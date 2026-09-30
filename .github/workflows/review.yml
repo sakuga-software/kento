@@ -1,0 +1,64 @@
+# The review of a pull request with PR-Agent (https://github.com/The-PR-Agent/pr-agent) on the
+# serverless inference of Scaleway Generative APIs, as the GitHub App « Sakuga Review ».
+# A repository calls it from its own workflow: see README.md.
+name: PR Agent
+
+on:
+  workflow_call:
+
+# The workflow token needs no permission: PR-Agent posts with a token of the App.
+permissions: {}
+
+jobs:
+  pr_agent:
+    name: PR Agent
+    # Drafts and pull requests of bots are skipped. A comment must be a command (`/improve`, `/ask …`)
+    # on a pull request, from a member of the repository. The comments of the App start the caller
+    # again, and this condition skips them: the sender is a bot.
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (
+        (github.event_name == 'pull_request' &&
+          !github.event.pull_request.draft &&
+          github.event.pull_request.user.type != 'Bot') ||
+        (github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          startsWith(github.event.comment.body, '/') &&
+          contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association))
+      )
+    # The self-hosted pool of prod-host: its rootless Docker daemon runs the image, apart from the
+    # production Swarm. It serves the private repositories of the organization only.
+    runs-on: [self-hosted, sakuga-linux, docker]
+    # The opening of a pull request runs /describe, /review and /improve: about 8 minutes.
+    timeout-minutes: 20
+    # A new push replaces the review of the previous one. A comment command is never cancelled.
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'pull_request'
+          && format('pr-agent-{0}-{1}', github.repository, github.event.pull_request.number)
+          || format('pr-agent-comment-{0}-{1}', github.repository, github.event.comment.id) }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      # A token of the App for the calling repository, and for this one: PR-Agent reads its global
+      # configuration here, and a token without access reads nothing and says nothing. It reads the
+      # code and writes comments and labels. `restricted_mode` stops PR-Agent from pushing.
+      - name: Sakuga Review token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # The Client ID of the App: not a secret.
+          client-id: Iv23liesB1xzywavcnv2
+          private-key: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
+          repositories: |
+            ${{ github.event.repository.name }}
+            pr-agent-settings
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: write
+      - name: PR Agent
+        # The official image of release 0.46.0 (tag 0.46.0-github_action), pinned by digest.
+        uses: docker://pragent/pr-agent@sha256:65e5b196e38cecd7df8a71fe29942052e081a0c6645132c2ac874df60b1760c7
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Scaleway Generative APIs: an IAM secret key, used as the key of the OpenAI-compatible endpoint.
+          OPENAI__KEY: ${{ secrets.SCW_SECRET_KEY }}
