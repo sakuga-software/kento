@@ -5,6 +5,12 @@ name: PR Agent
 
 on:
   workflow_call:
+    # The two secrets the review needs, and no other: a caller passes them by name.
+    secrets:
+      SCW_SECRET_KEY:
+        required: true
+      PR_AGENT_APP_PRIVATE_KEY:
+        required: true
 
 # The workflow token needs no permission: PR-Agent posts with a token of the App.
 permissions: {}

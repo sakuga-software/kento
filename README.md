@@ -98,7 +98,7 @@ Organization secrets, visibility « selected repositories »:
 | `SCW_SECRET_KEY` | The secret key of the Scaleway API key below. |
 | `PR_AGENT_APP_PRIVATE_KEY` | The private key of the App. |
 
-The calling workflow passes them with `secrets: inherit`. Both are in the macOS Keychain of the
+The calling workflow passes these two by name, and no other secret of the repository. Both are in the macOS Keychain of the
 machine that created them:
 
 | Secret | Keychain service | Account |
