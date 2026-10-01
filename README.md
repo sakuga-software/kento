@@ -53,7 +53,8 @@ A new push cancels the review of the previous one.
 1. The repository is **private**: the runners of `prod-host` do not serve public repositories,
    and a self-hosted runner on a public repository runs the code of forks.
 2. Add the repository to the visibility of the organization secrets below.
-3. Copy [`examples/pr-agent.yml`](examples/pr-agent.yml) to `.github/workflows/pr-agent.yml`.
+3. Copy [`examples/pr-agent.yml`](examples/pr-agent.yml) to `.github/workflows/pr-agent.yml`. It
+   calls the latest tag of `review.yml`, pinned by its SHA, and passes the two secrets by name.
 4. Optional: a `.pr_agent.toml` at the root of the repository, for what is proper to it. The usual
    case is `[pr_reviewer] extra_instructions` with its stack and its rules. A key replaces the
    whole key of this repository: to add to the `[ignore] glob` list, copy the list first.
@@ -65,9 +66,25 @@ from its default branch, and skips a missing file.
 
 ### Repositories
 
-| Repository | Since |
+| Repository | Pull request |
 | --- | --- |
-| `atlas` | 2026-09-29 |
+| `atlas` | atlas#1113, atlas#1115 |
+| `pantry` | pantry#629 |
+| `orchard` | orchard#1 |
+| `pass-app` | pass-app#3 |
+| `client-a` | client-a#90 |
+| `web-front` | web-front#545 |
+| `sakuga-software` | sakuga-software#11 |
+| `infra-repo` | infra-repo#1 |
+| `cache-server` | cache-server#1 |
+| `fruitback` (public, see below) | fruitback#74 |
+
+### A public repository
+
+A public repository cannot call a workflow of this private one, and the runners of `prod-host`
+do not serve it. `fruitback` holds a **copy** of `review.yml` that runs on `ubuntu-latest` (free for
+a public repository) and skips the pull requests of forks, which get no secret. PR-Agent still reads
+the configuration here. A change of `review.yml` goes to that copy by hand.
 
 ## GitHub App
 
@@ -185,4 +202,17 @@ The attestation must name `The-PR-Agent/pr-agent` and the tag `vX.Y.Z`. Then rep
 `review.yml`, and read the release notes for renamed configuration keys. Check again the limits
 above: a later release can implement inline findings on GitHub.
 
-The calling workflows use `@main`: a change here applies to every repository at its next review.
+## Release a new version of the workflow
+
+The calling workflows pin `review.yml` to a commit, with its tag as a comment: the two secrets go to
+that exact code, and a push here reaches no repository until it takes the new pin. The configuration
+in `.pr_agent.toml` is not pinned: PR-Agent reads it from `main` at each review.
+
+1. Merge the change of `review.yml` on `main`.
+2. Tag the merge commit with the next version: `gh api --method POST repos/sakuga-software/pr-agent-settings/git/refs -f ref=refs/tags/v2 -f sha=<commit>`.
+3. In each repository of the table above, replace the SHA and the comment on the `uses:` line of
+   `.github/workflows/pr-agent.yml`. `examples/pr-agent.yml` gets the same line.
+
+| Tag | Commit | Change |
+| --- | --- | --- |
+| `v1` | `246db1d441c38f255880104fd38837301aafa87e` | The first version, with the two secrets passed by name. |
