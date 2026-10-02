@@ -1,0 +1,20 @@
+# Automatic review of pull requests by Sakuga Review (MiMo through OpenRouter).
+# See https://github.com/sakuga-software/pr-agent-settings.
+name: Sakuga Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+# The review posts with a token of the GitHub App, which the shared workflow asks for. The token of
+# this workflow is not used, so it gets no permission.
+permissions: {}
+
+jobs:
+  review:
+    # Pinned to a commit of pr-agent-settings: the secrets below go to this exact code. To take a new
+    # version, replace the SHA and the tag in the comment (see the README of pr-agent-settings).
+    uses: sakuga-software/pr-agent-settings/.github/workflows/review.yml@SHA # v2
+    secrets:
+      PR_AGENT_APP_PRIVATE_KEY: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

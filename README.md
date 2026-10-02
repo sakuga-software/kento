@@ -1,68 +1,119 @@
 # pr-agent-settings
 
-The automatic review of pull requests for the repositories of `sakuga-software`:
-[PR-Agent](https://github.com/The-PR-Agent/pr-agent) release **0.46.0**, on the serverless inference
-of **Scaleway Generative APIs**, posting as the GitHub App **Sakuga Review** (`sakuga-review[bot]`).
+The automatic review of pull requests for the repositories of `sakuga-software`, posting as the
+GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **MiMo V2.6 Pro**
+through OpenRouter reads the diff and answers with findings, a severity and a confidence for each,
+and a confidence for the pull request. A script posts them as one review with inline comments, and
+blocks the merge on a sure blocking finding.
 
 This repository holds:
 
-- [`.pr_agent.toml`](.pr_agent.toml): the configuration of every repository. PR-Agent reads it
-  from `<org>/pr-agent-settings` by convention, before the `.pr_agent.toml` of the reviewed
-  repository. A key there replaces the same key here.
 - [`.github/workflows/review.yml`](.github/workflows/review.yml): the workflow that each repository
   calls.
-- [`examples/pr-agent.yml`](examples/pr-agent.yml): the calling workflow to copy.
+- [`examples/sakuga-review.yml`](examples/sakuga-review.yml): the calling workflow to copy.
+- [`review/`](review/): the script and the prompt.
+- [`eval/`](eval/): the bench that chose the model, and its results.
+- [`.pr_agent.toml`](.pr_agent.toml): the configuration of PR-Agent, which v1 ran. It goes when no
+  repository calls v1 any more: a repository on v1 reads it from `main` at each review.
 
-## What a pull request gets
+## What a push gets
 
-| Event | Commands |
+One review on the head commit, by `sakuga-review[bot]`:
+
+- **The body**: the verdict, the confidence in the pull request (0 to 100 %), a summary in two
+  sentences, a table of the findings, the findings that get no inline comment, and what the review
+  did not read. Its footer names the model, the tokens read and the cost.
+- **Inline comments**: one per finding of 70 % confidence or more, on a line that the pull request
+  changes, at most 5. Each gives the severity, the confidence, the failure scenario and the fix.
+  Each comment is a thread that a person resolves, so the unsure findings stay in the body.
+- **The verdict**:
+
+  | The review finds | Event |
+  | --- | --- |
+  | A `critical` or `major` finding, 70 % confidence or more, on a changed line | `REQUEST_CHANGES` |
+  | Anything else | `COMMENT` |
+
+  It never approves: the bench measured that one call finds about a quarter of the defects that a
+  careful reviewer finds, so an approval would claim more than the review knows.
+
+On the next push:
+
+- A finding that an open thread already carries is not posted again.
+- A thread whose file changed since its comment, and whose finding did not come back, gets a reply
+  that says it can be resolved. The App cannot resolve it: GitHub refuses `resolveReviewThread` to
+  an App that cannot write the contents, and this App only reads them. On a repository that
+  requires every thread resolved (atlas), a person resolves it.
+- The `REQUEST_CHANGES` of an earlier head is dismissed. A `COMMENT` alone does not lift it, so
+  without the dismissal a fixed pull request would stay blocked.
+
+Drafts, pull requests of bots and pushes of bots are skipped. A new push cancels the review of the
+previous one.
+
+## The model call
+
+| | Value |
 | --- | --- |
-| A pull request opens, reopens or leaves draft | `/describe`, `/review`, `/improve` |
-| A push to the pull request | `/describe`, `/review` again |
-| A comment on the pull request that starts with `/` | that command |
+| Models | `xiaomi/mimo-v2.6-pro`, then `z-ai/glm-5.3` (`REVIEW_MODELS` in the script) |
+| Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true}` |
+| Answer | JSON, held to a schema by the provider |
+| Input | the diff with the whole function around each change, `CLAUDE.md` and `AGENTS.md` up to 400 lines, at most 240 kB |
+| Cost | about 0.3 to 2 cents a review (measured) |
+| Time | 1 to 3 minutes; each attempt stops after 5 minutes, and the second starts with the other model |
 
-- `/describe` writes the description: a summary, a diagram walkthrough (Mermaid) and a file
-  walkthrough, after the text of the author.
-- `/review` posts one summary comment, updated on each push: the effort to review, the risk level,
-  the merge recommendation and the findings, each with a confidence in its title.
-- `/improve` posts each suggestion on its line as a GitHub suggestion, which a person applies with
-  one click. It posts the suggestions that score 7 or more out of 10.
-- `/ask <question>`: a question about the change.
+**Where the diff goes.** OpenRouter sends it only to a provider that keeps nothing and trains on
+nothing (`zdr`, `data_collection: deny`); a model with no such provider answers 404. The provider
+can be outside the EU: MiMo runs at DeepInfra. Enable the review on a client repository only if its
+contract allows it.
 
-A push does not run `/improve`: it makes two model calls, to write the suggestions and then to
-score them, and takes about 6 minutes on a 23-file diff where `/review` takes 1. The job holds a
-runner slot that CI shares.
+The script reads the code and never runs it. It is TypeScript that Node 24 or later runs as is: it
+needs `git` and Node, and no package and no build. Keep it to erasable syntax (no `enum`, no
+`namespace`), which Node strips without a compiler.
 
-Drafts, pull requests opened by a bot and comments from people outside the repository are skipped.
-A new push cancels the review of the previous one.
+## Run it by hand
 
-### Limits of PR-Agent 0.46.0 on GitHub
+```bash
+export OPENROUTER_API_KEY=...
+node review/sakuga-review.ts --repo-dir <checkout> --base <base sha> --head <head sha> --dry-run
+```
 
-- **No inline findings.** `inline_key_issues` is implemented for Azure DevOps and Bitbucket only. On
-  GitHub the findings stay in the summary, without a warning. Only `/improve` writes on the lines.
-- **The confidence of a finding is an instruction to the model**, not a field of PR-Agent. With the
-  example in the instruction, the model follows it (checked on atlas#1090); a title without it
-  is still possible.
-- **No « Resolved findings » section.** In a GitHub Action, PR-Agent cannot read the login of an App
-  token (`GET /user` refuses it), so it takes its own comments for the ones of
-  `github-actions[bot]`. With `persistent_finding_state` on, it would post a new review on each push.
-  It is off: PR-Agent finds its review by its hidden marker and updates it.
+`--dry-run` prints the answer with, for each finding, the line it would anchor on and whether it
+blocks. Without it, and with `GITHUB_TOKEN`, `--repository` and `--pr`, it posts.
+
+## Why this model, and not an agent
+
+[`eval/`](eval/) holds the bench, and [`eval/results.md`](eval/results.md) its detailed results: seven pull requests of pantry, atlas and web-front, with
+the ten defects that an earlier reviewer (Claude Opus, exploring the repository) found and that the
+authors then fixed, and one clean pull request. On 2026-10-02:
+
+| | Defects found per run (of 10) | Clean PR blocked | Cost a review |
+| --- | --- | --- | --- |
+| MiMo V2.6 Pro, one call | about 2.3 | 0 of 3 | $0.02 |
+| GLM-5.3, one call | 1.5 to 2 | 0 | $0.02 |
+| Claude Sonnet 5.5, one call | about 1.3 | 0 | $0.08 |
+| GPT-5.6 Luna, one call | about 1.3 | 0 | $0.002 |
+| The same four as agents (4 rounds of read-only tools) | about 0.5 | 0 | $0.016 to $0.125 |
+| Five models of Scaleway Generative APIs, one call | 0 to 1 | 1 of 5 | €0.001 to €0.13 |
+
+- **No model found the hard defects** at this budget: the endpoint of pantry#549 reachable through the
+  relay, the unique violation that drizzle wraps on pantry#565. They need a reading of another
+  service or of a library.
+- **OpenCode was dropped.** Its step limit ends a run inside a tool call with no answer; as an agent
+  it found fewer defects than one call; and its GitHub action can push commits.
+- **Scaleway has no prompt cache**, so an agent there pays the whole context at each step.
 
 ## Enable it on a repository
 
-1. The repository is **private**: the runners of `prod-host` do not serve public repositories,
+1. The repository is **private**: the runners of `runners-host` do not serve public repositories,
    and a self-hosted runner on a public repository runs the code of forks.
 2. Add the repository to the visibility of the organization secrets below.
-3. Copy [`examples/pr-agent.yml`](examples/pr-agent.yml) to `.github/workflows/pr-agent.yml`. It
-   calls the latest tag of `review.yml`, pinned by its SHA, and passes the two secrets by name.
-4. Optional: a `.pr_agent.toml` at the root of the repository, for what is proper to it. The usual
-   case is `[pr_reviewer] extra_instructions` with its stack and its rules. A key replaces the
-   whole key of this repository: to add to the `[ignore] glob` list, copy the list first.
-5. Open the pull request: its own review is the test. The calling workflow comes from the branch of
-   the pull request, the configurations from the default branches.
+3. Copy [`examples/sakuga-review.yml`](examples/sakuga-review.yml) to
+   `.github/workflows/sakuga-review.yml`, with the SHA of the latest tag (see the table at the end).
+   It passes the two secrets by name.
+4. Open the pull request: its own review is the test. The calling workflow comes from the branch of
+   the pull request.
 
-The conventions of the repository go into every prompt: PR-Agent reads `CLAUDE.md` and `AGENTS.md`
-from its default branch, and skips a missing file.
+The conventions of the repository go into every review: the script sends `CLAUDE.md` and
+`AGENTS.md` of the head commit, up to 400 lines each, and skips a missing file.
 
 ### Repositories
 
@@ -81,10 +132,10 @@ from its default branch, and skips a missing file.
 
 ### A public repository
 
-A public repository cannot call a workflow of this private one, and the runners of `prod-host`
+A public repository cannot call a workflow of this private one, and the runners of `runners-host`
 do not serve it. `fruitback` holds a **copy** of `review.yml` that runs on `ubuntu-latest` (free for
-a public repository) and skips the pull requests of forks, which get no secret. PR-Agent still reads
-the configuration here. A change of `review.yml` goes to that copy by hand.
+a public repository) and skips the pull requests of forks, which get no secret. A change of
+`review.yml` goes to that copy by hand.
 
 ## GitHub App
 
@@ -95,7 +146,7 @@ the configuration here. A change of `review.yml` goes to that copy by hand.
 | --- | --- |
 | App ID | `5134298` |
 | Client ID | `Iv23liesB1xzywavcnv2` |
-| Permissions | Pull requests write, Issues write, Contents read, Metadata read. No webhook, no event. |
+| Permissions | Pull requests write, Issues write, Contents read, Metadata read. No webhook, no event. Issues write served PR-Agent and can go. |
 | Installation | All the repositories of the organization. |
 
 Each run asks for a token for the calling repository and for this one only, with those
@@ -112,16 +163,25 @@ Organization secrets, visibility « selected repositories »:
 
 | Name | Value |
 | --- | --- |
-| `SCW_SECRET_KEY` | The secret key of the Scaleway API key below. |
 | `PR_AGENT_APP_PRIVATE_KEY` | The private key of the App. |
+| `OPENROUTER_API_KEY` | An OpenRouter API key for Sakuga Review, with a daily limit. |
 
-The calling workflow passes these two by name, and no other secret of the repository. Both are in the macOS Keychain of the
-machine that created them:
+The calling workflow passes these two by name, and no other secret of the repository. They are in
+the macOS Keychain of the machine that created them:
 
 | Secret | Keychain service | Account |
 | --- | --- | --- |
-| `SCW_SECRET_KEY` | `SECRET_STORE_ENTRY` | `IAM_APPLICATION` |
 | `PR_AGENT_APP_PRIVATE_KEY` | `github-app-atlas-review` | `private-key` |
+| `OPENROUTER_API_KEY` | `openrouter-pr-review` | `api-key` |
+
+**The daily limit of the OpenRouter key is the cost guard of the review** ($10 a day). The same key
+serves the bench of `eval/`. A key of its own for the CI would only split the usage per key and let
+one be revoked without the other.
+
+**Budget.** September 2026 had about 1,500 pull request heads that a review would read (atlas
+about 870, web-front 236, fruitback 201, pantry 173, the others about 10). At 0.3 to 2 cents a
+review, plus the 5.5 % that OpenRouter takes on a top-up, that is about $15 to $30 a month. The worst
+case, one review per commit (3,200 in September) at 2 cents, is about $70.
 
 A multi-line value comes back from `security find-generic-password -w` in hexadecimal: decode it
 with `xxd -r -p`.
@@ -142,77 +202,27 @@ with `xxd -r -p`.
    Pass the visibility again: without `--visibility`, `gh secret set --org` gives the secret to all
    the private repositories.
 
-3. Run a review (`/review` in a comment), then delete the old key in the App settings and the
+3. Push to an open pull request to run a review, then delete the old key in the App settings and the
    `.pem` file.
-
-## Scaleway
-
-| Resource | Name | Id |
-| --- | --- | --- |
-| Project | `pr-agent` | `00000000-0000-0000-0000-000000000000` |
-| IAM application | `IAM_APPLICATION` | `00000000-0000-0000-0000-000000000000` |
-| Policy | `IAM_POLICY`: `GenerativeApisModelAccess` on the `pr-agent` project only | `00000000-0000-0000-0000-000000000000` |
-| API key | of the application, default project `pr-agent` | access key `SCW_ACCESS_KEY_ID` |
-
-The key can call the models and nothing else, and only through the URL of the project
-(`https://api.scaleway.ai/<project id>/v1`): the URL without the project answers 403. The
-consumption is billed to the `pr-agent` project, and Cockpit shows its tokens.
-
-The diff of each pull request goes to Scaleway. Enable the review on a client repository only if
-its contract allows it.
-
-### Change the model
-
-The models, in `.pr_agent.toml`, section `[config]`:
-
-| Role | Model | Context | Price in / out (per million tokens) |
-| --- | --- | --- | --- |
-| `model` | `qwen3.5-397b-a17b` | 250k, 16k out | €0.60 / €3.60 |
-| `fallback_models` | `qwen3.6-35b-a3b` | 256k, 32k out | €0.25 / €1.50 |
-
-Keep the `openai/` prefix, which routes through the OpenAI-compatible path of LiteLLM, then the
-model ID of the
-[catalogue](https://www.scaleway.com/en/docs/generative-apis/reference-content/supported-models/).
-For a model that PR-Agent does not know:
-
-- `custom_model_max_tokens`: its context window.
-- `max_model_tokens`: the diff sent at most (64000). A larger pull request is clipped. This is what
-  bounds the cost, about 6 cents for a `/describe` and a `/review`.
-- `additional_reasoning_effort_models`: list it, or PR-Agent does not send `reasoning_effort` and
-  the model reasons at its own default. Measured on `qwen3.5-397b-a17b`: `low` answers correctly in
-  about 30 s, `medium` takes more than 60 s on a two-line diff, and `ai_timeout` is 300 s.
 
 ## Runner
 
-The job runs on the self-hosted pool of `prod-host` (`self-hosted, sakuga-linux, docker`): three
-slots, shared with CI. Its rootless Docker daemon runs the image, apart from the production Swarm.
-See `~/runners/README.md` on the host.
-
-## Upgrade PR-Agent
-
-The image is pinned by digest. For a new release `X.Y.Z` on the
-[Releases page](https://github.com/The-PR-Agent/pr-agent/releases):
-
-```bash
-docker buildx imagetools inspect pragent/pr-agent:X.Y.Z-github_action --format '{{.Manifest.Digest}}'
-gh attestation verify "oci://index.docker.io/pragent/pr-agent@sha256:<digest>" --repo The-PR-Agent/pr-agent
-```
-
-The attestation must name `The-PR-Agent/pr-agent` and the tag `vX.Y.Z`. Then replace the digest in
-`review.yml`, and read the release notes for renamed configuration keys. Check again the limits
-above: a later release can implement inline findings on GitHub.
+The job runs on `runners-host`, the CI server of the organization (`self-hosted, sakuga-linux`).
+It shares the slots with CI and holds one for 1 to 3 minutes. See `~/runners/README.md` on the
+host.
 
 ## Release a new version of the workflow
 
 The calling workflows pin `review.yml` to a commit, with its tag as a comment: the two secrets go to
-that exact code, and a push here reaches no repository until it takes the new pin. The configuration
-in `.pr_agent.toml` is not pinned: PR-Agent reads it from `main` at each review.
+that exact code, and a push here reaches no repository until it takes the new pin. The job checks out
+the script and the prompt at the same commit (`job.workflow_sha`), so they are pinned too.
 
 1. Merge the change of `review.yml` on `main`.
 2. Tag the merge commit with the next version: `gh api --method POST repos/sakuga-software/pr-agent-settings/git/refs -f ref=refs/tags/v2 -f sha=<commit>`.
 3. In each repository of the table above, replace the SHA and the comment on the `uses:` line of
-   `.github/workflows/pr-agent.yml`. `examples/pr-agent.yml` gets the same line.
+   `.github/workflows/sakuga-review.yml`. `examples/sakuga-review.yml` gets the same line.
 
 | Tag | Commit | Change |
 | --- | --- | --- |
-| `v1` | `246db1d441c38f255880104fd38837301aafa87e` | The first version, with the two secrets passed by name. |
+| `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
+| `v2` | (at the merge) | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |
