@@ -115,18 +115,18 @@ The conventions of the repository go into every review: the script sends `CLAUDE
 
 ### Repositories
 
-| Repository | Pull request |
-| --- | --- |
-| `atlas` | atlas#1113, atlas#1115 |
-| `pantry` | pantry#629 |
-| `orchard` | orchard#1 |
-| `pass-app` | pass-app#3 |
-| `client-a` | client-a#90 |
-| `web-front` | web-front#545 |
-| `sakuga-software` | sakuga-software#11 |
-| `infra-repo` | infra-repo#1 |
-| `cache-server` | cache-server#1 |
-| `fruitback` (public, see below) | fruitback#74 |
+| Repository | v1 (PR-Agent) | v2 (Sakuga Review) |
+| --- | --- | --- |
+| `atlas` | atlas#1113, atlas#1115 | atlas#1179 |
+| `pantry` | pantry#629 | pantry#649 |
+| `orchard` | orchard#1 | orchard#2 |
+| `pass-app` | pass-app#3 | pass-app#4 |
+| `client-a` | client-a#90 | client-a#92 |
+| `web-front` | web-front#545 | web-front#549 |
+| `sakuga-software` | sakuga-software#11 | sakuga-software#12 |
+| `infra-repo` | infra-repo#1 | infra-repo#2 |
+| `cache-server` | cache-server#1 | cache-server#2 |
+| `fruitback` (public, see below) | fruitback#74 | fruitback#75 |
 
 ### A public repository
 
@@ -225,4 +225,4 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 | Tag | Commit | Change |
 | --- | --- | --- |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
-| `v2` | (at the merge) | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |
+| `v2` | `98155ea6756730cf44ef35590f1e8f5d743cb8fe` | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |
