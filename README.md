@@ -1,4 +1,4 @@
-# pr-agent-settings
+# sakuga-review
 
 The automatic review of pull requests for the repositories of `sakuga-software`, posting as the
 GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **MiMo V2.6 Pro**
@@ -13,8 +13,6 @@ This repository holds:
 - [`examples/sakuga-review.yml`](examples/sakuga-review.yml): the calling workflow to copy.
 - [`review/`](review/): the script and the prompt.
 - [`eval/`](eval/): the bench that chose the model, and its results.
-- [`.pr_agent.toml`](.pr_agent.toml): the configuration of PR-Agent, which v1 ran. It goes when no
-  repository calls v1 any more: a repository on v1 reads it from `main` at each review.
 
 ## What a push gets
 
@@ -134,8 +132,10 @@ The conventions of the repository go into every review: the script sends `CLAUDE
 
 A public repository cannot call a workflow of this private one, and the runners of `runners-host`
 do not serve it. `fruitback` holds a **copy** of `review.yml` that runs on `ubuntu-latest` (free for
-a public repository) and skips the pull requests of forks, which get no secret. A change of
-`review.yml` goes to that copy by hand.
+a public repository) and skips the pull requests of forks, which get no secret. The copy checks out
+the script from this repository with the token of the App, at a SHA written in the copy, because
+`job.workflow_sha` names the copy there. A new version goes to that copy by hand: the job and the
+SHA.
 
 ## GitHub App
 
@@ -218,7 +218,7 @@ that exact code, and a push here reaches no repository until it takes the new pi
 the script and the prompt at the same commit (`job.workflow_sha`), so they are pinned too.
 
 1. Merge the change of `review.yml` on `main`.
-2. Tag the merge commit with the next version: `gh api --method POST repos/sakuga-software/pr-agent-settings/git/refs -f ref=refs/tags/v2 -f sha=<commit>`.
+2. Tag the merge commit with the next version: `gh api --method POST repos/sakuga-software/sakuga-review/git/refs -f ref=refs/tags/v2 -f sha=<commit>`.
 3. In each repository of the table above, replace the SHA and the comment on the `uses:` line of
    `.github/workflows/sakuga-review.yml`. `examples/sakuga-review.yml` gets the same line.
 

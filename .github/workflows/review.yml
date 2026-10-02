@@ -40,7 +40,7 @@ jobs:
           private-key: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
           repositories: |
             ${{ github.event.repository.name }}
-            pr-agent-settings
+            sakuga-review
           permission-contents: read
           permission-pull-requests: write
       # The whole history: the script diffs from the merge base, and a thread closes only when its
