@@ -57,12 +57,14 @@ The layout follows the one of Greptile.
 | The review finds | Event |
 | --- | --- |
 | A `P0` or `P1` finding, 70 % confidence or more, on a changed line | `REQUEST_CHANGES`, and the score is at most 2 |
-| Anything else | `COMMENT` |
+| No such finding, and a score of 4 or 5 | `APPROVE` |
+| No such finding, and a score of 1 to 3 | `COMMENT` |
 
-It never approves: the bench measured that one call finds about a quarter of the defects that a
-careful reviewer finds, so an approval would claim more than the review knows. The confidence of a
-finding (0 to 100) stays inside the script: it decides the inline comment and the block, and the
-reader sees the priority.
+An approval says that this review found nothing that blocks, not that the change is correct: the
+bench measured that one call finds about a quarter of the defects that a careful reviewer finds.
+No repository of the organization requires an approval to merge (2026-10-03), so the approval of
+the bot gates nothing; it shows in the list of reviews. The confidence of a finding (0 to 100) stays
+inside the script: it decides the inline comment and the block, and the reader sees the priority.
 
 On the next push:
 
@@ -262,5 +264,6 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 | Tag | Commit | Change |
 | --- | --- | --- |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
-| `v3` | (at the merge) | The layout of Greptile: a score of 1 to 5, a `review: N/5` label, a block at the end of the description with a Mermaid diagram, priority badges and suggestions. GLM-5.3 first. The token asks for Issues write. |
+| `v3.1` | (at the merge) | The review approves on a score of 4 or 5 with no blocking finding. |
+| `v3` | `a6a499e7ac5248c2f957919b9545c0c6869c0929` | The layout of Greptile: a score of 1 to 5, a `review: N/5` label, a block at the end of the description with a Mermaid diagram, priority badges and suggestions. GLM-5.3 first. The token asks for Issues write. |
 | `v2` | `98155ea6756730cf44ef35590f1e8f5d743cb8fe` | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |

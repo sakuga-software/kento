@@ -391,6 +391,15 @@ function inlineBody(finding: Finding, withSuggestion: boolean): string {
   return out.join('\n');
 }
 
+// The score from which a review with no blocking finding approves the pull request.
+const APPROVE_SCORE = 4;
+
+/** REQUEST_CHANGES on a sure blocking finding, APPROVE on a score of 4 or 5, COMMENT otherwise. */
+function verdict(answer: Answer, lines: ChangedLines): 'REQUEST_CHANGES' | 'APPROVE' | 'COMMENT' {
+  if (answer.findings.some((f) => isBlocking(f, lines))) return 'REQUEST_CHANGES';
+  return score(answer, lines) >= APPROVE_SCORE ? 'APPROVE' : 'COMMENT';
+}
+
 function reviewBody(answer: Answer, lines: ChangedLines): string {
   const blocking = answer.findings.filter((f) => isBlocking(f, lines)).length;
   const head = blocking
@@ -526,8 +535,7 @@ async function post(args: Args, answer: Answer, usage: Usage, skipped: string[],
     resolved++;
   }
 
-  const blocking = answer.findings.some((f) => isBlocking(f, lines));
-  const review = { commit_id: args.head, body: reviewBody(answer, lines), event: blocking ? 'REQUEST_CHANGES' : 'COMMENT', comments };
+  const review = { commit_id: args.head, body: reviewBody(answer, lines), event: verdict(answer, lines), comments };
   const path = `/repos/${owner}/${name}/pulls/${args.pr}/reviews`;
   let posted;
   try {
@@ -542,7 +550,8 @@ async function post(args: Args, answer: Answer, usage: Usage, skipped: string[],
   }
 
   // A COMMENT does not lift an earlier REQUEST_CHANGES, so the review of the previous head would keep
-  // the pull request blocked after its findings are fixed.
+  // the pull request blocked after its findings are fixed. An APPROVE lifts it, and the dismissal
+  // also clears it from the list of reviews.
   for (const previous of (await github('GET', `${path}?per_page=100`)) ?? []) {
     if (previous.user.login === BOT_LOGIN && previous.state === 'CHANGES_REQUESTED' && previous.id !== posted.id) {
       await github('PUT', `${path}/${previous.id}/dismissals`, { message: 'Remplacée par la revue du dernier commit.', event: 'DISMISS' });
@@ -603,7 +612,8 @@ async function main() {
   const { answer, usage } = await askModel(pack);
   log(
     `model=${usage.model} provider=${usage.provider} tokens=${usage.prompt_tokens}+${usage.completion_tokens} ` +
-      `cost=${usage.cost} score=${score(answer, lines)}/5 findings=${answer.findings.length} diagram=${diagram(answer) ? 'yes' : 'no'}`,
+      `cost=${usage.cost} score=${score(answer, lines)}/5 verdict=${verdict(answer, lines)} findings=${answer.findings.length} ` +
+      `diagram=${diagram(answer) ? 'yes' : 'no'}`,
   );
 
   if (values['dry-run']) {
