@@ -9,7 +9,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
@@ -35,10 +35,14 @@ const MAX_INLINE = 5;
 // GLM-5.3 answers in 30 to 90 seconds. MiMo V2.6 Pro writes about 10,000 tokens of reasoning at
 // 35 to 50 tokens a second, whatever the reasoning budget asks (measured on 2026-10-03): 4 to 6
 // minutes. It only takes over when GLM-5.3 fails, with the time it needs. Both fit the 15 minutes.
-const ATTEMPT_TIMEOUT_MS = [180_000, 480_000];
+const ATTEMPT_TIMEOUT_MS = process.env.REVIEW_TIMEOUT_MS
+  ? [Number(process.env.REVIEW_TIMEOUT_MS), Number(process.env.REVIEW_TIMEOUT_MS)]
+  : [180_000, 480_000];
 // The most a provider can charge, in dollars a million tokens. Without it, the routing of OpenRouter
 // sent GLM-5.3 to providers at $1.4 / $4.4, one of which reasons less and found less on the bench.
-const MAX_PRICE = { prompt: 0.5, completion: 3.5 };
+// The bench sets REVIEW_MAX_PRICE ("prompt,completion") to try a model above this cap.
+const [MAX_PROMPT_PRICE, MAX_COMPLETION_PRICE] = (process.env.REVIEW_MAX_PRICE ?? '0.5,3.5').split(',').map(Number);
+const MAX_PRICE = { prompt: MAX_PROMPT_PRICE, completion: MAX_COMPLETION_PRICE };
 // A finding can anchor on a changed line this far from the line the model named.
 const ANCHOR_DISTANCE = 10;
 
@@ -151,9 +155,8 @@ function buildPack(repo: string, base: string, head: string): { pack: string; sk
 
   let docs = '';
   for (const doc of ['CLAUDE.md', 'AGENTS.md']) {
-    const full = join(repo, doc);
-    if (!existsSync(full)) continue;
-    const text = readFileSync(full, 'utf8');
+    if (!git(repo, 'ls-tree', '--name-only', head, '--', doc).trim()) continue;
+    const text = git(repo, 'show', `${head}:${doc}`);
     if (text.split('\n').length <= MAX_DOC_LINES) docs += `## ${doc}\n\n${text}\n\n`;
   }
 

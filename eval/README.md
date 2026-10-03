@@ -3,6 +3,9 @@
 The bench that chose the model of [`review/`](../review/). Run it again before you change the model
 or the prompt, and when a new model comes out.
 
+[`martian/`](martian/) runs the same cases with the TypeScript pull requests of the Martian Code
+Review Bench and its judge, and gives the latest comparison of models.
+
 ## The cases
 
 [`cases.tsv`](cases.tsv) holds one pull request range a line: a name, the repository, the base
