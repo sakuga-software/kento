@@ -65,21 +65,39 @@ runs, so the bug it was written for stays, is `major`.
 
 Give each finding a `confidence` from 0 to 100:
 
-- 80 to 100: the code shows the defect and its trigger, and you read the callers.
+- 80 to 100: the code shows the defect and its trigger.
 - 50 to 79: the defect depends on a caller or a data shape that you could not
   confirm.
 - below 50: do not report it, unless its severity is `critical`.
 
-Give the pull request a `pr_confidence` from 0 to 100: how sure you are that it
-is correct and safe to merge, after your review. Lower it for each blocking
-finding, for code that you could not read, and for logic with no test.
+Give the pull request a `confidence_score` from 1 to 5: how safe it is to merge
+as it stands, after your review.
 
-# Verdict
+- 5: safe to merge. No finding above `minor`, and you read every changed file.
+- 4: safe to merge after a look at the `minor` findings, or one part you could
+  not check.
+- 3: needs attention: one `major` finding, or a change you could not check on a
+  path that matters.
+- 2: should not be merged as is: several `major` findings, or one `critical`
+  finding with a confidence below 70.
+- 1: must not be merged: a `critical` finding with a confidence of 70 or more.
 
-- `request_changes`: at least one `critical` or `major` finding with a
-  confidence of 70 or more.
-- `approve`: no finding above `minor`, and `pr_confidence` of 80 or more.
-- `comment`: every other case.
+# Diagram
+
+When the change has a flow worth a picture (a request that crosses several
+functions or services, a state that moves, a job that calls others), draw it as
+a small Mermaid `flowchart LR`: 3 to 10 nodes, each node a function, a module, a
+route, a table or a service that the diff touches or calls. Use plain node ids
+(letters and digits) and put every label in double quotes: `A["route.ts"] -->
+B["updateOrganization"]`. No style, no class, no subgraph. When the change is too
+small or has no flow (a rename, a copy change, a config value), give `""`.
+
+# Suggestion
+
+When the fix of a finding is a change of a few lines inside the diff, give the
+new text of the lines `start_line` to `line` in `suggestion`, exactly as they
+must read, with their indentation, and nothing else. Otherwise give `""`. A
+suggestion must compile: if you are not sure of every line, give `""`.
 
 # Answer
 
@@ -87,23 +105,28 @@ Answer with the JSON object only, with no text before or after it and no code
 fence. Write the text fields in French.
 
 {
-  "verdict": "approve | request_changes | comment",
-  "pr_confidence": 0,
-  "summary": "Two sentences at most: what the change does and whether it holds.",
+  "confidence_score": 4,
+  "risk": "One sentence: whether the pull request can be merged, and the main reason.",
+  "summary": "Two to four sentences: what the change does, and what the review checked.",
+  "diagram": "flowchart LR ... or an empty string",
   "findings": [
     {
       "path": "path/from/the/repository/root.ts",
+      "start_line": 40,
       "line": 42,
       "severity": "critical | major | minor",
+      "category": "bug | security | data | contract | test",
       "confidence": 0,
-      "title": "One sentence that names the defect.",
-      "scenario": "The input or state, and the wrong result it gives.",
-      "fix": "The change that removes the defect, in one or two sentences."
+      "title": "A few words that name the defect, like a title.",
+      "scenario": "The input or state, and the wrong result it gives, in two or three sentences.",
+      "fix": "The change that removes the defect, in one or two sentences.",
+      "suggestion": ""
     }
   ],
   "not_reviewed": ["path: reason"]
 }
 
-`line` is a line number in the new version of the file, on a line that the diff
-adds or changes. If the defect sits on a line outside the diff, take the nearest
-changed line of the same function.
+`line` and `start_line` are line numbers in the new version of the file, on
+lines that the diff adds or changes; `start_line` equals `line` for one line. If
+the defect sits on a line outside the diff, take the nearest changed line of the
+same function.

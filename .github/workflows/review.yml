@@ -43,6 +43,8 @@ jobs:
             sakuga-review
           permission-contents: read
           permission-pull-requests: write
+          # The score label of the pull request.
+          permission-issues: write
       # The whole history: the script diffs from the merge base, and a thread closes only when its
       # file changed since the commit that the thread names.
       - name: Check out the pull request

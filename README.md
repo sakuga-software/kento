@@ -1,7 +1,7 @@
 # sakuga-review
 
 The automatic review of pull requests for the repositories of `sakuga-software`, posting as the
-GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **MiMo V2.6 Pro**
+GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **GLM-5.3**
 through OpenRouter reads the diff and answers with findings, a severity and a confidence for each,
 and a confidence for the pull request. A script posts them as one review with inline comments, and
 blocks the merge on a sure blocking finding.
@@ -16,23 +16,53 @@ This repository holds:
 
 ## What a push gets
 
-One review on the head commit, by `sakuga-review[bot]`:
+The layout follows the one of Greptile.
 
-- **The body**: the verdict, the confidence in the pull request (0 to 100 %), a summary in two
-  sentences, a table of the findings, the findings that get no inline comment, and what the review
-  did not read. Its footer names the model, the tokens read and the cost.
-- **Inline comments**: one per finding of 70 % confidence or more, on a line that the pull request
-  changes, at most 5. Each gives the severity, the confidence, the failure scenario and the fix.
-  Each comment is a thread that a person resolves, so the unsure findings stay in the body.
-- **The verdict**:
+- **A block at the end of the description of the pull request**, replaced on each push:
+  - `Sakuga Review · Score de confiance : N/5`, and one sentence on whether the pull request can be
+    merged;
+  - the findings, numbered, each with its priority badge (`P0`, `P1`, `P2`, and `sécurité` for a
+    security finding) and a ▶ link to its thread. A finding with no thread shows its scenario and
+    its fix there;
+  - a folded summary, a folded Mermaid diagram of the flow that the change touches (when there is
+    one), and what the review did not read;
+  - a footer: the number of reviews, the last commit reviewed, the model and the cost.
 
-  | The review finds | Event |
-  | --- | --- |
-  | A `critical` or `major` finding, 70 % confidence or more, on a changed line | `REQUEST_CHANGES` |
-  | Anything else | `COMMENT` |
+  The script reads the description again just before it writes, and changes only the text between
+  its two markers (`<!-- sakuga-review:start -->`, `<!-- sakuga-review:end -->`).
+- **A label `review: N/5`**, coloured from red (1) to green (5), replaced on each push. The script
+  creates the label in a repository the first time.
+- **One review** on the head commit: the score and the sentence, and one inline comment per finding
+  of 70 % confidence or more on a line that the pull request changes, at most 5. An inline comment
+  gives the priority badge, the title, the failure scenario and the fix, and a GitHub suggestion
+  when the fix is a few changed lines. Each comment is a thread that a person resolves, so the
+  unsure findings stay in the description.
 
-  It never approves: the bench measured that one call finds about a quarter of the defects that a
-  careful reviewer finds, so an approval would claim more than the review knows.
+| Priority | Severity | Meaning |
+| --- | --- | --- |
+| `P0` | `critical` | data loss or corruption, a security hole, a crash on a main path |
+| `P1` | `major` | a wrong result or status on a real path, a broken contract, a regression |
+| `P2` | `minor` | an unusual trigger or a cosmetic impact |
+
+| Score | Meaning |
+| --- | --- |
+| 5 | safe to merge |
+| 4 | safe after a look at the minor findings |
+| 3 | needs attention |
+| 2 | should not be merged as is |
+| 1 | must not be merged |
+
+**The verdict**:
+
+| The review finds | Event |
+| --- | --- |
+| A `P0` or `P1` finding, 70 % confidence or more, on a changed line | `REQUEST_CHANGES`, and the score is at most 2 |
+| Anything else | `COMMENT` |
+
+It never approves: the bench measured that one call finds about a quarter of the defects that a
+careful reviewer finds, so an approval would claim more than the review knows. The confidence of a
+finding (0 to 100) stays inside the script: it decides the inline comment and the block, and the
+reader sees the priority.
 
 On the next push:
 
@@ -51,17 +81,23 @@ previous one.
 
 | | Value |
 | --- | --- |
-| Models | `xiaomi/mimo-v2.6-pro`, then `z-ai/glm-5.3` (`REVIEW_MODELS` in the script) |
-| Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true}` |
+| Models | `z-ai/glm-5.3`, then `xiaomi/mimo-v2.6-pro` when it fails (`REVIEW_MODELS` in the script) |
+| Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true, sort: "price", max_price: {prompt: 0.5, completion: 3.5}}` |
 | Answer | JSON, held to a schema by the provider |
 | Input | the diff with the whole function around each change, `CLAUDE.md` and `AGENTS.md` up to 400 lines, at most 240 kB |
-| Cost | about 0.3 to 2 cents a review (measured) |
-| Time | 1 to 3 minutes; each attempt stops after 5 minutes, and the second starts with the other model |
+| Cost | about 0.3 to 1.6 cents a review (measured); the diagram adds a few hundred output tokens, below 0.1 cent |
+| Time | 15 to 90 seconds (measured, seven reviews at once); GLM-5.3 stops after 3 minutes, MiMo after 8 |
 
 **Where the diff goes.** OpenRouter sends it only to a provider that keeps nothing and trains on
 nothing (`zdr`, `data_collection: deny`); a model with no such provider answers 404. The provider
-can be outside the EU: MiMo runs at DeepInfra. Enable the review on a client repository only if its
-contract allows it.
+can be outside the EU: GLM-5.3 runs at Reka, Wafer or InferenceNet, MiMo at DeepInfra or Novita.
+Enable the review on a client repository only if its contract allows it.
+
+**Why GLM-5.3 and not MiMo**, which found a little more on the bench: MiMo writes about 10,000
+tokens of reasoning at 35 to 50 tokens a second, whatever the reasoning budget asks, so a review
+takes 4 to 6 minutes. In v2, which tried MiMo first, 23 of the first 28 reviews fell back to
+GLM-5.3 after the wait (2026-10-03). The `max_price` keeps GLM-5.3 off the providers at
+$1.4 / $4.4, one of which reasons less and found less on the bench.
 
 The script reads the code and never runs it. It is TypeScript that Node 24 or later runs as is: it
 needs `git` and Node, and no package and no build. Keep it to erasable syntax (no `enum`, no
@@ -81,7 +117,8 @@ blocks. Without it, and with `GITHUB_TOKEN`, `--repository` and `--pr`, it posts
 
 [`eval/`](eval/) holds the bench, and [`eval/results.md`](eval/results.md) its detailed results: seven pull requests of pantry, atlas and web-front, with
 the ten defects that an earlier reviewer (Claude Opus, exploring the repository) found and that the
-authors then fixed, and one clean pull request. On 2026-10-02:
+authors then fixed, and one clean pull request. On 2026-10-02 (the bench measures the defects
+found, not the time: see [Why GLM-5.3](#the-model-call)):
 
 | | Defects found per run (of 10) | Clean PR blocked | Cost a review |
 | --- | --- | --- | --- |
@@ -146,7 +183,7 @@ SHA.
 | --- | --- |
 | App ID | `5134298` |
 | Client ID | `Iv23liesB1xzywavcnv2` |
-| Permissions | Pull requests write, Issues write, Contents read, Metadata read. No webhook, no event. Issues write served PR-Agent and can go. |
+| Permissions | Pull requests write, Issues write (the score label), Contents read, Metadata read. No webhook, no event. |
 | Installation | All the repositories of the organization. |
 
 Each run asks for a token for the calling repository and for this one only, with those
@@ -225,4 +262,5 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 | Tag | Commit | Change |
 | --- | --- | --- |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
+| `v3` | (at the merge) | The layout of Greptile: a score of 1 to 5, a `review: N/5` label, a block at the end of the description with a Mermaid diagram, priority badges and suggestions. GLM-5.3 first. The token asks for Issues write. |
 | `v2` | `98155ea6756730cf44ef35590f1e8f5d743cb8fe` | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |

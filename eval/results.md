@@ -55,3 +55,16 @@ library (drizzle wraps the error of plai565a), or of the input side of a schema.
   replays the whole history, so the total is right. Luna, GLM-5.3 and DeepSeek reported it.
 - A blocking finding on the clean PR, on a line that the PR did not change. The script now blocks
   only on a changed line.
+
+## Latency (2026-10-03)
+
+The bench above does not measure time. Measured afterwards, on the same cases:
+
+| | Time of a review | Note |
+| --- | --- | --- |
+| `xiaomi/mimo-v2.6-pro` (DeepInfra, Novita) | 4 to 6 min, 107 s on a five-line diff | about 10,000 reasoning tokens at 35 to 50 tokens/s; `reasoning.max_tokens: 3000` is not honoured (9,905 reasoning tokens) |
+| `z-ai/glm-5.3`, `sort: price`, `max_price` 0.5 / 3.5 | 16 to 93 s, seven at once | served by Reka; 0.3 to 1.6 cents |
+| `z-ai/glm-5.3`, `sort: throughput` | about 150 s | served by Mistral and Crusoe at $1.4 / $4.4 |
+
+In production with MiMo first (v2), 23 of the first 28 reviews fell back to GLM-5.3 after the
+five-minute wait. v3 calls GLM-5.3 first.
