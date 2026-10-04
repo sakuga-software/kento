@@ -136,21 +136,41 @@ const log = (message: string) => process.stderr.write(`${message}\n`);
 
 // The pack
 
+/**
+ * The changed files with their counts of added and removed lines (`-` for a binary file). Without
+ * `-z`, git writes a rename as `dir/{a => b}/file.ts`, which no git command takes as a path.
+ */
+function numstat(repo: string, base: string, head: string): { added: string; removed: string; path: string; from?: string }[] {
+  const fields = git(repo, 'diff', '--numstat', '-z', `${base}...${head}`).split('\0');
+  const rows: { added: string; removed: string; path: string; from?: string }[] = [];
+  for (let i = 0; i < fields.length && fields[i]; i++) {
+    const [added, removed, ...rest] = fields[i].split('\t');
+    // A path can hold a tab: with -z, git writes it as is.
+    const path = rest.join('\t');
+    if (path) rows.push({ added, removed, path });
+    else rows.push({ added, removed, from: fields[++i], path: fields[++i] });
+  }
+  return rows;
+}
+
 /** The first message of the review, and the files left out with their reason. */
 function buildPack(repo: string, base: string, head: string): { pack: string; skipped: string[] } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
-  for (const row of git(repo, 'diff', '--numstat', `${base}...${head}`).split('\n').filter(Boolean)) {
-    const [added, removed, path] = row.split('\t');
+  // The old path of each renamed file: the diff of a rename needs both paths.
+  const renamedFrom = new Map<string, string>();
+  for (const { added, removed, path, from } of numstat(repo, base, head)) {
     if (SKIP.test(path)) skipped.push(`${path} : fichier généré ou binaire`);
     else if (added !== '-' && Number(added) + Number(removed) > MAX_FILE_CHANGED_LINES)
       skipped.push(`${path} : plus de ${MAX_FILE_CHANGED_LINES} lignes modifiées`);
     else reviewed.push(path);
+    if (from) renamedFrom.set(path, from);
   }
 
   const hunks = new Map<string, string>();
   for (const path of reviewed) {
-    hunks.set(path, git(repo, 'diff', TEST_FILE.test(path) ? '-U3' : '-W', `${base}...${head}`, '--', path));
+    const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+    hunks.set(path, git(repo, 'diff', TEST_FILE.test(path) ? '-U3' : '-W', `${base}...${head}`, '--', ...paths));
   }
 
   let docs = '';
