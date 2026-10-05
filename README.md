@@ -23,7 +23,8 @@ The layout follows the one of Greptile.
     merged;
   - the findings, numbered, each with its priority badge (`P0`, `P1`, `P2`, and `sécurité` for a
     security finding) and a ▶ link to its thread. A finding with no thread shows its scenario and
-    its fix there;
+    its fix there. A finding on code outside the diff (a caller that the change breaks) links its
+    line in the file;
   - a folded summary, a folded Mermaid diagram of the flow that the change touches (when there is
     one), and what the review did not read;
   - a footer: the number of reviews, the last commit reviewed, the model and the cost.
@@ -32,7 +33,8 @@ The layout follows the one of Greptile.
   its two markers (`<!-- sakuga-review:start -->`, `<!-- sakuga-review:end -->`).
 - **A label `review: N/5`**, coloured from red (1) to green (5), replaced on each push. The script
   creates the label in a repository the first time.
-- **One review** on the head commit: the score and the sentence, and one inline comment per finding
+- **One review** on the head commit: the score and the sentence, the level, the model and the cost
+  of the review, and one inline comment per finding
   of 70 % confidence or more on a line that the pull request changes, at most 5. An inline comment
   gives the priority badge, the title, the failure scenario and the fix, and a GitHub suggestion
   when the fix is a few changed lines. Each comment is a thread that a person resolves, so the
@@ -57,8 +59,14 @@ The layout follows the one of Greptile.
 | The review finds | Event |
 | --- | --- |
 | A `P0` or `P1` finding, 70 % confidence or more, on a changed line | `REQUEST_CHANGES`, and the score is at most 2 |
-| No such finding, and a score of 4 or 5 | `APPROVE` |
-| No such finding, and a score of 1 to 3 | `COMMENT` |
+| No such finding, a score of 4 or 5, and no deeper review recommended | `APPROVE` |
+| No such finding, and a score of 1 to 3 or a deeper review recommended | `COMMENT` |
+
+**A deeper review.** A `lite` review can say that a stronger level would be worth its cost: for
+example when the change modifies a route whose callers it cannot see, or touches authorization or
+a migration it cannot confirm. The review and the description then show the reason and the command
+to type, and the review does not approve. The bench of 2026-10-05 saw it on the internal cases
+whose defects sit in another file, and not on the clean pull request.
 
 An approval says that this review found nothing that blocks, not that the change is correct: the
 bench measured that one call finds about a quarter of the defects that a careful reviewer finds.
@@ -79,16 +87,61 @@ On the next push:
 Drafts, pull requests of bots and pushes of bots are skipped. A new push cancels the review of the
 previous one.
 
+## Commands
+
+A comment that starts with `@sakuga-review` gives a command. The App is not a GitHub user, so the
+mention notifies nobody: the workflow reads the comment. Only a person who can write to the
+repository can give a command, because a command costs money. The bot reacts 👀 when it starts, 🚀
+when it ends and 😕 on an error or an unknown command, which also gets the list of commands.
+
+| Command | What it does |
+| --- | --- |
+| `@sakuga-review review [lite\|balanced\|heavy]` | A review of the pull request at this level, posted as on a push. `@sakuga-review` alone is a `lite` review. |
+| `@sakuga-review resolve [lite\|balanced\|heavy]` | The model reads up to 20 open review threads (of a bot or a person) and 150 kB, with the code at the head and the diff of each file since its thread opened, and answers in each thread; the final comment counts the threads left for a next command. It resolves a thread that the code fixed, or a finding of a bot that a reply settled. A thread of a person closes only when its file changed. Then one comment lists the threads and the cost. |
+
+| Level | Model | Context | Cost a review | Time |
+| --- | --- | --- | --- | --- |
+| `lite` (a push) | GLM-5.3, low reasoning; MiMo V2.6 Pro when it fails | no | about 1 cent | 15 to 90 s |
+| `balanced` | Claude Sonnet 5.5, medium reasoning | yes | about 5 cents | 1 to 3 min |
+| `heavy` | Claude Opus 5.5, high reasoning | yes | 10 to 50 cents (estimate); at most about $1.10 for a full pack of 240 kB with the 32,000 output tokens of its cap | 2 to 10 min |
+
+A `heavy` review of a large pull request can cost up to about $1, from the same OpenRouter key as
+all the reviews of the organization: its daily limit stops every review when it is reached.
+
+Everything that the model reads is data: a comment or a line of code that tells it to approve, or
+to mark a thread fixed, is not followed (see the prompts). A thread of a person closes only when its
+file changed, whatever the model says.
+
+**Resolving needs a permission that the App does not have yet.** GitHub resolves a review thread
+only for a token that can write the contents. Until an owner of the organization gives the App
+« Contents: Read and write » and accepts it, `resolve` answers in each thread and writes that a
+person can resolve it. The workflow asks for the write token only for `resolve`, for the one
+repository.
+
 ## The model call
 
 | | Value |
 | --- | --- |
-| Models | `z-ai/glm-5.3`, then `xiaomi/mimo-v2.6-pro` when it fails (`REVIEW_MODELS` in the script) |
-| Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true, sort: "price", max_price: {prompt: 0.5, completion: 3.5}}` |
+| Models | by level, see [Commands](#commands) (`LEVELS` in the script) |
+| Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true, sort: "price", max_price}`; `max_price` is 0.5 / 3.5 dollars a million tokens for `lite` |
 | Answer | JSON, held to a schema by the provider |
-| Input | the diff with the whole function around each change, `CLAUDE.md` and `AGENTS.md` up to 400 lines, at most 240 kB |
-| Cost | about 0.3 to 1.6 cents a review (measured); the diagram adds a few hundred output tokens, below 0.1 cent |
-| Time | 15 to 90 seconds (measured, seven reviews at once); GLM-5.3 stops after 3 minutes, MiMo after 8 |
+| Input | the diff with the whole function around each change, `CLAUDE.md` and `AGENTS.md` up to 400 lines, and the context below, at most 240 kB |
+| Cost | `lite`: about 0.3 to 3 cents a review (measured, median 1 cent); the diagram adds below 0.1 cent |
+| Time | `lite`: 15 to 90 seconds (measured); GLM-5.3 stops after 3 minutes, MiMo after 8 |
+
+**The context** (`balanced` and `heavy` only). The model has no tool, so the script adds the code
+outside the diff that a reviewer opens first. It finds that code with `git grep` at the head, and
+sends at most 60 kB of it, in the room that the diff leaves:
+
+- the callers of each changed API route under `routes/api/`, found by its URL;
+- the callers of each exported name that the change declares or modifies. A name that several
+  files export (`loader`, `action`) is skipped, because a grep cannot tell its callers apart;
+- the definition of each imported name that the added lines use (a schema, a type, a helper).
+
+A finding can sit on that code when the change breaks it. It has no inline comment and does not
+block: it appears in the description, with a link to its line. `lite` does not send the context:
+the bench of 2026-10-04 measured no gain with GLM-5.3 or GPT-5.6 Luna, which did not use it, when
+Claude Sonnet 5.5 found a defect of a caller with it.
 
 **Where the diff goes.** OpenRouter sends it only to a provider that keeps nothing and trains on
 nothing (`zdr`, `data_collection: deny`); a model with no such provider answers 404. The provider
@@ -109,11 +162,12 @@ needs `git` and Node, and no package and no build. Keep it to erasable syntax (n
 
 ```bash
 export OPENROUTER_API_KEY=...
-node review/sakuga-review.ts --repo-dir <checkout> --base <base sha> --head <head sha> --dry-run
+node review/sakuga-review.ts --repo-dir <checkout> --base <base sha> --head <head sha> --level lite --dry-run
 ```
 
 `--dry-run` prints the answer with, for each finding, the line it would anchor on and whether it
-blocks. Without it, and with `GITHUB_TOKEN`, `--repository` and `--pr`, it posts.
+blocks, and the body of the review. `--pack-only` prints the message that the model would read, and
+calls no model. Without them, and with `GITHUB_TOKEN`, `--repository` and `--pr`, it posts.
 
 ## Why this model, and not an agent
 
@@ -185,7 +239,7 @@ SHA.
 | --- | --- |
 | App ID | `5134298` |
 | Client ID | `Iv23liesB1xzywavcnv2` |
-| Permissions | Pull requests write, Issues write (the score label), Contents read, Metadata read. No webhook, no event. |
+| Permissions | Pull requests write, Issues write (the score label, the reactions), Contents read, Metadata read. No webhook, no event. Contents write is to add for `resolve` (see [Commands](#commands)). |
 | Installation | All the repositories of the organization. |
 
 Each run asks for a token for the calling repository and for this one only, with those
@@ -263,6 +317,7 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 
 | Tag | Commit | Change |
 | --- | --- | --- |
+| `v4` | (at the merge) | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
 | `v3.1` | (at the merge) | The review approves on a score of 4 or 5 with no blocking finding. |
 | `v3` | `a6a499e7ac5248c2f957919b9545c0c6869c0929` | The layout of Greptile: a score of 1 to 5, a `review: N/5` label, a block at the end of the description with a Mermaid diagram, priority badges and suggestions. GLM-5.3 first. The token asks for Issues write. |
