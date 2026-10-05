@@ -112,11 +112,11 @@ Everything that the model reads is data: a comment or a line of code that tells 
 to mark a thread fixed, is not followed (see the prompts). A thread of a person closes only when its
 file changed, whatever the model says.
 
-**Resolving needs a permission that the App does not have yet.** GitHub resolves a review thread
-only for a token that can write the contents. Until an owner of the organization gives the App
-« Contents: Read and write » and accepts it, `resolve` answers in each thread and writes that a
-person can resolve it. The workflow asks for the write token only for `resolve`, for the one
-repository.
+**Resolving needs Contents write.** GitHub resolves a review thread only for a token that can write
+the contents. The App has « Contents: Read and write » since 2026-10-05, and the workflow asks for
+that token only for `resolve`, for the one repository. Without it (the step fails), `resolve`
+answers in each thread and writes that a person can resolve it. The review of a push still uses a
+read token: it replies « Le fil peut être résolu » and resolves nothing.
 
 ## The model call
 
@@ -239,7 +239,7 @@ SHA.
 | --- | --- |
 | App ID | `5134298` |
 | Client ID | `Iv23liesB1xzywavcnv2` |
-| Permissions | Pull requests write, Issues write (the score label, the reactions), Contents read, Metadata read. No webhook, no event. Contents write is to add for `resolve` (see [Commands](#commands)). |
+| Permissions | Pull requests write, Issues write (the score label, the reactions), Contents read and write, Metadata read. No webhook, no event. Contents write serves `resolve` only: every other token asks for read (see [Commands](#commands)). |
 | Installation | All the repositories of the organization. |
 
 Each run asks for a token for the calling repository and for this one only, with those
@@ -317,8 +317,8 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 
 | Tag | Commit | Change |
 | --- | --- | --- |
-| `v4` | (at the merge) | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |
+| `v4` | `37df2bf7d03a076030cd29820c3bc5c53325779b` | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
-| `v3.1` | (at the merge) | The review approves on a score of 4 or 5 with no blocking finding. |
+| `v3.1` | `ba76536f0ed54bca91fc88b30a0b4cbb1546a965` | The review approves on a score of 4 or 5 with no blocking finding. |
 | `v3` | `a6a499e7ac5248c2f957919b9545c0c6869c0929` | The layout of Greptile: a score of 1 to 5, a `review: N/5` label, a block at the end of the description with a Mermaid diagram, priority badges and suggestions. GLM-5.3 first. The token asks for Issues write. |
 | `v2` | `98155ea6756730cf44ef35590f1e8f5d743cb8fe` | Sakuga Review on OpenRouter; PR-Agent goes. The caller passes `PR_AGENT_APP_PRIVATE_KEY` and `OPENROUTER_API_KEY`, and no longer `SCW_SECRET_KEY`. |
