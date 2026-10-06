@@ -220,6 +220,7 @@ The conventions of the repository go into every review: the script sends `CLAUDE
 | `infra-repo` | infra-repo#1 | infra-repo#2 |
 | `cache-server` | cache-server#1 | cache-server#2 |
 | `fruitback` (public, see below) | fruitback#74 | fruitback#75 |
+| `sakuga-review` (this repository, pinned to a released version) | — | sakuga-review#15 |
 
 ### A public repository
 
