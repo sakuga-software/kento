@@ -84,15 +84,28 @@ On the next push:
 - The `REQUEST_CHANGES` of an earlier head is dismissed. A `COMMENT` alone does not lift it, so
   without the dismissal a fixed pull request would stay blocked.
 
-Drafts, pull requests of bots and pushes of bots are skipped. A new push cancels the review of the
-previous one.
+Drafts are skipped, and so are the pull requests, the pushes and the comments of a bot, except the
+bots of the `trusted_bots` input of the workflow (default `sakuga-agent[bot]`, the App that the
+Claude Code agents push and open pull requests with). A trusted bot counts as a person: its pull
+requests get a review, and its comments give commands. Every other bot stays out, this App first,
+so that its own comments start no run. A caller can pass another list, comma-separated with no
+space:
+
+```yaml
+    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@<SHA> # v5
+    with:
+      trusted_bots: sakuga-agent[bot],other-agent[bot]
+```
+
+A new push cancels the review of the previous one.
 
 ## Commands
 
 A comment that starts with `@sakuga-review` gives a command. The App is not a GitHub user, so the
 mention notifies nobody: the workflow reads the comment. Only a person who can write to the
-repository can give a command, because a command costs money. The bot reacts 👀 when it starts, 🚀
-when it ends and 😕 on an error or an unknown command, which also gets the list of commands.
+repository, or a bot of `trusted_bots`, can give a command, because a command costs money. The bot
+reacts 👀 when it starts, 🚀 when it ends and 😕 on an error or an unknown command, which also gets
+the list of commands.
 
 | Command | What it does |
 | --- | --- |
@@ -326,6 +339,8 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 
 | Tag | Commit | Change |
 | --- | --- | --- |
+| `v5` | (at the merge) | The pull requests, pushes and comments of the bots of `trusted_bots` (default `sakuga-agent[bot]`) get a review and give commands, as a person's do. |
+| `v4.1` | `ea75cd4ceb471dab6b3cede1994ab13dcb07f30b` | Every level reads the definitions that the change uses and the migration of each SQL name that it writes. |
 | `v4` | `37df2bf7d03a076030cd29820c3bc5c53325779b` | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |
 | `v3.1` | `ba76536f0ed54bca91fc88b30a0b4cbb1546a965` | The review approves on a score of 4 or 5 with no blocking finding. |

@@ -5,6 +5,14 @@ name: Sakuga Review
 
 on:
   workflow_call:
+    inputs:
+      # The bots that act for a person: their pull requests get a review and their comments give
+      # commands, as a person's do. Every other bot is skipped, this App first: its own comments must
+      # not start a run. A comma-separated list of logins.
+      trusted_bots:
+        type: string
+        required: false
+        default: sakuga-agent[bot]
     # The two secrets the review needs, and no other: a caller passes them by name.
     secrets:
       PR_AGENT_APP_PRIVATE_KEY:
@@ -19,12 +27,13 @@ jobs:
   sakuga_review:
     name: Sakuga Review
     # The review of a push: one call to a model through OpenRouter, then review/sakuga-review.ts
-    # posts the findings. Drafts, pull requests of bots and pushes of bots are skipped.
+    # posts the findings. Drafts are skipped, and so are the pull requests and the pushes of a bot
+    # that is not in `trusted_bots`.
     if: >-
       github.event_name == 'pull_request' &&
-      github.event.sender.type != 'Bot' &&
+      (github.event.sender.type != 'Bot' || contains(format(',{0},', inputs.trusted_bots), format(',{0},', github.event.sender.login))) &&
       !github.event.pull_request.draft &&
-      github.event.pull_request.user.type != 'Bot'
+      (github.event.pull_request.user.type != 'Bot' || contains(format(',{0},', inputs.trusted_bots), format(',{0},', github.event.pull_request.user.login)))
     runs-on: [self-hosted, sakuga-linux]
     timeout-minutes: 15
     # A new push replaces the review of the previous one.
@@ -89,7 +98,7 @@ jobs:
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
-      github.event.sender.type != 'Bot' &&
+      (github.event.sender.type != 'Bot' || contains(format(',{0},', inputs.trusted_bots), format(',{0},', github.event.sender.login))) &&
       startsWith(github.event.comment.body, '@sakuga-review')
     runs-on: [self-hosted, sakuga-linux]
     # A heavy review can think for 12 minutes.
@@ -179,3 +188,4 @@ jobs:
           COMMAND: ${{ github.event.comment.body }}
           COMMENT_ID: ${{ github.event.comment.id }}
           COMMENTER: ${{ github.event.comment.user.login }}
+          TRUSTED_BOTS: ${{ inputs.trusted_bots }}

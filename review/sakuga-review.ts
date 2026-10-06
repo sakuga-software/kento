@@ -1020,8 +1020,14 @@ async function react(repository: string, commentId: number, content: 'eyes' | 'r
   }
 }
 
-/** A command costs money: only a person who can write to the repository can give one. */
+/**
+ * A command costs money: only a person who can write to the repository, or a bot of TRUSTED_BOTS,
+ * can give one. The API of collaborators does not know the bots of an App, and GitHub keeps the
+ * `[bot]` suffix to Apps, so a person cannot take the login of one.
+ */
 async function canCommand(repository: string, login: string): Promise<boolean> {
+  const trustedBots = (process.env.TRUSTED_BOTS ?? '').split(',').map((bot) => bot.trim()).filter(Boolean);
+  if (login.endsWith('[bot]')) return trustedBots.includes(login);
   try {
     const out = await github('GET', `/repos/${repository}/collaborators/${encodeURIComponent(login)}/permission`);
     return ['admin', 'maintain', 'write'].includes(out.permission);
