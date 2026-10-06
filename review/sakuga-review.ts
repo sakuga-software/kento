@@ -34,6 +34,7 @@ const INLINE_CONFIDENCE = 70;
 const MAX_INLINE = 5;
 
 type Level = 'lite' | 'balanced' | 'heavy';
+type ContextKind = 'full' | 'definitions';
 type LevelConfig = {
   /** The model that answers, then the one that takes over when it fails. */
   models: string[];
@@ -43,8 +44,11 @@ type LevelConfig = {
   maxTokens: number;
   /** The most a provider can charge, in dollars a million tokens. */
   maxPrice: { prompt: number; completion: number };
-  /** Whether the pack holds the code around the change (see buildContext). */
-  context: boolean;
+  /**
+   * The code around the change that the pack holds (see buildContext): `full` adds the callers of
+   * the changed code, `definitions` only the definitions that the change uses and the SQL names.
+   */
+  context: ContextKind;
 };
 
 /**
@@ -53,8 +57,9 @@ type LevelConfig = {
  * - lite: GLM-5.3 answers in 30 to 90 seconds for about 1 cent. MiMo V2.6 Pro takes over when it
  *   fails: it writes about 10,000 tokens of reasoning at 35 to 50 tokens a second, so 4 to 6
  *   minutes. Without the price cap, OpenRouter sent GLM-5.3 to providers at $1.4 / $4.4, one of
- *   which reasons less and found less on the bench. The bench measured no gain from the context
- *   with GLM-5.3 (2026-10-04), so lite does not send it.
+   *   which reasons less and found less on the bench. The bench measured no gain from the callers
+ *   with GLM-5.3 (2026-10-04), so lite sends only the definitions that the change uses: they are
+ *   small, and they answer what the model otherwise lists as not reviewed.
  * - balanced: Claude Sonnet 5.5 with the context, about 5 cents. On the bench it found a defect
  *   in a caller that GLM-5.3 missed with the same context.
  * - heavy: Claude Opus 5.5 with the context and more reasoning, about 10 to 50 cents.
@@ -66,7 +71,7 @@ const LEVELS: Record<Level, LevelConfig> = {
     effort: 'low',
     maxTokens: 16_000,
     maxPrice: { prompt: 0.5, completion: 3.5 },
-    context: false,
+    context: 'definitions',
   },
   balanced: {
     models: ['anthropic/claude-sonnet-5.5'],
@@ -74,7 +79,7 @@ const LEVELS: Record<Level, LevelConfig> = {
     effort: 'medium',
     maxTokens: 24_000,
     maxPrice: { prompt: 3, completion: 15 },
-    context: true,
+    context: 'full',
   },
   heavy: {
     models: ['anthropic/claude-opus-5.5'],
@@ -82,7 +87,7 @@ const LEVELS: Record<Level, LevelConfig> = {
     effort: 'high',
     maxTokens: 32_000,
     maxPrice: { prompt: 5, completion: 25 },
-    context: true,
+    context: 'full',
   },
 };
 
@@ -223,10 +228,10 @@ function fileAt(repo: string, head: string, path: string, cache: Map<string, str
 }
 
 /** The lines `git grep` finds at the head, as path and line number. It gives none on no match. */
-function grep(repo: string, head: string, args: string[]): { path: string; line: number; text: string }[] {
+function grep(repo: string, head: string, args: string[], globs = SOURCE_GLOBS): { path: string; line: number; text: string }[] {
   let out = '';
   try {
-    out = git(repo, 'grep', '-n', '-I', ...args, head, '--', ...SOURCE_GLOBS);
+    out = git(repo, 'grep', '-n', '-I', ...args, head, '--', ...globs);
   } catch {
     return [];
   }
@@ -263,19 +268,35 @@ function apiRoute(path: string): { url: string; pattern: string } | null {
   return { url: `/${segments.map((s) => (s.startsWith('$') ? `:${s.slice(1)}` : s)).join('/')}`, pattern: `/${pattern}${end}` };
 }
 
-/** The names that the changed files import and that the added lines use. */
+/** The packages of the repository (`@acme/db` → `packages/db/`): their code is in it. */
+function workspacePackages(repo: string, head: string): Map<string, string> {
+  const packages = new Map<string, string>();
+  for (const m of grep(repo, head, ['-E', '-e', '"name":[[:space:]]*"@[^/"]+/[^"]+"'], ['package.json', '*/package.json'])) {
+    const name = /"name":\s*"(@[^/"]+\/[^"]+)"/.exec(m.text)?.[1];
+    if (name && !packages.has(name)) packages.set(name, m.path.replace(/package\.json$/, ''));
+  }
+  return packages;
+}
+
+/** The names that the changed files import from the code of the repository, and that the added lines use. */
 function usedImports(repo: string, base: string, head: string, paths: string[], cache: Map<string, string[]>): { name: string; from: string; path: string }[] {
   const found: { name: string; from: string; path: string }[] = [];
+  const packages = workspacePackages(repo, head);
   for (const path of paths) {
     const added = git(repo, 'diff', '-U0', `${base}...${head}`, '--', path)
       .split('\n')
       .filter((row) => row.startsWith('+') && !row.startsWith('+++'))
       .join('\n');
     for (const [, , names, from] of fileAt(repo, head, path, cache).join('\n').matchAll(IMPORT)) {
-      if (!from.startsWith('.') && !from.startsWith('~') && !from.startsWith('@/') && !from.startsWith('@pantry/')) continue;
+      // A package of the repository resolves to its folder: `@acme/db/schema` → `packages/db/`.
+      const workspace = [...packages].find(([name]) => from === name || from.startsWith(`${name}/`))?.[1];
+      const local = from.startsWith('.') || from.startsWith('~') || from.startsWith('@/') || workspace !== undefined;
+      if (!local) continue;
       for (const raw of names.replace(/[{}]/g, ',').split(',')) {
         const name = raw.replace(/^\s*(type\s+)?(\*\s+as\s+)?/, '').split(/\s+as\s+/).pop()!.trim();
-        if (name && new RegExp(`\\b${name.replace('$', '\\$')}\\b`).test(added)) found.push({ name, from, path });
+        // Several files of a pull request import the same names: each one counts once.
+        if (found.some((f) => f.name === name && f.from === from)) continue;
+        if (name && new RegExp(`\\b${name.replace('$', '\\$')}\\b`).test(added)) found.push({ name, from, path: workspace ?? path });
       }
     }
   }
@@ -295,13 +316,34 @@ function changedExports(repo: string, base: string, head: string, paths: string[
   return found;
 }
 
+// A name of a constraint or an index that the code writes in a string: `product_sku_unique`.
+const SQL_NAME = /['"`]([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*_(?:unique|uniq|key|pkey|fkey|idx|index|check|excl))['"`]/g;
+const SQL_GLOBS = ['*.sql', '*.prisma', ...SOURCE_GLOBS];
+const MAX_SQL_NAMES = 12;
+
+/** The SQL names that the added lines of the changed source files write, with the files that write each one. */
+function addedSqlNames(repo: string, base: string, head: string, paths: string[]): Map<string, Set<string>> {
+  const names = new Map<string, Set<string>>();
+  for (const path of paths) {
+    for (const row of git(repo, 'diff', '-U0', `${base}...${head}`, '--', path).split('\n')) {
+      if (!row.startsWith('+') || row.startsWith('+++')) continue;
+      for (const [, name] of row.matchAll(SQL_NAME)) {
+        if (!names.has(name) && names.size >= MAX_SQL_NAMES) continue;
+        names.set(name, (names.get(name) ?? new Set()).add(path));
+      }
+    }
+  }
+  return names;
+}
+
 /**
  * Unchanged code around the change, found with `git grep` at the head: the definitions of the
  * imported names that the change uses, the callers of the exported names that it changes, and the
- * callers of the API routes that it changes. The model has no tool, so this is all it sees outside
- * the diff.
+ * callers of the API routes that it changes (`full` only), and where the SQL names that the change
+ * writes are defined. A SQL name that no file outside the diff holds is listed as absent. The model
+ * has no tool, so this is all it sees outside the diff.
  */
-function buildContext(repo: string, base: string, head: string, paths: string[], budget: number): string {
+function buildContext(repo: string, base: string, head: string, paths: string[], budget: number, kind: ContextKind): string {
   const atHead = new Set(git(repo, 'ls-tree', '-r', '--name-only', head, '--', ...paths).split('\n'));
   const sources = paths.filter((p) => atHead.has(p) && SOURCE_FILE.test(p) && !TEST_FILE.test(p));
   const cache = new Map<string, string[]>();
@@ -317,10 +359,28 @@ function buildContext(repo: string, base: string, head: string, paths: string[],
       // A declaration ends at the next line that starts at column 0 and is not a closing bracket.
       while (end < lines.length && end - start < MAX_SNIPPET_LINES && !(end > start && /^[^\s})\]]/.test(lines[end]))) end++;
     }
+    // Two sites a few lines apart in one file make one snippet, not two that repeat lines.
+    const near = snippets.find((s) => s.path === path && start <= s.end + 1 && end >= s.start - 1);
+    if (near && Math.max(end, near.end) - Math.min(start, near.start) < MAX_SNIPPET_LINES) {
+      near.start = Math.min(start, near.start);
+      near.end = Math.max(end, near.end);
+      return;
+    }
     snippets.push({ path, start, end, reason });
   };
+  const absent: string[] = [];
 
-  for (const path of sources) {
+  for (const [name, writers] of addedSqlNames(repo, base, head, sources)) {
+    const sites = grep(repo, head, ['-F', '-w', '-e', name], SQL_GLOBS).filter((m) => !writers.has(m.path));
+    // A migration says best what the name is: it comes before a mention in the code. A file of the
+    // diff that holds the name (a migration of this pull request) is in the diff already.
+    const outside = sites.filter((m) => !paths.includes(m.path));
+    const best = outside.find((m) => m.path.endsWith('.sql')) ?? outside[0];
+    if (best) add(best.path, best.line, `définition de \`${name}\`, que la PR écrit`, false);
+    else if (!sites.length) absent.push(name);
+  }
+
+  for (const path of kind === 'full' ? sources : []) {
     const route = apiRoute(path);
     if (!route) continue;
     // A path to a route file (`routes/api/x/route.ts'`) looks like a request to it.
@@ -330,28 +390,36 @@ function buildContext(repo: string, base: string, head: string, paths: string[],
     }
   }
 
-  for (const { name, path } of changedExports(repo, base, head, sources).slice(0, MAX_SYMBOLS)) {
+  for (const { name } of kind === 'full' ? changedExports(repo, base, head, sources).slice(0, MAX_SYMBOLS) : []) {
     // A name that several files export (`loader`, `action`, `default`) has callers that a grep cannot tell apart.
     if (new Set(definitionsOf(repo, head, name).map((d) => d.path)).size > 1) continue;
-    const sites = grep(repo, head, ['-w', '-e', name]).filter((m) => m.path !== path && !/^\s*(import|export\s+\{|export\s+\*)/.test(m.text));
+    // A caller in a file of the diff is in the diff already.
+    const sites = grep(repo, head, ['-w', '-e', name]).filter((m) => !paths.includes(m.path) && !/^\s*(import|export\s+\{|export\s+\*)/.test(m.text));
     for (const site of sites.slice(0, MAX_SITES)) add(site.path, site.line, `appel de \`${name}\`, que la PR modifie`, false);
   }
 
   for (const { name, from, path } of usedImports(repo, base, head, sources, cache).slice(0, MAX_SYMBOLS)) {
     const moduleName = from.split('/').pop()!;
-    const app = path.split('/').slice(0, 2).join('/');
-    // Without the resolution of the bundler: a relative or aliased import stays in its app, and the
-    // file named as the module comes first.
-    const local = /^(\.|~|@\/)/.test(from);
+    // `path` is the importing file, or the folder of a package of the repository (it ends with `/`).
+    const root = path.endsWith('/') ? path : `${path.split('/').slice(0, 2).join('/')}/`;
+    // Without the resolution of the bundler: an import stays in its app or its package, and the file
+    // named as the module comes first.
     const named = new RegExp(`/${moduleName.replace(/[.$]/g, '\\$&')}(/index)?\\.[a-z]+$`);
     const best = definitionsOf(repo, head, name)
-      .filter((d) => !local || d.path.startsWith(`${app}/`))
+      .filter((d) => d.path.startsWith(root))
       .sort((a, b) => Number(named.test(b.path)) - Number(named.test(a.path)))[0];
     if (best && !sources.includes(best.path)) add(best.path, best.line, `définition de \`${name}\`, que la PR utilise`, true);
   }
 
   const parts: string[] = [];
   let size = 0;
+  if (absent.length) {
+    const note =
+      `### SQL names that no other file holds\n\n${absent.map((n) => `- \`${n}\``).join('\n')}\n\n` +
+      'No migration, schema or code of the repository, in the diff or outside it, defines or mentions these names at the head.\n\n';
+    parts.push(note);
+    size += note.length;
+  }
   for (const s of snippets) {
     const lines = fileAt(repo, head, s.path, cache).slice(s.start - 1, s.end);
     const text = `### ${s.path}:${s.start}-${s.end} · ${s.reason}\n\n\`\`\`\n${lines.map((l, i) => `${s.start + i}| ${l}`).join('\n')}\n\`\`\`\n\n`;
@@ -382,7 +450,7 @@ function numstat(repo: string, base: string, head: string): { added: string; rem
 }
 
 /** The first message of the review, and the files left out with their reason. */
-function buildPack(repo: string, base: string, head: string, withContext: boolean): { pack: string; skipped: string[] } {
+function buildPack(repo: string, base: string, head: string, contextKind: ContextKind): { pack: string; skipped: string[] } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
@@ -428,12 +496,12 @@ function buildPack(repo: string, base: string, head: string, withContext: boolea
   for (const path of reviewed) if (hunks.has(path)) parts.push(hunks.get(path)!);
   parts.push('```\n');
   const room = Math.min(MAX_CONTEXT_BYTES, budget - size());
-  const context = withContext && room > 0 ? buildContext(repo, base, head, [...hunks.keys()], room) : '';
+  const context = room > 0 ? buildContext(repo, base, head, [...hunks.keys()], room, contextKind) : '';
   if (context) {
     parts.push(
       '\n## Context\n\nUnchanged code at the head of the pull request, from other files: definitions that the ' +
-        'change uses, and callers of the code that it changes. Each line starts with its line number. ' +
-        'The repository holds more code than this.\n\n',
+        (contextKind === 'full' ? 'change uses, and callers of the code that it changes. ' : 'change uses. ') +
+        'Each line starts with its line number. The repository holds more code than this.\n\n',
       context,
     );
   }

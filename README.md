@@ -101,7 +101,7 @@ when it ends and 😕 on an error or an unknown command, which also gets the lis
 
 | Level | Model | Context | Cost a review | Time |
 | --- | --- | --- | --- | --- |
-| `lite` (a push) | GLM-5.3, low reasoning; MiMo V2.6 Pro when it fails | no | about 1 cent | 15 to 90 s |
+| `lite` (a push) | GLM-5.3, low reasoning; MiMo V2.6 Pro when it fails | definitions only | about 1 cent | 15 to 90 s |
 | `balanced` | Claude Sonnet 5.5, medium reasoning | yes | about 5 cents | 1 to 3 min |
 | `heavy` | Claude Opus 5.5, high reasoning | yes | 10 to 50 cents (estimate); at most about $1.10 for a full pack of 240 kB with the 32,000 output tokens of its cap | 2 to 10 min |
 
@@ -129,19 +129,27 @@ read token: it replies « Le fil peut être résolu » and resolves nothing.
 | Cost | `lite`: about 0.3 to 3 cents a review (measured, median 1 cent); the diagram adds below 0.1 cent |
 | Time | `lite`: 15 to 90 seconds (measured); GLM-5.3 stops after 3 minutes, MiMo after 8 |
 
-**The context** (`balanced` and `heavy` only). The model has no tool, so the script adds the code
-outside the diff that a reviewer opens first. It finds that code with `git grep` at the head, and
-sends at most 60 kB of it, in the room that the diff leaves:
+**The context.** The model has no tool, so the script adds the code outside the diff that a
+reviewer opens first. It finds that code with `git grep` at the head, and sends at most 60 kB of it,
+in the room that the diff leaves. Every level gets the definitions; `balanced` and `heavy` also get
+the callers:
 
-- the callers of each changed API route under `routes/api/`, found by its URL;
-- the callers of each exported name that the change declares or modifies. A name that several
-  files export (`loader`, `action`) is skipped, because a grep cannot tell its callers apart;
-- the definition of each imported name that the added lines use (a schema, a type, a helper).
+- the definition of each imported name that the added lines use (a schema, a type, a helper), in
+  the app of the importing file, or in the folder of a package of the repository (`@acme/db`
+  → `packages/db/`);
+- each SQL name that the added lines write in a string (`product_sku_unique`, `*_idx`, `*_fkey`):
+  its migration or its schema. A name that no file outside the diff holds is listed as absent, so
+  the model can say that the code depends on a migration that is not there yet;
+- `balanced` and `heavy` only: the callers of each changed API route under `routes/api/`, found by
+  its URL, and of each exported name that the change declares or modifies, outside the files of
+  the diff. A name that several files export (`loader`, `action`) is skipped, because a grep cannot
+  tell its callers apart.
 
 A finding can sit on that code when the change breaks it. It has no inline comment and does not
-block: it appears in the description, with a link to its line. `lite` does not send the context:
-the bench of 2026-10-04 measured no gain with GLM-5.3 or GPT-5.6 Luna, which did not use it, when
-Claude Sonnet 5.5 found a defect of a caller with it.
+block: it appears in the description, with a link to its line. The bench of 2026-10-04 measured no
+gain from the callers with GLM-5.3 or GPT-5.6 Luna, which did not use them, when Claude Sonnet 5.5
+found a defect of a caller with them; so `lite` sends only the definitions, which are small (0 to
+12 kB on the bench) and answer what the review otherwise lists as not reviewed.
 
 **Where the diff goes.** OpenRouter sends it only to a provider that keeps nothing and trains on
 nothing (`zdr`, `data_collection: deny`); a model with no such provider answers 404. The provider
