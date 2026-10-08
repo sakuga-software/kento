@@ -20,7 +20,7 @@ jobs:
   review:
     # Pinned to a commit of sakuga-review: the secrets below go to this exact code. To take a new
     # version, replace the SHA and the tag in the comment (see the README of sakuga-review).
-    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@f421015719b5e137fefb82113931c91253747239 # v5
+    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@146912bd2b76ad5addee85eeade678ce2058f891 # v5.1
     secrets:
       PR_AGENT_APP_PRIVATE_KEY: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
