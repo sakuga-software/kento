@@ -54,22 +54,24 @@ type LevelConfig = {
 /**
  * The levels of a review. A push gets `lite`; a person asks for another level with a command.
  *
- * - lite: GLM-5.3 answers in 30 to 90 seconds for about 1 cent. MiMo V2.6 Pro takes over when it
- *   fails: it writes about 10,000 tokens of reasoning at 35 to 50 tokens a second, so 4 to 6
- *   minutes. Without the price cap, OpenRouter sent GLM-5.3 to providers at $1.4 / $4.4, one of
-   *   which reasons less and found less on the bench. The bench measured no gain from the callers
- *   with GLM-5.3 (2026-10-04), so lite sends only the definitions that the change uses: they are
- *   small, and they answer what the model otherwise lists as not reviewed.
+ * - lite: Claude Haiku 5.5 at medium reasoning answers in 20 to 45 seconds for about 1 cent. On
+ *   the bench of 2026-10-08 it found as much as GLM-5.3 or more, two to three times faster, with
+ *   no failed review. GLM-5.3 takes over when it fails; the price cap keeps GLM-5.3 off the
+ *   providers at $1.4 / $4.4, one of which reasons less. The reasoning counts in the output
+ *   tokens: at 16,000, a long reasoning left no room for the answer, which came back empty.
+ *   The bench measured no gain from the callers at this level (2026-10-04), so lite sends only the
+ *   definitions that the change uses: they are small, and they answer what the model otherwise
+ *   lists as not reviewed.
  * - balanced: Claude Sonnet 5.5 with the context, about 5 cents. On the bench it found a defect
  *   in a caller that GLM-5.3 missed with the same context.
  * - heavy: Claude Opus 5.5 with the context and more reasoning, about 10 to 50 cents.
  */
 const LEVELS: Record<Level, LevelConfig> = {
   lite: {
-    models: ['z-ai/glm-5.3', 'xiaomi/mimo-v2.6-pro'],
-    timeoutsMs: [180_000, 480_000],
-    effort: 'low',
-    maxTokens: 16_000,
+    models: ['anthropic/claude-haiku-5.5', 'z-ai/glm-5.3'],
+    timeoutsMs: [180_000, 240_000],
+    effort: 'medium',
+    maxTokens: 32_000,
     maxPrice: { prompt: 0.5, completion: 3.5 },
     context: 'definitions',
   },
@@ -91,10 +93,16 @@ const LEVELS: Record<Level, LevelConfig> = {
   },
 };
 
-/** The configuration of a level. The bench sets REVIEW_MODELS, REVIEW_TIMEOUT_MS and REVIEW_MAX_PRICE ("prompt,completion"). */
+/**
+ * The configuration of a level. The bench sets REVIEW_MODELS, REVIEW_EFFORT, REVIEW_MAX_TOKENS,
+ * REVIEW_TIMEOUT_MS and REVIEW_MAX_PRICE ("prompt,completion").
+ */
 function levelConfig(level: Level): LevelConfig {
   const config = { ...LEVELS[level] };
   if (process.env.REVIEW_MODELS) config.models = process.env.REVIEW_MODELS.split(',');
+  const effort = process.env.REVIEW_EFFORT;
+  if (effort === 'low' || effort === 'medium' || effort === 'high') config.effort = effort;
+  if (process.env.REVIEW_MAX_TOKENS) config.maxTokens = Number(process.env.REVIEW_MAX_TOKENS);
   if (process.env.REVIEW_TIMEOUT_MS) config.timeoutsMs = config.models.map(() => Number(process.env.REVIEW_TIMEOUT_MS));
   if (process.env.REVIEW_MAX_PRICE) {
     const [prompt, completion] = process.env.REVIEW_MAX_PRICE.split(',').map(Number);
@@ -994,7 +1002,7 @@ const USAGE = [
   '- `@sakuga-review review [lite|balanced|heavy]` : une revue de la PR au niveau donné (`lite` par défaut).',
   '- `@sakuga-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
   '',
-  '`lite` : GLM-5.3, environ 1 centime. `balanced` : Claude Sonnet 5.5 avec le code autour de la diff, environ 5 centimes. ' +
+  '`lite` : Claude Haiku 5.5, environ 1 centime. `balanced` : Claude Sonnet 5.5 avec le code autour de la diff, environ 5 centimes. ' +
     '`heavy` : Claude Opus 5.5 avec le même contexte et plus de réflexion, de 10 centimes à 1 dollar.',
 ].join('\n');
 

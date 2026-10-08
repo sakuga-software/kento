@@ -1,7 +1,7 @@
 # sakuga-review
 
 The automatic review of pull requests for the repositories of `sakuga-software`, posting as the
-GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **GLM-5.3**
+GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **Claude Haiku 5.5**
 through OpenRouter reads the diff and answers with findings, a severity and a confidence for each,
 and a confidence for the pull request. A script posts them as one review with inline comments, and
 blocks the merge on a sure blocking finding.
@@ -114,7 +114,7 @@ the list of commands.
 
 | Level | Model | Context | Cost a review | Time |
 | --- | --- | --- | --- | --- |
-| `lite` (a push) | GLM-5.3, low reasoning; MiMo V2.6 Pro when it fails | definitions only | about 1 cent | 15 to 90 s |
+| `lite` (a push) | Claude Haiku 5.5, medium reasoning; GLM-5.3 when it fails | definitions only | about 1 cent | 20 to 45 s |
 | `balanced` | Claude Sonnet 5.5, medium reasoning | yes | about 5 cents | 1 to 3 min |
 | `heavy` | Claude Opus 5.5, high reasoning | yes | 10 to 50 cents (estimate); at most about $1.10 for a full pack of 240 kB with the 32,000 output tokens of its cap | 2 to 10 min |
 
@@ -139,8 +139,8 @@ read token: it replies « Le fil peut être résolu » and resolves nothing.
 | Routing | OpenRouter, `provider: {zdr: true, data_collection: "deny", require_parameters: true, sort: "price", max_price}`; `max_price` is 0.5 / 3.5 dollars a million tokens for `lite` |
 | Answer | JSON, held to a schema by the provider |
 | Input | the diff with the whole function around each change, `CLAUDE.md` and `AGENTS.md` up to 400 lines, and the context below, at most 240 kB |
-| Cost | `lite`: about 0.3 to 3 cents a review (measured, median 1 cent); the diagram adds below 0.1 cent |
-| Time | `lite`: 15 to 90 seconds (measured); GLM-5.3 stops after 3 minutes, MiMo after 8 |
+| Cost | `lite`: about 1 cent a review (measured on the bench: $0.20 for 20 reviews); the diagram adds below 0.1 cent |
+| Time | `lite`: 20 to 45 seconds (measured, median 21 to 25); Haiku 5.5 stops after 3 minutes, GLM-5.3 after 4 |
 
 **The context.** The model has no tool, so the script adds the code outside the diff that a
 reviewer opens first. It finds that code with `git grep` at the head, and sends at most 60 kB of it,
@@ -166,14 +166,22 @@ found a defect of a caller with them; so `lite` sends only the definitions, whic
 
 **Where the diff goes.** OpenRouter sends it only to a provider that keeps nothing and trains on
 nothing (`zdr`, `data_collection: deny`); a model with no such provider answers 404. The provider
-can be outside the EU: GLM-5.3 runs at Reka, Wafer or InferenceNet, MiMo at DeepInfra or Novita.
+can be outside the EU: Claude runs at Google, Anthropic or Azure, GLM-5.3 at Reka, Wafer or
+InferenceNet.
 Enable the review on a client repository only if its contract allows it.
 
-**Why GLM-5.3 and not MiMo**, which found a little more on the bench: MiMo writes about 10,000
-tokens of reasoning at 35 to 50 tokens a second, whatever the reasoning budget asks, so a review
-takes 4 to 6 minutes. In v2, which tried MiMo first, 23 of the first 28 reviews fell back to
-GLM-5.3 after the wait (2026-10-03). The `max_price` keeps GLM-5.3 off the providers at
-$1.4 / $4.4, one of which reasons less and found less on the bench.
+**Why Claude Haiku 5.5 at medium reasoning** (bench of 2026-10-08, 20 TypeScript pull requests,
+see [`eval/martian/`](eval/martian/README.md)): it found as much as GLM-5.3 or more (F1 0.39 and
+0.46 against 0.33 to 0.41), for the same cost, two to three times faster, and no review failed. At
+high reasoning it found 3 of the 10 internal defects in both runs, for 1.6 cents and 55 to 60
+seconds: the level to take if the budget allows it. At low reasoning it found less than GLM-5.3.
+The reasoning counts in the output tokens, so `lite` allows 32,000: at 16,000, a long reasoning
+left no room for the answer.
+
+GLM-5.3 takes over when Haiku fails; the `max_price` keeps it off the providers at $1.4 / $4.4,
+one of which reasons less and found less on the bench. MiMo V2.6 Pro was the fallback until v5:
+it writes about 10,000 tokens of reasoning at 35 to 50 tokens a second, so 4 to 6 minutes, and its
+providers answered `429` and timeouts under load.
 
 The script reads the code and never runs it. It is TypeScript that Node 24 or later runs as is: it
 needs `git` and Node, and no package and no build. Keep it to erasable syntax (no `enum`, no
@@ -195,7 +203,7 @@ calls no model. Without them, and with `GITHUB_TOKEN`, `--repository` and `--pr`
 [`eval/`](eval/) holds the bench, and [`eval/results.md`](eval/results.md) its detailed results: seven pull requests of pantry, atlas and web-front, with
 the ten defects that an earlier reviewer (Claude Opus, exploring the repository) found and that the
 authors then fixed, and one clean pull request. On 2026-10-02 (the bench measures the defects
-found, not the time: see [Why GLM-5.3](#the-model-call)):
+found, not the time; the models of today come from the later bench of [`eval/martian/`](eval/martian/README.md)):
 
 | | Defects found per run (of 10) | Clean PR blocked | Cost a review |
 | --- | --- | --- | --- |
@@ -339,7 +347,8 @@ the script and the prompt at the same commit (`job.workflow_sha`), so they are p
 
 | Tag | Commit | Change |
 | --- | --- | --- |
-| `v5` | (at the merge) | The pull requests, pushes and comments of the bots of `trusted_bots` (default `sakuga-agent[bot]`) get a review and give commands, as a person's do. |
+| `v5.1` | (at the merge) | `lite` is Claude Haiku 5.5 at medium reasoning, with 32,000 output tokens; GLM-5.3 is the fallback, MiMo goes. |
+| `v5` | `f421015719b5e137fefb82113931c91253747239` | The pull requests, pushes and comments of the bots of `trusted_bots` (default `sakuga-agent[bot]`) get a review and give commands, as a person's do. |
 | `v4.1` | `ea75cd4ceb471dab6b3cede1994ab13dcb07f30b` | Every level reads the definitions that the change uses and the migration of each SQL name that it writes. |
 | `v4` | `37df2bf7d03a076030cd29820c3bc5c53325779b` | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |
 | `v1` | `246db1d441c38f255880104fd38837301aafa87e` | PR-Agent on Scaleway, with the two secrets passed by name. |

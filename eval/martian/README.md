@@ -36,6 +36,32 @@ does not answer for a pair, the summary line counts it in `judge errors`: run th
 bench is the key of CI: a run that uses the daily limit stops the reviews of the whole organization
 until the limit resets (00:00 UTC). Count the cost before you start.
 
+## Results, 2026-10-08: Claude Haiku 5.5 for `lite`
+
+The same 20 pull requests, with the review of v5 (the definitions in the pack). Each column gives
+one value a run.
+
+| Model, reasoning, output cap | F1 Martian | Recall | Precision | Internal found | Review cost (20 PRs) | Median | Failures |
+|---|---|---|---|---|---|---|---|
+| `z-ai/glm-5.3`, low, 16k (`lite` until v5) | 0.41 / 0.37 / 0.33 | 33 / 28 / 23 % | 42 / 38 / 41 % | 1 / 0 / 1 of 10 | $0.22 / $0.21 / $0.39 | 58 / 46 / 67 s | 0 / 0 / 2 |
+| `anthropic/claude-haiku-5.5`, low, 16k | 0.32 / 0.30 | 25 / 22 % | 33 / 31 % | 1 / 0 of 10 | $0.16 / $0.16 | 24 / 11 s | 0 / 0 |
+| `anthropic/claude-haiku-5.5`, medium, 32k (`lite` from v5.1) | 0.39 / 0.46 | 33 / 37 % | 39 / 48 % | 2 / 1 of 10 | $0.20 / $0.21 | 21 / 25 s | 0 / 0 |
+| `anthropic/claude-haiku-5.5`, high, 32k | 0.37 / 0.47 | 37 / 42 % | 35 / 50 % | 3 / 3 of 10 | $0.32 / $0.31 | 60 / 55 s | 0 / 0 |
+| `anthropic/claude-haiku-5.5`, high, 16k | 0.17 / 0.21 | 13 / 15 % | 28 / 28 % | 2 / 1 of 10 | $0.10 / $0.11 | 62 / 58 s | 8 / 7 |
+
+- **At low reasoning Haiku 5.5 finds less than GLM-5.3.** With more reasoning it finds as much or
+  more. No review failed in 120 when the output cap left room for the answer.
+- **High reasoning finds the most internal defects**: 3 of 10 in both runs, with the unique
+  violation that drizzle wraps on pantry#565, which no cheap model found before. It costs 1.6 cents a
+  review against 1.0 at medium.
+- **The reasoning counts in the output tokens.** At 16,000, high reasoning left no room for the
+  answer in 7 to 8 reviews of 20: the content came back empty. The two failures of GLM-5.3 in its
+  third run have the same symptom.
+- `mistralai/mistral-large-4-0`, released the same week, has no provider with zero data retention.
+
+`REVIEW_EFFORT` (`low`, `medium`, `high`) and `REVIEW_MAX_TOKENS` set the reasoning and the output
+cap of a run.
+
 ## Results, 2026-10-03
 
 Up to three runs of the 20 pull requests, counted as Martian counts them (see `score` in `run.ts`).

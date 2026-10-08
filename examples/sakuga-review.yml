@@ -1,4 +1,4 @@
-# Automatic review of pull requests by Sakuga Review (GLM-5.3 through OpenRouter), and its commands
+# Automatic review of pull requests by Sakuga Review (Claude Haiku 5.5 through OpenRouter), and its commands
 # in a comment: `@sakuga-review review [lite|balanced|heavy]`, `@sakuga-review resolve`.
 # See https://github.com/sakuga-software/sakuga-review.
 name: Sakuga Review
