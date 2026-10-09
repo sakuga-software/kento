@@ -227,7 +227,8 @@ found, not the time; the models of today come from the later bench of [`eval/mar
    and a self-hosted runner on a public repository runs the code of forks.
 2. Add the repository to the visibility of the organization secrets below.
 3. Copy [`examples/sakuga-review.yml`](examples/sakuga-review.yml) to
-   `.github/workflows/sakuga-review.yml`, with the SHA of the latest tag (see the table at the end).
+   `.github/workflows/sakuga-review.yml`. It calls `review.yml@stable`: nothing to change at a
+   release.
    It passes the two secrets by name.
 4. Open the pull request: its own review is the test. The calling workflow comes from the branch of
    the pull request.
@@ -256,9 +257,9 @@ The conventions of the repository go into every review: the script sends `CLAUDE
 A public repository cannot call a workflow of this private one, and the runners of `runners-host`
 do not serve it. `fruitback` holds a **copy** of `review.yml` that runs on `ubuntu-latest` (free for
 a public repository) and skips the pull requests of forks, which get no secret. The copy checks out
-the script from this repository with the token of the App, at a SHA written in the copy, because
-`job.workflow_sha` names the copy there. A new version goes to that copy by hand: the job and the
-SHA.
+the script from this repository with the token of the App, at `stable`, because `job.workflow_sha`
+names the copy there. A release reaches the script of the copy with `stable`, but a change of the
+jobs of `review.yml` goes to the copy by hand. `boo` holds the same copy.
 
 ## GitHub App
 
@@ -336,18 +337,40 @@ host.
 
 ## Release a new version of the workflow
 
-The calling workflows pin `review.yml` to a commit, with its tag as a comment: the two secrets go to
-that exact code, and a push here reaches no repository until it takes the new pin. The job checks out
-the script and the prompt at the same commit (`job.workflow_sha`), so they are pinned too.
+The calling workflows call `review.yml@stable`. `stable` is a tag that moves: a release moves it to
+a new commit, and every repository takes that commit on its next pull request event, with no change
+in the repository. The job checks out the script and the prompt at the commit of the workflow
+(`job.workflow_sha`), so the three always match. A version tag (`v5.1`, `v5.2`…) stays on each
+release, to name it and to roll back to it.
 
-1. Merge the change of `review.yml` on `main`.
-2. Tag the merge commit with the next version: `gh api --method POST repos/sakuga-software/sakuga-review/git/refs -f ref=refs/tags/v2 -f sha=<commit>`.
-3. In each repository of the table above, replace the SHA and the comment on the `uses:` line of
-   `.github/workflows/sakuga-review.yml`. `examples/sakuga-review.yml` gets the same line.
+This repository reviews its own pull requests with `review.yml@main`: a merged change runs here
+first, before `stable` moves.
+
+1. Merge the change on `main`. Open or push a pull request here, and check its review: it runs the
+   new code.
+2. Tag the merge commit with the next version, and move `stable` to it. GitHub refuses a ref to a
+   commit that changes a workflow to a token without the `workflow` scope, so push with git:
+
+   ```bash
+   git fetch origin main
+   git push origin origin/main:refs/tags/v5.2
+   git push --force origin origin/main:refs/tags/stable
+   ```
+
+3. To roll back, move `stable` to the previous version: `git push --force origin v5.1^{commit}:refs/tags/stable`.
+
+**Who can move `stable`.** The callers send their two secrets to the code at `stable`, so a ruleset
+of this repository (« stable tag: admins only ») lets only its admins create, move or delete that
+tag. A second ruleset refuses a branch named `stable`, which would make `@stable` mean a branch. A
+third makes every change of `main` go through a pull request (« main: pull requests only »).
+
+A caller can still pin a commit (`review.yml@<SHA> # v5.1`), for example to hold a repository on a
+version during an incident. It then takes no release until it moves the pin back to `@stable`.
 
 | Tag | Commit | Change |
 | --- | --- | --- |
-| `v5.1` | (at the merge) | `lite` is Claude Haiku 5.5 at medium reasoning, with 32,000 output tokens; GLM-5.3 is the fallback, MiMo goes. |
+| `stable` | moves | The release that the callers run. |
+| `v5.1` | `146912bd2b76ad5addee85eeade678ce2058f891` | `lite` is Claude Haiku 5.5 at medium reasoning, with 32,000 output tokens; GLM-5.3 is the fallback, MiMo goes. |
 | `v5` | `f421015719b5e137fefb82113931c91253747239` | The pull requests, pushes and comments of the bots of `trusted_bots` (default `sakuga-agent[bot]`) get a review and give commands, as a person's do. |
 | `v4.1` | `ea75cd4ceb471dab6b3cede1994ab13dcb07f30b` | Every level reads the definitions that the change uses and the migration of each SQL name that it writes. |
 | `v4` | `37df2bf7d03a076030cd29820c3bc5c53325779b` | Commands in a comment (`review` at a level, `resolve`); levels `lite`, `balanced`, `heavy`; a deeper review recommended; the level, the model and the cost in the review. The caller adds `issue_comment: types: [created]`. |

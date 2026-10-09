@@ -15,9 +15,9 @@ permissions: {}
 
 jobs:
   review:
-    # Pinned to a commit of sakuga-review: the secrets below go to this exact code. To take a new
-    # version, replace the SHA and the tag in the comment (see the README of sakuga-review).
-    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@SHA # v4
+    # `stable` is the release of sakuga-review: a release moves it, and only its admins can move it
+    # (see the README of sakuga-review). The secrets below go to the code at that tag.
+    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@stable
     secrets:
       PR_AGENT_APP_PRIVATE_KEY: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

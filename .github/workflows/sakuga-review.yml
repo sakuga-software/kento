@@ -2,8 +2,9 @@
 # in a comment: `@sakuga-review review [lite|balanced|heavy]`, `@sakuga-review resolve`.
 # See https://github.com/sakuga-software/sakuga-review.
 #
-# This repository reviews its own pull requests with a released version, pinned below, and not with
-# the code of the pull request: a change of the review does not review itself.
+# This repository reviews its own pull requests with the code of `main`, not with the code of the
+# pull request: a change of the review does not review itself, and a merged change runs here before
+# `stable` moves to it (see the README).
 name: Sakuga Review
 
 on:
@@ -18,9 +19,7 @@ permissions: {}
 
 jobs:
   review:
-    # Pinned to a commit of sakuga-review: the secrets below go to this exact code. To take a new
-    # version, replace the SHA and the tag in the comment (see the README of sakuga-review).
-    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@146912bd2b76ad5addee85eeade678ce2058f891 # v5.1
+    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@main
     secrets:
       PR_AGENT_APP_PRIVATE_KEY: ${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
