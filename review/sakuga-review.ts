@@ -213,6 +213,19 @@ function git(repo: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 }
 
+/**
+ * Whether a file changed between a commit and the head. A force-push can remove the commit from the
+ * history: the answer is then false, and the thread stays open.
+ */
+function fileChangedSince(repo: string, since: string | undefined, head: string, path: string): boolean {
+  if (!since) return false;
+  try {
+    return git(repo, 'diff', '--name-only', `${since}..${head}`, '--', path).trim() !== '';
+  } catch {
+    return false;
+  }
+}
+
 const log = (message: string) => process.stderr.write(`${message}\n`);
 
 // The context: unchanged code that the change uses or that uses the change
@@ -916,8 +929,8 @@ async function post(args: Args, answer: Answer, usage: Usage, skipped: string[],
   // A finding that the model did not repeat is not a fixed finding: the same code can be read twice.
   let resolved = 0;
   for (const t of threads) {
-    if (t.resolved || t.answered || keysNow.has(t.key) || !t.commit) continue;
-    if (!git(args.repoDir, 'diff', '--name-only', `${t.commit}..${args.head}`, '--', t.path).trim()) continue;
+    if (t.resolved || t.answered || keysNow.has(t.key)) continue;
+    if (!fileChangedSince(args.repoDir, t.commit, args.head, t.path)) continue;
     try {
       await graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: t.id });
     } catch (error) {
@@ -1148,17 +1161,6 @@ const cleanBody = (body: string) =>
     MAX_THREAD_COMMENT_CHARS,
   );
 
-/** Whether the file of a thread changed between the commit of its first comment and the head. */
-function changedSince(repo: string, thread: OpenThread, head: string): boolean {
-  const since = thread.comments[0].commit;
-  if (!since) return false;
-  try {
-    return git(repo, 'diff', '--name-only', `${since}..${head}`, '--', thread.path).trim() !== '';
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The message that the model reads: each thread, the code at the head around it, and its diff since.
  * It stops before MAX_RESOLVE_PACK_BYTES, and gives the threads that it holds.
@@ -1243,7 +1245,7 @@ async function resolve(args: Args) {
     const opener = t.comments[0];
     // A thread of a person closes only on a change of its file: an answer of the bot is not enough.
     // A finding of a bot that the file did not change since is not fixed.
-    const changed = changedSince(args.repoDir, t, args.head);
+    const changed = fileChangedSince(args.repoDir, opener.commit, args.head, t.path);
     const close = v.verdict === 'fixed' ? changed : v.verdict === 'answered' && opener.isBot;
     let status = '';
     if (close) {
