@@ -230,6 +230,9 @@ const log = (message: string) => process.stderr.write(`${message}\n`);
 
 // The context: unchanged code that the change uses or that uses the change
 
+/** The text as a literal in a regular expression, with every special character escaped. */
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const SOURCE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs)$/;
 const SOURCE_GLOBS = ['*.ts', '*.tsx', '*.mts', '*.cts', '*.js', '*.jsx', '*.mjs'];
 const IMPORT = /import\s+(type\s+)?([\w*\s{},$]+?)\s+from\s+['"]([^'"]+)['"]/g;
@@ -269,7 +272,7 @@ function grep(repo: string, head: string, args: string[], globs = SOURCE_GLOBS):
 /** The exported declarations of a name at the head. `git grep -E` knows POSIX classes, not `\s` or `\b`. */
 function definitionsOf(repo: string, head: string, name: string) {
   const keyword = '(default[[:space:]]+)?(declare[[:space:]]+)?(async[[:space:]]+)?(function\\*?|const|let|class|type|interface|enum)';
-  const pattern = `^[[:space:]]*export[[:space:]]+${keyword}[[:space:]]+${name.replace('$', '\\$')}([^[:alnum:]_$]|$)`;
+  const pattern = `^[[:space:]]*export[[:space:]]+${keyword}[[:space:]]+${escapeRegExp(name)}([^[:alnum:]_$]|$)`;
   return grep(repo, head, ['-E', '-e', pattern]);
 }
 
@@ -317,7 +320,7 @@ function usedImports(repo: string, base: string, head: string, paths: string[], 
         const name = raw.replace(/^\s*(type\s+)?(\*\s+as\s+)?/, '').split(/\s+as\s+/).pop()!.trim();
         // Several files of a pull request import the same names: each one counts once.
         if (found.some((f) => f.name === name && f.from === from)) continue;
-        if (name && new RegExp(`\\b${name.replace('$', '\\$')}\\b`).test(added)) found.push({ name, from, path: workspace ?? path });
+        if (name && new RegExp(`\\b${escapeRegExp(name)}\\b`).test(added)) found.push({ name, from, path: workspace ?? path });
       }
     }
   }
@@ -425,7 +428,7 @@ function buildContext(repo: string, base: string, head: string, paths: string[],
     const root = path.endsWith('/') ? path : `${path.split('/').slice(0, 2).join('/')}/`;
     // Without the resolution of the bundler: an import stays in its app or its package, and the file
     // named as the module comes first.
-    const named = new RegExp(`/${moduleName.replace(/[.$]/g, '\\$&')}(/index)?\\.[a-z]+$`);
+    const named = new RegExp(`/${escapeRegExp(moduleName)}(/index)?\\.[a-z]+$`);
     const best = definitionsOf(repo, head, name)
       .filter((d) => d.path.startsWith(root))
       .sort((a, b) => Number(named.test(b.path)) - Number(named.test(a.path)))[0];
@@ -1151,12 +1154,23 @@ function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n${TRUNCATED}` : text;
 }
 
+const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+const DETAILS_BLOCK = /<details>[\s\S]*?<\/details>/g;
+const MEDIA_TAG = /<(img|a|picture|source)\b[^>]*>/g;
+
+/** A removal can join the text around it into a new match: `<!<!---->-- x -->`. Repeat until the text is stable. */
+function removeAll(text: string, pattern: RegExp): string {
+  let current = text;
+  for (let previous = ''; previous !== current;) {
+    previous = current;
+    current = current.replace(pattern, '');
+  }
+  return current;
+}
+
 const cleanBody = (body: string) =>
   cut(
-    body
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/<details>[\s\S]*?<\/details>/g, '')
-      .replace(/<(img|a|picture|source)\b[^>]*>/g, '')
+    removeAll(removeAll(removeAll(body, HTML_COMMENT), DETAILS_BLOCK), MEDIA_TAG)
       .trim(),
     MAX_THREAD_COMMENT_CHARS,
   );
