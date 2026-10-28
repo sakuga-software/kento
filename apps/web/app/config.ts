@@ -106,7 +106,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // GITHUB_API_URL. HTTPS only: the runner refuses any other clone URL.
   let githubHost = githubServerHost(env.GITHUB_API_URL?.trim() || 'https://api.github.com')
   let githubUrl = (env.GITHUB_URL?.trim() || (githubHost ? `https://${githubHost}` : '')).replace(/\/+$/, '')
-  if (!/^https:\/\/[^\s@/]+(\/[^\s@]*)?$/.test(githubUrl)) {
+  if (githubHost === null) {
+    // Name the variable that is wrong, once, even without the GitHub App.
+    let message = 'GITHUB_API_URL must be an http(s) URL'
+    if (!problems.includes(message)) problems.push(message)
+  } else if (!/^https:\/\/[^\s@/]+(\/[^\s@]*)?$/.test(githubUrl)) {
     problems.push('GITHUB_URL must be an https:// URL')
   } else if (githubHost && new URL(githubUrl).host !== githubHost) {
     problems.push('GITHUB_URL must be on the server of GITHUB_API_URL')

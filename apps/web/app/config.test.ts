@@ -54,6 +54,17 @@ describe('loadConfig', () => {
       () => loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'https://ghe-a.example.com/api/v3', GITHUB_URL: 'https://ghe-b.example.com' }),
       other,
     )
+    // A GITHUB_API_URL that is not a URL is named as such, once, with or without the App.
+    for (let env of [{ GITHUB_API_URL: 'not-a-url' }, { GITHUB_API_URL: 'not-a-url', GITHUB_APP_ID: '12345', GITHUB_APP_PRIVATE_KEY: pem }]) {
+      let error: unknown
+      try {
+        loadConfig({ DATABASE_URL: url, ...env })
+      } catch (caught) {
+        error = caught
+      }
+      assert.ok(error instanceof ConfigError)
+      assert.equal(error.message, 'Invalid configuration: GITHUB_API_URL must be an http(s) URL')
+    }
     // Without GITHUB_URL, the clone server is the server of the API, as for a local fake GitHub.
     assert.equal(loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'https://ghe.example.com/api/v3' }).githubUrl, 'https://ghe.example.com')
     assert.equal(loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'http://127.0.0.1:55492' }).githubUrl, 'https://127.0.0.1:55492')
