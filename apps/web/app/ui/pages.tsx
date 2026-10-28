@@ -1,4 +1,5 @@
 import type { Handle } from 'remix/component'
+import { cop } from 'remix/middleware/cop'
 import { createController } from 'remix/router'
 
 import { pageRoutes } from '../routes.ts'
@@ -79,16 +80,31 @@ export function createPagesController(deps: PagesDependencies) {
       },
 
       // The theme form, for a browser without JavaScript: public/assets/theme.js does the same at once.
-      async theme(context) {
+      // cop() refuses a POST that the browser marks as sent from another site (Sec-Fetch-Site, or an
+      // Origin of another host): no other site sets the theme of a person. The sign-in adds the
+      // CSRF token of the session on top.
+      theme: {
+        middleware: [cop()],
+        async handler(context) {
         let form = await context.request.formData().catch(() => null)
         let theme = form?.get('theme')
         let returnTo = localPath(form?.get('returnTo'))
         let headers = new Headers({ Location: returnTo })
-        if (isTheme(theme)) headers.append('Set-Cookie', themeCookie(theme, context.url.protocol === 'https:'))
+        if (isTheme(theme)) headers.append('Set-Cookie', themeCookie(theme, isHttps(context)))
         return new Response(null, { status: 303, headers })
+        },
       },
     },
   })
+}
+
+/**
+ * Whether the browser reached the service over HTTPS. Traefik ends TLS and forwards plain HTTP with
+ * `X-Forwarded-Proto: https`; the cookie then gets `Secure`, as public/assets/theme.js sets it.
+ */
+export function isHttps(context: { url: URL; headers: Headers }): boolean {
+  if (context.url.protocol === 'https:') return true
+  return context.headers.get('X-Forwarded-Proto')?.split(',')[0]?.trim().toLowerCase() === 'https'
 }
 
 /** A path of this site, or `/`: never another origin (`//host`, `/\host`, a scheme). */

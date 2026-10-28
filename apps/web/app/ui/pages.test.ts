@@ -67,9 +67,9 @@ describe('the frame of a screen', () => {
 })
 
 describe('POST /preferences/theme', () => {
-  function post(body: Record<string, string>) {
+  function post(body: Record<string, string>, headers: HeadersInit = {}) {
     return router().fetch(
-      new Request('http://localhost/preferences/theme', { method: 'POST', body: new URLSearchParams(body) }),
+      new Request('http://localhost/preferences/theme', { method: 'POST', body: new URLSearchParams(body), headers }),
     )
   }
 
@@ -86,6 +86,22 @@ describe('POST /preferences/theme', () => {
 
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Set-Cookie'), null)
+  })
+
+  it('refuses a form that another site sent, and sets no cookie', async () => {
+    let attempts: Record<string, string>[] = [{ 'Sec-Fetch-Site': 'cross-site' }, { Origin: 'https://evil.example' }]
+    for (let headers of attempts) {
+      let response = await post({ theme: 'sumi', returnTo: '/' }, headers)
+      assert.equal(response.status, 403, JSON.stringify(headers))
+      assert.equal(response.headers.get('Set-Cookie'), null)
+    }
+    let sameSite = await post({ theme: 'sumi', returnTo: '/' }, { 'Sec-Fetch-Site': 'same-origin', Origin: 'http://localhost' })
+    assert.equal(sameSite.status, 303)
+  })
+
+  it('sets a Secure cookie behind the TLS proxy, as theme.js does over HTTPS', async () => {
+    let response = await post({ theme: 'sumi', returnTo: '/' }, { 'X-Forwarded-Proto': 'https' })
+    assert.match(response.headers.get('Set-Cookie') ?? '', /; Secure$/)
   })
 
   it('never goes back to another site', async () => {
