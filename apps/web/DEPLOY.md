@@ -163,7 +163,54 @@ that is safe.
 Close the registration once the runners are registered: remove `KENTO_RUNNER_REGISTRATION_TOKEN`.
 The registered runners keep working.
 
-## 7. Each later deployment
+## 7. Publication of the reviews (REV-5)
+
+The service publishes the review that a runner sends: the review with its score and its inline
+comments, the block at the end of the description, the label `review: N/5` and the check
+« Sakuga Review ». The format is the one of `review.yml`. No migration, and no new variable: the
+publisher runs when `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are set (section 6), and
+`startup.listening` shows `"publisher":true`.
+
+1. App settings → **Permissions & events → Repository permissions**:
+   - **Contents: Read**, **Pull requests: Read and write**, **Issues: Read and write**: the App has
+     them for the Action.
+   - **Checks: Read and write**: new. Save, then accept the change of permissions in the
+     organization (GitHub sends a request to its owners). Until then the review is published without
+     its check, and each review logs `review.check_token_refused`.
+2. Deploy the release with REV-5. `KENTO_REPOS` must hold the repository, and a runner must run
+   (section 6).
+3. Push a commit on an open pull request of the repository. In the logs, in order: `job.claimed`,
+   `job.result`, `review.published` with the GitHub id of the review, its score, the number of inline
+   comments and `"check":true`. On the pull request: a review of `sakuga-review[bot]` whose footer
+   starts with `Kentō · Niveau`, its inline comments, the block of the description, the label and the
+   check « Sakuga Review ».
+4. While `.github/workflows/sakuga-review.yml` still reacts to `pull_request`, the pull request gets
+   two reviews per push: the one of the Action and the one of Kentō. Compare them (step 4 of the
+   ticket), then merge the pull request that removes the trigger.
+
+What the publisher does not publish, on purpose, with the reason in `review.publication_skipped`:
+
+- `superseded`: the head of the pull request moved since the job. The review of the new head
+  replaces it, as a push cancelled the run of the Action.
+- `closed`: the pull request is closed or merged.
+- `suspended`: the installation of the App is suspended.
+
+A failure before the review is posted (`review.publication_failed`: the token, the pull request,
+the list of the threads) is tried again, three times per process, for 30 minutes. An error on one
+thread only leaves that thread open (`publish.thread_failed`, or `publish.step_failed` for its
+reply). The threads of the findings that are gone are closed only once the review is on GitHub. A failure after it (`publish.step_failed`: the dismissal, the description,
+the label or the check) is not: the review is on GitHub, and a second one would repeat it. Each
+review carries a hidden `<!-- kento:review <id> -->`: when the row could not be marked (a restart, a
+lost connection), the next try finds that review on GitHub, marks the row and posts nothing again
+(`publish.already_posted`).
+
+```sql
+select pr_number, left(head_sha, 8), score, published_at, github_review_id from reviews order by created_at desc limit 5;
+```
+
+`published_at` set with `github_review_id` null: a review that was skipped.
+
+## 8. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

@@ -2,7 +2,7 @@
 
 The service behind `review.sakuga.dev`. In milestone M2 it has no screen: it serves `GET /healthz`
 the GitHub App webhook `POST /webhooks/github` (REV-3) and the runner API `POST /api/runner/*`
-(REV-4).
+(REV-4). It publishes on GitHub the review that a runner sends (REV-5, `app/publish/`).
 
 - [Remix 3](https://github.com/remix-run/remix): `remix/router` (fetch-router), `remix/component`,
   `remix/node-fetch-server`. Node 24.3 or later runs the TypeScript source with `remix/node-tsx`;
@@ -34,6 +34,7 @@ and the log names the variable, never its value.
 | `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server (`https://<host>/api/v3`) or a local test. |
 | `GITHUB_URL` | no | the server of `GITHUB_API_URL` | The GitHub server where the runners clone, HTTPS only. It must be on the server of `GITHUB_API_URL` (github.com for `api.github.com`), else the service refuses to start: the installation token of one server never goes to another. |
 | `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service. Sent with a job only to a trusted runner that has no key of its own. A secret. |
+| `KENTO_BOT_LOGIN` | no | `sakuga-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
 
 ## `GET /healthz`
 

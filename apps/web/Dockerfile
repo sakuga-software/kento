@@ -18,8 +18,9 @@ RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages/protocol/package.json packages/protocol/
-# The production dependencies of apps/web and of the workspace packages it uses (packages/protocol,
-# which has none). No dev dependency.
+COPY packages/engine/package.json packages/engine/
+# The production dependencies of apps/web and of the workspace packages it uses (packages/protocol
+# and packages/engine, which have none). No dev dependency.
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @sakuga-review/web...
 
@@ -36,6 +37,10 @@ COPY apps/web/drizzle ./apps/web/drizzle
 # The messages of the runner API, shared with apps/runner. Node runs its TypeScript as is.
 COPY packages/protocol/package.json ./packages/protocol/
 COPY packages/protocol/src ./packages/protocol/src
+# The engine renders the review that the publisher posts, in the format of the Action. The service
+# never calls a model: the prompts stay out of the image.
+COPY packages/engine/package.json ./packages/engine/
+COPY packages/engine/src ./packages/engine/src
 
 # The commit of the image, shown by /healthz. Dokploy can pass it as a build argument.
 ARG APP_COMMIT=""

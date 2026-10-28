@@ -38,6 +38,11 @@ export type Answer = {
 };
 export type Usage = { model?: string; provider?: string; prompt_tokens?: number; completion_tokens?: number; cost?: number };
 export type ChangedLines = Map<string, Set<number>>;
+/**
+ * Where each finding anchors: the changed lines of the checkout, or the anchor that a runner already
+ * computed. The web service has no checkout: it reads the anchor of each finding in the result.
+ */
+export type Anchors = ChangedLines | ((finding: Finding) => number | null);
 
 const FINDING_SCHEMA = {
   type: 'object',
@@ -95,7 +100,8 @@ export function changedLines(repo: string, base: string, head: string): ChangedL
 }
 
 /** The changed line to comment on, or null when the finding sits outside the diff. */
-export function anchor(finding: Finding, lines: ChangedLines): number | null {
+export function anchor(finding: Finding, lines: Anchors): number | null {
+  if (typeof lines === 'function') return lines(finding);
   const candidates = [...(lines.get(finding.path.replace(/^\/+/, '')) ?? [])];
   if (!candidates.length) return null;
   if (candidates.includes(finding.line)) return finding.line;
@@ -107,7 +113,7 @@ export function anchor(finding: Finding, lines: ChangedLines): number | null {
  * A finding blocks only on a line that the pull request changes: the bench saw the model block a
  * clean pull request for code that the pull request did not touch.
  */
-export function isBlocking(finding: Finding, lines: ChangedLines): boolean {
+export function isBlocking(finding: Finding, lines: Anchors): boolean {
   return (
     BLOCKING_SEVERITIES.has(finding.severity) &&
     finding.confidence >= BLOCKING_CONFIDENCE &&
@@ -124,7 +130,7 @@ export function findingKey(finding: Finding): string {
  * The score that the reader sees. A blocking finding caps it at 2: a review that asks for changes
  * and calls the pull request safe would contradict itself.
  */
-export function score(answer: Answer, lines: ChangedLines): number {
+export function score(answer: Answer, lines: Anchors): number {
   const raw = Math.min(5, Math.max(1, Math.round(answer.confidence_score || 3)));
   return answer.findings.some((f) => isBlocking(f, lines)) ? Math.min(raw, 2) : raw;
 }
@@ -166,7 +172,7 @@ export function deeperReview(answer: Answer, level: Level): string | null {
  * REQUEST_CHANGES on a sure blocking finding, APPROVE on a score of 4 or 5, COMMENT otherwise. A
  * review that recommends a deeper review does not approve: it says that it could not check enough.
  */
-export function verdict(answer: Answer, lines: ChangedLines, level: Level): 'REQUEST_CHANGES' | 'APPROVE' | 'COMMENT' {
+export function verdict(answer: Answer, lines: Anchors, level: Level): 'REQUEST_CHANGES' | 'APPROVE' | 'COMMENT' {
   if (answer.findings.some((f) => isBlocking(f, lines))) return 'REQUEST_CHANGES';
   if (deeperReview(answer, level)) return 'COMMENT';
   return score(answer, lines) >= APPROVE_SCORE ? 'APPROVE' : 'COMMENT';

@@ -5,7 +5,9 @@
   "description": "The engine of Sakuga Review: pack, model call, findings and rendering of a review. No GitHub API.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./findings": "./src/findings.ts",
+    "./render": "./src/render.ts"
   },
   "engines": {
     "node": ">=24"

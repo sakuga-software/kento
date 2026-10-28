@@ -9,6 +9,7 @@ import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
 import { createInstallationTokenMinter } from './app/github/installation-token.ts'
 import { errorMessage, log } from './app/log.ts'
+import { createPublisher } from './app/publish/publisher.ts'
 import { createAppRouter } from './app/router.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -37,6 +38,21 @@ if (config.migrateOnStart) {
   }
 }
 
+let mintInstallationToken = config.githubApp ? createInstallationTokenMinter(config.githubApp) : null
+
+// The publisher posts the reviews that the runners send (REV-5). Without the App it has no token:
+// the reviews stay in the database, unpublished.
+let publisher =
+  config.githubApp && mintInstallationToken
+    ? createPublisher({
+        sql: database.sql,
+        mintInstallationToken,
+        apiUrl: config.githubApp.apiUrl,
+        webUrl: config.githubUrl,
+        botLogin: config.botLogin,
+      })
+    : null
+
 let router = createAppRouter({
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
@@ -50,8 +66,9 @@ let router = createAppRouter({
   runner: {
     store: createRunnerStore(database.sql),
     registrationToken: config.runnerRegistrationToken,
-    mintInstallationToken: config.githubApp ? createInstallationTokenMinter(config.githubApp) : null,
+    mintInstallationToken,
     providerApiKey: config.providerApiKey,
+    onReviewStored: publisher ? () => publisher.wake() : undefined,
     githubUrl: config.githubUrl,
   },
 })
@@ -76,7 +93,9 @@ server.listen(config.port, config.host, () => {
     version: config.version,
     commit: config.commit,
     kentoRepos: [...config.kentoRepos],
+    publisher: publisher !== null,
   })
+  publisher?.start()
 })
 
 let shuttingDown = false
@@ -86,6 +105,8 @@ function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true
   log('info', 'shutdown.started', { signal })
   server.close(async () => {
+    // A publication in progress ends before the database closes.
+    await publisher?.stop()
     await database.close()
     log('info', 'shutdown.done')
     process.exit(0)

@@ -77,7 +77,7 @@ export function levelConfig(level: Level, env: LevelEnv = {}): LevelConfig {
   if (env.REVIEW_TIMEOUT_MS) config.timeoutsMs = config.models.map(() => Number(env.REVIEW_TIMEOUT_MS));
   if (env.REVIEW_MAX_PRICE) {
     const [prompt, completion] = env.REVIEW_MAX_PRICE.split(',').map(Number);
-    config.maxPrice = { prompt, completion };
+    config.maxPrice = { prompt: prompt!, completion: completion! };
   }
   return config;
 }

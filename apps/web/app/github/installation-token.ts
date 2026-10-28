@@ -1,15 +1,23 @@
 import { createPrivateKey, sign, type KeyObject } from 'node:crypto'
 
-/** A GitHub token that a runner uses to clone one repository. */
+/** A GitHub token for one repository: a runner clones with it, the service publishes with it. */
 export interface InstallationToken {
   token: string
   /** ISO 8601, as GitHub gives it. GitHub makes it valid one hour. */
   expiresAt: string
 }
 
+/** The permissions that a token asks for, as GitHub names them. */
+export type TokenPermissions = Record<string, 'read' | 'write'>
+
+/** The token of a job: the runner clones with it, and cannot write. */
+export const CLONE_PERMISSIONS: TokenPermissions = { contents: 'read' }
+
 export type MintInstallationToken = (target: {
   installationId: number
   githubRepoId: number
+  /** `contents: read` when not given. */
+  permissions?: TokenPermissions
 }) => Promise<InstallationToken>
 
 export class InstallationTokenError extends Error {
@@ -25,9 +33,9 @@ export function readPrivateKey(pem: string): KeyObject {
 }
 
 /**
- * Makes installation tokens for the runners. The private key of the App stays in this process: a
- * runner gets only the token, which GitHub limits to the one repository of the job, with
- * `contents: read`, for one hour.
+ * Makes installation tokens. The private key of the App stays in this process: a runner gets only
+ * the token, which GitHub limits to the one repository of the job, with `contents: read`, for one
+ * hour. The publication of a review asks for its own token, with the permissions to write.
  */
 export function createInstallationTokenMinter(options: {
   appId: string
@@ -40,7 +48,7 @@ export function createInstallationTokenMinter(options: {
   let doFetch = options.fetch ?? globalThis.fetch
   let now = options.now ?? Date.now
 
-  return async ({ installationId, githubRepoId }) => {
+  return async ({ installationId, githubRepoId, permissions = CLONE_PERMISSIONS }) => {
     let response = await doFetch(`${apiUrl}/app/installations/${installationId}/access_tokens`, {
       method: 'POST',
       headers: {
@@ -52,7 +60,7 @@ export function createInstallationTokenMinter(options: {
       },
       body: JSON.stringify({
         repository_ids: [githubRepoId],
-        permissions: { contents: 'read' },
+        permissions,
       }),
       signal: AbortSignal.timeout(10_000),
     })

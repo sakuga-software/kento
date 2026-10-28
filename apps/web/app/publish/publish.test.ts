@@ -1,0 +1,458 @@
+import { descriptionBlock, reviewBody } from '@sakuga-review/engine/render'
+import { verdict, type ChangedLines } from '@sakuga-review/engine/findings'
+import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import * as assert from 'remix/assert'
+import { describe, it } from 'remix/test'
+
+import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
+import { createGitHub } from './github.ts'
+import { anchorOf, answerOf, CHECK_NAME, publishReview, usageOf } from './publish.ts'
+
+const BASE = 'a'.repeat(40)
+const HEAD1 = '1'.repeat(40)
+const HEAD2 = '2'.repeat(40)
+const HEAD3 = '3'.repeat(40)
+
+function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
+  return {
+    path: 'src/sum.ts',
+    start_line: 2,
+    line: 2,
+    severity: 'major',
+    category: 'bug',
+    confidence: 90,
+    title: 'La somme soustrait',
+    scenario: 'sum(1, 2) rend -1.',
+    fix: 'Remettre +.',
+    suggestion: '  return a + b;',
+    anchor: 2,
+    blocking: true,
+    suggestion_range: [2, 2],
+    ...overrides,
+  }
+}
+
+function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
+  return {
+    level: 'lite',
+    base: BASE,
+    head: HEAD1,
+    score: 2,
+    verdict: 'REQUEST_CHANGES',
+    model: 'anthropic/claude-haiku-5.5',
+    provider: 'Anthropic',
+    costUsd: 0.0123,
+    promptTokens: 1000,
+    completionTokens: 200,
+    summary: 'La PR change sum.',
+    risk: 'Un calcul faux.',
+    diagram: null,
+    deeperReview: null,
+    findings: [finding()],
+    notReviewed: [],
+    skipped: [],
+    ...overrides,
+  }
+}
+
+function setup(head = HEAD1) {
+  let fake = createFakeGitHub({ head, commits: { [HEAD1]: 'fix: sum', [HEAD2]: 'docs: readme', [HEAD3]: 'fix: sum again' } })
+  let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+  let checks = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_checks_2', fetch: fake.fetch })
+  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+  let warnings: { event: string; fields: Record<string, unknown> }[] = []
+  let publish = (review: ReviewPayload, withChecks = true) =>
+    publishReview(github, target, review, { checks: withChecks ? checks : null, warn: (event, fields) => warnings.push({ event, fields }) })
+  return { fake, publish, warnings }
+}
+
+describe('publishReview', () => {
+  it('posts the review, its inline comment, the block of the description, the label and the check', async () => {
+    let { fake, publish, warnings } = setup()
+
+    let outcome = await publish(payload())
+
+    assert.deepEqual(warnings, [])
+    assert.equal(outcome.score, 2)
+    assert.equal(outcome.inline, 1)
+    let [review] = fake.state.reviews
+    assert.equal(review!.state, 'CHANGES_REQUESTED')
+    assert.equal(review!.commitId, HEAD1)
+    // The fields that boo and the scripts read.
+    assert.match(review!.body, /\*\*Score de confiance : 2\/5\*\* · ⛔ 1 point bloquant · Un calcul faux\./)
+    assert.match(review!.body, /<sub>Kentō · Niveau `lite` · `anthropic\/claude-haiku-5\.5` · 0,012 \$ · /)
+
+    let [comment] = fake.botThreads()
+    assert.equal(comment!.path, 'src/sum.ts')
+    assert.equal(comment!.line, 2)
+    assert.equal(comment!.startLine, undefined, 'a one-line suggestion has no start line')
+    assert.match(comment!.body, /<img alt="P1" src="https:\/\/img\.shields\.io\/badge\/P1-e67e22/)
+    assert.match(comment!.body, /```suggestion\n {2}return a \+ b;\n```/)
+    assert.match(comment!.body, /<!-- sakuga-review:finding [0-9a-f]{12} -->/)
+
+    let body = fake.state.pr.body
+    assert.ok(body.startsWith('Description de la PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
+    assert.match(body, /<h2>Sakuga Review · Score de confiance : 2\/5<\/h2>/)
+    assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}">▶</a>`))
+    assert.match(body, /Revues \(1\) · Dernier commit relu : \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Niveau `lite`/)
+    assert.match(body, /<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->$/)
+
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    assert.ok(fake.state.repoLabels.has('review: 2/5'))
+
+    assert.equal(fake.state.checkRuns.length, 1)
+    let [check] = fake.state.checkRuns
+    assert.equal(check!.name, CHECK_NAME)
+    assert.equal(check!.name, 'Sakuga Review')
+    assert.equal(check!.head_sha, HEAD1)
+    assert.equal(check!.conclusion, 'success')
+    assert.equal(check!.output.title, 'Score de confiance : 2/5')
+    assert.equal(check!.token, 'ghs_fake_checks_2', 'the check goes with its own token')
+  })
+
+  it('does not post again a finding that an open thread carries, and dismisses the previous REQUEST_CHANGES', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+
+    // A second push that does not touch the finding.
+    fake.state.pr.head = HEAD2
+    fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['README.md'] })
+    let outcome = await publish(payload({ head: HEAD2 }))
+
+    assert.equal(outcome.inline, 0)
+    assert.equal(fake.botThreads().length, 1, 'no second thread for the same finding')
+    assert.deepEqual(fake.repliesTo(thread!.id), [], 'the thread gets no reply: the finding is still there')
+    assert.deepEqual(
+      fake.state.reviews.map((r) => r.state),
+      ['DISMISSED', 'CHANGES_REQUESTED'],
+    )
+    // The block links the finding to its open thread, and counts the reviews.
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}">▶</a>`))
+    assert.match(fake.state.pr.body, /<!-- sakuga-review:count 2 -->/)
+    assert.equal((fake.state.pr.body.match(/sakuga-review:start/g) ?? []).length, 1, 'one block, replaced')
+  })
+
+  it('also finds the thread of a finding worded differently a few lines away', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    fake.state.pr.head = HEAD2
+    fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['src/sum.ts'] })
+
+    await publish(payload({ head: HEAD2, findings: [finding({ title: 'Signe inversé dans sum', anchor: 3, line: 3, start_line: 3 })] }))
+
+    let [thread] = fake.botThreads()
+    assert.equal(fake.botThreads().length, 1)
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+  })
+
+  it('answers on the thread of a fixed finding that the file changed, once', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+
+    fake.state.pr.head = HEAD3
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: ['src/sum.ts'] })
+    let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+
+    assert.equal(outcome.resolved, 1)
+    let replies = fake.repliesTo(thread!.id)
+    assert.equal(replies.length, 1)
+    assert.match(replies[0]!.body, /^Ce constat n'apparaît plus au commit `333333333`, et le fichier a changé depuis\. Le fil peut être résolu\./)
+    assert.match(replies[0]!.body, /<!-- sakuga-review:gone -->/)
+    assert.match(fake.state.pr.body, /1 constat d'une revue précédente n'apparait plus : le fil peut être résolu\./)
+    assert.equal(fake.state.reviews.at(-1)!.state, 'APPROVED')
+    assert.deepEqual(fake.state.pr.labels, ['review: 5/5'], 'the old score label goes')
+
+    // The next review does not answer the same thread again.
+    await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+    assert.equal(fake.repliesTo(thread!.id).length, 1)
+  })
+
+  it('opens a new thread for a finding that comes back after its thread was answered as gone', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [old] = fake.botThreads()
+    fake.state.pr.head = HEAD2
+    fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['src/sum.ts'] })
+    await publish(payload({ head: HEAD2, score: 5, verdict: 'APPROVE', findings: [] }))
+    assert.equal(fake.repliesTo(old!.id).length, 1)
+
+    fake.state.pr.head = HEAD3
+    let outcome = await publish(payload({ head: HEAD3 }))
+
+    assert.equal(outcome.inline, 1)
+    let threads = fake.botThreads()
+    assert.equal(threads.length, 2)
+    let fresh = threads.find((t) => t.id !== old!.id)!
+    assert.equal(fresh.commit, HEAD3)
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${fresh.id}">▶</a>`))
+    assert.doesNotMatch(fake.state.pr.body, new RegExp(`#discussion_r${old!.id}"`))
+    assert.equal(fake.repliesTo(old!.id).length, 1, 'the old thread gets no second reply')
+  })
+
+  it('posts the review when GitHub fails on a thread, and leaves that thread open', async () => {
+    let { fake, publish, warnings } = setup()
+    await publish(payload())
+    let first = fake.addThread({ path: 'src/a.ts', line: 1, body: 'x <!-- sakuga-review:finding 0000000000aa -->', commit: HEAD1 })
+    let second = fake.addThread({ path: 'src/b.ts', line: 1, body: 'y <!-- sakuga-review:finding 0000000000bb -->', commit: HEAD2 })
+    fake.state.pr.head = HEAD3
+    // The compare API fails for the commit of the first thread; the second thread was deleted on
+    // GitHub, so the reply to it answers 404.
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'error', files: [] })
+    fake.state.compare.set(`${HEAD2}...${HEAD3}`, { status: 'ahead', files: ['src/b.ts'] })
+    fake.state.deletedComments.add(second)
+    warnings.length = 0
+
+    let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+
+    assert.equal(fake.state.reviews.length, 2, 'the review is posted')
+    assert.equal(outcome.resolved, 0)
+    assert.deepEqual(fake.repliesTo(first), [])
+    assert.deepEqual(fake.repliesTo(second), [])
+    assert.deepEqual(
+      warnings.map((w) => w.event).sort(),
+      // The thread of the first review and the first thread share the failing comparison; the reply
+      // to the deleted thread fails after the review.
+      ['publish.step_failed', 'publish.thread_failed', 'publish.thread_failed', 'publish.thread_not_resolved'],
+    )
+  })
+
+  it('closes no thread when the review cannot be posted', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    fake.state.canResolve = true
+    fake.state.pr.head = HEAD3
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: ['src/sum.ts'] })
+    fake.state.failReviews = true
+
+    await assert.rejects(publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] })), /answered 502/)
+
+    assert.equal(fake.state.resolved.has(thread!.id), false)
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+    // The next try, with GitHub back, closes it and says so in the block.
+    fake.state.failReviews = false
+    let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+    assert.equal(outcome.resolved, 1)
+    assert.ok(fake.state.resolved.has(thread!.id))
+    assert.match(fake.state.pr.body, /1 constat d'une revue précédente n'apparait plus/)
+  })
+
+  it('resolves the thread when GitHub lets the App do it', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    fake.state.canResolve = true
+    fake.state.pr.head = HEAD3
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: ['src/sum.ts'] })
+
+    await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+
+    assert.ok(fake.state.resolved.has(thread!.id))
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+  })
+
+  it('keeps open a thread whose file did not change: a finding that the model did not repeat is not fixed', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    fake.state.pr.head = HEAD2
+    fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['README.md'] })
+
+    let outcome = await publish(payload({ head: HEAD2, score: 4, verdict: 'APPROVE', findings: [] }))
+
+    assert.equal(outcome.resolved, 0)
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+  })
+
+  it('keeps open the thread of a commit that a force-push removed, and says so in the review', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    fake.state.pr.head = HEAD3
+
+    // GitHub no longer has the commit of the thread: 404. A diverged history gives the same answer.
+    await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'diverged', files: ['src/sum.ts'] })
+    await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+    for (let review of fake.state.reviews.slice(1)) {
+      assert.match(review.body, /Un force-push a retiré de l'historique le commit relu par un fil ouvert\./)
+      assert.match(review.body, /depuis la base `aaaaaaaaa`/)
+    }
+  })
+
+  it('posts the review without its inline comments when GitHub refuses a line', async () => {
+    let { fake, publish, warnings } = setup()
+    fake.state.refuseInline = true
+
+    let outcome = await publish(payload())
+
+    assert.equal(outcome.inline, 0)
+    assert.equal(fake.state.reviews.length, 1)
+    assert.deepEqual(fake.botThreads(), [])
+    assert.deepEqual(warnings.map((w) => w.event), ['publish.inline_refused'])
+    // Without a thread, the block shows the scenario of the finding.
+    assert.match(fake.state.pr.body, /sum\(1, 2\) rend -1\. \*\*Correction :\*\* Remettre \+\./)
+  })
+
+  it('keeps the inline comments to the sure findings, five at most', async () => {
+    let { fake, publish } = setup()
+    let findings = [
+      finding({ title: 'Peu sûr', confidence: 50, severity: 'minor', blocking: false, anchor: 10, line: 10, start_line: 10 }),
+      finding({ title: 'Hors diff', anchor: null, line: 200, start_line: 200, blocking: false }),
+      ...Array.from({ length: 6 }, (_, i) =>
+        finding({ title: `Constat ${i}`, severity: 'minor', blocking: false, anchor: 20 + 10 * i, line: 20 + 10 * i, start_line: 20 + 10 * i, suggestion: '', suggestion_range: null }),
+      ),
+    ]
+
+    let outcome = await publish(payload({ score: 3, verdict: 'COMMENT', findings }))
+
+    assert.equal(outcome.inline, 5)
+    assert.deepEqual(
+      fake.botThreads().map((c) => c.body.match(/\*\*(.+?)\*\*/)![1]),
+      ['Constat 0', 'Constat 1', 'Constat 2', 'Constat 3', 'Constat 4'],
+    )
+    assert.equal(fake.state.reviews[0]!.state, 'COMMENTED')
+    // A finding outside the diff links the line of the file at the reviewed commit.
+    assert.match(fake.state.pr.body, /\[`src\/sum\.ts:200`\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/blob\/1{40}\/src\/sum\.ts#L200\)/)
+  })
+
+  it('puts a suggestion of several lines on its range', async () => {
+    let { fake, publish } = setup()
+    await publish(payload({ findings: [finding({ start_line: 2, line: 4, anchor: 4, suggestion_range: [2, 4], suggestion: 'a\nb\nc' })] }))
+    let [comment] = fake.botThreads()
+    assert.equal(comment!.startLine, 2)
+    assert.equal(comment!.line, 4)
+  })
+
+  it('posts the review when the App cannot write checks, without the check', async () => {
+    let { fake, publish } = setup()
+    let outcome = await publish(payload(), false)
+    assert.equal(fake.state.reviews.length, 1)
+    assert.equal(fake.state.checkRuns.length, 0)
+    assert.equal(outcome.score, 2)
+  })
+
+  it('logs a failed step after the review and goes on to the next one', async () => {
+    let { fake, publish, warnings } = setup()
+    // The commit is unknown: the description cannot name it.
+    fake.state.commits = {}
+
+    await publish(payload())
+
+    assert.equal(fake.state.reviews.length, 1)
+    assert.deepEqual(warnings.map((w) => [w.event, w.fields.step]), [['publish.step_failed', 'description']])
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    assert.equal(fake.state.checkRuns.length, 1)
+  })
+
+  it('dismisses a REQUEST_CHANGES of the bot past the first page of reviews', async () => {
+    let { fake, publish } = setup()
+    for (let i = 0; i < 104; i++) fake.addReview({ user: i % 2 ? 'alex' : BOT, state: 'COMMENTED' })
+    let old = fake.addReview({ state: 'CHANGES_REQUESTED' })
+    let person = fake.addReview({ user: 'alex', state: 'CHANGES_REQUESTED' })
+
+    await publish(payload({ score: 5, verdict: 'APPROVE', findings: [] }))
+
+    let states = new Map(fake.state.reviews.map((r) => [r.id, r.state]))
+    assert.equal(states.get(old), 'DISMISSED')
+    assert.equal(states.get(person), 'CHANGES_REQUESTED', 'the review of a person stays')
+  })
+
+  it('runs the steps after the review when marking it as posted fails', async () => {
+    let { fake } = setup()
+    let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+    let checks = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_checks_2', fetch: fake.fetch })
+    let warnings: { event: string; fields: Record<string, unknown> }[] = []
+    let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+
+    let outcome = await publishReview(github, target, payload(), {
+      checks,
+      onPosted: async () => {
+        throw new Error('connection terminated')
+      },
+      warn: (event, fields) => warnings.push({ event, fields }),
+    })
+
+    assert.equal(outcome.reviewId, fake.state.reviews[0]!.id)
+    assert.deepEqual(warnings.map((w) => [w.event, w.fields.step]), [['publish.step_failed', 'mark']])
+    assert.match(fake.state.pr.body, /<!-- sakuga-review:count 1 -->/)
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    assert.equal(fake.state.checkRuns.length, 1)
+  })
+
+  it('does not post again a review that an earlier try posted but could not mark', async () => {
+    let { fake } = setup()
+    let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+    let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+    let marked: number[] = []
+    let warnings: string[] = []
+    let options = {
+      marker: '0b7c4c1e-0000-4000-8000-000000000001',
+      onPosted: async (id: number) => void marked.push(id),
+      warn: (event: string) => void warnings.push(event),
+    }
+
+    let first = await publishReview(github, target, payload(), options)
+    let second = await publishReview(github, target, payload(), options)
+
+    assert.equal(fake.state.reviews.length, 1)
+    assert.match(fake.state.reviews[0]!.body, /<!-- kento:review 0b7c4c1e-0000-4000-8000-000000000001 -->$/)
+    assert.equal(fake.botThreads().length, 1)
+    assert.equal(second.reviewId, first.reviewId)
+
+    assert.deepEqual(marked, [first.reviewId, first.reviewId])
+    assert.deepEqual(warnings, ['publish.already_posted'])
+    assert.match(fake.state.pr.body, /<!-- sakuga-review:count 1 -->/, 'the block counts the review once')
+    // A review of another stored row is posted.
+    await publishReview(github, target, payload(), { ...options, marker: '0b7c4c1e-0000-4000-8000-000000000002' })
+    assert.equal(fake.state.reviews.length, 2)
+  })
+
+  it('counts no inline comment for a review found again', async () => {
+    let { fake } = setup()
+    let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+    let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+    // The first try lost its inline comment (422), so the second try still has one to place.
+    fake.state.refuseInline = true
+    await publishReview(github, target, payload(), { marker: 'row-1' })
+    fake.state.refuseInline = false
+
+    let second = await publishReview(github, target, payload(), { marker: 'row-1' })
+
+    assert.equal(fake.state.reviews.length, 1)
+    assert.deepEqual(fake.botThreads(), [])
+    assert.equal(second.inline, 0)
+  })
+
+  it('renders the review and the block as the Action does, from the anchors of the runner', () => {
+    // The Action renders from the changed lines of its checkout; the service from the anchors that the
+    // runner computed from the same lines. Both must give the same text, but for the name of Kentō.
+    let lines: ChangedLines = new Map([['src/sum.ts', new Set([2, 3, 4])]])
+    let review = payload({
+      findings: [
+        finding(),
+        finding({ title: 'Loin', line: 40, start_line: 40, anchor: null, blocking: false, suggestion_range: null }),
+        finding({ title: 'Proche', line: 9, start_line: 9, anchor: 4, blocking: true, suggestion_range: null }),
+      ],
+      deeperReview: 'Le diff touche la sécurité.',
+      score: 2,
+    })
+    let answer = answerOf(review)
+    let usage = usageOf(review)
+    let action = reviewBody(answer, lines, 'lite', usage)
+    let kento = reviewBody(answer, anchorOf, 'lite', usage, 'Kentō')
+    assert.equal(kento.replace('Kentō · ', ''), action)
+    assert.equal(verdict(answer, anchorOf, 'lite'), verdict(answer, lines, 'lite'))
+    assert.equal(verdict(answer, anchorOf, 'lite'), review.verdict)
+    let context = { count: 3, head: HEAD1, subject: 'fix: sum', commitUrl: `https://github.com/o/n/commit/${HEAD1}`, level: 'lite' as const }
+    let links = answer.findings.map((f) => ({ finding: f, url: null }))
+    assert.equal(
+      descriptionBlock(answer, links, [], 0, usage, anchorOf, { ...context, by: 'Kentō' }).replace('Kentō · ', ''),
+      descriptionBlock(answer, links, [], 0, usage, lines, context),
+    )
+  })
+})

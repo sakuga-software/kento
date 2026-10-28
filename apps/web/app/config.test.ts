@@ -26,7 +26,13 @@ describe('loadConfig', () => {
       githubApp: null,
       githubUrl: 'https://github.com',
       providerApiKey: null,
+      botLogin: 'sakuga-review[bot]',
     })
+  })
+
+  it('reads the login of the App, and refuses a login that is not one of an App', () => {
+    assert.equal(loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'kento[bot]' }).botLogin, 'kento[bot]')
+    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'alex' }), /KENTO_BOT_LOGIN must be the login of an App/)
   })
 
   it('reads the runner settings, and the GitHub App with its key on one line', () => {

@@ -26,6 +26,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@sakuga-review/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@sakuga-review/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

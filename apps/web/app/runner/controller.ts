@@ -26,6 +26,8 @@ export interface RunnerApiDependencies {
   mintInstallationToken: MintInstallationToken | null
   /** The model key of the service, for a trusted runner without its own key. */
   providerApiKey: string | null
+  /** Called after a review is stored: the publisher posts it on GitHub (REV-5). */
+  onReviewStored?: () => void
   /** The GitHub server of the App, where the runners clone. `https://github.com` when not given. */
   githubUrl?: string
   /** How long a claim waits for a job, and how often it looks. Tests make them short. */
@@ -175,6 +177,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         })
         switch (outcome) {
           case 'stored':
+            if (body.outcome === 'done') deps.onReviewStored?.()
             return new Response(null, { status: 204 })
           case 'not_found':
             return error(404, 'job_not_found')

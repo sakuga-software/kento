@@ -35,12 +35,18 @@ export interface Config {
   githubUrl: string
   /** The model key of the service, sent only to a trusted runner without its own key. */
   providerApiKey: string | null
+  /**
+   * The login of the GitHub App, as GitHub shows it on its reviews. The publisher finds the threads
+   * and the reviews of the bot with it.
+   */
+  botLogin: string
 }
 
 /** The shortest webhook secret that `loadConfig` accepts. `openssl rand -hex 32` gives 64 characters. */
 export const MIN_WEBHOOK_SECRET_LENGTH = 32
 
 const DEFAULT_TRUSTED_BOTS = 'sakuga-agent[bot]'
+const DEFAULT_BOT_LOGIN = 'sakuga-review[bot]'
 
 export class ConfigError extends Error {
   override name = 'ConfigError'
@@ -100,6 +106,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (privateKey && /^\d+$/.test(appId)) githubApp = { appId, privateKey, apiUrl }
   }
 
+  let botLogin = env.KENTO_BOT_LOGIN?.trim() || DEFAULT_BOT_LOGIN
+  if (!/^[A-Za-z0-9-]+\[bot\]$/.test(botLogin)) problems.push('KENTO_BOT_LOGIN must be the login of an App, name[bot]')
   // The runners clone from this server with the installation token of GITHUB_API_URL, so both must
   // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
   // Server (https://<host>/api/v3 and https://<host>). Without GITHUB_URL, it is the server of
@@ -137,6 +145,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubApp,
     githubUrl,
     providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
+    botLogin,
   }
 }
 

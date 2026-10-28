@@ -11,4 +11,6 @@
 !apps/web/drizzle/**
 !packages/protocol/package.json
 !packages/protocol/src/**
+!packages/engine/package.json
+!packages/engine/src/**
 apps/web/app/**/*.test.ts

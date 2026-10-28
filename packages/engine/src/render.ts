@@ -1,5 +1,5 @@
 // The review as a reader sees it: the inline comments, the body of the review and the block of the description.
-import { anchor, deeperReview, diagram, findingKey, isBlocking, score, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
+import { anchor, deeperReview, diagram, findingKey, isBlocking, score, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
 import type { Level } from './levels.ts';
 
 // The markers that the next review reads back in the comments and the description.
@@ -29,10 +29,13 @@ export function inlineBody(finding: Finding, withSuggestion: boolean): string {
 
 const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' };
 
-/** The level, the model and the cost of a review, as the reader sees them. */
-export function costLine(level: Level, usage: Usage): string {
+/**
+ * The level, the model and the cost of a review, as the reader sees them. `by` names the service that
+ * posts the review (`Kentō`); the Action gives none.
+ */
+export function costLine(level: Level, usage: Usage, by?: string): string {
   const cost = typeof usage.cost === 'number' ? ` · ${usage.cost.toFixed(3).replace('.', ',')} $` : '';
-  return `Niveau \`${LEVEL_LABEL[level]}\` · \`${usage.model ?? '?'}\`${cost}`;
+  return `${by ? `${by} · ` : ''}Niveau \`${LEVEL_LABEL[level]}\` · \`${usage.model ?? '?'}\`${cost}`;
 }
 
 function deeperReviewNote(reason: string): string {
@@ -42,7 +45,7 @@ function deeperReviewNote(reason: string): string {
   );
 }
 
-export function reviewBody(answer: Answer, lines: ChangedLines, level: Level, usage: Usage): string {
+export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, by?: string): string {
   const blocking = answer.findings.filter((f) => isBlocking(f, lines)).length;
   const head = blocking
     ? `⛔ ${blocking} point${blocking > 1 ? 's' : ''} bloquant${blocking > 1 ? 's' : ''}`
@@ -53,7 +56,7 @@ export function reviewBody(answer: Answer, lines: ChangedLines, level: Level, us
   return (
     `${MARKER_SUMMARY}\n**Score de confiance : ${score(answer, lines)}/5** · ${head} · ${answer.risk}\n\n` +
     (deeper ? `${deeperReviewNote(deeper)}\n\n` : '') +
-    `<sub>${costLine(level, usage)} · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>`
+    `<sub>${costLine(level, usage, by)} · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>`
   );
 }
 
@@ -65,8 +68,8 @@ export function descriptionBlock(
   skipped: string[],
   resolved: number,
   usage: Usage,
-  lines: ChangedLines,
-  context: { count: number; head: string; subject: string; commitUrl: string; level: Level },
+  lines: Anchors,
+  context: { count: number; head: string; subject: string; commitUrl: string; level: Level; by?: string },
 ): string {
   const out = [BLOCK_START, '', '---', '', `<h2>Sakuga Review · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
   const deeper = deeperReview(answer, context.level);
@@ -98,7 +101,7 @@ export function descriptionBlock(
   if (notReviewed.length) out.push('<details><summary>Non relu</summary>', '', ...notReviewed.map((n) => `- ${n}`), '', '</details>', '');
   const subject = context.subject.length > 50 ? `${context.subject.slice(0, 47)}...` : context.subject;
   out.push(
-    `<sub>Revues (${context.count}) · Dernier commit relu : [${subject.replace(/[[\]]/g, '')}](${context.commitUrl}) · ${costLine(context.level, usage)}</sub>`,
+    `<sub>Revues (${context.count}) · Dernier commit relu : [${subject.replace(/[[\]]/g, '')}](${context.commitUrl}) · ${costLine(context.level, usage, context.by)}</sub>`,
     '',
     `<!-- sakuga-review:count ${context.count} -->`,
     BLOCK_END,

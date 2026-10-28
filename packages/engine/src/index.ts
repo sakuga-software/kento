@@ -24,6 +24,7 @@ export {
   suggestionRange,
   verdict,
   type Answer,
+  type Anchors,
   type ChangedLines,
   type Finding,
   type Severity,
