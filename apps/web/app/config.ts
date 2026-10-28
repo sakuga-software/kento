@@ -31,6 +31,8 @@ export interface Config {
   runnerRegistrationToken: string | null
   /** The GitHub App that makes the installation tokens of the jobs. Null: a claim gives no job. */
   githubApp: { appId: string; privateKey: KeyObject; apiUrl: string } | null
+  /** The GitHub server that the runners clone from: `https://github.com`, or a GitHub Enterprise Server. */
+  githubUrl: string
   /** The model key of the service, sent only to a trusted runner without its own key. */
   providerApiKey: string | null
 }
@@ -92,10 +94,22 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     } catch {
       problems.push('GITHUB_APP_PRIVATE_KEY must be the PEM private key of the App')
     }
-    // GitHub Enterprise Server, or a fake GitHub in a local test.
+    // GitHub Enterprise Server (with GITHUB_URL), or a fake GitHub in a local test.
     let apiUrl = env.GITHUB_API_URL?.trim() || 'https://api.github.com'
     if (!/^https?:\/\/[^\s@]+$/.test(apiUrl)) problems.push('GITHUB_API_URL must be an http(s) URL')
     if (privateKey && /^\d+$/.test(appId)) githubApp = { appId, privateKey, apiUrl }
+  }
+
+  // The runners clone from this server with the installation token of GITHUB_API_URL, so both must
+  // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
+  // Server (https://<host>/api/v3 and https://<host>). Without GITHUB_URL, it is the server of
+  // GITHUB_API_URL. HTTPS only: the runner refuses any other clone URL.
+  let githubHost = githubServerHost(env.GITHUB_API_URL?.trim() || 'https://api.github.com')
+  let githubUrl = (env.GITHUB_URL?.trim() || (githubHost ? `https://${githubHost}` : '')).replace(/\/+$/, '')
+  if (!/^https:\/\/[^\s@/]+(\/[^\s@]*)?$/.test(githubUrl)) {
+    problems.push('GITHUB_URL must be an https:// URL')
+  } else if (githubHost && new URL(githubUrl).host !== githubHost) {
+    problems.push('GITHUB_URL must be on the server of GITHUB_API_URL')
   }
 
   if (problems.length > 0) {
@@ -117,6 +131,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     trustedBots: new Set(readList(env.KENTO_TRUSTED_BOTS ?? DEFAULT_TRUSTED_BOTS)),
     runnerRegistrationToken,
     githubApp,
+    githubUrl,
     providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
   }
 }
@@ -159,4 +174,14 @@ function readBoolean(
   if (raw === 'false' || raw === '0') return false
   problems.push(`${name} must be true or false`)
   return fallback
+}
+
+/** The host of the GitHub server of an API URL: github.com for api.github.com, else its own host. */
+function githubServerHost(apiUrl: string): string | null {
+  try {
+    let host = new URL(apiUrl).host
+    return host === 'api.github.com' ? 'github.com' : host
+  } catch {
+    return null
+  }
 }

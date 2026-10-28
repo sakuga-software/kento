@@ -24,6 +24,7 @@ describe('loadConfig', () => {
       trustedBots: new Set(['sakuga-agent[bot]']),
       runnerRegistrationToken: null,
       githubApp: null,
+      githubUrl: 'https://github.com',
       providerApiKey: null,
     })
   })
@@ -42,6 +43,21 @@ describe('loadConfig', () => {
     assert.equal(config.githubApp?.appId, '12345')
     assert.equal(config.githubApp?.privateKey.asymmetricKeyType, 'rsa')
     assert.equal(config.githubApp?.apiUrl, 'https://api.github.com')
+    assert.equal(config.githubUrl, 'https://github.com')
+    let enterprise = loadConfig({ DATABASE_URL: url, GITHUB_URL: 'https://ghe.example.com/', GITHUB_API_URL: 'https://ghe.example.com/api/v3' })
+    assert.equal(enterprise.githubUrl, 'https://ghe.example.com')
+    assert.throws(() => loadConfig({ DATABASE_URL: url, GITHUB_URL: 'http://ghe.example.com' }), /GITHUB_URL must be an https:\/\/ URL/)
+    // The token of one server must never go to another: GITHUB_URL must be on the server of the API.
+    let other = /GITHUB_URL must be on the server of GITHUB_API_URL/
+    assert.throws(() => loadConfig({ DATABASE_URL: url, GITHUB_URL: 'https://ghe.example.com' }), other)
+    assert.throws(
+      () => loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'https://ghe-a.example.com/api/v3', GITHUB_URL: 'https://ghe-b.example.com' }),
+      other,
+    )
+    // Without GITHUB_URL, the clone server is the server of the API, as for a local fake GitHub.
+    assert.equal(loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'https://ghe.example.com/api/v3' }).githubUrl, 'https://ghe.example.com')
+    assert.equal(loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'http://127.0.0.1:55492' }).githubUrl, 'https://127.0.0.1:55492')
+    assert.equal(loadConfig({ DATABASE_URL: url, GITHUB_API_URL: 'https://api.github.com/' }).githubUrl, 'https://github.com')
     assert.equal(config.providerApiKey, 'sk-or-test')
   })
 

@@ -26,6 +26,8 @@ export interface RunnerApiDependencies {
   mintInstallationToken: MintInstallationToken | null
   /** The model key of the service, for a trusted runner without its own key. */
   providerApiKey: string | null
+  /** The GitHub server of the App, where the runners clone. `https://github.com` when not given. */
+  githubUrl?: string
   /** How long a claim waits for a job, and how often it looks. Tests make them short. */
   claimWaitMs?: number
   claimPollMs?: number
@@ -36,6 +38,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export function createRunnerController(deps: RunnerApiDependencies) {
   let claimWaitMs = deps.claimWaitMs ?? CLAIM_WAIT_SECONDS * 1000
   let claimPollMs = deps.claimPollMs ?? 1000
+  let githubUrl = deps.githubUrl ?? 'https://github.com'
 
   /** The runner of the request, or the 401 to send. Never says why a token is refused. */
   async function authenticate(request: Request, action: string): Promise<RunnerRow | Response> {
@@ -113,7 +116,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               id: job.id,
               kind: 'review',
               level: job.level,
-              repo: { fullName: job.fullName, cloneUrl: `https://github.com/${job.fullName}.git` },
+              repo: { fullName: job.fullName, cloneUrl: `${githubUrl}/${job.fullName}.git` },
               pullRequest: { number: job.prNumber, headSha: job.headSha, baseRef: job.baseRef },
               installationToken,
               leaseExpiresAt: job.leaseExpiresAt.toISOString(),

@@ -31,7 +31,8 @@ and the log names the variable, never its value.
 | `KENTO_RUNNER_REGISTRATION_TOKEN` | no | | Secret that a runner sends to `POST /api/runner/register`, 32 characters or more. Without it, the registration answers 401. |
 | `GITHUB_APP_ID` | no | | ID of the GitHub App. With `GITHUB_APP_PRIVATE_KEY`, the service makes the installation token of each job. Without them, a claim gives no job. |
 | `GITHUB_APP_PRIVATE_KEY` | no | | PEM private key of the App; on one line, `\n` for each new line. A secret: it never leaves the service. |
-| `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server or a local test. |
+| `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server (`https://<host>/api/v3`) or a local test. |
+| `GITHUB_URL` | no | the server of `GITHUB_API_URL` | The GitHub server where the runners clone, HTTPS only. It must be on the server of `GITHUB_API_URL` (github.com for `api.github.com`), else the service refuses to start: the installation token of one server never goes to another. |
 | `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service. Sent with a job only to a trusted runner that has no key of its own. A secret. |
 
 ## `GET /healthz`

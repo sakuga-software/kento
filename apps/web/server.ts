@@ -52,6 +52,7 @@ let router = createAppRouter({
     registrationToken: config.runnerRegistrationToken,
     mintInstallationToken: config.githubApp ? createInstallationTokenMinter(config.githubApp) : null,
     providerApiKey: config.providerApiKey,
+    githubUrl: config.githubUrl,
   },
 })
 

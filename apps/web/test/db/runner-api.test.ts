@@ -242,6 +242,13 @@ describe('runner API', () => {
       assert.deepEqual(rows.map((r) => r.attempts), [1, 1, 1, 1, 1])
     })
 
+    it('gives the clone URL of the configured GitHub server', async () => {
+      let { token } = await register()
+      await queueJob()
+      let job = (await (await claim(token, undefined, router({ githubUrl: 'https://ghe.example.com' }))).json()) as Job
+      assert.equal(job.repo.cloneUrl, 'https://ghe.example.com/sakuga-software/sakuga-review.git')
+    })
+
     it('waits for a job during the long poll', async () => {
       let { token } = await register()
       let app = router({ claimWaitMs: 3000, claimPollMs: 50 })
