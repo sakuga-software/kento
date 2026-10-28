@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Kent\u014d web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
+  "description": "Kentō web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
   "scripts": {
     "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
     "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
     "db:generate": "drizzle-kit generate",
-    "lint": "oxlint --deny-warnings app test server.ts drizzle.config.ts",
+    "lint": "oxlint --deny-warnings app test e2e scripts server.ts drizzle.config.ts playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "NODE_ENV=test remix test 'app/**/*.test.ts'",
-    "test:db": "NODE_ENV=test remix test 'test/db/**/*.test.ts' --concurrency 1"
+    "test:db": "NODE_ENV=test remix test 'test/db/**/*.test.ts' --concurrency 1",
+    "e2e": "playwright test",
+    "design:board": "node --import remix/node-tsx scripts/design-board.tsx"
   },
   "engines": {
     "node": ">=24.3.0"
@@ -24,6 +26,8 @@
     "remix": "3.1.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
+    "@playwright/test": "1.58.2",
     "@types/node": "24.19.2",
     "drizzle-kit": "0.31.11",
     "oxlint": "1.90.0",

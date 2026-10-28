@@ -3,15 +3,10 @@ import { createController as createRemixController } from 'remix/router'
 import { handleGithubWebhook } from '../github/webhook.ts'
 import type { AppDependencies } from '../router.ts'
 import { routes } from '../routes.ts'
-import { HomePage } from './home-page.tsx'
 
 export function createController(deps: AppDependencies) {
   return createRemixController(routes, {
     actions: {
-      home(context) {
-        return context.render(<HomePage version={deps.version} />)
-      },
-
       // Reads the database on every call. 200 when the database answers, 503 otherwise, so that
       // the container health check and Dokploy see a service without its database as down.
       async healthz() {

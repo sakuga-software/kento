@@ -34,6 +34,8 @@ COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/server.ts ./apps/web/
 COPY apps/web/app ./apps/web/app
 COPY apps/web/drizzle ./apps/web/drizzle
+# The stylesheet, the fonts and the script of the screens, served under /assets/.
+COPY apps/web/public ./apps/web/public
 # The messages of the runner API, shared with apps/runner. Node runs its TypeScript as is.
 COPY packages/protocol/package.json ./packages/protocol/
 COPY packages/protocol/src ./packages/protocol/src

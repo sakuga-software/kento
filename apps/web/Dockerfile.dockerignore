@@ -9,6 +9,7 @@
 !apps/web/server.ts
 !apps/web/app/**
 !apps/web/drizzle/**
+!apps/web/public/**
 !packages/protocol/package.json
 !packages/protocol/src/**
 !packages/engine/package.json

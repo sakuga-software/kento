@@ -1,8 +1,8 @@
 # apps/web — Kentō web service
 
-The service behind `review.sakuga.dev`. In milestone M2 it has no screen: it serves `GET /healthz`
-the GitHub App webhook `POST /webhooks/github` (REV-3) and the runner API `POST /api/runner/*`
-(REV-4). It publishes on GitHub the review that a runner sends (REV-5, `app/publish/`).
+The service behind `review.sakuga.dev`: `GET /healthz`, the GitHub App webhook `POST /webhooks/github`
+(REV-3), the runner API `POST /api/runner/*` (REV-4), the publication on GitHub of the review that a
+runner sends (REV-5, `app/publish/`), and the screens of milestone M3 (REV-8 and after).
 
 - [Remix 3](https://github.com/remix-run/remix): `remix/router` (fetch-router), `remix/component`,
   `remix/node-fetch-server`. Node 24.3 or later runs the TypeScript source with `remix/node-tsx`;
@@ -11,6 +11,22 @@ the GitHub App webhook `POST /webhooks/github` (REV-3) and the runner API `POST 
   `drizzle/`, applied at startup.
 
 Deployment: [DEPLOY.md](DEPLOY.md).
+
+## Screens
+
+Server-rendered HTML in French, with `remix/component`, and one small script
+(`public/assets/theme.js`). The design is in [design/](../../design/README.md).
+
+- `app/ui/shell.tsx`: the frame of every screen. Sidebar (wider than 760 px) or top bar and tab
+  bar, page header, « Lecture seule » banner for a member, footer `Kentō x.y.z · par Sakuga`.
+- `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
+  the frame. A screen writes a token name, never a colour value.
+- `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
+  everything under `/assets/`; the content security policy allows no other origin except the avatars
+  of GitHub, and no inline script or style.
+- The theme (Papier, Sumi, Appareil) is the cookie `kento_theme` of the browser.
+- REV-9, REV-10, REV-13, REV-14 and REV-18 fill the screens; each one is an empty « Bientôt ici »
+  until then.
 
 ## Configuration
 
@@ -163,6 +179,8 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @saku
 | `pnpm -F @sakuga-review/web test`          | Unit tests, no database.                                     |
 | `pnpm -F @sakuga-review/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
 | `pnpm -F @sakuga-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
+| `pnpm -F @sakuga-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px. Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @sakuga-review/web exec playwright install chromium` once. |
+| `pnpm -F @sakuga-review/web design:board`  | Writes the frames of `design/socle/` from the components. |
 
 `test:db` creates one throwaway database per test file on the server of `TEST_DATABASE_URL`, and
 drops it at the end:

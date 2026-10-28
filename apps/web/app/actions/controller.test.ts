@@ -62,17 +62,3 @@ describe('GET /healthz', () => {
     })
   })
 })
-
-describe('GET /', () => {
-  it('renders the placeholder page with the version', async () => {
-    let router = routerWith(async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }))
-
-    let response = await get(router, routes.home.href())
-
-    assert.equal(response.status, 200)
-    assert.match(response.headers.get('Content-Type') ?? '', /text\/html/)
-    let html = await response.text()
-    assert.match(html, /<h1>Kentō<\/h1>/)
-    assert.match(html, /Version 1\.2\.3/)
-  })
-})
