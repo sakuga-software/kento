@@ -50,6 +50,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     permissions: new Map<string, string>(),
     /** The reactions of the App on the comments of the pull request: `commentId:content`. */
     reactions: new Set<string>(),
+    /** The next comments of the pull request answer 502, as during an outage of GitHub. */
+    failIssueComments: 0,
     /** The comments of the pull request (not of a review). */
     issueComments: [] as { id: number; body: string; author: string }[],
     reviews: [] as Review[],
@@ -71,6 +73,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     deletedComments: new Set<number>(),
     /** GitHub refuses `resolveReviewThread` to an App without `contents: write`. */
     canResolve: false,
+    /** The permissions that the App has only in read: a token that asks to write them answers 422. */
+    readOnly: new Set<string>(),
+    /** `resolveReviewThread` asks for a token minted with `contents: write`, as GitHub does. */
+    resolveNeedsWrite: false,
     calls: [] as { method: string; path: string; token: string }[],
   }
 
@@ -102,6 +108,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
 
   let json = (status: number, body: unknown) => new Response(body === null ? null : JSON.stringify(body), { status })
 
+  let reactionIds = new Map<string, number>()
+
   async function handle(method: string, url: URL, body: any, token: string): Promise<Response> {
     let path = url.pathname
     state.calls.push({ method, path: path + url.search, token })
@@ -110,7 +118,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if ((m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path)) && method === 'POST') {
       let permissions: Record<string, string> = body.permissions
       for (let key of Object.keys(permissions)) {
-        if (!state.appPermissions.has(key)) {
+        if (!state.appPermissions.has(key) || (permissions[key] === 'write' && state.readOnly.has(key))) {
           return json(422, { message: `The permissions requested are not granted to this installation.` })
         }
       }
@@ -121,9 +129,28 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
 
     if (path === '/graphql') {
       if (body.query.includes('resolveReviewThread')) {
-        if (!state.canResolve) return json(200, { errors: [{ message: 'Resource not accessible by integration' }] })
+        let minted = state.tokens.find((t) => t.token === token)
+        if (!state.canResolve || (state.resolveNeedsWrite && minted?.permissions.contents !== 'write')) {
+          return json(200, { errors: [{ message: 'Resource not accessible by integration' }] })
+        }
         state.resolved.add(Number(String(body.variables.id).replace('PRRT_', '')))
         return json(200, { data: { resolveReviewThread: { thread: { id: body.variables.id } } } })
+      }
+      if (body.query.includes('opener:')) {
+        // The query of a resolve: the first comment and the newest ones, with the type of the author.
+        let nodes = threadsOf().map((t) => {
+          let comments = t.comments.nodes.map((c) => {
+            let author = state.comments.find((x) => x.id === c.databaseId)!.author
+            return {
+              databaseId: c.databaseId,
+              body: c.body,
+              author: { login: c.author.login, __typename: author.endsWith('[bot]') ? 'Bot' : 'User' },
+              originalCommit: c.commit,
+            }
+          })
+          return { id: t.id, isResolved: t.isResolved, path: t.path, line: t.line, originalLine: t.line, opener: { nodes: comments.slice(0, 1) }, recent: { nodes: comments.slice(-29) } }
+        })
+        return json(200, { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } } })
       }
       return json(200, {
         data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: threadsOf() } } } },
@@ -152,12 +179,24 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if ((m = /^\/issues\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'POST') {
       if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
       let key = `${m[1]}:${body.content}`
-      if (state.reactions.has(key)) return json(200, { content: body.content })
+      let id = reactionIds.get(key) ?? nextId++
+      reactionIds.set(key, id)
+      if (state.reactions.has(key)) return json(200, { id, content: body.content })
       state.reactions.add(key)
-      return json(201, { content: body.content })
+      return json(201, { id, content: body.content })
+    }
+    if ((m = /^\/issues\/comments\/(\d+)\/reactions\/(\d+)$/.exec(rest)) && method === 'DELETE') {
+      let key = [...reactionIds].find(([k, id]) => k.startsWith(`${m![1]}:`) && id === Number(m![2]))?.[0]
+      if (!key || !state.reactions.has(key)) return json(404, { message: 'Not Found' })
+      state.reactions.delete(key)
+      return json(204, null)
     }
     if (rest === `/issues/${state.pr.number}/comments` && method === 'POST') {
       if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
+      if (state.failIssueComments > 0) {
+        state.failIssueComments--
+        return json(502, { message: 'Bad Gateway' })
+      }
       let id = nextId++
       state.issueComments.push({ id, body: body.body, author: BOT })
       return json(201, { id })

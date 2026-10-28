@@ -109,3 +109,63 @@ test('a job with a clone URL that is not HTTPS, or a base that looks like an opt
   j.pullRequest.headSha = 'HEAD';
   assert.equal(parseJob(j).ok, false);
 });
+
+const resolveJob = (): Job => ({
+  ...job(),
+  kind: 'resolve',
+  resolve: {
+    threads: [
+      {
+        id: 'PRRT_kwDO',
+        path: 'src/a.ts',
+        line: 12,
+        comments: [{ id: 1001, author: 'sakuga-review', isBot: true, body: 'La somme soustrait.', commit: SHA }],
+      },
+    ],
+    open: 3,
+    waiting: 1,
+  },
+});
+
+test('a claim says which kinds of job the runner runs; a runner of an earlier release says nothing', () => {
+  assert.deepEqual(parseClaimRequest({ hasProviderKey: true }), { ok: true, value: { hasProviderKey: true } });
+  assert.deepEqual(parseClaimRequest({ hasProviderKey: true, kinds: ['review', 'resolve'] }), {
+    ok: true,
+    value: { hasProviderKey: true, kinds: ['review', 'resolve'] },
+  });
+  assert.equal(parseClaimRequest({ hasProviderKey: true, kinds: ['deploy'] }).ok, false);
+});
+
+test('a resolve job carries its threads; a review job carries none', () => {
+  assert.deepEqual(parseJob(resolveJob()), { ok: true, value: resolveJob() });
+  const threads = (resolveJob() as Extract<Job, { kind: 'resolve' }>).resolve;
+  assert.equal(parseJob({ ...job(), resolve: threads }).ok, false);
+  const { resolve: _, ...withoutThreads } = resolveJob() as any;
+  assert.equal(parseJob(withoutThreads).ok, false);
+  const tooMany = resolveJob() as any;
+  tooMany.resolve.threads = Array.from({ length: 21 }, () => tooMany.resolve.threads[0]);
+  assert.equal(parseJob(tooMany).ok, false);
+});
+
+test('a resolved result passes with its verdicts, and fails with an unknown verdict', () => {
+  const resolved = {
+    outcome: 'resolved',
+    attempt: 1,
+    resolve: {
+      level: 'lite',
+      head: SHA,
+      model: 'anthropic/claude-haiku-5.5',
+      provider: 'Anthropic',
+      costUsd: 0.004,
+      promptTokens: 900,
+      completionTokens: 100,
+      open: 3,
+      waiting: 1,
+      held: 1,
+      threads: [{ id: 'PRRT_kwDO', verdict: 'fixed', reply: 'Corrigé.', changed: true }],
+    },
+  };
+  assert.deepEqual(parseResultRequest(resolved), { ok: true, value: resolved });
+  assert.equal(parseResultRequest({ ...resolved, resolve: { ...resolved.resolve, model: null, held: 0, threads: [] } }).ok, true);
+  assert.equal(parseResultRequest({ ...resolved, resolve: { ...resolved.resolve, threads: [{ id: 'x', verdict: 'maybe', reply: '', changed: null }] } }).ok, false);
+});

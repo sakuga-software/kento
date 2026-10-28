@@ -18,7 +18,7 @@
  *
  * Node 24 or later runs this code as is: no build. Keep to erasable TypeScript syntax.
  */
-import { arr, bool, int, nullable, num, obj, oneOf, run, str, tagged, tuple2, type Checked } from './check.ts';
+import { arr, bool, int, nullable, num, obj, oneOf, optional, run, str, tagged, tuple2, type Checked } from './check.ts';
 
 export type { Checked } from './check.ts';
 
@@ -74,11 +74,35 @@ export const parseRegisterResponse = (value: unknown): Checked<RegisterResponse>
 
 // --- Claim ------------------------------------------------------------------------------------
 
+/** What a job does: review a pull request, or answer and resolve its open review threads. */
+export const JOB_KINDS = ['review', 'resolve'] as const;
+export type JobKind = (typeof JOB_KINDS)[number];
+
+/** A job `resolve` holds at most this many threads, as the Action. */
+export const MAX_RESOLVE_THREADS = 20;
+
 /**
- * `hasProviderKey`: the runner has its own key for the model. The service then never sends its own
- * key, even to a trusted runner.
+ * - `hasProviderKey`: the runner has its own key for the model. The service then never sends its
+ *   own key, even to a trusted runner.
+ * - `kinds`: the kinds of job that the runner can run. A runner of an earlier release does not send
+ *   it, and gets only `review` jobs.
  */
-export type ClaimRequest = { hasProviderKey: boolean };
+export type ClaimRequest = { hasProviderKey: boolean; kinds?: JobKind[] };
+
+/**
+ * One comment of an open review thread, as the service read it on GitHub. `body` is already cleaned
+ * (no HTML comment, no `<details>`, no image) and cut. `commit`: the commit that the comment was
+ * written on, or null when GitHub does not know it.
+ */
+export type ResolveComment = { id: number; author: string; isBot: boolean; body: string; commit: string | null };
+export type ResolveThread = { id: string; path: string; line: number | null; comments: ResolveComment[] };
+
+/**
+ * What a job `resolve` answers: the open threads that no `resolve` answered at this head yet, the
+ * first MAX_RESOLVE_THREADS of them. `open`: all the open threads; `waiting`: those not answered at
+ * this head. The runner gives both back in its result, for the summary comment.
+ */
+export type ResolveInput = { threads: ResolveThread[]; open: number; waiting: number };
 
 /**
  * A job, as the runner receives it.
@@ -89,10 +113,9 @@ export type ClaimRequest = { hasProviderKey: boolean };
  *   gets it; otherwise it is null and the runner uses its own key.
  * - `attempt`: the number of this claim of the job, from 1. The heartbeat and the result send it.
  */
-export type Job = {
+type JobBase = {
   id: string;
   attempt: number;
-  kind: 'review';
   level: Level;
   repo: { fullName: string; cloneUrl: string };
   pullRequest: { number: number; headSha: string; baseRef: string };
@@ -101,12 +124,14 @@ export type Job = {
   provider: { kind: ProviderKind; apiKey: string } | null;
 };
 
-const claimRequest = obj({ hasProviderKey: bool });
+/** A review job has no `resolve` key: a runner of an earlier release reads it as before. */
+export type Job = (JobBase & { kind: 'review' }) | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
+
+const claimRequest = obj({ hasProviderKey: bool, kinds: optional(arr(oneOf(JOB_KINDS), { max: 10 })) });
 const attempt = int({ min: 1, max: 1000 });
-const job = obj({
+const jobBase = {
   id: uuid,
   attempt,
-  kind: oneOf(['review'] as const),
   level: oneOf(LEVELS),
   repo: obj({
     fullName: str({ min: 3, max: 200, pattern: /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/ }),
@@ -122,10 +147,33 @@ const job = obj({
   installationToken: obj({ token: str({ min: 1, max: 500 }), expiresAt: isoDate }),
   leaseExpiresAt: isoDate,
   provider: nullable(obj({ kind: oneOf(PROVIDER_KINDS), apiKey: str({ min: 1, max: 500 }) })),
+};
+const resolveComment = obj({
+  id: int({ min: 1, max: Number.MAX_SAFE_INTEGER }),
+  author: str({ min: 1, max: 100 }),
+  isBot: bool,
+  // 2000 characters and the mark of a cut (packages/engine/src/threads.ts).
+  body: str({ max: 2100 }),
+  commit: nullable(sha),
+});
+const resolveThread = obj({
+  id: str({ min: 1, max: 100 }),
+  path: str({ min: 1, max: 1000 }),
+  line: nullable(int({ min: 0, max: 10_000_000 })),
+  comments: arr(resolveComment, { max: 30 }),
+});
+const count = int({ min: 0, max: 100_000 });
+const job = tagged('kind', {
+  review: obj({ ...jobBase, kind: oneOf(['review'] as const) }),
+  resolve: obj({
+    ...jobBase,
+    kind: oneOf(['resolve'] as const),
+    resolve: obj({ threads: arr(resolveThread, { max: MAX_RESOLVE_THREADS }), open: count, waiting: count }),
+  }),
 });
 
-export const parseClaimRequest = (value: unknown): Checked<ClaimRequest> => run(claimRequest, value);
-export const parseJob = (value: unknown): Checked<Job> => run(job, value);
+export const parseClaimRequest = (value: unknown): Checked<ClaimRequest> => run(claimRequest, value) as Checked<ClaimRequest>;
+export const parseJob = (value: unknown): Checked<Job> => run(job, value) as Checked<Job>;
 
 // --- Heartbeat --------------------------------------------------------------------------------
 
@@ -186,8 +234,31 @@ export type ReviewPayload = {
   skipped: string[];
 };
 
+export const THREAD_VERDICTS = ['fixed', 'answered', 'open'] as const;
+
+/**
+ * The answer of a job `resolve`. `threads`: the verdict of the model on each thread that it read,
+ * with `changed`, whether the file of the thread changed between the commit of its first comment and
+ * the head (null when a force-push removed that commit). `held`: the number of threads that the
+ * pack of the model held (it stops at 150 kB). `model` is null when no thread waited: no model call.
+ */
+export type ResolvePayload = {
+  level: Level;
+  head: string;
+  model: string | null;
+  provider: string | null;
+  costUsd: number | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  open: number;
+  waiting: number;
+  held: number;
+  threads: { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reply: string; changed: boolean | null }[];
+};
+
 export type ResultRequest =
   | { outcome: 'done'; attempt: number; review: ReviewPayload }
+  | { outcome: 'resolved'; attempt: number; resolve: ResolvePayload }
   | { outcome: 'failed'; attempt: number; reason: string };
 
 const line = int({ min: 0, max: 10_000_000 });
@@ -229,6 +300,26 @@ const review = obj({
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),
+  resolved: obj({
+    outcome: oneOf(['resolved'] as const),
+    attempt,
+    resolve: obj({
+      level: oneOf(LEVELS),
+      head: sha,
+      model: nullable(str({ min: 1, max: 200 })),
+      provider: nullable(text(200)),
+      costUsd: nullable(num({ min: 0, max: 9999 })),
+      promptTokens: tokens,
+      completionTokens: tokens,
+      open: count,
+      waiting: count,
+      held: int({ min: 0, max: MAX_RESOLVE_THREADS }),
+      threads: arr(
+        obj({ id: str({ min: 1, max: 100 }), verdict: oneOf(THREAD_VERDICTS), reply: text(10_000), changed: nullable(bool) }),
+        { max: MAX_RESOLVE_THREADS },
+      ),
+    }),
+  }),
   failed: obj({ outcome: oneOf(['failed'] as const), attempt, reason: str({ min: 1, max: 2000 }) }),
 });
 

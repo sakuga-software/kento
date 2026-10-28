@@ -177,3 +177,31 @@ export const reviews = pgTable(
     check('reviews_score_range', sql`${table.score} between 1 and 5`),
   ],
 )
+
+/**
+ * The result of a resolve job, before and after its publication on GitHub: the verdict of the model
+ * on each thread. The publisher posts the replies, resolves the threads and posts the summary once:
+ * it sets `published_at` before it writes, so a failure in the middle never posts twice.
+ */
+export const resolutions = pgTable(
+  'resolutions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    jobId: uuid('job_id')
+      .notNull()
+      .references(() => jobs.id, { onDelete: 'cascade' }),
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    headSha: text('head_sha').notNull(),
+    /** Null when no thread waited: no model call. */
+    model: text('model'),
+    costUsd: numeric('cost_usd', { precision: 10, scale: 6 }),
+    /** The result of the runner, as the protocol gives it (`ResolvePayload`). */
+    result: jsonb('result').notNull(),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [uniqueIndex('resolutions_job_id_idx').on(table.jobId), index('resolutions_repo_pr_idx').on(table.repoId, table.prNumber)],
+)

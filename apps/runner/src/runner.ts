@@ -58,7 +58,7 @@ export async function runLoop(
   while (!signal.aborted) {
     try {
       const started = Date.now();
-      const job = await api.claim({ hasProviderKey }, signal);
+      const job = await api.claim({ hasProviderKey, kinds: ['review', 'resolve'] }, signal);
       delay = 1000;
       if (job) await runJob(job, { ...deps, api, signal });
       // A claim with no job normally waits up to 30 s on the service. One that answers at once (a

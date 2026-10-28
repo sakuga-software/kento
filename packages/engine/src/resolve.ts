@@ -1,19 +1,20 @@
 // The answer to the open threads: the pack of each thread with its code now and its diff since.
 import { git } from './git.ts';
 import { diffStart, fileDiff } from './history.ts';
+import { cleanBody, cut, markerResolve } from './threads.ts';
+
+export { cleanBody, markerResolve };
 
 export type ThreadComment = { id: number; author: string; isBot: boolean; body: string; commit?: string };
 export type OpenThread = { id: string; path: string; line: number | null; comments: ThreadComment[] };
 export type ThreadVerdict = { id: string; verdict: 'fixed' | 'answered' | 'open'; reply: string };
 
 export const MAX_THREADS = 20;
-const MAX_THREAD_COMMENT_CHARS = 2000;
 const MAX_THREAD_DIFF_BYTES = 6000;
 const THREAD_CODE_RADIUS = 25;
 export const MAX_RESOLVE_PACK_BYTES = 150_000;
 // A minified or generated line can hold thousands of characters.
 const MAX_CODE_LINE_CHARS = 400;
-export const markerResolve = (head: string) => `<!-- sakuga-review:resolve ${head.slice(0, 12)} -->`;
 
 export const RESOLVE_SCHEMA = {
   type: 'object',
@@ -35,34 +36,6 @@ export const RESOLVE_SCHEMA = {
   required: ['threads'],
   additionalProperties: false,
 };
-
-const TRUNCATED = '[… coupé ici]';
-
-/** The text cut to a size, with a mark that the model sees when the cut drops something. */
-function cut(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}\n${TRUNCATED}` : text;
-}
-
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
-const DETAILS_BLOCK = /<details>[\s\S]*?<\/details>/g;
-const MEDIA_TAG = /<(img|a|picture|source)\b[^>]*>/g;
-
-/** A removal can join the text around it into a new match: `<!<!---->-- x -->`. Repeat until the text is stable. */
-function removeAll(text: string, pattern: RegExp): string {
-  let current = text;
-  for (let previous = ''; previous !== current;) {
-    previous = current;
-    current = current.replace(pattern, '');
-  }
-  return current;
-}
-
-export const cleanBody = (body: string) =>
-  cut(
-    removeAll(removeAll(removeAll(body, HTML_COMMENT), DETAILS_BLOCK), MEDIA_TAG)
-      .trim(),
-    MAX_THREAD_COMMENT_CHARS,
-  );
 
 /**
  * The message that the model reads: each thread, the code at the head around it, and its diff since.

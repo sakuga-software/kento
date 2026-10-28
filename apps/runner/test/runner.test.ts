@@ -64,7 +64,7 @@ afterEach(() => {
   output.write = write;
 });
 
-function job(overrides: Partial<Job> = {}): Job {
+function job(overrides: Partial<Job> & Record<string, unknown> = {}): Job {
   return {
     id: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11',
     attempt: 1,
@@ -76,7 +76,7 @@ function job(overrides: Partial<Job> = {}): Job {
     leaseExpiresAt: '2027-01-15T08:02:00Z',
     provider: null,
     ...overrides,
-  };
+  } as Job;
 }
 
 const answer = (): Answer => ({
@@ -390,4 +390,105 @@ test('the configuration wants an https service and a known provider, and never p
 test('redact removes GitHub tokens, runner tokens and URL credentials that the runner does not know', () => {
   assert.equal(redact('ghs_abcdefghijklmnopqrstuvwxyz0123 and kento_rt_abcdefghijklmnopqrstuvwxyz'), '[redacted] and [redacted]');
   assert.equal(redact('fatal: https://x-access-token:abc@github.com/a/b.git'), 'fatal: https://[redacted]@github.com/a/b.git');
+});
+
+// --- resolve ---------------------------------------------------------------------------------
+
+/** A model that answers `resolve`: `fixed` for each thread of the pack, and records the packs. */
+function stubResolveModel() {
+  const packs: string[] = [];
+  const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    const pack: string = body.messages[1].content;
+    packs.push(pack);
+    const ids = [...pack.matchAll(/^## Thread (\S+)$/gm)].map((m) => m[1]!);
+    const threads = ids.map((id) => ({ id, verdict: 'fixed', reply: `Corrigé (${id}).` }));
+    return new Response(
+      JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify({ threads }) } }], usage: { prompt_tokens: 20, completion_tokens: 8, cost: 0.003 } }),
+    );
+  }) as typeof globalThis.fetch;
+  return { fetch: stub, packs };
+}
+
+function resolveJob(threads: { id: string; commit: string | null; author?: string; isBot?: boolean }[]): Job {
+  return job({
+    kind: 'resolve',
+    resolve: {
+      threads: threads.map((t, i) => ({
+        id: t.id,
+        path: 'sum.ts',
+        line: 2,
+        comments: [{ id: 100 + i, author: t.author ?? 'sakuga-review', isBot: t.isBot ?? true, body: 'La somme soustrait.', commit: t.commit }],
+      })),
+      open: threads.length + 1,
+      waiting: threads.length,
+    },
+  });
+}
+
+test('a resolve job: the pack of the threads, one model call, and whether each file changed since its thread', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel();
+  const first = git(source, 'rev-list', '--max-parents=0', 'pr');
+  const job = resolveJob([
+    { id: 'PRRT_before', commit: first },
+    { id: 'PRRT_at_head', commit: head },
+    { id: 'PRRT_gone', commit: 'f'.repeat(40) },
+    { id: 'PRRT_unknown', commit: null },
+  ]);
+  const outcome = await runJob(job, deps(api, model.fetch, RUNNER_KEY));
+
+  assert.equal(outcome, 'done');
+  assert.equal(model.packs.length, 1);
+  assert.match(model.packs[0]!, /## Thread PRRT_before/);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'resolved');
+  if (result.outcome !== 'resolved') return;
+  assert.equal(result.resolve.head, head);
+  assert.equal(result.resolve.held, 4);
+  assert.deepEqual({ open: result.resolve.open, waiting: result.resolve.waiting }, { open: 5, waiting: 4 });
+  assert.equal(result.resolve.costUsd, 0.003);
+  assert.deepEqual(
+    result.resolve.threads.map((t) => [t.id, t.verdict, t.changed]),
+    [
+      ['PRRT_before', 'fixed', true],
+      ['PRRT_at_head', 'fixed', false],
+      // A force-push removed the commit of the thread: nobody can tell.
+      ['PRRT_gone', 'fixed', null],
+      // GitHub gave no commit for the thread: unknown too, not « unchanged ».
+      ['PRRT_unknown', 'fixed', null],
+    ],
+  );
+  assert.deepEqual(readdirSync(join(root, 'work')), [], 'the clone is removed after the job');
+  assertNoSecretInLogs();
+});
+
+test('a resolve job with no thread to answer clones nothing and calls no model', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel();
+  const outcome = await runJob(job({ kind: 'resolve', resolve: { threads: [], open: 2, waiting: 0 } }), {
+    ...deps(api, model.fetch, RUNNER_KEY),
+    cloneUrl: () => 'file:///nowhere/at/all',
+  });
+  assert.equal(outcome, 'done');
+  assert.equal(model.packs.length, 0);
+  const result = results[0]!;
+  assert.ok(result.outcome === 'resolved');
+  assert.deepEqual({ model: result.resolve.model, held: result.resolve.held, threads: result.resolve.threads, open: result.resolve.open }, { model: null, held: 0, threads: [], open: 2 });
+});
+
+test('the runner claims both kinds of job', async () => {
+  const stop = new AbortController();
+  const fake = fakeApi();
+  const claims: unknown[] = [];
+  const api = {
+    ...fake.api,
+    claim: async (body: unknown) => {
+      claims.push(body);
+      stop.abort();
+      return null;
+    },
+  };
+  await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'] });
 });

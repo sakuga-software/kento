@@ -1,10 +1,11 @@
-// The commands of the comments: `@kento review [lite|balanced|heavy] [force]`, with `@sakuga-review`
-// as an alias (REV-7). The webhook gives the parsed command; this handler asks GitHub what the
+// The commands of the comments: `@kento review [lite|balanced|heavy] [force]` and
+// `@kento resolve [lite|balanced|heavy]`, with `@sakuga-review` as an alias (REV-7). The webhook gives the parsed command; this handler asks GitHub what the
 // payload does not hold (the permission of the commenter, the head and the fork of the pull
 // request), queues the job, and answers on the comment.
 //
 // The answers on the comment:
-// - 👀 when a job is queued. The publisher adds 🚀 after the review, or 😕 when the job fails.
+// - 👀 when a job is queued. The publisher adds 🚀 after the review or the resolution, or 😕 when
+//   the job fails.
 // - 😕 and a short reply when the command is refused: unknown command, fork, head already reviewed.
 //   The reply goes only with a reaction that GitHub has just created (201, not 200): a redelivery of
 //   the same comment posts no second reply.
@@ -14,7 +15,7 @@ import type { Db } from '../db/client.ts'
 import { enqueueCommandJob, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { USAGE } from '../github/comment-command.ts'
-import { log } from '../log.ts'
+import { errorMessage, log } from '../log.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
 
 /**
@@ -38,12 +39,16 @@ export interface CommandHandlerDependencies {
 }
 
 /**
- * Adds a reaction of the App to a comment of a pull request. True when GitHub created it (201),
- * false when the App had already left it (200).
+ * Adds a reaction of the App to a comment of a pull request. `created` is true when GitHub created
+ * it (201), false when the App had already left it (200).
  */
 export async function react(github: GitHub, fullName: string, commentId: number, content: Reaction): Promise<boolean> {
-  let { status } = await github.send('POST', `/repos/${fullName}/issues/comments/${commentId}/reactions`, { content })
-  return status === 201
+  return (await reactWithId(github, fullName, commentId, content)).created
+}
+
+async function reactWithId(github: GitHub, fullName: string, commentId: number, content: Reaction) {
+  let { status, body } = await github.send<{ id?: number }>('POST', `/repos/${fullName}/issues/comments/${commentId}/reactions`, { content })
+  return { created: status === 201, id: typeof body?.id === 'number' ? body.id : null }
 }
 
 export function createCommandHandler(deps: CommandHandlerDependencies): HandleCommentCommand {
@@ -72,11 +77,25 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       return { outcome: 'refused', reason: 'commenter cannot write to the repository' }
     }
 
-    /** 😕 on the comment, and the reply when the reaction is new. */
+    /**
+     * 😕 on the comment, and the reply when the reaction is new. When the reply fails, the reaction
+     * goes away before the delivery fails: a redelivery then creates it again, and replies.
+     */
     async function refuse(reason: string, reply: string): Promise<WebhookResult> {
-      let created = await react(github, fullName, message.commentId, 'confused')
-      if (created) await github.rest('POST', `/repos/${fullName}/issues/${message.prNumber}/comments`, { body: reply })
-      log('info', 'command.refused', { ...fields, reason, replied: created })
+      let reaction = await reactWithId(github, fullName, message.commentId, 'confused')
+      if (reaction.created) {
+        try {
+          await github.rest('POST', `/repos/${fullName}/issues/${message.prNumber}/comments`, { body: reply })
+        } catch (error) {
+          if (reaction.id !== null) {
+            await github
+              .send('DELETE', `/repos/${fullName}/issues/comments/${message.commentId}/reactions/${reaction.id}`)
+              .catch((cause) => log('warn', 'command.reaction_not_removed', { ...fields, error: errorMessage(cause) }))
+          }
+          throw error
+        }
+      }
+      log('info', 'command.refused', { ...fields, reason, replied: reaction.created })
       return { outcome: 'refused', reason }
     }
 
@@ -84,13 +103,6 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
     if (command.verb === 'unknown') {
       return refuse('unknown command', `@${message.commenter.login} \`${command.text.replaceAll('`', "'")}\` n'est pas une commande de Kentō.\n\n${USAGE}`)
     }
-    if (command.verb === 'resolve') {
-      // The job `resolve` comes with the next pull request of REV-7. Until then, nothing answers:
-      // the workflow of a repository outside KENTO_REPOS keeps the command.
-      log('info', 'command.not_handled', fields)
-      return { outcome: 'skipped', reason: 'resolve is not handled by Kentō yet' }
-    }
-
     let pr: PullRequest = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
     if (pr.state !== 'open') return { outcome: 'skipped', reason: 'pull request is closed' }
     // The code of a fork is not the code of the repository. GitHub sends `head.repo: null` when the
@@ -110,6 +122,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         prNumber: message.prNumber,
         headSha: pr.head.sha,
         baseRef: pr.base.ref,
+        kind: command.verb,
         level: command.level,
         force: command.force,
         commentId: message.commentId,
@@ -130,6 +143,12 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         return out
       }
       case 'already':
+        if (command.verb === 'resolve') {
+          return refuse(
+            'a resolve of the pull request is already running',
+            `@${message.commenter.login} Une résolution des fils de cette PR est déjà en file ou en cours : attendez sa fin, puis relancez \`@kento resolve\` si des fils restent ouverts.`,
+          )
+        }
         return refuse(
           'head already has a review at this level',
           `@${message.commenter.login} Le commit \`${pr.head.sha.slice(0, 9)}\` a déjà une review \`${command.level}\` (en file, en cours ou publiée) : ` +

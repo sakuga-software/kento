@@ -106,7 +106,10 @@ A new push cancels the review of the previous one.
 ## Commands
 
 A comment that starts with `@sakuga-review` gives a command. The App is not a GitHub user, so the
-mention notifies nobody: the workflow reads the comment. Only a person who can write to the
+mention notifies nobody: the workflow reads the comment. On a repository that Kentō serves
+(`KENTO_REPOS` of `apps/web`, today this repository), Kentō reads the command instead, with
+`@kento` as its new name and `@sakuga-review` as an alias, and `@kento review heavy force` to pay
+again for a level that the head already has (see [apps/web/DEPLOY.md](apps/web/DEPLOY.md), section 9). Only a person who can write to the
 repository, or a bot of `trusted_bots`, can give a command, because a command costs money. The bot
 reacts 👀 when it starts, 🚀 when it ends and 😕 on an error or an unknown command, which also gets
 the list of commands.
@@ -351,12 +354,13 @@ in the repository. The job checks out the script and the prompt at the commit of
 (`job.workflow_sha`), so the three always match. A version tag (`v5.1`, `v5.2`…) stays on each
 release, to name it and to roll back to it.
 
-The automatic review of the pull requests of this repository comes from Kentō (`apps/web`), not
-from a workflow (REV-5). Its comment commands still go through `review.yml@main`: a merged change
-runs here first, before `stable` moves.
+The reviews and the comment commands of this repository come from Kentō (`apps/web`), not from a
+workflow (REV-5, REV-7): nothing here runs `review.yml`.
 
-1. Merge the change on `main`. Comment `@sakuga-review review` on a pull request here, and check the
-   review that it posts: it runs the new code.
+1. Merge the change on `main`. In a repository that calls `review.yml@stable` (git8n, for example),
+   open a test pull request that changes its caller to `review.yml@main`: a `pull_request` event runs
+   the workflow file of the pull request, so its review runs the new code. Check that review, then
+   close the test pull request.
 2. Tag the merge commit with the next version, and move `stable` to it. GitHub refuses a ref to a
    commit that changes a workflow to a token without the `workflow` scope, so push with git:
 

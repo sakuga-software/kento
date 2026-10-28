@@ -1,8 +1,19 @@
 // One job: clone, review with packages/engine, send the result. The heartbeat keeps the lease while
 // the job runs, and stops the job when the service cancels it.
 import { mkdir } from 'node:fs/promises';
-import { levelConfig, reviewPullRequest, type ReviewResult } from '@sakuga-review/engine';
-import { HEARTBEAT_SECONDS, type Job, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
+import {
+  askJson,
+  fileChangedSince,
+  levelConfig,
+  mergeBase,
+  RESOLVE_SCHEMA,
+  resolvePack,
+  reviewPullRequest,
+  type OpenThread,
+  type ReviewResult,
+  type ThreadVerdict,
+} from '@sakuga-review/engine';
+import { HEARTBEAT_SECONDS, type Job, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';
@@ -33,7 +44,7 @@ export type JobOutcome = 'done' | 'failed' | 'cancelled' | 'lost' | 'interrupted
 /** Runs a job to its end and sends its result. Throws only when the result cannot be sent. */
 export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcome> {
   const started = Date.now();
-  const fields = { jobId: job.id, attempt: job.attempt, repo: job.repo.fullName, pr: job.pullRequest.number, head: job.pullRequest.headSha, reviewLevel: job.level };
+  const fields = { jobId: job.id, kind: job.kind, attempt: job.attempt, repo: job.repo.fullName, pr: job.pullRequest.number, head: job.pullRequest.headSha, reviewLevel: job.level };
   log('info', 'job.started', fields);
   addSecret(job.installationToken.token);
   addSecret(job.provider?.apiKey);
@@ -75,8 +86,11 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
 
   let result: ResultRequest;
   try {
-    const review = await reviewJob(job, deps, signal);
-    result = { outcome: 'done', attempt: job.attempt, review };
+    if (job.kind === 'resolve') {
+      result = { outcome: 'resolved', attempt: job.attempt, resolve: await resolveJob(job, deps, signal) };
+    } else {
+      result = { outcome: 'done', attempt: job.attempt, review: await reviewJob(job, deps, signal) };
+    }
   } catch (error) {
     result = { outcome: 'failed', attempt: job.attempt, reason: errorMessage(error).slice(0, 2000) || 'unknown error' };
   } finally {
@@ -108,7 +122,7 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
       }
       // A review that the service refuses (400) becomes a failure with the reason, so the job does
       // not stay running until its lease ends.
-      if (!(error instanceof ApiError && error.status === 400 && result.outcome === 'done')) throw error;
+      if (!(error instanceof ApiError && error.status === 400 && result.outcome !== 'failed')) throw error;
       result = { outcome: 'failed', attempt: job.attempt, reason: `the service refused the review: ${errorMessage(error)}`.slice(0, 2000) };
       try {
         await deps.api.result(job.id, result);
@@ -119,20 +133,28 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
         return 'lost';
       }
     }
-    log(result.outcome === 'done' ? 'info' : 'warn', 'job.finished', {
+    log(result.outcome === 'failed' ? 'warn' : 'info', 'job.finished', {
       ...fields,
       outcome: result.outcome,
       durationMs: Date.now() - started,
-      ...(result.outcome === 'done' ? { score: result.review.score, model: result.review.model, costUsd: result.review.costUsd } : { reason: result.reason }),
+      ...(result.outcome === 'done'
+        ? { score: result.review.score, model: result.review.model, costUsd: result.review.costUsd }
+        : result.outcome === 'resolved'
+          ? { threads: result.resolve.threads.length, model: result.resolve.model, costUsd: result.resolve.costUsd }
+          : { reason: result.reason }),
     });
-    return result.outcome;
+    return result.outcome === 'failed' ? 'failed' : 'done';
   } finally {
     removeSecret(job.installationToken.token);
     removeSecret(job.provider?.apiKey);
   }
 }
 
-async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload> {
+type Checkout = Awaited<ReturnType<typeof clonePullRequest>>;
+type Workspace = { checkout: Checkout; env: Record<string, string>; apiKey: string; fetch: typeof fetch };
+
+/** Clones the pull request, runs `work` in its checkout with the git environment, and removes it. */
+async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSignal, work: (ws: Workspace) => Promise<T>): Promise<T> {
   // The key of the runner first: with it, the service never sees a key. A trusted runner without
   // its own key gets the key of the service with the job.
   const apiKey = deps.config.provider.apiKey ?? job.provider?.apiKey;
@@ -150,8 +172,20 @@ async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): 
   try {
     signal.throwIfAborted();
     const modelFetch = deps.modelFetch ?? globalThis.fetch;
-    const result = await withEnvironment(env, () =>
-      reviewPullRequest({
+    // A cancelled job stops its model call, so it costs nothing more.
+    const fetch = ((url: string, init: RequestInit = {}) =>
+      modelFetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal })) as typeof globalThis.fetch;
+    const ws = { checkout, env, apiKey, fetch };
+    return await withEnvironment(env, () => work(ws));
+  } finally {
+    await checkout.remove();
+  }
+}
+
+async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload> {
+  return withCheckout(job, deps, signal, async ({ checkout, apiKey, fetch }) =>
+    payload(
+      await reviewPullRequest({
         repoDir: checkout.repoDir,
         base: checkout.base,
         head: checkout.head,
@@ -159,16 +193,77 @@ async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): 
         config: levelConfig(job.level),
         apiKey,
         baseUrl: deps.config.provider.baseUrl,
-        // A cancelled job stops its model call, so it costs nothing more.
-        fetch: ((url: string, init: RequestInit = {}) =>
-          modelFetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal })) as typeof fetch,
+        fetch,
         log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
       }),
+    ),
+  );
+}
+
+/**
+ * The answer to the open threads, as `resolve` of the Action: the pack of the threads (their code at
+ * the head and their diff since), one model call, and for each thread whether its file changed since
+ * its first comment. The runner writes nothing on GitHub: the service posts the replies and resolves
+ * the threads with its own token.
+ */
+async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDependencies, signal: AbortSignal): Promise<ResolvePayload> {
+  const { open, waiting } = job.resolve;
+  const empty: ResolvePayload = {
+    level: job.level,
+    head: job.pullRequest.headSha,
+    model: null,
+    provider: null,
+    costUsd: null,
+    promptTokens: null,
+    completionTokens: null,
+    open,
+    waiting,
+    held: 0,
+    threads: [],
+  };
+  // No thread waits: no clone, and no model call.
+  if (job.resolve.threads.length === 0) return empty;
+
+  return withCheckout(job, deps, signal, async ({ checkout, apiKey, fetch }) => {
+    const threads: OpenThread[] = job.resolve.threads.map((t) => ({
+      ...t,
+      comments: t.comments.map(({ commit, ...c }) => ({ ...c, ...(commit ? { commit } : {}) })),
+    }));
+    // As the Action: the diff of a thread whose commit is gone starts at the merge base.
+    const base = mergeBase(checkout.repoDir, checkout.base, checkout.head);
+    const { pack, held } = resolvePack(checkout.repoDir, base, checkout.head, threads);
+    if (held.length === 0) return empty;
+    const { answer, usage } = await askJson<{ threads: ThreadVerdict[] }>(
+      { apiKey, baseUrl: deps.config.provider.baseUrl, fetch, log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }) },
+      levelConfig(job.level),
+      'resolve.md',
+      pack,
+      { name: 'resolve', schema: RESOLVE_SCHEMA },
     );
-    return payload(result);
-  } finally {
-    await checkout.remove();
-  }
+    const byId = new Map((answer.threads ?? []).map((v) => [v.id, v]));
+    const verdicts: ResolvePayload['threads'] = [];
+    for (const t of held) {
+      const v = byId.get(t.id);
+      if (!v || !['fixed', 'answered', 'open'].includes(v.verdict)) continue;
+      verdicts.push({
+        id: t.id,
+        verdict: v.verdict,
+        reply: cut(v.reply, 10_000),
+        // A thread whose commit GitHub does not give: nobody can tell what changed since (null).
+        changed: t.comments[0]?.commit ? fileChangedSince(checkout.repoDir, t.comments[0].commit, checkout.head, t.path) : null,
+      });
+    }
+    return {
+      ...empty,
+      model: usage.model ? cut(usage.model, 200) : 'unknown',
+      provider: usage.provider ?? null,
+      costUsd: typeof usage.cost === 'number' ? usage.cost : null,
+      promptTokens: usage.prompt_tokens ?? null,
+      completionTokens: usage.completion_tokens ?? null,
+      held: held.length,
+      threads: verdicts,
+    };
+  });
 }
 
 /** The review as the protocol sends it: the result of the engine without the pack and the lines. */

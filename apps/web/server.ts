@@ -83,6 +83,7 @@ let router = createAppRouter({
     mintInstallationToken,
     providerApiKey: config.providerApiKey,
     onReviewStored: publisher ? () => publisher.wake() : undefined,
+    githubApiUrl: config.githubApp?.apiUrl,
     githubUrl: config.githubUrl,
   },
 })

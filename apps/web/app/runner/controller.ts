@@ -10,11 +10,14 @@ import {
   type HeartbeatResponse,
   type Job,
   type RegisterResponse,
+  type ResolveInput,
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
 
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
+import { createGitHub } from '../publish/github.ts'
+import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { RunnerRow, RunnerStore } from './store.ts'
 import { bearerToken, hashToken, newRunnerToken, sameSecret } from './tokens.ts'
@@ -27,8 +30,11 @@ export interface RunnerApiDependencies {
   mintInstallationToken: MintInstallationToken | null
   /** The model key of the service, for a trusted runner without its own key. */
   providerApiKey: string | null
-  /** Called after a review is stored: the publisher posts it on GitHub (REV-5). */
+  /** Called after a review or a resolution is stored: the publisher posts it on GitHub (REV-5). */
   onReviewStored?: () => void
+  /** The REST API of GitHub, where the service reads the threads of a resolve job. */
+  githubApiUrl?: string
+  fetch?: typeof globalThis.fetch
   /** The GitHub server of the App, where the runners clone. `https://github.com` when not given. */
   githubUrl?: string
   /** How long a claim waits for a job, and how often it looks. Tests make them short. */
@@ -96,18 +102,29 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         // stops the loop.
         let deadline = Date.now() + claimWaitMs
         while (!request.signal.aborted) {
-          let job = await deps.store.claimJob(runner.id, { trustedOnly })
+          let job = await deps.store.claimJob(runner.id, { trustedOnly, kinds: body.kinds ?? ['review'] })
           if (job) {
             let installationToken
+            let resolve: ResolveInput | null = null
             try {
               installationToken = await mint({
                 installationId: job.githubInstallationId,
                 githubRepoId: job.githubRepoId,
               })
+              if (job.kind === 'resolve') {
+                // The service reads the threads with its own token; the runner gets them, not the token.
+                let threadsToken = await mint({
+                  installationId: job.githubInstallationId,
+                  githubRepoId: job.githubRepoId,
+                  permissions: THREADS_PERMISSIONS,
+                })
+                let github = createGitHub({ apiUrl: deps.githubApiUrl ?? 'https://api.github.com', token: threadsToken.token, fetch: deps.fetch })
+                resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
+              }
             } catch (cause) {
-              // The job cannot run without a token. It counts as an attempt: queued again after the
-              // backoff, or failed after the last attempt.
-              let reason = `installation token: ${errorMessage(cause)}`.slice(0, 1000)
+              // The job cannot run without a token or its threads. It counts as an attempt: queued
+              // again after the backoff, or failed after the last attempt.
+              let reason = `${installationToken ? 'review threads' : 'installation token'}: ${errorMessage(cause)}`.slice(0, 1000)
               let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
               log('error', 'job.installation_token_failed', {
                 jobId: job.id,
@@ -130,18 +147,20 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               pr: job.prNumber,
               head: job.headSha,
               keyFromService: provider !== null,
+              kind: job.kind,
+              ...(resolve ? { threads: resolve.threads.length } : {}),
             })
-            return json<Job>(200, {
+            let message = {
               id: job.id,
               attempt: job.attempt,
-              kind: 'review',
               level: job.level,
               repo: { fullName: job.fullName, cloneUrl: `${githubUrl}/${job.fullName}.git` },
               pullRequest: { number: job.prNumber, headSha: job.headSha, baseRef: job.baseRef },
               installationToken,
               leaseExpiresAt: job.leaseExpiresAt.toISOString(),
               provider,
-            })
+            }
+            return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
           }
           let left = deadline - Date.now()
           if (left <= 0) break
@@ -190,11 +209,13 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           stored: outcome,
           ...(body.outcome === 'done'
             ? { score: body.review.score, model: body.review.model, costUsd: body.review.costUsd }
-            : { reason: body.reason }),
+            : body.outcome === 'resolved'
+              ? { threads: body.resolve.threads.length, model: body.resolve.model, costUsd: body.resolve.costUsd }
+              : { reason: body.reason }),
         })
         switch (outcome) {
           case 'stored':
-            if (body.outcome === 'done') deps.onReviewStored?.()
+            if (body.outcome !== 'failed') deps.onReviewStored?.()
             return new Response(null, { status: 204 })
           case 'not_found':
             return error(404, 'job_not_found')
@@ -204,6 +225,8 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             return error(409, 'job_not_running')
           case 'wrong_head':
             return error(422, 'wrong_head')
+          case 'wrong_kind':
+            return error(422, 'wrong_kind')
         }
       },
     },

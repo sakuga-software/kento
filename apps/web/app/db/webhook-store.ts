@@ -1,9 +1,9 @@
-import type { Level } from '@sakuga-review/protocol'
+import type { JobKind, Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import type { Installation, Repository, WebhookCommand } from '../github/events.ts'
 import type { Db } from './client.ts'
-import { jobs, orgs, repos } from './schema.ts'
+import { jobs, orgs, repos, resolutions } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -111,6 +111,12 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
   }
 }
 
+/**
+ * A review or a resolution older than this is not published any more: its pull request has moved on.
+ * The publisher and the guard of `resolve` use the same age.
+ */
+export const PUBLISH_MAX_AGE = '30 minutes'
+
 export interface CommandJobInput {
   installation: Installation
   repository: Repository
@@ -118,8 +124,9 @@ export interface CommandJobInput {
   /** The head and the base branch of the pull request, as GitHub gave them after the comment. */
   headSha: string
   baseRef: string
+  kind: JobKind
   level: Level
-  /** Pay again for a level that the head already has. */
+  /** Pay again for a level that the head already has. Review only. */
   force: boolean
   commentId: number
   deliveryId: string
@@ -129,12 +136,15 @@ export type CommandJobResult =
   | { outcome: 'queued'; jobId: string }
   /** The comment, or the delivery, already created a job: a redelivery, or a replay. */
   | { outcome: 'duplicate'; reason: string; jobId: string | null }
-  /** The head already has a review at this level, queued, running or done. */
+  /**
+   * Review: the head already has a review at this level, queued, running or done. Resolve: a resolve
+   * of the pull request is queued, running, or done and not published yet.
+   */
   | { outcome: 'already'; jobId: string }
   | { outcome: 'skipped'; reason: string }
 
 /**
- * Creates the review job of a command. It cancels no other job: a heavy review asked during the lite
+ * Creates the job of a command: a review or a resolve. It cancels no other job: a heavy review asked during the lite
  * review of the push runs beside it. A newer push cancels it, as any job of an older head.
  *
  * The cost limit: a head that already has a review at this level (queued, running or done) gets no
@@ -158,7 +168,33 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput, kentoRepos: Re
       .limit(1)
     if (earlier) return { outcome: 'duplicate', reason: 'comment already created a job', jobId: earlier.id }
 
-    if (!input.force) {
+    if (input.kind === 'resolve') {
+      // A resolve answers only the threads that no resolve answered at this head: a second one at
+      // the same head costs nothing once the first is published, but two at the same time would
+      // answer the same threads twice. A job is done before the publisher posts its replies and
+      // their marker: until then it still counts, but only as long as the publisher would still
+      // take it. An older row is never published, and must not hold the pull request for ever.
+      let [active] = await tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.repoId, repo.id),
+            eq(jobs.prNumber, input.prNumber),
+            eq(jobs.kind, 'resolve'),
+            or(
+              inArray(jobs.state, [...ACTIVE_STATES]),
+              and(
+                eq(jobs.state, 'done'),
+                sql`exists (select 1 from ${resolutions} where ${resolutions.jobId} = ${jobs.id} and ${resolutions.publishedAt} is null
+                  and ${resolutions.createdAt} > now() - ${PUBLISH_MAX_AGE}::interval)`,
+              ),
+            ),
+          ),
+        )
+        .limit(1)
+      if (active) return { outcome: 'already', jobId: active.id }
+    } else if (!input.force) {
       let [same] = await tx
         .select({ id: jobs.id })
         .from(jobs)
@@ -181,7 +217,7 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput, kentoRepos: Re
       .insert(jobs)
       .values({
         repoId: repo.id,
-        kind: 'review',
+        kind: input.kind,
         level: input.level,
         state: 'queued',
         prNumber: input.prNumber,

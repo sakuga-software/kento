@@ -179,3 +179,14 @@ To see the attempts of the last jobs:
 select left(head_sha, 8), state, attempts, failure_reason, not_before, lease_expires_at
 from jobs order by created_at desc limit 10;
 ```
+
+## Resolve jobs (REV-7)
+
+A runner of this release claims `review` and `resolve` jobs (`kinds` in the claim). A resolve job
+holds the open review threads, which the service read on GitHub: the runner clones the pull request
+as for a review, builds the pack of the threads, calls the model, and tells for each thread whether
+its file changed since the thread. It never calls GitHub, and its token stays `contents: read`. With
+no thread to answer, it clones nothing and calls no model.
+
+A runner of an earlier release keeps working: it sends no `kinds`, and gets review jobs only. Deploy
+`web` first, then this runner; the resolve jobs wait in the queue meanwhile.

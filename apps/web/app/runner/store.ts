@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 
-import { LEASE_SECONDS, MAX_ATTEMPTS, type Level, type ReviewPayload } from '@sakuga-review/protocol'
+import { LEASE_SECONDS, MAX_ATTEMPTS, type JobKind, type Level, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
 
 /** A runner, as an authenticated call sees it. */
 export interface RunnerRow {
@@ -14,6 +14,7 @@ export interface ClaimedJob {
   id: string
   /** The number of this claim of the job, from 1. */
   attempt: number
+  kind: JobKind
   level: Level
   prNumber: number
   headSha: string
@@ -38,7 +39,13 @@ export type HeartbeatOutcome =
   | { kind: 'lease_lost' }
   | { kind: 'finished' }
 
-export type ResultOutcome = 'stored' | 'not_found' | 'lease_lost' | 'not_running' | 'wrong_head'
+/** `wrong_kind`: a review for a resolve job, or the reverse. */
+export type ResultOutcome = 'stored' | 'not_found' | 'lease_lost' | 'not_running' | 'wrong_head' | 'wrong_kind'
+
+export type StoredResult =
+  | { outcome: 'done'; review: ReviewPayload }
+  | { outcome: 'resolved'; resolve: ResolvePayload }
+  | { outcome: 'failed'; reason: string }
 
 /** What one sweep of the expired leases did. */
 export interface ExpiredLeases {
@@ -66,7 +73,7 @@ export interface RunnerStore {
    * is trusted at that moment gets a job: a runner without a model key of its own can run a job
    * only with the key of the service.
    */
-  claimJob(runnerId: string, options?: { trustedOnly?: boolean }): Promise<ClaimedJob | null>
+  claimJob(runnerId: string, options?: { trustedOnly?: boolean; kinds?: readonly JobKind[] }): Promise<ClaimedJob | null>
   /**
    * Gives a claimed job back, for example when no installation token could be made: queued again
    * after the backoff while attempts remain, failed with `reason` after the last one.
@@ -77,7 +84,7 @@ export interface RunnerStore {
     jobId: string,
     runnerId: string,
     attempt: number,
-    result: { outcome: 'done'; review: ReviewPayload } | { outcome: 'failed'; reason: string },
+    result: StoredResult,
   ): Promise<ResultOutcome>
   /**
    * Queues again each running job whose lease has ended, or fails it after its last attempt. The
@@ -118,6 +125,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
     // and nothing. The update runs in the same statement, so a claimed job is never seen as queued.
     async claimJob(runnerId, options = {}) {
       let trustedOnly = options.trustedOnly ?? false
+      // A runner of an earlier release does not say what it runs: review jobs only.
+      let kinds = [...(options.kinds ?? ['review'])]
       let [row] = await sql<
         (Omit<ClaimedJob, 'githubRepoId' | 'githubInstallationId' | 'leaseExpiresAt'> & {
           leaseExpiresAt: Date | string
@@ -135,7 +144,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             updated_at = now()
           where id = (
             select id from jobs
-            where state = 'queued' and kind = 'review' and base_ref is not null
+            where state = 'queued' and kind = any(${kinds}::job_kind[]) and base_ref is not null
               and attempts < ${MAX_ATTEMPTS}
               and (not_before is null or not_before <= now())
             order by created_at
@@ -148,10 +157,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             select 1 from runners
             where id = ${runnerId} and revoked_at is null and (${trustedOnly}::boolean = false or trusted)
           )
-          returning id, attempts, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at
+          returning id, attempts, kind, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at
         )
         select
-          claimed.id, claimed.attempts as "attempt", claimed.level, claimed.pr_number as "prNumber", claimed.head_sha as "headSha",
+          claimed.id, claimed.attempts as "attempt", claimed.kind, claimed.level, claimed.pr_number as "prNumber", claimed.head_sha as "headSha",
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
           orgs.github_installation_id as "githubInstallationId",
@@ -221,10 +230,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         // The lock of the job orders this write with the sweep of the expired leases and with a
         // cancel: the first one to commit wins, and the other one sees its state.
         let [job] = await tx<
-          { state: string; holds: boolean; repoId: string; prNumber: number; headSha: string }[]
+          { state: string; holds: boolean; kind: JobKind; repoId: string; prNumber: number; headSha: string }[]
         >`
           select state, (runner_id is not distinct from ${runnerId} and attempts = ${attempt}) as holds,
-            repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha"
+            kind, repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha"
           from jobs where id = ${jobId}
           for update`
         if (!job) return 'not_found' as const
@@ -239,7 +248,22 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           return 'stored' as const
         }
 
+        if (result.outcome === 'resolved') {
+          let { resolve } = result
+          if (job.kind !== 'resolve') return 'wrong_kind' as const
+          if (resolve.head !== job.headSha) return 'wrong_head' as const
+          await tx`
+            insert into resolutions (job_id, repo_id, pr_number, head_sha, model, cost_usd, result)
+            values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${resolve.model},
+              ${resolve.costUsd}, ${JSON.stringify(resolve)}::jsonb)`
+          await tx`
+            update jobs set state = 'done', finished_at = now(), lease_expires_at = null, updated_at = now()
+            where id = ${jobId}`
+          return 'stored' as const
+        }
+
         let { review } = result
+        if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
         await tx`
           insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)

@@ -234,8 +234,11 @@ carries an `attempt`, and the heartbeat and the result send it back.
 
 ## 9. Commands in the comments (REV-7)
 
-The release with REV-7 adds the migration `0003_comment_commands` (columns `jobs.github_comment_id`,
-unique, and `jobs.command_answered_at`; additive only). No new variable.
+The release with REV-7 adds two migrations, additive only: `0003_comment_commands` (columns
+`jobs.github_comment_id`, unique, and `jobs.command_answered_at`) and `0004_resolutions` (table
+`resolutions`). No new variable. The runner protocol gains a job kind `resolve`: a runner says in its
+claim which kinds it runs, and a runner of an earlier release, which says nothing, gets review jobs
+only. So the order web, then runner, is safe: resolve jobs wait in the queue until the new runner.
 
 A new comment of an open pull request that starts with `@kento` or `@sakuga-review` is a command,
 for the repositories of `KENTO_REPOS` only: another repository keeps its commands in `review.yml`.
@@ -244,7 +247,7 @@ for the repositories of `KENTO_REPOS` only: another repository keeps its command
 | --- | --- |
 | `@kento review [lite\|balanced\|heavy]` | Queues a review of the current head at that level (`lite` by default; `@kento` alone is `lite`). |
 | `@kento review heavy force` | The same, even when the head already has a review at that level. |
-| `@kento resolve [level]` | Nothing yet: it comes with the job `resolve`. |
+| `@kento resolve [lite\|balanced\|heavy]` | Queues a resolve job: the model reads up to 20 open threads and 150 kB, answers in each, and the service resolves the threads that the code settled. |
 
 The checks, in this order, with the reason in the logs (`webhook.ignored`, `command.not_allowed`,
 `command.refused`, `command.accepted`):
@@ -255,6 +258,9 @@ The checks, in this order, with the reason in the logs (`webhook.ignored`, `comm
 - An unknown command: 😕 and the list of the commands.
 - A head that already has a review at that level, queued, running or done (the lite review of the
   push counts): 😕 and a reply that names `force`. A failed or cancelled review does not count.
+- A resolve while another resolve of the pull request is queued or running: 😕 and a reply. A
+  resolve at a head that a resolve already answered costs nothing: the threads that carry its mark
+  wait for a new push, and with no thread left the runner calls no model.
 - Otherwise: one job, and 👀. After the publication of its review the comment gets 🚀; when the job
   fails, or a newer push cancels it, 😕.
 
@@ -263,21 +269,39 @@ a new delivery id give `duplicate`. A reply goes only with a new reaction, so a 
 second reply. When GitHub fails during the command (token, permission, pull request), the delivery
 answers 500: send it again from **Advanced → Recent Deliveries**.
 
+The resolve job, step by step:
+
+- At the claim, the service reads the open threads with a token `pull_requests: read` of its own,
+  and sends them in the job, cleaned. The runner clones with `contents: read` as for a review,
+  builds the pack, calls the model, and tells for each thread whether its file changed since the
+  thread. It writes nothing on GitHub.
+- The publisher replies in each thread, resolves with a token `contents: write` + `pull_requests:
+  write` asked for this repository at that moment, and posts the summary with the cost. It marks the
+  row before it writes: a failure in the middle never posts twice (`resolve.publication_failed`, 😕).
+- A thread of a person closes only when its file changed since the thread; a finding of the bot
+  closes when the code fixed it or a reply settled it. Without `contents: write` the reply says that a
+  person can resolve the thread (`resolve.write_token_refused`).
+
 1. The App already has **Issue comment** in its events (section 5) and **Issues: Read and write**
-   (section 7): nothing to change in its settings.
-2. Deploy `web`. `/healthz` gives `"migrations":4`.
-3. Check on a pull request of `sakuga-software/sakuga-review`:
+   (section 7). For `resolve`: **Repository permissions → Contents: Read and write**, then accept the
+   change in the organization. Until then resolve answers in each thread and resolves none.
+2. Merge REV-7 (both pull requests), then deploy `web` at once: the second pull request removes
+   `.github/workflows/sakuga-review.yml`, so between the merge and the deploy a command on this
+   repository gets no answer, and never two. `/healthz` gives `"migrations":5`.
+3. Publish the runner image of the same commit and recreate the runner
+   ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
+4. Check on a pull request of `sakuga-software/sakuga-review`:
    - `@kento review heavy`: 👀 at once, then a review « Kentō · Niveau heavy » and 🚀.
+   - `@sakuga-review resolve`: 👀, a reply in each open thread, the fixed threads resolved, a comment
+     « Kentō · résolution des fils » with the cost, and 🚀.
    - the same comment again: 😕 and the reply about `force`; no second job.
    - `@kento frobnicate`: 😕 and the list of the commands.
    - a comment of an account without write access: no job, and `command.not_allowed` in the logs.
-4. While `.github/workflows/sakuga-review.yml` still reacts to `issue_comment`, a command
-   `@sakuga-review …` on this repository runs twice: in the Action and in Kentō. Remove that trigger
-   once the job `resolve` is deployed too.
 
 ```sql
 select level, state, left(head_sha, 8), github_comment_id, command_answered_at from jobs
 where github_comment_id is not null order by created_at desc limit 5;
+select pr_number, left(head_sha, 8), model, cost_usd, published_at from resolutions order by created_at desc limit 5;
 ```
 
 ## 10. Each later deployment

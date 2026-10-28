@@ -74,6 +74,15 @@ export function tuple2<A, B>(a: Check<A>, b: Check<B>): Check<[A, B]> {
   };
 }
 
+const OPTIONAL = new WeakSet<Check<unknown>>();
+
+/** A key of `obj` that can be missing. A runner of an earlier release does not send it. */
+export function optional<T>(check: Check<T>): Check<T | undefined> {
+  const out: Check<T | undefined> = (value, path, errors) => check(value, path, errors);
+  OPTIONAL.add(out);
+  return out;
+}
+
 type Shape = Record<string, Check<unknown>>;
 type FromShape<S extends Shape> = { [K in keyof S]: S[K] extends Check<infer T> ? T : never };
 
@@ -91,6 +100,7 @@ export function obj<S extends Shape>(shape: S): Check<FromShape<S>> {
     }
     for (const [key, check] of Object.entries(shape)) {
       if (!Object.hasOwn(value, key)) {
+        if (OPTIONAL.has(check)) continue;
         errors.push(`${path}.${key}: is required`);
         continue;
       }

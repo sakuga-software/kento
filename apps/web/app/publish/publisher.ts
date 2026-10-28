@@ -5,12 +5,14 @@
 // `reviews.published_at` set and `github_review_id` set: the review is on GitHub.
 // `reviews.published_at` set and `github_review_id` null: the review was not published, on purpose
 // (the pull request is closed, or a newer push moved its head). The log line says why.
-import type { ReviewPayload } from '@sakuga-review/protocol'
+import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { react, type Reaction } from '../commands/handler.ts'
+import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
+import { publishResolution } from '../resolve/publish.ts'
 import { createGitHub, type GitHub } from './github.ts'
 import { publishReview } from './publish.ts'
 
@@ -23,7 +25,7 @@ export const PUBLISH_PERMISSIONS: TokenPermissions = { contents: 'read', pull_re
 export const CHECK_PERMISSIONS: TokenPermissions = { checks: 'write' }
 
 /** A review older than this is not published any more: its pull request has moved on. */
-const MAX_AGE = '30 minutes'
+const MAX_AGE = PUBLISH_MAX_AGE
 /** The tries of one review in one process. A failure after the review is on GitHub never retries. */
 const MAX_TRIES = 3
 /** One publisher at a time across the containers of the service (a deploy runs two for a while). */
@@ -73,6 +75,28 @@ type EndedCommand = {
 
 /** The reaction to the comment of a command: one token with `issues: write`. */
 const REACTION_PERMISSIONS: TokenPermissions = { issues: 'write' }
+
+/** Read the threads, reply in them, post the summary and react: no `contents`. */
+export const RESOLVE_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
+/**
+ * GitHub resolves a review thread only for a token that can write the contents. The service asks for
+ * it only here, for this repository, at the moment it resolves; never for a runner.
+ */
+export const RESOLVE_THREAD_PERMISSIONS: TokenPermissions = { contents: 'write', pull_requests: 'write' }
+
+/** A resolution that the publisher has just taken: its row is already marked published. */
+type PendingResolution = {
+  id: string
+  jobId: string
+  prNumber: number
+  headSha: string
+  result: ResolvePayload | string
+  fullName: string
+  githubRepoId: string | number
+  installationId: string | number
+  suspended: boolean
+  commentId: string | number | null
+}
 
 export interface Publisher {
   /** Publishes every pending review, oldest first. Returns what happened to each. */
@@ -172,6 +196,85 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   }
 
   /**
+   * Publishes the resolutions, at most once each: the row is marked before anything is posted, so a
+   * failure in the middle (a restart, an outage of GitHub) never posts the replies twice. The
+   * comment of the command gets 🚀 after the summary, or 😕 when the publication stops.
+   */
+  async function publishResolutions(connection: postgres.Sql) {
+    let rows = await connection<PendingResolution[]>`
+      with taken as (
+        update resolutions set published_at = now()
+        where id in (
+          select id from resolutions
+          where published_at is null and created_at > now() - ${MAX_AGE}::interval
+          order by created_at
+          limit 20
+        )
+        returning id, job_id, pr_number, head_sha, result
+      )
+      select taken.id, taken.job_id as "jobId", taken.pr_number as "prNumber", taken.head_sha as "headSha",
+        taken.result, repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
+        orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+        jobs.github_comment_id as "commentId"
+      from taken
+      join jobs on jobs.id = taken.job_id
+      join repos on repos.id = jobs.repo_id
+      join orgs on orgs.id = repos.org_id`
+    for (let row of rows) {
+      let fields = { resolutionId: row.id, jobId: row.jobId, repo: row.fullName, pr: row.prNumber, head: row.headSha }
+      let payload: ResolvePayload = typeof row.result === 'string' ? JSON.parse(row.result) : row.result
+      let github: GitHub | null = null
+      let answer = async (content: Reaction) => {
+        if (github && row.commentId !== null) {
+          await react(github, row.fullName, Number(row.commentId), content).catch((error) =>
+            log('warn', 'command.reaction_failed', { ...fields, content, error: errorMessage(error) }),
+          )
+        }
+        await connection`update jobs set command_answered_at = now() where id = ${row.jobId}`
+      }
+      try {
+        if (row.suspended) {
+          log('info', 'resolve.publication_skipped', { ...fields, reason: 'suspended' })
+          await answer('confused')
+          continue
+        }
+        let target = { installationId: Number(row.installationId), githubRepoId: Number(row.githubRepoId) }
+        let token = await deps.mintInstallationToken({ ...target, permissions: RESOLVE_PERMISSIONS })
+        github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+        let pr: { state: string; head: { sha: string } } = await github.rest('GET', `/repos/${row.fullName}/pulls/${row.prNumber}`)
+        if (pr.state !== 'open' || pr.head.sha !== row.headSha) {
+          let reason = pr.state !== 'open' ? 'closed' : 'superseded'
+          log('info', 'resolve.publication_skipped', { ...fields, reason })
+          await answer('confused')
+          continue
+        }
+        let writer: GitHub | null = null
+        if (payload.threads.some((t) => t.verdict !== 'open')) {
+          try {
+            let writeToken = await deps.mintInstallationToken({ ...target, permissions: RESOLVE_THREAD_PERMISSIONS })
+            writer = createGitHub({ apiUrl: deps.apiUrl, token: writeToken.token, fetch: deps.fetch })
+          } catch (error) {
+            // The App does not have `contents: write` yet: the replies say that a person can resolve.
+            log('warn', 'resolve.write_token_refused', { ...fields, error: errorMessage(error) })
+          }
+        }
+        let outcome = await publishResolution(
+          github,
+          writer,
+          { fullName: row.fullName, pr: row.prNumber, webUrl },
+          payload,
+          (event, extra) => log('warn', event, { ...fields, ...extra }),
+        )
+        log('info', 'resolve.published', { ...fields, ...outcome, costUsd: payload.costUsd })
+        await answer('rocket')
+      } catch (error) {
+        log('error', 'resolve.publication_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
+        await answer('confused').catch(() => {})
+      }
+    }
+  }
+
+  /**
    * 😕 on the comment of each command whose job ended without a review: failed after its last
    * attempt, or cancelled by a newer push, a close or the installation. Once per job.
    */
@@ -245,6 +348,11 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
             })
             results.push({ kind: 'failed', reviewId: row.id, error: message })
           }
+        }
+        try {
+          await publishResolutions(connection)
+        } catch (error) {
+          log('error', 'resolve.publisher_failed', { error: errorMessage(error) })
         }
         try {
           await answerEndedCommands(connection)
