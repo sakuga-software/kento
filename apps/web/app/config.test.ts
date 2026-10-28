@@ -1,3 +1,5 @@
+import { generateKeyPairSync } from 'node:crypto'
+
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
@@ -20,7 +22,45 @@ describe('loadConfig', () => {
       githubWebhookSecret: null,
       kentoRepos: new Set(),
       trustedBots: new Set(['sakuga-agent[bot]']),
+      runnerRegistrationToken: null,
+      githubApp: null,
+      providerApiKey: null,
     })
+  })
+
+  it('reads the runner settings, and the GitHub App with its key on one line', () => {
+    let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    let pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString().replaceAll('\n', '\\n')
+    let config = loadConfig({
+      DATABASE_URL: url,
+      KENTO_RUNNER_REGISTRATION_TOKEN: 'r'.repeat(40),
+      GITHUB_APP_ID: '12345',
+      GITHUB_APP_PRIVATE_KEY: pem,
+      KENTO_PROVIDER_API_KEY: 'sk-or-test',
+    })
+    assert.equal(config.runnerRegistrationToken, 'r'.repeat(40))
+    assert.equal(config.githubApp?.appId, '12345')
+    assert.equal(config.githubApp?.privateKey.asymmetricKeyType, 'rsa')
+    assert.equal(config.githubApp?.apiUrl, 'https://api.github.com')
+    assert.equal(config.providerApiKey, 'sk-or-test')
+  })
+
+  it('refuses a short registration token and a GitHub App without a valid key, without the values', () => {
+    let error: unknown
+    try {
+      loadConfig({
+        DATABASE_URL: url,
+        KENTO_RUNNER_REGISTRATION_TOKEN: 'short-secret',
+        GITHUB_APP_ID: '12345',
+        GITHUB_APP_PRIVATE_KEY: 'not-a-key-secret',
+      })
+    } catch (caught) {
+      error = caught
+    }
+    assert.ok(error instanceof ConfigError)
+    assert.match(error.message, /KENTO_RUNNER_REGISTRATION_TOKEN must have at least 32 characters/)
+    assert.match(error.message, /GITHUB_APP_PRIVATE_KEY must be the PEM private key of the App/)
+    assert.doesNotMatch(error.message, /secret/)
   })
 
   it('reads every variable', () => {

@@ -136,7 +136,34 @@ deliveries in between get 401; redeliver them from Recent Deliveries.
 
 Turn it off: uncheck **Webhook → Active** in the App, or remove `GITHUB_WEBHOOK_SECRET` (503).
 
-## 6. Each later deployment
+## 6. Runner API (REV-4)
+
+The runners call `POST /api/runner/*` on the same domain. Deploy the release with REV-4 first: its
+migration `0001_runners` adds the table `runners` and the columns `jobs.base_ref` and
+`jobs.runner_id`. Without the variables below the API is closed (register: 401; claim: no job), and
+that is safe.
+
+1. The App « Sakuga Review » must have the permission **Repository contents: Read** (it has it for
+   the reviews of the Action). The service asks GitHub for tokens with this permission only.
+2. App settings → **General → Private keys → Generate a private key**. Keep the downloaded PEM only
+   in Dokploy, then delete the file. Note the **App ID** at the top of the page.
+3. Dokploy → `web` → **Environment**, add, then **Deploy**:
+
+   ```sh
+   KENTO_RUNNER_REGISTRATION_TOKEN=<openssl rand -hex 32>
+   GITHUB_APP_ID=<App ID>
+   GITHUB_APP_PRIVATE_KEY=<the PEM; on one line, write each new line as \n>
+   KENTO_PROVIDER_API_KEY=<the OpenRouter key of the service, for the trusted runners>
+   ```
+
+   An invalid key stops the start with `startup.config_invalid` naming `GITHUB_APP_PRIVATE_KEY`,
+   never its value.
+4. Start the runner: [apps/runner/DEPLOY.md](../runner/DEPLOY.md).
+
+Close the registration once the runners are registered: remove `KENTO_RUNNER_REGISTRATION_TOKEN`.
+The registered runners keep working.
+
+## 7. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

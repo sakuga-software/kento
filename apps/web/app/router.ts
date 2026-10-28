@@ -6,6 +6,8 @@ import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
 import { routes } from './routes.ts'
+import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
+import { runnerRoutes } from './runner/routes.ts'
 
 /** What the routes need from the outside. Tests pass fakes. */
 export interface AppDependencies {
@@ -13,6 +15,8 @@ export interface AppDependencies {
   version: string
   commit: string | null
   webhook: WebhookDependencies
+  /** The runner API. Without it, its routes answer 404. */
+  runner?: RunnerApiDependencies
 }
 
 export function createAppRouter(deps: AppDependencies) {
@@ -20,6 +24,7 @@ export function createAppRouter(deps: AppDependencies) {
     middleware: [requestLogger(), render()],
   })
   router.map(routes, createController(deps))
+  if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))
   return router
 }
 

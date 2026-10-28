@@ -30,7 +30,7 @@ export {
   type Usage,
 } from './findings.ts';
 export { buildContext, buildPack } from './pack.ts';
-export { askJson, askModel, type ModelClient, type Reply, type Schema } from './model.ts';
+export { askJson, askModel, OPENROUTER_BASE_URL, type ModelClient, type Reply, type Schema } from './model.ts';
 export {
   BLOCK_END,
   BLOCK_START,

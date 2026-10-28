@@ -7,8 +7,10 @@ import { createDatabase } from './app/db/client.ts'
 import { createDatabaseCheck } from './app/db/health.ts'
 import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
+import { createInstallationTokenMinter } from './app/github/installation-token.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createAppRouter } from './app/router.ts'
+import { createRunnerStore } from './app/runner/store.ts'
 
 // Startup order: configuration, database, migrations, then the server. A failure at any step stops
 // the process with a non-zero code before the server listens, so Dokploy keeps the previous
@@ -44,6 +46,12 @@ let router = createAppRouter({
     kentoRepos: config.kentoRepos,
     trustedBots: config.trustedBots,
     apply: createWebhookStore(database.db, { kentoRepos: config.kentoRepos }),
+  },
+  runner: {
+    store: createRunnerStore(database.sql),
+    registrationToken: config.runnerRegistrationToken,
+    mintInstallationToken: config.githubApp ? createInstallationTokenMinter(config.githubApp) : null,
+    providerApiKey: config.providerApiKey,
   },
 })
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Kentō web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
+  "description": "Kent\u014d web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
   "scripts": {
     "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
     "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
@@ -17,6 +17,7 @@
     "node": ">=24.3.0"
   },
   "dependencies": {
+    "@sakuga-review/protocol": "workspace:*",
     "drizzle-orm": "0.45.4",
     "postgres": "3.4.9",
     "remix": "3.1.0"

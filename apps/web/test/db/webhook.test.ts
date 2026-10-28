@@ -14,6 +14,7 @@ import { createTestDatabase } from './helpers.ts'
 interface JobRow {
   pr_number: number
   head_sha: string
+  base_ref: string | null
   state: string
   level: string
   kind: string
@@ -66,7 +67,7 @@ describe('POST /webhooks/github against Postgres', () => {
 
   function jobRows() {
     return sql<JobRow[]>`
-      select pr_number, head_sha, state, level, kind, github_delivery_id from jobs order by created_at, id`
+      select pr_number, head_sha, base_ref, state, level, kind, github_delivery_id from jobs order by created_at, id`
   }
 
   it('1. a push creates one queued review job with the head of the push', async () => {
@@ -78,7 +79,7 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal(rows.length, 1)
     assert.deepEqual(
       { ...rows[0]!, github_delivery_id: undefined },
-      { pr_number: 24, head_sha: headSha(1), state: 'queued', level: 'lite', kind: 'review', github_delivery_id: undefined },
+      { pr_number: 24, head_sha: headSha(1), base_ref: 'main', state: 'queued', level: 'lite', kind: 'review', github_delivery_id: undefined },
     )
     let [repo] = await sql`select full_name, enabled from repos`
     assert.equal(repo!.full_name, 'sakuga-software/sakuga-review')

@@ -161,6 +161,8 @@ async function enqueueReview(
     level: repo.defaultLevel,
     prNumber: command.prNumber,
     headSha: command.headSha,
+    // The runner diffs the head from its merge base with this branch.
+    baseRef: command.baseRef,
     githubDeliveryId: deliveryId,
   })
   if (!job) return { outcome: 'duplicate', reason: 'delivery already created a job' }

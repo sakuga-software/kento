@@ -101,6 +101,12 @@ test('falls back to the next model of the level and logs the failed attempt', as
   assert.match(logs[0], /^attempt 1 with .+ failed: Error: OpenRouter answered 503: down$/);
 });
 
+test('calls another server of the same API when the caller gives its base URL', async () => {
+  const { fetch, calls } = fakeModel();
+  await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', baseUrl: 'https://proxy.example/v1/', fetch, log: () => {} });
+  assert.equal(calls[0].url, 'https://proxy.example/v1/chat/completions');
+});
+
 test('a level reads the environment only when the caller passes it', () => {
   process.env.REVIEW_MODELS = 'x/from-env';
   try {

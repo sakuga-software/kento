@@ -1,0 +1,13 @@
+# BuildKit reads this file because it sits next to apps/runner/Dockerfile. The build context is the
+# root of the repository; send only what the image needs.
+*
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!apps/runner/package.json
+!apps/runner/src/**
+!packages/engine/package.json
+!packages/engine/src/**
+!packages/engine/prompts/**
+!packages/protocol/package.json
+!packages/protocol/src/**

@@ -1,0 +1,44 @@
+name: Runner
+
+# The image of the Kentō runner (apps/runner): it must build, and start far enough to check its
+# configuration. Its unit tests run in the Test workflow with the other packages. Nothing here
+# pushes the image: publishing to ghcr.io is a manual step (apps/runner/DEPLOY.md).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: runner-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Runner image
+    runs-on: [self-hosted, sakuga-linux, docker]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the image
+        run: docker build -f apps/runner/Dockerfile --build-arg APP_COMMIT=${{ github.sha }} -t kento-runner:ci-${{ github.run_id }} .
+      # Without KENTO_URL the runner must stop at once, with the name of the variable in its log:
+      # this proves that Node runs the source, and that git is in the image.
+      - name: Start the image
+        run: |
+          set -o pipefail
+          docker run --rm kento-runner:ci-${{ github.run_id }} git --version
+          if docker run --rm kento-runner:ci-${{ github.run_id }} > out.log 2>&1; then
+            echo "::error::the runner started without KENTO_URL"; exit 1
+          fi
+          cat out.log
+          grep -q '"event":"startup.config_invalid".*KENTO_URL' out.log
+      - name: Remove the image
+        if: always()
+        run: docker image rm kento-runner:ci-${{ github.run_id }} || true

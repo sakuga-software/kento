@@ -16,7 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 
-// The tables of milestone M2 only: orgs, repos, jobs, reviews. Later tickets add their own tables
+// The tables of milestone M2 only: orgs, repos, runners, jobs, reviews. Later tickets add their own tables
 // and columns with new migrations (`pnpm -F @sakuga-review/web db:generate`).
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
@@ -67,6 +67,34 @@ export const repos = pgTable(
   (table) => [index('repos_org_id_idx').on(table.orgId)],
 )
 
+/**
+ * A machine that runs jobs. It registers once with the registration token, and gets a runner token
+ * that the service shows once and keeps only as a hash. Setting `revoked_at` refuses the token at
+ * the next call.
+ */
+export const runners = pgTable(
+  'runners',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The name that the runner gave at its registration. Two runners can have the same name. */
+    name: text('name').notNull(),
+    labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
+    /** The version of the runner, at its registration. */
+    version: text('version'),
+    /** SHA-256 of the runner token, in hex. The token itself is never stored. */
+    tokenHash: text('token_hash').notNull().unique(),
+    /**
+     * A trusted runner without its own model key gets the key of the service with each job. Only
+     * an operator sets it, in the database: a registration never does.
+     */
+    trusted: boolean('trusted').notNull().default(false),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+)
+
 /** A unit of work for a runner: one review or one resolve on one head of a pull request. */
 export const jobs = pgTable(
   'jobs',
@@ -80,6 +108,13 @@ export const jobs = pgTable(
     state: jobState('state').notNull().default('queued'),
     prNumber: integer('pr_number').notNull(),
     headSha: text('head_sha').notNull(),
+    /**
+     * The base branch of the pull request: the runner diffs the head from its merge base with it.
+     * Null on a job created before the column; a runner never claims such a job.
+     */
+    baseRef: text('base_ref'),
+    /** The runner that claimed the job. */
+    runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */
     githubDeliveryId: text('github_delivery_id').unique(),
     attempts: smallint('attempts').notNull().default(0),
@@ -94,6 +129,7 @@ export const jobs = pgTable(
     // A runner claims the oldest queued job.
     index('jobs_state_created_at_idx').on(table.state, table.createdAt),
     index('jobs_repo_pr_idx').on(table.repoId, table.prNumber),
+    index('jobs_runner_id_idx').on(table.runnerId),
     check('jobs_pr_number_positive', sql`${table.prNumber} > 0`),
     check('jobs_attempts_not_negative', sql`${table.attempts} >= 0`),
   ],

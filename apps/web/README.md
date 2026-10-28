@@ -1,7 +1,8 @@
 # apps/web — Kentō web service
 
 The service behind `review.sakuga.dev`. In milestone M2 it has no screen: it serves `GET /healthz`
-and the GitHub App webhook `POST /webhooks/github` (REV-3). The next ticket adds the runner API (REV-4).
+the GitHub App webhook `POST /webhooks/github` (REV-3) and the runner API `POST /api/runner/*`
+(REV-4).
 
 - [Remix 3](https://github.com/remix-run/remix): `remix/router` (fetch-router), `remix/component`,
   `remix/node-fetch-server`. Node 24.3 or later runs the TypeScript source with `remix/node-tsx`;
@@ -27,6 +28,11 @@ and the log names the variable, never its value.
 | `GITHUB_WEBHOOK_SECRET` | no   |           | Secret of the GitHub App webhook, 32 characters or more (`openssl rand -hex 32`). A secret: never commit it. Without it, `/webhooks/github` answers 503. |
 | `KENTO_REPOS`       | no       | (none)    | Comma-separated `owner/name` of the repositories that get a review job. Empty: no job. M3 replaces it with the Repos screen. |
 | `KENTO_TRUSTED_BOTS` | no      | `sakuga-agent[bot]` | Comma-separated bot logins whose pull requests and pushes get a review, as in `review.yml`. |
+| `KENTO_RUNNER_REGISTRATION_TOKEN` | no | | Secret that a runner sends to `POST /api/runner/register`, 32 characters or more. Without it, the registration answers 401. |
+| `GITHUB_APP_ID` | no | | ID of the GitHub App. With `GITHUB_APP_PRIVATE_KEY`, the service makes the installation token of each job. Without them, a claim gives no job. |
+| `GITHUB_APP_PRIVATE_KEY` | no | | PEM private key of the App; on one line, `\n` for each new line. A secret: it never leaves the service. |
+| `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server or a local test. |
+| `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service. Sent with a job only to a trusted runner that has no key of its own. A secret. |
 
 ## `GET /healthz`
 
@@ -90,11 +96,35 @@ The logs name the event, action, delivery id and outcome (`webhook.applied`, `we
 `webhook.bad_signature`, `webhook.too_large`, `webhook.invalid`, `webhook.failed`), never the secret,
 the signature or the body. The response is a JSON `outcome`, shown on the deliveries page of the App.
 
+## Runner API: `POST /api/runner/*`
+
+A runner ([apps/runner](../runner)) takes the jobs over HTTPS. `packages/protocol` holds every message
+and its check; the service checks each body against it (400 with the list of problems, 413 over
+1 MB, 415 without `Content-Type: application/json`).
+
+| Route | Auth | Does |
+| --- | --- | --- |
+| `register` | registration token | Creates a runner and returns its token once (`kento_rt_…`, 256 random bits). The table `runners` keeps only its SHA-256. A new runner is never `trusted`. |
+| `jobs/claim` | runner token | Long poll up to 30 s. Takes the oldest `queued` review job with one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`: two runners never get the same job. The job becomes `running`, with the runner and a lease of 2 min. 200 with the job, or 204. |
+| `jobs/:id/heartbeat` | runner token, holder of the job | Extends the lease by 2 min. `cancel: true` when a newer push cancelled the job. 404 for another runner's job. |
+| `jobs/:id/result` | runner token, holder of the job | `done` with the review: one row in `reviews`, the job becomes `done`. `failed` with a reason: the job becomes `failed`. 409 when the job is no longer `running`, 422 when the review is of another head. |
+
+Each job carries a GitHub installation token that the service asks for the one repository of the
+job, with `contents: read`; GitHub makes it valid one hour. The private key of the App never leaves
+the service. The OpenRouter key of the service goes with a job only to a `trusted` runner that says
+it has no key of its own.
+
+A wrong, missing or revoked runner token gets 401 with no reason. Revoke a runner with
+`update runners set revoked_at = now() where id = …`: its next call gets 401.
+
+Events: `runner.registered`, `runner.registration_refused`, `runner.auth_refused`, `job.claimed`,
+`job.installation_token_failed`, `job.result`. No token or key is logged.
+
 ## Logs
 
 One JSON object per line: `time`, `level`, `event`, and fields. `info` goes to stdout, `warn` and
 `error` to stderr; Loki reads both. Events: `startup.*`, `shutdown.*`, `http.request` (every request
-except a successful `/healthz`), `http.unhandled_error`, `webhook.*`.
+except a successful `/healthz`), `http.unhandled_error`, `webhook.*`, `runner.*`, `job.*`.
 
 ## Develop
 

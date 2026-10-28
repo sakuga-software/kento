@@ -1,4 +1,8 @@
+import type { KeyObject } from 'node:crypto'
+
 import packageJson from '../package.json' with { type: 'json' }
+
+import { readPrivateKey } from './github/installation-token.ts'
 
 /** The settings of the service. `loadConfig` reads them once, at startup. */
 export interface Config {
@@ -23,6 +27,12 @@ export interface Config {
   kentoRepos: ReadonlySet<string>
   /** The bot logins whose pull requests and pushes get a review, as a person's do. */
   trustedBots: ReadonlySet<string>
+  /** The secret that a runner sends to register. Null closes the registration. */
+  runnerRegistrationToken: string | null
+  /** The GitHub App that makes the installation tokens of the jobs. Null: a claim gives no job. */
+  githubApp: { appId: string; privateKey: KeyObject; apiUrl: string } | null
+  /** The model key of the service, sent only to a trusted runner without its own key. */
+  providerApiKey: string | null
 }
 
 /** The shortest webhook secret that `loadConfig` accepts. `openssl rand -hex 32` gives 64 characters. */
@@ -66,6 +76,28 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     }
   }
 
+  let runnerRegistrationToken = env.KENTO_RUNNER_REGISTRATION_TOKEN?.trim() || null
+  if (runnerRegistrationToken !== null && runnerRegistrationToken.length < 32) {
+    problems.push('KENTO_RUNNER_REGISTRATION_TOKEN must have at least 32 characters')
+  }
+
+  let githubApp: Config['githubApp'] = null
+  let appId = env.GITHUB_APP_ID?.trim() ?? ''
+  let privateKeyPem = env.GITHUB_APP_PRIVATE_KEY?.trim() ?? ''
+  if (appId !== '' || privateKeyPem !== '') {
+    if (!/^\d+$/.test(appId)) problems.push('GITHUB_APP_ID must be the number of the App')
+    let privateKey: KeyObject | null = null
+    try {
+      privateKey = readPrivateKey(privateKeyPem)
+    } catch {
+      problems.push('GITHUB_APP_PRIVATE_KEY must be the PEM private key of the App')
+    }
+    // GitHub Enterprise Server, or a fake GitHub in a local test.
+    let apiUrl = env.GITHUB_API_URL?.trim() || 'https://api.github.com'
+    if (!/^https?:\/\/[^\s@]+$/.test(apiUrl)) problems.push('GITHUB_API_URL must be an http(s) URL')
+    if (privateKey && /^\d+$/.test(appId)) githubApp = { appId, privateKey, apiUrl }
+  }
+
   if (problems.length > 0) {
     throw new ConfigError(`Invalid configuration: ${problems.join('; ')}`)
   }
@@ -83,6 +115,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubWebhookSecret: githubWebhookSecret === '' ? null : githubWebhookSecret,
     kentoRepos: new Set(kentoRepos),
     trustedBots: new Set(readList(env.KENTO_TRUSTED_BOTS ?? DEFAULT_TRUSTED_BOTS)),
+    runnerRegistrationToken,
+    githubApp,
+    providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
   }
 }
 

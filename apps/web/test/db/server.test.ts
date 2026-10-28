@@ -80,7 +80,7 @@ describe('server', () => {
       assert.equal(response.status, 200, first.output())
       assert.equal(body.status, 'ok')
       assert.equal(body.commit, 'abc1234')
-      assert.equal(body.database.migrations, 1)
+      assert.equal(body.database.migrations, 2)
       assert.match(first.output(), /"event":"startup.migrations_applied"/)
     } finally {
       assert.equal(await stop(first), 0, first.output())

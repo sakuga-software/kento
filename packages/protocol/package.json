@@ -1,0 +1,16 @@
+{
+  "name": "@sakuga-review/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The messages between the Kentō web service and its runners: the job, the heartbeat and the result, with their checks. No dependency.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'"
+  }
+}

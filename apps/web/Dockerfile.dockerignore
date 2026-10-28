@@ -9,4 +9,6 @@
 !apps/web/server.ts
 !apps/web/app/**
 !apps/web/drizzle/**
+!packages/protocol/package.json
+!packages/protocol/src/**
 apps/web/app/**/*.test.ts

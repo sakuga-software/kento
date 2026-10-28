@@ -17,9 +17,11 @@ ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
-# The production dependencies of apps/web only. No dev dependency, no other workspace package.
+COPY packages/protocol/package.json packages/protocol/
+# The production dependencies of apps/web and of the workspace packages it uses (packages/protocol,
+# which has none). No dev dependency.
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --prod --filter @sakuga-review/web
+    pnpm install --frozen-lockfile --prod --filter @sakuga-review/web...
 
 FROM ${NODE_IMAGE}
 ENV NODE_ENV=production \
@@ -31,6 +33,9 @@ COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/server.ts ./apps/web/
 COPY apps/web/app ./apps/web/app
 COPY apps/web/drizzle ./apps/web/drizzle
+# The messages of the runner API, shared with apps/runner. Node runs its TypeScript as is.
+COPY packages/protocol/package.json ./packages/protocol/
+COPY packages/protocol/src ./packages/protocol/src
 
 # The commit of the image, shown by /healthz. Dokploy can pass it as a build argument.
 ARG APP_COMMIT=""

@@ -15,8 +15,20 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
+  apps/runner:
+    dependencies:
+      '@sakuga-review/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@sakuga-review/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+
   apps/web:
     dependencies:
+      '@sakuga-review/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       drizzle-orm:
         specifier: 0.45.4
         version: 0.45.4(postgres@3.4.9)
@@ -41,6 +53,8 @@ importers:
         version: 7.0.2
 
   packages/engine: {}
+
+  packages/protocol: {}
 
 packages:
 

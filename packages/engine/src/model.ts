@@ -4,15 +4,18 @@ import { join } from 'node:path';
 import { ANSWER_SCHEMA, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+/** The API of OpenRouter. A caller can give another base with the same API, for example a proxy. */
+export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const PROMPTS = join(import.meta.dirname, '..', 'prompts');
 
 /**
  * What the engine needs to call a model. The caller gives the key: the engine reads no environment.
- * `fetch` replaces the network in a test; `log` gets the failed attempts.
+ * `fetch` replaces the network in a test; `log` gets the failed attempts. `baseUrl` replaces
+ * OPENROUTER_BASE_URL with another server of the same API.
  */
 export type ModelClient = {
   apiKey: string | undefined;
+  baseUrl?: string;
   fetch?: typeof fetch;
   log?: (message: string) => void;
 };
@@ -33,7 +36,8 @@ async function callJson<T>(
   schema: Schema,
   timeoutMs: number,
 ): Promise<{ answer: T; usage: Usage }> {
-  const response = await (client.fetch ?? globalThis.fetch)(OPENROUTER_URL, {
+  const url = `${(client.baseUrl ?? OPENROUTER_BASE_URL).replace(/\/+$/, '')}/chat/completions`;
+  const response = await (client.fetch ?? globalThis.fetch)(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${client.apiKey}`,
