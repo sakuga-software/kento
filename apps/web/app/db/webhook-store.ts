@@ -1,3 +1,4 @@
+import type { Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import type { Installation, Repository, WebhookCommand } from '../github/events.ts'
@@ -11,11 +12,17 @@ export type WebhookResult =
   | { outcome: 'skipped'; reason: string }
   | { outcome: 'cancelled'; cancelled: number }
   | { outcome: 'updated'; repositories: number; cancelled: number }
+  /** A command that the bot refused: no permission, an unknown command, a fork, a head already reviewed. */
+  | { outcome: 'refused'; reason: string }
 
 /** The commands that write to the database. `ping`, `ignore` and `invalid` never reach the store. */
 export type StoreCommand = Exclude<WebhookCommand, { type: 'ping' | 'ignore' | 'invalid' }>
 
 export type ApplyWebhook = (command: StoreCommand, deliveryId: string) => Promise<WebhookResult>
+
+/** A command in a comment. It asks GitHub before it writes: it runs out of the transaction of the store. */
+export type CommentCommandMessage = Extract<StoreCommand, { type: 'comment_command' }>
+export type HandleCommentCommand = (command: CommentCommandMessage, deliveryId: string) => Promise<WebhookResult>
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
@@ -42,13 +49,19 @@ export interface StoreOptions {
    * variable with the Repos screen, which then owns the column.
    */
   kentoRepos: ReadonlySet<string>
+  /** The commands of the comments (REV-7). Without it, a command is skipped. */
+  handleCommentCommand?: HandleCommentCommand
 }
 
-/** Applies each command in one transaction. */
+/** Applies each command in one transaction. A command of a comment goes to its handler. */
 export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook {
   let { kentoRepos } = options
-  return (command, deliveryId) =>
-    db.transaction(async (tx) => {
+  return async (command, deliveryId) => {
+    if (command.type === 'comment_command') {
+      if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
+      return options.handleCommentCommand(command, deliveryId)
+    }
+    return db.transaction(async (tx) => {
       switch (command.type) {
         case 'enqueue_review':
           return enqueueReview(tx, command, deliveryId, kentoRepos)
@@ -95,6 +108,93 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
         }
       }
     })
+  }
+}
+
+export interface CommandJobInput {
+  installation: Installation
+  repository: Repository
+  prNumber: number
+  /** The head and the base branch of the pull request, as GitHub gave them after the comment. */
+  headSha: string
+  baseRef: string
+  level: Level
+  /** Pay again for a level that the head already has. */
+  force: boolean
+  commentId: number
+  deliveryId: string
+}
+
+export type CommandJobResult =
+  | { outcome: 'queued'; jobId: string }
+  /** The comment, or the delivery, already created a job: a redelivery, or a replay. */
+  | { outcome: 'duplicate'; reason: string; jobId: string | null }
+  /** The head already has a review at this level, queued, running or done. */
+  | { outcome: 'already'; jobId: string }
+  | { outcome: 'skipped'; reason: string }
+
+/**
+ * Creates the review job of a command. It cancels no other job: a heavy review asked during the lite
+ * review of the push runs beside it. A newer push cancels it, as any job of an older head.
+ *
+ * The cost limit: a head that already has a review at this level (queued, running or done) gets no
+ * second one, unless the command says `force`. A failed or cancelled review does not count.
+ *
+ * The upsert of the repository locks its row until the end of the transaction: two commands of the
+ * same repository run one after the other, and the second one sees the job of the first.
+ */
+export function enqueueCommandJob(db: Db, input: CommandJobInput, kentoRepos: ReadonlySet<string>): Promise<CommandJobResult> {
+  return db.transaction(async (tx): Promise<CommandJobResult> => {
+    let org = await upsertOrg(tx, input.installation, null)
+    if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
+    let [repo] = await upsertRepoRows(tx, org.id, [input.repository], kentoRepos)
+    if (!repo) throw new Error('upsert of the repository returned no row')
+    if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
+
+    let [earlier] = await tx
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(or(eq(jobs.githubCommentId, input.commentId), eq(jobs.githubDeliveryId, input.deliveryId)))
+      .limit(1)
+    if (earlier) return { outcome: 'duplicate', reason: 'comment already created a job', jobId: earlier.id }
+
+    if (!input.force) {
+      let [same] = await tx
+        .select({ id: jobs.id })
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.repoId, repo.id),
+            eq(jobs.prNumber, input.prNumber),
+            eq(jobs.headSha, input.headSha),
+            eq(jobs.kind, 'review'),
+            eq(jobs.level, input.level),
+            inArray(jobs.state, ['queued', 'running', 'done']),
+          ),
+        )
+        .orderBy(desc(jobs.createdAt))
+        .limit(1)
+      if (same) return { outcome: 'already', jobId: same.id }
+    }
+
+    let [job] = await tx
+      .insert(jobs)
+      .values({
+        repoId: repo.id,
+        kind: 'review',
+        level: input.level,
+        state: 'queued',
+        prNumber: input.prNumber,
+        headSha: input.headSha,
+        baseRef: input.baseRef,
+        githubDeliveryId: input.deliveryId,
+        githubCommentId: input.commentId,
+      })
+      .onConflictDoNothing()
+      .returning({ id: jobs.id })
+    if (!job) return { outcome: 'duplicate', reason: 'comment already created a job', jobId: null }
+    return { outcome: 'queued', jobId: job.id }
+  })
 }
 
 /**

@@ -2,6 +2,7 @@ import * as http from 'node:http'
 
 import { createRequestListener } from 'remix/node-fetch-server'
 
+import { createCommandHandler } from './app/commands/handler.ts'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
 import { createDatabaseCheck } from './app/db/health.ts'
@@ -64,7 +65,17 @@ let router = createAppRouter({
     secret: config.githubWebhookSecret,
     kentoRepos: config.kentoRepos,
     trustedBots: config.trustedBots,
-    apply: createWebhookStore(database.db, { kentoRepos: config.kentoRepos }),
+    botLogin: config.botLogin,
+    apply: createWebhookStore(database.db, {
+      kentoRepos: config.kentoRepos,
+      // The commands of the comments (REV-7): `@kento review heavy`, `@sakuga-review review balanced`.
+      handleCommentCommand: createCommandHandler({
+        db: database.db,
+        mintInstallationToken,
+        apiUrl: config.githubApp?.apiUrl ?? 'https://api.github.com',
+        kentoRepos: config.kentoRepos,
+      }),
+    }),
   },
   runner: {
     store: runnerStore,

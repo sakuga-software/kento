@@ -11,6 +11,8 @@ export class GitHubError extends Error {
 /** The REST and GraphQL API of GitHub, with one installation token. */
 export interface GitHub {
   rest<T = any>(method: string, path: string, payload?: unknown): Promise<T>
+  /** As `rest`, with the status of the answer: some routes answer 200 or 201 for « found » or « created ». */
+  send<T = any>(method: string, path: string, payload?: unknown): Promise<{ status: number; body: T }>
   graphql<T = any>(query: string, variables: Record<string, unknown>): Promise<T>
 }
 
@@ -18,7 +20,7 @@ export function createGitHub(options: { apiUrl: string; token: string; fetch?: t
   let apiUrl = options.apiUrl.replace(/\/+$/, '')
   let doFetch = options.fetch ?? globalThis.fetch
 
-  async function rest(method: string, path: string, payload?: unknown) {
+  async function send(method: string, path: string, payload?: unknown) {
     let response = await doFetch(apiUrl + path, {
       method,
       headers: {
@@ -33,11 +35,14 @@ export function createGitHub(options: { apiUrl: string; token: string; fetch?: t
     })
     let text = await response.text()
     if (!response.ok) throw new GitHubError(method, path, response.status, text)
-    return text ? JSON.parse(text) : null
+    return { status: response.status, body: text ? JSON.parse(text) : null }
   }
+
+  let rest = async (method: string, path: string, payload?: unknown) => (await send(method, path, payload)).body
 
   return {
     rest,
+    send,
     async graphql(query, variables) {
       let out = await rest('POST', '/graphql', { query, variables })
       if (out?.errors) throw new Error(`GraphQL: ${JSON.stringify(out.errors).slice(0, 300)}`)

@@ -1,3 +1,5 @@
+import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
+
 // Turns a verified webhook into one command for the store. The functions here read the payload
 // only: no database, no network. A payload that lacks a field the command needs gives `invalid`.
 
@@ -27,6 +29,20 @@ export type WebhookCommand =
       /** The branch that the pull request targets, for the runner. */
       baseRef: string
     }
+  | {
+      /**
+       * A command in a new comment of a pull request (`@kento review heavy`). The payload holds
+       * neither the head nor the fork of the pull request, nor the permission of the commenter: the
+       * command handler asks GitHub for them before it queues a job.
+       */
+      type: 'comment_command'
+      installation: Installation
+      repository: Repository
+      prNumber: number
+      commentId: number
+      commenter: { login: string; isBot: boolean }
+      command: CommentCommand
+    }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
   | { type: 'upsert_installation'; installation: Installation; repositories: Repository[]; suspended: boolean }
   | { type: 'delete_installation'; installation: Installation }
@@ -38,6 +54,8 @@ export interface EventPolicy {
   kentoRepos: ReadonlySet<string>
   /** Lowercase bot logins that act for a person. */
   trustedBots: ReadonlySet<string>
+  /** The login of the App, `sakuga-review[bot]`. Its own comments never give a command. */
+  botLogin?: string
 }
 
 /** The `pull_request` actions that create a review job: the same as `review.yml`. */
@@ -61,8 +79,7 @@ export function commandFor(event: string, payload: unknown, policy: EventPolicy)
     case 'installation_repositories':
       return installationRepositoriesCommand(payload)
     case 'issue_comment':
-      // The `@kento` commands have their own ticket.
-      return { type: 'ignore', reason: 'issue_comment is not handled yet' }
+      return issueCommentCommand(payload, policy)
     default:
       return { type: 'ignore', reason: `event ${event} is not handled` }
   }
@@ -107,6 +124,56 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
     return { type: 'invalid', reason: 'pull_request payload lacks head.sha or base.ref' }
   }
   return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef }
+}
+
+/**
+ * `issue_comment`: a new comment of an open pull request that starts with `@kento` or
+ * `@sakuga-review`. An edited comment gives no command: a command costs money, and an edit would
+ * run it again. A repository outside KENTO_REPOS keeps its commands in the workflow `review.yml`.
+ */
+function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
+  let action = str(payload.action)
+  if (action !== 'created') return { type: 'ignore', reason: `issue_comment action ${action ?? '(none)'} gives no command` }
+  let issue = obj(payload.issue)
+  let comment = obj(payload.comment)
+  // A comment of an issue that is not a pull request.
+  if (!obj(issue?.pull_request)) return { type: 'ignore', reason: 'comment is not on a pull request' }
+  let body = typeof comment?.body === 'string' ? comment.body : ''
+  let command = parseCommentCommand(body)
+  if (command === null) return { type: 'ignore', reason: 'comment is not a command' }
+
+  let installation = installationFromRepository(payload)
+  let repository = repositoryOf(obj(payload.repository))
+  let prNumber = int(issue?.number)
+  let commentId = int(comment?.id)
+  let user = obj(comment?.user)
+  let login = str(user?.login)
+  if (!installation || !repository || prNumber === null || commentId === null || login === null) {
+    return { type: 'invalid', reason: 'issue_comment payload lacks installation, repository, number or comment' }
+  }
+
+  // The App first: even in KENTO_TRUSTED_BOTS, its own answers never run a command.
+  let botLogin = (policy.botLogin ?? 'sakuga-review[bot]').toLowerCase()
+  if (login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
+    return { type: 'ignore', reason: 'comment of the App itself' }
+  }
+  if (!policy.kentoRepos.has(repository.fullName.toLowerCase())) {
+    return { type: 'ignore', reason: 'repository is not in KENTO_REPOS: the workflow keeps the command' }
+  }
+  if (isUntrustedBot(user, policy) || isUntrustedBot(obj(payload.sender), policy)) {
+    return { type: 'ignore', reason: 'command of an untrusted bot' }
+  }
+  if (issue?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
+
+  return {
+    type: 'comment_command',
+    installation,
+    repository,
+    prNumber,
+    commentId,
+    commenter: { login, isBot: user?.type === 'Bot' },
+    command,
+  }
 }
 
 function installationCommand(payload: Obj): WebhookCommand {

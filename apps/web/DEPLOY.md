@@ -232,7 +232,55 @@ carries an `attempt`, and the heartbeat and the result send it back.
      `job.cancelled_by_service` then `job.finished` with `"outcome":"cancelled"`, and only the new head
      gets a review.
 
-## 9. Each later deployment
+## 9. Commands in the comments (REV-7)
+
+The release with REV-7 adds the migration `0003_comment_commands` (columns `jobs.github_comment_id`,
+unique, and `jobs.command_answered_at`; additive only). No new variable.
+
+A new comment of an open pull request that starts with `@kento` or `@sakuga-review` is a command,
+for the repositories of `KENTO_REPOS` only: another repository keeps its commands in `review.yml`.
+
+| Command | What it does |
+| --- | --- |
+| `@kento review [lite\|balanced\|heavy]` | Queues a review of the current head at that level (`lite` by default; `@kento` alone is `lite`). |
+| `@kento review heavy force` | The same, even when the head already has a review at that level. |
+| `@kento resolve [level]` | Nothing yet: it comes with the job `resolve`. |
+
+The checks, in this order, with the reason in the logs (`webhook.ignored`, `command.not_allowed`,
+`command.refused`, `command.accepted`):
+
+- An edited comment, a comment of the App, or of a bot outside `KENTO_TRUSTED_BOTS`: ignored.
+- A person without `write`, `maintain` or `admin` on the repository: no job and no answer.
+- A pull request from a fork: 😕 and a short reply.
+- An unknown command: 😕 and the list of the commands.
+- A head that already has a review at that level, queued, running or done (the lite review of the
+  push counts): 😕 and a reply that names `force`. A failed or cancelled review does not count.
+- Otherwise: one job, and 👀. After the publication of its review the comment gets 🚀; when the job
+  fails, or a newer push cancels it, 😕.
+
+A comment creates one job at most, whatever its deliveries: GitHub's « Redeliver » and a replay with
+a new delivery id give `duplicate`. A reply goes only with a new reaction, so a redelivery posts no
+second reply. When GitHub fails during the command (token, permission, pull request), the delivery
+answers 500: send it again from **Advanced → Recent Deliveries**.
+
+1. The App already has **Issue comment** in its events (section 5) and **Issues: Read and write**
+   (section 7): nothing to change in its settings.
+2. Deploy `web`. `/healthz` gives `"migrations":4`.
+3. Check on a pull request of `sakuga-software/sakuga-review`:
+   - `@kento review heavy`: 👀 at once, then a review « Kentō · Niveau heavy » and 🚀.
+   - the same comment again: 😕 and the reply about `force`; no second job.
+   - `@kento frobnicate`: 😕 and the list of the commands.
+   - a comment of an account without write access: no job, and `command.not_allowed` in the logs.
+4. While `.github/workflows/sakuga-review.yml` still reacts to `issue_comment`, a command
+   `@sakuga-review …` on this repository runs twice: in the Action and in Kentō. Remove that trigger
+   once the job `resolve` is deployed too.
+
+```sql
+select level, state, left(head_sha, 8), github_comment_id, command_answered_at from jobs
+where github_comment_id is not null order by created_at desc limit 5;
+```
+
+## 10. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

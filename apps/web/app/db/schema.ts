@@ -117,6 +117,13 @@ export const jobs = pgTable(
     runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */
     githubDeliveryId: text('github_delivery_id').unique(),
+    /**
+     * The comment of the pull request whose command created the job (`@kento review heavy`), or null
+     * for the review of a push. One comment creates one job at most, whatever its deliveries.
+     */
+    githubCommentId: bigint('github_comment_id', { mode: 'number' }).unique(),
+    /** When the comment of the command got its last reaction: 🚀 after the publication, 😕 on a failure. */
+    commandAnsweredAt: timestamp('command_answered_at', { withTimezone: true }),
     /** The number of claims of the job. Each claim is one attempt; the runner sends its number back. */
     attempts: smallint('attempts').notNull().default(0),
     /** While `running`: the end of the lease of the runner. With no heartbeat after it, the job goes back to the queue. */

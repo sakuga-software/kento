@@ -25,6 +25,8 @@ export interface FakeGitHubOptions {
   head: string
   /** The subject of each commit. */
   commits?: Record<string, string>
+  /** The GitHub id of the repository. */
+  repoId?: number
 }
 
 export function createFakeGitHub(options: FakeGitHubOptions) {
@@ -34,7 +36,22 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
   let nextId = 1000
 
   let state = {
-    pr: { number: options.pr ?? 28, state: 'open', head: options.head, body: 'Description de la PR.', labels: [] as string[] },
+    pr: {
+      number: options.pr ?? 28,
+      state: 'open',
+      head: options.head,
+      body: 'Description de la PR.',
+      labels: [] as string[],
+      /** The repository of the head: another id for a fork, null for a deleted fork. */
+      headRepoId: (options.repoId ?? 3001) as number | null,
+      baseRef: 'main',
+    },
+    /** The permission of each login on the repository, as `collaborators/:login/permission` gives it. Missing: 404. */
+    permissions: new Map<string, string>(),
+    /** The reactions of the App on the comments of the pull request: `commentId:content`. */
+    reactions: new Set<string>(),
+    /** The comments of the pull request (not of a review). */
+    issueComments: [] as { id: number; body: string; author: string }[],
     reviews: [] as Review[],
     comments: [] as Comment[],
     resolved: new Set<number>(),
@@ -118,7 +135,32 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     let prPath = `/pulls/${state.pr.number}`
 
     if (rest === prPath && method === 'GET') {
-      return json(200, { number: state.pr.number, state: state.pr.state, head: { sha: state.pr.head }, body: state.pr.body })
+      return json(200, {
+        number: state.pr.number,
+        state: state.pr.state,
+        head: { sha: state.pr.head, repo: state.pr.headRepoId === null ? null : { id: state.pr.headRepoId } },
+        base: { ref: state.pr.baseRef },
+        body: state.pr.body,
+      })
+    }
+    if ((m = /^\/collaborators\/([^/]+)\/permission$/.exec(rest)) && method === 'GET') {
+      let permission = state.permissions.get(decodeURIComponent(m[1]!))
+      return permission === undefined
+        ? json(404, { message: 'Not Found' })
+        : json(200, { permission: permission === 'maintain' ? 'write' : permission === 'triage' ? 'read' : permission, role_name: permission })
+    }
+    if ((m = /^\/issues\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'POST') {
+      if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
+      let key = `${m[1]}:${body.content}`
+      if (state.reactions.has(key)) return json(200, { content: body.content })
+      state.reactions.add(key)
+      return json(201, { content: body.content })
+    }
+    if (rest === `/issues/${state.pr.number}/comments` && method === 'POST') {
+      if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
+      let id = nextId++
+      state.issueComments.push({ id, body: body.body, author: BOT })
+      return json(201, { id })
     }
     if (rest === prPath && method === 'PATCH') {
       state.pr.body = body.body

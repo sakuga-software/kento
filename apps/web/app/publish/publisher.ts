@@ -8,6 +8,7 @@
 import type { ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { react, type Reaction } from '../commands/handler.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub, type GitHub } from './github.ts'
@@ -56,7 +57,22 @@ type Pending = {
   githubRepoId: string | number
   installationId: string | number
   suspended: boolean
+  /** The comment of the command that asked for the review, or null for the review of a push. */
+  commentId: string | number | null
 }
+
+/** A job of a command that ended without a review: it failed, or a newer push cancelled it. */
+type EndedCommand = {
+  id: string
+  state: string
+  commentId: string | number
+  fullName: string
+  githubRepoId: string | number
+  installationId: string | number
+}
+
+/** The reaction to the comment of a command: one token with `issues: write`. */
+const REACTION_PERMISSIONS: TokenPermissions = { issues: 'write' }
 
 export interface Publisher {
   /** Publishes every pending review, oldest first. Returns what happened to each. */
@@ -78,16 +94,19 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   async function publishOne(row: Pending): Promise<PublishResult> {
     let review: ReviewPayload = typeof row.result === 'string' ? JSON.parse(row.result) : row.result
     let [owner, name] = row.fullName.split('/') as [string, string]
+    let github: GitHub | null = null
     let skip = async (reason: 'closed' | 'superseded' | 'suspended'): Promise<PublishResult> => {
       await deps.sql`update reviews set published_at = now() where id = ${row.id} and published_at is null`
       log('info', 'review.publication_skipped', { reviewId: row.id, repo: row.fullName, pr: row.prNumber, head: row.headSha, reason })
+      // The command that asked for this review gets 😕: its review will not come.
+      if (github) await answerCommand(github, row, 'confused')
       return { kind: 'skipped', reviewId: row.id, reason }
     }
     if (row.suspended) return skip('suspended')
 
     let target = { installationId: Number(row.installationId), githubRepoId: Number(row.githubRepoId) }
     let token = await deps.mintInstallationToken({ ...target, permissions: PUBLISH_PERMISSIONS })
-    let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+    github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
 
     // A newer push cancels the job of the previous head; a review that came back before the cancel
     // is not published either. The workflow did the same: a push cancelled the run in progress.
@@ -132,7 +151,58 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       resolved: outcome.resolved,
       check: checks !== null,
     })
+    await answerCommand(github, row, 'rocket')
     return { kind: 'published', reviewId: row.id, githubReviewId }
+  }
+
+  /**
+   * The last reaction on the comment of a command, once. A failure is logged and never throws: the
+   * review is already on GitHub, and a second try would post it again.
+   */
+  async function answerCommand(github: GitHub, row: { id: string; fullName: string; commentId: string | number | null }, content: Reaction) {
+    if (row.commentId === null) return
+    try {
+      await react(github, row.fullName, Number(row.commentId), content)
+    } catch (error) {
+      log('warn', 'command.reaction_failed', { reviewId: row.id, commentId: Number(row.commentId), content, error: errorMessage(error) })
+    }
+    await deps.sql`
+      update jobs set command_answered_at = now()
+      where id = (select job_id from reviews where id = ${row.id}) and command_answered_at is null`
+  }
+
+  /**
+   * 😕 on the comment of each command whose job ended without a review: failed after its last
+   * attempt, or cancelled by a newer push, a close or the installation. Once per job.
+   */
+  async function answerEndedCommands(connection: postgres.Sql) {
+    let rows = await connection<EndedCommand[]>`
+      select jobs.id, jobs.state, jobs.github_comment_id as "commentId", repos.full_name as "fullName",
+        repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
+      from jobs
+      join repos on repos.id = jobs.repo_id
+      join orgs on orgs.id = repos.org_id
+      where jobs.github_comment_id is not null and jobs.command_answered_at is null
+        and jobs.state in ('failed', 'cancelled') and jobs.finished_at > now() - ${MAX_AGE}::interval
+        and orgs.suspended_at is null
+      order by jobs.finished_at
+      limit 20`
+    for (let row of rows) {
+      try {
+        let token = await deps.mintInstallationToken({
+          installationId: Number(row.installationId),
+          githubRepoId: Number(row.githubRepoId),
+          permissions: REACTION_PERMISSIONS,
+        })
+        let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+        await react(github, row.fullName, Number(row.commentId), 'confused')
+        log('info', 'command.ended_without_review', { jobId: row.id, state: row.state, repo: row.fullName, commentId: Number(row.commentId) })
+      } catch (error) {
+        // One try: the comment may be gone. The job keeps its state either way.
+        log('warn', 'command.reaction_failed', { jobId: row.id, commentId: Number(row.commentId), content: 'confused', error: errorMessage(error) })
+      }
+      await connection`update jobs set command_answered_at = now() where id = ${row.id}`
+    }
   }
 
   async function publishPending(): Promise<PublishResult[]> {
@@ -144,8 +214,10 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         let rows = await connection<Pending[]>`
           select reviews.id, reviews.pr_number as "prNumber", reviews.head_sha as "headSha", reviews.result,
             repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
-            orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended
+            orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+            jobs.github_comment_id as "commentId"
           from reviews
+          join jobs on jobs.id = reviews.job_id
           join repos on repos.id = reviews.repo_id
           join orgs on orgs.id = repos.org_id
           where reviews.published_at is null and reviews.created_at > now() - ${MAX_AGE}::interval
@@ -173,6 +245,11 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
             })
             results.push({ kind: 'failed', reviewId: row.id, error: message })
           }
+        }
+        try {
+          await answerEndedCommands(connection)
+        } catch (error) {
+          log('error', 'command.answers_failed', { error: errorMessage(error) })
         }
         return results
       } finally {

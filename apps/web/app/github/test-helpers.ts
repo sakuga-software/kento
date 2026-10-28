@@ -88,3 +88,32 @@ export function signedRequest(payload: unknown, options: SignedRequestOptions = 
   if (signature !== null) headers.set('X-Hub-Signature-256', signature)
   return new Request('http://localhost/webhooks/github', { method: 'POST', headers, body })
 }
+
+/** The payload of an `issue_comment` event on a pull request, with the fields we read. */
+export function issueCommentPayload(
+  options: {
+    action?: string
+    body?: string
+    number?: number
+    commentId?: number
+    user?: { login: string; type: string }
+    sender?: { login: string; type: string }
+    state?: string
+    onPullRequest?: boolean
+    repo?: typeof REPO
+  } = {},
+) {
+  let user = options.user ?? { login: 'alex', type: 'User' }
+  return {
+    action: options.action ?? 'created',
+    issue: {
+      number: options.number ?? 28,
+      state: options.state ?? 'open',
+      ...(options.onPullRequest === false ? {} : { pull_request: { url: 'https://api.github.com/repos/x/y/pulls/28' } }),
+    },
+    comment: { id: options.commentId ?? 9001, body: options.body ?? '@kento review heavy', user },
+    repository: options.repo ?? REPO,
+    sender: options.sender ?? user,
+    installation: { id: 1001, node_id: 'MDIz' },
+  }
+}

@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { commandFor, type EventPolicy } from './events.ts'
-import { headSha, pullRequestPayload, REPO } from './test-helpers.ts'
+import { headSha, issueCommentPayload, pullRequestPayload, REPO } from './test-helpers.ts'
 
 const policy: EventPolicy = {
   kentoRepos: new Set(['sakuga-software/sakuga-review']),
@@ -128,9 +128,69 @@ describe('commandFor installation', () => {
 })
 
 describe('commandFor other events', () => {
-  it('ping answers, issue_comment and unknown events are ignored', () => {
+  it('ping answers, and unknown events are ignored', () => {
     assert.deepEqual(commandFor('ping', { zen: 'Keep it logically awesome.' }, policy), { type: 'ping' })
-    assert.equal(reasonOf({ action: 'created' }, 'issue_comment'), 'issue_comment is not handled yet')
     assert.equal(reasonOf({ action: 'completed' }, 'check_run'), 'event check_run is not handled')
+  })
+})
+
+describe('commandFor issue_comment', () => {
+  it('a new comment that starts with a name of the bot gives a command', () => {
+    assert.deepEqual(commandFor('issue_comment', issueCommentPayload({ body: '@sakuga-review review balanced' }), policy), {
+      type: 'comment_command',
+      installation,
+      repository,
+      prNumber: 28,
+      commentId: 9001,
+      commenter: { login: 'alex', isBot: false },
+      command: { verb: 'review', level: 'balanced', force: false },
+    })
+  })
+
+  it('an unknown command still goes to the handler, which answers with the list', () => {
+    let command = commandFor('issue_comment', issueCommentPayload({ body: '@kento frobnicate' }), policy)
+    assert.ok(command.type === 'comment_command')
+    assert.deepEqual(command.command, { verb: 'unknown', text: '@kento frobnicate' })
+  })
+
+  it('an edited or deleted comment gives no command', () => {
+    assert.match(reasonOf(issueCommentPayload({ action: 'edited' }), 'issue_comment'), /action edited gives no command/)
+    assert.match(reasonOf(issueCommentPayload({ action: 'deleted' }), 'issue_comment'), /action deleted gives no command/)
+  })
+
+  it('a comment of an issue, or a comment that is not a command, gives nothing', () => {
+    assert.equal(reasonOf(issueCommentPayload({ onPullRequest: false }), 'issue_comment'), 'comment is not on a pull request')
+    assert.equal(reasonOf(issueCommentPayload({ body: 'Looks good. @kento review heavy' }), 'issue_comment'), 'comment is not a command')
+  })
+
+  it('a repository outside KENTO_REPOS keeps its commands in the workflow', () => {
+    let other = { ...REPO, id: 4001, full_name: 'sakuga-software/fruitback' }
+    assert.match(reasonOf(issueCommentPayload({ repo: other }), 'issue_comment'), /not in KENTO_REPOS/)
+  })
+
+  it('the App itself never gives a command, even when it is trusted', () => {
+    let app = { login: 'sakuga-review[bot]', type: 'Bot' }
+    let trusting: EventPolicy = { ...policy, trustedBots: new Set(['sakuga-review[bot]']) }
+    let command = commandFor('issue_comment', issueCommentPayload({ user: app, body: '@kento review heavy' }), trusting)
+    assert.deepEqual(command, { type: 'ignore', reason: 'comment of the App itself' })
+  })
+
+  it('an untrusted bot is ignored; a bot of KENTO_TRUSTED_BOTS gives a command', () => {
+    let bot = { login: 'dependabot[bot]', type: 'Bot' }
+    assert.equal(reasonOf(issueCommentPayload({ user: bot }), 'issue_comment'), 'command of an untrusted bot')
+    let agent = { login: 'sakuga-agent[bot]', type: 'Bot' }
+    let command = commandFor('issue_comment', issueCommentPayload({ user: agent }), policy)
+    assert.ok(command.type === 'comment_command')
+    assert.deepEqual(command.commenter, { login: 'sakuga-agent[bot]', isBot: true })
+  })
+
+  it('a closed pull request gives no command', () => {
+    assert.equal(reasonOf(issueCommentPayload({ state: 'closed' }), 'issue_comment'), 'pull request is closed')
+  })
+
+  it('a payload without its comment is invalid', () => {
+    let payload: Record<string, unknown> = issueCommentPayload()
+    payload.comment = { body: '@kento review' }
+    assert.match(reasonOf(payload, 'issue_comment'), /lacks installation, repository, number or comment/)
   })
 })
