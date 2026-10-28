@@ -81,11 +81,19 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           return new Response(null, { status: 204 })
         }
 
+        // A runner without its own model key can run a job only with the key of the service, and
+        // only when it is trusted. Without that, a claim would take a job only to fail it.
+        if (!body.hasProviderKey && !deps.providerApiKey) {
+          await sleep(claimWaitMs, request.signal)
+          return new Response(null, { status: 204 })
+        }
+        let trustedOnly = !body.hasProviderKey
+
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
         // stops the loop.
         let deadline = Date.now() + claimWaitMs
         while (!request.signal.aborted) {
-          let job = await deps.store.claimJob(runner.id)
+          let job = await deps.store.claimJob(runner.id, { trustedOnly })
           if (job) {
             let installationToken
             try {

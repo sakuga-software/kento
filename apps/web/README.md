@@ -106,7 +106,7 @@ and its check; the service checks each body against it (400 with the list of pro
 | Route | Auth | Does |
 | --- | --- | --- |
 | `register` | registration token | Creates a runner and returns its token once (`kento_rt_…`, 256 random bits). The table `runners` keeps only its SHA-256. A new runner is never `trusted`. |
-| `jobs/claim` | runner token | Long poll up to 30 s. Takes the oldest `queued` review job with one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`: two runners never get the same job. The job becomes `running`, with the runner and a lease of 2 min. 200 with the job, or 204. |
+| `jobs/claim` | runner token | Long poll up to 30 s. A runner without its own model key gets a job only when it is `trusted` and the service has `KENTO_PROVIDER_API_KEY`; otherwise the jobs stay queued. Takes the oldest `queued` review job with one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`: two runners never get the same job. The job becomes `running`, with the runner and a lease of 2 min. 200 with the job, or 204. |
 | `jobs/:id/heartbeat` | runner token, holder of the job | Extends the lease by 2 min. `cancel: true` when a newer push cancelled the job. 404 for another runner's job. |
 | `jobs/:id/result` | runner token, holder of the job | `done` with the review: one row in `reviews`, the job becomes `done`. `failed` with a reason: the job becomes `failed`. 409 when the job is no longer `running`, 422 when the review is of another head. |
 

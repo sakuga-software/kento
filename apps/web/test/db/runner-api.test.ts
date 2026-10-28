@@ -76,7 +76,8 @@ describe('runner API', () => {
     return job!.id
   }
 
-  function claim(token: string, body: unknown = { hasProviderKey: false }, app?: ReturnType<typeof router>) {
+  // By default, a runner with its own model key: it may take any job.
+  function claim(token: string, body: unknown = { hasProviderKey: true }, app?: ReturnType<typeof router>) {
     return call('/api/runner/jobs/claim', { token, body, app })
   }
 
@@ -277,7 +278,7 @@ describe('runner API', () => {
 
     it('reads the trust of the runner when it claims, not when its request began', async () => {
       let { runnerId, token } = await register()
-      let pending = claim(token, undefined, router({ claimWaitMs: 1500, claimPollMs: 50 }))
+      let pending = claim(token, { hasProviderKey: false }, router({ claimWaitMs: 1500, claimPollMs: 50 }))
       await new Promise((resolve) => setTimeout(resolve, 200))
       await database.sql`update runners set trusted = true where id = ${runnerId}`
       await queueJob()
@@ -313,9 +314,28 @@ describe('runner API', () => {
       let shared = (await (await claim(token, { hasProviderKey: false })).json()) as Job
       assert.deepEqual(shared.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
 
-      await queueJob()
-      let none = (await (await claim(token, { hasProviderKey: false }, router({ providerApiKey: null }))).json()) as Job
-      assert.equal(none.provider, null)
+    })
+
+    it('gives no job to a runner that has no model key to run it with, and leaves the job queued', async () => {
+      let { runnerId, token } = await register()
+      let jobId = await queueJob()
+
+      // Not trusted yet, and no key of its own: it could only fail the job.
+      let start = Date.now()
+      assert.equal((await claim(token, { hasProviderKey: false }, router({ claimWaitMs: 300, claimPollMs: 50 }))).status, 204)
+      assert.ok(Date.now() - start >= 300, 'the claim still waits, so the runner does not loop')
+
+      // Trusted, but the service has no key to give.
+      await database.sql`update runners set trusted = true where id = ${runnerId}`
+      assert.equal((await claim(token, { hasProviderKey: false }, router({ providerApiKey: null }))).status, 204)
+
+      let [row] = await database.sql<{ state: string; runner_id: string | null }[]>`
+        select state, runner_id from jobs where id = ${jobId}`
+      assert.deepEqual({ ...row }, { state: 'queued', runner_id: null })
+      assert.deepEqual(mints, [])
+
+      // With its own key, the same runner takes it.
+      assert.equal((await claim(token, { hasProviderKey: true })).status, 200)
     })
 
     it('fails the job when GitHub gives no installation token, and gives no job', async () => {

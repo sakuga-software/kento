@@ -39,9 +39,11 @@ export interface RunnerStore {
   findRunner(tokenHash: string): Promise<RunnerRow | null>
   /**
    * Takes the oldest queued job for this runner, or null. Two calls never get the same job, and a
-   * runner revoked since the start of its request gets none.
+   * runner revoked since the start of its request gets none. With `trustedOnly`, only a runner that
+   * is trusted at that moment gets a job: a runner without a model key of its own can run a job
+   * only with the key of the service.
    */
-  claimJob(runnerId: string): Promise<ClaimedJob | null>
+  claimJob(runnerId: string, options?: { trustedOnly?: boolean }): Promise<ClaimedJob | null>
   /** Gives a claimed job back as failed, for example when no installation token could be made. */
   failJob(jobId: string, runnerId: string, reason: string): Promise<void>
   heartbeat(jobId: string, runnerId: string): Promise<HeartbeatOutcome>
@@ -81,7 +83,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
     // One statement: the subquery locks the oldest queued job and skips a job that another claim
     // has locked, so two runners that claim at the same time get two different jobs, or one job
     // and nothing. The update runs in the same statement, so a claimed job is never seen as queued.
-    async claimJob(runnerId) {
+    async claimJob(runnerId, options = {}) {
+      let trustedOnly = options.trustedOnly ?? false
       let [row] = await sql<
         (Omit<ClaimedJob, 'githubRepoId' | 'githubInstallationId' | 'leaseExpiresAt'> & {
           leaseExpiresAt: Date | string
@@ -105,7 +108,11 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             limit 1
           )
           -- A claim waits up to 30 s: the runner may have been revoked since its request began.
-          and exists (select 1 from runners where id = ${runnerId} and revoked_at is null)
+          -- Its trust is read here too, for the same reason.
+          and exists (
+            select 1 from runners
+            where id = ${runnerId} and revoked_at is null and (${trustedOnly}::boolean = false or trusted)
+          )
           returning id, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at
         )
         select

@@ -79,7 +79,8 @@ docker run -d --name kento-runner --restart unless-stopped \
 ## 3. Trust the runner (key mode « app »)
 
 A registration never makes a trusted runner. In M2, `runners-host` has no key of its own and uses
-the OpenRouter key of the service, so mark it trusted in the database of the web service:
+the OpenRouter key of the service, so mark it trusted in the database of the web service. Until
+then it takes no job: the jobs stay queued for it, they do not fail:
 
 ```sql
 select id, name, labels, trusted, created_at, last_seen_at from runners order by created_at;
