@@ -1,0 +1,30 @@
+{
+  "name": "@sakuga-review/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Kentō web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
+  "scripts": {
+    "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
+    "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
+    "db:generate": "drizzle-kit generate",
+    "lint": "oxlint --deny-warnings app test server.ts drizzle.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "NODE_ENV=test remix test 'app/**/*.test.ts'",
+    "test:db": "NODE_ENV=test remix test 'test/db/**/*.test.ts' --concurrency 1"
+  },
+  "engines": {
+    "node": ">=24.3.0"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4",
+    "postgres": "3.4.9",
+    "remix": "3.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "drizzle-kit": "0.31.11",
+    "oxlint": "1.90.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+#
+# Image of the Kentō web service (apps/web). Build it from the root of the repository, because the
+# pnpm workspace and its lockfile live there:
+#
+#   docker build -f apps/web/Dockerfile --build-arg APP_COMMIT=$(git rev-parse HEAD) -t kento-web .
+#
+# The service runs its TypeScript source with `remix/node-tsx`, as Remix 3 recommends: there is no
+# build step. It applies the pending migrations at startup (MIGRATE_ON_START, on by default).
+
+ARG NODE_IMAGE=node:24-bookworm-slim
+
+FROM ${NODE_IMAGE} AS deps
+WORKDIR /repo
+# corepack installs the pnpm version of `packageManager` in the root package.json.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY apps/web/package.json apps/web/
+# The production dependencies of apps/web only. No dev dependency, no other workspace package.
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prod --filter @sakuga-review/web
+
+FROM ${NODE_IMAGE}
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000
+WORKDIR /repo
+COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/apps/web/node_modules ./apps/web/node_modules
+COPY apps/web/package.json apps/web/tsconfig.json apps/web/server.ts ./apps/web/
+COPY apps/web/app ./apps/web/app
+COPY apps/web/drizzle ./apps/web/drizzle
+
+# The commit of the image, shown by /healthz. Dokploy can pass it as a build argument.
+ARG APP_COMMIT=""
+ENV APP_COMMIT=${APP_COMMIT}
+
+USER node
+WORKDIR /repo/apps/web
+EXPOSE 3000
+
+# Docker marks the container unhealthy when /healthz fails three times in a row, for example
+# when the database is down.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
+CMD ["node", "--import", "remix/node-tsx", "server.ts"]

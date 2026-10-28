@@ -1,3 +1,9 @@
 packages:
   - apps/*
   - packages/*
+
+# pnpm 11 refuses to install while a dependency has a build script that this list does not decide.
+# esbuild (from drizzle-kit and the Remix test runner) ships its binary as an optional dependency:
+# its postinstall script only checks it, so it does not run.
+allowBuilds:
+  esbuild: false

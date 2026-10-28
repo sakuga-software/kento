@@ -1,0 +1,12 @@
+# BuildKit reads this file because it sits next to apps/web/Dockerfile. The build context is the
+# root of the repository; send only what the image needs.
+*
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!apps/web/package.json
+!apps/web/tsconfig.json
+!apps/web/server.ts
+!apps/web/app/**
+!apps/web/drizzle/**
+apps/web/app/**/*.test.ts
