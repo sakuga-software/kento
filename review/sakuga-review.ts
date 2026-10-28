@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { diffStart, fileChangedSince, fileDiff } from './history.ts';
 
 const HERE = import.meta.dirname;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -211,19 +212,6 @@ const ANSWER_SCHEMA = {
 
 function git(repo: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-}
-
-/**
- * Whether a file changed between a commit and the head. A force-push can remove the commit from the
- * history: the answer is then false, and the thread stays open.
- */
-function fileChangedSince(repo: string, since: string | undefined, head: string, path: string): boolean {
-  if (!since) return false;
-  try {
-    return git(repo, 'diff', '--name-only', `${since}..${head}`, '--', path).trim() !== '';
-  } catch {
-    return false;
-  }
 }
 
 const log = (message: string) => process.stderr.write(`${message}\n`);
@@ -891,7 +879,21 @@ async function setScoreLabel(owner: string, name: string, pr: number, value: num
 
 type Args = { repoDir: string; repository: string; pr: number; head: string; level: Level };
 
-async function post(args: Args, answer: Answer, usage: Usage, skipped: string[], lines: ChangedLines) {
+/**
+ * The note of a review when a force-push removed the commit of open threads: their diff starts at the
+ * merge base, and they stay open.
+ */
+function goneNote(gone: number, base: string): string {
+  if (!gone) return '';
+  const threads = gone > 1 ? `${gone} fils ouverts` : 'un fil ouvert';
+  return (
+    `\n\n> [!NOTE]\n> Un force-push a retiré de l'historique le commit relu par ${threads}. ` +
+    `Le diff depuis ce commit est impossible : cette revue relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
+    `et ${gone > 1 ? 'ces fils restent ouverts' : 'ce fil reste ouvert'}.`
+  );
+}
+
+async function post(args: Args & { base: string }, answer: Answer, usage: Usage, skipped: string[], lines: ChangedLines) {
   const [owner, name] = args.repository.split('/');
   const threads = await botThreads(owner, name, args.pr);
   const openThreads = new Map(threads.filter((t) => !t.resolved).map((t) => [t.key, t]));
@@ -930,10 +932,14 @@ async function post(args: Args, answer: Answer, usage: Usage, skipped: string[],
 
   // A thread closes only when its file changed since the comment and the finding did not come back.
   // A finding that the model did not repeat is not a fixed finding: the same code can be read twice.
+  // A thread whose commit a force-push removed stays open: nothing tells what changed since.
   let resolved = 0;
+  let gone = 0;
   for (const t of threads) {
     if (t.resolved || t.answered || keysNow.has(t.key)) continue;
-    if (!fileChangedSince(args.repoDir, t.commit, args.head, t.path)) continue;
+    const changed = fileChangedSince(args.repoDir, t.commit, args.head, t.path);
+    if (changed === null) gone++;
+    if (!changed) continue;
     try {
       await graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: t.id });
     } catch (error) {
@@ -949,7 +955,7 @@ async function post(args: Args, answer: Answer, usage: Usage, skipped: string[],
     resolved++;
   }
 
-  const review = { commit_id: args.head, body: reviewBody(answer, lines, args.level, usage), event: verdict(answer, lines, args.level), comments };
+  const review = { commit_id: args.head, body: reviewBody(answer, lines, args.level, usage) + goneNote(gone, args.base), event: verdict(answer, lines, args.level), comments };
   const path = `/repos/${owner}/${name}/pulls/${args.pr}/reviews`;
   let posted;
   try {
@@ -1179,7 +1185,7 @@ const cleanBody = (body: string) =>
  * The message that the model reads: each thread, the code at the head around it, and its diff since.
  * It stops before MAX_RESOLVE_PACK_BYTES, and gives the threads that it holds.
  */
-function resolvePack(repo: string, head: string, threads: OpenThread[]): { pack: string; held: OpenThread[] } {
+function resolvePack(repo: string, base: string, head: string, threads: OpenThread[]): { pack: string; held: OpenThread[] } {
   const header = `# Open review threads at the head ${head.slice(0, 9)}\n`;
   const sections: string[] = [];
   const held: OpenThread[] = [];
@@ -1202,20 +1208,20 @@ function resolvePack(repo: string, head: string, threads: OpenThread[]): { pack:
       const code = lines.slice(start - 1, end).map((l, i) => `${start + i}| ${cut(l, MAX_CODE_LINE_CHARS)}`).join('\n');
       parts.push(`\n### The code now, lines ${start}-${end}\n\n\`\`\`\n${code}\n\`\`\`\n`);
     }
-    const since = opener.commit;
+    // A force-push can remove the commit of the thread: the diff then starts at the merge base.
+    const start = diffStart(repo, opener.commit, base, head);
     let diff = '';
-    if (since) {
+    if (start) {
       try {
-        diff = cut(git(repo, 'diff', `${since}..${head}`, '--', t.path), MAX_THREAD_DIFF_BYTES);
+        diff = cut(fileDiff(repo, start, head, t.path), MAX_THREAD_DIFF_BYTES);
       } catch {
         diff = '';
       }
     }
-    parts.push(
-      diff
-        ? `\n### The diff of this file since the thread opened\n\n\`\`\`diff\n${diff}\n\`\`\`\n`
-        : '\n### The diff of this file since the thread opened\n\nNo change.\n',
-    );
+    const title = start?.gone
+      ? '### The diff of this file in the whole pull request (a force-push removed the commit of the thread)'
+      : '### The diff of this file since the thread opened';
+    parts.push(diff ? `\n${title}\n\n\`\`\`diff\n${diff}\n\`\`\`\n` : `\n${title}\n\nNo change.\n`);
     const section = parts.join('');
     if (size + section.length > MAX_RESOLVE_PACK_BYTES) break;
     sections.push(section);
@@ -1225,13 +1231,13 @@ function resolvePack(repo: string, head: string, threads: OpenThread[]): { pack:
   return { pack: header + sections.join(''), held };
 }
 
-async function resolve(args: Args) {
+async function resolve(args: Args & { base: string }) {
   const [owner, name] = args.repository.split('/');
   const marker = markerResolve(args.head);
   const all = await openThreads(owner, name, args.pr);
   // A thread that this command already answered at this head waits for a new push.
   const waiting = all.filter((t) => !t.comments.some((c) => c.body.includes(marker)));
-  const { pack, held: threads } = resolvePack(args.repoDir, args.head, waiting.slice(0, MAX_THREADS));
+  const { pack, held: threads } = resolvePack(args.repoDir, args.base, args.head, waiting.slice(0, MAX_THREADS));
   if (!threads.length) {
     const at = `au commit \`${args.head.slice(0, 9)}\``;
     const text = waiting.length
@@ -1259,9 +1265,13 @@ async function resolve(args: Args) {
     const opener = t.comments[0];
     // A thread of a person closes only on a change of its file: an answer of the bot is not enough.
     // A finding of a bot that the file did not change since is not fixed.
+    // A force-push that removed the commit of the thread gives null: the thread stays open.
     const changed = fileChangedSince(args.repoDir, opener.commit, args.head, t.path);
-    const close = v.verdict === 'fixed' ? changed : v.verdict === 'answered' && opener.isBot;
-    let status = '';
+    const close = v.verdict === 'fixed' ? changed === true : v.verdict === 'answered' && opener.isBot;
+    let status =
+      v.verdict === 'fixed' && changed === null
+        ? `Un force-push a retiré de l'historique le commit de ce fil : le changement depuis ce commit est inconnu, et le fil reste ouvert.`
+        : '';
     if (close) {
       try {
         await graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: t.id }, writeToken);
