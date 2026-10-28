@@ -221,18 +221,36 @@ describe('POST /webhooks/github against Postgres', () => {
     let [repo] = await sql<{ id: string }[]>`select id from repos`
 
     // An enqueue in flight: it holds the lock of the repository row and has inserted its job, but
-    // has not committed yet.
+    // has not committed yet. It commits only when the close is blocked by it, or when the close
+    // has already answered (no lock: the close did not see the job, and the test fails). No fixed
+    // delay: the order is the same on a slow and on a fast machine.
     let close: Promise<unknown> | undefined
+    let blocked = false
     await sql.begin(async (tx) => {
       await tx`select id from repos where id = ${repo!.id} for update`
-      await tx`update jobs set state = 'cancelled', failure_reason = 'superseded by a newer push'`
+      let [holder] = await tx<{ pid: number }[]>`select pg_backend_pid() as pid`
+      await tx`update jobs set state = 'cancelled', failure_reason = 'superseded by a newer push'
+               where repo_id = ${repo!.id} and pr_number = 24 and head_sha = ${headSha(1)}`
       await tx`insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
                values (${repo!.id}, 'lite', 24, ${headSha(2)}, 'in-flight')`
-      close = post(pullRequestPayload({ action: 'closed', head: headSha(2) }))
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      let settled = false
+      close = post(pullRequestPayload({ action: 'closed', head: headSha(2) })).finally(() => (settled = true))
+      let deadline = Date.now() + 10_000
+      while (!settled && Date.now() < deadline) {
+        // Only a backend that this transaction blocks counts: the close, waiting on the row lock.
+        let [waiting] = await sql<{ count: number }[]>`
+          select count(*)::int as count from pg_stat_activity
+          where ${holder!.pid}::int = any(pg_blocking_pids(pid))`
+        if (waiting!.count > 0) {
+          blocked = true
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
     })
     let { body } = (await close) as { body: { cancelled: number } }
 
+    assert.equal(blocked, true, 'the close did not wait for the lock of the repository row')
     assert.equal(body.cancelled, 1)
     assert.deepEqual((await jobRows()).map((row) => [row.head_sha, row.state]), [
       [headSha(1), 'cancelled'],
