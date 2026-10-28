@@ -83,7 +83,60 @@ Useful queries once the labels exist:
 {project="Kentō", app="web"} | json | event="http.request" | status >= 500
 ```
 
-## 5. Each later deployment
+## 5. GitHub App webhook (REV-3)
+
+The existing App « Sakuga Review » (client id `Iv23liesB1xzywavcnv2`) gets a webhook. No new App.
+Deploy the release with REV-3 first: without its secret the route answers 503, and that is safe.
+
+1. Generate the secret on your machine, and keep it only in Dokploy and in the App settings:
+
+   ```sh
+   openssl rand -hex 32
+   ```
+
+2. Dokploy → `web` → **Environment**, add, then **Deploy**:
+
+   ```sh
+   GITHUB_WEBHOOK_SECRET=<the 64 characters>
+   KENTO_REPOS=sakuga-software/sakuga-review
+   ```
+
+   `KENTO_TRUSTED_BOTS` defaults to `sakuga-agent[bot]`. The logs at startup show
+   `startup.listening` with `kentoRepos`, and no `startup.webhook_disabled`.
+3. GitHub → organization `sakuga-software` → **Settings → Developer settings → GitHub Apps → Sakuga
+   Review → General**:
+   - **Webhook → Active**: on.
+   - **Webhook URL**: `https://review.sakuga.dev/webhooks/github`
+   - **Webhook secret**: the same 64 characters.
+   - SSL verification: enabled.
+   - **Save changes**.
+4. Same App → **Permissions & events → Subscribe to events**: `Pull request`, `Issue comment`
+   (`Installation` and `Installation repositories` need no box: GitHub always sends them to an
+   App). Save. If GitHub asks the organization to accept a change of permissions, accept it.
+5. **Advanced → Recent Deliveries**: the `ping` has the answer 200 `{"outcome":"pong"}`.
+
+### Check the four steps of the ticket
+
+1. Push a commit on an open pull request of `sakuga-software/sakuga-review`. Recent Deliveries shows
+   `pull_request.synchronize` with 202 `{"outcome":"queued",…}`, and in the database:
+
+   ```sql
+   select pr_number, left(head_sha, 8), state, github_delivery_id from jobs order by created_at desc limit 5;
+   ```
+
+   gives one `queued` row with the head of the push.
+2. Push again: the first row is `cancelled`, the new one `queued`.
+3. A wrong signature: `curl -i -X POST https://review.sakuga.dev/webhooks/github -H 'X-GitHub-Event: ping' -H 'X-GitHub-Delivery: manual-1' -H 'X-Hub-Signature-256: sha256=00' -d '{}'`
+   gives 401 `invalid signature`, and `jobs` has no new row.
+4. Recent Deliveries → the delivery of step 2 → **Redeliver**: 202 `{"outcome":"duplicate",…}`, and
+   no new row.
+
+Rotate the secret: a new value in Dokploy and in the App settings, one right after the other. The
+deliveries in between get 401; redeliver them from Recent Deliveries.
+
+Turn it off: uncheck **Webhook → Active** in the App, or remove `GITHUB_WEBHOOK_SECRET` (503).
+
+## 6. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

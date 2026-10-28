@@ -8,6 +8,7 @@ import { after, before, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { createDatabaseCheck } from '../../app/db/health.ts'
 import { migrationsFolder, runMigrations } from '../../app/db/migrate.ts'
+import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase } from './helpers.ts'
 
@@ -164,6 +165,7 @@ describe('GET /healthz against Postgres', () => {
       checkDatabase: createDatabaseCheck(database.sql),
       version: '0.1.0',
       commit: null,
+      webhook: disabledWebhook,
     })
 
     let response = await router.fetch(new URL('/healthz', 'http://localhost'))
@@ -184,6 +186,7 @@ describe('GET /healthz against Postgres', () => {
         checkDatabase: createDatabaseCheck(emptyDatabase.sql),
         version: '0.1.0',
         commit: null,
+        webhook: disabledWebhook,
       })
       let response = await router.fetch(new URL('/healthz', 'http://localhost'))
       let body = await response.json()

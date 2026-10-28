@@ -4,9 +4,10 @@ import { describe, it } from 'remix/test'
 import type { CheckDatabase } from '../db/health.ts'
 import { createAppRouter } from '../router.ts'
 import { routes } from '../routes.ts'
+import { disabledWebhook } from '../github/test-helpers.ts'
 
 function routerWith(checkDatabase: CheckDatabase) {
-  return createAppRouter({ checkDatabase, version: '1.2.3', commit: 'abc1234' })
+  return createAppRouter({ checkDatabase, version: '1.2.3', commit: 'abc1234', webhook: disabledWebhook })
 }
 
 function get(router: ReturnType<typeof routerWith>, href: string) {

@@ -3,6 +3,7 @@ import { createRouter, type RouterContext } from 'remix/router'
 
 import { createController } from './actions/controller.tsx'
 import type { CheckDatabase } from './db/health.ts'
+import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
 import { routes } from './routes.ts'
 
@@ -11,6 +12,7 @@ export interface AppDependencies {
   checkDatabase: CheckDatabase
   version: string
   commit: string | null
+  webhook: WebhookDependencies
 }
 
 export function createAppRouter(deps: AppDependencies) {

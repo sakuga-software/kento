@@ -1,5 +1,6 @@
 import { createController as createRemixController } from 'remix/router'
 
+import { handleGithubWebhook } from '../github/webhook.ts'
 import type { AppDependencies } from '../router.ts'
 import { routes } from '../routes.ts'
 import { HomePage } from './home-page.tsx'
@@ -25,6 +26,11 @@ export function createController(deps: AppDependencies) {
           },
           { status: ok ? 200 : 503, headers: { 'Cache-Control': 'no-store' } },
         )
+      },
+
+      // GitHub App webhook: signature first, then the job queue. See app/github/webhook.ts.
+      githubWebhook(context) {
+        return handleGithubWebhook(context.request, deps.webhook)
       },
     },
   })

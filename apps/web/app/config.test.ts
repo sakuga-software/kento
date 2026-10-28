@@ -17,6 +17,9 @@ describe('loadConfig', () => {
       migrateOnStart: true,
       version: packageJson.version,
       commit: null,
+      githubWebhookSecret: null,
+      kentoRepos: new Set(),
+      trustedBots: new Set(['sakuga-agent[bot]']),
     })
   })
 
@@ -34,6 +37,39 @@ describe('loadConfig', () => {
     assert.equal(config.port, 8080)
     assert.equal(config.migrateOnStart, false)
     assert.equal(config.commit, 'abc1234')
+  })
+
+  it('reads the webhook secret, the repositories and the trusted bots', () => {
+    let secret = ` ${'s'.repeat(40)} `
+    let config = loadConfig({
+      DATABASE_URL: url,
+      GITHUB_WEBHOOK_SECRET: secret,
+      KENTO_REPOS: ' Sakuga-Software/sakuga-review , sakuga-software/fruitback,,',
+      KENTO_TRUSTED_BOTS: 'Renovate[bot], sakuga-agent[bot]',
+    })
+    // GitHub signs with the exact string: no trim.
+    assert.equal(config.githubWebhookSecret, secret)
+    assert.deepEqual(config.kentoRepos, new Set(['sakuga-software/sakuga-review', 'sakuga-software/fruitback']))
+    assert.deepEqual(config.trustedBots, new Set(['renovate[bot]', 'sakuga-agent[bot]']))
+  })
+
+  it('refuses a short webhook secret and never prints it', () => {
+    let error: unknown
+    try {
+      loadConfig({ DATABASE_URL: url, GITHUB_WEBHOOK_SECRET: 'short-secret-value' })
+    } catch (caught) {
+      error = caught
+    }
+    assert.ok(error instanceof ConfigError)
+    assert.match(error.message, /GITHUB_WEBHOOK_SECRET must have at least 32 characters/)
+    assert.doesNotMatch(error.message, /short-secret-value/)
+  })
+
+  it('refuses a repository that is not owner/name', () => {
+    assert.throws(
+      () => loadConfig({ DATABASE_URL: url, KENTO_REPOS: 'sakuga-review' }),
+      /KENTO_REPOS must be a comma-separated list of owner\/name/,
+    )
   })
 
   it('names every invalid variable and never prints a value', () => {

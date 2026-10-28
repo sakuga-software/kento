@@ -5,6 +5,7 @@ import { createRequestListener } from 'remix/node-fetch-server'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
 import { createDatabaseCheck } from './app/db/health.ts'
+import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createAppRouter } from './app/router.ts'
@@ -38,7 +39,17 @@ let router = createAppRouter({
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,
+  webhook: {
+    secret: config.githubWebhookSecret,
+    kentoRepos: config.kentoRepos,
+    trustedBots: config.trustedBots,
+    apply: createWebhookStore(database.db, { kentoRepos: config.kentoRepos }),
+  },
 })
+
+if (config.githubWebhookSecret === null) {
+  log('warn', 'startup.webhook_disabled', { reason: 'GITHUB_WEBHOOK_SECRET is not set' })
+}
 
 let server = http.createServer(
   createRequestListener(router.fetch, {
@@ -55,6 +66,7 @@ server.listen(config.port, config.host, () => {
     port: config.port,
     version: config.version,
     commit: config.commit,
+    kentoRepos: [...config.kentoRepos],
   })
 })
 

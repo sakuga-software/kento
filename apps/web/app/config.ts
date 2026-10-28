@@ -14,7 +14,21 @@ export interface Config {
   /** The version of the package, and the commit of the image when the build gives it. */
   version: string
   commit: string | null
+  /**
+   * The secret of the GitHub App webhook, for `X-Hub-Signature-256`. Without it, `/webhooks/github`
+   * answers 503 to every request. Never logged.
+   */
+  githubWebhookSecret: string | null
+  /** The repositories that get a job, as lowercase `owner/name`. M3 replaces it with the Repos screen. */
+  kentoRepos: ReadonlySet<string>
+  /** The bot logins whose pull requests and pushes get a review, as a person's do. */
+  trustedBots: ReadonlySet<string>
 }
+
+/** The shortest webhook secret that `loadConfig` accepts. `openssl rand -hex 32` gives 64 characters. */
+export const MIN_WEBHOOK_SECRET_LENGTH = 32
+
+const DEFAULT_TRUSTED_BOTS = 'sakuga-agent[bot]'
 
 export class ConfigError extends Error {
   override name = 'ConfigError'
@@ -38,6 +52,20 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   let databasePoolMax = readInteger(env, 'DATABASE_POOL_MAX', 10, 1, 100, problems)
   let migrateOnStart = readBoolean(env, 'MIGRATE_ON_START', true, problems)
 
+  // The secret is not trimmed: GitHub signs with the exact string that the App settings hold.
+  let githubWebhookSecret = env.GITHUB_WEBHOOK_SECRET ?? ''
+  if (githubWebhookSecret !== '' && githubWebhookSecret.length < MIN_WEBHOOK_SECRET_LENGTH) {
+    problems.push(`GITHUB_WEBHOOK_SECRET must have at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`)
+  }
+
+  let kentoRepos = readList(env.KENTO_REPOS ?? '')
+  for (let repo of kentoRepos) {
+    if (!/^[a-z0-9-]+\/[a-z0-9._-]+$/.test(repo)) {
+      problems.push('KENTO_REPOS must be a comma-separated list of owner/name')
+      break
+    }
+  }
+
   if (problems.length > 0) {
     throw new ConfigError(`Invalid configuration: ${problems.join('; ')}`)
   }
@@ -52,7 +80,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     migrateOnStart,
     version: packageJson.version,
     commit: commit ? commit : null,
+    githubWebhookSecret: githubWebhookSecret === '' ? null : githubWebhookSecret,
+    kentoRepos: new Set(kentoRepos),
+    trustedBots: new Set(readList(env.KENTO_TRUSTED_BOTS ?? DEFAULT_TRUSTED_BOTS)),
   }
+}
+
+// GitHub logins and repository names are case-insensitive: the list keeps them in lowercase.
+function readList(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item !== '')
 }
 
 function readInteger(
