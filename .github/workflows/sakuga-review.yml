@@ -1,15 +1,16 @@
-# Automatic review of pull requests by Sakuga Review (Claude Haiku 5.5 through OpenRouter), and its commands
-# in a comment: `@sakuga-review review [lite|balanced|heavy]`, `@sakuga-review resolve`.
-# See https://github.com/sakuga-software/sakuga-review.
+# The commands of Sakuga Review in a comment of a pull request: `@sakuga-review review [lite|balanced|heavy]`
+# and `@sakuga-review resolve`. See https://github.com/sakuga-software/sakuga-review.
 #
-# This repository reviews its own pull requests with the code of `main`, not with the code of the
-# pull request: a change of the review does not review itself, and a merged change runs here before
-# `stable` moves to it (see the README).
+# The automatic review of each push no longer runs here: Kentō (apps/web) publishes it, with a runner
+# and the GitHub App, and no GitHub Actions (REV-5). The commands stay on the workflow until Kentō
+# takes them (the ticket of the `@kento` commands).
+#
+# This repository runs the commands with the code of `main`, not with the code of the pull request:
+# a change of the review does not review itself, and a merged change runs here before `stable` moves
+# to it (see the README).
 name: Sakuga Review
 
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 

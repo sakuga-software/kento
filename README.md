@@ -351,11 +351,12 @@ in the repository. The job checks out the script and the prompt at the commit of
 (`job.workflow_sha`), so the three always match. A version tag (`v5.1`, `v5.2`…) stays on each
 release, to name it and to roll back to it.
 
-This repository reviews its own pull requests with `review.yml@main`: a merged change runs here
-first, before `stable` moves.
+The automatic review of the pull requests of this repository comes from Kentō (`apps/web`), not
+from a workflow (REV-5). Its comment commands still go through `review.yml@main`: a merged change
+runs here first, before `stable` moves.
 
-1. Merge the change on `main`. Open or push a pull request here, and check its review: it runs the
-   new code.
+1. Merge the change on `main`. Comment `@sakuga-review review` on a pull request here, and check the
+   review that it posts: it runs the new code.
 2. Tag the merge commit with the next version, and move `stable` to it. GitHub refuses a ref to a
    commit that changes a workflow to a token without the `workflow` scope, so push with git:
 
