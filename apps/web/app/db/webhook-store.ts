@@ -53,10 +53,13 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
         case 'enqueue_review':
           return enqueueReview(tx, command, deliveryId, kentoRepos)
         case 'cancel_pull_request': {
+          // The lock waits for an enqueue of the same repository that has not committed yet, so the
+          // update below also sees its job.
           let [repo] = await tx
             .select({ id: repos.id })
             .from(repos)
             .where(eq(repos.githubRepoId, command.repository.githubRepoId))
+            .for('update')
           if (!repo) return { outcome: 'skipped', reason: 'unknown repository' }
           let where = and(eq(jobs.repoId, repo.id), eq(jobs.prNumber, command.prNumber))
           let cancelled = await cancelActive(tx, where, CANCEL_REASON.closed)

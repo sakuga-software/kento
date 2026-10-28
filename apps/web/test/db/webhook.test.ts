@@ -216,6 +216,30 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal(replay.body.outcome, 'duplicate')
   })
 
+  it('a close waits for an enqueue of the same repository that has not committed yet', async () => {
+    await post(pullRequestPayload({ head: headSha(1) }))
+    let [repo] = await sql<{ id: string }[]>`select id from repos`
+
+    // An enqueue in flight: it holds the lock of the repository row and has inserted its job, but
+    // has not committed yet.
+    let close: Promise<unknown> | undefined
+    await sql.begin(async (tx) => {
+      await tx`select id from repos where id = ${repo!.id} for update`
+      await tx`update jobs set state = 'cancelled', failure_reason = 'superseded by a newer push'`
+      await tx`insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+               values (${repo!.id}, 'lite', 24, ${headSha(2)}, 'in-flight')`
+      close = post(pullRequestPayload({ action: 'closed', head: headSha(2) }))
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    let { body } = (await close) as { body: { cancelled: number } }
+
+    assert.equal(body.cancelled, 1)
+    assert.deepEqual((await jobRows()).map((row) => [row.head_sha, row.state]), [
+      [headSha(1), 'cancelled'],
+      [headSha(2), 'cancelled'],
+    ])
+  })
+
   it('a captured push replayed after the close queues nothing; the reopen does', async () => {
     let push = pullRequestPayload({ head: headSha(1) })
     await post(push)

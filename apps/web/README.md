@@ -82,8 +82,9 @@ Duplicates:
   cover a review on demand).
 - While the last job of a pull request was cancelled by its close, only `reopened` queues a job:
   GitHub sends no push for a closed pull request, so a `synchronize` then is a replay.
-- The upsert of the repository locks its row until the transaction ends: two deliveries of one
-  repository run one after the other, and leave one queued job per pull request.
+- The upsert of the repository locks its row until the transaction ends, and a close takes the same
+  lock: two deliveries of one repository run one after the other, and leave one queued job per pull
+  request (none after a close).
 
 The logs name the event, action, delivery id and outcome (`webhook.applied`, `webhook.ignored`,
 `webhook.bad_signature`, `webhook.too_large`, `webhook.invalid`, `webhook.failed`), never the secret,
