@@ -495,6 +495,19 @@ describe('commands in the comments of a pull request', () => {
         assert.equal((await say('@kento resolve')).body.outcome, 'queued')
       })
 
+      it('18d. a thread that the model gave no verdict for is counted in the summary', async () => {
+        await say('@kento resolve')
+        let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
+        assert.ok(job)
+        let result = resolved()
+        result.threads = result.threads.slice(0, 1)
+        await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: result })
+        await publisher().publishPending()
+        let summary = fake.state.issueComments.at(-1)!.body
+        assert.match(summary, /2 fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande `@kento resolve` les relira\./)
+        assert.equal(fake.repliesTo(personAnswered).length, 0)
+      })
+
       it('19. without `contents: write`, the replies say that a person can resolve, and the threads stay open', async () => {
         fake.state.readOnly.add('contents')
         await say('@kento resolve')

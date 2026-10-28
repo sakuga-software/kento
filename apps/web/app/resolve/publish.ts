@@ -103,6 +103,8 @@ export async function publishResolution(
   }
 
   let skipped = Math.max(0, payload.waiting - payload.held)
+  // Threads that the model read and gave no verdict for: the runner leaves them out.
+  let unanswered = Math.max(0, payload.held - payload.threads.length)
   let usage = {
     model: payload.model ?? '?',
     ...(payload.provider ? { provider: payload.provider } : {}),
@@ -112,8 +114,16 @@ export async function publishResolution(
     body: [
       `**${BY} · résolution des fils** ${at}`,
       '',
-      ...(lines.length ? lines : ["Aucun des fils relus n'est encore ouvert."]),
+      ...(lines.length ? lines : unanswered ? [] : ["Aucun des fils relus n'est encore ouvert."]),
       '',
+      ...(unanswered
+        ? [
+            unanswered > 1
+              ? `${unanswered} fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande \`@kento resolve\` les relira.`
+              : 'Un fil relu sans réponse du modèle : il reste ouvert, et la prochaine commande `@kento resolve` le relira.',
+            '',
+          ]
+        : []),
       ...(skipped
         ? [
             `${skipped} autre${skipped > 1 ? 's' : ''} ${plural(skipped, 'fil')} ${plural(skipped, 'ouvert')} attend${skipped > 1 ? 'ent' : ''} : ` +

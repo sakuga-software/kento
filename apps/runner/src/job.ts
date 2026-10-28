@@ -244,7 +244,11 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
     const verdicts: ResolvePayload['threads'] = [];
     for (const t of held) {
       const v = byId.get(t.id);
-      if (!v || !['fixed', 'answered', 'open'].includes(v.verdict)) continue;
+      if (!v || !['fixed', 'answered', 'open'].includes(v.verdict)) {
+        // The summary counts it (held − threads), and the next resolve reads it again.
+        log('warn', 'job.thread_without_verdict', { jobId: job.id, thread: t.id });
+        continue;
+      }
       verdicts.push({
         id: t.id,
         verdict: v.verdict,
