@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import type { Installation, Repository, WebhookCommand } from '../github/events.ts'
 import type { Db } from './client.ts'
@@ -122,6 +122,21 @@ async function enqueueReview(
 
   let [delivered] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.githubDeliveryId, deliveryId))
   if (delivered) return { outcome: 'duplicate', reason: 'delivery already created a job' }
+
+  // GitHub sends no push event for a closed pull request, but a captured signed push can come back
+  // with a new delivery id. While the last job of the pull request was cancelled by its close, only
+  // a `reopened` event queues a job.
+  if (command.action !== 'reopened') {
+    let [last] = await tx
+      .select({ state: jobs.state, failureReason: jobs.failureReason })
+      .from(jobs)
+      .where(and(eq(jobs.repoId, repo.id), eq(jobs.prNumber, command.prNumber)))
+      .orderBy(desc(jobs.createdAt), desc(jobs.id))
+      .limit(1)
+    if (last?.state === 'cancelled' && last.failureReason === CANCEL_REASON.closed) {
+      return { outcome: 'skipped', reason: 'pull request is closed' }
+    }
+  }
 
   let [sameHead] = await tx
     .select({ id: jobs.id })

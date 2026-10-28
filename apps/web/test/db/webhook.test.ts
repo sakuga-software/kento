@@ -216,6 +216,18 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal(replay.body.outcome, 'duplicate')
   })
 
+  it('a captured push replayed after the close queues nothing; the reopen does', async () => {
+    let push = pullRequestPayload({ head: headSha(1) })
+    await post(push)
+    await post(pullRequestPayload({ action: 'closed', head: headSha(1) }))
+    let replay = await post(push)
+    assert.deepEqual(replay.body, { outcome: 'skipped', reason: 'pull request is closed' })
+    assert.deepEqual((await jobRows()).map((row) => row.state), ['cancelled'])
+
+    assert.equal((await post(pullRequestPayload({ action: 'reopened', head: headSha(1) }))).body.outcome, 'queued')
+    assert.equal((await post(pullRequestPayload({ head: headSha(2) }))).body.outcome, 'queued')
+  })
+
   it('a reopen after a close of a reviewed head queues nothing: the review is done', async () => {
     await post(pullRequestPayload({ head: headSha(1) }))
     await sql`update jobs set state = 'done'`
@@ -241,6 +253,7 @@ describe('POST /webhooks/github against Postgres', () => {
     let store = createWebhookStore(database.db, { kentoRepos: new Set() })
     let command = {
       type: 'enqueue_review' as const,
+      action: 'synchronize' as const,
       installation: { githubInstallationId: 1001, githubAccountId: 2001, login: 'sakuga-software' },
       repository: { githubRepoId: 3001, fullName: 'sakuga-software/sakuga-review' },
       prNumber: 24,

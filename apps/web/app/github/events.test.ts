@@ -23,6 +23,7 @@ describe('commandFor pull_request', () => {
     it(`${action} queues a review of the head`, () => {
       assert.deepEqual(commandFor('pull_request', pullRequestPayload({ action, head: headSha(7) }), policy), {
         type: 'enqueue_review',
+        action,
         installation,
         repository,
         prNumber: 24,

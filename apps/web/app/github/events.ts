@@ -18,6 +18,8 @@ export type WebhookCommand =
   | { type: 'invalid'; reason: string }
   | {
       type: 'enqueue_review'
+      /** The `pull_request` action. After a close, only `reopened` queues a job again. */
+      action: ReviewAction
       installation: Installation
       repository: Repository
       prNumber: number
@@ -39,7 +41,13 @@ export interface EventPolicy {
 }
 
 /** The `pull_request` actions that create a review job: the same as `review.yml`. */
-const REVIEW_ACTIONS = new Set(['opened', 'synchronize', 'reopened', 'ready_for_review'])
+const REVIEW_ACTIONS = ['opened', 'synchronize', 'reopened', 'ready_for_review'] as const
+
+export type ReviewAction = (typeof REVIEW_ACTIONS)[number]
+
+function isReviewAction(action: string | null): action is ReviewAction {
+  return (REVIEW_ACTIONS as readonly (string | null)[]).includes(action)
+}
 
 export function commandFor(event: string, payload: unknown, policy: EventPolicy): WebhookCommand {
   if (!isObject(payload)) return { type: 'invalid', reason: 'payload is not an object' }
@@ -73,7 +81,7 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   if (action === 'closed') {
     return { type: 'cancel_pull_request', installation, repository, prNumber }
   }
-  if (action === null || !REVIEW_ACTIONS.has(action)) {
+  if (!isReviewAction(action)) {
     return { type: 'ignore', reason: `pull_request action ${action ?? '(none)'} creates no job` }
   }
   if (!policy.kentoRepos.has(repository.fullName.toLowerCase())) {
@@ -98,7 +106,7 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   if (headSha === null || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(headSha) || baseRef === null) {
     return { type: 'invalid', reason: 'pull_request payload lacks head.sha or base.ref' }
   }
-  return { type: 'enqueue_review', installation, repository, prNumber, headSha, baseRef }
+  return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef }
 }
 
 function installationCommand(payload: Obj): WebhookCommand {
