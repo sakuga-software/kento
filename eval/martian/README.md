@@ -1,7 +1,7 @@
 # A TypeScript slice of the Martian bench
 
-[`run.ts`](run.ts) runs `review/sakuga-review.ts --dry-run` on each pull request of a subset, then
-asks the judge of the [Martian Code Review Bench](https://github.com/withmartian/code-review-benchmark)
+[`run.ts`](run.ts) runs the engine of [`packages/engine`](../../packages/engine/) on each pull
+request of a subset, as the Action does at the `lite` level, then asks the judge of the [Martian Code Review Bench](https://github.com/withmartian/code-review-benchmark)
 (MIT) whether each finding matches each golden comment. The judge prompt is the one of Martian,
 unchanged. The judge model is `anthropic/claude-sonnet-5.5`; keep it the same from one run to the
 next. The full bench that this slice comes from is in [`../PLAN.md`](../PLAN.md).

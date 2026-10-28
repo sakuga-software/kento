@@ -1,5 +1,5 @@
 // A pull request that a force-push rewrote: the commit of an open thread leaves its history.
-// Run with `node --test review/`.
+// Run with `pnpm test`, or `node --test packages/engine/test/`.
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { diffStart, fileChangedSince, fileDiff, inHistory } from './history.ts';
+import { diffStart, fileChangedSince, fileDiff, inHistory } from '../src/history.ts';
 
 const git = (repo: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultBranch=main', ...args], {

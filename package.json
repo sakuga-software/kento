@@ -1,0 +1,17 @@
+{
+  "name": "sakuga-review",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm --recursive --if-present test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}

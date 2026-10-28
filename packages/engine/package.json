@@ -1,0 +1,16 @@
+{
+  "name": "@sakuga-review/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The engine of Sakuga Review: pack, model call, findings and rendering of a review. No GitHub API.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'"
+  }
+}

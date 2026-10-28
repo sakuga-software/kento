@@ -1,20 +1,16 @@
 /**
  * A slice of the Martian Code Review Bench for Sakuga Review: each model reviews the selected pull
- * requests with review/sakuga-review.ts, and the judge of Martian matches each finding against the
- * golden comments. See README.md.
+ * requests with the engine of packages/engine, as the Action does, and the judge of Martian matches
+ * each finding against the golden comments. See README.md.
  *
  *     OPENROUTER_API_KEY=... node eval/martian/run.ts --subset subset.json --repos <dir> --out <dir> \
  *       --label run1 --models z-ai/glm-5.3,xiaomi/mimo-v2.6-pro
  */
-import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
+import { levelConfig, reviewPullRequest } from '../../packages/engine/src/index.ts';
 
-const run = promisify(execFile);
-const HERE = import.meta.dirname;
-const SCRIPT = join(HERE, '..', '..', 'review', 'sakuga-review.ts');
 const JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
 const REVIEWS_AT_ONCE = 6;
 const JUDGE_CALLS_AT_ONCE = 12;
@@ -67,25 +63,26 @@ async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R
 
 async function review(pr: Pr, model: string, repoDir: string): Promise<Review> {
   const start = Date.now();
+  // The failed attempts of the engine: a fallback to the next model shows here.
+  const failures: string[] = [];
   try {
-    const { stdout, stderr } = await run('node', [SCRIPT, '--repo-dir', repoDir, '--base', pr.base, '--head', pr.head, '--dry-run'], {
-      env: { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: process.env.REVIEW_TIMEOUT_MS ?? '480000' },
-      maxBuffer: 64 * 1024 * 1024,
+    // A lite review, with the variables REVIEW_* of the environment, as the Action reads them.
+    const config = levelConfig('lite', { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: process.env.REVIEW_TIMEOUT_MS ?? '480000' });
+    const out = await reviewPullRequest({
+      repoDir,
+      base: pr.base,
+      head: pr.head,
+      level: 'lite',
+      config,
+      apiKey: process.env.OPENROUTER_API_KEY,
+      log: (message) => failures.push(message),
     });
-    const out = JSON.parse(stdout);
     // The candidate that the judge reads: what a reader of the review reads.
-    const findings = out.answer.findings.map((f: { title: string; scenario: string; fix: string; path: string; line: number }) =>
-      `${f.path}:${f.line} — ${f.title}. ${f.scenario} Fix: ${f.fix}`,
-    );
-    return { findings, cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: stderr.includes('failed') ? stderr.trim().split('\n')[0] : undefined };
+    const findings = out.findings.map((f) => `${f.path}:${f.line} — ${f.title}. ${f.scenario} Fix: ${f.fix}`);
+    return { findings, cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: failures[0] };
   } catch (error) {
-    const stderr = (error as { stderr?: string }).stderr
-      ?.split('\n')
-      .filter((line) => !line.trimStart().startsWith('at '))
-      .join('\n')
-      .trim()
-      .slice(-600);
-    return { findings: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: stderr || String(error).slice(0, 300) };
+    const message = [...failures, String(error)].join('\n').slice(-600);
+    return { findings: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: message };
   }
 }
 
