@@ -107,9 +107,26 @@ and its check; the service checks each body against it (400 with the list of pro
 | Route | Auth | Does |
 | --- | --- | --- |
 | `register` | registration token | Creates a runner and returns its token once (`kento_rt_…`, 256 random bits). The table `runners` keeps only its SHA-256. A new runner is never `trusted`. |
-| `jobs/claim` | runner token | Long poll up to 30 s. A runner without its own model key gets a job only when it is `trusted` and the service has `KENTO_PROVIDER_API_KEY`; otherwise the jobs stay queued. Takes the oldest `queued` review job with one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`: two runners never get the same job. The job becomes `running`, with the runner and a lease of 2 min. 200 with the job, or 204. |
-| `jobs/:id/heartbeat` | runner token, holder of the job | Extends the lease by 2 min. `cancel: true` when a newer push cancelled the job. 404 for another runner's job. |
-| `jobs/:id/result` | runner token, holder of the job | `done` with the review: one row in `reviews`, the job becomes `done`. `failed` with a reason: the job becomes `failed`. 409 when the job is no longer `running`, 422 when the review is of another head. |
+| `jobs/claim` | runner token | Long poll up to 30 s. A runner without its own model key gets a job only when it is `trusted` and the service has `KENTO_PROVIDER_API_KEY`; otherwise the jobs stay queued. Takes the oldest `queued` review job with one `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`: two runners never get the same job. The job becomes `running`, with the runner, a lease of 2 min and the next `attempt` number. A job queued again waits for its `not_before` (backoff). 200 with the job, or 204. |
+| `jobs/:id/heartbeat` | runner token, holder of the attempt | Body `{ "attempt": n }`. Extends the lease by 2 min. `cancel: true` when a push, a close or a suspension cancelled the job. 409 `lease_lost` when this runner and attempt no longer hold the job, 409 `job_finished` after its result, 404 for a job that does not exist. |
+| `jobs/:id/result` | runner token, holder of the attempt | `done` with the review and the attempt: one row in `reviews`, the job becomes `done`. `failed` with a reason: the job becomes `failed`. 409 `lease_lost` when another attempt holds the job (or it went back to the queue), 409 `job_not_running` when it is cancelled or finished, 422 when the review is of another head. |
+
+### Leases and attempts
+
+The holder of a job is its runner **and** its attempt (`jobs.attempts`, incremented by each claim).
+Every heartbeat and result names its attempt, and the service compares both under the lock of the
+row: a runner whose lease was taken over can never write a result, even when the same runner claimed
+the job again.
+
+Every 15 s each replica of the service sweeps the `running` jobs whose lease has ended, in one
+`UPDATE … FOR UPDATE SKIP LOCKED` statement (two sweeps never take the same job, and a job whose
+result is being written is left to the next sweep):
+
+- fewer than 2 attempts: back to `queued`, `not_before` = now + 30 s × 2^(attempts − 1);
+- 2 attempts: `failed`, `failure_reason` = `lease expired 2 times`.
+
+A failure to make the installation token at a claim counts as an attempt in the same way. A job that
+fails keeps the reviews of the earlier heads: nothing is removed.
 
 Each job carries a GitHub installation token that the service asks for the one repository of the
 job, with `contents: read`; GitHub makes it valid one hour. The private key of the App never leaves
@@ -120,7 +137,8 @@ A wrong, missing or revoked runner token gets 401 with no reason. Revoke a runne
 `update runners set revoked_at = now() where id = …`: its next call gets 401.
 
 Events: `runner.registered`, `runner.registration_refused`, `runner.auth_refused`, `job.claimed`,
-`job.installation_token_failed`, `job.result`. No token or key is logged.
+`job.installation_token_failed`, `job.result`, `job.lease_lost`, `job.lease_expired` (with `state`
+`queued` or `failed`), `job.lease_sweep_failed`. No token or key is logged.
 
 ## Logs
 

@@ -15,6 +15,13 @@
       "when": 1793208713956,
       "tag": "0001_runners",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793213708436,
+      "tag": "0002_job_retries",
+      "breakpoints": true
     }
   ]
 }

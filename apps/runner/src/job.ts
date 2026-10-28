@@ -3,7 +3,7 @@
 import { mkdir } from 'node:fs/promises';
 import { levelConfig, reviewPullRequest, type ReviewResult } from '@sakuga-review/engine';
 import { HEARTBEAT_SECONDS, type Job, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
-import { ApiError, type KentoApi } from './api.ts';
+import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';
 import { addSecret, errorMessage, log, removeSecret } from './log.ts';
@@ -22,61 +22,102 @@ export type JobDependencies = {
   signal?: AbortSignal;
 };
 
-export type JobOutcome = 'done' | 'failed' | 'cancelled' | 'interrupted';
+/**
+ * - `cancelled`: the service cancelled the job (a newer push, a close); nothing was sent.
+ * - `lost`: the service gave the job to another attempt (the lease ended) or refused the result with
+ *   409; nothing was stored.
+ * - `interrupted`: the runner stopped in the middle; the job comes back when its lease ends.
+ */
+export type JobOutcome = 'done' | 'failed' | 'cancelled' | 'lost' | 'interrupted';
 
 /** Runs a job to its end and sends its result. Throws only when the result cannot be sent. */
 export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcome> {
   const started = Date.now();
-  const fields = { jobId: job.id, repo: job.repo.fullName, pr: job.pullRequest.number, head: job.pullRequest.headSha, reviewLevel: job.level };
+  const fields = { jobId: job.id, attempt: job.attempt, repo: job.repo.fullName, pr: job.pullRequest.number, head: job.pullRequest.headSha, reviewLevel: job.level };
   log('info', 'job.started', fields);
   addSecret(job.installationToken.token);
   addSecret(job.provider?.apiKey);
 
-  const cancel = new AbortController();
-  const signal = deps.signal ? AbortSignal.any([deps.signal, cancel.signal]) : cancel.signal;
+  // `stop` ends the job when the service no longer wants it from this runner: `cancelled` when it
+  // was cancelled, `lost` when its lease went to another attempt.
+  const stop = new AbortController();
+  let stoppedAs: 'cancelled' | 'lost' | null = null;
+  const stopJob = (as: 'cancelled' | 'lost', reason: string) => {
+    if (stoppedAs) return;
+    stoppedAs = as;
+    stop.abort(new Error(reason));
+  };
+  const signal = deps.signal ? AbortSignal.any([deps.signal, stop.signal]) : stop.signal;
+
+  // One heartbeat at a time, and none once the job has ended, even when a call was in flight.
+  let ended = false;
+  let beating = false;
   const heartbeat = setInterval(async () => {
+    if (ended || beating) return;
+    beating = true;
     try {
-      const answer = await deps.api.heartbeat(job.id);
-      if (answer.cancel) {
+      const answer = await deps.api.heartbeat(job.id, job.attempt);
+      if (!ended && answer.cancel) {
         log('info', 'job.cancelled_by_service', fields);
-        cancel.abort(new Error('the service cancelled the job'));
+        stopJob('cancelled', 'the service cancelled the job');
       }
     } catch (error) {
-      log('warn', 'job.heartbeat_failed', { ...fields, error: errorMessage(error) });
+      if (!ended && isJobLost(error)) {
+        log('warn', 'job.lease_lost', { ...fields, error: errorMessage(error) });
+        stopJob('lost', 'the service gave the job to another attempt');
+      } else {
+        log('warn', 'job.heartbeat_failed', { ...fields, error: errorMessage(error) });
+      }
+    } finally {
+      beating = false;
     }
   }, deps.heartbeatMs ?? HEARTBEAT_SECONDS * 1000);
 
   let result: ResultRequest;
   try {
     const review = await reviewJob(job, deps, signal);
-    result = { outcome: 'done', review };
+    result = { outcome: 'done', attempt: job.attempt, review };
   } catch (error) {
-    result = { outcome: 'failed', reason: errorMessage(error).slice(0, 2000) || 'unknown error' };
+    result = { outcome: 'failed', attempt: job.attempt, reason: errorMessage(error).slice(0, 2000) || 'unknown error' };
   } finally {
+    ended = true;
     clearInterval(heartbeat);
   }
 
   try {
-    if (cancel.signal.aborted) {
-      // The service no longer wants the job: it would refuse the result.
-      log('info', 'job.finished', { ...fields, outcome: 'cancelled', durationMs: Date.now() - started });
-      return 'cancelled';
+    if (stoppedAs) {
+      // The service no longer wants the job from this runner: it would refuse the result.
+      log('info', 'job.finished', { ...fields, outcome: stoppedAs, durationMs: Date.now() - started });
+      return stoppedAs;
     }
     if (result.outcome === 'failed' && deps.signal?.aborted) {
       // The runner stops (SIGTERM, a redeploy) in the middle of the job. The failure comes from the
-      // stop, not from the pull request: send nothing, so that the job stays running until its lease
-      // ends and the service gives it to another runner (REV-6). A review already done is still sent.
+      // stop, not from the pull request: send nothing. The job stays running until its lease ends,
+      // then the service queues it again for another attempt. A review already done is still sent.
       log('warn', 'job.finished', { ...fields, outcome: 'interrupted', durationMs: Date.now() - started });
       return 'interrupted';
     }
     try {
       await deps.api.result(job.id, result);
     } catch (error) {
+      // The job was cancelled, or its lease went to another attempt, after the last heartbeat: the
+      // service stored nothing, and it is not an error of the runner.
+      if (isJobLost(error)) {
+        log('warn', 'job.finished', { ...fields, outcome: 'lost', durationMs: Date.now() - started, error: errorMessage(error) });
+        return 'lost';
+      }
       // A review that the service refuses (400) becomes a failure with the reason, so the job does
       // not stay running until its lease ends.
       if (!(error instanceof ApiError && error.status === 400 && result.outcome === 'done')) throw error;
-      result = { outcome: 'failed', reason: `the service refused the review: ${errorMessage(error)}`.slice(0, 2000) };
-      await deps.api.result(job.id, result);
+      result = { outcome: 'failed', attempt: job.attempt, reason: `the service refused the review: ${errorMessage(error)}`.slice(0, 2000) };
+      try {
+        await deps.api.result(job.id, result);
+      } catch (second) {
+        // The lease can go to another attempt between the two calls.
+        if (!isJobLost(second)) throw second;
+        log('warn', 'job.finished', { ...fields, outcome: 'lost', durationMs: Date.now() - started, error: errorMessage(second) });
+        return 'lost';
+      }
     }
     log(result.outcome === 'done' ? 'info' : 'warn', 'job.finished', {
       ...fields,

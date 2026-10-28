@@ -210,7 +210,29 @@ select pr_number, left(head_sha, 8), score, published_at, github_review_id from 
 
 `published_at` set with `github_review_id` null: a review that was skipped.
 
-## 8. Each later deployment
+## 8. Expired leases and attempts (REV-6)
+
+The release with REV-6 adds the migration `0002_job_retries` (column `jobs.not_before` and a partial
+index on the leases of the running jobs; additive only) and changes the runner protocol: each job
+carries an `attempt`, and the heartbeat and the result send it back.
+
+1. Stop the runner first (`docker stop kento-runner` on `runners-host`). A runner of the earlier
+   release would claim a job of the new service, refuse its message (`attempt` is a key it does not
+   know) and log `runner.claim_failed`: the job would come back only after its lease, and each such
+   claim spends one of its 2 attempts. The jobs queued while no runner runs just wait.
+2. Deploy `web`. Its logs show `startup.migrations_applied`, and `/healthz` gives `"migrations":3`.
+3. Publish the runner image of the same commit and recreate the runner
+   ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
+4. Check, with one runner and one open pull request:
+   - push a commit, then `docker stop kento-runner` during the review. About 2 min later the web logs
+     show `job.lease_expired` with `"state":"queued"`; start the runner again, and the job ends
+     `done` with `attempts = 2`. One row in `reviews`.
+   - stop it twice on the same job: the job ends `failed` with `failure_reason = 'lease expired 2 times'`.
+   - push twice in a row during a review: the first job ends `cancelled`, the runner logs
+     `job.cancelled_by_service` then `job.finished` with `"outcome":"cancelled"`, and only the new head
+     gets a review.
+
+## 9. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

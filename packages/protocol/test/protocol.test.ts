@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseClaimRequest, parseJob, parseRegisterRequest, parseResultRequest, type Job, type ReviewPayload } from '../src/index.ts';
+import { parseClaimRequest, parseHeartbeatRequest, parseJob, parseRegisterRequest, parseResultRequest, type Job, type ReviewPayload } from '../src/index.ts';
 
 const SHA = 'a'.repeat(40);
 
 const job = (): Job => ({
   id: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11',
+  attempt: 1,
   kind: 'review',
   level: 'lite',
   repo: { fullName: 'sakuga-software/sakuga-review', cloneUrl: 'https://github.com/sakuga-software/sakuga-review.git' },
@@ -55,12 +56,13 @@ test('a valid job, register, claim and result pass', () => {
   assert.deepEqual(parseJob(job()), { ok: true, value: job() });
   assert.equal(parseRegisterRequest({ name: 'runners-host', labels: ['linux', 'x64'], version: '0.1.0' }).ok, true);
   assert.equal(parseClaimRequest({ hasProviderKey: false }).ok, true);
-  assert.deepEqual(parseResultRequest({ outcome: 'done', review: review() }), { ok: true, value: { outcome: 'done', review: review() } });
-  assert.equal(parseResultRequest({ outcome: 'failed', reason: 'clone failed' }).ok, true);
+  assert.deepEqual(parseResultRequest({ outcome: 'done', attempt: 1, review: review() }), { ok: true, value: { outcome: 'done', attempt: 1, review: review() } });
+  assert.equal(parseResultRequest({ outcome: 'failed', attempt: 2, reason: 'clone failed' }).ok, true);
+  assert.deepEqual(parseHeartbeatRequest({ attempt: 2 }), { ok: true, value: { attempt: 2 } });
 });
 
 test('a result with a wrong score, an extra key or a missing key fails, with the path of each problem', () => {
-  const bad = { outcome: 'done', review: { ...review(), score: 6, extra: 1 } } as Record<string, unknown>;
+  const bad = { outcome: 'done', attempt: 1, review: { ...review(), score: 6, extra: 1 } } as Record<string, unknown>;
   delete (bad.review as Record<string, unknown>).model;
   const checked = parseResultRequest(bad);
   assert.equal(checked.ok, false);
@@ -73,14 +75,23 @@ test('a result with an unknown outcome, a bad finding or too many findings fails
   assert.equal(parseResultRequest([]).ok, false);
   const badFinding = review();
   (badFinding.findings[0] as Record<string, unknown>).severity = 'blocker';
-  assert.deepEqual(parseResultRequest({ outcome: 'done', review: badFinding }), {
+  assert.deepEqual(parseResultRequest({ outcome: 'done', attempt: 1, review: badFinding }), {
     ok: false,
     errors: ['$.review.findings[0].severity: must be one of critical, major, minor'],
   });
   const many = review();
   many.findings = Array.from({ length: 101 }, () => review().findings[0]!);
-  assert.equal(parseResultRequest({ outcome: 'done', review: many }).ok, false);
-  assert.equal(parseResultRequest({ outcome: 'failed', reason: '' }).ok, false);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: many }).ok, false);
+  assert.equal(parseResultRequest({ outcome: 'failed', attempt: 1, reason: '' }).ok, false);
+});
+
+test('a heartbeat or a result without a valid attempt fails: the service fences each claim with it', () => {
+  for (const attempt of [undefined, 0, -1, 1.5, '1', 1001]) {
+    const value = attempt === undefined ? {} : { attempt };
+    assert.equal(parseHeartbeatRequest(value).ok, false, String(attempt));
+    assert.equal(parseResultRequest({ outcome: 'failed', reason: 'x', ...value }).ok, false, String(attempt));
+    assert.equal(parseJob({ ...job(), attempt }).ok, false, String(attempt));
+  }
 });
 
 test('a job with a clone URL that is not HTTPS, or a base that looks like an option, fails', () => {

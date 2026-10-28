@@ -117,7 +117,7 @@ describe('publication of a review', () => {
     let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true })
     assert.equal(claimed.status, 200)
     let job: Job = await claimed.json()
-    let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', review: result })
+    let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: result })
     assert.equal(stored.status, 204)
     return job.id
   }
@@ -349,7 +349,7 @@ describe('publication of a review', () => {
     let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-2', labels: [], version: '0.1.0' })
     let { token } = await registered.json()
     let job: Job = await (await call('/api/runner/jobs/claim', token, { hasProviderKey: true })).json()
-    let response = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'failed', reason: 'clone failed' })
+    let response = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'failed', attempt: job.attempt, reason: 'clone failed' })
     assert.equal(response.status, 204)
     assert.equal(woken, 0)
   })

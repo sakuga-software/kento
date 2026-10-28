@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { after, afterEach, before, beforeEach, test } from 'node:test';
 import type { Answer } from '@sakuga-review/engine';
 import { parseResultRequest, type Job, type ResultRequest } from '@sakuga-review/protocol';
-import { createApi, UnauthorizedError } from '../src/api.ts';
+import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
 import { runJob } from '../src/job.ts';
@@ -67,6 +67,7 @@ afterEach(() => {
 function job(overrides: Partial<Job> = {}): Job {
   return {
     id: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11',
+    attempt: 1,
     kind: 'review',
     level: 'lite',
     repo: { fullName: 'sakuga-software/sakuga-review', cloneUrl: 'https://github.com/sakuga-software/sakuga-review.git' },
@@ -105,19 +106,30 @@ function stubModel(options: { hang?: boolean } = {}) {
   return { fetch: stub, keys };
 }
 
-/** An API that records the results, as the service would get them. */
-function fakeApi(options: { cancel?: boolean } = {}) {
+/**
+ * An API that records the results, as the service would get them. `heartbeatStatus` / `resultStatus`
+ * make the service answer with that error status, as when the lease of the attempt is lost (409).
+ */
+function fakeApi(options: { cancel?: boolean; heartbeatStatus?: number; resultStatus?: number } = {}) {
   const results: ResultRequest[] = [];
+  const attempts: number[] = [];
   let heartbeats = 0;
   return {
     results,
+    attempts,
     heartbeats: () => heartbeats,
     api: {
       claim: async () => null,
-      heartbeat: async () => (heartbeats++, { leaseExpiresAt: '2027-01-15T08:04:00Z', cancel: options.cancel ?? false }),
+      heartbeat: async (_id: string, attempt: number) => {
+        heartbeats++;
+        attempts.push(attempt);
+        if (options.heartbeatStatus) throw new ApiError(options.heartbeatStatus, `heartbeat: the service answered ${options.heartbeatStatus}`);
+        return { leaseExpiresAt: '2027-01-15T08:04:00Z', cancel: options.cancel ?? false };
+      },
       result: async (_id: string, body: ResultRequest) => {
         const checked = parseResultRequest(JSON.parse(JSON.stringify(body)));
         assert.ok(checked.ok, `the result is the protocol: ${!checked.ok && checked.errors.join('; ')}`);
+        if (options.resultStatus) throw new ApiError(options.resultStatus, `result: the service answered ${options.resultStatus}`);
         results.push(body);
       },
     },
@@ -169,7 +181,7 @@ test('the key of the runner comes before the key of the job, and no key fails th
 
   const two = fakeApi();
   assert.equal(await runJob(job(), deps(two.api, model.fetch)), 'failed');
-  assert.deepEqual(two.results, [{ outcome: 'failed', reason: 'no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted' }]);
+  assert.deepEqual(two.results, [{ outcome: 'failed', attempt: 1, reason: 'no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted' }]);
   assertNoSecretInLogs();
 });
 
@@ -191,6 +203,67 @@ test('a job that the service cancels stops its model call and sends nothing', as
   assert.equal(await runJob(job(), d), 'cancelled');
   assert.ok(heartbeats() >= 1);
   assert.deepEqual(results, []);
+});
+
+test('a job whose lease went to another attempt stops at the next heartbeat and sends nothing', async () => {
+  const { api, results, attempts } = fakeApi({ heartbeatStatus: 409 });
+  const model = stubModel({ hang: true });
+  const d = { ...deps(api, model.fetch, RUNNER_KEY), heartbeatMs: 50 };
+  assert.equal(await runJob(job({ attempt: 2 }), d), 'lost');
+  assert.deepEqual(results, []);
+  assert.ok(attempts.length >= 1 && attempts.every((a) => a === 2), `the heartbeat sends the attempt of the job: ${attempts}`);
+  assert.match(logs.join('\n'), /"event":"job.lease_lost"/);
+  assert.match(logs.join('\n'), /"event":"job.finished".*"outcome":"lost"/);
+});
+
+test('a result that the service refuses with 409 ends the job as lost, without an error', async () => {
+  const { api, results } = fakeApi({ resultStatus: 409 });
+  assert.equal(await runJob(job(), deps(api, stubModel().fetch, RUNNER_KEY)), 'lost');
+  assert.deepEqual(results, []);
+  assert.match(logs.join('\n'), /"event":"job.finished".*"outcome":"lost"/);
+});
+
+test('a review refused with 400, then a failure refused with 409, ends the job as lost', async () => {
+  const sent: string[] = [];
+  const { api } = fakeApi();
+  const statuses = [400, 409];
+  const refusing = {
+    ...api,
+    result: async (_id: string, body: ResultRequest) => {
+      sent.push(body.outcome);
+      const status = statuses.shift()!;
+      throw new ApiError(status, `result: the service answered ${status}`);
+    },
+  };
+  assert.equal(await runJob(job(), deps(refusing, stubModel().fetch, RUNNER_KEY)), 'lost');
+  assert.deepEqual(sent, ['done', 'failed']);
+  assert.match(logs.join('\n'), /"event":"job.finished".*"outcome":"lost"/);
+});
+
+test('a heartbeat that fails for another reason does not stop the job', async () => {
+  const { api, results, heartbeats } = fakeApi({ heartbeatStatus: 503 });
+  // A model that answers after a few heartbeats.
+  const slow = (async (url: string, init: RequestInit) => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return stubModel().fetch(url, init);
+  }) as typeof fetch;
+  assert.equal(await runJob(job(), { ...deps(api, slow, RUNNER_KEY), heartbeatMs: 30 }), 'done');
+  assert.ok(heartbeats() >= 2);
+  assert.equal(results[0]!.outcome, 'done');
+});
+
+test('the heartbeat stops when the job ends, also when it ends in a failure', async () => {
+  const { api, heartbeats } = fakeApi();
+  // A model that fails after a few heartbeats.
+  const failing = (async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    throw new Error('the model is down');
+  }) as unknown as typeof fetch;
+  assert.equal(await runJob(job(), { ...deps(api, failing, RUNNER_KEY), heartbeatMs: 20 }), 'failed');
+  const count = heartbeats();
+  assert.ok(count >= 1, 'the job sent heartbeats while it ran');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(heartbeats(), count, 'no heartbeat after the end of the job');
 });
 
 test('a runner that stops in the middle of a job sends nothing, so the job can be taken again', async () => {

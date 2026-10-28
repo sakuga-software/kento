@@ -167,9 +167,9 @@ describe('runner API', () => {
       let { runnerId, token } = await register()
       for (let bad of [null, 'kento_rt_wrong', `${token}x`, REGISTRATION_TOKEN]) {
         assert.equal((await claim(bad as string)).status, 401, String(bad))
-        assert.equal((await call(`/api/runner/jobs/${jobId}/heartbeat`, { token: bad })).status, 401)
+        assert.equal((await call(`/api/runner/jobs/${jobId}/heartbeat`, { token: bad, body: { attempt: 1 } })).status, 401)
         assert.equal(
-          (await call(`/api/runner/jobs/${jobId}/result`, { token: bad, body: { outcome: 'failed', reason: 'x' } })).status,
+          (await call(`/api/runner/jobs/${jobId}/result`, { token: bad, body: { outcome: 'failed', attempt: 1, reason: 'x' } })).status,
           401,
         )
       }
@@ -200,6 +200,7 @@ describe('runner API', () => {
       assert.equal(response.status, 200)
       let job: Job = await response.json()
       assert.equal(job.id, first)
+      assert.equal(job.attempt, 1)
       assert.deepEqual(job.repo, {
         fullName: 'sakuga-software/sakuga-review',
         cloneUrl: 'https://github.com/sakuga-software/sakuga-review.git',
@@ -338,15 +339,28 @@ describe('runner API', () => {
       assert.equal((await claim(token, { hasProviderKey: true })).status, 200)
     })
 
-    it('fails the job when GitHub gives no installation token, and gives no job', async () => {
+    it('queues the job again when GitHub gives no installation token, and fails it at the last attempt', async () => {
       let { token } = await register()
       let jobId = await queueJob()
       mintFails = true
       assert.equal((await claim(token)).status, 204)
-      let [row] = await database.sql<{ state: string; failure_reason: string }[]>`
-        select state, failure_reason from jobs where id = ${jobId}`
+      let [first] = await database.sql<{ state: string; attempts: number; wait: number; failure_reason: string | null }[]>`
+        select state, attempts, extract(epoch from not_before - now())::int as wait, failure_reason
+        from jobs where id = ${jobId}`
+      assert.equal(first!.state, 'queued')
+      assert.equal(first!.attempts, 1)
+      assert.ok(first!.wait > 20 && first!.wait <= 30, `backoff of ${first!.wait} s`)
+      assert.equal(first!.failure_reason, null)
+      assert.equal((await claim(token)).status, 204, 'not before the end of the backoff')
+
+      await database.sql`update jobs set not_before = now() - interval '1 second' where id = ${jobId}`
+      assert.equal((await claim(token)).status, 204)
+      let [row] = await database.sql<{ state: string; attempts: number; failure_reason: string }[]>`
+        select state, attempts, failure_reason from jobs where id = ${jobId}`
       assert.equal(row!.state, 'failed')
+      assert.equal(row!.attempts, 2)
       assert.match(row!.failure_reason, /^installation token: GitHub answered 404/)
+      assert.equal(mints.length, 2)
     })
 
     it('gives no job when the GitHub App is not configured, after the whole wait', async () => {
@@ -374,22 +388,29 @@ describe('runner API', () => {
       let other = await register('other')
       await database.sql`update jobs set lease_expires_at = now() + interval '5 seconds' where id = ${jobId}`
 
-      let response = await call(`/api/runner/jobs/${jobId}/heartbeat`, { token })
+      let response = await call(`/api/runner/jobs/${jobId}/heartbeat`, { token, body: { attempt: 1 } })
       assert.equal(response.status, 200)
       let body = await response.json()
       assert.equal(body.cancel, false)
       assert.ok(new Date(body.leaseExpiresAt).getTime() - Date.now() > 100_000)
 
-      assert.equal((await call(`/api/runner/jobs/${jobId}/heartbeat`, { token: other.token })).status, 404)
-      assert.equal((await call('/api/runner/jobs/not-a-uuid/heartbeat', { token })).status, 404)
+      let notHolder = await call(`/api/runner/jobs/${jobId}/heartbeat`, { token: other.token, body: { attempt: 1 } })
+      assert.equal(notHolder.status, 409)
+      assert.deepEqual(await notHolder.json(), { error: 'lease_lost' })
+      let missing = await call(`/api/runner/jobs/${crypto.randomUUID()}/heartbeat`, { token, body: { attempt: 1 } })
+      assert.equal(missing.status, 404)
+      assert.equal((await call('/api/runner/jobs/not-a-uuid/heartbeat', { token, body: { attempt: 1 } })).status, 404)
+      let noAttempt = await call(`/api/runner/jobs/${jobId}/heartbeat`, { token, body: {} })
+      assert.equal(noAttempt.status, 400)
+      assert.deepEqual((await noAttempt.json()).errors, ['$.attempt: is required'])
     })
 
     it('a heartbeat on a cancelled job tells the runner to stop', async () => {
       let { token, jobId } = await claimed()
       await database.sql`update jobs set state = 'cancelled' where id = ${jobId}`
-      let body = await (await call(`/api/runner/jobs/${jobId}/heartbeat`, { token })).json()
+      let body = await (await call(`/api/runner/jobs/${jobId}/heartbeat`, { token, body: { attempt: 1 } })).json()
       assert.equal(body.cancel, true)
-      let result = await call(`/api/runner/jobs/${jobId}/result`, { token, body: { outcome: 'done', review: review() } })
+      let result = await call(`/api/runner/jobs/${jobId}/result`, { token, body: { outcome: 'done', attempt: 1, review: review() } })
       assert.equal(result.status, 409)
       let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from reviews`
       assert.equal(count!.n, 0)
@@ -414,7 +435,7 @@ describe('runner API', () => {
       }
       let response = await call(`/api/runner/jobs/${jobId}/result`, {
         token,
-        body: { outcome: 'done', review: review({ score: 2, findings: [finding] }) },
+        body: { outcome: 'done', attempt: 1, review: review({ score: 2, findings: [finding] }) },
       })
       assert.equal(response.status, 204)
 
@@ -431,7 +452,7 @@ describe('runner API', () => {
         select state, finished_at is not null as finished, lease_expires_at as lease from jobs where id = ${jobId}`
       assert.deepEqual(job, { state: 'done', finished: true, lease: null })
 
-      let again = await call(`/api/runner/jobs/${jobId}/result`, { token, body: { outcome: 'done', review: review() } })
+      let again = await call(`/api/runner/jobs/${jobId}/result`, { token, body: { outcome: 'done', attempt: 1, review: review() } })
       assert.equal(again.status, 409)
     })
 
@@ -440,13 +461,14 @@ describe('runner API', () => {
       let other = await register('other')
       let url = `/api/runner/jobs/${jobId}/result`
 
-      assert.equal((await call(url, { token: other.token, body: { outcome: 'done', review: review() } })).status, 404)
+      assert.equal((await call(url, { token: other.token, body: { outcome: 'done', attempt: 1, review: review() } })).status, 409)
+      assert.equal((await call(url, { token, body: { outcome: 'done', attempt: 2, review: review() } })).status, 409, 'another attempt')
 
-      let invalid = await call(url, { token, body: { outcome: 'done', review: { ...review(), score: 9 } } })
+      let invalid = await call(url, { token, body: { outcome: 'done', attempt: 1, review: { ...review(), score: 9 } } })
       assert.equal(invalid.status, 400)
       assert.deepEqual((await invalid.json()).errors, ['$.review.score: must be from 1 to 5'])
 
-      let wrongHead = await call(url, { token, body: { outcome: 'done', review: review({ head: 'c'.repeat(40) }) } })
+      let wrongHead = await call(url, { token, body: { outcome: 'done', attempt: 1, review: review({ head: 'c'.repeat(40) }) } })
       assert.equal(wrongHead.status, 422)
 
       let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from reviews`
@@ -459,7 +481,7 @@ describe('runner API', () => {
       let { token, jobId } = await claimed()
       let response = await call(`/api/runner/jobs/${jobId}/result`, {
         token,
-        body: { outcome: 'failed', reason: 'x'.repeat(1_100_000) },
+        body: { outcome: 'failed', attempt: 1, reason: 'x'.repeat(1_100_000) },
       })
       assert.equal(response.status, 413)
     })
@@ -468,7 +490,7 @@ describe('runner API', () => {
       let { token, jobId } = await claimed()
       let response = await call(`/api/runner/jobs/${jobId}/result`, {
         token,
-        body: { outcome: 'failed', reason: 'clone failed: exit 128' },
+        body: { outcome: 'failed', attempt: 1, reason: 'clone failed: exit 128' },
       })
       assert.equal(response.status, 204)
       let [job] = await database.sql<{ state: string; failure_reason: string }[]>`

@@ -6,8 +6,13 @@
  *
  * 1. `POST /api/runner/register` with the registration token → a runner token, shown once.
  * 2. `POST /api/runner/jobs/claim` → 200 with a job, or 204 after the long poll with no job.
- * 3. `POST /api/runner/jobs/:id/heartbeat` every 30 s while it works → the new end of the lease.
+ * 3. `POST /api/runner/jobs/:id/heartbeat` every 30 s while it works → the new end of the lease, or
+ *    `cancel: true` when the job is no longer wanted.
  * 4. `POST /api/runner/jobs/:id/result` → the review, or the reason of the failure.
+ *
+ * Each claim of a job is one attempt, with its number in `Job.attempt`. The heartbeat and the result
+ * send it back. When a lease ends with no heartbeat, the service queues the job again for a new
+ * attempt: the runner of the old attempt then gets 409 `lease_lost`, and its result is never stored.
  *
  * Every call after the registration sends `Authorization: Bearer <runner token>`.
  *
@@ -29,6 +34,8 @@ export const PATHS = {
 export const CLAIM_WAIT_SECONDS = 30;
 /** A claim or a heartbeat gives the runner the job for this long. */
 export const LEASE_SECONDS = 120;
+/** A job is claimed at most this many times. The service fails it when the last lease ends. */
+export const MAX_ATTEMPTS = 2;
 /** The runner sends a heartbeat this often while it works on a job. */
 export const HEARTBEAT_SECONDS = 30;
 /** The largest body that the service reads from a runner. */
@@ -80,9 +87,11 @@ export type ClaimRequest = { hasProviderKey: boolean };
  *   hour. It clones the code; it cannot write. The runner never logs it.
  * - `provider`: the key of the service for the model. Only a trusted runner without its own key
  *   gets it; otherwise it is null and the runner uses its own key.
+ * - `attempt`: the number of this claim of the job, from 1. The heartbeat and the result send it.
  */
 export type Job = {
   id: string;
+  attempt: number;
   kind: 'review';
   level: Level;
   repo: { fullName: string; cloneUrl: string };
@@ -93,8 +102,10 @@ export type Job = {
 };
 
 const claimRequest = obj({ hasProviderKey: bool });
+const attempt = int({ min: 1, max: 1000 });
 const job = obj({
   id: uuid,
+  attempt,
   kind: oneOf(['review'] as const),
   level: oneOf(LEVELS),
   repo: obj({
@@ -118,10 +129,17 @@ export const parseJob = (value: unknown): Checked<Job> => run(job, value);
 
 // --- Heartbeat --------------------------------------------------------------------------------
 
-/** `cancel`: the job is no longer wanted (a newer push cancelled it). The runner stops and sends nothing. */
+export type HeartbeatRequest = { attempt: number };
+
+/**
+ * `cancel`: the job is no longer wanted (a newer push, a close or a suspension cancelled it). The
+ * runner stops and sends nothing.
+ */
 export type HeartbeatResponse = { leaseExpiresAt: string; cancel: boolean };
 
+const heartbeatRequest = obj({ attempt });
 const heartbeatResponse = obj({ leaseExpiresAt: isoDate, cancel: bool });
+export const parseHeartbeatRequest = (value: unknown): Checked<HeartbeatRequest> => run(heartbeatRequest, value);
 export const parseHeartbeatResponse = (value: unknown): Checked<HeartbeatResponse> => run(heartbeatResponse, value);
 
 // --- Result -----------------------------------------------------------------------------------
@@ -168,7 +186,9 @@ export type ReviewPayload = {
   skipped: string[];
 };
 
-export type ResultRequest = { outcome: 'done'; review: ReviewPayload } | { outcome: 'failed'; reason: string };
+export type ResultRequest =
+  | { outcome: 'done'; attempt: number; review: ReviewPayload }
+  | { outcome: 'failed'; attempt: number; reason: string };
 
 const line = int({ min: 0, max: 10_000_000 });
 const tokens = nullable(int({ min: 0, max: 100_000_000 }));
@@ -208,13 +228,20 @@ const review = obj({
   skipped: arr(text(1000), { max: 2000 }),
 });
 const resultRequest = tagged('outcome', {
-  done: obj({ outcome: oneOf(['done'] as const), review }),
-  failed: obj({ outcome: oneOf(['failed'] as const), reason: str({ min: 1, max: 2000 }) }),
+  done: obj({ outcome: oneOf(['done'] as const), attempt, review }),
+  failed: obj({ outcome: oneOf(['failed'] as const), attempt, reason: str({ min: 1, max: 2000 }) }),
 });
 
 export const parseResultRequest = (value: unknown): Checked<ResultRequest> => run(resultRequest, value) as Checked<ResultRequest>;
 
 // --- Errors -----------------------------------------------------------------------------------
 
-/** The body of every 4xx and 5xx answer of the API. `errors` lists the problems of a 400. */
+/**
+ * The body of every 4xx and 5xx answer of the API. `errors` lists the problems of a 400.
+ *
+ * The heartbeat and the result answer 409 with:
+ * - `lease_lost`: the attempt of the runner is over (its lease ended, and the job went back to the
+ *   queue or to another runner). The runner stops the job and sends nothing more.
+ * - `job_finished` / `job_not_running`: the job already has its result, or was cancelled.
+ */
 export type ApiError = { error: string; errors?: string[] };

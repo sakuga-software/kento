@@ -117,8 +117,12 @@ export const jobs = pgTable(
     runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */
     githubDeliveryId: text('github_delivery_id').unique(),
+    /** The number of claims of the job. Each claim is one attempt; the runner sends its number back. */
     attempts: smallint('attempts').notNull().default(0),
+    /** While `running`: the end of the lease of the runner. With no heartbeat after it, the job goes back to the queue. */
     leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    /** A job queued again after an expired lease waits until then before a runner can claim it (backoff). */
+    notBefore: timestamp('not_before', { withTimezone: true }),
     failureReason: text('failure_reason'),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
@@ -130,6 +134,8 @@ export const jobs = pgTable(
     index('jobs_state_created_at_idx').on(table.state, table.createdAt),
     index('jobs_repo_pr_idx').on(table.repoId, table.prNumber),
     index('jobs_runner_id_idx').on(table.runnerId),
+    // The sweep of the expired leases reads the running jobs only.
+    index('jobs_running_lease_idx').on(table.leaseExpiresAt).where(sql`${table.state} = 'running'`),
     check('jobs_pr_number_positive', sql`${table.prNumber} > 0`),
     check('jobs_attempts_not_negative', sql`${table.attempts} >= 0`),
   ],

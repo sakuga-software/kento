@@ -119,8 +119,9 @@ update runners set revoked_at = now() where id = '<id>';
 ```
 
 The next call of the runner gets 401 (a claim in progress ends within 30 s). The runner logs
-`runner.token_refused` and stops; it does not register again on its own. A job that it held stays
-`running` until the ticket of expired leases (REV-6) gives it back.
+`runner.token_refused` and stops; it does not register again on its own. A job that it held goes
+back to the queue when its lease ends (at most 2 min after the last heartbeat, see
+[Leases and attempts](#leases-and-attempts)).
 
 To start it again as a new runner: remove the volume (`docker volume rm kento-runner-state`), put
 `KENTO_REGISTRATION_TOKEN` back in the env file, recreate the container, and trust the new row if
@@ -151,8 +152,30 @@ needed.
   one hour. The private key of the App stays in the web service.
 - A stop of the runner (`docker stop`, a redeploy) in the middle of a job sends no result: the
   failure comes from the stop, not from the pull request. The job stays `running` until its lease
-  ends, and REV-6 gives it to another runner. A review already finished is still sent.
+  ends, then goes back to the queue for another attempt. A review already finished is still sent.
 - A service that answers a claim at once with no job (no GitHub App configured) holds it for the
   whole wait anyway, and the runner waits at least 5 s between two such claims.
 - Every log line goes through a filter that removes the tokens and keys that the runner knows, and
   any `ghs_…`, `kento_rt_…` or URL credential.
+
+## Leases and attempts
+
+- A claim gives the runner a lease of 2 min on the job, and each heartbeat (every 30 s) extends it.
+  Each claim is one **attempt**: the job carries its number, and the heartbeat and the result send it
+  back.
+- The web service sweeps the expired leases every 15 s. A `running` job whose lease ended goes back
+  to `queued`, and waits 30 s (the backoff) before a runner can claim it again. After its second
+  attempt it becomes `failed` with the reason `lease expired 2 times`.
+- A runner whose attempt is over gets 409 `lease_lost` on its next heartbeat: it stops the job
+  (`job.lease_lost`, then `job.finished` with `"outcome":"lost"`) and sends nothing. A result that
+  arrives after another attempt began gets 409 too, and the service stores nothing.
+- A job cancelled while it runs (a newer push, a close, a suspension): the next heartbeat answers
+  `cancel: true`, the runner stops its model call and sends nothing (`"outcome":"cancelled"`), and a
+  late result gets 409.
+
+To see the attempts of the last jobs:
+
+```sql
+select left(head_sha, 8), state, attempts, failure_reason, not_before, lease_expires_at
+from jobs order by created_at desc limit 10;
+```

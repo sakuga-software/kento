@@ -1,0 +1,2 @@
+ALTER TABLE "jobs" ADD COLUMN "not_before" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "jobs_running_lease_idx" ON "jobs" USING btree ("lease_expires_at") WHERE "jobs"."state" = 'running';

@@ -11,6 +11,7 @@ import { createInstallationTokenMinter } from './app/github/installation-token.t
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
 import { createAppRouter } from './app/router.ts'
+import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
 // Startup order: configuration, database, migrations, then the server. A failure at any step stops
@@ -38,6 +39,8 @@ if (config.migrateOnStart) {
   }
 }
 
+let runnerStore = createRunnerStore(database.sql)
+
 let mintInstallationToken = config.githubApp ? createInstallationTokenMinter(config.githubApp) : null
 
 // The publisher posts the reviews that the runners send (REV-5). Without the App it has no token:
@@ -64,7 +67,7 @@ let router = createAppRouter({
     apply: createWebhookStore(database.db, { kentoRepos: config.kentoRepos }),
   },
   runner: {
-    store: createRunnerStore(database.sql),
+    store: runnerStore,
     registrationToken: config.runnerRegistrationToken,
     mintInstallationToken,
     providerApiKey: config.providerApiKey,
@@ -76,6 +79,10 @@ let router = createAppRouter({
 if (config.githubWebhookSecret === null) {
   log('warn', 'startup.webhook_disabled', { reason: 'GITHUB_WEBHOOK_SECRET is not set' })
 }
+
+// A job whose runner stopped sending heartbeats goes back to the queue, or fails after its last
+// attempt. Each replica sweeps; two sweeps never take the same job.
+let stopLeaseSweeper = startLeaseSweeper(runnerStore)
 
 let server = http.createServer(
   createRequestListener(router.fetch, {
@@ -105,6 +112,7 @@ function shutdown(signal: NodeJS.Signals) {
   shuttingDown = true
   log('info', 'shutdown.started', { signal })
   server.close(async () => {
+    await stopLeaseSweeper()
     // A publication in progress ends before the database closes.
     await publisher?.stop()
     await database.close()

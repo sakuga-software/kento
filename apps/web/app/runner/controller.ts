@@ -2,6 +2,7 @@ import {
   CLAIM_WAIT_SECONDS,
   MAX_BODY_BYTES,
   parseClaimRequest,
+  parseHeartbeatRequest,
   parseRegisterRequest,
   parseResultRequest,
   type ApiError,
@@ -104,10 +105,17 @@ export function createRunnerController(deps: RunnerApiDependencies) {
                 githubRepoId: job.githubRepoId,
               })
             } catch (cause) {
-              // The job cannot run without a token; a retry is the work of a later ticket.
+              // The job cannot run without a token. It counts as an attempt: queued again after the
+              // backoff, or failed after the last attempt.
               let reason = `installation token: ${errorMessage(cause)}`.slice(0, 1000)
-              await deps.store.failJob(job.id, runner.id, reason)
-              log('error', 'job.installation_token_failed', { jobId: job.id, runnerId: runner.id, error: reason })
+              let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
+              log('error', 'job.installation_token_failed', {
+                jobId: job.id,
+                runnerId: runner.id,
+                attempt: job.attempt,
+                state: released,
+                error: reason,
+              })
               continue
             }
             let provider =
@@ -116,6 +124,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
                 : null
             log('info', 'job.claimed', {
               jobId: job.id,
+              attempt: job.attempt,
               runnerId: runner.id,
               repo: job.fullName,
               pr: job.prNumber,
@@ -124,6 +133,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             })
             return json<Job>(200, {
               id: job.id,
+              attempt: job.attempt,
               kind: 'review',
               level: job.level,
               repo: { fullName: job.fullName, cloneUrl: `${githubUrl}/${job.fullName}.git` },
@@ -144,10 +154,15 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         let runner = await authenticate(request, 'heartbeat')
         if (runner instanceof Response) return runner
         if (!UUID.test(params.id)) return error(404, 'job_not_found')
-        let outcome = await deps.store.heartbeat(params.id, runner.id)
+        let body = await readJson(request, parseHeartbeatRequest)
+        if (body instanceof Response) return body
+        let outcome = await deps.store.heartbeat(params.id, runner.id, body.attempt)
         switch (outcome.kind) {
           case 'not_found':
             return error(404, 'job_not_found')
+          case 'lease_lost':
+            log('warn', 'job.lease_lost', { jobId: params.id, runnerId: runner.id, attempt: body.attempt, action: 'heartbeat' })
+            return error(409, 'lease_lost')
           case 'finished':
             return error(409, 'job_finished')
           default:
@@ -165,10 +180,12 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         let body = await readJson(request, parseResultRequest)
         if (body instanceof Response) return body
 
-        let outcome = await deps.store.storeResult(params.id, runner.id, body)
+        let { attempt, ...result } = body
+        let outcome = await deps.store.storeResult(params.id, runner.id, attempt, result)
         log(outcome === 'stored' ? 'info' : 'warn', 'job.result', {
           jobId: params.id,
           runnerId: runner.id,
+          attempt,
           outcome: body.outcome,
           stored: outcome,
           ...(body.outcome === 'done'
@@ -181,6 +198,8 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             return new Response(null, { status: 204 })
           case 'not_found':
             return error(404, 'job_not_found')
+          case 'lease_lost':
+            return error(409, 'lease_lost')
           case 'not_running':
             return error(409, 'job_not_running')
           case 'wrong_head':

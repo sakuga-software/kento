@@ -7,6 +7,7 @@ import {
   PATHS,
   type Checked,
   type ClaimRequest,
+  type HeartbeatRequest,
   type HeartbeatResponse,
   type Job,
   type RegisterRequest,
@@ -17,6 +18,15 @@ import {
 /** The service refused the runner token (401): it is wrong or revoked. */
 export class UnauthorizedError extends Error {
   override name = 'UnauthorizedError';
+}
+
+/**
+ * The service no longer gives this attempt of the job to the runner (409, or 404 for a job that is
+ * gone): its lease ended and the job went back to the queue or to another runner, or the job was
+ * cancelled or finished. The runner stops the job and sends nothing more.
+ */
+export function isJobLost(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 409 || error.status === 404);
 }
 
 export class ApiError extends Error {
@@ -30,7 +40,7 @@ export class ApiError extends Error {
 
 export type KentoApi = {
   claim(body: ClaimRequest, signal?: AbortSignal): Promise<Job | null>;
-  heartbeat(jobId: string): Promise<HeartbeatResponse>;
+  heartbeat(jobId: string, attempt: number): Promise<HeartbeatResponse>;
   result(jobId: string, body: ResultRequest): Promise<void>;
 };
 
@@ -50,8 +60,9 @@ export function createApi(baseUrl: string, runnerToken: string, doFetch: typeof 
       if (response.status !== 200) throw await failure(response, 'claim');
       return checked(parseJob(await response.json()), 'claim');
     },
-    async heartbeat(jobId) {
-      const response = await post(doFetch, baseUrl, PATHS.heartbeat(jobId), runnerToken, {}, AbortSignal.timeout(15_000));
+    async heartbeat(jobId, attempt) {
+      const body: HeartbeatRequest = { attempt };
+      const response = await post(doFetch, baseUrl, PATHS.heartbeat(jobId), runnerToken, body, AbortSignal.timeout(15_000));
       if (response.status !== 200) throw await failure(response, 'heartbeat');
       return checked(parseHeartbeatResponse(await response.json()), 'heartbeat');
     },
