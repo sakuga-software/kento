@@ -366,11 +366,11 @@ workflow (REV-5, REV-7): nothing here runs `review.yml`.
 
    ```bash
    git fetch origin main
-   git push origin origin/main:refs/tags/v5.2
+   git push origin origin/main:refs/tags/v5.3
    git push --force origin origin/main:refs/tags/stable
    ```
 
-3. To roll back, move `stable` to the previous version: `git push --force origin v5.1^{commit}:refs/tags/stable`.
+3. To roll back, move `stable` to the previous version: `git push --force origin v5.2^{commit}:refs/tags/stable`.
 
 **Who can move `stable`.** The callers send their two secrets to the code at `stable`, so a ruleset
 of this repository (« stable tag: admins only ») lets only its admins create, move or delete that
@@ -383,6 +383,8 @@ version during an incident. It then takes no release until it moves the pin back
 | Tag | Commit | Change |
 | --- | --- | --- |
 | `stable` | moves | The release that the callers run. |
+| `v5.2` | `9f57969ae86cccc3f22ecbf7c37068c2932cbcf2` | The script uses the engine of `packages/engine`. The bot login is `kento-review[bot]`, the new name of the App. A thread whose commit a force-push removed stays open. Comments escape every special character. |
+| `v5.1.1` | `a02273946b313af0dfbaaa9aa37abda6c89895b8` | A thread whose commit a force-push removed stays open instead of failing the review. |
 | `v5.1` | `146912bd2b76ad5addee85eeade678ce2058f891` | `lite` is Claude Haiku 5.5 at medium reasoning, with 32,000 output tokens; GLM-5.3 is the fallback, MiMo goes. |
 | `v5` | `f421015719b5e137fefb82113931c91253747239` | The pull requests, pushes and comments of the bots of `trusted_bots` (default `sakuga-agent[bot]`) get a review and give commands, as a person's do. |
 | `v4.1` | `ea75cd4ceb471dab6b3cede1994ab13dcb07f30b` | Every level reads the definitions that the change uses and the migration of each SQL name that it writes. |
