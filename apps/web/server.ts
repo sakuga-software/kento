@@ -27,6 +27,7 @@ import { createOrgSettingsStore } from './app/org-settings/store.ts'
 import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
+import { appInstallUrl } from './app/ui/pages.tsx'
 import { createRunnersAdminStore } from './app/runner/admin.ts'
 import { createDashboardStore } from './app/dashboard/store.ts'
 import { createReadPullRequest } from './app/dashboard/github.ts'
@@ -93,6 +94,8 @@ let auth =
         }),
         store: createAuthStore(database.sql),
         lookupRole: createRoleLookup(config.githubApp),
+        // REV-32: « Installer Kentō sur une organisation » on the page « Accès refusé ».
+        installUrl: appInstallUrl(config.githubUrl, config.appSlug),
       }
     : null
 

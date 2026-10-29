@@ -36,6 +36,10 @@ test('a person outside of the org cannot sign in', async ({ page, context }) => 
 
   await expect(page).toHaveURL(/\/login\?notice=not_member$/)
   await expect(page.getByRole('alert')).toContainText('Accès refusé.')
+  // REV-32: the page names the account that GitHub gave, and offers two ways out.
+  await expect(page.getByRole('alert')).toContainText('Connecté à GitHub en tant que @stranger')
+  await expect(page.getByRole('link', { name: 'Changer de compte GitHub' })).toHaveAttribute('href', '/login/github?switch=1')
+  await expect(page.getByRole('link', { name: /Installer Kentō sur une organisation/ })).toHaveAttribute('href', /\/apps\/kento-review\/installations\/new$/)
   // The pending sign-in is dropped: the session cookie is emptied.
   expect((await context.cookies()).filter((c) => c.name.includes('kento_session') && c.value !== '')).toEqual([])
   await page.goto('/repos')

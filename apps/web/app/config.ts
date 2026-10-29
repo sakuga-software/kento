@@ -46,6 +46,12 @@ export interface Config {
    */
   botLogin: string
   /**
+   * REV-32. The slug of the GitHub App, in the URL of its page: « Installer Kentō sur une
+   * organisation ». KENTO_APP_SLUG, or the bot login without `[bot]` (GitHub names the bot of an App
+   * `<slug>[bot]`).
+   */
+  appSlug: string
+  /**
    * The GitHub sign-in of the screens, with the user authorization of the GitHub App. Null when
    * one of its variables is missing: every screen then shows « Connexion indisponible ».
    */
@@ -126,6 +132,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   let botLogin = env.KENTO_BOT_LOGIN?.trim() || DEFAULT_BOT_LOGIN
   if (!/^[A-Za-z0-9-]+\[bot\]$/.test(botLogin)) problems.push('KENTO_BOT_LOGIN must be the login of an App, name[bot]')
+  let appSlug = env.KENTO_APP_SLUG?.trim() || botLogin.replace(/\[bot\]$/, '').toLowerCase()
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(appSlug)) problems.push('KENTO_APP_SLUG must be the slug of the GitHub App, as in github.com/apps/<slug>')
   // The runners clone from this server with the installation token of GITHUB_API_URL, so both must
   // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
   // Server (https://<host>/api/v3 and https://<host>). Without GITHUB_URL, it is the server of
@@ -173,6 +181,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
     secretsKeys,
     botLogin,
+    appSlug,
     signIn,
   }
 }

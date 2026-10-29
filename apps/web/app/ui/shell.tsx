@@ -17,10 +17,15 @@ import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
 /** The screens of the navigation, in its order. */
 export type Section = 'dashboard' | 'repos' | 'findings' | 'runners' | 'settings'
 
-const NAV: { key: Section; label: string; href: string; Icon: typeof DashboardIcon }[] = [
+/**
+ * `soon`: the screen is not there yet (REV-32). The sidebar names it, with « Bientôt » and no link;
+ * the tab bar leaves it out. No link of the navigation leads to an empty screen.
+ */
+const NAV: { key: Section; label: string; href: string; Icon: typeof DashboardIcon; soon?: boolean }[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href(), Icon: DashboardIcon },
   { key: 'repos', label: 'Repos', href: routes.repos.href(), Icon: ReposIcon },
-  { key: 'findings', label: 'Findings', href: routes.findings.href(), Icon: FindingsIcon },
+  // REV-18 fills the Findings screen.
+  { key: 'findings', label: 'Findings', href: routes.findings.href(), Icon: FindingsIcon, soon: true },
   { key: 'runners', label: 'Runners', href: routes.runners.href(), Icon: RunnersIcon },
   { key: 'settings', label: 'Réglages', href: routes.settings.href(), Icon: SettingsIcon },
 ]
@@ -81,12 +86,22 @@ export function Shell(handle: Handle<ShellProps>) {
             {viewer ? <OrgCard frame={frame} viewer={viewer} /> : null}
             <nav class="nav" aria-label="Navigation principale">
               <ul>
-                {NAV.map(({ key, label, href, Icon }) => (
+                {NAV.map(({ key, label, href, Icon, soon }) => (
                   <li>
-                    <a href={href} aria-current={key === section ? 'page' : undefined}>
-                      <Icon />
-                      {label}
-                    </a>
+                    {soon && key !== section ? (
+                      <span class="nav-soon">
+                        <Icon />
+                        {label}
+                        <span class="tag tag-quiet">Bientôt</span>
+                        {/* REV-32: a screen reader hears that it is no link yet. */}
+                        <span class="visually-hidden"> : pas encore disponible</span>
+                      </span>
+                    ) : (
+                      <a href={href} aria-current={key === section ? 'page' : undefined}>
+                        <Icon />
+                        {label}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -135,7 +150,7 @@ export function Shell(handle: Handle<ShellProps>) {
 
         <nav class="tabbar" aria-label="Navigation principale, mobile">
           <ul>
-            {NAV.map(({ key, label, href, Icon }) => (
+            {NAV.filter((item) => !item.soon || item.key === section).map(({ key, label, href, Icon }) => (
               <li>
                 <a href={href} aria-current={key === section ? 'page' : undefined}>
                   <Icon />

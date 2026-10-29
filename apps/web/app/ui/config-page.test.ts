@@ -256,6 +256,16 @@ describe('the Config screen of a repository', () => {
     assert.match(await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text(), /value="heavy" checked/)
   })
 
+  it('names the tabs of M5 with « Bientôt » and no link (REV-32)', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn()
+    let html = await (await request(`/repos/${ORCHARD}/config`, { cookie })).text()
+    assert.doesNotMatch(html, /\?tab=rules"/)
+    assert.doesNotMatch(html, /\?tab=assignment"/)
+    assert.match(html, /<span class="config-tab-soon">Règles<span class="tag tag-quiet">Bientôt<\/span><span class="visually-hidden"> : pas encore disponible<\/span><\/span>/)
+    assert.match(html, /<span class="config-tab-soon">Assignation<span class="tag tag-quiet">Bientôt<\/span><span class="visually-hidden"> : pas encore disponible<\/span><\/span>/)
+  })
+
   it('shows the tabs of M5 empty', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()

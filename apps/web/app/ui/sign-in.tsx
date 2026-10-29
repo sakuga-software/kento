@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
 import { Document } from './document.tsx'
-import { AlertIcon, GitHubIcon, MarkGlyph } from './icons.tsx'
+import { AlertIcon, ExternalIcon, GitHubIcon, MarkGlyph } from './icons.tsx'
 import type { Theme } from './theme.ts'
 
 /** Why the sign-in page is shown again. Each one has its sentence below. */
@@ -11,7 +11,7 @@ const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; tex
   not_member: {
     tone: 'alert',
     title: 'Accès refusé.',
-    text: 'Ce compte GitHub n’est membre d’aucune organisation où Kentō est installé. Demandez à un admin de l’organisation de vous inviter, puis réessayez.',
+    text: 'Ce compte GitHub n’est membre d’aucune organisation où Kentō est installé. Changez de compte, demandez à un admin de l’organisation de vous inviter, ou installez Kentō sur votre organisation.',
   },
   failed: {
     tone: 'alert',
@@ -47,13 +47,21 @@ export interface SignInPageProps {
   /** The link that starts the GitHub sign-in. Null when the sign-in is not configured. */
   signInHref: string | null
   notice: SignInNotice | null
+  /** REV-32. The GitHub account that the refused sign-in read, from a signed cookie. */
+  refusedLogin?: string | null
+  /** The sign-in that asks GitHub to pick an account. */
+  switchHref?: string | null
+  /** The page of GitHub that installs the App on an org. Null when the service does not know it. */
+  installHref?: string | null
 }
 
 /** « Se connecter à Kentō »: one button, GitHub. */
 export function SignInPage(handle: Handle<SignInPageProps>) {
   return () => {
-    let { theme, version, assetVersion, signInHref, notice } = handle.props
+    let { theme, version, assetVersion, signInHref, notice, refusedLogin, switchHref, installHref } = handle.props
     let message = notice ? NOTICES[notice] : null
+    // REV-32: after a refusal, the same button would sign in the same account again.
+    let refused = notice === 'not_member' && signInHref !== null
     return (
       <Document title="Connexion" theme={theme} assetVersion={assetVersion}>
         <main class="signin">
@@ -74,11 +82,34 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                 <div class={`banner ${message.tone === 'alert' ? 'banner-alert' : 'banner-info'}`} role="alert">
                   <AlertIcon />
                   <p>
-                    <strong>{message.title}</strong> {message.text}
+                    <strong>{message.title}</strong>{' '}
+                    {refused && refusedLogin ? (
+                      <>
+                        Connecté à GitHub en tant que <strong class="mono">@{refusedLogin}</strong>.{' '}
+                      </>
+                    ) : null}
+                    {message.text}
                   </p>
                 </div>
               ) : null}
-              {signInHref ? (
+              {refused ? (
+                <div class="signin-actions">
+                  <a class="button button-primary button-large" href={switchHref ?? signInHref!}>
+                    <GitHubIcon />
+                    Changer de compte GitHub
+                  </a>
+                  {installHref ? (
+                    <a class="button button-large" href={installHref} rel="noreferrer" target="_blank">
+                      Installer Kentō sur une organisation
+                      <ExternalIcon />
+                      <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                    </a>
+                  ) : null}
+                  <p class="signin-note">
+                    Un admin vous a invité ? <a href={signInHref!}>Réessayer avec {refusedLogin ? `@${refusedLogin}` : 'ce compte'}</a>.
+                  </p>
+                </div>
+              ) : signInHref ? (
                 <a class="button button-primary button-large" href={signInHref}>
                   <GitHubIcon />
                   Continuer avec GitHub

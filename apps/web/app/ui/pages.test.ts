@@ -6,10 +6,12 @@ import { SESSION_TTL_MS } from '../auth/session-storage.ts'
 import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { localPath } from './pages.tsx'
+import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 
 const COOKIE = '__Host-kento_session'
+
+const INSTALL_URL = 'https://github.com/apps/kento-review/installations/new'
 
 function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
   let auth = fakeAuth(options)
@@ -20,7 +22,7 @@ function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
     version: '1.2.3',
     commit: 'abc1234',
     webhook: disabledWebhook,
-    auth: auth.deps,
+    auth: { ...auth.deps, installUrl: INSTALL_URL },
   })
 
   function request(path: string, init: { method?: string; cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
@@ -125,6 +127,82 @@ describe('the GitHub sign-in', () => {
     assert.equal(auth.users.size, 0)
     assert.equal((await request('/', { cookie })).status, 303)
     assert.match(await (await request('/login?notice=not_member')).text(), /Accès refusé\./)
+  })
+
+  it('names the refused account and offers another account or the App on an org (REV-32)', async () => {
+    let { request, signIn } = setup()
+    let { callback } = await signIn(STRANGER)
+    let refused = cookieOf(callback, '__Host-kento_refused')
+    assert.ok(refused, 'the refusal sets a signed cookie with the login')
+    let header = callback.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!
+    for (let attribute of ['HttpOnly', 'Max-Age=300', 'Path=/', 'SameSite=Lax', 'Secure']) assert.ok(header.includes(attribute), attribute)
+
+    let shown = await request('/login?notice=not_member', { cookie: refused })
+    // Shown once: the page empties the cookie for the next person at this browser.
+    assert.match(shown.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /^__Host-kento_refused=;.*Max-Age=0/)
+    let html = await shown.text()
+    assert.match(html, /Connecté à GitHub en tant que <strong class="mono">@stranger<\/strong>/)
+    assert.match(html, /href="\/login\/github\?switch=1"[^>]*>.*Changer de compte GitHub/s)
+    assert.match(html, new RegExp(`href="${INSTALL_URL}"[^>]*>Installer Kentō sur une organisation`))
+    assert.match(html, /href="\/login\/github">Réessayer avec @stranger<\/a>/)
+    assert.doesNotMatch(html, /Continuer avec GitHub/)
+
+    // Without the cookie, or with a forged one, the page names no account.
+    let bare = await (await request('/login?notice=not_member')).text()
+    assert.doesNotMatch(bare, /Connecté à GitHub en tant que/)
+    assert.match(bare, /Changer de compte GitHub/)
+    let forged = await (await request('/login?notice=not_member', { cookie: '__Host-kento_refused=evil' })).text()
+    assert.doesNotMatch(forged, /@evil/)
+    // The cookie names the account on « Accès refusé » only, and any visit of the page empties it,
+    // forged or not.
+    let other = await request('/login?notice=signed_out', { cookie: refused })
+    assert.doesNotMatch(await other.text(), /@stranger/)
+    for (let response of [other, await request('/login', { cookie: '__Host-kento_refused=evil' })]) {
+      assert.match(response.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /Max-Age=0/)
+    }
+    assert.equal((await request('/login')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
+  })
+
+  it('a sign-in that works empties the cookie of an earlier refusal (REV-32)', async () => {
+    let { signIn, request } = setup()
+    let { callback } = await signIn(ALEX)
+    // A signed-in visit of /login goes back to the screens, and empties a leftover cookie on its way.
+    let session = cookieOf(callback, COOKIE)!
+    let back = await request('/login', { cookie: `${session}; __Host-kento_refused=leftover` })
+    assert.equal(back.status, 303)
+    assert.match(back.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /Max-Age=0/)
+    assert.match(callback.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /^__Host-kento_refused=;.*Max-Age=0/)
+    assert.notEqual(cookieOf(callback, COOKIE) ?? `${COOKIE}=`, `${COOKIE}=`, 'the session cookie is still set')
+  })
+
+  it('makes the link « Installer Kentō » from the slug of the App, on github.com or a GitHub Enterprise Server (REV-32)', () => {
+    assert.equal(appInstallUrl('https://github.com', 'kento-review'), 'https://github.com/apps/kento-review/installations/new')
+    assert.equal(appInstallUrl('https://ghe.example.com/', 'sakuga-review'), 'https://ghe.example.com/apps/sakuga-review/installations/new')
+  })
+
+  it('a new sign-in empties the cookie of an earlier refusal (REV-32)', async () => {
+    let { request } = setup()
+    let start = await request('/login/github?switch=1', { cookie: '__Host-kento_refused=leftover' })
+    assert.equal(start.status, 302)
+    assert.match(start.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /Max-Age=0/)
+    assert.equal((await request('/login/github')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
+  })
+
+  it('« Changer de compte GitHub » asks GitHub for its account picker (REV-32)', async () => {
+    let { request } = setup()
+    let plain = new URL((await request('/login/github')).headers.get('Location')!)
+    assert.equal(plain.searchParams.get('prompt'), null)
+    let picker = new URL((await request('/login/github?switch=1&returnTo=%2Frepos')).headers.get('Location')!)
+    assert.equal(picker.searchParams.get('prompt'), 'select_account')
+    assert.ok(picker.searchParams.get('state'))
+  })
+
+  it('names Findings in the sidebar with « Bientôt » and no link, and leaves it out of the tab bar (REV-32)', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/', { cookie })).text()
+    assert.doesNotMatch(html, /href="\/findings"/)
+    assert.match(html, /<span class="nav-soon">.*?Findings<span class="tag tag-quiet">Bientôt<\/span><span class="visually-hidden"> : pas encore disponible<\/span><\/span>/s)
   })
 
   it('says the sign-in failed when GitHub cannot tell, and lets nobody in', async () => {
@@ -411,7 +489,7 @@ describe('the frame of a screen', () => {
     let html = await response.text()
     assert.match(html, /<html lang="fr" data-theme="system">/)
     assert.match(html, /<title>Tableau de bord · Kentō<\/title>/)
-    for (let label of ['Tableau de bord', 'Repos', 'Findings', 'Runners', 'Réglages']) {
+    for (let label of ['Tableau de bord', 'Repos', 'Runners', 'Réglages']) {
       assert.ok(html.includes(`${label}</a>`), `the navigation has ${label}`)
     }
     assert.match(html, /Kentō 1\.2\.3 · par Sakuga/)

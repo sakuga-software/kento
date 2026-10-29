@@ -26,6 +26,7 @@ describe('loadConfig', () => {
       providerApiKey: null,
       secretsKeys: null,
       botLogin: 'kento-review[bot]',
+      appSlug: 'kento-review',
       signIn: null,
     })
   })
@@ -81,6 +82,12 @@ describe('loadConfig', () => {
   it('reads the login of the App, and refuses a login that is not one of an App', () => {
     assert.equal(loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'kento[bot]' }).botLogin, 'kento[bot]')
     assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'alex' }), /KENTO_BOT_LOGIN must be the login of an App/)
+  })
+
+  it('reads the slug of the App, or takes it from the login of its bot (REV-32)', () => {
+    assert.equal(loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'Kento-Review[bot]' }).appSlug, 'kento-review')
+    assert.equal(loadConfig({ DATABASE_URL: url, KENTO_APP_SLUG: 'kento-review-staging' }).appSlug, 'kento-review-staging')
+    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_APP_SLUG: 'Kentō Review' }), /KENTO_APP_SLUG must be the slug of the GitHub App/)
   })
 
   it('reads the runner settings, and the GitHub App with its key on one line', () => {

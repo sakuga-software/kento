@@ -23,6 +23,9 @@ import { Shell, type PageFrame } from './shell.tsx'
 export const CONFIG_TABS = ['models', 'levels', 'trigger', 'rules', 'assignment'] as const
 export type ConfigTab = (typeof CONFIG_TABS)[number]
 
+/** REV-32. The tabs that come with M5: named in the bar, with « Bientôt » and no link. */
+const SOON_TABS: readonly ConfigTab[] = ['rules', 'assignment']
+
 const TAB_LABELS: Record<ConfigTab, string> = {
   models: 'Provider et modèles',
   levels: 'Niveaux et passes',
@@ -142,9 +145,18 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
           <ul>
             {CONFIG_TABS.map((key) => (
               <li>
-                <a href={`${routes.repoConfig.href({ id: view.id })}?tab=${key}`} aria-current={key === tab ? 'page' : undefined}>
-                  {TAB_LABELS[key]}
-                </a>
+                {SOON_TABS.includes(key) && key !== tab ? (
+                  <span class="config-tab-soon">
+                    {TAB_LABELS[key]}
+                    <span class="tag tag-quiet">Bientôt</span>
+                    {/* REV-32: a screen reader hears that it is no link yet. */}
+                    <span class="visually-hidden"> : pas encore disponible</span>
+                  </span>
+                ) : (
+                  <a href={`${routes.repoConfig.href({ id: view.id })}?tab=${key}`} aria-current={key === tab ? 'page' : undefined}>
+                    {TAB_LABELS[key]}
+                  </a>
+                )}
               </li>
             ))}
           </ul>

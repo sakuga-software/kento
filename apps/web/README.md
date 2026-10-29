@@ -74,6 +74,7 @@ and the log names the variable, never its value.
 | `KENTO_SECRETS_KEY` | no | | Master key of the keys of the providers (REV-11): 32 random bytes in base64 (`openssl rand -base64 32`). The keys are stored AES-256-GCM under it. Without it, the screen stores no key. A secret. See SECURITY.md. |
 | `KENTO_SECRETS_PREVIOUS_KEYS` | no | | Comma-separated earlier master keys, during a rotation only: they still decrypt; `node app/providers/rotate-keys.ts --apply` encrypts every key again under `KENTO_SECRETS_KEY`. A secret. |
 | `KENTO_BOT_LOGIN` | no | `kento-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
+| `KENTO_APP_SLUG` | no | `KENTO_BOT_LOGIN` without `[bot]` | Slug of the GitHub App, as in `github.com/apps/<slug>`. The page « Accès refusé » links to `<GITHUB_URL>/apps/<slug>/installations/new`. |
 | `KENTO_PUBLIC_URL` | for the sign-in | | The https origin of the service as the browser sees it, `https://review.sakuga.dev`. It makes the callback URL, the expected `Origin` of a form, and the `Secure` session cookie. `http://` only on `localhost` or `127.0.0.1`. |
 | `GITHUB_APP_CLIENT_ID` | for the sign-in | | Client ID of the GitHub App, for its user authorization. |
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | | Client secret of the GitHub App. A secret. |

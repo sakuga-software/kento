@@ -63,6 +63,8 @@ export interface AuthDependencies {
   store: AuthStore
   lookupRole: LookupRole
   now?: () => number
+  /** REV-32. The page of GitHub that installs the App on an org, for « Accès refusé ». */
+  installUrl?: string | null
 }
 
 /** The Repos screen (REV-9). Null: the screen shows its empty frame. */
@@ -189,7 +191,15 @@ function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): S
   return signed
 }
 
+/** A login of GitHub: what the page « Accès refusé » accepts to show from its cookie. */
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** REV-32. The page of GitHub that installs the App `slug` on an org (`config.appSlug`). */
+export function appInstallUrl(githubUrl: string, slug: string): string {
+  return `${githubUrl.replace(/\/+$/, '')}/apps/${encodeURIComponent(slug)}/installations/new`
+}
 
 /** The page of the installation of the App on GitHub, where an owner picks the repositories it sees. */
 export function installationUrl(githubUrl: string, org: { login: string; githubInstallationId: number }): string {
@@ -234,7 +244,30 @@ export function createUiControllers(deps: UiDependencies) {
       ]
     : []
 
-  function toSignIn(path: string, notice?: SignInNotice) {
+  // REV-32. The login of a GitHub account that the sign-in refused, for the page « Accès refusé » that
+  // follows. A signed cookie of 5 minutes, not a session: a refusal writes nothing on the server.
+  let refusedCookie = auth
+    ? createCookie(secure ? '__Host-kento_refused' : 'kento_refused', {
+        secrets: auth.sessionSecrets,
+        httpOnly: true,
+        secure,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 5 * 60,
+      })
+    : null
+
+    /** The request carries a cookie of a refused sign-in, signed or not. */
+  function hasRefused(cookies: string | null): boolean {
+    return refusedCookie !== null && (cookies ?? '').split(/;\s*/).some((pair) => pair.startsWith(`${refusedCookie.name}=`))
+  }
+
+  /** Empties the cookie of a refused sign-in. */
+  function clearRefused(): Promise<string> {
+    return refusedCookie!.serialize('', { maxAge: 0 })
+  }
+
+    function toSignIn(path: string, notice?: SignInNotice) {
     let query = new URLSearchParams()
     if (notice) query.set('notice', notice)
     if (path !== '/') query.set('returnTo', path)
@@ -470,10 +503,12 @@ export function createUiControllers(deps: UiDependencies) {
     return redirect(`${pageRoutes.settings.href()}?notice=${notice}${id ? `#provider-${id}` : ''}`)
   }
 
-  function signInPage(theme: Theme, notice: SignInNotice | null, returnTo: string) {
-    let href = auth
-      ? `${authRoutes.signInGitHub.href()}${returnTo !== '/' ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`
-      : null
+  function signInPage(theme: Theme, notice: SignInNotice | null, returnTo: string, refusedLogin: string | null = null) {
+    let query = new URLSearchParams()
+    if (returnTo !== '/') query.set('returnTo', returnTo)
+    let search = query.toString()
+    let href = auth ? `${authRoutes.signInGitHub.href()}${search ? `?${search}` : ''}` : null
+    query.set('switch', '1')
     return (
       <SignInPage
         theme={theme}
@@ -481,6 +516,9 @@ export function createUiControllers(deps: UiDependencies) {
         assetVersion={assetVersion}
         signInHref={href}
         notice={auth ? notice : 'disabled'}
+        refusedLogin={refusedLogin}
+        switchHref={auth ? `${authRoutes.signInGitHub.href()}?${query}` : null}
+        installHref={auth?.installUrl ?? null}
       />
     )
   }
@@ -1035,22 +1073,46 @@ export function createUiControllers(deps: UiDependencies) {
   let signIn = createController(authRoutes, {
     middleware: [securityHeaders(), ...sessionLayer],
     actions: {
-      signIn(context) {
+      async signIn(context) {
         let notice = context.url.searchParams.get('notice')
         let returnTo = localPath(context.url.searchParams.get('returnTo'))
+        let cookies = context.headers.get('Cookie')
+        // Any visit of the page empties the cookie of a refusal, forged or not, whatever the answer.
+        let leftover = hasRefused(cookies)
         if (auth) {
           let record = readSessionAuth(sessionOf(context))
-          if (record && record.signedInAt + SESSION_TTL_MS > now()) return redirect(returnTo)
+          if (record && record.signedInAt + SESSION_TTL_MS > now()) {
+            let back = redirect(returnTo)
+            if (leftover) back.headers.append('Set-Cookie', await clearRefused())
+            return back
+          }
         }
-        let theme = readTheme(context.headers.get('Cookie'))
-        return context.render(signInPage(theme, NOTICES.find((n) => n === notice) ?? null, returnTo))
+        let theme = readTheme(cookies)
+        let known = NOTICES.find((n) => n === notice) ?? null
+        let refusedLogin = known === 'not_member' && refusedCookie ? await refusedCookie.parse(cookies) : null
+        let page = await context.render(signInPage(theme, known, returnTo, refusedLogin && GITHUB_LOGIN.test(refusedLogin) ? refusedLogin : null))
+        // The login is shown once: the next person at this browser does not see it.
+        if (leftover) page.headers.append('Set-Cookie', await clearRefused())
+        return page
       },
 
-      signInGitHub(context) {
+      async signInGitHub(context) {
         if (!auth) return redirect(authRoutes.signIn.href())
-        return startExternalAuth(auth.provider, context, {
+        let response = await startExternalAuth(auth.provider, context, {
           returnTo: localPath(context.url.searchParams.get('returnTo')),
         })
+        // REV-32. « Changer de compte GitHub »: GitHub shows its account picker instead of signing in
+        // the same account again.
+        // A new sign-in starts: the login of an earlier refusal has no use now.
+        if (hasRefused(context.headers.get('Cookie'))) response.headers.append('Set-Cookie', await clearRefused())
+        let location = response.headers.get('Location')
+        if (context.url.searchParams.get('switch') !== '1' || !location) return response
+        let url = new URL(location)
+        url.searchParams.set('prompt', 'select_account')
+        // A new response: the headers of the one of `remix/auth` may be immutable.
+        let headers = new Headers(response.headers)
+        headers.set('Location', url.href)
+        return new Response(null, { status: response.status, headers })
       },
 
       // GitHub comes back here. The person gets a session only when GitHub counts them in an org
@@ -1073,10 +1135,13 @@ export function createUiControllers(deps: UiDependencies) {
         if (decision.kind !== 'allowed') {
           log('info', 'auth.sign_in_refused', { login: profile.login, reason: decision.kind })
           sessionOf(context).destroy()
-          return redirect(`${authRoutes.signIn.href()}?notice=${decision.kind === 'refused' ? 'not_member' : 'failed'}`)
+          let refused = redirect(`${authRoutes.signIn.href()}?notice=${decision.kind === 'refused' ? 'not_member' : 'failed'}`)
+          if (decision.kind === 'refused' && refusedCookie) refused.headers.append('Set-Cookie', await refusedCookie.serialize(profile.login))
+          return refused
         }
 
         let user = await auth.store.upsertUser(profile)
+        let signedIn = await clearRefused()
         await saveSignInRoles(auth.store, user, decision.roles, decision.unconfirmed)
         // A new session id: an id known before the sign-in never becomes a signed-in one.
         let session = completeAuth(context)
@@ -1090,7 +1155,9 @@ export function createUiControllers(deps: UiDependencies) {
           login: user.login,
           orgs: decision.roles.map((r) => `${r.org.login}:${r.role}`),
         })
-        return redirect(localPath(returnTo ?? '/'))
+        let done = redirect(localPath(returnTo ?? '/'))
+        done.headers.append('Set-Cookie', signedIn)
+        return done
       },
     },
   })
