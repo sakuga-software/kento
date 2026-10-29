@@ -2,7 +2,7 @@
 // calls, on one repository, in memory. It answers through a `fetch` function, so the code under test
 // runs unchanged. No network.
 
-export const BOT = 'sakuga-review[bot]'
+export const BOT = 'kento-review[bot]'
 
 type Comment = {
   id: number

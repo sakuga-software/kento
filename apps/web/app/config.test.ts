@@ -25,7 +25,7 @@ describe('loadConfig', () => {
       githubApp: null,
       githubUrl: 'https://github.com',
       providerApiKey: null,
-      botLogin: 'sakuga-review[bot]',
+      botLogin: 'kento-review[bot]',
       signIn: null,
     })
   })

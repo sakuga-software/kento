@@ -52,7 +52,7 @@ export type WebhookCommand =
 export interface EventPolicy {
   /** Lowercase bot logins that act for a person. */
   trustedBots: ReadonlySet<string>
-  /** The login of the App, `sakuga-review[bot]`. Its own comments never give a command. */
+  /** The login of the App, `kento-review[bot]`. Its own comments never give a command. */
   botLogin?: string
 }
 
@@ -149,7 +149,7 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
   }
 
   // The App first: even in KENTO_TRUSTED_BOTS, its own answers never run a command.
-  let botLogin = (policy.botLogin ?? 'sakuga-review[bot]').toLowerCase()
+  let botLogin = (policy.botLogin ?? 'kento-review[bot]').toLowerCase()
   if (login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
     return { type: 'ignore', reason: 'comment of the App itself' }
   }

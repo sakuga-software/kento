@@ -72,7 +72,7 @@ and the log names the variable, never its value.
 | `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server (`https://<host>/api/v3`) or a local test. |
 | `GITHUB_URL` | no | the server of `GITHUB_API_URL` | The GitHub server where the runners clone, HTTPS only. It must be on the server of `GITHUB_API_URL` (github.com for `api.github.com`), else the service refuses to start: the installation token of one server never goes to another. |
 | `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service. Sent with a job only to a trusted runner that has no key of its own. A secret. |
-| `KENTO_BOT_LOGIN` | no | `sakuga-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
+| `KENTO_BOT_LOGIN` | no | `kento-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
 | `KENTO_PUBLIC_URL` | for the sign-in | | The https origin of the service as the browser sees it, `https://review.sakuga.dev`. It makes the callback URL, the expected `Origin` of a form, and the `Secure` session cookie. `http://` only on `localhost` or `127.0.0.1`. |
 | `GITHUB_APP_CLIENT_ID` | for the sign-in | | Client ID of the GitHub App, for its user authorization. |
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | | Client secret of the GitHub App. A secret. |

@@ -66,7 +66,7 @@ export const MIN_SESSION_SECRET_LENGTH = 32
 export const MIN_WEBHOOK_SECRET_LENGTH = 32
 
 const DEFAULT_TRUSTED_BOTS = 'sakuga-agent[bot]'
-const DEFAULT_BOT_LOGIN = 'sakuga-review[bot]'
+const DEFAULT_BOT_LOGIN = 'kento-review[bot]'
 
 export class ConfigError extends Error {
   override name = 'ConfigError'

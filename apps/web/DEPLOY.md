@@ -182,7 +182,7 @@ publisher runs when `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are set (sectio
    (section 6).
 3. Push a commit on an open pull request of the repository. In the logs, in order: `job.claimed`,
    `job.result`, `review.published` with the GitHub id of the review, its score, the number of inline
-   comments and `"check":true`. On the pull request: a review of `sakuga-review[bot]` whose footer
+   comments and `"check":true`. On the pull request: a review of `kento-review[bot]` whose footer
    starts with `Kentō · Niveau`, its inline comments, the block of the description, the label and the
    check « Sakuga Review ».
 4. While `.github/workflows/sakuga-review.yml` still reacts to `pull_request`, the pull request gets

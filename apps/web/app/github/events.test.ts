@@ -70,7 +70,7 @@ describe('commandFor pull_request', () => {
   })
 
   it('the review App itself gets no job', () => {
-    let self = { login: 'sakuga-review[bot]', type: 'Bot' }
+    let self = { login: 'kento-review[bot]', type: 'Bot' }
     assert.equal(reasonOf(pullRequestPayload({ sender: self })), 'pushed by an untrusted bot')
   })
 
@@ -166,8 +166,8 @@ describe('commandFor issue_comment', () => {
   })
 
   it('the App itself never gives a command, even when it is trusted', () => {
-    let app = { login: 'sakuga-review[bot]', type: 'Bot' }
-    let trusting: EventPolicy = { ...policy, trustedBots: new Set(['sakuga-review[bot]']) }
+    let app = { login: 'kento-review[bot]', type: 'Bot' }
+    let trusting: EventPolicy = { ...policy, trustedBots: new Set(['kento-review[bot]']) }
     let command = commandFor('issue_comment', issueCommentPayload({ user: app, body: '@kento review heavy' }), trusting)
     assert.deepEqual(command, { type: 'ignore', reason: 'comment of the App itself' })
   })

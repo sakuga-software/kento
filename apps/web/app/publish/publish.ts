@@ -51,7 +51,7 @@ export interface PublishTarget {
   owner: string
   name: string
   pr: number
-  /** The login of the App on GitHub, `sakuga-review[bot]`. */
+  /** The login of the App on GitHub, `kento-review[bot]`. */
   botLogin: string
   /** `https://github.com`: the links of the description. */
   webUrl: string

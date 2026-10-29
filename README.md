@@ -1,7 +1,7 @@
 # sakuga-review
 
 The automatic review of pull requests for the repositories of `sakuga-software`, posting as the
-GitHub App **Sakuga Review** (`sakuga-review[bot]`). On each push, one call to **Claude Haiku 5.5**
+GitHub App **Kento Review** (`kento-review[bot]`, renamed from Sakuga Review on 2026-10-29). On each push, one call to **Claude Haiku 5.5**
 through OpenRouter reads the diff and answers with findings, a severity and a confidence for each,
 and a confidence for the pull request. A script posts them as one review with inline comments, and
 blocks the merge on a sure blocking finding.

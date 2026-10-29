@@ -54,7 +54,7 @@ import {
 
 const GITHUB_API = 'https://api.github.com';
 
-const BOT_LOGIN = process.env.REVIEW_BOT_LOGIN ?? 'sakuga-review[bot]';
+const BOT_LOGIN = process.env.REVIEW_BOT_LOGIN ?? 'kento-review[bot]';
 
 // Each inline comment is a thread that a person must resolve, so only the sure findings get one.
 const INLINE_CONFIDENCE = 70;
