@@ -2,6 +2,7 @@ import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
 import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview } from '../dashboard/store.ts'
+import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
 import { pageRoutes as routes } from '../routes.ts'
@@ -100,6 +101,142 @@ export interface DashboardPageProps {
   /** `https://github.com`, or the GitHub Enterprise Server: the links « Voir la PR ». */
   githubUrl: string
   notice?: DashboardNotice | null
+  /** KENTO_PROVIDER_API_KEY is set: a trusted runner gets the key of the service without a provider. */
+  serviceKey?: boolean
+  /** The page of the installation of the App on GitHub, where an owner picks the repositories. */
+  installationUrl?: string | null
+}
+
+/** One step of the list « Mise en route » (REV-26). */
+export interface SetupStep {
+  key: 'app' | 'provider' | 'runner' | 'repo' | 'review'
+  title: string
+  state: 'done' | 'wait' | 'todo'
+  /** What is true now, in one sentence. */
+  text: string
+  /** Where the step is done. An admin gets it as a link; a member reads « Demandez à un admin ». */
+  action: { label: string; href: string; external?: boolean } | null
+}
+
+const SETUP_STATE: Record<SetupStep['state'], { text: string; status: string }> = {
+  done: { text: 'Fait', status: 'status-online' },
+  wait: { text: 'En cours', status: 'status-wait' },
+  todo: { text: 'À faire', status: 'status-stale' },
+}
+
+/**
+ * REV-26. The steps to the first review, each from the state of the org: the App, a provider (or
+ * the key of the service), a runner online, a repository enabled, then a pull request. Null once a
+ * review of the org is published: the list is gone for good.
+ */
+export function setupSteps(
+  screen: Pick<DashboardScreen, 'setup' | 'runners' | 'queue' | 'now'>,
+  options: { serviceKey: boolean; installationUrl: string | null },
+): SetupStep[] | null {
+  let { setup, runners, queue, now } = screen
+  if (setup.published) return null
+  let online = runners.filter((runner) => runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, now) === 'online').length
+  let jobs = queue.runningCount + queue.queuedCount
+  let install = options.installationUrl ? { label: 'Ouvrir l’installation sur GitHub', href: options.installationUrl, external: true } : null
+  return [
+    setup.suspended
+      ? {
+          key: 'app',
+          title: 'Installer l’App GitHub',
+          state: 'todo',
+          text: 'L’installation est suspendue sur GitHub : aucun push ne crée de job. Un propriétaire de l’organisation la réactive.',
+          action: install,
+        }
+      : {
+          key: 'app',
+          title: 'Installer l’App GitHub',
+          state: 'done',
+          text: 'L’App est installée sur l’organisation. Elle ne voit que les repos choisis sur GitHub.',
+          action: install ? { ...install, label: 'Choisir les repos sur GitHub' } : null,
+        },
+    setup.providers > 0
+      ? {
+          key: 'provider',
+          title: 'Ajouter un provider',
+          state: 'done',
+          text: setup.providers === 1 ? '1 provider dans Réglages.' : `${setup.providers} providers dans Réglages.`,
+          action: { label: 'Voir les providers', href: `${routes.settings.href()}#providers-title` },
+        }
+      : options.serviceKey
+        ? {
+            key: 'provider',
+            title: 'Ajouter un provider',
+            state: 'done',
+            text: 'Aucun provider : un runner de confiance reçoit la clé du service. Ajoutez le vôtre pour payer vos propres reviews.',
+            action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
+          }
+        : {
+            key: 'provider',
+            title: 'Ajouter un provider',
+            state: 'todo',
+            text: 'Aucun provider, et pas de clé du service : un runner n’a pas de modèle à appeler.',
+            action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
+          },
+    online > 0
+      ? {
+          key: 'runner',
+          title: 'Enregistrer un runner',
+          state: 'done',
+          text: online === 1 ? '1 runner en ligne.' : `${online} runners en ligne.`,
+          action: { label: 'Voir les runners', href: routes.runners.href() },
+        }
+      : runners.length > 0 || setup.pendingRegistrations > 0
+        ? {
+            key: 'runner',
+            title: 'Enregistrer un runner',
+            state: 'wait',
+            text:
+              runners.length > 0
+                ? 'Un runner est enregistré, mais aucun n’est en ligne : les jobs l’attendent en file.'
+                : 'Un token d’enregistrement attend son runner.',
+            action: { label: 'Voir les runners', href: routes.runners.href() },
+          }
+        : {
+            key: 'runner',
+            title: 'Enregistrer un runner',
+            state: 'todo',
+            text: 'Aucun runner : les jobs attendraient en file.',
+            action: { label: 'Créer un runner', href: routes.runners.href() },
+          },
+    setup.enabledRepos > 0
+      ? {
+          key: 'repo',
+          title: 'Activer un repo',
+          state: 'done',
+          text: setup.enabledRepos === 1 ? '1 repo activé.' : `${setup.enabledRepos} repos activés.`,
+          action: { label: 'Voir les repos', href: routes.repos.href() },
+        }
+      : {
+          key: 'repo',
+          title: 'Activer un repo',
+          state: 'todo',
+          text: 'Aucun repo activé : un push ne crée aucun job.',
+          action: { label: 'Activer un repo', href: routes.repos.href() },
+        },
+    jobs > 0
+      ? {
+          key: 'review',
+          title: 'Obtenir la première review',
+          state: 'wait',
+          text:
+            queue.runningCount > 0
+              ? 'En attente de la première review : un runner fait le job.'
+              : 'En attente de la première review : le job est en file, un runner en ligne le prendra.',
+          action: null,
+        }
+      : {
+          key: 'review',
+          title: 'Obtenir la première review',
+          state: 'todo',
+          text: 'Ouvrez une pull request, ou poussez sur une PR ouverte, dans un repo activé.',
+          action: null,
+        },
+  ]
 }
 
 function prUrl(githubUrl: string, repo: string, prNumber: number): string {
@@ -113,12 +250,13 @@ function total(day: DayStats): number {
 
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
-    let { frame, screen, githubUrl, notice } = handle.props
+    let { frame, screen, githubUrl, notice, serviceKey, installationUrl } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let today = screen.week.at(-1)
     let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
     let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
+    let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })
     return (
       <Shell frame={frame} section="dashboard" title="Tableau de bord" lead="Ce qui tourne, ce qui a échoué, et ce que ça coûte.">
         <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
@@ -133,6 +271,8 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
               <p>{DASHBOARD_NOTICES[notice]}</p>
             </div>
           ) : null}
+
+          {steps ? <SetupSection steps={steps} admin={admin} /> : null}
 
           {screen.banner ? <FailureBannerView banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} /> : null}
 
@@ -181,6 +321,62 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
         </div>
         <script src={`/assets/dashboard.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
+    )
+  }
+}
+
+function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
+  return () => {
+    let { steps, admin } = handle.props
+    let done = steps.filter((step) => step.state === 'done').length
+    return (
+      <section class="card setup" aria-labelledby="setup-title">
+        <div class="dash-section-head">
+          <h2 id="setup-title" class="section-title">
+            Mise en route
+          </h2>
+          <span class="hint">
+            {done} étape{done > 1 ? 's' : ''} sur {steps.length}
+          </span>
+        </div>
+        <p class="hint setup-lead">
+          {admin
+            ? 'Ce qu’il faut pour obtenir la première review. Cette liste disparaît quand elle est publiée.'
+            : 'Ce qu’il faut pour obtenir la première review. Un admin de l’organisation fait ces étapes ; cette liste disparaît quand la première review est publiée.'}
+        </p>
+        <ol class="setup-steps">
+          {steps.map((step, index) => (
+            <li class={`setup-step setup-${step.state}`} id={`setup-${step.key}`}>
+              <span class="setup-index" aria-hidden="true">
+                {index + 1}
+              </span>
+              <div class="setup-body">
+                <div class="dash-review-head">
+                  <h3 class="setup-title">{step.title}</h3>
+                  <span class={`status ${SETUP_STATE[step.state].status}`}>{SETUP_STATE[step.state].text}</span>
+                </div>
+                <p class="hint">{step.text}</p>
+                {step.state !== 'done' && step.action && !admin ? <p class="hint">Demandez à un admin de l’organisation.</p> : null}
+              </div>
+              {step.action && (admin || step.state === 'done') ? (
+                <a
+                  class={`button button-small ${step.state === 'todo' && admin ? 'button-primary' : ''}`}
+                  href={step.action.href}
+                  {...(step.action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
+                >
+                  {step.action.label}
+                  {step.action.external ? (
+                    <>
+                      <ExternalIcon />
+                      <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                    </>
+                  ) : null}
+                </a>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
     )
   }
 }

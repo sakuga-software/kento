@@ -92,9 +92,12 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
 
         <p class="repos-summary" aria-live="polite">
           {repos.length} {repos.length > 1 ? 'repos' : 'repo'} · {enabled} {enabled > 1 ? 'activés' : 'activé'} ·{' '}
-          {checking
-            ? 'vérification en cours sur GitHub, rechargez dans un instant'
-            : checkedAt
+          {checking ? (
+            // REV-26: public/assets/repos.js reads the screen again until the check is over.
+            <span data-recheck="">
+              vérification en cours sur GitHub · <a href={routes.repos.href()}>Recharger</a>
+            </span>
+          ) : checkedAt
               ? `vérifiés sur GitHub ${ago(checkedAt, now)}`
               : 'pas encore vérifiés sur GitHub'}
         </p>
@@ -165,6 +168,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
             </ul>
           </section>
         </div>
+        {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
       </Shell>
     )
   }

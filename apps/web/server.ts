@@ -163,6 +163,7 @@ let router = createAppRouter({
     githubUrl: config.githubUrl,
     readPullRequest:
       mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
+    serviceKey: config.providerApiKey !== null,
   },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,

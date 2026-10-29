@@ -99,6 +99,24 @@ export interface DashboardRunner {
   running: number
 }
 
+/**
+ * REV-26. What the list « Mise en route » reads, until the first review of the org is published:
+ * the App, the providers, the runners and the repositories. The runners themselves are in
+ * `DashboardScreen.runners`, the jobs in `DashboardScreen.queue`.
+ */
+export interface SetupState {
+  /** A review of the org is published on GitHub: the list is not shown again. */
+  published: boolean
+  /** The installation of the App is suspended on GitHub. */
+  suspended: boolean
+  /** The repositories enabled on the Repos screen. */
+  enabledRepos: number
+  /** The providers of the org (REV-11). */
+  providers: number
+  /** The registration tokens of the org that are not used and not expired: a runner is on its way. */
+  pendingRegistrations: number
+}
+
 export interface DashboardScreen {
   /** The clock of the database: every age on the screen has one clock. */
   now: Date
@@ -112,6 +130,7 @@ export interface DashboardScreen {
   runners: DashboardRunner[]
   /** The enabled repositories that still run the review workflow of GitHub Actions: no follow-up of findings. */
   workflowRepos: string[]
+  setup: SetupState
 }
 
 export type RetryOutcome =
@@ -415,11 +434,34 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
     return { dailyCapUsd: readMoney(row?.daily), monthlyCapUsd: readMoney(row?.monthly), alertPct: Number(row?.alert ?? 80) }
   }
 
+  async function setup(orgId: string): Promise<SetupState> {
+    let [row] = await sql<
+      { published: boolean; suspended: boolean; enabledRepos: string; providers: string; pendingRegistrations: string }[]
+    >`
+      select
+        exists (
+          select 1 from reviews join repos on repos.id = reviews.repo_id
+          where repos.org_id = ${orgId} and reviews.published_at is not null
+        ) as published,
+        (select suspended_at is not null from orgs where id = ${orgId}) as suspended,
+        (select count(*) from repos where org_id = ${orgId} and enabled) as "enabledRepos",
+        (select count(*) from providers where org_id = ${orgId}) as providers,
+        (select count(*) from runner_registrations
+          where org_id = ${orgId} and used_at is null and expires_at > now()) as "pendingRegistrations"`
+    return {
+      published: Boolean(row?.published),
+      suspended: Boolean(row?.suspended),
+      enabledRepos: Number(row?.enabledRepos ?? 0),
+      providers: Number(row?.providers ?? 0),
+      pendingRegistrations: Number(row?.pendingRegistrations ?? 0),
+    }
+  }
+
   return {
     async screen(orgId) {
       let [clock] = await sql<{ now: Date | string }[]>`select now() as now`
       let failed = await failures(orgId)
-      let [bannerView, weekView, recentView, costs, caps, queueView, runnerViews, workflow] = await Promise.all([
+      let [bannerView, weekView, recentView, costs, caps, queueView, runnerViews, workflow, setupView] = await Promise.all([
         banner(failed),
         week(orgId),
         recent(orgId),
@@ -431,6 +473,7 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
           select full_name as "fullName" from repos
           where org_id = ${orgId} and enabled and workflow in ('reusable', 'copy')
           order by full_name`,
+        setup(orgId),
       ])
       return {
         now: toDate(clock!.now),
@@ -443,6 +486,7 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
         queue: queueView,
         runners: runnerViews,
         workflowRepos: workflow.map((row) => row.fullName),
+        setup: setupView,
       }
     },
 

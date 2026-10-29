@@ -64,12 +64,13 @@ function setup() {
     async saveCheck() {},
   }
   let checks: string[] = []
+  let checking = { now: false }
   let check: RepoCheck = {
     async run(org) {
       checks.push(org.login)
       return { repos: 2, failed: 0 }
     },
-    refreshIfStale: () => false,
+    refreshIfStale: () => checking.now,
   }
   let router = createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
@@ -103,7 +104,7 @@ function setup() {
     return { cookie, csrf, html }
   }
 
-  return { request, signIn, rows, changes, checks }
+  return { request, signIn, rows, changes, checks, checking }
 }
 
 describe('the Repos screen', () => {
@@ -205,6 +206,18 @@ describe('the Repos screen', () => {
 
     rows[ORG.id]![1]!.workflow = 'none'
     assert.match((await signIn()).html, /basculé/)
+  })
+
+  it('reads the screen again by itself while GitHub is being checked, and not after (REV-26)', async () => {
+    let { request, signIn, checking } = setup()
+    let { cookie, html } = await signIn()
+    assert.doesNotMatch(html, /data-recheck/)
+    assert.doesNotMatch(html, /assets\/repos.js/)
+    checking.now = true
+    html = await (await request('/repos', { cookie })).text()
+    assert.match(html, /<span data-recheck="">vérification en cours sur GitHub · <a href="\/repos">Recharger<\/a><\/span>/)
+    assert.match(html, /src="\/assets\/repos.js\?v=1.2.3"/)
+    assert.doesNotMatch(html, /rechargez dans un instant/)
   })
 
   it('says in a note, not an alert, that a failed job set the counter back to zero, with a link to its PR', async () => {

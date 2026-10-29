@@ -7,7 +7,7 @@ import type { PullRequestNow, ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } from '../dashboard/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { capState, duration, failureText, money } from './dashboard.tsx'
+import { capState, duration, failureText, money, setupSteps } from './dashboard.tsx'
 
 const COOKIE = '__Host-kento_session'
 const NOW = new Date('2026-10-29T10:00:00Z')
@@ -95,6 +95,7 @@ function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
     },
     runners: [{ id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }],
     workflowRepos: ['sakuga-software/dojo'],
+    setup: { published: true, suspended: false, enabledRepos: 2, providers: 1, pendingRegistrations: 0 },
     ...overrides,
   }
 }
@@ -105,6 +106,7 @@ function setup(
   view: DashboardScreen = screen(),
   outcome: RetryOutcome = { kind: 'queued', jobId: 'new' },
   github: PullRequestNow | Error | null = { open: true, headSha: HEAD },
+  serviceKey = false,
 ) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
@@ -140,7 +142,7 @@ function setup(
     commit: null,
     webhook: disabledWebhook,
     auth: auth.deps,
-    dashboard: { store, githubUrl: 'https://github.com', readPullRequest },
+    dashboard: { store, githubUrl: 'https://github.com', readPullRequest, serviceKey },
   })
 
   function request(path: string, init: { cookie?: string | null; form?: Record<string, string> } = {}) {
@@ -195,6 +197,87 @@ describe('the words of the dashboard', () => {
     assert.equal(capState(3.99, 5, 80), 'ok')
     assert.equal(capState(4, 5, 80), 'alert')
     assert.equal(capState(5, 5, 80), 'reached')
+  })
+})
+
+/** A new org: the App is installed, and nothing else is there. */
+function fresh(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
+  return screen({
+    banner: null,
+    failures: [],
+    recent: [],
+    workflowRepos: [],
+    runners: [],
+    queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
+    setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },
+    ...overrides,
+  })
+}
+
+describe('the list « Mise en route » (REV-26)', () => {
+  const OPTIONS = { serviceKey: false, installationUrl: 'https://github.com/organizations/sakuga-software/settings/installations/42' }
+  const states = (view: DashboardScreen, options = OPTIONS) => setupSteps(view, options)?.map((step) => `${step.key}:${step.state}`)
+
+  it('has five steps from the state of a new org: only the App is done', () => {
+    assert.deepEqual(states(fresh()), ['app:done', 'provider:todo', 'runner:todo', 'repo:todo', 'review:todo'])
+  })
+
+  it('counts the key of the service as a provider', () => {
+    assert.deepEqual(states(fresh(), { ...OPTIONS, serviceKey: true })?.[1], 'provider:done')
+  })
+
+  it('marks each step from what the org has, and the first review as waiting while a job is in the queue', () => {
+    let view = fresh({
+      setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, pendingRegistrations: 0 },
+      runners: [{ id: 'r', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
+      queue: { running: [], queued: [], runningCount: 0, queuedCount: 1 },
+    })
+    assert.deepEqual(states(view), ['app:done', 'provider:done', 'runner:done', 'repo:done', 'review:wait'])
+  })
+
+  it('says that a runner is on its way when it is registered but silent, or when a token waits for it', () => {
+    let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0 }] })
+    assert.equal(states(silent)?.[2], 'runner:wait')
+    let token = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 1 } })
+    assert.equal(states(token)?.[2], 'runner:wait')
+  })
+
+  it('says that a suspended installation is to be done again', () => {
+    let view = fresh({ setup: { published: false, suspended: true, enabledRepos: 0, providers: 0, pendingRegistrations: 0 } })
+    assert.equal(states(view)?.[0], 'app:todo')
+  })
+
+  it('is gone once a review of the org is published', () => {
+    assert.equal(setupSteps(screen(), OPTIONS), null)
+  })
+
+  it('leads a new admin to each step in one click', async () => {
+    let { signIn } = setup(fresh())
+    let { html } = await signIn(ALEX)
+    assert.match(html, /<h2 id="setup-title" class="section-title">Mise en route<\/h2>/)
+    assert.match(html, /1 étape sur 5/)
+    assert.match(html, /href="https:\/\/github.com\/organizations\/sakuga-software\/settings\/installations\/\d+"[^>]*>Choisir les repos sur GitHub/)
+    assert.match(html, /href="\/settings#nouveau-provider"[^>]*>Ajouter un provider/)
+    assert.match(html, /href="\/runners"[^>]*>Créer un runner/)
+    assert.match(html, /href="\/repos"[^>]*>Activer un repo/)
+    assert.match(html, /Ouvrez une pull request/)
+    assert.doesNotMatch(html, /Demandez à un admin/)
+  })
+
+  it('shows a member the same list to read, with « Demandez à un admin » and no link to a step to do', async () => {
+    let { signIn } = setup(fresh())
+    let { html } = await signIn(CAMILLE)
+    assert.match(html, /Mise en route/)
+    assert.equal(html.match(/Demandez à un admin de l’organisation\./g)?.length, 3)
+    assert.doesNotMatch(html, /href="\/runners"[^>]*>Créer un runner/)
+    assert.doesNotMatch(html, /href="\/repos"[^>]*>Activer un repo/)
+    assert.doesNotMatch(html, /href="\/settings#nouveau-provider"/)
+  })
+
+  it('is not on the dashboard of an org with a published review', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn(ALEX)
+    assert.doesNotMatch(html, /Mise en route/)
   })
 })
 

@@ -97,6 +97,33 @@ describe('the dashboard of an org', () => {
     await test.drop()
   })
 
+  it('reads the steps of « Mise en route » for the org only, until a review of the org is published (REV-26)', async () => {
+    let setup = async () => (await store.screen(org)).setup
+    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 0, pendingRegistrations: 0 })
+
+    await database.sql`
+      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${org}, 'anthropic', 'Anthropic', true),
+        (gen_random_uuid(), ${otherOrg}, 'anthropic', 'Other', true)`
+    await database.sql`
+      insert into runner_registrations (org_id, name, trusted, token_hash, expires_at) values
+        (${org}, 'pending', true, 'reg-1', now() + interval '30 minutes'),
+        (${org}, 'expired', true, 'reg-2', now() - interval '1 minute'),
+        (${otherOrg}, 'other', true, 'reg-3', now() + interval '30 minutes')`
+    // A review published in another org, and a review of the org that is not published yet.
+    await review(await job({ repoId: otherRepo }))
+    await review(await job({}), { publishedAgo: null })
+    await database.sql`update orgs set suspended_at = now() where id = ${otherOrg}`
+    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 1, pendingRegistrations: 1 })
+
+    await review(await job({ pr: 13 }))
+    await database.sql`update orgs set suspended_at = now() where id = ${org}`
+    let after = await setup()
+    assert.equal(after.published, true)
+    assert.equal(after.suspended, true)
+    await database.sql`update orgs set suspended_at = null`
+    await database.sql`delete from runner_registrations`
+  })
+
   it('shows the last failure with its reason, the review that stays published, and the estimates', async () => {
     let ok = await job({ level: 'lite', createdAgo: '3 hours', startedAgo: '3 hours', finishedAgo: '179 minutes' })
     await review(ok, { cost: 0.002, publishedAgo: '170 minutes', createdAgo: '175 minutes', score: 3 })

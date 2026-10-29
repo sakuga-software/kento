@@ -81,6 +81,8 @@ export interface DashboardDependencies {
   githubUrl: string
   /** Reads the head of a pull request before a retry. Null without the GitHub App: the jobs of the database decide alone. */
   readPullRequest: ReadPullRequest | null
+  /** KENTO_PROVIDER_API_KEY is set: the list « Mise en route » counts it as a provider (REV-26). */
+  serviceKey?: boolean
 }
 
 /** The section « Providers et clés » of the settings (REV-11). */
@@ -645,6 +647,8 @@ export function createUiControllers(deps: UiDependencies) {
             screen={screen}
             githubUrl={dashboard.githubUrl}
             notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
+            serviceKey={dashboard.serviceKey ?? false}
+            installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org)}
           />,
         )
       },

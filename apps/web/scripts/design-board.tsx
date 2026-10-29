@@ -372,6 +372,7 @@ const DASHBOARD: DashboardScreen = {
     { id: 'u3', name: 'portable-alex', orgId: 'org-1', lastSeenAt: dAgo(60 * 47), running: 0 },
   ],
   workflowRepos: ['sakuga-software/fruitback', 'sakuga-software/orchard'],
+  setup: { published: true, suspended: false, enabledRepos: 4, providers: 1, pendingRegistrations: 0 },
 }
 const EMPTY_DASHBOARD: DashboardScreen = {
   now: D_NOW,
@@ -384,6 +385,8 @@ const EMPTY_DASHBOARD: DashboardScreen = {
   queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
   runners: [],
   workflowRepos: [],
+  // REV-26: a new org, with the list « Mise en route ».
+  setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },
 }
 
 function dashboardPage(theme: Theme, viewer: Viewer, screen: DashboardScreen = DASHBOARD, extra: Partial<DashboardPageProps> = {}) {
