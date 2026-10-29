@@ -17,11 +17,16 @@ export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' 
   stranger: { id: 103, name: 'Someone Else', role: null },
 }
 
+/** A repository name of 80 characters (REV-25). */
+export const LONG_REPO_NAME = 'sakuga-review-very-long-repository-name-for-monorepo-tooling-and-shared-settings'
+
 /** The repositories of the installation, for the check of the Repos screen. */
 export const FAKE_REPOS = [
   { id: 7001, full_name: 'sakuga-software/orchard', private: true, default_branch: 'main' },
   { id: 7002, full_name: 'sakuga-software/fruitback', private: false, default_branch: 'main' },
   { id: 7003, full_name: 'sakuga-software/infra-repo', private: true, default_branch: 'main' },
+  // REV-25: a name of 80 characters, for the width of the Repos table.
+  { id: 7004, full_name: `sakuga-software/${LONG_REPO_NAME}`, private: true, default_branch: 'main' },
 ]
 
 /** The workflow files of each repository: orchard calls review.yml@stable, fruitback holds a copy. */

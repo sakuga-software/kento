@@ -253,7 +253,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
     return (
       <tr id={`repo-${repo.id}`}>
         <th scope="row" data-label="Repo">
-          <a class="repo-name" href={repoUrl} rel="noreferrer">
+          <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
             {name}
           </a>
           <span class="tag tag-quiet">{repo.private === null ? 'visibilité inconnue' : repo.private ? 'privé' : 'public'}</span>

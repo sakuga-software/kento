@@ -120,6 +120,8 @@ describe('the Repos screen', () => {
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/677"/)
     assert.match(html, /#677 · 4\/5/)
     assert.match(html, /pas encore mesurée/)
+    // REV-25: the name can be cut short on screen; its title keeps it whole.
+    assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
     assert.match(html, /Critère de bascule/)
     assert.match(html, /Repli pendant la transition/)
     // « Gérer l'installation » leads to the page of the App on GitHub.

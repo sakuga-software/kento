@@ -804,6 +804,8 @@ kbd,
 }
 
 .table-wrap {
+  /* The containing block of the hidden labels of the rows: without it they sit past the table and widen the page. */
+  position: relative;
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
@@ -851,14 +853,30 @@ kbd,
 }
 .repo-name {
   display: block;
+  max-width: 22ch;
   margin-bottom: var(--space-1);
+  overflow: hidden;
   color: var(--ink);
   font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A tag or a model id is one word: the column grows instead of cutting it in two. */
+.table .tag,
+.table td .mono {
+  white-space: nowrap;
+}
+/* The action stays in view when a narrow window scrolls the table. */
 .row-action {
+  position: sticky;
+  right: 0;
+  background: var(--paper-raised);
+  box-shadow: inset 1px 0 0 var(--line);
   text-align: right;
   white-space: nowrap;
+}
+.table tbody tr:target .row-action {
+  background: var(--ai-wash);
 }
 
 .switch {
@@ -991,10 +1009,16 @@ kbd,
     padding-inline: 0;
   }
   .repo-name {
+    max-width: 100%;
     margin: 0;
     font-size: var(--text-md);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .row-action {
+    position: static;
+    background: none;
+    box-shadow: none;
     text-align: left;
   }
   .row-action .button {

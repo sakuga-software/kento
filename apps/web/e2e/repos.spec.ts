@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
+import { LONG_REPO_NAME } from './fake-github.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // The Repos screen (REV-9) in a browser, against the server, Postgres and the fake GitHub: the check
@@ -114,6 +115,63 @@ test.describe('the Repos screen', () => {
     } finally {
       await sql.end()
     }
+  })
+
+  test('a repository name of 80 characters: the page does not scroll sideways, and « Désactiver » stays in view (REV-25)', async ({ page }) => {
+    await signIn(page, 'alex')
+    await checkNow(page)
+    let sql = database()
+    try {
+      let [repo] = await sql<{ id: string }[]>`
+        update repos set enabled = true where full_name = ${`sakuga-software/${LONG_REPO_NAME}`} returning id`
+      let [job] = await sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, finished_at)
+        values (${repo!.id}, 'heavy', 'done', 7, ${'7'.repeat(40)}, 'main', now()) returning id`
+      await sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, result, github_review_id, published_at)
+        values (${job!.id}, ${repo!.id}, 7, ${'7'.repeat(40)}, 4, 'anthropic/claude-sonnet-4-5', '{}'::jsonb, 7, now())`
+    } finally {
+      await sql.end()
+    }
+
+    let width = page.viewportSize()!.width
+    for (let viewport of width > 760 ? [width, 1024] : [width]) {
+      await page.setViewportSize({ width: viewport, height: 900 })
+      await page.goto('/repos')
+      let row = rowOf(page, LONG_REPO_NAME)
+      await expect(row.getByRole('link', { name: LONG_REPO_NAME, exact: true })).toHaveAttribute('title', `sakuga-software/${LONG_REPO_NAME}`)
+      await expect(row.getByText('claude-sonnet-4-5')).toBeVisible()
+
+      let layout = await page.evaluate(() => {
+        let wrap = document.querySelector('.table-wrap')!
+        let box = wrap.getBoundingClientRect()
+        let actions = [...document.querySelectorAll('.row-action .button')].map((button) => {
+          let r = button.getBoundingClientRect()
+          return r.left >= box.left - 0.5 && r.right <= Math.min(box.right, window.innerWidth) + 0.5
+        })
+        // A tag or a model id on two lines is at least two lines high.
+        let broken = [...document.querySelectorAll('.table .tag, .table td .mono')]
+          .filter((el) => {
+            let style = getComputedStyle(el)
+            let line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5
+            return el.getBoundingClientRect().height >= 1.8 * line
+          })
+          .map((el) => el.textContent)
+        return {
+          pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          tableOverflow: wrap.scrollWidth - wrap.clientWidth,
+          actions,
+          broken,
+        }
+      })
+      expect(layout.pageOverflow, `page at ${viewport} px`).toBeLessThanOrEqual(0)
+      if (viewport >= 1440) expect(layout.tableOverflow, `table at ${viewport} px`).toBeLessThanOrEqual(0)
+      // Other specs can leave more repositories in the database: every row counts, at least the 4 of the fake.
+      expect(layout.actions.length, `rows at ${viewport} px`).toBeGreaterThanOrEqual(4)
+      expect(layout.actions, `actions at ${viewport} px`).not.toContain(false)
+      expect(layout.broken, `tags and model ids at ${viewport} px`).toEqual([])
+    }
+    await expectNoAxeViolations(page)
   })
 
   test('a member reads the list under « Lecture seule », with no action', async ({ page }) => {
