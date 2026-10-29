@@ -28,6 +28,8 @@ export interface ClaimedJob {
   githubInstallationId: number
   /** Whether the runner is trusted now, read in the statement that claims the job. */
   runnerTrusted: boolean
+  /** The org of the runner, read in the same statement; null for a runner of the service. */
+  runnerOrgId: string | null
   /** The provider of the org that the claim gave the job; null: the OpenRouter key of the service. */
   provider: ClaimedProvider | null
   /** REV-12. The config resolved when the job was queued (`JobConfig`), or null for a job queued before it. */
@@ -292,7 +294,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
           orgs.github_installation_id as "githubInstallationId",
-          me.trusted as "runnerTrusted", claimed.config,
+          me.trusted as "runnerTrusted", me.org_id as "runnerOrgId", claimed.config,
           case when p.id is null then null else json_build_object(
             'id', p.id, 'orgId', p.org_id, 'kind', p.kind, 'label', p.label, 'baseUrl', p.base_url,
             'keyCiphertext', p.key_ciphertext, 'runnerHeld', p.runner_held, 'models', p.models) end as provider

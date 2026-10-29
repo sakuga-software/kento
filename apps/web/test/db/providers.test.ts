@@ -205,6 +205,17 @@ describe('providers and their encrypted keys', () => {
       }
     })
 
+    it('keeps one default when two admins choose two providers at the same time', async () => {
+      let a = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let b = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'B', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let c = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'C', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      for (let round = 0; round < 20; round++) {
+        await Promise.all([store.setDefault(orgId, b.id), store.setDefault(orgId, c.id), store.setDefault(orgId, a.id)])
+        let defaults = (await store.list(orgId)).filter((p) => p.isDefault)
+        assert.equal(defaults.length, 1)
+      }
+    })
+
     it('stores no key without a master key', async () => {
       let without = createProvidersStore(database.sql, null)
       await assert.rejects(without.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} }), /KENTO_SECRETS_KEY/)
@@ -260,6 +271,23 @@ describe('providers and their encrypted keys', () => {
       assert.deepEqual(job!.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
       assert.equal('providers' in job!, false)
       assert.equal((await claim(serviceRunner, { hasProviderKey: false })).status, 204)
+    })
+
+    it('never decrypts the key for a runner of another org, even if the claim gave it the job', async () => {
+      await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let jobId = await queueJob()
+      let token = await runner({ trusted: true })
+      let real = createRunnerStore(database.sql)
+      // A claim that would be wrong: the check of the controller is the second line of defence.
+      let wrong = { ...real, claimJob: async (...args: Parameters<typeof real.claimJob>) => {
+        let job = await real.claimJob(...args)
+        return job && { ...job, runnerOrgId: otherOrgId }
+      } }
+      let response = await call('/api/runner/jobs/claim', token, NEW_RUNNER, router({ store: wrong }))
+      assert.equal(response.status, 204)
+      assert.ok(!(await response.text()).includes(ANTHROPIC_KEY))
+      let [row] = await database.sql<{ state: string; attempts: number }[]>`select state, attempts from jobs where id = ${jobId}`
+      assert.deepEqual({ ...row }, { state: 'queued', attempts: 1 })
     })
 
     it('without its master key, the service gives no job that needs the key of a provider', async () => {

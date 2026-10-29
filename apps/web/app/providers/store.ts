@@ -148,6 +148,9 @@ export function createProvidersStore(sql: postgres.Sql, box: SecretBox | null): 
       // An id from a URL: one that is not a uuid is a provider that does not exist, not a 500.
       if (!UUID.test(id)) return null
       return sql.begin(async (tx) => {
+        // The lock of the org orders this change with another one, an add and a removal: two admins
+        // who choose two providers at once never break the one default of the org.
+        await tx`select 1 from orgs where id = ${orgId} for update`
         let [target] = await tx<{ id: string }[]>`select id from providers where id = ${id} and org_id = ${orgId} for update`
         if (!target) return null
         await tx`update providers set is_default = false, updated_at = now() where org_id = ${orgId} and is_default and id <> ${id}`
