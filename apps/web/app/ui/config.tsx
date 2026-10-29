@@ -365,7 +365,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 />
                 <FieldError id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Vide : pas de repli." />
               </div>
-              <button class="button button-primary" type="submit">
+              <button class="button" type="submit">
                 {value.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
                 <span class="visually-hidden"> pour {level}</span>
               </button>

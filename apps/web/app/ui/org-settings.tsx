@@ -360,7 +360,8 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                     </p>
                   ) : null}
                 </fieldset>
-                <button class="button button-primary" type="submit">
+                {/* A row of the section: a secondary button (REV-29, one primary action per section at most). */}
+                <button class="button" type="submit">
                   Enregistrer le niveau
                 </button>
               </form>
@@ -493,7 +494,7 @@ function LevelDefault(
                   <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Vide : pas de repli." />
                 </div>
               </div>
-              <button class="button button-primary" type="submit">
+              <button class="button" type="submit">
                 Enregistrer<span class="visually-hidden"> le modèle {level}</span>
               </button>
             </form>

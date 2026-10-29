@@ -174,6 +174,31 @@ test.describe('the settings of the org', () => {
     }
   })
 
+  // REV-29. Every section is one click from the top, has a URL, and the page stays under one
+  // primary button per section.
+  test('the table of contents leads to each section, and its anchor is the URL', async ({ page }) => {
+    await signIn(page, 'alex')
+    await page.goto('/settings')
+    let nav = page.getByRole('navigation', { name: 'Sections des réglages' })
+    for (let [name, id] of [
+      ['App GitHub', 'app'],
+      ['Bots de confiance', 'bots'],
+      ['Niveaux et modèles', 'defauts'],
+      ['Providers et clés', 'providers'],
+      ['Coûts et plafond', 'plafond'],
+    ] as const) {
+      await nav.getByRole('link', { name }).click()
+      await expect(page).toHaveURL(new RegExp(`/settings#${id}$`))
+      await expect(page.locator(`#${id}`)).toBeInViewport()
+    }
+    // The table of contents marks the section on screen.
+    await expect(nav.getByRole('link', { name: 'Coûts et plafond' })).toHaveAttribute('aria-current', 'location')
+    for (let section of await page.locator('.settings-content section').all()) {
+      expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
+    }
+    await expectNoAxeViolations(page)
+  })
+
   test('a member reads everything, and has no form', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'camille')

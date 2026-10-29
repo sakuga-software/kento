@@ -145,6 +145,33 @@ describe('the settings of the org (REV-13)', () => {
     assert.match(html, /commit <span class="mono">abcdef123<\/span>/)
   })
 
+  it('leads to each section from the top in one click, with one primary button per section at most (REV-29)', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/settings', { cookie })).text()
+    let nav = /<nav aria-label="Sections des réglages" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
+    let anchors = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
+    assert.deepEqual(anchors, ['plafond', 'defauts', 'bots', 'app'])
+    for (let id of anchors) assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `the section #${id} is on the page`)
+    // Each section of the org: at most one primary button (the defaults have none, their rows are secondary).
+    let sections = html.split('<section ').slice(1)
+    assert.ok(sections.length >= 4)
+    for (let section of sections) assert.ok((section.match(/button-primary/g) ?? []).length <= 1, section.slice(0, 120))
+    assert.doesNotMatch(sections.find((s) => s.includes('id="defauts"'))!, /button-primary/)
+  })
+
+  it('has the four sections of its table of contents for a member, and without the state of the App (REV-29)', async () => {
+    for (let [app, profile] of [[null, ALEX], [null, CAMILLE], [undefined, CAMILLE]] as const) {
+      let { request, signIn } = app === null ? setup(null) : setup()
+      let { cookie } = await signIn(profile)
+      let html = await (await request('/settings', { cookie })).text()
+      for (let id of ['plafond', 'defauts', 'bots', 'app']) {
+        assert.match(html, new RegExp(`href="#${id}"`))
+        assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `#${id} for ${profile.login}, App ${app === null ? 'unknown' : 'known'}`)
+      }
+    }
+  })
+
   it('shows a member everything, read only', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(CAMILLE)

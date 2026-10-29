@@ -46,7 +46,11 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await page.goto('/settings')
     await expect(page.getByRole('heading', { name: 'Providers et clés' })).toBeVisible()
     await expectNoAxeViolations(page)
+    // REV-29: the form is folded; the table of contents opens it.
     let form = page.locator('#nouveau-provider')
+    await expect(form.getByLabel('Type')).toBeHidden()
+    await page.getByRole('navigation', { name: 'Sections des réglages' }).getByRole('link', { name: 'Ajouter un provider' }).click()
+    await expect(page).toHaveURL(/#nouveau-provider$/)
     await form.getByLabel('Type').selectOption('anthropic')
     await form.getByLabel('Nom').fill(label)
     await form.getByLabel('Clé', { exact: true }).fill(key)
@@ -128,7 +132,14 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'alex')
-  await page.goto('/settings')
+  // A malformed hash stops nothing: settings.js still opens the form from a link of the table of contents.
+  await page.goto('/settings#%E0%A4%A')
+  await page.getByRole('navigation', { name: 'Sections des réglages' }).getByRole('link', { name: 'Ajouter un provider' }).click()
+  await expect(page.locator('#nouveau-provider').getByLabel('Type')).toBeVisible()
+  expect(errors.filter((e) => /URI/i.test(e))).toEqual([])
+
+  // A link to the anchor opens the folded form (the home screen has one).
+  await page.goto('/settings#nouveau-provider')
   let form = page.locator('#nouveau-provider')
   await form.getByLabel('Type').selectOption('openai_compatible')
   await form.getByLabel('Nom').fill('vLLM')

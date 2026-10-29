@@ -111,10 +111,13 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
           </div>
         ) : null}
 
+        <div class="settings-layout">
+          <SettingsNav org={!!org} providers={!!providers} add={admin && !!providers} />
+          <div class="settings-content">
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
         {providers ? (
-          <section class="provider-section" aria-labelledby="providers-title">
+          <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
             <h2 id="providers-title" class="section-title">
               Providers et clés <span class="count">{providers.length}</span>
             </h2>
@@ -150,7 +153,45 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
+          </div>
+        </div>
+        <script src={`/assets/settings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
+    )
+  }
+}
+
+/**
+ * The table of contents of the settings (REV-29): one link per section, at the side of the page
+ * on a wide screen and at its top on a phone. Each section keeps its anchor: #plafond, #defauts,
+ * #bots, #app, #providers, #nouveau-provider.
+ */
+function SettingsNav(handle: Handle<{ org: boolean; providers: boolean; add: boolean }>) {
+  return () => {
+    let { org, providers, add } = handle.props
+    let links: [string, string][] = [
+      ...(org
+        ? ([
+            ['#plafond', 'Coûts et plafond'],
+            ['#defauts', 'Niveaux et modèles'],
+            ['#bots', 'Bots de confiance'],
+            ['#app', 'App GitHub'],
+          ] as [string, string][])
+        : []),
+      ...(providers ? ([['#providers', 'Providers et clés']] as [string, string][]) : []),
+      ...(add ? ([['#nouveau-provider', 'Ajouter un provider']] as [string, string][]) : []),
+    ]
+    if (links.length < 2) return null
+    return (
+      <nav class="settings-nav" aria-label="Sections des réglages">
+        <ul>
+          {links.map(([href, label]) => (
+            <li>
+              <a href={href}>{label}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
     )
   }
 }
@@ -348,10 +389,14 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
         </p>
       )
     return (
-      <section class="card new-provider" id="nouveau-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
-        <h2 id="new-provider-title" class="section-title">
-          Ajouter un provider
-        </h2>
+      // Folded until it is asked for (REV-29): open after a form with errors, or when the URL names
+      // #nouveau-provider (public/assets/settings.js).
+      <section class="new-provider" id="nouveau-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
+        <details class="new-provider-toggle" open={form && Object.keys(form.errors).length > 0 ? true : undefined}>
+          <summary class="button">
+            <span id="new-provider-title">Ajouter un provider</span>
+          </summary>
+          <div class="card new-provider-card">
         <form method="post" action={routes.providerAdd.href()} noValidate autoComplete="off">
           <input type="hidden" name="_csrf" value={csrf} />
           <FormErrors errors={errors} />
@@ -440,6 +485,8 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             Ajouter le provider
           </button>
         </form>
+          </div>
+        </details>
       </section>
     )
   }

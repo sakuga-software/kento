@@ -219,6 +219,19 @@ describe('the section « Providers et clés »', () => {
     assert.deepEqual(writes, [`add ${ORG.id} anthropic`])
   })
 
+  it('folds « Ajouter un provider » behind a button, and opens it on an error (REV-29)', async () => {
+    let { request, signIn } = setup([])
+    let { cookie, csrf } = await signIn(ALEX)
+    let page = await (await request('/settings', { cookie })).text()
+    let toggle = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
+    assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
+    assert.match(page, /<a href="#providers">Providers et clés<\/a>.*<a href="#nouveau-provider">Ajouter un provider<\/a>/s)
+    assert.match(page, /src="\/assets\/settings\.js\?v=/)
+    let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
+    let open = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
+    assert.match(open, /\bopen\b/)
+  })
+
   it('gives a form with an error back without the key it held', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
