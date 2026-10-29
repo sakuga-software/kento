@@ -180,7 +180,7 @@ let router = createAppRouter({
               settingsUrl: publicUrl ? new URL('/settings#plafond', publicUrl).toString() : `${config.githubUrl}`,
             })
           : undefined,
-      // The commands of the comments (REV-7): `@kento review heavy`, `@sakuga-review review balanced`.
+      // The commands of the comments (REV-7): `@kento-ai review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
         db: database.db,
         mintInstallationToken,

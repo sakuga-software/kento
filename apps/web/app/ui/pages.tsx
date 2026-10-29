@@ -395,7 +395,7 @@ export function createUiControllers(deps: UiDependencies) {
             ? readTrustedBotsForm(form)
             : key === 'level'
               ? readLevelForm(form)
-              : readModelsForm(form, (await settings.providers.list(orgId)).map((p) => p.id))
+              : readModelsForm(form, await settings.providers.list(orgId))
       if (!parsed.ok) {
         return renderSettings(context, signed, page, { orgForm: { field: key, values: formValues(form), errors: parsed.errors } }, 422)
       }
@@ -564,7 +564,7 @@ export function createUiControllers(deps: UiDependencies) {
               ? readPathsForm(form)
               : key === 'monthlyCapUsd'
                 ? readCapForm(form)
-                : readModelsForm(form, (await configDeps.providers.list(signed.membership.org.id)).map((p) => p.id))
+                : readModelsForm(form, await configDeps.providers.list(signed.membership.org.id))
       if (!parsed.ok) {
         return renderConfig(context, signed, page, tab, { form: { field: key, values: formValues(form), errors: parsed.errors } }, 422)
       }

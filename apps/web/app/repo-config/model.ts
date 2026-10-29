@@ -1,5 +1,5 @@
 import { LEVELS as ENGINE_LEVELS } from '@sakuga-review/engine/levels'
-import type { Level } from '@sakuga-review/protocol'
+import type { Level, ProviderKind } from '@sakuga-review/protocol'
 
 // The config of a repository (REV-12) and of its org: what each key means, how the screen and the
 // service read the JSON of the database, and how a repository inherits from its org. No database,
@@ -26,7 +26,7 @@ export interface LevelModels {
  * - `push`: each push of a pull request that is not a draft, and its passage to « Ready for review »;
  * - `ready`: only the opening of a pull request that is not a draft, its passage to « Ready for
  *   review », and its reopening; a later push creates nothing;
- * - `command`: nothing. Only a command in a comment (`@kento review`) creates a job.
+ * - `command`: nothing. Only a command in a comment (`@kento-ai review`) creates a job.
  */
 export const TRIGGERS = ['push', 'ready', 'command'] as const
 export type Trigger = (typeof TRIGGERS)[number]
@@ -263,21 +263,39 @@ function field(form: FormData, name: string): string {
  * The form of one level: the provider, its model, then the fallback model (empty: none). The
  * provider must be one of `providers`, the providers that the org can use.
  */
-export function readModelsForm(form: FormData, providers: readonly string[]): FormResult<LevelModels> {
+export function readModelsForm(form: FormData, providers: readonly { id: string; kind: ProviderKind }[]): FormResult<LevelModels> {
   let errors: Record<string, string> = {}
   let provider = field(form, 'provider')
   let model = field(form, 'model')
   let fallback = field(form, 'fallback')
-  if (!providers.includes(provider)) errors.provider = 'Choisissez un provider de l’org.'
+  let kind = providers.find((p) => p.id === provider)?.kind
+  if (!kind) errors.provider = 'Choisissez un provider de l’org.'
   if (model === '') errors.model = 'Indiquez un modèle.'
   else if (!MODEL.test(model)) errors.model = MODEL_HELP
+  else if (kind && wrongIdForm(kind, model)) errors.model = ID_FORM_HELP[kind as 'openrouter' | 'anthropic']
   if (fallback !== '' && !MODEL.test(fallback)) errors.fallback = MODEL_HELP
+  else if (fallback !== '' && kind && wrongIdForm(kind, fallback)) errors.fallback = ID_FORM_HELP[kind as 'openrouter' | 'anthropic']
   else if (fallback !== '' && fallback === model) errors.fallback = 'Le repli doit être un autre modèle, ou rester vide.'
   if (Object.keys(errors).length > 0) return { ok: false, errors }
   return { ok: true, value: { provider, model, fallback: fallback === '' ? null : fallback } }
 }
 
 const MODEL_HELP = 'Un identifiant de modèle : lettres, chiffres et « . _ : / @ - », 200 caractères au plus.'
+
+/**
+ * An OpenRouter id names its vendor (`anthropic/claude-sonnet-5.5`); an Anthropic id does not
+ * (`claude-sonnet-5-5`). The other provider answers 404 to the wrong form.
+ */
+function wrongIdForm(kind: ProviderKind, model: string): boolean {
+  if (kind === 'openrouter') return !model.includes('/')
+  if (kind === 'anthropic') return model.includes('/')
+  return false
+}
+
+const ID_FORM_HELP = {
+  openrouter: 'OpenRouter attend le fournisseur devant le modèle, par exemple anthropic/claude-sonnet-5.5.',
+  anthropic: 'Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+} as const
 
 export function readTriggerForm(form: FormData): FormResult<Trigger> {
   let value = field(form, 'trigger')

@@ -1,5 +1,5 @@
-// The commands of the comments: `@kento review [lite|balanced|heavy] [force]` and
-// `@kento resolve [lite|balanced|heavy]`, with `@sakuga-review` as an alias (REV-7). The webhook gives the parsed command; this handler asks GitHub what the
+// The commands of the comments: `@kento-ai review [lite|balanced|heavy] [force]` and
+// `@kento-ai resolve [lite|balanced|heavy]`, with `@sakuga-review` as an alias (REV-7). The webhook gives the parsed command; this handler asks GitHub what the
 // payload does not hold (the permission of the commenter, the head and the fork of the pull
 // request), queues the job, and answers on the comment.
 //
@@ -152,13 +152,13 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         if (command.verb === 'resolve') {
           return refuse(
             'a resolve of the pull request is already running',
-            `@${message.commenter.login} Une résolution des fils de cette PR est déjà en file ou en cours : attendez sa fin, puis relancez \`@kento resolve\` si des fils restent ouverts.`,
+            `@${message.commenter.login} Une résolution des fils de cette PR est déjà en file ou en cours : attendez sa fin, puis relancez \`@kento-ai resolve\` si des fils restent ouverts.`,
           )
         }
         return refuse(
           'head already has a review at this level',
           `@${message.commenter.login} Le commit \`${pr.head.sha.slice(0, 9)}\` a déjà une review \`${command.level}\` (en file, en cours ou publiée) : ` +
-            `elle n'est pas payée deux fois. \`@kento review ${command.level} force\` en demande une autre.`,
+            `elle n'est pas payée deux fois. \`@kento-ai review ${command.level} force\` en demande une autre.`,
         )
       case 'skipped':
         return { outcome: 'skipped', reason: result.reason }

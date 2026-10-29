@@ -275,7 +275,7 @@ export const jobs = pgTable(
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */
     githubDeliveryId: text('github_delivery_id').unique(),
     /**
-     * The comment of the pull request whose command created the job (`@kento review heavy`), or null
+     * The comment of the pull request whose command created the job (`@kento-ai review heavy`), or null
      * for the review of a push. One comment creates one job at most, whatever its deliveries.
      */
     githubCommentId: bigint('github_comment_id', { mode: 'number' }).unique(),

@@ -114,7 +114,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |
 | `installation_repositories` | `added` / `removed` | Upserts / deletes the repositories (a deleted repository takes its jobs and reviews with it). |
-| `issue_comment` | | 202 `ignored`: the `@kento` commands have their own ticket. |
+| `issue_comment` | | 202 `ignored`: the `@kento-ai` commands have their own ticket. |
 
 A `pull_request` event also upserts its org and repository, so the App needs no new `installation`
 event after the webhook is added.
@@ -144,7 +144,7 @@ Duplicates:
   suspended`, `installation deleted`). The delivery id is not signed, so a captured request can come
   back with a new one: a head superseded by a newer push stays blocked, so the replay of an older
   push cannot queue a paid review of a stale head nor cancel the job of the current head. The cost: a
-  force-push back to a head that was already reviewed gets no new job (the `@kento` commands will
+  force-push back to a head that was already reviewed gets no new job (the `@kento-ai` commands will
   cover a review on demand).
 - While the last job of a pull request was cancelled by its close, only `reopened` queues a job:
   GitHub sends no push for a closed pull request, so a `synchronize` then is a replay.

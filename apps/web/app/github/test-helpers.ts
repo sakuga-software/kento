@@ -109,7 +109,7 @@ export function issueCommentPayload(
       state: options.state ?? 'open',
       ...(options.onPullRequest === false ? {} : { pull_request: { url: 'https://api.github.com/repos/x/y/pulls/28' } }),
     },
-    comment: { id: options.commentId ?? 9001, body: options.body ?? '@kento review heavy', user },
+    comment: { id: options.commentId ?? 9001, body: options.body ?? '@kento-ai review heavy', user },
     repository: options.repo ?? REPO,
     sender: options.sender ?? user,
     installation: { id: 1001, node_id: 'MDIz' },

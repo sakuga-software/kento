@@ -125,7 +125,10 @@ describe('the paths', () => {
 
 describe('the forms', () => {
   it('a level: a provider of the org, a model, and a fallback of the same provider or none', () => {
-    let providers = ['service']
+    let providers = [
+      { id: 'service', kind: 'openrouter' as const },
+      { id: 'own', kind: 'anthropic' as const },
+    ]
     assert.deepEqual(readModelsForm(form({ provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: '' }), providers), { ok: true, value: SONNET })
     assert.deepEqual(readModelsForm(form({ provider: 'service', model: 'a/b', fallback: 'c/d' }), providers), {
       ok: true,
@@ -138,6 +141,28 @@ describe('the forms', () => {
     assert.equal(same.ok, false)
     // A model id is never an option of a command.
     assert.equal(readModelsForm(form({ provider: 'service', model: '--help', fallback: '' }), providers).ok, false)
+  })
+
+  it('a level: the model id has the form of its provider', () => {
+    let providers = [
+      { id: 'service', kind: 'openrouter' as const },
+      { id: 'own', kind: 'anthropic' as const },
+      { id: 'gpu', kind: 'ollama' as const },
+      { id: 'vllm', kind: 'openai_compatible' as const },
+    ]
+    assert.deepEqual(readModelsForm(form({ provider: 'own', model: 'claude-sonnet-5-5', fallback: 'claude-haiku-5-5' }), providers), {
+      ok: true,
+      value: { provider: 'own', model: 'claude-sonnet-5-5', fallback: 'claude-haiku-5-5' },
+    })
+    let openrouterIds = readModelsForm(form({ provider: 'own', model: 'anthropic/claude-opus-5.5', fallback: 'z-ai/glm-5.3' }), providers)
+    assert.equal(openrouterIds.ok, false)
+    if (!openrouterIds.ok) assert.deepEqual(Object.keys(openrouterIds.errors).sort(), ['fallback', 'model'])
+    assert.equal(readModelsForm(form({ provider: 'service', model: 'claude-sonnet-5-5', fallback: '' }), providers).ok, false)
+    for (let provider of ['gpu', 'vllm']) {
+      for (let model of ['qwen3:32b', 'Qwen/Qwen3-Coder-30B']) {
+        assert.equal(readModelsForm(form({ provider, model, fallback: '' }), providers).ok, true, `${provider} ${model}`)
+      }
+    }
   })
 
   it('the monthly limit: dollars with a comma or a dot, or empty for none', () => {

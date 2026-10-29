@@ -29,12 +29,13 @@ export function createConfigProviders(store: ProvidersStore, options: { serviceK
     async list(orgId) {
       let service: ProviderOption = {
         id: SERVICE_PROVIDER,
+        kind: 'openrouter',
         label: 'OpenRouter (clé du service)',
         hint: options.serviceKey
           ? 'La clé du service pour un runner de confiance, ou la clé OpenRouter du runner.'
           : 'La clé OpenRouter du runner : le service n’en a pas.',
       }
-      let own = (await store.list(orgId)).map((provider) => ({ id: provider.id, label: provider.label, hint: hint(provider) }))
+      let own = (await store.list(orgId)).map((provider) => ({ id: provider.id, kind: provider.kind, label: provider.label, hint: hint(provider) }))
       return [service, ...own]
     },
   }

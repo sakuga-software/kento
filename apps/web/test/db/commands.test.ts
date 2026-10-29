@@ -127,8 +127,8 @@ describe('commands in the comments of a pull request', () => {
     fake.state.permissions.set('triager', 'triage')
   })
 
-  it('1. `@kento review heavy` queues a heavy review of the current head, and answers 👀', async () => {
-    let { status, body, payload } = await say('@kento review heavy')
+  it('1. `@kento-ai review heavy` queues a heavy review of the current head, and answers 👀', async () => {
+    let { status, body, payload } = await say('@kento-ai review heavy')
     assert.equal(status, 202)
     assert.equal(body.outcome, 'queued')
     let rows = await jobs()
@@ -147,12 +147,12 @@ describe('commands in the comments of a pull request', () => {
 
   it('2. `@sakuga-review` is an alias, and the name alone asks for a lite review', async () => {
     assert.equal((await say('@sakuga-review review balanced')).body.outcome, 'queued')
-    assert.equal((await say('@kento')).body.outcome, 'queued')
+    assert.equal((await say('@kento-ai')).body.outcome, 'queued')
     assert.deepEqual((await jobs()).map((j) => j.level), ['balanced', 'lite'])
   })
 
   it('3. a redelivery, or a replay with a new delivery id, creates no second job', async () => {
-    let first = await say('@kento review heavy')
+    let first = await say('@kento-ai review heavy')
     assert.equal((await replay(first.payload, first.deliveryId)).body.outcome, 'duplicate')
     assert.equal((await replay(first.payload, nextDelivery())).body.outcome, 'duplicate')
     assert.equal((await jobs()).length, 1)
@@ -160,80 +160,80 @@ describe('commands in the comments of a pull request', () => {
   })
 
   it('4. a heavy asked twice on the same head is paid once; `force` pays again', async () => {
-    let first = await say('@kento review heavy')
-    let second = await say('@kento review heavy')
+    let first = await say('@kento-ai review heavy')
+    let second = await say('@kento-ai review heavy')
     assert.equal(second.body.outcome, 'refused')
     assert.equal(second.body.reason, 'head already has a review at this level')
     assert.deepEqual(reactionsOf(second.payload.comment.id), ['confused'])
     assert.equal(fake.state.issueComments.length, 1)
-    assert.match(fake.state.issueComments[0]!.body, /@alex .*déjà une review `heavy`.*@kento review heavy force/s)
+    assert.match(fake.state.issueComments[0]!.body, /@alex .*déjà une review `heavy`.*@kento-ai review heavy force/s)
 
     // The replay of the refused comment posts no second reply.
     await replay(second.payload, nextDelivery())
     assert.equal(fake.state.issueComments.length, 1)
 
-    let forced = await say('@kento review heavy force')
+    let forced = await say('@kento-ai review heavy force')
     assert.equal(forced.body.outcome, 'queued')
     assert.deepEqual((await jobs()).map((j) => j.level), ['heavy', 'heavy'])
     assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes'])
   })
 
   it('5. another level, or a new head, is not a repeat; a failed review does not count', async () => {
-    await say('@kento review heavy')
-    assert.equal((await say('@kento review balanced')).body.outcome, 'queued')
+    await say('@kento-ai review heavy')
+    assert.equal((await say('@kento-ai review balanced')).body.outcome, 'queued')
     fake.state.pr.head = headSha(0xdef)
-    assert.equal((await say('@kento review heavy')).body.outcome, 'queued')
+    assert.equal((await say('@kento-ai review heavy')).body.outcome, 'queued')
     await database.sql`update jobs set state = 'failed', finished_at = now() where head_sha = ${headSha(0xdef)}`
-    assert.equal((await say('@kento review heavy')).body.outcome, 'queued')
+    assert.equal((await say('@kento-ai review heavy')).body.outcome, 'queued')
     assert.equal((await jobs()).length, 4)
   })
 
-  it('6. the lite review of the push counts: `@kento review` on the same head is refused', async () => {
+  it('6. the lite review of the push counts: `@kento-ai review` on the same head is refused', async () => {
     let push = pullRequestPayload({ action: 'synchronize', number: PR, head: HEAD })
     let pushed = await router().fetch(signedRequest(push, { deliveryId: nextDelivery() }))
     assert.equal(pushed.status, 202)
-    assert.equal((await say('@kento review')).body.outcome, 'refused')
+    assert.equal((await say('@kento-ai review')).body.outcome, 'refused')
     assert.equal((await jobs()).length, 1)
   })
 
   it('7. only a person who can write gives a command: no job, no reaction, no reply for the others', async () => {
     for (let login of ['reader', 'triager', 'stranger']) {
-      let { body, payload } = await say('@kento review heavy', { user: { login, type: 'User' } })
+      let { body, payload } = await say('@kento-ai review heavy', { user: { login, type: 'User' } })
       assert.deepEqual(body, { outcome: 'refused', reason: 'commenter cannot write to the repository' })
       assert.deepEqual(reactionsOf(payload.comment.id), [])
     }
     // An unknown command of a reader gets no list either.
-    assert.equal((await say('@kento frobnicate', { user: { login: 'reader', type: 'User' } })).body.outcome, 'refused')
+    assert.equal((await say('@kento-ai frobnicate', { user: { login: 'reader', type: 'User' } })).body.outcome, 'refused')
     assert.equal(fake.state.issueComments.length, 0)
     assert.equal((await jobs()).length, 0)
 
     for (let login of ['writer', 'maintainer']) {
-      assert.equal((await say(`@kento review ${login === 'writer' ? 'lite' : 'balanced'}`, { user: { login, type: 'User' } })).body.outcome, 'queued')
+      assert.equal((await say(`@kento-ai review ${login === 'writer' ? 'lite' : 'balanced'}`, { user: { login, type: 'User' } })).body.outcome, 'queued')
     }
   })
 
   it('8. a bot of KENTO_TRUSTED_BOTS commands without a permission call; another bot never reaches GitHub', async () => {
-    let agent = await say('@kento review balanced', { user: { login: 'sakuga-agent[bot]', type: 'Bot' } })
+    let agent = await say('@kento-ai review balanced', { user: { login: 'sakuga-agent[bot]', type: 'Bot' } })
     assert.equal(agent.body.outcome, 'queued')
     assert.equal(permissionCalls().length, 0)
 
     let calls = fake.state.calls.length
-    let other = await say('@kento review heavy', { user: { login: 'dependabot[bot]', type: 'Bot' } })
+    let other = await say('@kento-ai review heavy', { user: { login: 'dependabot[bot]', type: 'Bot' } })
     assert.equal(other.status, 202)
     assert.equal(other.body.outcome, 'ignored')
-    let own = await say('@kento review heavy', { user: { login: BOT, type: 'Bot' } })
+    let own = await say('@kento-ai review heavy', { user: { login: BOT, type: 'Bot' } })
     assert.equal(own.body.reason, 'comment of the App itself')
     assert.equal(fake.state.calls.length, calls)
     assert.equal((await jobs()).length, 1)
   })
 
   it('9. an unknown command gets 😕 and the list of the commands, once', async () => {
-    let { body, payload, deliveryId } = await say('@kento frobnicate')
+    let { body, payload, deliveryId } = await say('@kento-ai frobnicate')
     assert.deepEqual(body, { outcome: 'refused', reason: 'unknown command' })
     assert.deepEqual(reactionsOf(payload.comment.id), ['confused'])
     assert.equal(fake.state.issueComments.length, 1)
-    assert.match(fake.state.issueComments[0]!.body, /`@kento frobnicate` n'est pas une commande de Kentō/)
-    assert.match(fake.state.issueComments[0]!.body, /@kento review \[lite\|balanced\|heavy\]/)
+    assert.match(fake.state.issueComments[0]!.body, /`@kento-ai frobnicate` n'est pas une commande de Kentō/)
+    assert.match(fake.state.issueComments[0]!.body, /@kento-ai review \[lite\|balanced\|heavy\]/)
     await replay(payload, deliveryId)
     assert.equal(fake.state.issueComments.length, 1)
     assert.equal((await jobs()).length, 0)
@@ -241,18 +241,18 @@ describe('commands in the comments of a pull request', () => {
 
   it('10. a pull request from a fork, or from a deleted fork, gets no job', async () => {
     fake.state.pr.headRepoId = 9999
-    let fork = await say('@kento review heavy')
+    let fork = await say('@kento-ai review heavy')
     assert.deepEqual(fork.body, { outcome: 'refused', reason: 'pull request from a fork' })
     assert.deepEqual(reactionsOf(fork.payload.comment.id), ['confused'])
     assert.match(fake.state.issueComments[0]!.body, /fork/)
     fake.state.pr.headRepoId = null
-    assert.equal((await say('@kento review heavy')).body.reason, 'pull request from a fork')
+    assert.equal((await say('@kento-ai review heavy')).body.reason, 'pull request from a fork')
     assert.equal((await jobs()).length, 0)
   })
 
   it('11. a pull request closed since the comment, or a repository that is not enabled, gets no job', async () => {
     fake.state.pr.state = 'closed'
-    assert.deepEqual((await say('@kento review heavy')).body, { outcome: 'skipped', reason: 'pull request is closed' })
+    assert.deepEqual((await say('@kento-ai review heavy')).body, { outcome: 'skipped', reason: 'pull request is closed' })
 
     let calls = fake.state.calls.length
     let other = { ...REPO, id: 4001, full_name: 'sakuga-software/fruitback' }
@@ -261,14 +261,14 @@ describe('commands in the comments of a pull request', () => {
     assert.equal(outside.body.outcome, 'skipped')
     assert.match(outside.body.reason, /workflow keeps the command/)
     await database.sql`update repos set enabled = false`
-    let disabled = await say('@kento review heavy')
+    let disabled = await say('@kento-ai review heavy')
     assert.deepEqual(disabled.body, { outcome: 'skipped', reason: 'repository is not enabled: the workflow keeps the command' })
     assert.equal(fake.state.calls.length, calls)
     assert.equal((await jobs()).length, 0)
   })
 
   it('12. two identical commands at the same time: one job, one refusal', async () => {
-    let [a, b] = await Promise.all([say('@kento review heavy'), say('@kento review heavy')])
+    let [a, b] = await Promise.all([say('@kento-ai review heavy'), say('@kento-ai review heavy')])
     assert.deepEqual([a.body.outcome, b.body.outcome].sort(), ['queued', 'refused'])
     assert.equal((await jobs()).length, 1)
   })
@@ -277,11 +277,11 @@ describe('commands in the comments of a pull request', () => {
     let { body, payload } = await say('@sakuga-review resolve balanced')
     assert.equal(body.outcome, 'queued')
     assert.deepEqual(reactionsOf(payload.comment.id), ['eyes'])
-    let again = await say('@kento resolve')
+    let again = await say('@kento-ai resolve')
     assert.deepEqual(again.body, { outcome: 'refused', reason: 'a resolve of the pull request is already running' })
     assert.match(fake.state.issueComments.at(-1)!.body, /déjà en file ou en cours/)
     await database.sql`update jobs set state = 'done', finished_at = now()`
-    assert.equal((await say('@kento resolve')).body.outcome, 'queued')
+    assert.equal((await say('@kento-ai resolve')).body.outcome, 'queued')
     assert.deepEqual((await jobs()).map((j) => [j.kind, j.level]), [['resolve', 'balanced'], ['resolve', 'lite']])
   })
 
@@ -290,14 +290,14 @@ describe('commands in the comments of a pull request', () => {
     let failing = fake.fetch
     fake.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       String(input).includes('/collaborators/') ? new Response('{}', { status: 502 }) : failing(input, init)) as typeof fetch
-    let { status } = await say('@kento review heavy')
+    let { status } = await say('@kento-ai review heavy')
     assert.equal(status, 500)
     assert.equal((await jobs()).length, 0)
   })
 
   it('14b. a reply that fails takes its 😕 back, so that the redelivery replies', async () => {
     fake.state.failIssueComments = 1
-    let first = await say('@kento frobnicate')
+    let first = await say('@kento-ai frobnicate')
     assert.equal(first.status, 500)
     assert.deepEqual(reactionsOf(first.payload.comment.id), [])
     assert.equal(fake.state.issueComments.length, 0)
@@ -339,7 +339,7 @@ describe('commands in the comments of a pull request', () => {
     }
 
     it('15. the review of a command is published, then the comment gets 🚀 (end to end)', async () => {
-      let { payload } = await say('@kento review heavy')
+      let { payload } = await say('@kento-ai review heavy')
       let { job, token } = await claim()
       assert.equal(job.level, 'heavy')
       assert.equal(job.pullRequest.headSha, HEAD)
@@ -359,7 +359,7 @@ describe('commands in the comments of a pull request', () => {
     })
 
     it('16. a job of a command that fails gets 😕, once', async () => {
-      let { payload } = await say('@kento review heavy')
+      let { payload } = await say('@kento-ai review heavy')
       let { job, token } = await claim()
       let failed = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'failed', attempt: job.attempt, reason: 'clone failed' })
       assert.equal(failed.status, 204)
@@ -375,7 +375,7 @@ describe('commands in the comments of a pull request', () => {
     })
 
     it('17. a review of a command that a newer push superseded is not published, and gets 😕', async () => {
-      let { payload } = await say('@kento review heavy')
+      let { payload } = await say('@kento-ai review heavy')
       let { job, token } = await claim()
       await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: review() })
       fake.state.pr.head = headSha(0xfff)
@@ -468,36 +468,36 @@ describe('commands in the comments of a pull request', () => {
         assert.equal(fake.state.comments.length + fake.state.issueComments.length, comments)
 
         // A new resolve at the same head finds the open thread already answered: no model call needed.
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let next = await claimWith({ hasProviderKey: true, kinds: ['review', 'resolve'] })
         assert.ok(next.job && next.job.kind === 'resolve')
         assert.deepEqual({ threads: next.job.resolve.threads.length, open: next.job.resolve.open, waiting: next.job.resolve.waiting }, { threads: 0, open: 1, waiting: 0 })
       })
 
       it('18b. a resolve done but not published yet still holds the pull request', async () => {
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
         // The job is done; the publisher has not posted the replies and their marker yet.
-        let early = await say('@kento resolve')
+        let early = await say('@kento-ai resolve')
         assert.equal(early.body.reason, 'a resolve of the pull request is already running')
         await publisher().publishPending()
-        assert.equal((await say('@kento resolve')).body.outcome, 'queued')
+        assert.equal((await say('@kento-ai resolve')).body.outcome, 'queued')
       })
 
       it('18c. an unpublished resolution older than the publisher takes stops holding the pull request', async () => {
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
         // The publisher was down for longer than it keeps a row: the row is never published.
         await database.sql`update resolutions set created_at = now() - interval '31 minutes'`
-        assert.equal((await say('@kento resolve')).body.outcome, 'queued')
+        assert.equal((await say('@kento-ai resolve')).body.outcome, 'queued')
       })
 
       it('18d. a thread that the model gave no verdict for is counted in the summary', async () => {
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         let result = resolved()
@@ -505,13 +505,13 @@ describe('commands in the comments of a pull request', () => {
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: result })
         await publisher().publishPending()
         let summary = fake.state.issueComments.at(-1)!.body
-        assert.match(summary, /2 fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande `@kento resolve` les relira\./)
+        assert.match(summary, /2 fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande `@kento-ai resolve` les relira\./)
         assert.equal(fake.repliesTo(personAnswered).length, 0)
       })
 
       it('19. without `contents: write`, the replies say that a person can resolve, and the threads stay open', async () => {
         fake.state.readOnly.add('contents')
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
@@ -522,7 +522,7 @@ describe('commands in the comments of a pull request', () => {
       })
 
       it('20. a review sent for a resolve job is refused; a resolution of an older head is not published', async () => {
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         let wrong = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: review() })
@@ -538,7 +538,7 @@ describe('commands in the comments of a pull request', () => {
       })
 
       it('21. a GitHub error while the service reads the threads gives the job back for another attempt', async () => {
-        await say('@kento resolve')
+        await say('@kento-ai resolve')
         let failing = fake.fetch
         fake.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
           String(input).endsWith('/graphql') ? new Response('{}', { status: 502 }) : failing(input, init)) as typeof fetch
