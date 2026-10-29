@@ -1,4 +1,5 @@
 // The levels of a review: the model, its reasoning, its limits and the context of the pack.
+import type { ProviderKind } from './providers.ts';
 
 export type Level = 'lite' | 'balanced' | 'heavy';
 export type ContextKind = 'full' | 'definitions';
@@ -84,4 +85,34 @@ export function levelConfig(level: Level, env: LevelEnv = {}): LevelConfig {
 
 export function isLevel(value: string | undefined): value is Level {
   return value === 'lite' || value === 'balanced' || value === 'heavy';
+}
+
+/**
+ * The models of a level at Anthropic, by their own ids: the same family as on OpenRouter, without
+ * GLM. A server of the OpenAI API and Ollama have no default: their admin names the models.
+ */
+const ANTHROPIC_MODELS: Record<Level, string[]> = {
+  lite: ['claude-haiku-5-5'],
+  balanced: ['claude-sonnet-5-5'],
+  heavy: ['claude-opus-5-5'],
+};
+
+/** The models of a level at a provider when its admin names none. Empty: the admin must name them. */
+export function defaultModels(kind: ProviderKind, level: Level): string[] {
+  if (kind === 'openrouter') return [...LEVELS[level].models];
+  if (kind === 'anthropic') return [...ANTHROPIC_MODELS[level]];
+  return [];
+}
+
+/**
+ * The configuration of a level for a provider: the models that the job names, or the default
+ * models of the provider. The time limits follow the models: the last one repeats.
+ */
+export function providerLevelConfig(level: Level, kind: ProviderKind, models?: readonly string[], env: LevelEnv = {}): LevelConfig {
+  const config = levelConfig(level, env);
+  if (env.REVIEW_MODELS) return config;
+  const chosen = models && models.length > 0 ? [...models] : defaultModels(kind, level);
+  config.timeoutsMs = chosen.map((_, i) => config.timeoutsMs[i] ?? config.timeoutsMs.at(-1)!);
+  config.models = chosen;
+  return config;
 }

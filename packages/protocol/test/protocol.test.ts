@@ -169,3 +169,43 @@ test('a resolved result passes with its verdicts, and fails with an unknown verd
   assert.equal(parseResultRequest({ ...resolved, resolve: { ...resolved.resolve, model: null, held: 0, threads: [] } }).ok, true);
   assert.equal(parseResultRequest({ ...resolved, resolve: { ...resolved.resolve, threads: [{ id: 'x', verdict: 'maybe', reply: '', changed: null }] } }).ok, false);
 });
+
+// --- providers (REV-11) ------------------------------------------------------------------------
+
+const PROVIDER = { id: '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', kind: 'anthropic', apiKey: 'sk-ant-x', baseUrl: null, models: ['claude-opus-5-5'] };
+
+test('a job with providers: each kind, the key of the service, a runner-held provider', () => {
+  assert.ok(parseJob({ ...job(), providers: [PROVIDER] }).ok);
+  assert.ok(parseJob({ ...job(), providers: [{ ...PROVIDER, id: 'service', kind: 'openrouter', models: ['anthropic/claude-haiku-5.5'] }] }).ok);
+  assert.ok(parseJob({ ...job(), providers: [{ ...PROVIDER, kind: 'ollama', apiKey: null, baseUrl: 'http://gpu.lan:11434', models: ['qwen3:32b'] }] }).ok);
+  assert.ok(parseJob({ ...job(), providers: [{ ...PROVIDER, kind: 'openai_compatible', baseUrl: 'https://llm.example.com/v1', models: [] }] }).ok);
+});
+
+test('a job: a provider with a wrong id, kind, URL or model is refused', () => {
+  const refused = (provider: object) => assert.equal(parseJob({ ...job(), providers: [provider] }).ok, false, JSON.stringify(provider));
+  refused({ ...PROVIDER, id: 'org-1' });
+  refused({ ...PROVIDER, kind: 'bedrock' });
+  refused({ ...PROVIDER, baseUrl: 'ftp://x' });
+  refused({ ...PROVIDER, baseUrl: 'https://user:pass@x' });
+  refused({ ...PROVIDER, models: ['--help'] });
+  refused({ ...PROVIDER, models: ['a b'] });
+  refused({ ...PROVIDER, extra: true });
+  // The key of the first release is an OpenRouter key only: an earlier runner reads it as such.
+  assert.equal(parseJob({ ...job(), provider: { kind: 'anthropic', apiKey: 'k' } }).ok, false);
+});
+
+test('a claim says its features and its own provider; an earlier claim has neither', () => {
+  assert.ok(parseClaimRequest({ hasProviderKey: true, kinds: ['review'], features: ['providers'], ownProvider: 'ollama' }).ok);
+  assert.ok(parseClaimRequest({ hasProviderKey: false, features: ['providers'], ownProvider: null }).ok);
+  assert.ok(parseClaimRequest({ hasProviderKey: false }).ok);
+  assert.equal(parseClaimRequest({ hasProviderKey: false, features: ['teleport'] }).ok, false);
+  assert.equal(parseClaimRequest({ hasProviderKey: false, ownProvider: 'bedrock' }).ok, false);
+});
+
+test('a result: the status of a refused key, and where the cost comes from', () => {
+  assert.ok(parseResultRequest({ outcome: 'failed', attempt: 1, reason: 'Anthropic answered 401', providerStatus: 401 }).ok);
+  assert.ok(parseResultRequest({ outcome: 'failed', attempt: 1, reason: 'clone failed', providerStatus: null }).ok);
+  assert.equal(parseResultRequest({ outcome: 'failed', attempt: 1, reason: 'x', providerStatus: 42 }).ok, false);
+  assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), costSource: 'unknown', costUsd: 0 } }).ok);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), costSource: 'guess' } }).ok, false);
+});

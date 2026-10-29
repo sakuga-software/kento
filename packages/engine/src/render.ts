@@ -34,7 +34,15 @@ const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced',
  * posts the review (`Kentō`); the Action gives none.
  */
 export function costLine(level: Level, usage: Usage, by?: string): string {
-  const cost = typeof usage.cost === 'number' ? ` · ${usage.cost.toFixed(3).replace('.', ',')} $` : '';
+  const amount = (value: number) => `${value.toFixed(3).replace('.', ',')} $`;
+  const cost =
+    usage.cost_source === 'unknown'
+      ? ' · coût inconnu (aucun prix pour ce modèle, compté 0 $)'
+      : usage.cost_source === 'free'
+        ? ` · ${amount(0)} (modèle local)`
+        : typeof usage.cost === 'number'
+          ? ` · ${amount(usage.cost)}`
+          : '';
   return `${by ? `${by} · ` : ''}Niveau \`${LEVEL_LABEL[level]}\` · \`${usage.model ?? '?'}\`${cost}`;
 }
 

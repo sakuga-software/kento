@@ -2,6 +2,7 @@
 // jobs one at a time until it stops.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { FEATURES, type JobKind } from '@sakuga-review/protocol';
 import { createApi, register, UnauthorizedError, type KentoApi } from './api.ts';
 import type { Config } from './config.ts';
 import { runJob, type JobDependencies } from './job.ts';
@@ -53,12 +54,15 @@ export async function runLoop(
   signal: AbortSignal,
 ): Promise<void> {
   let delay = 1000;
-  const hasProviderKey = deps.config.provider.apiKey !== null;
+  // The runner says what it can read in a job, and which provider it calls on its own. An earlier
+  // service refuses a claim with these keys: the service is deployed before its runners.
+  const ownProvider = deps.config.provider.own;
+  const claim = { hasProviderKey: ownProvider !== null, kinds: ['review', 'resolve'] as JobKind[], features: [...FEATURES], ownProvider };
   const minClaimIntervalMs = deps.minClaimIntervalMs ?? MIN_CLAIM_INTERVAL_MS;
   while (!signal.aborted) {
     try {
       const started = Date.now();
-      const job = await api.claim({ hasProviderKey, kinds: ['review', 'resolve'] }, signal);
+      const job = await api.claim(claim, signal);
       delay = 1000;
       if (job) await runJob(job, { ...deps, api, signal });
       // A claim with no job normally waits up to 30 s on the service. One that answers at once (a

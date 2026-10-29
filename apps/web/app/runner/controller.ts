@@ -9,6 +9,7 @@ import {
   type Checked,
   type HeartbeatResponse,
   type Job,
+  type JobProvider,
   type RegisterResponse,
   type ResolveInput,
 } from '@sakuga-review/protocol'
@@ -118,13 +119,15 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           return new Response(null, { status: 204 })
         }
 
-        // A runner without its own model key can run a job only with the key of the service, and
-        // only when it is trusted. Without that, a claim would take a job only to fail it.
-        if (!body.hasProviderKey && !deps.providerApiKey) {
+        // A runner without its own OpenRouter key can run a job only with the key of the service,
+        // and only when it is trusted. Without that, a claim would take a job only to fail it. A
+        // runner of an earlier release does not say the kind of its key: OpenRouter.
+        let ownKey = body.hasProviderKey && (body.ownProvider ?? 'openrouter') === 'openrouter'
+        if (!ownKey && !deps.providerApiKey) {
           await sleep(claimWaitMs, request.signal)
           return new Response(null, { status: 204 })
         }
-        let trustedOnly = !body.hasProviderKey
+        let trustedOnly = !ownKey
 
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
         // stops the loop.
@@ -163,10 +166,14 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               })
               continue
             }
-            let provider =
-              job.runnerTrusted && !body.hasProviderKey && deps.providerApiKey
-                ? { kind: 'openrouter' as const, apiKey: deps.providerApiKey }
-                : null
+            // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
+            // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
+            let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
+            let readsProviders = body.features?.includes('providers') ?? false
+            let provider = !readsProviders && serviceKey ? { kind: 'openrouter' as const, apiKey: serviceKey } : null
+            let providers: JobProvider[] | undefined = readsProviders
+              ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }]
+              : undefined
             log('info', 'job.claimed', {
               jobId: job.id,
               attempt: job.attempt,
@@ -174,7 +181,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               repo: job.fullName,
               pr: job.prNumber,
               head: job.headSha,
-              keyFromService: provider !== null,
+              keyFromService: serviceKey !== null,
               kind: job.kind,
               ...(resolve ? { threads: resolve.threads.length } : {}),
             })
@@ -187,6 +194,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               installationToken,
               leaseExpiresAt: job.leaseExpiresAt.toISOString(),
               provider,
+              ...(providers ? { providers } : {}),
             }
             return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
           }

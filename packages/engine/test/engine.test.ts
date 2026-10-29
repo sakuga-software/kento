@@ -98,7 +98,7 @@ test('falls back to the next model of the level and logs the failed attempt', as
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch, log: (m) => logs.push(m) });
   assert.deepEqual(calls.map((c) => c.body.model), LEVELS.lite.models);
   assert.equal(result.usage.model, LEVELS.lite.models[1]);
-  assert.match(logs[0], /^attempt 1 with .+ failed: Error: OpenRouter answered 503: down$/);
+  assert.match(logs[0], /^attempt 1 with .+ failed: ProviderError: OpenRouter answered 503: down$/);
 });
 
 test('calls another server of the same API when the caller gives its base URL', async () => {

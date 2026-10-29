@@ -10,7 +10,7 @@ import { parseResultRequest, type Job, type ResultRequest } from '@sakuga-review
 import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
-import { runJob } from '../src/job.ts';
+import { chooseModel, runJob } from '../src/job.ts';
 import { output, redact } from '../src/log.ts';
 import { runLoop, runnerToken } from '../src/runner.ts';
 
@@ -139,7 +139,7 @@ function fakeApi(options: { cancel?: boolean; heartbeatStatus?: number; resultSt
 const deps = (api: ReturnType<typeof fakeApi>['api'], modelFetch: typeof fetch, apiKey: string | null = null) => ({
   api,
   modelFetch,
-  config: { workDir: join(root, 'work'), provider: { kind: 'openrouter' as const, baseUrl: undefined, apiKey } },
+  config: { workDir: join(root, 'work'), provider: { kind: 'openrouter' as const, baseUrl: undefined, apiKey, own: apiKey ? ('openrouter' as const) : null } },
   cloneUrl: () => `file://${source}`,
   gitProtocols: 'file',
 });
@@ -490,5 +490,141 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'] });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers'], ownProvider: 'openrouter' });
+});
+
+// --- providers (REV-11) ------------------------------------------------------------------------
+
+const PROVIDER_ID = '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f';
+const ANTHROPIC_KEY = 'sk-ant-api-key-of-the-test-0123456789';
+
+/** A model that answers as Anthropic, or with `status`, and records each call. */
+function stubAnthropic(status = 200) {
+  const calls: { url: string; headers: Record<string, string>; body: any }[] = [];
+  const stub = (async (url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    calls.push({ url: String(url), headers: init.headers as Record<string, string>, body });
+    if (status !== 200) return new Response(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }), { status });
+    return new Response(
+      JSON.stringify({
+        model: body.model,
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(answer()) }],
+        usage: { input_tokens: 10_000, output_tokens: 1_000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      }),
+    );
+  }) as typeof globalThis.fetch;
+  return { fetch: stub, calls };
+}
+
+const anthropicProvider = (apiKey: string | null, models: string[] = []) => ({ id: PROVIDER_ID, kind: 'anthropic' as const, apiKey, baseUrl: null, models });
+
+test('a job with an Anthropic provider of the service: the key of the job, the cost from the price table', async () => {
+  const { api, results } = fakeApi();
+  const model = stubAnthropic();
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY)] }), deps(api, model.fetch));
+  assert.equal(outcome, 'done');
+  assert.equal(model.calls[0]!.url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(model.calls[0]!.headers['x-api-key'], ANTHROPIC_KEY);
+  assert.equal(model.calls[0]!.body.model, 'claude-haiku-5-5', 'the default model of the level at Anthropic');
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  // 10,000 × 0.10 + 1,000 × 0.50 millionths of a dollar.
+  assert.equal(result.review.costUsd, 0.0015);
+  assert.equal(result.review.costSource, 'table');
+  assert.ok(!logs.join('\n').includes(ANTHROPIC_KEY), 'no log line holds the key of the provider');
+  assertNoSecretInLogs();
+});
+
+test('the models that the job names replace the defaults of the provider', async () => {
+  const { api } = fakeApi();
+  const model = stubAnthropic();
+  await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY, ['claude-sonnet-5-5'])] }), deps(api, model.fetch));
+  assert.equal(model.calls[0]!.body.model, 'claude-sonnet-5-5');
+});
+
+test('a refused key fails the job with the status of the provider, and the next model is not called', async () => {
+  const { api, results } = fakeApi();
+  const model = stubAnthropic(401);
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY, ['claude-haiku-5-5', 'claude-sonnet-5-5'])] }), deps(api, model.fetch));
+  assert.equal(outcome, 'failed');
+  assert.equal(model.calls.length, 1);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'failed');
+  if (result.outcome !== 'failed') return;
+  assert.equal(result.providerStatus, 401);
+  assert.match(result.reason, /Anthropic answered 401/);
+  assert.ok(!result.reason.includes(ANTHROPIC_KEY));
+  assertNoSecretInLogs();
+});
+
+test('a provider that the runner must hold: without it, the job fails with a clear reason and calls nothing', async () => {
+  const { api, results } = fakeApi();
+  const model = stubAnthropic();
+  await runJob(job({ providers: [anthropicProvider(null)] }), deps(api, model.fetch));
+  assert.equal(model.calls.length, 0);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'failed');
+  if (result.outcome !== 'failed') return;
+  assert.match(result.reason, /needs a anthropic provider on the runner/);
+  assert.equal(result.providerStatus, null);
+});
+
+test('a service of an earlier release gets no key that it does not know in the result', async () => {
+  const { api, results } = fakeApi();
+  const model = stubAnthropic(401);
+  // No `providers`: the job of an earlier service, and an OpenRouter key.
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model.fetch));
+  const result = results[0]!;
+  assert.equal(result.outcome, 'failed');
+  assert.ok(!('providerStatus' in result));
+});
+
+test('the provider of a job: the runner first when it holds that kind, else the key of the job', () => {
+  const own = (kind: 'ollama' | 'anthropic' | 'openrouter', apiKey: string | null, baseUrl?: string) => ({ kind, apiKey, baseUrl, own: kind });
+  const ollamaJob = job({ providers: [{ id: PROVIDER_ID, kind: 'ollama', apiKey: null, baseUrl: null, models: ['qwen3:32b'] }] });
+  const local = chooseModel(ollamaJob, own('ollama', null, 'http://gpu.lan:11434'));
+  assert.deepEqual({ kind: local.kind, apiKey: local.apiKey, baseUrl: local.baseUrl, models: local.config.models }, {
+    kind: 'ollama',
+    apiKey: undefined,
+    baseUrl: 'http://gpu.lan:11434',
+    models: ['qwen3:32b'],
+  });
+  // The runner holds an Anthropic key: the key of the job is never used.
+  assert.equal(chooseModel(job({ providers: [anthropicProvider(ANTHROPIC_KEY)] }), own('anthropic', 'sk-ant-runner')).apiKey, 'sk-ant-runner');
+  // The runner holds another kind: the key of the job.
+  assert.equal(chooseModel(job({ providers: [anthropicProvider(ANTHROPIC_KEY)] }), own('openrouter', RUNNER_KEY)).apiKey, ANTHROPIC_KEY);
+  assert.throws(() => chooseModel(ollamaJob, own('openrouter', RUNNER_KEY)), /needs a ollama provider on the runner/);
+});
+
+test('the configuration of a provider: Ollama may be HTTP, the others must be HTTPS', () => {
+  const ollama = loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'ollama', PROVIDER_BASE_URL: 'http://gpu.lan:11434' });
+  assert.deepEqual(ollama.provider, { kind: 'ollama', baseUrl: 'http://gpu.lan:11434', apiKey: null, own: 'ollama' });
+  assert.equal(loadConfig({ KENTO_URL: 'https://review.sakuga.dev' }).provider.own, null, 'no key: the runner holds no provider');
+  assert.equal(loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'anthropic', PROVIDER_API_KEY: 'sk-ant-x' }).provider.own, 'anthropic');
+  assert.throws(() => loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'anthropic', PROVIDER_BASE_URL: 'http://proxy.lan' }), /PROVIDER_BASE_URL must be an https:\/\/ URL/);
+  assert.throws(() => loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_API_KEY: 'k' }), /PROVIDER_BASE_URL is required/);
+});
+
+test('the loop says what it can read and which provider it holds', async () => {
+  const bodies: unknown[] = [];
+  const controller = new AbortController();
+  const api = {
+    ...fakeApi().api,
+    claim: async (body: unknown) => {
+      bodies.push(body);
+      controller.abort();
+      return null;
+    },
+  };
+  const model = stubModel();
+  await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers'], ownProvider: 'ollama' });
+});
+
+test('the protocol and the engine know the same providers', async () => {
+  const engine = await import('@sakuga-review/engine');
+  const protocol = await import('@sakuga-review/protocol');
+  assert.deepEqual([...protocol.PROVIDER_KINDS], [...engine.PROVIDER_KINDS]);
 });

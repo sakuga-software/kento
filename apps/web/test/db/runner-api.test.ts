@@ -314,7 +314,39 @@ describe('runner API', () => {
       await queueJob()
       let shared = (await (await claim(token, { hasProviderKey: false })).json()) as Job
       assert.deepEqual(shared.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
+    })
 
+    it('counts only an OpenRouter key of the runner as its own key', async () => {
+      let { runnerId, token } = await register()
+      await queueJob()
+      // An untrusted runner whose own provider is Ollama cannot run a job of the OpenRouter key.
+      let ollama = { hasProviderKey: true, features: ['providers'], ownProvider: 'ollama' }
+      assert.equal((await claim(token, ollama)).status, 204)
+
+      await database.sql`update runners set trusted = true where id = ${runnerId}`
+      let job = (await (await claim(token, ollama)).json()) as Job
+      assert.equal(job.provider, null)
+      assert.equal(job.providers?.[0]?.apiKey, 'sk-or-service-key', 'trusted: the key of the service')
+
+      await queueJob()
+      let own = (await (await claim(token, { hasProviderKey: true, features: ['providers'], ownProvider: 'openrouter' })).json()) as Job
+      assert.equal(own.provider, null)
+      assert.deepEqual(own.providers, [{ id: 'service', kind: 'openrouter', apiKey: null, baseUrl: null, models: [] }], 'its own key: no key sent')
+    })
+
+    it('gives a runner that reads providers the key of the service in providers, never in provider', async () => {
+      let { runnerId, token } = await register()
+      await database.sql`update runners set trusted = true where id = ${runnerId}`
+      await queueJob()
+      let job = (await (await claim(token, { hasProviderKey: true, features: ['providers'], ownProvider: 'ollama' })).json()) as Job
+      assert.equal(job.provider, null)
+      assert.deepEqual(job.providers, [{ id: 'service', kind: 'openrouter', apiKey: 'sk-or-service-key', baseUrl: null, models: [] }])
+
+      // A runner of an earlier release gets no key that it does not know.
+      await queueJob()
+      let earlier = (await (await claim(token, { hasProviderKey: false })).json()) as Job
+      assert.equal('providers' in earlier, false)
+      assert.deepEqual(earlier.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
     })
 
     it('gives no job to a runner that has no model key to run it with, and leaves the job queued', async () => {

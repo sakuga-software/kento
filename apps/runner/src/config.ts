@@ -15,7 +15,11 @@ export type Config = {
   stateDir: string;
   /** Where the runner clones each job. Removed after each job. */
   workDir: string;
-  provider: { kind: ProviderKind; baseUrl: string | undefined; apiKey: string | null };
+  /**
+   * The runner's own provider: its key, or its own server (Ollama needs no key). `own` is the kind
+   * that the runner calls without a key of the service, or null when it has neither.
+   */
+  provider: { kind: ProviderKind; baseUrl: string | undefined; apiKey: string | null; own: ProviderKind | null };
 };
 
 export class ConfigError extends Error {
@@ -49,7 +53,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (!(PROVIDER_KINDS as readonly string[]).includes(kind)) problems.push(`PROVIDER_KIND must be one of ${PROVIDER_KINDS.join(', ')}`);
 
   const baseUrl = (env.PROVIDER_BASE_URL ?? '').trim() || undefined;
-  if (baseUrl !== undefined && !/^https:\/\/[^\s@]+$/.test(baseUrl)) problems.push('PROVIDER_BASE_URL must be an https:// URL');
+  // HTTPS: the key travels in a header. Ollama has no key, and often runs on this machine or on the
+  // private network of the runner: HTTP is allowed for it only.
+  const urlPattern = kind === 'ollama' ? /^https?:\/\/[^\s@]+$/ : /^https:\/\/[^\s@]+$/;
+  if (baseUrl !== undefined && !urlPattern.test(baseUrl)) {
+    problems.push(kind === 'ollama' ? 'PROVIDER_BASE_URL must be an http:// or https:// URL' : 'PROVIDER_BASE_URL must be an https:// URL');
+  }
+  const apiKey = env.PROVIDER_API_KEY?.trim() || null;
+  if (kind === 'openai_compatible' && apiKey && !baseUrl) problems.push('PROVIDER_BASE_URL is required with PROVIDER_KIND=openai_compatible');
 
   if (problems.length > 0) throw new ConfigError(`Invalid configuration: ${problems.join('; ')}`);
 
@@ -60,6 +71,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     labels,
     stateDir: (env.KENTO_STATE_DIR ?? '').trim() || '/var/lib/kento-runner',
     workDir: (env.KENTO_WORK_DIR ?? '').trim() || join(tmpdir(), 'kento-runner'),
-    provider: { kind: kind as ProviderKind, baseUrl, apiKey: env.PROVIDER_API_KEY?.trim() || null },
+    provider: { kind: kind as ProviderKind, baseUrl, apiKey, own: apiKey || kind === 'ollama' ? (kind as ProviderKind) : null },
   };
 }

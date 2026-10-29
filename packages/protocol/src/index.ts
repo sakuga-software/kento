@@ -47,9 +47,26 @@ export const RUNNER_TOKEN_PREFIX = 'kento_rt_';
 export const LEVELS = ['lite', 'balanced', 'heavy'] as const;
 export type Level = (typeof LEVELS)[number];
 
-/** The providers of models that a runner can call. M2 has OpenRouter only. */
-export const PROVIDER_KINDS = ['openrouter'] as const;
+/**
+ * The providers of models that a runner can call (packages/engine/src/providers.ts). A runner of an
+ * earlier release knows `openrouter` only.
+ */
+export const PROVIDER_KINDS = ['openrouter', 'anthropic', 'openai_compatible', 'ollama'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+
+/**
+ * What a runner can read in a job beyond the first release. A runner of an earlier release sends
+ * none, and gets jobs of the first shape only: `obj()` refuses a key that it does not know.
+ *
+ * - `providers`: the job can carry `providers` (several kinds of provider, their base URL and their
+ *   models), and the result of a failure can carry `providerStatus`, and a review its `costSource`.
+ */
+export const FEATURES = ['providers'] as const;
+export type Feature = (typeof FEATURES)[number];
+
+/** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
+export const COST_SOURCES = ['provider', 'table', 'free', 'unknown'] as const;
+export type CostSource = (typeof COST_SOURCES)[number];
 
 const uuid = str({ max: 36, pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ });
 const sha = str({ max: 64, pattern: /^[0-9a-f]{40}([0-9a-f]{24})?$/ });
@@ -86,8 +103,12 @@ export const MAX_RESOLVE_THREADS = 20;
  *   own key, even to a trusted runner.
  * - `kinds`: the kinds of job that the runner can run. A runner of an earlier release does not send
  *   it, and gets only `review` jobs.
+ * - `features`: what the runner can read in a job (FEATURES). Not sent by an earlier release.
+ * - `ownProvider`: the kind of the provider of the runner's own key, or of its own server (Ollama,
+ *   which needs no key). Null when the runner has neither. Not sent by an earlier release: its own
+ *   key, when `hasProviderKey`, is an OpenRouter key.
  */
-export type ClaimRequest = { hasProviderKey: boolean; kinds?: JobKind[] };
+export type ClaimRequest = { hasProviderKey: boolean; kinds?: JobKind[]; features?: Feature[]; ownProvider?: ProviderKind | null };
 
 /**
  * One comment of an open review thread, as the service read it on GitHub. `body` is already cleaned
@@ -105,12 +126,25 @@ export type ResolveThread = { id: string; path: string; line: number | null; com
 export type ResolveInput = { threads: ResolveThread[]; open: number; waiting: number };
 
 /**
+ * A provider that the job may call, with the feature `providers`.
+ *
+ * - `id`: the provider of the org (a uuid), or `service` for the key of the service.
+ * - `apiKey`: the key, given only to a trusted runner; null when the runner calls with its own key
+ *   or its own server (`ownProvider` of its claim is this kind). The runner never logs it.
+ * - `baseUrl`: where to call; null for the default URL of the kind, or the runner's own URL.
+ * - `models`: the models of the level, the first one first. Empty: the defaults of the kind.
+ */
+export type JobProvider = { id: string; kind: ProviderKind; apiKey: string | null; baseUrl: string | null; models: string[] };
+
+/**
  * A job, as the runner receives it.
  *
  * - `installationToken`: a GitHub token for this repository only, with `contents: read`, valid one
  *   hour. It clones the code; it cannot write. The runner never logs it.
- * - `provider`: the key of the service for the model. Only a trusted runner without its own key
- *   gets it; otherwise it is null and the runner uses its own key.
+ * - `provider`: for a runner of an earlier release only: the OpenRouter key of the service. Only a
+ *   trusted runner without its own key gets it; otherwise it is null and the runner uses its own key.
+ *   A runner with the feature `providers` gets null here, and reads `providers`.
+ * - `providers`: with the feature `providers` only. The runner calls the first one.
  * - `attempt`: the number of this claim of the job, from 1. The heartbeat and the result send it.
  */
 type JobBase = {
@@ -121,13 +155,29 @@ type JobBase = {
   pullRequest: { number: number; headSha: string; baseRef: string };
   installationToken: { token: string; expiresAt: string };
   leaseExpiresAt: string;
-  provider: { kind: ProviderKind; apiKey: string } | null;
+  provider: { kind: 'openrouter'; apiKey: string } | null;
+  providers?: JobProvider[];
 };
 
 /** A review job has no `resolve` key: a runner of an earlier release reads it as before. */
 export type Job = (JobBase & { kind: 'review' }) | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
-const claimRequest = obj({ hasProviderKey: bool, kinds: optional(arr(oneOf(JOB_KINDS), { max: 10 })) });
+const claimRequest = obj({
+  hasProviderKey: bool,
+  kinds: optional(arr(oneOf(JOB_KINDS), { max: 10 })),
+  features: optional(arr(oneOf(FEATURES), { max: 20 })),
+  ownProvider: optional(nullable(oneOf(PROVIDER_KINDS))),
+});
+/** A model id at a provider: `claude-opus-5-5`, `anthropic/claude-haiku-5.5`, `qwen3:32b`. */
+export const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/;
+const jobProvider = obj({
+  id: str({ min: 1, max: 36, pattern: /^(service|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/ }),
+  kind: oneOf(PROVIDER_KINDS),
+  apiKey: nullable(str({ min: 1, max: 500 })),
+  // HTTPS, or HTTP for a server on a private network (Ollama): the runner checks it again.
+  baseUrl: nullable(str({ max: 300, pattern: /^https?:\/\/[^\s@]+$/ })),
+  models: arr(str({ min: 1, max: 200, pattern: MODEL_ID }), { max: 5 }),
+});
 const attempt = int({ min: 1, max: 1000 });
 const jobBase = {
   id: uuid,
@@ -146,7 +196,8 @@ const jobBase = {
   }),
   installationToken: obj({ token: str({ min: 1, max: 500 }), expiresAt: isoDate }),
   leaseExpiresAt: isoDate,
-  provider: nullable(obj({ kind: oneOf(PROVIDER_KINDS), apiKey: str({ min: 1, max: 500 }) })),
+  provider: nullable(obj({ kind: oneOf(['openrouter'] as const), apiKey: str({ min: 1, max: 500 }) })),
+  providers: optional(arr(jobProvider, { max: 4 })),
 };
 const resolveComment = obj({
   id: int({ min: 1, max: Number.MAX_SAFE_INTEGER }),
@@ -223,6 +274,8 @@ export type ReviewPayload = {
   model: string;
   provider: string | null;
   costUsd: number | null;
+  /** With the feature `providers`. `unknown`: no price for the model, `costUsd` is 0. */
+  costSource?: CostSource;
   promptTokens: number | null;
   completionTokens: number | null;
   summary: string;
@@ -248,6 +301,7 @@ export type ResolvePayload = {
   model: string | null;
   provider: string | null;
   costUsd: number | null;
+  costSource?: CostSource;
   promptTokens: number | null;
   completionTokens: number | null;
   open: number;
@@ -256,10 +310,14 @@ export type ResolvePayload = {
   threads: { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reply: string; changed: boolean | null }[];
 };
 
+/**
+ * `providerStatus`, with the feature `providers`: the HTTP status of the provider when the model
+ * call failed on it (401 or 403: the provider refused the key). Null when the failure is elsewhere.
+ */
 export type ResultRequest =
   | { outcome: 'done'; attempt: number; review: ReviewPayload }
   | { outcome: 'resolved'; attempt: number; resolve: ResolvePayload }
-  | { outcome: 'failed'; attempt: number; reason: string };
+  | { outcome: 'failed'; attempt: number; reason: string; providerStatus?: number | null };
 
 const line = int({ min: 0, max: 10_000_000 });
 const tokens = nullable(int({ min: 0, max: 100_000_000 }));
@@ -288,6 +346,7 @@ const review = obj({
   provider: nullable(text(200)),
   // reviews.cost_usd is numeric(10, 6).
   costUsd: nullable(num({ min: 0, max: 9999 })),
+  costSource: optional(oneOf(COST_SOURCES)),
   promptTokens: tokens,
   completionTokens: tokens,
   summary: text(50_000),
@@ -309,6 +368,7 @@ const resultRequest = tagged('outcome', {
       model: nullable(str({ min: 1, max: 200 })),
       provider: nullable(text(200)),
       costUsd: nullable(num({ min: 0, max: 9999 })),
+      costSource: optional(oneOf(COST_SOURCES)),
       promptTokens: tokens,
       completionTokens: tokens,
       open: count,
@@ -320,7 +380,12 @@ const resultRequest = tagged('outcome', {
       ),
     }),
   }),
-  failed: obj({ outcome: oneOf(['failed'] as const), attempt, reason: str({ min: 1, max: 2000 }) }),
+  failed: obj({
+    outcome: oneOf(['failed'] as const),
+    attempt,
+    reason: str({ min: 1, max: 2000 }),
+    providerStatus: optional(nullable(int({ min: 100, max: 599 }))),
+  }),
 });
 
 export const parseResultRequest = (value: unknown): Checked<ResultRequest> => run(resultRequest, value) as Checked<ResultRequest>;

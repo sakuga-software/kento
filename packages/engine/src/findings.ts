@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { git } from './git.ts';
 import type { Level } from './levels.ts';
+import type { CostSource } from './prices.ts';
 
 // A finding blocks the merge at this severity and confidence.
 const BLOCKING_SEVERITIES = new Set(['critical', 'major']);
@@ -36,7 +37,20 @@ export type Answer = {
   /** Whether a stronger level would review this pull request better, and why. */
   deeper_review: { recommended: boolean; reason: string };
 };
-export type Usage = { model?: string; provider?: string; prompt_tokens?: number; completion_tokens?: number; cost?: number };
+/**
+ * The model that answered, its tokens and its cost in dollars. `cost_source` says where the cost
+ * comes from (see prices.ts); with `unknown`, the cost is 0 and the review says that it is not known.
+ */
+export type Usage = {
+  model?: string;
+  provider?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  cost?: number;
+  cost_source?: CostSource;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+};
 export type ChangedLines = Map<string, Set<number>>;
 /**
  * Where each finding anchors: the changed lines of the checkout, or the anchor that a runner already

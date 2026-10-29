@@ -153,9 +153,12 @@ needed.
 | `KENTO_REGISTRATION_TOKEN` | first start | | Registers the runner when the state volume has no `runner.json`. A secret. |
 | `KENTO_RUNNER_NAME` | no | host name | Shown in `runners.name`. A token of the Runners screen sets the name itself. |
 | `KENTO_RUNNER_LABELS` | no | | Comma-separated labels, kept in `runners.labels`. A token of the Runners screen sets them itself. A repository with a `default_runner_pool` gives its jobs only to a runner that has that label. |
-| `PROVIDER_KIND` | no | `openrouter` | The API of the model. M2 knows `openrouter` only. |
-| `PROVIDER_BASE_URL` | no | `https://openrouter.ai/api/v1` | Another server with the same API, HTTPS only. |
-| `PROVIDER_API_KEY` | no | | The key of the runner (key mode « runner »). With it, the service never sends its key. A secret. |
+| `PROVIDER_KIND` | no | `openrouter` | The provider of the runner's own key or server: `openrouter`, `anthropic`, `openai_compatible` or `ollama`. The runner calls it for the jobs whose provider has this kind; for the others it needs the key of the job (a trusted runner). |
+| `PROVIDER_BASE_URL` | no | the URL of the kind | Another server with the same API. HTTPS only, except for `ollama` (HTTP allowed: a server on this machine or the private network; default `http://localhost:11434`). Required with `openai_compatible`. |
+| `PROVIDER_API_KEY` | no | | The key of the runner (key mode « runner »). With it, the service never sends its key for this kind. Ollama needs none. A secret. |
+
+The service must be deployed before a runner of this release: the runner sends `features` and
+`ownProvider` with each claim, and an earlier service refuses them (400).
 | `KENTO_STATE_DIR` | no | `/var/lib/kento-runner` | Holds `runner.json`. |
 | `KENTO_WORK_DIR` | no | `/tmp/kento-runner` | Where the jobs clone. |
 

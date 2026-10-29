@@ -1,7 +1,7 @@
 /**
  * The engine of Sakuga Review: the pack of a pull request, the model call, the findings and the
- * review as a reader sees it. It reads a checkout with git and calls the model through OpenRouter;
- * it never calls GitHub. The Action (review/sakuga-review.ts), the bench (eval/martian) and the
+ * review as a reader sees it. It reads a checkout with git and calls the model through a provider
+ * (OpenRouter, Anthropic, a server of the OpenAI API, or Ollama); it never calls GitHub. The Action (review/sakuga-review.ts), the bench (eval/martian) and the
  * runner call it.
  *
  * Node 24 or later runs this code as is: no build. Keep to erasable TypeScript syntax, and import
@@ -9,7 +9,18 @@
  */
 export { git } from './git.ts';
 export { diffStart, fileChangedSince, fileDiff, inHistory } from './history.ts';
-export { isLevel, LEVELS, levelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';
+export { defaultModels, isLevel, LEVELS, levelConfig, providerLevelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';
+export { costFromTable, costKnown, priceOf, type CostSource, type Price } from './prices.ts';
+export {
+  ANTHROPIC_BASE_URL,
+  defaultBaseUrl,
+  isProviderKind,
+  OLLAMA_BASE_URL,
+  PROVIDER_KINDS,
+  ProviderError,
+  refusedKey,
+  type ProviderKind,
+} from './providers.ts';
 export {
   anchor,
   ANSWER_SCHEMA,

@@ -4,8 +4,11 @@ import { mkdir } from 'node:fs/promises';
 import {
   askJson,
   fileChangedSince,
-  levelConfig,
   mergeBase,
+  ProviderError,
+  providerLevelConfig,
+  type LevelConfig,
+  type ProviderKind,
   RESOLVE_SCHEMA,
   resolvePack,
   reviewPullRequest,
@@ -13,7 +16,7 @@ import {
   type ReviewResult,
   type ThreadVerdict,
 } from '@sakuga-review/engine';
-import { HEARTBEAT_SECONDS, type Job, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
+import { HEARTBEAT_SECONDS, type CostSource, type Job, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';
@@ -48,6 +51,9 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
   log('info', 'job.started', fields);
   addSecret(job.installationToken.token);
   addSecret(job.provider?.apiKey);
+  for (const provider of job.providers ?? []) addSecret(provider.apiKey);
+  // A service that sends `providers` reads the keys that only it knows in the result.
+  const newService = job.providers !== undefined;
 
   // `stop` ends the job when the service no longer wants it from this runner: `cancelled` when it
   // was cancelled, `lost` when its lease went to another attempt.
@@ -93,6 +99,8 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
     }
   } catch (error) {
     result = { outcome: 'failed', attempt: job.attempt, reason: errorMessage(error).slice(0, 2000) || 'unknown error' };
+    // The service marks a provider whose key is refused: an admin then replaces the key.
+    if (newService) result.providerStatus = error instanceof ProviderError ? error.status : null;
   } finally {
     ended = true;
     clearInterval(heartbeat);
@@ -147,18 +155,43 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
   } finally {
     removeSecret(job.installationToken.token);
     removeSecret(job.provider?.apiKey);
+    for (const provider of job.providers ?? []) removeSecret(provider.apiKey);
   }
 }
 
+/** The provider that a job calls: its kind, its key, its URL and the configuration of the level. */
+export type Model = { kind: ProviderKind; apiKey: string | undefined; baseUrl: string | undefined; config: LevelConfig };
+
+/**
+ * The provider of a job. The runner's own key or server first, when it is of the kind that the job
+ * names: with it, the service never sees a key. Else the key that the service gave with the job,
+ * which only a trusted runner gets.
+ */
+export function chooseModel(job: Job, own: JobDependencies['config']['provider']): Model {
+  if (job.providers !== undefined) {
+    const wanted = job.providers[0];
+    if (!wanted) throw new Error('the job names no provider');
+    const config = providerLevelConfig(job.level, wanted.kind, wanted.models);
+    if (own.own === wanted.kind) {
+      return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
+    }
+    if (wanted.apiKey === null) {
+      throw new Error(`no model key: the job needs a ${wanted.kind} provider on the runner (PROVIDER_KIND and PROVIDER_API_KEY), or a trusted runner`);
+    }
+    return { kind: wanted.kind, apiKey: wanted.apiKey, baseUrl: wanted.baseUrl ?? undefined, config };
+  }
+  // A service of an earlier release: an OpenRouter key, the runner's own first.
+  const apiKey = (own.own === 'openrouter' ? own.apiKey : null) ?? job.provider?.apiKey;
+  if (!apiKey) throw new Error('no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted');
+  return { kind: 'openrouter', apiKey, baseUrl: own.own === 'openrouter' ? own.baseUrl : undefined, config: providerLevelConfig(job.level, 'openrouter') };
+}
+
 type Checkout = Awaited<ReturnType<typeof clonePullRequest>>;
-type Workspace = { checkout: Checkout; env: Record<string, string>; apiKey: string; fetch: typeof fetch };
+type Workspace = { checkout: Checkout; env: Record<string, string>; model: Model; fetch: typeof fetch };
 
 /** Clones the pull request, runs `work` in its checkout with the git environment, and removes it. */
 async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSignal, work: (ws: Workspace) => Promise<T>): Promise<T> {
-  // The key of the runner first: with it, the service never sees a key. A trusted runner without
-  // its own key gets the key of the service with the job.
-  const apiKey = deps.config.provider.apiKey ?? job.provider?.apiKey;
-  if (!apiKey) throw new Error('no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted');
+  const model = chooseModel(job, deps.config.provider);
 
   await mkdir(deps.config.workDir, { recursive: true });
   const cloneUrl = deps.cloneUrl?.(job) ?? job.repo.cloneUrl;
@@ -175,7 +208,7 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
     // A cancelled job stops its model call, so it costs nothing more.
     const fetch = ((url: string, init: RequestInit = {}) =>
       modelFetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal })) as typeof globalThis.fetch;
-    const ws = { checkout, env, apiKey, fetch };
+    const ws = { checkout, env, model, fetch };
     return await withEnvironment(env, () => work(ws));
   } finally {
     await checkout.remove();
@@ -183,19 +216,21 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
 }
 
 async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload> {
-  return withCheckout(job, deps, signal, async ({ checkout, apiKey, fetch }) =>
+  return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) =>
     payload(
       await reviewPullRequest({
         repoDir: checkout.repoDir,
         base: checkout.base,
         head: checkout.head,
         level: job.level,
-        config: levelConfig(job.level),
-        apiKey,
-        baseUrl: deps.config.provider.baseUrl,
+        config: model.config,
+        kind: model.kind,
+        apiKey: model.apiKey,
+        baseUrl: model.baseUrl,
         fetch,
         log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
       }),
+      job.providers !== undefined,
     ),
   );
 }
@@ -224,7 +259,7 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
   // No thread waits: no clone, and no model call.
   if (job.resolve.threads.length === 0) return empty;
 
-  return withCheckout(job, deps, signal, async ({ checkout, apiKey, fetch }) => {
+  return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) => {
     const threads: OpenThread[] = job.resolve.threads.map((t) => ({
       ...t,
       comments: t.comments.map(({ commit, ...c }) => ({ ...c, ...(commit ? { commit } : {}) })),
@@ -234,8 +269,14 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
     const { pack, held } = resolvePack(checkout.repoDir, base, checkout.head, threads);
     if (held.length === 0) return empty;
     const { answer, usage } = await askJson<{ threads: ThreadVerdict[] }>(
-      { apiKey, baseUrl: deps.config.provider.baseUrl, fetch, log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }) },
-      levelConfig(job.level),
+      {
+        kind: model.kind,
+        apiKey: model.apiKey,
+        baseUrl: model.baseUrl,
+        fetch,
+        log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
+      },
+      model.config,
       'resolve.md',
       pack,
       { name: 'resolve', schema: RESOLVE_SCHEMA },
@@ -262,6 +303,7 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
       model: usage.model ? cut(usage.model, 200) : 'unknown',
       provider: usage.provider ?? null,
       costUsd: typeof usage.cost === 'number' ? usage.cost : null,
+      ...(job.providers !== undefined ? { costSource: costSourceOf(usage.cost_source, usage.cost) } : {}),
       promptTokens: usage.prompt_tokens ?? null,
       completionTokens: usage.completion_tokens ?? null,
       held: held.length,
@@ -270,8 +312,16 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
   });
 }
 
-/** The review as the protocol sends it: the result of the engine without the pack and the lines. */
-export function payload(result: ReviewResult): ReviewPayload {
+/** Where the cost comes from; an answer of OpenRouter without a cost is `unknown`. */
+function costSourceOf(source: CostSource | undefined, cost: number | undefined): CostSource {
+  return source ?? (typeof cost === 'number' ? 'provider' : 'unknown');
+}
+
+/**
+ * The review as the protocol sends it: the result of the engine without the pack and the lines.
+ * `withCostSource`: the service reads `costSource` (it sent `providers` with the job).
+ */
+export function payload(result: ReviewResult, withCostSource = false): ReviewPayload {
   const { answer, usage } = result;
   return {
     level: result.level,
@@ -282,6 +332,7 @@ export function payload(result: ReviewResult): ReviewPayload {
     model: usage.model || 'unknown',
     provider: usage.provider ?? null,
     costUsd: typeof usage.cost === 'number' ? usage.cost : null,
+    ...(withCostSource ? { costSource: costSourceOf(usage.cost_source, usage.cost) } : {}),
     promptTokens: usage.prompt_tokens ?? null,
     completionTokens: usage.completion_tokens ?? null,
     summary: cut(answer.summary, 50_000),
