@@ -12,9 +12,11 @@ import {
   type Source,
   type Trigger,
 } from '../repo-config/model.ts'
+import { effectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import type { RepoConfigView } from '../repo-config/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -283,9 +285,11 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
     let errors = mine?.errors ?? {}
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
     let current = value.value
-    let values = mine?.values ?? { provider: current.provider, model: current.model, fallback: current.fallback ?? '' }
+    let effective = effectiveLevel(level, value, providers)
+    // Nothing chosen, in the repository or the org: the form shows what runs, the provider « Par défaut ».
+    let shown = value.source === 'kento' ? { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback } : current
+    let values = mine?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `level-${level}`
-    let providerLabel = providers.find((p) => p.id === current.provider)?.label ?? current.provider
     let providerId = `${id}-provider`
     let modelId = `${id}-model`
     let fallbackId = `${id}-fallback`
@@ -298,6 +302,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
           </h2>
           <SourceTag source={value.source} />
         </header>
+        <EffectiveLine effective={effective} scope="repo" source={value.source} />
         {ctx.admin ? (
           <>
             <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })} noValidate>
@@ -365,6 +370,9 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 />
                 <FieldError id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Vide : pas de repli." />
               </div>
+              {value.source === 'kento' && effective.origin === 'default' ? (
+                <p class="hint">Remplacer ici fixe ce choix pour le repo : le niveau ne suivra plus le provider « Par défaut ».</p>
+              ) : null}
               <button class="button" type="submit">
                 {value.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
                 <span class="visually-hidden"> pour {level}</span>
@@ -372,20 +380,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
             </form>
             {value.source === 'repo' ? <ResetForm ctx={ctx} field={field} label={level} /> : null}
           </>
-        ) : (
-          <dl class="config-facts">
-            <div>
-              <dt>Modèle</dt>
-              <dd>
-                <span class="mono">{current.model}</span> <span class="hint">via {providerLabel}</span>
-              </dd>
-            </div>
-            <div>
-              <dt>Repli</dt>
-              <dd>{current.fallback ? <span class="mono">{current.fallback}</span> : 'aucun'}</dd>
-            </div>
-          </dl>
-        )}
+        ) : null}
       </section>
     )
   }

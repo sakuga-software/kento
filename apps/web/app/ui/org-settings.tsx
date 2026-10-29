@@ -6,9 +6,11 @@ import type { AppStatus } from '../org-settings/app-status.ts'
 import { capAlerts, capReached, checkPermissions, missingEvents, REQUIRED_EVENTS, type CapPeriod } from '../org-settings/model.ts'
 import { formatUsd, resetWhen } from '../org-settings/notice.ts'
 import type { DeliveryView, OrgSettingsView } from '../org-settings/store.ts'
-import { kentoDefaults, LEVEL_KEYS, type ConfigField, type LevelModels } from '../repo-config/model.ts'
+import { kentoDefaults, LEVEL_KEYS, SERVICE_PROVIDER, type ConfigField, type LevelModels } from '../repo-config/model.ts'
+import { effectiveLevel, type EffectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { ago } from './runners.tsx'
@@ -198,6 +200,25 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
   }
 }
 
+/**
+ * REV-27. The next job of each level of the org: the config of the org, else the provider « Par
+ * défaut ». A repository may choose another one in its Config.
+ */
+export function orgEffectiveLevels(view: Pick<OrgSettingsView, 'config'>, providers: readonly ProviderOption[]): Record<Level, EffectiveLevel> {
+  let kento = kentoDefaults()
+  let out = {} as Record<Level, EffectiveLevel>
+  for (let level of LEVEL_KEYS) {
+    let set = view.config.models?.[level]
+    out[level] = effectiveLevel(level, set ? { value: set, source: 'org' } : { value: kento.models[level], source: 'kento' }, providers)
+  }
+  return out
+}
+
+/** A level of the org runs on the OpenRouter key that the service holds. */
+function usesServiceKey(props: Pick<OrgSectionProps, 'view' | 'providers'>): boolean {
+  return Object.values(orgEffectiveLevels(props.view, props.providers)).some((e) => e.provider.id === SERVICE_PROVIDER && e.provider.serviceHoldsKey)
+}
+
 function CapSection(handle: Handle<SectionProps>) {
   return () => {
     let { view, admin, csrf, form } = handle.props
@@ -238,7 +259,8 @@ function CapSection(handle: Handle<SectionProps>) {
         </dl>
         <p class="hint">
           Au plafond, aucun nouveau job n’est mis en file : un push reçoit le check « Kentō · plafond », une commande une réponse. Les
-          jobs déjà en file ou en cours finissent. La limite de 10 $ par jour de la clé OpenRouter reste un second garde-fou.
+          jobs déjà en file ou en cours finissent.
+          {usesServiceKey(handle.props) ? ' La clé OpenRouter du service a aussi sa limite de 10 $ par jour : un second garde-fou pour les niveaux qui l’utilisent.' : null}
         </p>
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
@@ -378,6 +400,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
             level={key}
             value={view.config.models?.[key] ?? kento.models[key]}
             set={view.config.models?.[key] !== undefined}
+            effective={orgEffectiveLevels(view, providers)[key]}
             providers={providers}
             admin={admin}
             csrf={csrf}
@@ -410,22 +433,34 @@ function ResetForm(handle: Handle<{ csrf: string; version: number; field: OrgFie
 }
 
 function LevelDefault(
-  handle: Handle<{ level: Level; value: LevelModels; set: boolean; providers: ProviderOption[]; admin: boolean; csrf: string; version: number; form: OrgForm | null }>,
+  handle: Handle<{
+    level: Level
+    value: LevelModels
+    set: boolean
+    effective: EffectiveLevel
+    providers: ProviderOption[]
+    admin: boolean
+    csrf: string
+    version: number
+    form: OrgForm | null
+  }>,
 ) {
   return () => {
-    let { level, value, set, providers, admin, csrf, version, form } = handle.props
+    let { level, value, set, effective, providers, admin, csrf, version, form } = handle.props
     let errors = form?.errors ?? {}
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
-    let values = form?.values ?? { provider: value.provider, model: value.model, fallback: value.fallback ?? '' }
+    // A level without a choice shows what runs today: the provider « Par défaut » and its models.
+    let shown = set ? value : { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback }
+    let values = form?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `org-${level}`
     let selected = values.provider ?? ''
-    let providerLabel = providers.find((p) => p.id === value.provider)?.label ?? value.provider
     return (
       <div class="org-default" id={id}>
         <div class="config-card-head">
           <h3 class="org-default-title mono">{level}</h3>
           <OrgSource set={set} />
         </div>
+        <EffectiveLine effective={effective} scope="org" source={set ? 'org' : 'kento'} />
         {admin ? (
           <>
             <form method="post" action={routes.orgSettingsSave.href()} noValidate>
@@ -442,7 +477,7 @@ function LevelDefault(
                     name="provider"
                     {...focusIf(first, 'provider')}
                     aria-invalid={errors.provider ? 'true' : undefined}
-                    aria-describedby={describedBy(`${id}-provider`, errors.provider, false)}
+                    aria-describedby={describedBy(`${id}-provider`, errors.provider, providers.some((p) => p.id === selected))}
                   >
                     {providers.map((p) => (
                       <option value={p.id} selected={p.id === selected}>
@@ -455,7 +490,7 @@ function LevelDefault(
                       </option>
                     ) : null}
                   </select>
-                  <FieldMessage id={`${id}-provider`} error={errors.provider} />
+                  <FieldMessage id={`${id}-provider`} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint} />
                 </div>
                 <div class="field">
                   <label class="field-label" for={`${id}-model`}>
@@ -494,23 +529,18 @@ function LevelDefault(
                   <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Vide : pas de repli." />
                 </div>
               </div>
+              {set ? null : (
+                <p class="hint">
+                  Enregistrer fixe ce choix pour l’org : le niveau ne suivra plus le provider « Par défaut ».
+                </p>
+              )}
               <button class="button" type="submit">
                 Enregistrer<span class="visually-hidden"> le modèle {level}</span>
               </button>
             </form>
             {set ? <ResetForm csrf={csrf} version={version} field={`models.${level}`} label={level} /> : null}
           </>
-        ) : (
-          <p>
-            <span class="mono">{value.model}</span> <span class="hint">via {providerLabel}</span>
-            {value.fallback ? (
-              <>
-                {' '}
-                · repli <span class="mono">{value.fallback}</span>
-              </>
-            ) : null}
-          </p>
-        )}
+        ) : null}
       </div>
     )
   }

@@ -1,5 +1,4 @@
-import type { ProviderCatalog, ProviderOption } from '../repo-config/providers.ts'
-import { SERVICE_PROVIDER } from '../repo-config/model.ts'
+import { serviceOption, type ProviderCatalog, type ProviderOption } from '../repo-config/providers.ts'
 import { providerState } from '../ui/settings.tsx'
 import { KIND_LABELS } from './form.ts'
 import type { ProvidersStore, ProviderView } from './store.ts'
@@ -27,16 +26,25 @@ function hint(provider: ProviderView): string {
 export function createConfigProviders(store: ProvidersStore, options: { serviceKey: boolean }): ProviderCatalog {
   return {
     async list(orgId) {
-      let service: ProviderOption = {
-        id: SERVICE_PROVIDER,
-        kind: 'openrouter',
-        label: 'OpenRouter (clé du service)',
-        hint: options.serviceKey
-          ? 'La clé du service pour un runner de confiance, ou la clé OpenRouter du runner.'
-          : 'La clé OpenRouter du runner : le service n’en a pas.',
-      }
-      let own = (await store.list(orgId)).map((provider) => ({ id: provider.id, kind: provider.kind, label: provider.label, hint: hint(provider) }))
-      return [service, ...own]
+      let own = (await store.list(orgId)).map(
+        (provider): ProviderOption => ({
+          id: provider.id,
+          kind: provider.kind,
+          label: provider.label,
+          hint: hint(provider),
+          isDefault: provider.isDefault,
+          keyFrom: keyFrom(provider),
+          serviceHoldsKey: !provider.runnerHeld,
+          models: provider.models,
+        }),
+      )
+      return [serviceOption(options.serviceKey), ...own]
     },
   }
+}
+
+/** « clé du runner », « serveur du runner » or « clé chiffrée par le service ». */
+export function keyFrom(provider: Pick<ProviderView, 'runnerHeld' | 'kind'>): string {
+  if (provider.kind === 'ollama') return 'serveur du runner'
+  return provider.runnerHeld ? 'clé du runner' : 'clé chiffrée par le service'
 }

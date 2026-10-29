@@ -10,7 +10,7 @@ import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { ago } from './runners.tsx'
-import { OrgSettingsSections, type OrgSectionProps } from './org-settings.tsx'
+import { OrgSettingsSections, orgEffectiveLevels, type OrgSectionProps } from './org-settings.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
@@ -46,7 +46,7 @@ function since(date: Date, now: Date): string {
 export const PROVIDER_NOTICES = {
   added: { tone: 'ok', text: 'Provider ajouté. Testez-le pour vérifier la clé.' },
   replaced: { tone: 'ok', text: 'Clé remplacée. L’ancienne n’est plus gardée.' },
-  default: { tone: 'ok', text: 'Les jobs de l’organisation utilisent maintenant ce provider.' },
+  default: { tone: 'ok', text: 'Ce provider est maintenant « Par défaut » : les niveaux sans provider choisi l’utilisent.' },
   removed: { tone: 'info', text: 'Provider retiré, avec sa clé.' },
   tested_ok: { tone: 'ok', text: 'Le provider a accepté la clé.' },
   tested_refused: { tone: 'alert', text: 'Le provider a refusé la clé.' },
@@ -88,6 +88,9 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
+    // REV-27. Which levels of the org run on each provider: the same rule as Valeurs par défaut.
+    let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
+    let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     return (
       <Shell frame={frame} section="settings" title="Réglages" lead="Ce qui vaut pour toute l’organisation.">
         {refused.map((p) => (
@@ -145,7 +148,14 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
             ) : (
               <ul class="provider-list">
                 {providers.map((provider) => (
-                  <ProviderItem provider={provider} now={now} admin={admin} csrf={csrf} keyError={keyError?.id === provider.id ? keyError.message : null} />
+                  <ProviderItem
+                    provider={provider}
+                    now={now}
+                    admin={admin}
+                    csrf={csrf}
+                    keyError={keyError?.id === provider.id ? keyError.message : null}
+                    levels={usage(provider.id)}
+                  />
                 ))}
               </ul>
             )}
@@ -209,9 +219,52 @@ const STATE_CLASS: Record<ProviderState, string> = {
   unknown: 'status-stale',
 }
 
-function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin: boolean; csrf: string; keyError: string | null }>) {
+/** « lite », « lite et heavy », « lite, balanced et heavy ». */
+function levelList(levels: readonly Level[]): string {
+  return levels.length <= 1 ? levels.join('') : `${levels.slice(0, -1).join(', ')} et ${levels.at(-1)}`
+}
+
+/**
+ * REV-27. The levels of the org that run on this provider, under its name: « Par défaut » and the
+ * choices of Valeurs par défaut never say two different things. Null: the service has no settings of
+ * the org.
+ */
+function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] | null }>) {
   return () => {
-    let { provider, now, admin, csrf, keyError } = handle.props
+    let { provider, levels } = handle.props
+    if (!levels) return null
+    let others = LEVELS.filter((level) => !levels.includes(level))
+    let defaults = <a href="#defauts">Valeurs par défaut</a>
+    if (provider.isDefault) {
+      return (
+        <p class="hint provider-usage">
+          {levels.length === LEVELS.length ? (
+            <>Fait les niveaux {levelList(levels)} de l’org.</>
+          ) : levels.length > 0 ? (
+            <>
+              Fait les niveaux {levelList(levels)} de l’org ; {levelList(others)} {others.length > 1 ? 'ont' : 'a'} un autre provider, choisi
+              dans {defaults}.
+            </>
+          ) : (
+            <>Aucun niveau de l’org ne l’utilise : chacun a son provider, choisi dans {defaults}.</>
+          )}{' '}
+          Un repo peut choisir le sien dans sa Config.
+        </p>
+      )
+    }
+    return levels.length > 0 ? (
+      <p class="hint provider-usage">
+        Choisi pour {levels.length > 1 ? 'les niveaux' : 'le niveau'} {levelList(levels)} de l’org, dans {defaults}.
+      </p>
+    ) : null
+  }
+}
+
+function ProviderItem(
+  handle: Handle<{ provider: ProviderView; now: Date; admin: boolean; csrf: string; keyError: string | null; levels: Level[] | null }>,
+) {
+  return () => {
+    let { provider, now, admin, csrf, keyError, levels } = handle.props
     let state = providerState(provider)
     let id = provider.id
     return (
@@ -237,6 +290,7 @@ function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin:
             )}
           </span>
         </div>
+        <ProviderUsage provider={provider} levels={levels} />
         <dl class="provider-facts">
           <div>
             <dt>Clé</dt>
@@ -302,7 +356,7 @@ function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin:
               <form method="post" action={routes.providerDefault.href({ id })}>
                 <input type="hidden" name="_csrf" value={csrf} />
                 <button class="button" type="submit">
-                  Utiliser pour les jobs
+                  Mettre par défaut
                 </button>
               </form>
             )}
@@ -404,7 +458,13 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             <label class="field-label" for="provider-kind">
               Type
             </label>
-            <select class="input" id="provider-kind" name="kind" {...field('kind')}>
+            <select
+              class="input"
+              id="provider-kind"
+              name="kind"
+              {...field('kind')}
+              aria-describedby={errors.kind ? 'provider-kind-error provider-kind-hint' : 'provider-kind-hint'}
+            >
               {KINDS.map((kind) => (
                 <option value={kind} selected={values.kind === kind}>
                   {KIND_LABELS[kind]}
@@ -412,16 +472,17 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               ))}
             </select>
             {errors.kind ? (
-              message('kind', '')
-            ) : (
-              <ul class="field-hint kind-hints" id="provider-kind-hint">
-                {KINDS.map((kind) => (
-                  <li>
-                    <strong>{KIND_LABELS[kind]}</strong> : {KIND_HINTS[kind]}
-                  </li>
-                ))}
-              </ul>
-            )}
+              <p class="field-error" id="provider-kind-error">
+                {errors.kind}
+              </p>
+            ) : null}
+            <ul class="field-hint kind-hints" id="provider-kind-hint">
+              {KINDS.map((kind) => (
+                <li>
+                  <strong>{KIND_LABELS[kind]}</strong> : {KIND_HINTS[kind]}
+                </li>
+              ))}
+            </ul>
           </div>
           <div class="field">
             <label class="field-label" for="provider-label">

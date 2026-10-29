@@ -17,7 +17,10 @@ function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
 }
 
-/** orchard enabled, at its first config, with no job; the org sets nothing. */
+/**
+ * orchard enabled, at its first config, with no job; the org sets nothing and has no provider. A
+ * provider « Par défaut » left by another spec would run the levels without a choice (REV-27).
+ */
 async function reset(page: Page) {
   await page.goto('/repos')
   await page.getByRole('button', { name: 'Actualiser' }).click()
@@ -28,6 +31,7 @@ async function reset(page: Page) {
     await sql`update repos set enabled = true, config = '{}', config_version = 0, config_updated_by = null, config_updated_at = null, default_level = 'lite'
       where full_name = ${ORCHARD.full_name}`
     await sql`update orgs set config = '{}'`
+    await sql`delete from providers`
   } finally {
     await sql.end()
   }

@@ -449,7 +449,7 @@ const APP_STATUS: AppStatus = {
 }
 const ORG_PROVIDER_OPTIONS = [
   ...PROVIDERS,
-  { id: '00000000-0000-4000-8000-000000000020', kind: 'anthropic' as const, label: 'Anthropic de Sakuga', hint: 'Valide · clé du service chiffrée' },
+  { id: '00000000-0000-4000-8000-000000000020', kind: 'anthropic' as const, label: 'Anthropic de Sakuga', hint: 'Valide · clé du service chiffrée', isDefault: true, keyFrom: 'clé chiffrée par le service', serviceHoldsKey: true, models: {} },
 ]
 function orgSection(extra: Partial<OrgSectionProps> = {}): OrgSectionProps {
   return {

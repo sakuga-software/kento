@@ -4,7 +4,7 @@ import { describe, it } from 'remix/test'
 import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { ConfigOverrides } from '../repo-config/model.ts'
-import { serviceProviders } from '../repo-config/providers.ts'
+import { serviceOption, serviceProviders, type ProviderCatalog } from '../repo-config/providers.ts'
 import type { RepoConfigStore, RepoConfigView } from '../repo-config/store.ts'
 import { createAppRouter } from '../router.ts'
 
@@ -13,7 +13,7 @@ const ORCHARD = '00000000-0000-4000-8000-000000000001'
 const ELSEWHERE = '00000000-0000-4000-8000-000000000009'
 
 /** The Config screen with the fake sign-in, and the configs in memory. */
-function setup(orgConfig: ConfigOverrides = {}) {
+function setup(orgConfig: ConfigOverrides = {}, providers: ProviderCatalog = serviceProviders) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -73,7 +73,7 @@ function setup(orgConfig: ConfigOverrides = {}) {
     commit: null,
     webhook: disabledWebhook,
     auth: auth.deps,
-    repoConfig: { store, providers: serviceProviders },
+    repoConfig: { store, providers },
   })
 
   function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
@@ -213,6 +213,8 @@ describe('the Config screen of a repository', () => {
     let { cookie, csrf, html } = await signIn(CAMILLE)
     assert.match(html, /Lecture seule\./)
     assert.match(html, /anthropic\/claude-haiku-5\.5/)
+    // REV-27: a member reads the provider and the model of the next job, with where they come from.
+    assert.match(html, /Prochain job<\/span> <strong>OpenRouter · clé du service<\/strong>/)
     assert.doesNotMatch(html, new RegExp(`action="/repos/${ORCHARD}/config`))
     let trigger = await (await request(`/repos/${ORCHARD}/config?tab=trigger`, { cookie })).text()
     assert.doesNotMatch(trigger, /<form method="post" action="\/repos\//)
@@ -271,5 +273,49 @@ describe('the Config screen of a repository', () => {
     let { cookie } = await signIn()
     assert.match(await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text(), /arrivent avec M5/)
     assert.match(await (await request(`/repos/${ORCHARD}/config?tab=assignment`, { cookie })).text(), /arrivent avec M5/)
+  })
+})
+
+describe('the provider « Par défaut » in Config (REV-27)', () => {
+  const DEFAULT_ID = '0f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
+  const catalog: ProviderCatalog = {
+    list: async () => [
+      serviceOption(true),
+      {
+        id: DEFAULT_ID,
+        kind: 'anthropic',
+        label: 'Anthropic de Sakuga',
+        hint: 'Anthropic, provider par défaut de l’org · clé sur le runner',
+        isDefault: true,
+        keyFrom: 'clé du runner',
+        serviceHoldsKey: false,
+        models: { lite: ['claude-haiku-4-5'] },
+      },
+    ],
+  }
+
+  it('a level without a choice shows the default provider, and « Remplacer ici » says that it fixes the choice', async () => {
+    let { signIn } = setup({}, catalog)
+    let { html } = await signIn()
+    let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))
+    assert.match(lite, /<strong>Anthropic de Sakuga · clé du runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>, sans repli/)
+    assert.match(lite, new RegExp(`<option value="${DEFAULT_ID}" selected>`))
+    assert.match(lite, /Remplacer ici fixe ce choix pour le repo : le niveau ne suivra plus le provider « Par défaut »/)
+  })
+
+  it('a level that the org chose shows no such warning', async () => {
+    let { signIn } = setup({ models: { lite: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } } }, catalog)
+    let { html } = await signIn()
+    let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))
+    assert.match(lite, /choisi pour l’org/)
+    assert.doesNotMatch(lite, /ne suivra plus le provider/)
+  })
+
+  it('a level whose chosen provider was removed shows what runs and what the config names', async () => {
+    let { signIn } = setup({ models: { lite: { provider: '9e1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', model: 'claude-x', fallback: 'claude-y' } } }, catalog)
+    let { html } = await signIn(CAMILLE)
+    let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))
+    assert.match(lite, /le provider choisi n’existe plus/)
+    assert.match(lite, /\(la config nomme <span class="mono">claude-x<\/span>, repli <span class="mono">claude-y<\/span>\)/)
   })
 })

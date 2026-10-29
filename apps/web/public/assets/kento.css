@@ -1760,6 +1760,20 @@ kbd,
   margin: 0;
   padding-left: var(--space-4);
 }
+/* REV-27. The levels of the org that run on a provider, under its name. */
+.provider-usage {
+  margin-top: var(--space-2);
+}
+/* REV-27. « Prochain job » of a level: the provider, its key and the models that the next job uses. */
+.effective-line {
+  margin-bottom: var(--space-3);
+}
+.effective-label {
+  margin-right: var(--space-1);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
 /* REV-28. « Rien n’est enregistré » at the top of a form sent back with its errors. */
 .form-errors {
   margin-bottom: var(--space-4);

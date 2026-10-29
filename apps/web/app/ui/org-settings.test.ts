@@ -5,7 +5,7 @@ import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { AppStatus, ReadAppStatus } from '../org-settings/app-status.ts'
 import type { OrgSettingsStore, OrgSettingsValues, OrgSettingsView } from '../org-settings/store.ts'
-import { serviceProviders } from '../repo-config/providers.ts'
+import { serviceOption, serviceProviders, type ProviderCatalog } from '../repo-config/providers.ts'
 import { createAppRouter } from '../router.ts'
 
 const COOKIE = '__Host-kento_session'
@@ -75,7 +75,7 @@ function fakeStore() {
   return { store, rows, saves }
 }
 
-function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, status: APP }) {
+function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, status: APP }, providers: ProviderCatalog = serviceProviders) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -88,7 +88,7 @@ function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, stat
     auth: { ...auth.deps, now: () => NOW.getTime() },
     orgSettings: {
       store: fake.store,
-      providers: serviceProviders,
+      providers,
       readAppStatus: app ? async () => app : null,
       webhookUrl: 'https://review.sakuga.dev/webhooks/github',
       webhookSecret: true,
@@ -340,3 +340,45 @@ describe('the settings of the org (REV-13)', () => {
     assert.doesNotMatch(html, /Rejouer depuis la page/)
   })
 })
+
+describe('one rule for the provider of a level (REV-27)', () => {
+  const DEFAULT_ID = '0f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
+  const runnerAnthropic = {
+    id: DEFAULT_ID,
+    kind: 'anthropic' as const,
+    label: 'Anthropic de Sakuga',
+    hint: 'Anthropic, provider par défaut de l’org · clé sur le runner',
+    isDefault: true,
+    keyFrom: 'clé du runner',
+    serviceHoldsKey: false,
+    models: { lite: ['claude-haiku-4-5'] },
+  }
+  const catalog = (serviceKey: boolean): ProviderCatalog => ({ list: async () => [serviceOption(serviceKey), runnerAnthropic] })
+
+  it('a level without a choice shows the provider « Par défaut », its key and its models, never « clé du service »', async () => {
+    let { request, signIn } = setup(undefined, catalog(false))
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/settings', { cookie })).text()
+    let lite = html.slice(html.indexOf('id="org-lite"'), html.indexOf('id="org-balanced"'))
+    assert.match(lite, /Prochain job<\/span> <strong>Anthropic de Sakuga · clé du runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>/)
+    assert.match(lite, /le provider « Par défaut » de Providers et clés/)
+    assert.match(lite, new RegExp(`<option value="${DEFAULT_ID}" selected>`), 'the form shows what runs')
+    assert.match(lite, /ne suivra plus le provider « Par défaut »/)
+    // Without a key in the service, the OpenRouter option says « clé du runner », as its help.
+    assert.match(html, /OpenRouter · clé du runner/)
+    assert.doesNotMatch(html, /clé du service/)
+    assert.doesNotMatch(html, /10 \$ par jour/, 'no level runs on the key of the service')
+  })
+
+  it('a level that chose OpenRouter says so, and the limit of the key of the service shows', async () => {
+    let { request, signIn, rows } = setup(undefined, catalog(true))
+    rows[ORG.id]!.config = { models: { heavy: { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null } } }
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/settings', { cookie })).text()
+    let heavy = html.slice(html.indexOf('id="org-heavy"'))
+    assert.match(heavy, /<strong>OpenRouter · clé du service<\/strong> · <span class="mono">anthropic\/claude-opus-5.5<\/span>/)
+    assert.match(heavy, /choisi pour l’org ; ne suit pas le provider « Par défaut »/)
+    assert.match(html, /La clé OpenRouter du service a aussi sa limite de 10 \$ par jour/)
+  })
+})
+
