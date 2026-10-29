@@ -15,8 +15,11 @@ import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
 import type { AuthStore, MembershipRow, UserRow } from '../auth/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { authRoutes, pageRoutes } from '../routes.ts'
+import type { RepoCheck } from '../repos/check.ts'
+import type { ReposStore } from '../repos/store.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
 import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
+import { ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
 import { Shell, type PageFrame, type Section, type Viewer } from './shell.tsx'
@@ -35,11 +38,21 @@ export interface AuthDependencies {
   now?: () => number
 }
 
+/** The Repos screen (REV-9). Null: the screen shows its empty frame. */
+export interface ReposDependencies {
+  store: ReposStore
+  /** Reads the repositories on GitHub. Null without the GitHub App. */
+  check: RepoCheck | null
+  /** `https://github.com`, or the GitHub Enterprise Server. */
+  githubUrl: string
+}
+
 export interface UiDependencies {
   version: string
   /** The commit of the image, when the build gives it: it versions the URLs of the assets. */
   commit: string | null
   auth: AuthDependencies | null
+  repos?: ReposDependencies | null
   /** The Runners screen (REV-10). Null: it shows its empty frame. */
   runners?: RunnersAdminStore | null
 }
@@ -103,6 +116,11 @@ function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): S
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** The page of the installation of the App on GitHub, where an owner picks the repositories it sees. */
+export function installationUrl(githubUrl: string, org: { login: string; githubInstallationId: number }): string {
+  return `${githubUrl}/organizations/${encodeURIComponent(org.login)}/settings/installations/${org.githubInstallationId}`
+}
 
 function forbidden() {
   return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
@@ -250,6 +268,26 @@ export function createUiControllers(deps: UiDependencies) {
     )
   }
 
+  async function setRepoEnabled(context: { get(key: typeof Signed): SignedIn | undefined; params: { id: string } }, enabled: boolean) {
+    let signed = signedOf(context)
+    if (signed.membership.role !== 'admin') {
+      log('warn', 'repos.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+      return forbidden()
+    }
+    let store = deps.repos?.store
+    let result = store ? await store.setEnabled(signed.membership.org.id, context.params.id, enabled) : null
+    if (!result) return new Response('Not Found', { status: 404 })
+    log('info', enabled ? 'repos.enabled' : 'repos.disabled', {
+      login: signed.user.login,
+      org: signed.membership.org.login,
+      repo: result.fullName,
+      cancelled: result.cancelled,
+    })
+    let query = new URLSearchParams({ done: enabled ? 'enabled' : 'disabled', repo: context.params.id })
+    if (!enabled) query.set('cancelled', String(result.cancelled))
+    return redirect(`${pageRoutes.repos.href()}?${query}#repo-${context.params.id}`)
+  }
+
   let pages = createController(pageRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
     actions: {
@@ -257,9 +295,60 @@ export function createUiControllers(deps: UiDependencies) {
         let page = frame(signedOf(context), context, getCsrfToken(context))
         return context.render(<PlaceholderPage frame={page} section="dashboard" />)
       },
-      repos(context) {
-        let page = frame(signedOf(context), context, getCsrfToken(context))
-        return context.render(<PlaceholderPage frame={page} section="repos" />)
+      async repos(context) {
+        let signed = signedOf(context)
+        let page = frame(signed, context, getCsrfToken(context))
+        let repos = deps.repos
+        if (!repos) return context.render(<PlaceholderPage frame={page} section="repos" />)
+        let org = signed.membership.org
+        let rows = await repos.store.list(org.id)
+        let checking = repos.check?.refreshIfStale(org, rows) ?? false
+        let query = context.url.searchParams
+        let named = rows.find((row) => row.id === query.get('repo'))
+        let done = query.get('done')
+        let notice: ReposNotice | null =
+          done === 'checked' || done === 'check_failed'
+            ? { kind: done }
+            : done === 'enabled' && named
+              ? { kind: 'enabled', fullName: named.fullName }
+              : done === 'disabled' && named
+                ? { kind: 'disabled', fullName: named.fullName, cancelled: Number(query.get('cancelled')) || 0 }
+                : null
+        let confirm = signed.membership.role === 'admin' ? (rows.find((row) => row.id === query.get('confirm') && row.enabled) ?? null) : null
+        return context.render(
+          <ReposPage
+            frame={page}
+            repos={rows}
+            installationUrl={installationUrl(repos.githubUrl, org)}
+            githubUrl={repos.githubUrl}
+            checking={checking}
+            notice={notice}
+            confirm={confirm}
+            now={new Date(now())}
+          />,
+        )
+      },
+
+      // REV-9. The forms of the Repos screen: an admin of the org on screen only. cop() and csrf()
+      // of the session layer ran before.
+      async repoEnable(context) {
+        return setRepoEnabled(context, true)
+      },
+      async repoDisable(context) {
+        return setRepoEnabled(context, false)
+      },
+      async reposCheck(context) {
+        let signed = signedOf(context)
+        if (signed.membership.role !== 'admin') return forbidden()
+        let check = deps.repos?.check
+        if (!check) return redirect(`${pageRoutes.repos.href()}?done=check_failed`)
+        try {
+          await check.run(signed.membership.org)
+          return redirect(`${pageRoutes.repos.href()}?done=checked`)
+        } catch {
+          // The check logs its error.
+          return redirect(`${pageRoutes.repos.href()}?done=check_failed`)
+        }
       },
       findings(context) {
         let page = frame(signedOf(context), context, getCsrfToken(context))

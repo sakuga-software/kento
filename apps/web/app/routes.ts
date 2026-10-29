@@ -10,6 +10,10 @@ export const routes = route({
 export const pageRoutes = route({
   home: get('/'),
   repos: get('/repos'),
+  /** REV-9: an admin enables or disables a repository, or reads GitHub again. */
+  repoEnable: post('/repos/:id/enable'),
+  repoDisable: post('/repos/:id/disable'),
+  reposCheck: post('/repos/check'),
   findings: get('/findings'),
   runners: get('/runners'),
   runnerNew: post('/runners/new'),

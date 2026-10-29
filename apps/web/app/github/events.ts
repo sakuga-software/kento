@@ -50,8 +50,6 @@ export type WebhookCommand =
   | { type: 'remove_repositories'; installation: Installation; githubRepoIds: number[] }
 
 export interface EventPolicy {
-  /** Lowercase `owner/name` of the repositories that get a job. */
-  kentoRepos: ReadonlySet<string>
   /** Lowercase bot logins that act for a person. */
   trustedBots: ReadonlySet<string>
   /** The login of the App, `sakuga-review[bot]`. Its own comments never give a command. */
@@ -101,9 +99,6 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   if (!isReviewAction(action)) {
     return { type: 'ignore', reason: `pull_request action ${action ?? '(none)'} creates no job` }
   }
-  if (!policy.kentoRepos.has(repository.fullName.toLowerCase())) {
-    return { type: 'ignore', reason: 'repository is not in KENTO_REPOS' }
-  }
   if (pr.draft === true) return { type: 'ignore', reason: 'draft pull request' }
 
   let sender = obj(payload.sender)
@@ -129,7 +124,8 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
 /**
  * `issue_comment`: a new comment of an open pull request that starts with `@kento` or
  * `@sakuga-review`. An edited comment gives no command: a command costs money, and an edit would
- * run it again. A repository outside KENTO_REPOS keeps its commands in the workflow `review.yml`.
+ * run it again. The command handler drops the command of a repository that is not enabled: that
+ * repository keeps its commands in the workflow `review.yml`.
  */
 function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   let action = str(payload.action)
@@ -156,9 +152,6 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
   let botLogin = (policy.botLogin ?? 'sakuga-review[bot]').toLowerCase()
   if (login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
     return { type: 'ignore', reason: 'comment of the App itself' }
-  }
-  if (!policy.kentoRepos.has(repository.fullName.toLowerCase())) {
-    return { type: 'ignore', reason: 'repository is not in KENTO_REPOS: the workflow keeps the command' }
   }
   if (isUntrustedBot(user, policy) || isUntrustedBot(obj(payload.sender), policy)) {
     return { type: 'ignore', reason: 'command of an untrusted bot' }

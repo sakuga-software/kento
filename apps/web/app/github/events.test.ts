@@ -5,7 +5,6 @@ import { commandFor, type EventPolicy } from './events.ts'
 import { headSha, issueCommentPayload, pullRequestPayload, REPO } from './test-helpers.ts'
 
 const policy: EventPolicy = {
-  kentoRepos: new Set(['sakuga-software/sakuga-review']),
   trustedBots: new Set(['sakuga-agent[bot]']),
 }
 
@@ -50,11 +49,9 @@ describe('commandFor pull_request', () => {
     assert.equal(reasonOf(pullRequestPayload({ draft: true })), 'draft pull request')
   })
 
-  it('a repository outside KENTO_REPOS gets no job, whatever its case', () => {
+  it('any repository of the installation gives a job command: the store reads whether it is enabled', () => {
     let other = { ...REPO, id: 4001, full_name: 'sakuga-software/fruitback' }
-    assert.equal(reasonOf(pullRequestPayload({ repo: other })), 'repository is not in KENTO_REPOS')
-    let upper = { ...REPO, full_name: 'Sakuga-Software/Sakuga-Review' }
-    assert.equal(commandFor('pull_request', pullRequestPayload({ repo: upper }), policy).type, 'enqueue_review')
+    assert.equal(commandFor('pull_request', pullRequestPayload({ repo: other }), policy).type, 'enqueue_review')
   })
 
   it('a push by an untrusted bot gets no job', () => {
@@ -163,9 +160,9 @@ describe('commandFor issue_comment', () => {
     assert.equal(reasonOf(issueCommentPayload({ body: 'Looks good. @kento review heavy' }), 'issue_comment'), 'comment is not a command')
   })
 
-  it('a repository outside KENTO_REPOS keeps its commands in the workflow', () => {
+  it('a comment of any repository gives the command: the handler reads whether the repository is enabled', () => {
     let other = { ...REPO, id: 4001, full_name: 'sakuga-software/fruitback' }
-    assert.match(reasonOf(issueCommentPayload({ repo: other }), 'issue_comment'), /not in KENTO_REPOS/)
+    assert.equal(commandFor('issue_comment', issueCommentPayload({ repo: other }), policy).type, 'comment_command')
   })
 
   it('the App itself never gives a command, even when it is trusted', () => {

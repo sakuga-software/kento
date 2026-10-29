@@ -10,7 +10,6 @@ export const REPO = { id: 3001, full_name: 'sakuga-software/sakuga-review', owne
 /** The router of a test that does not call the webhook. */
 export const disabledWebhook: WebhookDependencies = {
   secret: null,
-  kentoRepos: new Set(),
   trustedBots: new Set(),
   apply: () => Promise.reject(new Error('the webhook is disabled in this test')),
 }
@@ -28,7 +27,6 @@ export function spyStore(result: WebhookResult = { outcome: 'queued', jobId: 'jo
 export function webhookDeps(apply: ApplyWebhook, overrides: Partial<WebhookDependencies> = {}): WebhookDependencies {
   return {
     secret: TEST_SECRET,
-    kentoRepos: new Set([REPO.full_name]),
     trustedBots: new Set(['sakuga-agent[bot]']),
     apply,
     ...overrides,

@@ -38,24 +38,19 @@ export const CANCEL_REASON = {
   closed: 'pull request closed',
   suspended: 'installation suspended',
   uninstalled: 'installation deleted',
+  /** An admin disabled the repository on the Repos screen while the job waited in the queue. */
+  disabled: 'repository disabled',
 } as const
 
 type CancelReason = (typeof CANCEL_REASON)[keyof typeof CANCEL_REASON]
 
 export interface StoreOptions {
-  /**
-   * Lowercase `owner/name` of `KENTO_REPOS`. In M2 the variable decides which repositories are
-   * enabled: each upsert writes `repos.enabled` from it, and a job needs `enabled`. M3 replaces the
-   * variable with the Repos screen, which then owns the column.
-   */
-  kentoRepos: ReadonlySet<string>
   /** The commands of the comments (REV-7). Without it, a command is skipped. */
   handleCommentCommand?: HandleCommentCommand
 }
 
 /** Applies each command in one transaction. A command of a comment goes to its handler. */
-export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook {
-  let { kentoRepos } = options
+export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWebhook {
   return async (command, deliveryId) => {
     if (command.type === 'comment_command') {
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
@@ -64,7 +59,7 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
     return db.transaction(async (tx) => {
       switch (command.type) {
         case 'enqueue_review':
-          return enqueueReview(tx, command, deliveryId, kentoRepos)
+          return enqueueReview(tx, command, deliveryId)
         case 'cancel_pull_request': {
           // The lock waits for an enqueue of the same repository that has not committed yet, so the
           // update below also sees its job.
@@ -80,7 +75,7 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
         }
         case 'upsert_installation': {
           let org = await upsertOrg(tx, command.installation, command.suspended)
-          let count = await upsertRepos(tx, org.id, command.repositories, kentoRepos)
+          let count = await upsertRepos(tx, org.id, command.repositories)
           let cancelled = command.suspended ? await cancelOrgJobs(tx, org.id, CANCEL_REASON.suspended) : 0
           return { outcome: 'updated', repositories: count, cancelled }
         }
@@ -93,7 +88,7 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
         }
         case 'add_repositories': {
           let org = await upsertOrg(tx, command.installation, null)
-          let count = await upsertRepos(tx, org.id, command.repositories, kentoRepos)
+          let count = await upsertRepos(tx, org.id, command.repositories)
           return { outcome: 'updated', repositories: count, cancelled: 0 }
         }
         case 'remove_repositories': {
@@ -109,6 +104,19 @@ export function createWebhookStore(db: Db, options: StoreOptions): ApplyWebhook 
       }
     })
   }
+}
+
+/**
+ * Whether Kentō serves a repository: its row is enabled, and the installation is not suspended. A
+ * repository that is not, or that Kentō does not know yet, keeps its commands in `review.yml`.
+ */
+export async function isRepoEnabled(db: Db, githubRepoId: number): Promise<boolean> {
+  let [row] = await db
+    .select({ enabled: repos.enabled })
+    .from(repos)
+    .innerJoin(orgs, eq(orgs.id, repos.orgId))
+    .where(and(eq(repos.githubRepoId, githubRepoId), sql`${orgs.suspendedAt} is null`))
+  return row?.enabled === true
 }
 
 /**
@@ -153,11 +161,11 @@ export type CommandJobResult =
  * The upsert of the repository locks its row until the end of the transaction: two commands of the
  * same repository run one after the other, and the second one sees the job of the first.
  */
-export function enqueueCommandJob(db: Db, input: CommandJobInput, kentoRepos: ReadonlySet<string>): Promise<CommandJobResult> {
+export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<CommandJobResult> {
   return db.transaction(async (tx): Promise<CommandJobResult> => {
     let org = await upsertOrg(tx, input.installation, null)
     if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
-    let [repo] = await upsertRepoRows(tx, org.id, [input.repository], kentoRepos)
+    let [repo] = await upsertRepoRows(tx, org.id, [input.repository])
     if (!repo) throw new Error('upsert of the repository returned no row')
     if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
 
@@ -251,11 +259,10 @@ async function enqueueReview(
   tx: Tx,
   command: Extract<StoreCommand, { type: 'enqueue_review' }>,
   deliveryId: string,
-  kentoRepos: ReadonlySet<string>,
 ): Promise<WebhookResult> {
   let org = await upsertOrg(tx, command.installation, null)
   if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
-  let [repo] = await upsertRepoRows(tx, org.id, [command.repository], kentoRepos)
+  let [repo] = await upsertRepoRows(tx, org.id, [command.repository])
   if (!repo) throw new Error('upsert of the repository returned no row')
   if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
 
@@ -357,21 +364,16 @@ async function upsertOrg(tx: Tx, installation: Installation, suspended: boolean 
   return org
 }
 
-async function upsertRepos(
-  tx: Tx,
-  orgId: string,
-  repositories: Repository[],
-  kentoRepos: ReadonlySet<string>,
-): Promise<number> {
+async function upsertRepos(tx: Tx, orgId: string, repositories: Repository[]): Promise<number> {
   if (repositories.length === 0) return 0
-  return (await upsertRepoRows(tx, orgId, repositories, kentoRepos)).length
+  return (await upsertRepoRows(tx, orgId, repositories)).length
 }
 
 // A repository keeps its row when it is renamed, or moved to another installation: its GitHub id
-// does not change. `enabled` follows KENTO_REPOS (M2); `default_level` is a setting that an event
-// never changes. One insert cannot update the same row twice: a repository listed twice keeps its
-// last entry.
-function upsertRepoRows(tx: Tx, orgId: string, repositories: Repository[], kentoRepos: ReadonlySet<string>) {
+// does not change. `enabled` and `default_level` are settings of the Repos screen that an event never
+// changes: a new repository comes in disabled. One insert cannot update the same row twice: a
+// repository listed twice keeps its last entry.
+function upsertRepoRows(tx: Tx, orgId: string, repositories: Repository[]) {
   let unique = [...new Map(repositories.map((repo) => [repo.githubRepoId, repo])).values()]
   return tx
     .insert(repos)
@@ -380,12 +382,11 @@ function upsertRepoRows(tx: Tx, orgId: string, repositories: Repository[], kento
         orgId,
         githubRepoId: repo.githubRepoId,
         fullName: repo.fullName,
-        enabled: kentoRepos.has(repo.fullName.toLowerCase()),
       })),
     )
     .onConflictDoUpdate({
       target: repos.githubRepoId,
-      set: { orgId, fullName: sql`excluded.full_name`, enabled: sql`excluded.enabled`, updatedAt: sql`now()` },
+      set: { orgId, fullName: sql`excluded.full_name`, updatedAt: sql`now()` },
     })
     .returning({ id: repos.id, defaultLevel: repos.defaultLevel, enabled: repos.enabled })
 }

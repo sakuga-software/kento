@@ -12,7 +12,7 @@
 // - Nothing for a person who cannot write to the repository: the bot does not answer every comment
 //   of every visitor. The log says why.
 import type { Db } from '../db/client.ts'
-import { enqueueCommandJob, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
+import { enqueueCommandJob, isRepoEnabled, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { USAGE } from '../github/comment-command.ts'
 import { errorMessage, log } from '../log.ts'
@@ -34,7 +34,6 @@ export interface CommandHandlerDependencies {
   /** Null without the GitHub App: a command is then skipped. */
   mintInstallationToken: MintInstallationToken | null
   apiUrl: string
-  kentoRepos: ReadonlySet<string>
   fetch?: typeof globalThis.fetch
 }
 
@@ -60,6 +59,12 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       commentId: message.commentId,
       commenter: message.commenter.login,
       verb: message.command.verb,
+    }
+    // A repository that Kentō does not serve keeps its commands in `review.yml`: no token, no
+    // reaction, no reply, so the comment never gets two answers.
+    if (!(await isRepoEnabled(deps.db, message.repository.githubRepoId))) {
+      log('info', 'command.repo_not_enabled', fields)
+      return { outcome: 'skipped', reason: 'repository is not enabled: the workflow keeps the command' }
     }
     let mint = deps.mintInstallationToken
     if (!mint) return { outcome: 'skipped', reason: 'GitHub App is not configured' }
@@ -128,7 +133,6 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         commentId: message.commentId,
         deliveryId,
       },
-      deps.kentoRepos,
     )
     switch (result.outcome) {
       case 'queued':

@@ -20,7 +20,7 @@ describe('runner API', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
   let repoId: string
-  let mints: { installationId: number; githubRepoId: number }[]
+  let mints: { installationId: number; githubRepoId: number | null }[]
   let mintFails: boolean
 
   let mint: MintInstallationToken = async (target) => {

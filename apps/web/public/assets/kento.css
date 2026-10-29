@@ -732,6 +732,276 @@ kbd,
   display: none;
 }
 
+/* ---------------------------------------------------------------- Tables, and the Repos screen (REV-9) */
+/* `.tag` and `.hint` come from « Shared parts » (REV-10) below; the variants here only add a colour. */
+
+.banner-ok {
+  border-left-color: var(--matsu);
+  background: var(--matsu-wash);
+}
+.banner-ok svg {
+  color: var(--matsu);
+}
+.banner p {
+  margin: 0;
+}
+
+.banner-confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.banner-confirm-title {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.banner-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.button-small {
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.tag.tag-ok {
+  background: var(--matsu-wash);
+  color: var(--matsu);
+}
+.tag.tag-info {
+  background: var(--ai-wash);
+  color: var(--ai);
+}
+.tag.tag-quiet {
+  background: var(--paper-sunken);
+  color: var(--ink-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+.hint.hint-alert {
+  color: var(--shu);
+}
+.hint.hint-ok {
+  color: var(--matsu);
+  font-weight: 600;
+}
+
+.repos-summary {
+  margin-bottom: var(--space-3);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-1);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+}
+.table th,
+.table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.table thead th {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--space-4);
+}
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--space-4);
+}
+.table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.table tbody tr:target {
+  background: var(--ai-wash);
+}
+.table tbody th {
+  font-weight: 600;
+}
+.repo-name {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--ink);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.row-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.switch-count {
+  min-width: 4ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.switch-bar {
+  appearance: none;
+  width: 72px;
+  height: 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunken);
+  overflow: hidden;
+}
+.switch-bar::-webkit-progress-bar {
+  background: var(--paper-sunken);
+  border-radius: var(--radius-pill);
+}
+.switch-bar::-webkit-progress-value {
+  background: var(--ai);
+  border-radius: var(--radius-pill);
+}
+.switch-bar::-moz-progress-bar {
+  background: var(--ai);
+  border-radius: var(--radius-pill);
+}
+.switch-done::-webkit-progress-value {
+  background: var(--matsu);
+}
+.switch-done::-moz-progress-bar {
+  background: var(--matsu);
+}
+
+.repos-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+.note h2 {
+  margin-bottom: var(--space-3);
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.note ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--ink-soft);
+}
+.note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* Under 760 px a row of the table becomes a card: each cell under its column name. */
+@media (max-width: 760px) {
+  .table-wrap {
+    overflow: visible;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .table,
+  .table tbody {
+    display: block;
+  }
+  /* A card: the name on top, the cells two by two, the action at the bottom. */
+  .table tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--paper-raised);
+  }
+  .table th,
+  .table td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .table td::before {
+    content: attr(data-label);
+    color: var(--ink-muted);
+    font-size: var(--text-xs);
+    line-height: var(--leading-xs);
+    font-weight: 600;
+  }
+  .table tbody th,
+  .table .row-action {
+    grid-column: 1 / -1;
+  }
+  .table tbody th {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--line);
+  }
+  .table .row-action::before {
+    content: none;
+  }
+  .table tr > :first-child,
+  .table tr > :last-child {
+    padding-inline: 0;
+  }
+  .repo-name {
+    margin: 0;
+    font-size: var(--text-md);
+  }
+  .row-action {
+    text-align: left;
+  }
+  .row-action .button {
+    min-height: var(--control-h-touch);
+  }
+}
+
 /* ---------------------------------------------------------------- Mobile (390 px and up to 760 px) */
 
 @media (max-width: 760px) {

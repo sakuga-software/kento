@@ -23,8 +23,6 @@ export interface Config {
    * answers 503 to every request. Never logged.
    */
   githubWebhookSecret: string | null
-  /** The repositories that get a job, as lowercase `owner/name`. M3 replaces it with the Repos screen. */
-  kentoRepos: ReadonlySet<string>
   /** The bot logins whose pull requests and pushes get a review, as a person's do. */
   trustedBots: ReadonlySet<string>
   /** The secret that a runner sends to register. Null closes the registration. */
@@ -98,14 +96,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     problems.push(`GITHUB_WEBHOOK_SECRET must have at least ${MIN_WEBHOOK_SECRET_LENGTH} characters`)
   }
 
-  let kentoRepos = readList(env.KENTO_REPOS ?? '')
-  for (let repo of kentoRepos) {
-    if (!/^[a-z0-9-]+\/[a-z0-9._-]+$/.test(repo)) {
-      problems.push('KENTO_REPOS must be a comma-separated list of owner/name')
-      break
-    }
-  }
-
   let runnerRegistrationToken = env.KENTO_RUNNER_REGISTRATION_TOKEN?.trim() || null
   if (runnerRegistrationToken !== null && runnerRegistrationToken.length < 32) {
     problems.push('KENTO_RUNNER_REGISTRATION_TOKEN must have at least 32 characters')
@@ -163,7 +153,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     version: packageJson.version,
     commit: commit ? commit : null,
     githubWebhookSecret: githubWebhookSecret === '' ? null : githubWebhookSecret,
-    kentoRepos: new Set(kentoRepos),
     trustedBots: new Set(readList(env.KENTO_TRUSTED_BOTS ?? DEFAULT_TRUSTED_BOTS)),
     runnerRegistrationToken,
     githubApp,

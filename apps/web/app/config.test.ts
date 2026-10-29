@@ -20,7 +20,6 @@ describe('loadConfig', () => {
       version: packageJson.version,
       commit: null,
       githubWebhookSecret: null,
-      kentoRepos: new Set(),
       trustedBots: new Set(['sakuga-agent[bot]']),
       runnerRegistrationToken: null,
       githubApp: null,
@@ -161,7 +160,7 @@ describe('loadConfig', () => {
     assert.equal(config.commit, 'abc1234')
   })
 
-  it('reads the webhook secret, the repositories and the trusted bots', () => {
+  it('reads the webhook secret and the trusted bots, and no list of repositories', () => {
     let secret = ` ${'s'.repeat(40)} `
     let config = loadConfig({
       DATABASE_URL: url,
@@ -171,7 +170,8 @@ describe('loadConfig', () => {
     })
     // GitHub signs with the exact string: no trim.
     assert.equal(config.githubWebhookSecret, secret)
-    assert.deepEqual(config.kentoRepos, new Set(['sakuga-software/sakuga-review', 'sakuga-software/fruitback']))
+    // The Repos screen enables a repository: the variable of M2 is not read any more.
+    assert.equal('kentoRepos' in config, false)
     assert.deepEqual(config.trustedBots, new Set(['renovate[bot]', 'sakuga-agent[bot]']))
   })
 
@@ -185,13 +185,6 @@ describe('loadConfig', () => {
     assert.ok(error instanceof ConfigError)
     assert.match(error.message, /GITHUB_WEBHOOK_SECRET must have at least 32 characters/)
     assert.doesNotMatch(error.message, /short-secret-value/)
-  })
-
-  it('refuses a repository that is not owner/name', () => {
-    assert.throws(
-      () => loadConfig({ DATABASE_URL: url, KENTO_REPOS: 'sakuga-review' }),
-      /KENTO_REPOS must be a comma-separated list of owner\/name/,
-    )
   })
 
   it('names every invalid variable and never prints a value', () => {

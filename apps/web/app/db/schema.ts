@@ -48,6 +48,12 @@ export const orgs = pgTable('orgs', {
   updatedAt: updatedAt(),
 })
 
+/**
+ * The review workflow that a repository still runs, as the Repos screen reads it on GitHub: none, a
+ * workflow that calls `review.yml` of sakuga-review (`reusable`), or a copy of its job (`copy`).
+ */
+export const workflowMode = pgEnum('workflow_mode', ['none', 'reusable', 'copy'])
+
 /** A repository that the installation of an org can see. */
 export const repos = pgTable(
   'repos',
@@ -59,9 +65,22 @@ export const repos = pgTable(
     githubRepoId: bigint('github_repo_id', { mode: 'number' }).notNull().unique(),
     /** `owner/name`. It changes when the repository is renamed or moved. */
     fullName: text('full_name').notNull(),
-    /** No job is created for a repository that is not enabled. */
+    /**
+     * No job is created for a repository that is not enabled. An admin sets it on the Repos screen
+     * (REV-9); an event of GitHub never changes it.
+     */
     enabled: boolean('enabled').notNull().default(false),
     defaultLevel: reviewLevel('default_level').notNull().default('lite'),
+    /** From GitHub, at the last check of the Repos screen. Null before the first one. */
+    private: boolean('private'),
+    defaultBranch: text('default_branch'),
+    /** The review workflow of the repository at the last check. Null before the first one. */
+    workflow: workflowMode('workflow'),
+    /** The path of that workflow file, `.github/workflows/sakuga-review.yml`. */
+    workflowPath: text('workflow_path'),
+    /** The ref after `review.yml@` in a calling workflow: `stable`, or a SHA. */
+    workflowRef: text('workflow_ref'),
+    workflowCheckedAt: timestamp('workflow_checked_at', { withTimezone: true }),
     /**
      * The label that a runner must carry to run the jobs of this repository. Null: any runner of the
      * org, or of the service.

@@ -12,7 +12,7 @@ import { authRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
-import { createUiControllers, type AuthDependencies } from './ui/pages.tsx'
+import { createUiControllers, type AuthDependencies, type ReposDependencies } from './ui/pages.tsx'
 
 /** The stylesheet, the fonts and the one script of the screens, under `/assets/`. */
 const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url))
@@ -27,6 +27,8 @@ export interface AppDependencies {
   runner?: RunnerApiDependencies
   /** The GitHub sign-in of the screens. Without it, every screen leads to « Connexion indisponible ». */
   auth?: AuthDependencies | null
+  /** The Repos screen. Without it, the screen shows its empty frame. */
+  repos?: ReposDependencies | null
   /** What the Runners screen reads and writes. Without it, the screen stays empty. */
   runnersAdmin?: RunnersAdminStore | null
 }
@@ -50,6 +52,7 @@ export function createAppRouter(deps: AppDependencies) {
     commit: deps.commit,
     auth: deps.auth ?? null,
     runners: deps.runnersAdmin ?? null,
+    repos: deps.repos ?? null,
   })
   router.map(pageRoutes, ui.pages)
   router.map(authRoutes, ui.signIn)

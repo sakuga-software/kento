@@ -14,6 +14,24 @@ export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' 
   stranger: { id: 103, name: 'Someone Else', role: null },
 }
 
+/** The repositories of the installation, for the check of the Repos screen. */
+export const FAKE_REPOS = [
+  { id: 7001, full_name: 'sakuga-software/orchard', private: true, default_branch: 'main' },
+  { id: 7002, full_name: 'sakuga-software/fruitback', private: false, default_branch: 'main' },
+  { id: 7003, full_name: 'sakuga-software/infra-repo', private: true, default_branch: 'main' },
+]
+
+/** The workflow files of each repository: orchard calls review.yml@stable, fruitback holds a copy. */
+const WORKFLOWS: Record<string, Record<string, string>> = {
+  'sakuga-software/orchard': {
+    'sakuga-review.yml': 'on: pull_request\njobs:\n  review:\n    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@stable\n',
+    'ci.yml': 'on: push\njobs: {}\n',
+  },
+  'sakuga-software/fruitback': {
+    'sakuga-review.yml': 'on: pull_request\njobs:\n  r:\n    steps:\n      - run: node review/sakuga-review.ts\n',
+  },
+}
+
 let codes = new Map<string, { login: string; challenge: string; redirectUri: string }>()
 
 function json(response: http.ServerResponse, status: number, body: unknown) {
@@ -70,6 +88,27 @@ let server = http.createServer(async (request, response) => {
 
   if (request.method === 'POST' && url.pathname === `/app/installations/${FAKE_ORG.installationId}/access_tokens`) {
     return json(response, 201, { token: 'ghs_members', expires_at: new Date(Date.now() + 3600_000).toISOString() })
+  }
+
+  if (request.method === 'GET' && url.pathname === '/installation/repositories') {
+    if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
+    return json(response, 200, { total_count: FAKE_REPOS.length, repositories: FAKE_REPOS })
+  }
+
+  let contents = /^\/repos\/([^/]+\/[^/]+)\/contents\/\.github\/workflows(?:\/([^/]+))?$/.exec(url.pathname)
+  if (request.method === 'GET' && contents) {
+    let files = WORKFLOWS[contents[1]!]
+    if (!files) return json(response, 404, { message: 'Not Found' })
+    if (!contents[2]) {
+      return json(
+        response,
+        200,
+        Object.keys(files).map((name) => ({ type: 'file', name, path: `.github/workflows/${name}` })),
+      )
+    }
+    let text = files[contents[2]]
+    if (text === undefined) return json(response, 404, { message: 'Not Found' })
+    return json(response, 200, { encoding: 'base64', content: Buffer.from(text).toString('base64') })
   }
 
   let membership = /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/.exec(url.pathname)

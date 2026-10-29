@@ -14,6 +14,8 @@ import { createPublisher } from './app/publish/publisher.ts'
 import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
 import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
 import { createAuthStore } from './app/auth/store.ts'
+import { createRepoCheck } from './app/repos/check.ts'
+import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
 import { createRunnersAdminStore } from './app/runner/admin.ts'
@@ -95,8 +97,21 @@ let sweepTimer = sessionStorage
     }, 60 * 60 * 1000).unref()
   : null
 
+// The Repos screen (REV-9): an admin enables a repository there. The check reads the repositories
+// and their workflows on GitHub with an installation token.
+let reposStore = createReposStore(database.sql)
+let repos = {
+  store: reposStore,
+  check:
+    mintInstallationToken && config.githubApp
+      ? createRepoCheck({ store: reposStore, mintInstallationToken, apiUrl: config.githubApp.apiUrl })
+      : null,
+  githubUrl: config.githubUrl,
+}
+
 let router = createAppRouter({
   auth,
+  repos,
   // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
   runnersAdmin: createRunnersAdminStore(database.sql),
   checkDatabase: createDatabaseCheck(database.sql),
@@ -104,17 +119,14 @@ let router = createAppRouter({
   commit: config.commit,
   webhook: {
     secret: config.githubWebhookSecret,
-    kentoRepos: config.kentoRepos,
     trustedBots: config.trustedBots,
     botLogin: config.botLogin,
     apply: createWebhookStore(database.db, {
-      kentoRepos: config.kentoRepos,
       // The commands of the comments (REV-7): `@kento review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
         db: database.db,
         mintInstallationToken,
         apiUrl: config.githubApp?.apiUrl ?? 'https://api.github.com',
-        kentoRepos: config.kentoRepos,
       }),
     }),
   },
@@ -128,6 +140,11 @@ let router = createAppRouter({
     githubUrl: config.githubUrl,
   },
 })
+
+// REV-9: an admin enables a repository on the Repos screen. The variable of M2 changes nothing now.
+if (process.env.KENTO_REPOS !== undefined) {
+  log('warn', 'startup.kento_repos_ignored', { reason: 'KENTO_REPOS is not read any more: enable a repository on the Repos screen' })
+}
 
 if (config.githubWebhookSecret === null) {
   log('warn', 'startup.webhook_disabled', { reason: 'GITHUB_WEBHOOK_SECRET is not set' })
@@ -152,7 +169,6 @@ server.listen(config.port, config.host, () => {
     port: config.port,
     version: config.version,
     commit: config.commit,
-    kentoRepos: [...config.kentoRepos],
     publisher: publisher !== null,
     signIn: auth !== null,
   })

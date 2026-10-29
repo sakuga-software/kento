@@ -5,9 +5,9 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
-import { headSha, pullRequestPayload, signedRequest, TEST_SECRET, type SignedRequestOptions } from '../../app/github/test-helpers.ts'
+import { headSha, pullRequestPayload, REPO, signedRequest, TEST_SECRET, type SignedRequestOptions } from '../../app/github/test-helpers.ts'
 import { createAppRouter } from '../../app/router.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 
 // The test of the ticket, from the signed request to the row in `jobs`, against Postgres.
 
@@ -39,9 +39,8 @@ describe('POST /webhooks/github against Postgres', () => {
       commit: null,
       webhook: {
         secret: TEST_SECRET,
-        kentoRepos: new Set(['sakuga-software/sakuga-review']),
         trustedBots: new Set(['sakuga-agent[bot]']),
-        apply: createWebhookStore(database.db, { kentoRepos: new Set(['sakuga-software/sakuga-review']) }),
+        apply: createWebhookStore(database.db),
       },
     })
   })
@@ -53,6 +52,7 @@ describe('POST /webhooks/github against Postgres', () => {
 
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews cascade`
+    await seedEnabledRepo(sql)
   })
 
   function nextDelivery(): string {
@@ -127,7 +127,8 @@ describe('POST /webhooks/github against Postgres', () => {
     let { status } = await post(pullRequestPayload(), { secret: `${TEST_SECRET}-wrong` })
     assert.equal(status, 401)
     let [counts] = await sql`select (select count(*)::int from jobs) as jobs, (select count(*)::int from orgs) as orgs, (select count(*)::int from repos) as repos`
-    assert.deepEqual({ ...counts }, { jobs: 0, orgs: 0, repos: 0 })
+    // The org and the repository of the seed only.
+    assert.deepEqual({ ...counts }, { jobs: 0, orgs: 1, repos: 1 })
   })
 
   it('4. a redelivery creates no second job and cancels nothing', async () => {
@@ -279,7 +280,7 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal(reopened.body.outcome, 'duplicate')
   })
 
-  it('enabled follows KENTO_REPOS, and a repository that is not enabled gets no job', async () => {
+  it('an event never changes enabled: a new repository comes in disabled, and a disabled one gets no job', async () => {
     let account = { id: 2001, login: 'sakuga-software', type: 'Organization' }
     let repositories = [
       { id: 3001, name: 'sakuga-review', full_name: 'sakuga-software/sakuga-review' },
@@ -289,22 +290,19 @@ describe('POST /webhooks/github against Postgres', () => {
     let rows = await sql<{ full_name: string; enabled: boolean }[]>`select full_name, enabled from repos order by full_name`
     assert.deepEqual(rows.map((row) => [row.full_name, row.enabled]), [
       ['sakuga-software/fruitback', false],
+      // Enabled on the Repos screen (the seed): the installation event keeps it.
       ['sakuga-software/sakuga-review', true],
     ])
 
-    // A store whose KENTO_REPOS no longer lists the repository: the upsert turns it off, no job.
-    let store = createWebhookStore(database.db, { kentoRepos: new Set() })
-    let command = {
-      type: 'enqueue_review' as const,
-      action: 'synchronize' as const,
-      installation: { githubInstallationId: 1001, githubAccountId: 2001, login: 'sakuga-software' },
-      repository: { githubRepoId: 3001, fullName: 'sakuga-software/sakuga-review' },
-      prNumber: 24,
-      headSha: headSha(1),
-      baseRef: 'main',
-    }
-    assert.deepEqual(await store(command, nextDelivery()), { outcome: 'skipped', reason: 'repository is not enabled' })
+    let fruitback = { ...REPO, id: 3002, full_name: 'sakuga-software/fruitback' }
+    let { body } = await post(pullRequestPayload({ repo: fruitback, head: headSha(1) }))
+    assert.deepEqual(body, { outcome: 'skipped', reason: 'repository is not enabled' })
+
+    // Disabled on the screen: the next push of sakuga-review creates nothing either.
+    await sql`update repos set enabled = false where github_repo_id = 3001`
+    assert.equal((await post(pullRequestPayload({ head: headSha(2) }))).body.outcome, 'skipped')
     assert.equal((await jobRows()).length, 0)
+    assert.deepEqual((await sql`select enabled from repos where github_repo_id = 3001`)[0], { enabled: false })
   })
 
   it('the job takes the default level of the repository', async () => {

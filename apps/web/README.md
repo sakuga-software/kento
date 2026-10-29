@@ -65,7 +65,6 @@ and the log names the variable, never its value.
 | `MIGRATE_ON_START`  | no       | `true`    | Apply the pending migrations before listening.                     |
 | `APP_COMMIT`        | no       |           | Commit of the image, shown by `/healthz`. The Dockerfile sets it from the build argument of the same name. |
 | `GITHUB_WEBHOOK_SECRET` | no   |           | Secret of the GitHub App webhook, 32 characters or more (`openssl rand -hex 32`). A secret: never commit it. Without it, `/webhooks/github` answers 503. |
-| `KENTO_REPOS`       | no       | (none)    | Comma-separated `owner/name` of the repositories that get a review job. Empty: no job. M3 replaces it with the Repos screen. |
 | `KENTO_TRUSTED_BOTS` | no      | `sakuga-agent[bot]` | Comma-separated bot logins whose pull requests and pushes get a review, as in `review.yml`. |
 | `KENTO_RUNNER_REGISTRATION_TOKEN` | no | | Secret that a runner sends to `POST /api/runner/register`, 32 characters or more. Without it, the registration answers 401. |
 | `GITHUB_APP_ID` | no | | ID of the GitHub App. With `GITHUB_APP_PRIVATE_KEY`, the service makes the installation token of each job. Without them, a claim gives no job. |
@@ -109,7 +108,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | Event | Action | Effect |
 | ----- | ------ | ------ |
 | `ping` | | 200 `pong` |
-| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the default level of the repository. The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `ignored`): a repository outside `KENTO_REPOS`, a draft, a push or a pull request of a bot outside `KENTO_TRUSTED_BOTS`, a pull request from a fork. |
+| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the default level of the repository. The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside `KENTO_TRUSTED_BOTS`, a pull request from a fork. |
 | `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. |
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |
@@ -119,8 +118,20 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 A `pull_request` event also upserts its org and repository, so the App needs no new `installation`
 event after the webhook is added.
 
-In M2, `repos.enabled` mirrors `KENTO_REPOS`: each upsert of a repository writes it, and a job needs
-it. M3 replaces the variable with the Repos screen, which then owns the column.
+`repos.enabled` belongs to the Repos screen (REV-9): an admin of the org enables or disables a
+repository there, and an event never changes it. A repository comes in disabled. A job needs it, and
+so does a command in a comment: the command of a repository that is not enabled gets no token, no
+reaction and no reply, so `review.yml` keeps it. Disabling a repository cancels its queued jobs; a
+running job ends, and the published reviews stay.
+
+The Repos screen reads the repositories of the installation on GitHub (`GET
+/installation/repositories`, then the files of `.github/workflows`) with an installation token
+`contents: read`: at the first visit, then when the last check is older than 10 minutes, in the
+background; « Actualiser » runs it at once. A workflow that calls `review.yml@<ref>` is
+`reusable`, one that runs `review/sakuga-review.ts` without `workflow_call` is a `copy`. The switch
+counter is the number of reviews that Kentō published on GitHub since the last failed job of the
+repository, or since its last double publication (two reviews of a push at the same head and
+level); at 20, the screen offers to remove `review.yml` on GitHub.
 
 Duplicates:
 

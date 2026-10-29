@@ -277,7 +277,7 @@ describe('expired leases, attempts and cancel of a running job', () => {
 
   it('6. a push during a review: the next heartbeat says cancel, the result is refused, only the new head is queued', async () => {
     let runner = await register('r')
-    let apply = createWebhookStore(database.db, { kentoRepos: new Set(['sakuga-software/sakuga-review']) })
+    let apply = createWebhookStore(database.db)
     let push = (head: string) =>
       apply(
         {
@@ -364,7 +364,7 @@ describe('expired leases, attempts and cancel of a running job', () => {
 
   it('9. a cancel and a result at the same time: the job is cancelled with no review, or done with one', async () => {
     let runner = await register('r')
-    let apply = createWebhookStore(database.db, { kentoRepos: new Set(['sakuga-software/sakuga-review']) })
+    let apply = createWebhookStore(database.db)
     for (let i = 0; i < 30; i++) {
       await database.sql`truncate jobs, reviews cascade`
       let head = i.toString(16).padStart(40, '0')

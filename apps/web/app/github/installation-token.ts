@@ -15,7 +15,8 @@ export const CLONE_PERMISSIONS: TokenPermissions = { contents: 'read' }
 
 export type MintInstallationToken = (target: {
   installationId: number
-  githubRepoId: number
+  /** The one repository of the token. Null: every repository of the installation (the Repos screen reads their list). */
+  githubRepoId: number | null
   /** `contents: read` when not given. */
   permissions?: TokenPermissions
 }) => Promise<InstallationToken>
@@ -58,10 +59,7 @@ export function createInstallationTokenMinter(options: {
         'User-Agent': 'kento-web',
         'X-GitHub-Api-Version': '2022-11-28',
       },
-      body: JSON.stringify({
-        repository_ids: [githubRepoId],
-        permissions,
-      }),
+      body: JSON.stringify(githubRepoId === null ? { permissions } : { repository_ids: [githubRepoId], permissions }),
       signal: AbortSignal.timeout(10_000),
     })
     if (response.status !== 201) {

@@ -98,11 +98,11 @@ Deploy the release with REV-3 first: without its secret the route answers 503, a
 
    ```sh
    GITHUB_WEBHOOK_SECRET=<the 64 characters>
-   KENTO_REPOS=sakuga-software/sakuga-review
    ```
 
    `KENTO_TRUSTED_BOTS` defaults to `sakuga-agent[bot]`. The logs at startup show
-   `startup.listening` with `kentoRepos`, and no `startup.webhook_disabled`.
+   `startup.listening`, and no `startup.webhook_disabled`. Since REV-9 a repository gets jobs once an
+   admin enables it on the Repos screen (section 12); before REV-9 it was `KENTO_REPOS`.
 3. GitHub → organization `sakuga-software` → **Settings → Developer settings → GitHub Apps → Sakuga
    Review → General**:
    - **Webhook → Active**: on.
@@ -177,7 +177,8 @@ publisher runs when `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` are set (sectio
    - **Checks: Read and write**: new. Save, then accept the change of permissions in the
      organization (GitHub sends a request to its owners). Until then the review is published without
      its check, and each review logs `review.check_token_refused`.
-2. Deploy the release with REV-5. `KENTO_REPOS` must hold the repository, and a runner must run
+2. Deploy the release with REV-5. The repository must be enabled (`KENTO_REPOS` before REV-9, the
+   Repos screen since), and a runner must run
    (section 6).
 3. Push a commit on an open pull request of the repository. In the logs, in order: `job.claimed`,
    `job.result`, `review.published` with the GitHub id of the review, its score, the number of inline
@@ -241,7 +242,8 @@ claim which kinds it runs, and a runner of an earlier release, which says nothin
 only. So the order web, then runner, is safe: resolve jobs wait in the queue until the new runner.
 
 A new comment of an open pull request that starts with `@kento` or `@sakuga-review` is a command,
-for the repositories of `KENTO_REPOS` only: another repository keeps its commands in `review.yml`.
+for the enabled repositories only (`KENTO_REPOS` before REV-9, the Repos screen since): another
+repository keeps its commands in `review.yml`.
 
 | Command | What it does |
 | --- | --- |
@@ -397,7 +399,37 @@ Check, after the deploy (the steps of the ticket):
 `KENTO_RUNNER_REGISTRATION_TOKEN` is no longer needed for a new runner: remove it once
 `runners-host` is registered (it keeps working without it).
 
-## 12. Each later deployment
+## 12. The Repos screen (REV-9)
+
+The release with REV-9 adds the migration `0007_repos_screen` (type `workflow_mode` and six nullable
+columns of `repos`: `private`, `default_branch`, `workflow`, `workflow_path`, `workflow_ref`,
+`workflow_checked_at`; additive only) and drops the variable `KENTO_REPOS`. `/healthz` gives
+`"migrations":8`.
+
+`repos.enabled` keeps its value: a repository that `KENTO_REPOS` enabled stays enabled
+(`sakuga-software/sakuga-review` today), and every other one stays disabled. No data migration.
+
+1. Deploy `web`. With `KENTO_REPOS` still set, the log shows `startup.kento_repos_ignored`: remove
+   the variable in Dokploy → `web` → **Environment** (it changes nothing any more).
+2. The App already has **Contents: Read** (section 7): the screen reads the list of the repositories
+   and their `.github/workflows` with it. No new permission.
+3. Check, signed in as an owner of `sakuga-software`:
+   - `/repos` lists the repositories of the installation; « Actualiser » gives « Liste à jour. », and
+     the log `repos.checked` with the number of repositories. `sakuga-review` shows « App Kentō »;
+     a repository with `.github/workflows/sakuga-review.yml` shows `review.yml@stable`, `fruitback`
+     and `boo` « copie de review.yml ».
+   - The test of the ticket, on `orchard`: « Activer » (log `repos.enabled`), then push a commit on a
+     pull request of orchard: a job, then a review « Kentō ». The pull request also gets the review
+     of the Action while `review.yml` stays. « Désactiver », confirm (log `repos.disabled`), push
+     again: no job, and the review stays on GitHub.
+   - A member who is not an owner sees the list under « Lecture seule », with no button; a POST of
+     theirs gets 403 (`repos.change_refused`).
+   - A job that fails on orchard brings its counter back to 0/20, « remis à zéro après un échec ».
+
+At 20/20, « Retirer review.yml » opens the deletion of the file on GitHub: the person commits it on a
+branch and merges it like any change. Kentō never writes the repository itself.
+
+## 13. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

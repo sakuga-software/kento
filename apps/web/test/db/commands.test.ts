@@ -18,9 +18,8 @@ import { createPublisher } from '../../app/publish/publisher.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createRunnerStore } from '../../app/runner/store.ts'
 import { BOT, createFakeGitHub, type FakeGitHub } from '../fake-github.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 
-const KENTO_REPOS = new Set(['sakuga-software/sakuga-review'])
 const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = headSha(0xabc)
 const PR = 28
@@ -55,16 +54,13 @@ describe('commands in the comments of a pull request', () => {
       commit: null,
       webhook: {
         secret: TEST_SECRET,
-        kentoRepos: KENTO_REPOS,
         trustedBots: new Set(['sakuga-agent[bot]']),
         botLogin: BOT,
         apply: createWebhookStore(database.db, {
-          kentoRepos: KENTO_REPOS,
           handleCommentCommand: createCommandHandler({
             db: database.db,
             mintInstallationToken: mint(),
             apiUrl: fake.apiUrl,
-            kentoRepos: KENTO_REPOS,
             fetch: fake.fetch,
           }),
         }),
@@ -122,6 +118,7 @@ describe('commands in the comments of a pull request', () => {
 
   beforeEach(async () => {
     await database.sql`truncate orgs, repos, runners, jobs, reviews cascade`
+    await seedEnabledRepo(database.sql)
     fake = createFakeGitHub({ head: HEAD, pr: PR, repoId: REPO.id })
     fake.state.permissions.set('alex', 'admin')
     fake.state.permissions.set('writer', 'write')
@@ -253,15 +250,19 @@ describe('commands in the comments of a pull request', () => {
     assert.equal((await jobs()).length, 0)
   })
 
-  it('11. a pull request closed since the comment, or a repository outside KENTO_REPOS, gets no job', async () => {
+  it('11. a pull request closed since the comment, or a repository that is not enabled, gets no job', async () => {
     fake.state.pr.state = 'closed'
     assert.deepEqual((await say('@kento review heavy')).body, { outcome: 'skipped', reason: 'pull request is closed' })
 
     let calls = fake.state.calls.length
     let other = { ...REPO, id: 4001, full_name: 'sakuga-software/fruitback' }
+    // No row (Kentō does not know it), then a row that is not enabled: no token, no reaction, no reply.
     let outside = await say('@sakuga-review review heavy', { repo: other })
-    assert.equal(outside.body.outcome, 'ignored')
+    assert.equal(outside.body.outcome, 'skipped')
     assert.match(outside.body.reason, /workflow keeps the command/)
+    await database.sql`update repos set enabled = false`
+    let disabled = await say('@kento review heavy')
+    assert.deepEqual(disabled.body, { outcome: 'skipped', reason: 'repository is not enabled: the workflow keeps the command' })
     assert.equal(fake.state.calls.length, calls)
     assert.equal((await jobs()).length, 0)
   })

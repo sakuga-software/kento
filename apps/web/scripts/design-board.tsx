@@ -9,6 +9,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 import { renderToString } from 'remix/component/server'
 
+import type { RepoView } from '../app/repos/store.ts'
+import { ReposPage, type ReposPageProps } from '../app/ui/repos.tsx'
 import { Shell, type PageFrame, type Viewer } from '../app/ui/shell.tsx'
 import { SignInPage } from '../app/ui/sign-in.tsx'
 import type { Theme } from '../app/ui/theme.ts'
@@ -120,6 +122,88 @@ const runnersFrames: { file: string; node: unknown }[] = [
   },
 ]
 
+// The Repos screen (REV-9): one repository of each mode and each state of the switch.
+const REPOS_OUT = new URL('../../../design/repos/frames/', import.meta.url)
+const NOW = new Date('2026-10-29T10:00:00Z')
+const minutesAgo = (n: number) => new Date(NOW.getTime() - n * 60_000)
+
+function repo(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): RepoView {
+  return {
+    githubRepoId: 1,
+    enabled: false,
+    defaultLevel: 'lite',
+    private: true,
+    defaultBranch: 'main',
+    workflow: 'none',
+    workflowPath: null,
+    workflowRef: null,
+    workflowCheckedAt: minutesAgo(4),
+    streak: 0,
+    resetBy: null,
+    lastReview: null,
+    ...fields,
+  }
+}
+
+/** The repositories of the board: one of each mode and each state of the switch. */
+const REPOS: RepoView[] = [
+  repo({
+    id: 'r-boo', fullName: 'sakuga-software/boo', private: false, workflow: 'copy', workflowPath: '.github/workflows/sakuga-review.yml',
+  }),
+  repo({ id: 'r-detective', fullName: 'sakuga-software/web-front', workflow: null, workflowCheckedAt: null }),
+  repo({
+    id: 'r-fruitback', fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
+    workflowPath: '.github/workflows/sakuga-review.yml', streak: 20,
+    lastReview: { prNumber: 677, score: 4, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(38) },
+  }),
+  repo({
+    id: 'r-orchard', fullName: 'sakuga-software/orchard', enabled: true, workflow: 'reusable', workflowRef: 'stable',
+    workflowPath: '.github/workflows/sakuga-review.yml', streak: 0, resetBy: 'failure',
+    lastReview: { prNumber: 12, score: 3, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(190) },
+  }),
+  repo({ id: 'r-pantry', fullName: 'sakuga-software/pantry', workflow: 'reusable', workflowRef: 'stable', workflowPath: '.github/workflows/sakuga-review.yml' }),
+  repo({
+    id: 'r-review', fullName: 'sakuga-software/sakuga-review', enabled: true, defaultLevel: 'lite', streak: 20,
+    lastReview: { prNumber: 54, score: 5, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(12) },
+  }),
+  repo({
+    id: 'r-atlas', fullName: 'sakuga-software/atlas', enabled: true, defaultLevel: 'balanced', workflow: 'reusable', workflowRef: 'stable',
+    workflowPath: '.github/workflows/sakuga-review.yml', streak: 7,
+    lastReview: { prNumber: 1204, score: 4, model: 'anthropic/claude-sonnet-5.5', publishedAt: minutesAgo(2900) },
+  }),
+  repo({ id: 'r-tofu', fullName: 'sakuga-software/infra-repo', workflow: 'none' }),
+]
+
+function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> = {}) {
+  return (
+    <ReposPage
+      frame={frame(theme, viewer, '/repos')}
+      repos={REPOS}
+      installationUrl="https://github.com/organizations/sakuga-software/settings/installations/1"
+      githubUrl="https://github.com"
+      checking={false}
+      notice={null}
+      confirm={null}
+      now={NOW}
+      {...extra}
+    />
+  )
+}
+
+const reposFrames: { file: string; node: unknown }[] = [
+  { file: 'repos-admin-paper.html', node: reposPage('paper', admin) },
+  { file: 'repos-member-sumi.html', node: reposPage('sumi', member) },
+  {
+    file: 'repos-admin-confirm-sumi.html',
+    node: reposPage('sumi', admin, { confirm: REPOS.find((r) => r.id === 'r-orchard')! }),
+  },
+  {
+    file: 'repos-admin-enabled-paper-390.html',
+    node: reposPage('paper', admin, { notice: { kind: 'enabled', fullName: 'sakuga-software/orchard' } }),
+  },
+  { file: 'repos-member-sumi-390.html', node: reposPage('sumi', member) },
+]
+
 async function writeFrames(out: URL, assets: string, list: { file: string; node: unknown }[], label: string) {
   await mkdir(out, { recursive: true })
   for (let { file, node } of list) {
@@ -132,3 +216,4 @@ async function writeFrames(out: URL, assets: string, list: { file: string; node:
 
 await writeFrames(OUT, ASSETS, frames, 'design/socle/frames/')
 await writeFrames(RUNNERS_OUT, ASSETS, runnersFrames, 'design/runners/frames/')
+await writeFrames(REPOS_OUT, ASSETS, reposFrames, 'design/repos/frames/')
