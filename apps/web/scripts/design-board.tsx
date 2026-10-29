@@ -16,6 +16,8 @@ import { SignInPage } from '../app/ui/sign-in.tsx'
 import type { Theme } from '../app/ui/theme.ts'
 import type { RunnersScreen } from '../app/runner/admin.ts'
 import { RunnersPage } from '../app/ui/runners.tsx'
+import type { ProviderView } from '../app/providers/store.ts'
+import { SettingsPage, type SettingsPageProps } from '../app/ui/settings.tsx'
 import { serviceProviders } from '../app/repo-config/providers.ts'
 import type { RepoConfigView } from '../app/repo-config/store.ts'
 import { ConfigPage, type ConfigPageProps } from '../app/ui/config.tsx'
@@ -207,6 +209,44 @@ const reposFrames: { file: string; node: unknown }[] = [
   { file: 'repos-member-sumi-390.html', node: reposPage('sumi', member) },
 ]
 
+// The section « Providers et clés » of the settings (REV-11): a valid provider, a refused key with its
+// banner, a provider held by the runner, a server without prices, and the form.
+const PROVIDERS_OUT = new URL('../../../design/providers/frames/', import.meta.url)
+function provider(fields: Partial<ProviderView> & Pick<ProviderView, 'id' | 'label' | 'kind'>): ProviderView {
+  return {
+    orgId: 'org-1', baseUrl: null, keyLast4: null, keySetAt: null, runnerHeld: false, isDefault: false, models: {},
+    lastOkAt: null, refusedAt: null, refusedStatus: null, refusedMessage: null, createdAt: minutes(60 * 24 * 3), ...fields,
+  }
+}
+const ORG_PROVIDERS: ProviderView[] = [
+  provider({ id: '00000000-0000-4000-8000-000000000020', label: 'Anthropic de Sakuga', kind: 'anthropic', keyLast4: 'Q7xA', keySetAt: minutes(60 * 24 * 3), isDefault: true, lastOkAt: minutes(4) }),
+  provider({
+    id: '00000000-0000-4000-8000-000000000021', label: 'OpenRouter (ancienne clé)', kind: 'openrouter', keyLast4: '9f2c', keySetAt: minutes(60 * 24 * 40),
+    refusedAt: new Date('2026-10-29T08:40:00Z'), refusedStatus: 401, refusedMessage: '401 User not found.',
+  }),
+  provider({ id: '00000000-0000-4000-8000-000000000022', label: 'GPU du bureau', kind: 'ollama', runnerHeld: true, baseUrl: 'http://gpu.lan:11434', models: { lite: ['qwen3:32b'], balanced: ['qwen3:32b'], heavy: ['qwen3:235b'] } }),
+  provider({ id: '00000000-0000-4000-8000-000000000023', label: 'vLLM interne', kind: 'openai_compatible', keyLast4: 'b81e', keySetAt: minutes(300), baseUrl: 'https://llm.sakuga.dev/v1', models: { lite: ['qwen3-coder'], balanced: ['qwen3-coder'], heavy: ['deepseek-v4'] } }),
+]
+function settingsPage(theme: Theme, viewer: Viewer, extra: Partial<SettingsPageProps> = {}) {
+  return <SettingsPage frame={frame(theme, viewer, '/settings')} providers={ORG_PROVIDERS} now={now} secretsConfigured serviceKey {...extra} />
+}
+const providersFrames: { file: string; node: unknown }[] = [
+  { file: 'providers-admin-paper.html', node: settingsPage('paper', admin) },
+  { file: 'providers-admin-sumi-390.html', node: settingsPage('sumi', admin, { notice: { kind: 'tested_ok' } }) },
+  { file: 'providers-member-paper-390.html', node: settingsPage('paper', member) },
+  {
+    file: 'providers-admin-empty-sumi.html',
+    node: settingsPage('sumi', admin, {
+      providers: [],
+      secretsConfigured: false,
+      form: {
+        values: { kind: 'openai_compatible', label: 'vLLM', baseUrl: 'http://llm.lan/v1', runnerHeld: false, models: { lite: '', balanced: '', heavy: '' } },
+        errors: { baseUrl: 'Une URL en https:// : la clé passe dans un en-tête.', models: 'Compatible OpenAI n’a pas de modèle par défaut : nommez au moins un modèle pour chaque niveau.' },
+      },
+    }),
+  },
+]
+
 // REV-12: the Config screen of orchard.
 const CONFIG_OUT = new URL('../../../design/config/frames/', import.meta.url)
 const orchard_CONFIG: RepoConfigView = {
@@ -271,4 +311,5 @@ async function writeFrames(out: URL, assets: string, list: { file: string; node:
 await writeFrames(OUT, ASSETS, frames, 'design/socle/frames/')
 await writeFrames(RUNNERS_OUT, ASSETS, runnersFrames, 'design/runners/frames/')
 await writeFrames(REPOS_OUT, ASSETS, reposFrames, 'design/repos/frames/')
+await writeFrames(PROVIDERS_OUT, ASSETS, providersFrames, 'design/providers/frames/')
 await writeFrames(CONFIG_OUT, ASSETS, configFrames, 'design/config/frames/')

@@ -465,7 +465,57 @@ Check, signed in as an owner of `sakuga-software`, on `orchard` (the tests of th
    passage to « Ready for review » creates one, and a later push none (webhook outcome `skipped`,
    « trigger of the config is ready »).
 
-## 14. Each later deployment
+## 14. Providers and encrypted keys (REV-11)
+
+The release with REV-11 adds the migration `0009_providers` (type `provider_kind`, table `providers`,
+column `jobs.provider_id` with its index; additive only) and the variables `KENTO_SECRETS_KEY` and
+`KENTO_SECRETS_PREVIOUS_KEYS`. `/healthz` gives `"migrations":10`. The threat model is in
+[SECURITY.md](../../SECURITY.md).
+
+An org without a provider keeps running on `KENTO_PROVIDER_API_KEY` as before: nothing changes until
+an admin adds a provider.
+
+Which provider a job uses: the one that the config of the repository or of the org chose for the
+level (section 13, « Provider et modèles », which lists the providers of the org); `service` there
+means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provider of the org
+(« Utiliser pour les jobs » in `/settings`), else `KENTO_PROVIDER_API_KEY`.
+
+1. **Generate the master key** on your machine: `openssl rand -base64 32`. Keep it in the password
+   manager (« Kentō · KENTO_SECRETS_KEY »). Never paste it in a ticket, a chat or a commit.
+2. **Dokploy** → `web` → **Environment**: add `KENTO_SECRETS_KEY=<the 44 characters>`. Save, then
+   deploy `web`. The log shows `startup.secrets` with a `keyId` (not the key), and
+   `startup.migrations_applied`. Without the variable, the log shows `startup.secrets_disabled` and the
+   screen stores no key.
+3. **Deploy the service before the runners.** A runner of this release sends `features` and
+   `ownProvider` in its claim; an earlier service would refuse it. Then update `runners-host` to the
+   image of this release (section 6). A runner of an earlier release keeps running the jobs of the
+   orgs without a provider.
+4. **Move `KENTO_PROVIDER_API_KEY` into a provider of `sakuga-software`** (optional, recommended):
+   - signed in as an owner, `/settings` → « Ajouter un provider »: type OpenRouter, name
+     « OpenRouter de Sakuga », the key of `KENTO_PROVIDER_API_KEY` (from the password manager, not
+     from a log), models empty (the levels of today). « Ajouter le provider », then « Tester »: « Le
+     provider a accepté la clé. » and the state « Valide ».
+   - Check that a job runs with it: `@kento review` on a pull request of `sakuga-review`; the log
+     `job.claimed` has `"provider":{"id":…,"kind":"openrouter"}` and `"keyFromService":true`, and the
+     provider shows « Valide · dernier appel il y a … ».
+   - `KENTO_PROVIDER_API_KEY` then only serves the orgs that have no provider. Remove it from Dokploy
+     once every org that should run on Sakuga's key has its own provider (today: only
+     `sakuga-software`), and redeploy. Without it, the jobs of an org with no provider wait for a
+     runner with its own key.
+5. **The test of the ticket**, with an Anthropic key of Sakuga:
+   - « Ajouter un provider »: type Anthropic, the key, models empty (Haiku 5.5, Sonnet 5.5, Opus 5.5).
+     « Tester » → « Valide ». « Utiliser pour les jobs » if OpenRouter is the default.
+   - `@kento review balanced` on a pull request of `sakuga-review`: the review is published, and its
+     footer gives `claude-sonnet-5-5` and a cost (from the price table, `costSource: "table"`).
+   - « Remplacer la clé » with a wrong key (`sk-ant-wrong-0000000000`), then `@kento review`: the job
+     fails with `the provider « … » refused its key (401): …`, the state shows « Refusée · 401 depuis
+     9 h 40 » and a banner on top of the settings. Replace it with the right key: the banner goes.
+   - `docker exec` into Postgres (or the Dokploy console):
+     `select id, kind, key_last4, left(key_ciphertext, 24) from providers;` shows `v1:<key id>:…` and
+     4 characters, never a key.
+6. **Rotation of the master key**: see [SECURITY.md](../../SECURITY.md#the-master-key).
+
+## 15. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

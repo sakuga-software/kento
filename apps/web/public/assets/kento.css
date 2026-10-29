@@ -1579,3 +1579,121 @@ kbd,
     justify-content: center;
   }
 }
+
+/* ---------------------------------------------------------------- Providers et clés (REV-11) */
+
+.provider-section {
+  margin-bottom: var(--space-8);
+}
+.provider-lead {
+  max-width: 720px;
+  margin-bottom: var(--space-4);
+}
+.provider-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.provider {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-1);
+}
+.provider-refused {
+  border-color: var(--shu);
+}
+.provider-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.provider-name {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  overflow-wrap: anywhere;
+}
+.provider-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+}
+.provider-facts dt {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  letter-spacing: 0.02em;
+}
+.provider-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.model {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.provider-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.replace-key[open] summary,
+.replace-key[open] summary.button-primary {
+  background: var(--paper-sunken);
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+/* An open form takes the whole row, under the buttons. */
+.provider-actions details[open] {
+  flex-basis: 100%;
+  order: 10;
+}
+.replace-body {
+  border-color: var(--line-strong);
+}
+.replace-body .field {
+  margin-bottom: 0;
+}
+.new-provider {
+  margin-bottom: var(--space-8);
+}
+.model-field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 420px);
+  align-items: center;
+  gap: var(--space-2);
+}
+.model-field + .model-field {
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 760px) {
+  .provider {
+    padding: var(--space-4);
+  }
+  .provider-facts {
+    grid-template-columns: 1fr;
+  }
+  .provider-actions .button,
+  .provider-actions summary {
+    min-height: var(--control-h-touch);
+  }
+  .model-field {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}

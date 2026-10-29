@@ -26,6 +26,12 @@ export const pageRoutes = route({
   runnerTrust: post('/runners/:id/trust'),
   runnerRevoke: post('/runners/:id/revoke'),
   settings: get('/settings'),
+  /** REV-11: the providers of the org and their encrypted keys. An admin only. */
+  providerAdd: post('/settings/providers'),
+  providerTest: post('/settings/providers/:id/test'),
+  providerKey: post('/settings/providers/:id/key'),
+  providerDefault: post('/settings/providers/:id/default'),
+  providerRemove: post('/settings/providers/:id/remove'),
   theme: post('/preferences/theme'),
   org: post('/preferences/org'),
   signOut: post('/logout'),

@@ -12,7 +12,13 @@ import { authRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
-import { createUiControllers, type AuthDependencies, type RepoConfigDependencies, type ReposDependencies } from './ui/pages.tsx'
+import {
+  createUiControllers,
+  type AuthDependencies,
+  type ProvidersDependencies,
+  type RepoConfigDependencies,
+  type ReposDependencies,
+} from './ui/pages.tsx'
 
 /** The stylesheet, the fonts and the one script of the screens, under `/assets/`. */
 const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url))
@@ -31,6 +37,8 @@ export interface AppDependencies {
   repos?: ReposDependencies | null
   /** What the Runners screen reads and writes. Without it, the screen stays empty. */
   runnersAdmin?: RunnersAdminStore | null
+  /** The section « Providers et clés » of the settings (REV-11). Without it, the settings stay empty. */
+  providers?: ProvidersDependencies | null
   /** The Config screen of a repository (REV-12). Without it, the screen answers 404. */
   repoConfig?: RepoConfigDependencies | null
 }
@@ -55,6 +63,7 @@ export function createAppRouter(deps: AppDependencies) {
     auth: deps.auth ?? null,
     runners: deps.runnersAdmin ?? null,
     repos: deps.repos ?? null,
+    providers: deps.providers ?? null,
     repoConfig: deps.repoConfig ?? null,
   })
   router.map(pageRoutes, ui.pages)

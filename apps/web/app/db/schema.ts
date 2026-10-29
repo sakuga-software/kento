@@ -171,6 +171,60 @@ export const runnerRegistrations = pgTable(
   (table) => [index('runner_registrations_org_id_idx').on(table.orgId)],
 )
 
+/** The API of a provider of models (packages/engine/src/providers.ts). */
+export const providerKind = pgEnum('provider_kind', ['openrouter', 'anthropic', 'openai_compatible', 'ollama'])
+
+/** The models of a provider at each level, the first one first. A level that is not here: the defaults of the kind. */
+export type ProviderModels = Partial<Record<'lite' | 'balanced' | 'heavy', string[]>>
+
+/**
+ * A provider of models of an org, with its key encrypted (REV-11). The key is AES-256-GCM under the
+ * master key of the environment (`app/providers/secrets.ts`), bound to the id and the org of the
+ * row: a ciphertext copied to another row does not decrypt. The service decrypts it only to give
+ * it to a trusted runner of the org for one job, or to test it from the screen; the browser and the
+ * logs never get it.
+ */
+export const providers = pgTable(
+  'providers',
+  {
+    id: uuid('id').primaryKey(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    kind: providerKind('kind').notNull(),
+    label: text('label').notNull(),
+    /** Null: the URL of the kind. A server of the OpenAI API needs one. */
+    baseUrl: text('base_url'),
+    /** `v1:<key id>:<iv>:<ciphertext and tag>`. Null when the runner holds the key or the server. */
+    keyCiphertext: text('key_ciphertext'),
+    /** The last 4 characters of the key: what the screen shows. */
+    keyLast4: text('key_last4'),
+    keySetAt: timestamp('key_set_at', { withTimezone: true }),
+    /** The runner holds the key (or the server, for Ollama): the service never has it. */
+    runnerHeld: boolean('runner_held').notNull().default(false),
+    /** The provider of the jobs of the org. One per org at most; none: the key of the service. */
+    isDefault: boolean('is_default').notNull().default(false),
+    models: jsonb('models').$type<ProviderModels>().notNull().default({}),
+    /** The last call that the provider answered: a job, or a test from the screen. */
+    lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+    /** The first refusal of the key (401, 403) since the last call that worked. */
+    refusedAt: timestamp('refused_at', { withTimezone: true }),
+    refusedStatus: smallint('refused_status'),
+    refusedMessage: text('refused_message'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index('providers_org_id_idx').on(table.orgId),
+    uniqueIndex('providers_org_default_idx').on(table.orgId).where(sql`${table.isDefault}`),
+    // A key held by the service, or none: never both, never a half.
+    check('providers_key_or_runner', sql`(${table.runnerHeld} and ${table.keyCiphertext} is null) or (not ${table.runnerHeld} and ${table.keyCiphertext} is not null)`),
+    check('providers_last4_with_key', sql`(${table.keyCiphertext} is null) = (${table.keyLast4} is null)`),
+    check('providers_ollama_on_runner', sql`${table.kind} <> 'ollama' or ${table.runnerHeld}`),
+  ],
+)
+
 /** A unit of work for a runner: one review or one resolve on one head of a pull request. */
 export const jobs = pgTable(
   'jobs',
@@ -191,6 +245,11 @@ export const jobs = pgTable(
     baseRef: text('base_ref'),
     /** The runner that claimed the job. */
     runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
+    /**
+     * The provider of the org that the last claim gave the job (REV-11). Null: the key of the
+     * service, or the provider was removed since. A result marks its state (valid, key refused).
+     */
+    providerId: uuid('provider_id').references(() => providers.id, { onDelete: 'set null' }),
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */
     githubDeliveryId: text('github_delivery_id').unique(),
     /**
@@ -223,6 +282,8 @@ export const jobs = pgTable(
     index('jobs_state_created_at_idx').on(table.state, table.createdAt),
     index('jobs_repo_pr_idx').on(table.repoId, table.prNumber),
     index('jobs_runner_id_idx').on(table.runnerId),
+    // The removal of a provider sets the provider of its jobs to null.
+    index('jobs_provider_id_idx').on(table.providerId),
     // The sweep of the expired leases reads the running jobs only.
     index('jobs_running_lease_idx').on(table.leaseExpiresAt).where(sql`${table.state} = 'running'`),
     check('jobs_pr_number_positive', sql`${table.prNumber} > 0`),

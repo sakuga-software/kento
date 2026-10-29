@@ -64,6 +64,13 @@
       "when": 1793273932764,
       "tag": "0008_repo_config",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793280354783,
+      "tag": "0009_providers",
+      "breakpoints": true
     }
   ]
 }

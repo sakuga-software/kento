@@ -18,6 +18,7 @@ import { createController } from 'remix/router'
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
+import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { jobModels } from '../repo-config/model.ts'
 import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
@@ -33,8 +34,13 @@ export interface RunnerApiDependencies {
   registrationToken: string | null
   /** Null when the GitHub App is not configured: a claim then gives no job. */
   mintInstallationToken: MintInstallationToken | null
-  /** The model key of the service, for a trusted runner without its own key. */
+  /** The OpenRouter key of the service, for a trusted runner without its own key, when the org has no provider. */
   providerApiKey: string | null
+  /**
+   * Decrypts the key of a provider of an org (REV-11), for a trusted runner of that org or of the
+   * service, for one job. Null without KENTO_SECRETS_KEY: no job of a provider with a key then runs.
+   */
+  secrets?: SecretBox | null
   /** Called after a review or a resolution is stored: the publisher posts it on GitHub (REV-5). */
   onReviewStored?: () => void
   /** The REST API of GitHub, where the service reads the threads of a resolve job. */
@@ -120,21 +126,30 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           return new Response(null, { status: 204 })
         }
 
-        // A runner without its own OpenRouter key can run a job only with the key of the service,
-        // and only when it is trusted. Without that, a claim would take a job only to fail it. A
-        // runner of an earlier release does not say the kind of its key: OpenRouter.
-        let ownKey = body.hasProviderKey && (body.ownProvider ?? 'openrouter') === 'openrouter'
-        if (!ownKey && !deps.providerApiKey) {
+        // The provider that the runner calls on its own. A runner of an earlier release does not say
+        // the kind of its key: OpenRouter.
+        let ownProvider = body.ownProvider !== undefined ? body.ownProvider : body.hasProviderKey ? 'openrouter' : null
+        let ownKey = ownProvider === 'openrouter'
+        let readsProviders = body.features?.includes('providers') ?? false
+        let secrets = deps.secrets ?? null
+        // A runner that holds no provider can run a job only with a key that the service holds, and
+        // only when it is trusted. With no such key at all, a claim would take a job only to fail it.
+        if (ownProvider === null && !deps.providerApiKey && !(readsProviders && secrets)) {
           await sleep(claimWaitMs, request.signal)
           return new Response(null, { status: 204 })
         }
-        let trustedOnly = !ownKey
 
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
         // stops the loop.
         let deadline = Date.now() + claimWaitMs
         while (!request.signal.aborted) {
-          let job = await deps.store.claimJob(runner.id, { trustedOnly, kinds: body.kinds ?? ['review'] })
+          let job = await deps.store.claimJob(runner.id, {
+            kinds: body.kinds ?? ['review'],
+            ownProvider,
+            readsProviders,
+            serviceKey: deps.providerApiKey !== null,
+            secrets: secrets !== null,
+          })
           if (job) {
             let installationToken
             let resolve: ResolveInput | null = null
@@ -167,14 +182,41 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               })
               continue
             }
-            // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
-            // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
-            let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
-            let readsProviders = body.features?.includes('providers') ?? false
-            let provider = !readsProviders && serviceKey ? { kind: 'openrouter' as const, apiKey: serviceKey } : null
-            let providers: JobProvider[] | undefined = readsProviders
-              ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }]
-              : undefined
+            let provider: Job['provider'] = null
+            let providers: JobProvider[] | undefined
+            let keyFromService: boolean
+            if (job.provider) {
+              // The provider of the org. Its key goes only to a trusted runner that does not hold this
+              // kind itself; the claim already chose such a runner, and this checks it again.
+              let p = job.provider
+              let needsKey = p.kind !== ownProvider && !p.runnerHeld
+              let apiKey: string | null = null
+              if (needsKey) {
+                let reason: string | null = null
+                if (!job.runnerTrusted || !secrets || !p.keyCiphertext) reason = `the provider « ${p.label} » needs a trusted runner`
+                else {
+                  try {
+                    apiKey = secrets.decrypt(p.keyCiphertext, providerAad(p))
+                  } catch (cause) {
+                    reason = `the key of the provider « ${p.label} » cannot be decrypted: ${errorMessage(cause)}`
+                  }
+                }
+                if (reason) {
+                  let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
+                  log('error', 'job.provider_key_unavailable', { jobId: job.id, runnerId: runner.id, providerId: p.id, state: released, error: reason })
+                  continue
+                }
+              }
+              providers = [{ id: p.id, kind: p.kind, apiKey, baseUrl: p.baseUrl, models: p.models[job.level] ?? [] }]
+              keyFromService = apiKey !== null
+            } else {
+              // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
+              // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
+              let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
+              provider = !readsProviders && serviceKey ? { kind: 'openrouter', apiKey: serviceKey } : null
+              providers = readsProviders ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }] : undefined
+              keyFromService = serviceKey !== null
+            }
             log('info', 'job.claimed', {
               jobId: job.id,
               attempt: job.attempt,
@@ -182,7 +224,8 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               repo: job.fullName,
               pr: job.prNumber,
               head: job.headSha,
-              keyFromService: serviceKey !== null,
+              keyFromService,
+              provider: job.provider ? { id: job.provider.id, kind: job.provider.kind } : 'service',
               kind: job.kind,
               ...(resolve ? { threads: resolve.threads.length } : {}),
             })

@@ -15,6 +15,10 @@ import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
 import type { AuthStore, MembershipRow, UserRow } from '../auth/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { authRoutes, pageRoutes } from '../routes.ts'
+import { readKeyForm, readProviderForm } from '../providers/form.ts'
+import type { Probe } from '../providers/probe.ts'
+import { SecretsError } from '../providers/secrets.ts'
+import type { ProvidersStore } from '../providers/store.ts'
 import {
   CONFIG_FIELDS,
   readCapForm,
@@ -37,6 +41,7 @@ import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, typ
 import { ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
+import { PROVIDER_NOTICES, SettingsPage, type ProviderNotice, type SettingsPageProps } from './settings.tsx'
 import { Shell, type PageFrame, type Section, type Viewer } from './shell.tsx'
 import { SignInPage, type SignInNotice } from './sign-in.tsx'
 import { isTheme, readTheme, themeCookie, type Theme } from './theme.ts'
@@ -62,6 +67,17 @@ export interface ReposDependencies {
   githubUrl: string
 }
 
+/** The section « Providers et clés » of the settings (REV-11). */
+export interface ProvidersDependencies {
+  store: ProvidersStore
+  /** « Tester »: one call to the provider with its key. */
+  probe: Probe
+  /** KENTO_SECRETS_KEY is set. */
+  secretsConfigured: boolean
+  /** KENTO_PROVIDER_API_KEY is set. */
+  serviceKey: boolean
+}
+
 /** The Config screen of a repository (REV-12). Null: the screen answers 404. */
 export interface RepoConfigDependencies {
   store: RepoConfigStore
@@ -79,6 +95,8 @@ export interface UiDependencies {
   repos?: ReposDependencies | null
   /** The Runners screen (REV-10). Null: it shows its empty frame. */
   runners?: RunnersAdminStore | null
+  /** The providers of the settings (REV-11). Null: the settings show their empty frame. */
+  providers?: ProvidersDependencies | null
   repoConfig?: RepoConfigDependencies | null
 }
 
@@ -276,6 +294,43 @@ export function createUiControllers(deps: UiDependencies) {
       <RunnersPage frame={page} screen={screen} version={deps.version} kentoUrl={auth!.publicUrl.origin} {...extra} />,
       { status },
     )
+  }
+
+  async function renderSettings(
+    context: { render(node: any, init?: ResponseInit): Response },
+    signed: SignedIn,
+    page: PageFrame,
+    extra: Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'>,
+    status = 200,
+  ) {
+    let providers = deps.providers!
+    let list = await providers.store.list(signed.membership.org.id)
+    return context.render(
+      <SettingsPage
+        frame={page}
+        providers={list}
+        now={new Date(now())}
+        secretsConfigured={providers.secretsConfigured}
+        serviceKey={providers.serviceKey}
+        {...extra}
+      />,
+      { status },
+    )
+  }
+
+  /** The providers and the signed-in admin of a form of the section, or the 403 to send. */
+  function providerAdmin(context: { get(key: typeof Signed): SignedIn | undefined }, action: string): { signed: SignedIn; providers: ProvidersDependencies } | Response {
+    let signed = signedOf(context)
+    if (!deps.providers || signed.membership.role !== 'admin') {
+      log('warn', 'providers.change_refused', { login: signed.user.login, org: signed.membership.org.login, action, reason: 'not an admin' })
+      return forbidden()
+    }
+    return { signed, providers: deps.providers }
+  }
+
+  // The notice is a fixed word: no text of the URL is ever written into the page.
+  function toSettings(notice: ProviderNotice, id?: string) {
+    return redirect(`${pageRoutes.settings.href()}?notice=${notice}${id ? `#provider-${id}` : ''}`)
   }
 
   function signInPage(theme: Theme, notice: SignInNotice | null, returnTo: string) {
@@ -621,9 +676,126 @@ export function createUiControllers(deps: UiDependencies) {
         return redirect(`${pageRoutes.runners.href()}?notice=${revoked ? 'revoked' : 'missing'}`)
       },
 
-      settings(context) {
-        let page = frame(signedOf(context), context, getCsrfToken(context))
-        return context.render(<PlaceholderPage frame={page} section="settings" />)
+      async settings(context) {
+        let signed = signedOf(context)
+        let page = frame(signed, context, getCsrfToken(context))
+        if (!deps.providers) return context.render(<PlaceholderPage frame={page} section="settings" />)
+        let notice = context.url.searchParams.get('notice')
+        return renderSettings(context, signed, page, {
+          notice: notice !== null && notice in PROVIDER_NOTICES ? { kind: notice as ProviderNotice } : null,
+        })
+      },
+
+      // REV-11. The forms of « Providers et clés »: an admin of the org on screen only. cop() and
+      // csrf() of the session layer ran before. A key is read from the form, encrypted, and never
+      // written back into a page, a redirect or a log.
+      async providerAdd(context) {
+        let admin = providerAdmin(context, 'add')
+        if (admin instanceof Response) return admin
+        let { signed, providers } = admin
+        let page = frame(signed, context, getCsrfToken(context))
+        let { values, input, errors } = readProviderForm(context.get(FormData))
+        if (input && input.apiKey !== null && !providers.secretsConfigured) {
+          errors.apiKey = 'Le service ne peut pas chiffrer de clé (KENTO_SECRETS_KEY) : laissez-la sur le runner.'
+        }
+        if (!input || errors.apiKey) return renderSettings(context, signed, page, { form: { values, errors } }, 422)
+        let added
+        try {
+          added = await providers.store.add({ ...input, orgId: signed.membership.org.id, userId: signed.user.id })
+        } catch (error) {
+          if (!(error instanceof SecretsError)) throw error
+          return renderSettings(context, signed, page, { form: { values, errors: { apiKey: error.message } } }, 422)
+        }
+        log('info', 'providers.added', {
+          providerId: added.id,
+          org: signed.membership.org.login,
+          by: signed.user.login,
+          kind: added.kind,
+          runnerHeld: added.runnerHeld,
+          isDefault: added.isDefault,
+        })
+        return toSettings('added', added.id)
+      },
+
+      // The answer of a test is the page itself, with the message of the probe: it never goes
+      // through a URL.
+      async providerTest(context) {
+        let admin = providerAdmin(context, 'test')
+        if (admin instanceof Response) return admin
+        let { signed, providers } = admin
+        let id = context.params.id
+        let page = frame(signed, context, getCsrfToken(context))
+        let failed = (detail: string) => renderSettings(context, signed, page, { notice: { kind: 'test_failed', detail } })
+        let found
+        try {
+          found = UUID.test(id) ? await providers.store.withKey(signed.membership.org.id, id) : null
+        } catch (error) {
+          if (!(error instanceof SecretsError)) throw error
+          log('error', 'providers.key_unreadable', { providerId: id, error: error.message })
+          return failed('La clé ne se déchiffre pas avec la clé maître du service.')
+        }
+        if (!found) return toSettings('missing')
+        if (found.apiKey === null) return failed('Ce provider se teste depuis le runner qui le tient.')
+        let result = await providers.probe({ kind: found.provider.kind, baseUrl: found.provider.baseUrl, apiKey: found.apiKey })
+        log(result.outcome === 'ok' ? 'info' : 'warn', 'providers.tested', {
+          providerId: id,
+          org: signed.membership.org.login,
+          by: signed.user.login,
+          outcome: result.outcome,
+          ...(result.outcome === 'refused' ? { status: result.status } : {}),
+        })
+        if (result.outcome === 'ok') {
+          await providers.store.recordOk(id, found.provider.keySetAt)
+          return toSettings('tested_ok', id)
+        }
+        if (result.outcome === 'refused') {
+          await providers.store.recordRefused(id, result.status, result.message, found.provider.keySetAt)
+          return toSettings('tested_refused', id)
+        }
+        return failed(result.message)
+      },
+
+      async providerKey(context) {
+        let admin = providerAdmin(context, 'replace_key')
+        if (admin instanceof Response) return admin
+        let { signed, providers } = admin
+        let id = context.params.id
+        if (!UUID.test(id)) return toSettings('missing')
+        let { apiKey, error } = readKeyForm(context.get(FormData))
+        let page = frame(signed, context, getCsrfToken(context))
+        if (!apiKey) return renderSettings(context, signed, page, { keyError: { id, message: error! } }, 422)
+        let replaced
+        try {
+          replaced = await providers.store.replaceKey(signed.membership.org.id, id, apiKey)
+        } catch (cause) {
+          if (!(cause instanceof SecretsError)) throw cause
+          return renderSettings(context, signed, page, { keyError: { id, message: cause.message } }, 422)
+        }
+        if (!replaced) return toSettings('missing')
+        log('info', 'providers.key_replaced', { providerId: id, org: signed.membership.org.login, by: signed.user.login })
+        return toSettings('replaced', id)
+      },
+
+      async providerDefault(context) {
+        let admin = providerAdmin(context, 'default')
+        if (admin instanceof Response) return admin
+        let { signed, providers } = admin
+        let id = context.params.id
+        let done = UUID.test(id) ? await providers.store.setDefault(signed.membership.org.id, id) : null
+        if (!done) return toSettings('missing')
+        log('info', 'providers.default_changed', { providerId: id, org: signed.membership.org.login, by: signed.user.login })
+        return toSettings('default', id)
+      },
+
+      async providerRemove(context) {
+        let admin = providerAdmin(context, 'remove')
+        if (admin instanceof Response) return admin
+        let { signed, providers } = admin
+        let id = context.params.id
+        let removed = UUID.test(id) ? await providers.store.remove(signed.membership.org.id, id) : null
+        if (!removed) return toSettings('missing')
+        log('info', 'providers.removed', { providerId: id, org: signed.membership.org.login, by: signed.user.login, kind: removed.kind })
+        return toSettings('removed')
       },
 
       // The theme form, for a browser without JavaScript: public/assets/theme.js does the same at once.

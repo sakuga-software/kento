@@ -9,7 +9,10 @@
     "./findings": "./src/findings.ts",
     "./levels": "./src/levels.ts",
     "./render": "./src/render.ts",
-    "./threads": "./src/threads.ts"
+    "./threads": "./src/threads.ts",
+    "./levels": "./src/levels.ts",
+    "./prices": "./src/prices.ts",
+    "./providers": "./src/providers.ts"
   },
   "engines": {
     "node": ">=24"

@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync, randomBytes } from 'node:crypto'
 
 import { defineConfig, devices } from '@playwright/test'
 
@@ -58,6 +58,8 @@ export default defineConfig({
         GITHUB_APP_CLIENT_SECRET: 'e2e-client-secret',
         KENTO_PUBLIC_URL: `http://127.0.0.1:${port}`,
         KENTO_SESSION_SECRET: 'e2e-session-secret-0123456789abcdef',
+        // The master key of the keys of the providers (REV-11): random, for this run only.
+        KENTO_SECRETS_KEY: randomBytes(32).toString('base64'),
         GITHUB_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
       },
     },

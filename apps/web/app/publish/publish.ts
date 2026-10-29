@@ -109,6 +109,8 @@ export function usageOf(review: ReviewPayload): Usage {
     model: review.model,
     ...(review.provider ? { provider: review.provider } : {}),
     ...(review.costUsd !== null ? { cost: review.costUsd } : {}),
+    // REV-11: a model without a price counts 0, and the cost line says that the cost is not known.
+    ...(review.costSource ? { cost_source: review.costSource } : {}),
   }
 }
 

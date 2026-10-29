@@ -1,6 +1,9 @@
 import type postgres from 'postgres'
 
-import { LEASE_SECONDS, MAX_ATTEMPTS, type JobKind, type Level, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
+import { LEASE_SECONDS, MAX_ATTEMPTS, type JobKind, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
+
+import type { ProviderModels } from '../db/schema.ts'
+import { refusalMessage } from '../providers/store.ts'
 
 /** A runner, as an authenticated call sees it. */
 export interface RunnerRow {
@@ -25,8 +28,39 @@ export interface ClaimedJob {
   githubInstallationId: number
   /** Whether the runner is trusted now, read in the statement that claims the job. */
   runnerTrusted: boolean
+  /** The provider of the org that the claim gave the job; null: the OpenRouter key of the service. */
+  provider: ClaimedProvider | null
   /** REV-12. The config resolved when the job was queued (`JobConfig`), or null for a job queued before it. */
   config: unknown
+}
+
+/** A provider of an org, as the claim reads it: the key is still encrypted. */
+export interface ClaimedProvider {
+  id: string
+  orgId: string
+  kind: ProviderKind
+  label: string
+  baseUrl: string | null
+  keyCiphertext: string | null
+  runnerHeld: boolean
+  models: ProviderModels
+}
+
+/**
+ * What a claim can run, from its body and the configuration of the service.
+ *
+ * - `ownProvider`: the kind of the runner's own key or server, or null.
+ * - `readsProviders`: the runner reads `providers` (FEATURES). A runner that does not gets only the
+ *   jobs of an org without a provider: it knows only the OpenRouter key.
+ * - `serviceKey`: the service has its OpenRouter key (KENTO_PROVIDER_API_KEY).
+ * - `secrets`: the service has its master key, so it can decrypt the key of a provider.
+ */
+export interface ClaimOptions {
+  kinds?: readonly JobKind[]
+  ownProvider?: ProviderKind | null
+  readsProviders?: boolean
+  serviceKey?: boolean
+  secrets?: boolean
 }
 
 /**
@@ -47,7 +81,7 @@ export type ResultOutcome = 'stored' | 'not_found' | 'lease_lost' | 'not_running
 export type StoredResult =
   | { outcome: 'done'; review: ReviewPayload }
   | { outcome: 'resolved'; resolve: ResolvePayload }
-  | { outcome: 'failed'; reason: string }
+  | { outcome: 'failed'; reason: string; providerStatus?: number | null }
 
 /** What one sweep of the expired leases did. */
 export interface ExpiredLeases {
@@ -64,6 +98,26 @@ export interface ExpiredLeases {
  */
 export const RETRY_BACKOFF_SECONDS = 30
 
+/**
+ * A result that the service stores means that the provider of the job answered: its key is valid.
+ * Called once the result passed its checks. `called`: false for a resolve that had no thread to
+ * answer and called no model, which tells nothing about the key.
+ */
+async function markValid(tx: postgres.TransactionSql, jobId: string, providerId: string | null, called: boolean) {
+  if (!providerId || !called) return
+  await tx`
+    update providers set last_ok_at = now(), refused_at = null, refused_status = null, refused_message = null
+    where id = ${providerId} and ${sameKey(tx, jobId)}`
+}
+
+/**
+ * The key of the provider is still the one that the claim of the job gave: an admin did not replace
+ * it since. The answer to an old key says nothing about the new one.
+ */
+function sameKey(tx: postgres.TransactionSql, jobId: string) {
+  return tx`key_set_at <= (select started_at from jobs where id = ${jobId})`
+}
+
 /** What the runner API reads and writes. Tests of the routes can pass a fake. */
 export interface RunnerStore {
   /** A runner of the service, registered with KENTO_RUNNER_REGISTRATION_TOKEN: no org. */
@@ -79,12 +133,13 @@ export interface RunnerStore {
   /** The runner of this token hash, when it is not revoked. Marks it as seen. */
   findRunner(tokenHash: string): Promise<RunnerRow | null>
   /**
-   * Takes the oldest queued job for this runner, or null. Two calls never get the same job, and a
-   * runner revoked since the start of its request gets none. With `trustedOnly`, only a runner that
-   * is trusted at that moment gets a job: a runner without a model key of its own can run a job
-   * only with the key of the service.
+   * Takes the oldest queued job that this runner can run, or null. Two calls never get the same job,
+   * and a runner revoked since the start of its request gets none. A job runs with the default
+   * provider of its org, or with the OpenRouter key of the service when the org has none. A runner
+   * gets it when it holds that kind itself, or when it is trusted at that moment and the service
+   * holds the key: otherwise it could only fail the job.
    */
-  claimJob(runnerId: string, options?: { trustedOnly?: boolean; kinds?: readonly JobKind[] }): Promise<ClaimedJob | null>
+  claimJob(runnerId: string, options?: ClaimOptions): Promise<ClaimedJob | null>
   /**
    * Gives a claimed job back, for example when no installation token could be made: queued again
    * after the backoff while attempts remain, failed with `reason` after the last one.
@@ -154,14 +209,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
     // has locked, so two runners that claim at the same time get two different jobs, or one job
     // and nothing. The update runs in the same statement, so a claimed job is never seen as queued.
     async claimJob(runnerId, options = {}) {
-      let trustedOnly = options.trustedOnly ?? false
       // A runner of an earlier release does not say what it runs: review jobs only.
       let kinds = [...(options.kinds ?? ['review'])]
+      let ownProvider = options.ownProvider ?? null
+      let readsProviders = options.readsProviders ?? false
+      let serviceKey = options.serviceKey ?? false
+      let secrets = options.secrets ?? false
       let [row] = await sql<
-        (Omit<ClaimedJob, 'githubRepoId' | 'githubInstallationId' | 'leaseExpiresAt'> & {
+        (Omit<ClaimedJob, 'githubRepoId' | 'githubInstallationId' | 'leaseExpiresAt' | 'provider'> & {
           leaseExpiresAt: Date | string
           githubRepoId: string
           githubInstallationId: string
+          provider: ClaimedProvider | null
         })[]
       >`
         with me as (
@@ -170,44 +229,78 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           -- the revocation waits for this claim and then gives its job back to the queue, or this
           -- claim waits for the revocation and then sees it.
           select id, org_id, labels, trusted from runners
-          where id = ${runnerId} and revoked_at is null and (${trustedOnly}::boolean = false or trusted)
+          where id = ${runnerId} and revoked_at is null
           for share
+        ),
+        pick as (
+          select jobs.id, prov.id as provider_id,
+            -- The service gives the key of the provider: its state follows the result of the job.
+            -- A runner that calls with its own key or server says nothing about that key.
+            (prov.id is not null and not prov.runner_held and prov.kind::text is distinct from ${ownProvider}::text) as key_from_service
+          from jobs
+          join repos on repos.id = jobs.repo_id
+          cross join me
+          -- The provider of the job (REV-11, REV-12): the provider of the org that the config of the
+          -- repository or of the org chose for the level (jobs.config); the key of the service when the
+          -- config chose « service »; else, with no choice (the values of Kentō), the default provider of
+          -- the org. A provider of another org never matches, and a provider removed since leaves the
+          -- key of the service.
+          left join providers prov on prov.org_id = repos.org_id and case
+            when jobs.config->'models'->>'provider' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              then prov.id = (jobs.config->'models'->>'provider')::uuid
+            when jobs.config->>'source' in ('repo', 'org') then false
+            else prov.is_default
+          end
+          where jobs.state = 'queued' and jobs.kind = any(${kinds}::job_kind[]) and jobs.base_ref is not null
+            and jobs.attempts < ${MAX_ATTEMPTS}
+            and (jobs.not_before is null or jobs.not_before <= now())
+            -- A runner of an org runs the jobs of that org only; a runner of the service, every job.
+            and (me.org_id is null or repos.org_id = me.org_id)
+            -- The pool of the repository: a runner without its label never gets the job.
+            and (repos.default_runner_pool is null or repos.default_runner_pool = any(me.labels))
+            -- A job only for a runner that can call its provider: with its own key or server of
+            -- that kind, or trusted with the key that the service holds. The key of a provider
+            -- goes only to a runner of its org or of the service (the line above).
+            and case
+              when prov.id is null then
+                ${ownProvider}::text = 'openrouter' or (me.trusted and ${serviceKey}::boolean)
+              when not ${readsProviders}::boolean then false
+              when prov.kind::text = ${ownProvider}::text then true
+              when prov.runner_held then false
+              else me.trusted and ${secrets}::boolean
+            end
+          order by jobs.created_at
+          for update of jobs skip locked
+          limit 1
         ),
         claimed as (
           update jobs set
             state = 'running',
             runner_id = ${runnerId},
+            provider_id = case when pick.key_from_service then pick.provider_id end,
             lease_expires_at = now() + ${lease}::interval,
             started_at = now(),
             attempts = attempts + 1,
             updated_at = now()
-          where id = (
-            select jobs.id from jobs
-            join repos on repos.id = jobs.repo_id
-            cross join me
-            where jobs.state = 'queued' and jobs.kind = any(${kinds}::job_kind[]) and jobs.base_ref is not null
-              and jobs.attempts < ${MAX_ATTEMPTS}
-              and (jobs.not_before is null or jobs.not_before <= now())
-              -- A runner of an org runs the jobs of that org only; a runner of the service, every job.
-              and (me.org_id is null or repos.org_id = me.org_id)
-              -- The pool of the repository: a runner without its label never gets the job.
-              and (repos.default_runner_pool is null or repos.default_runner_pool = any(me.labels))
-            order by jobs.created_at
-            for update of jobs skip locked
-            limit 1
-          )
-          returning id, attempts, kind, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at, config
+          from pick
+          where jobs.id = pick.id
+          returning jobs.id, jobs.attempts, jobs.kind, jobs.repo_id, jobs.level, jobs.pr_number, jobs.head_sha,
+            jobs.base_ref, jobs.lease_expires_at, jobs.config, pick.provider_id
         )
         select
           claimed.id, claimed.attempts as "attempt", claimed.kind, claimed.level, claimed.pr_number as "prNumber", claimed.head_sha as "headSha",
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
           orgs.github_installation_id as "githubInstallationId",
-          me.trusted as "runnerTrusted", claimed.config
+          me.trusted as "runnerTrusted", claimed.config,
+          case when p.id is null then null else json_build_object(
+            'id', p.id, 'orgId', p.org_id, 'kind', p.kind, 'label', p.label, 'baseUrl', p.base_url,
+            'keyCiphertext', p.key_ciphertext, 'runnerHeld', p.runner_held, 'models', p.models) end as provider
         from claimed
         cross join me
         join repos on repos.id = claimed.repo_id
-        join orgs on orgs.id = repos.org_id`
+        join orgs on orgs.id = repos.org_id
+        left join providers p on p.id = claimed.provider_id`
       if (!row) return null
       return {
         ...row,
@@ -269,10 +362,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         // The lock of the job orders this write with the sweep of the expired leases and with a
         // cancel: the first one to commit wins, and the other one sees its state.
         let [job] = await tx<
-          { state: string; holds: boolean; kind: JobKind; repoId: string; prNumber: number; headSha: string }[]
+          { state: string; holds: boolean; kind: JobKind; repoId: string; prNumber: number; headSha: string; providerId: string | null }[]
         >`
           select state, (runner_id is not distinct from ${runnerId} and attempts = ${attempt}) as holds,
-            kind, repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha"
+            kind, repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha", provider_id as "providerId"
           from jobs where id = ${jobId}
           for update`
         if (!job) return 'not_found' as const
@@ -280,17 +373,31 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         if (job.state !== 'running') return 'not_running' as const
 
         if (result.outcome === 'failed') {
+          let refused = result.providerStatus === 401 || result.providerStatus === 403
+          let reason = result.reason
+          if (refused && job.providerId) {
+            // The provider refused its key: the state of the provider says it on the screen, with a
+            // banner, until an admin replaces the key or a call works again.
+            let [provider] = await tx<{ label: string }[]>`
+              update providers set refused_at = coalesce(refused_at, now()), refused_status = ${result.providerStatus!},
+                refused_message = ${refusalMessage(`${result.providerStatus} ${result.reason}`)}
+              where id = ${job.providerId} and ${sameKey(tx, jobId)}
+              returning label`
+            if (provider) reason = `the provider « ${provider.label} » refused its key (${result.providerStatus}): ${result.reason}`.slice(0, 2000)
+          }
           await tx`
-            update jobs set state = 'failed', failure_reason = ${result.reason}, finished_at = now(),
+            update jobs set state = 'failed', failure_reason = ${reason}, finished_at = now(),
               lease_expires_at = null, updated_at = now()
             where id = ${jobId}`
           return 'stored' as const
         }
 
+
         if (result.outcome === 'resolved') {
           let { resolve } = result
           if (job.kind !== 'resolve') return 'wrong_kind' as const
           if (resolve.head !== job.headSha) return 'wrong_head' as const
+          await markValid(tx, jobId, job.providerId, resolve.model !== null)
           await tx`
             insert into resolutions (job_id, repo_id, pr_number, head_sha, model, cost_usd, result)
             values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${resolve.model},
@@ -304,6 +411,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         let { review } = result
         if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
+        await markValid(tx, jobId, job.providerId, true)
         await tx`
           insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
           values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${review.score},

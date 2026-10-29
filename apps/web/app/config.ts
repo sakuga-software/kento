@@ -3,6 +3,7 @@ import type { KeyObject } from 'node:crypto'
 import packageJson from '../package.json' with { type: 'json' }
 
 import { readPrivateKey } from './github/installation-token.ts'
+import { readMasterKeys, SecretsError } from './providers/secrets.ts'
 
 /** The settings of the service. `loadConfig` reads them once, at startup. */
 export interface Config {
@@ -31,8 +32,16 @@ export interface Config {
   githubApp: { appId: string; privateKey: KeyObject; apiUrl: string } | null
   /** The GitHub server that the runners clone from: `https://github.com`, or a GitHub Enterprise Server. */
   githubUrl: string
-  /** The model key of the service, sent only to a trusted runner without its own key. */
+  /**
+   * The OpenRouter key of the service, sent only to a trusted runner without its own key, for the
+   * jobs of an org that has no provider (REV-11).
+   */
   providerApiKey: string | null
+  /**
+   * The master keys that encrypt the keys of the providers (KENTO_SECRETS_KEY, and the earlier ones
+   * of a rotation in KENTO_SECRETS_PREVIOUS_KEYS). Null: the Providers section stores no key.
+   */
+  secretsKeys: { current: Buffer; previous: Buffer[] } | null
   /**
    * The login of the GitHub App, as GitHub shows it on its reviews. The publisher finds the threads
    * and the reviews of the bot with it.
@@ -138,6 +147,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   let signIn = readSignIn(env, githubApp, githubUrl, problems)
 
+  let secretsKeys: Config['secretsKeys'] = null
+  try {
+    secretsKeys = readMasterKeys(env)
+  } catch (error) {
+    if (!(error instanceof SecretsError)) throw error
+    problems.push(error.message)
+  }
+
   if (problems.length > 0) {
     throw new ConfigError(`Invalid configuration: ${problems.join('; ')}`)
   }
@@ -158,6 +175,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubApp,
     githubUrl,
     providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
+    secretsKeys,
     botLogin,
     signIn,
   }

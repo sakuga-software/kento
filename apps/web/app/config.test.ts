@@ -25,6 +25,7 @@ describe('loadConfig', () => {
       githubApp: null,
       githubUrl: 'https://github.com',
       providerApiKey: null,
+      secretsKeys: null,
       botLogin: 'kento-review[bot]',
       signIn: null,
     })
@@ -214,3 +215,20 @@ function errorOf(fn: () => unknown): Error {
   }
   throw new Error('expected an error')
 }
+
+describe('loadConfig: the master key of the providers (REV-11)', () => {
+  it('reads KENTO_SECRETS_KEY and the earlier keys of a rotation', () => {
+    let current = Buffer.alloc(32, 1).toString('base64')
+    let previous = Buffer.alloc(32, 2).toString('base64')
+    let config = loadConfig({ DATABASE_URL: 'postgres://u:p@h/d', KENTO_SECRETS_KEY: current, KENTO_SECRETS_PREVIOUS_KEYS: previous })
+    assert.equal(config.secretsKeys!.current.toString('base64'), current)
+    assert.equal(config.secretsKeys!.previous.length, 1)
+  })
+
+  it('names a key that is not 32 bytes of base64, never its value', () => {
+    assert.throws(
+      () => loadConfig({ DATABASE_URL: 'postgres://u:p@h/d', KENTO_SECRETS_KEY: 'my-secret-passphrase' }),
+      (error: Error) => /KENTO_SECRETS_KEY must be 32 random bytes/.test(error.message) && !error.message.includes('my-secret-passphrase'),
+    )
+  })
+})

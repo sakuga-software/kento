@@ -15,9 +15,12 @@ import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
 import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
-import { serviceProviders } from './app/repo-config/providers.ts'
+import { createConfigProviders } from './app/providers/catalog.ts'
 import { createRepoConfigStore } from './app/repo-config/store.ts'
 import { createRepoCheck } from './app/repos/check.ts'
+import { createProbe } from './app/providers/probe.ts'
+import { createSecretBox } from './app/providers/secrets.ts'
+import { createProvidersStore } from './app/providers/store.ts'
 import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
@@ -112,11 +115,26 @@ let repos = {
   githubUrl: config.githubUrl,
 }
 
+// The providers of the orgs and their encrypted keys (REV-11). Without KENTO_SECRETS_KEY, the
+// screen stores no key and no job of a provider with a key runs.
+let secrets = config.secretsKeys ? createSecretBox(config.secretsKeys.current, config.secretsKeys.previous) : null
+if (!secrets) log('warn', 'startup.secrets_disabled', { reason: 'KENTO_SECRETS_KEY is not set: the keys of the providers cannot be stored' })
+else log('info', 'startup.secrets', { keyId: secrets.keyId, previousKeys: config.secretsKeys!.previous.length })
+
+let providersStore = createProvidersStore(database.sql, secrets)
+
 let router = createAppRouter({
   auth,
   repos,
+  // The section « Providers et clés » of the settings (REV-11).
+  providers: {
+    store: providersStore,
+    probe: createProbe(),
+    secretsConfigured: secrets !== null,
+    serviceKey: config.providerApiKey !== null,
+  },
   // The Config screen of a repository (REV-12). The providers of the org come with REV-11.
-  repoConfig: { store: createRepoConfigStore(database.sql), providers: serviceProviders, trustedBots: [...config.trustedBots] },
+  repoConfig: { store: createRepoConfigStore(database.sql), providers: createConfigProviders(providersStore, { serviceKey: config.providerApiKey !== null }), trustedBots: [...config.trustedBots] },
   // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
   runnersAdmin: createRunnersAdminStore(database.sql),
   checkDatabase: createDatabaseCheck(database.sql),
@@ -145,6 +163,7 @@ let router = createAppRouter({
     registrationToken: config.runnerRegistrationToken,
     mintInstallationToken,
     providerApiKey: config.providerApiKey,
+    secrets,
     onReviewStored: publisher ? () => publisher.wake() : undefined,
     githubApiUrl: config.githubApp?.apiUrl,
     githubUrl: config.githubUrl,

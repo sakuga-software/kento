@@ -109,6 +109,8 @@ export async function publishResolution(
     model: payload.model ?? '?',
     ...(payload.provider ? { provider: payload.provider } : {}),
     ...(payload.costUsd !== null ? { cost: payload.costUsd } : {}),
+    // REV-11: a model without a price counts 0, and the cost line says that the cost is not known.
+    ...(payload.costSource ? { cost_source: payload.costSource } : {}),
   }
   await github.rest('POST', `/repos/${fullName}/issues/${pr}/comments`, {
     body: [
