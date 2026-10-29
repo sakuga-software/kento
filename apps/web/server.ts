@@ -28,6 +28,8 @@ import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
 import { createRunnersAdminStore } from './app/runner/admin.ts'
+import { createDashboardStore } from './app/dashboard/store.ts'
+import { createReadPullRequest } from './app/dashboard/github.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -155,6 +157,13 @@ let router = createAppRouter({
   },
   // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
   runnersAdmin: createRunnersAdminStore(database.sql),
+  // The dashboard (REV-14): reviews, failures, queue, cost of the day and runners of the org.
+  dashboard: {
+    store: createDashboardStore(database.sql),
+    githubUrl: config.githubUrl,
+    readPullRequest:
+      mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
+  },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,

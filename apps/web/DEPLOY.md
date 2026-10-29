@@ -581,7 +581,41 @@ Steps:
    still written). It reads `KENTO_TRUSTED_BOTS` again, and has no cost limit of the org: put the
    variable back before a rollback if the trusted bots differ from the default.
 
-## 16. Each later deployment
+## 16. The dashboard (REV-14)
+
+The release with REV-14 adds the migration `0011_dashboard_indexes`: three indexes, additive only —
+`reviews (repo_id, created_at)`, `resolutions (repo_id, created_at)`, and `jobs (repo_id, finished_at)`
+where `state = 'failed'`. `/healthz` gives `"migrations":12`. The migration runs in the transaction of
+the migrator and holds a `SHARE` lock on the three tables while it builds them: writes of results and
+of new jobs wait until it ends (milliseconds on the tables of today; on a database of 600 000 jobs and
+456 000 reviews, the migration took 0,3 s).
+
+The home screen `/` is now the dashboard of the org on screen: a member reads it; an admin can also
+« Relancer en <niveau> » the last failed review (`POST /jobs/:id/retry`, under `cop()` and the CSRF
+token, logged as `dashboard.retry`). A retry queues a review of the same head and base branch, with the
+config of today; like a command, it skips the trigger, the paths and the monthly limit of the
+repository, but not the cost limit of the org (section 15): at the limit, nothing is queued. It first reads the pull request on GitHub (installation token `pull_requests: read`):
+it is refused when the pull request is closed, when its head on GitHub or a newer job is another
+commit, when GitHub does not answer, or when a review of that level is already queued or running on
+the head.
+
+The cost of the day and of the month is the sum of `reviews.cost_usd` and `resolutions.cost_usd` of
+the repositories of the org since 00:00 UTC (the first of the month, UTC), per provider of the job.
+The limits and the alert threshold are those of the settings of the org (section 15); the totals are
+`readOrgCosts` of `app/org-settings/costs.ts`, the same as the settings screen.
+
+Check, signed in as an owner of `sakuga-software`:
+
+1. `/`: the reviews of the week, the last reviews, the queue and the runners match the database
+   (`select state, count(*) from jobs group by 1;`).
+2. The cost of the day equals
+   `select sum(cost_usd) from reviews where created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc';`
+   plus the same sum on `resolutions`.
+3. Stop the runner twice during a job (section 11): after the second expired lease, the banner says
+   « le bail a expiré deux fois sur <runner> ». « Relancer en balanced » queues a job; the banner says
+   « Relance en balanced en file », and goes away when its review is published.
+
+## 17. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

@@ -9,6 +9,8 @@ export const routes = route({
 /** The screens, and the forms of their frame. A signed-in member of an org only. */
 export const pageRoutes = route({
   home: get('/'),
+  /** REV-14: « Relancer en <niveau> » on the banner of the last failure. An admin only. */
+  jobRetry: post('/jobs/:id/retry'),
   repos: get('/repos'),
   /** REV-9: an admin enables or disables a repository, or reads GitHub again. */
   repoEnable: post('/repos/:id/enable'),

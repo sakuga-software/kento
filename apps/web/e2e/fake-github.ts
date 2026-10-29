@@ -35,6 +35,11 @@ const WORKFLOWS: Record<string, Record<string, string>> = {
   },
 }
 
+/** The open pull requests that a retry of the dashboard reads (e2e/dashboard.spec.ts): `owner/name#number` → head. */
+export const FAKE_PULLS: Record<string, string> = {
+  'sakuga-software/dash-e2e#41': 'c'.repeat(40),
+}
+
 let codes = new Map<string, { login: string; challenge: string; redirectUri: string }>()
 
 function json(response: http.ServerResponse, status: number, body: unknown) {
@@ -116,6 +121,13 @@ let server = http.createServer(async (request, response) => {
     return json(response, 200, { encoding: 'base64', content: Buffer.from(text).toString('base64') })
   }
 
+  let pull = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(url.pathname)
+  if (request.method === 'GET' && pull) {
+    if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
+    let head = FAKE_PULLS[`${pull[1]}#${pull[2]}`]
+    if (!head) return json(response, 404, { message: 'Not Found' })
+    return json(response, 200, { number: Number(pull[2]), state: 'open', head: { sha: head }, base: { ref: 'main' } })
+  }
   // REV-13: the App and its installation, read with the JWT of the App by the settings screen.
   if (request.method === 'GET' && url.pathname === '/app') {
     return json(response, 200, { slug: 'kento-review', name: 'Kentō Review', html_url: 'https://github.com/apps/kento-review', owner: { login: FAKE_ORG.login, type: 'Organization' } })

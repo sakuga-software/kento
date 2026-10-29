@@ -40,6 +40,9 @@ import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
 import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
+import type { ReadPullRequest } from '../dashboard/github.ts'
+import type { DashboardStore, RetryOutcome } from '../dashboard/store.ts'
+import { DASHBOARD_NOTICES, DashboardPage, type DashboardNotice } from './dashboard.tsx'
 import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from './config.tsx'
 import { ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
@@ -69,6 +72,15 @@ export interface ReposDependencies {
   check: RepoCheck | null
   /** `https://github.com`, or the GitHub Enterprise Server. */
   githubUrl: string
+}
+
+/** The dashboard (REV-14). Null: it shows its empty frame. */
+export interface DashboardDependencies {
+  store: DashboardStore
+  /** `https://github.com`, or the GitHub Enterprise Server: the links to the pull requests. */
+  githubUrl: string
+  /** Reads the head of a pull request before a retry. Null without the GitHub App: the jobs of the database decide alone. */
+  readPullRequest: ReadPullRequest | null
 }
 
 /** The section « Providers et clés » of the settings (REV-11). */
@@ -113,6 +125,7 @@ export interface UiDependencies {
   /** The providers of the settings (REV-11). Null: the settings show their empty frame. */
   providers?: ProvidersDependencies | null
   repoConfig?: RepoConfigDependencies | null
+  dashboard?: DashboardDependencies | null
   orgSettings?: OrgSettingsDependencies | null
 }
 
@@ -618,9 +631,64 @@ export function createUiControllers(deps: UiDependencies) {
   let pages = createController(pageRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
     actions: {
-      home(context) {
-        let page = frame(signedOf(context), context, getCsrfToken(context))
-        return context.render(<PlaceholderPage frame={page} section="dashboard" />)
+      // REV-14. The dashboard: a member reads it; an admin can also retry the last failure.
+      async home(context) {
+        let signed = signedOf(context)
+        let page = frame(signed, context, getCsrfToken(context))
+        let dashboard = deps.dashboard
+        if (!dashboard) return context.render(<PlaceholderPage frame={page} section="dashboard" />)
+        let screen = await dashboard.store.screen(signed.membership.org.id)
+        let notice = context.url.searchParams.get('notice')
+        return context.render(
+          <DashboardPage
+            frame={page}
+            screen={screen}
+            githubUrl={dashboard.githubUrl}
+            notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
+          />,
+        )
+      },
+      // cop() and csrf() of the session layer ran before.
+      async jobRetry(context) {
+        let signed = signedOf(context)
+        let dashboard = deps.dashboard
+        if (!dashboard || signed.membership.role !== 'admin') {
+          log('warn', 'dashboard.retry_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+          return forbidden()
+        }
+        let level = context.get(FormData)?.get('level')
+        if (level !== 'lite' && level !== 'balanced' && level !== 'heavy') return new Response('Bad Request', { status: 400 })
+        let id = context.params.id
+        let orgId = signed.membership.org.id
+        let outcome: RetryOutcome | { kind: 'github_failed' }
+        let target = UUID.test(id) ? await dashboard.store.retryTarget(orgId, id) : null
+        if (!target) {
+          outcome = { kind: 'not_found' }
+        } else {
+          let now: Awaited<ReturnType<ReadPullRequest>> | null = null
+          try {
+            now = dashboard.readPullRequest ? await dashboard.readPullRequest(target) : null
+          } catch (error) {
+            log('warn', 'dashboard.retry_github_failed', { failedJobId: id, repo: target.fullName, pr: target.prNumber, error: errorMessage(error) })
+          }
+          outcome =
+            dashboard.readPullRequest && !now
+              ? { kind: 'github_failed' }
+              : now && !now.open
+                ? { kind: 'closed' }
+                : await dashboard.store.retry(orgId, id, level, now?.headSha ?? null)
+        }
+        log('info', 'dashboard.retry', {
+          login: signed.user.login,
+          org: signed.membership.org.login,
+          failedJobId: id,
+          level,
+          outcome: outcome.kind,
+          ...('jobId' in outcome ? { jobId: outcome.jobId } : {}),
+        })
+        let notice: DashboardNotice =
+          outcome.kind === 'queued' ? 'retried' : outcome.kind === 'not_found' ? 'missing' : outcome.kind
+        return redirect(`${pageRoutes.home.href()}?notice=${notice}`)
       },
       async repos(context) {
         let signed = signedOf(context)

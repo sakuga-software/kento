@@ -15,6 +15,7 @@ import { runnerRoutes } from './runner/routes.ts'
 import {
   createUiControllers,
   type AuthDependencies,
+  type DashboardDependencies,
   type OrgSettingsDependencies,
   type ProvidersDependencies,
   type RepoConfigDependencies,
@@ -42,6 +43,8 @@ export interface AppDependencies {
   providers?: ProvidersDependencies | null
   /** The Config screen of a repository (REV-12). Without it, the screen answers 404. */
   repoConfig?: RepoConfigDependencies | null
+  /** The dashboard (REV-14). Without it, the home screen shows its empty frame. */
+  dashboard?: DashboardDependencies | null
   /** The settings of the org (REV-13). Without them, the settings show the providers only. */
   orgSettings?: OrgSettingsDependencies | null
 }
@@ -68,6 +71,7 @@ export function createAppRouter(deps: AppDependencies) {
     repos: deps.repos ?? null,
     providers: deps.providers ?? null,
     repoConfig: deps.repoConfig ?? null,
+    dashboard: deps.dashboard ?? null,
     orgSettings: deps.orgSettings ?? null,
   })
   router.map(pageRoutes, ui.pages)

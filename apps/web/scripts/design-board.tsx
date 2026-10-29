@@ -21,6 +21,8 @@ import { SettingsPage, type SettingsPageProps } from '../app/ui/settings.tsx'
 import { serviceProviders } from '../app/repo-config/providers.ts'
 import type { RepoConfigView } from '../app/repo-config/store.ts'
 import { ConfigPage, type ConfigPageProps } from '../app/ui/config.tsx'
+import type { DashboardScreen } from '../app/dashboard/store.ts'
+import { DashboardPage, type DashboardPageProps } from '../app/ui/dashboard.tsx'
 import type { AppStatus } from '../app/org-settings/app-status.ts'
 import type { OrgSettingsView } from '../app/org-settings/store.ts'
 import type { OrgSectionProps } from '../app/ui/org-settings.tsx'
@@ -301,6 +303,109 @@ const configFrames: { file: string; node: unknown }[] = [
   { file: 'config-trigger-member-sumi-390.html', node: configPage('sumi', member, { tab: 'trigger' }) },
 ]
 
+// The dashboard (REV-14): a failure with its retry, a busy week, the queue and the runners.
+const DASHBOARD_OUT = new URL('../../../design/dashboard/frames/', import.meta.url)
+const D_NOW = new Date('2026-10-29T10:00:00Z')
+const dAgo = (seconds: number) => new Date(D_NOW.getTime() - seconds * 1000)
+const DASHBOARD: DashboardScreen = {
+  now: D_NOW,
+  banner: {
+    id: '00000000-0000-4000-8000-000000000101',
+    repoId: 'r-orchard',
+    repo: 'sakuga-software/orchard',
+    prNumber: 128,
+    kind: 'review',
+    level: 'lite',
+    attempts: 2,
+    reason: 'lease expired 2 times',
+    runnerName: 'runners-host',
+    finishedAt: dAgo(240),
+    previous: { score: 3, publishedAt: new Date('2026-10-29T08:12:00Z') },
+    retry: null,
+    estimates: { lite: 0.004, balanced: 0.118, heavy: 0.36 },
+  },
+  failures: [
+    { id: 'f1', repoId: 'r-orchard', repo: 'sakuga-software/orchard', prNumber: 128, kind: 'review', level: 'lite', attempts: 2, reason: 'lease expired 2 times', runnerName: 'runners-host', finishedAt: dAgo(240) },
+    { id: 'f2', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 676, kind: 'review', level: 'balanced', attempts: 1, reason: 'the provider « Anthropic » refused its key (401): invalid x-api-key', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 26) },
+    { id: 'f3', repoId: 'r-dojo', repo: 'sakuga-software/dojo', prNumber: 702, kind: 'resolve', level: 'lite', attempts: 1, reason: 'clone failed: repository not found', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 50) },
+  ],
+  week: [
+    { day: '2026-10-23', published: { lite: 9, balanced: 1, heavy: 0 }, failed: 0, meanDurationMs: 84_000 },
+    { day: '2026-10-24', published: { lite: 4, balanced: 0, heavy: 0 }, failed: 0, meanDurationMs: 71_000 },
+    { day: '2026-10-25', published: { lite: 1, balanced: 0, heavy: 0 }, failed: 0, meanDurationMs: 66_000 },
+    { day: '2026-10-26', published: { lite: 12, balanced: 2, heavy: 1 }, failed: 1, meanDurationMs: 112_000 },
+    { day: '2026-10-27', published: { lite: 18, balanced: 3, heavy: 1 }, failed: 0, meanDurationMs: 98_000 },
+    { day: '2026-10-28', published: { lite: 22, balanced: 4, heavy: 2 }, failed: 2, meanDurationMs: 104_000 },
+    { day: '2026-10-29', published: { lite: 7, balanced: 1, heavy: 0 }, failed: 1, meanDurationMs: 91_000 },
+  ],
+  recent: [
+    { id: 'r1', repoId: 'r-sakuga-review', repo: 'sakuga-software/sakuga-review', prNumber: 64, level: 'lite', verdict: 'APPROVE', score: 4, findings: 1, costUsd: 0.0042, durationMs: 74_000, createdAt: dAgo(180), publishedAt: dAgo(170) },
+    { id: 'r2', repoId: 'r-orchard', repo: 'sakuga-software/orchard', prNumber: 127, level: 'balanced', verdict: 'REQUEST_CHANGES', score: 2, findings: 6, costUsd: 0.131, durationMs: 188_000, createdAt: dAgo(1500), publishedAt: dAgo(1490) },
+    { id: 'r3', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 675, level: 'lite', verdict: 'COMMENT', score: 3, findings: 3, costUsd: 0.0051, durationMs: 81_000, createdAt: dAgo(3600), publishedAt: dAgo(3590) },
+    { id: 'r4', repoId: 'r-dojo', repo: 'sakuga-software/dojo', prNumber: 701, level: 'heavy', verdict: 'APPROVE', score: 5, findings: 0, costUsd: 0.362, durationMs: 296_000, createdAt: dAgo(7200), publishedAt: null },
+  ],
+  costs: {
+    dayUsd: 4.12,
+    monthUsd: 61.4,
+    dayByProvider: [
+      { providerId: 'p1', label: 'Anthropic (équipe)', usd: 3.6 },
+      { providerId: null, label: 'Clé du service', usd: 0.52 },
+    ],
+    monthByProvider: [
+      { providerId: 'p1', label: 'Anthropic (équipe)', usd: 48.9 },
+      { providerId: null, label: 'Clé du service', usd: 12.5 },
+      { providerId: 'p2', label: 'Ollama du bureau', usd: 0 },
+    ],
+    monthUnknown: 3,
+  },
+  caps: { dailyCapUsd: 5, monthlyCapUsd: 150, alertPct: 80 },
+  queue: {
+    running: [
+      { id: 'j1', repo: 'sakuga-software/fruitback', prNumber: 677, kind: 'review', level: 'balanced', attempts: 1, createdAt: dAgo(140), startedAt: dAgo(95), leaseExpiresAt: new Date(D_NOW.getTime() + 85_000), notBefore: null, runnerName: 'mac-mini', runnerSeenAt: dAgo(4) },
+      { id: 'j2', repo: 'sakuga-software/orchard', prNumber: 129, kind: 'resolve', level: 'lite', attempts: 2, createdAt: dAgo(400), startedAt: dAgo(30), leaseExpiresAt: new Date(D_NOW.getTime() + 150_000), notBefore: null, runnerName: 'runners-host', runnerSeenAt: dAgo(9) },
+    ],
+    queued: [
+      { id: 'j3', repo: 'sakuga-software/dojo', prNumber: 703, kind: 'review', level: 'lite', attempts: 0, createdAt: dAgo(20), startedAt: null, leaseExpiresAt: null, notBefore: null, runnerName: null, runnerSeenAt: null },
+      { id: 'j4', repo: 'sakuga-software/pantry', prNumber: 88, kind: 'review', level: 'lite', attempts: 1, createdAt: dAgo(300), startedAt: null, leaseExpiresAt: null, notBefore: new Date(D_NOW.getTime() + 45_000), runnerName: null, runnerSeenAt: null },
+    ],
+    runningCount: 2,
+    queuedCount: 2,
+  },
+  runners: [
+    { id: 'u1', name: 'mac-mini', orgId: 'org-1', lastSeenAt: dAgo(4), running: 1 },
+    { id: 'u2', name: 'runners-host', orgId: null, lastSeenAt: dAgo(9), running: 1 },
+    { id: 'u3', name: 'portable-alex', orgId: 'org-1', lastSeenAt: dAgo(60 * 47), running: 0 },
+  ],
+  workflowRepos: ['sakuga-software/fruitback', 'sakuga-software/orchard'],
+}
+const EMPTY_DASHBOARD: DashboardScreen = {
+  now: D_NOW,
+  banner: null,
+  failures: [],
+  week: DASHBOARD.week.map((day) => ({ ...day, published: { lite: 0, balanced: 0, heavy: 0 }, failed: 0, meanDurationMs: null })),
+  recent: [],
+  costs: { dayUsd: 0, monthUsd: 0, dayByProvider: [], monthByProvider: [], monthUnknown: 0 },
+  caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 },
+  queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
+  runners: [],
+  workflowRepos: [],
+}
+
+function dashboardPage(theme: Theme, viewer: Viewer, screen: DashboardScreen = DASHBOARD, extra: Partial<DashboardPageProps> = {}) {
+  return <DashboardPage frame={frame(theme, viewer, '/')} screen={screen} githubUrl="https://github.com" {...extra} />
+}
+
+const dashboardFrames: { file: string; node: unknown }[] = [
+  { file: 'dashboard-admin-paper.html', node: dashboardPage('paper', admin) },
+  {
+    file: 'dashboard-admin-retried-sumi.html',
+    node: dashboardPage('sumi', admin, { ...DASHBOARD, banner: { ...DASHBOARD.banner!, retry: { id: 'j5', level: 'balanced', state: 'queued' } } }, { notice: 'retried' }),
+  },
+  { file: 'dashboard-member-paper-390.html', node: dashboardPage('paper', member) },
+  { file: 'dashboard-admin-sumi-390.html', node: dashboardPage('sumi', admin) },
+  { file: 'dashboard-admin-empty-paper.html', node: dashboardPage('paper', admin, EMPTY_DASHBOARD) },
+]
+
 // REV-13: the settings of the org, above « Providers et clés ».
 const ORG_OUT = new URL('../../../design/org-settings/frames/', import.meta.url)
 const ORG_VIEW: OrgSettingsView = {
@@ -404,4 +509,5 @@ await writeFrames(RUNNERS_OUT, ASSETS, runnersFrames, 'design/runners/frames/')
 await writeFrames(REPOS_OUT, ASSETS, reposFrames, 'design/repos/frames/')
 await writeFrames(PROVIDERS_OUT, ASSETS, providersFrames, 'design/providers/frames/')
 await writeFrames(CONFIG_OUT, ASSETS, configFrames, 'design/config/frames/')
+await writeFrames(DASHBOARD_OUT, ASSETS, dashboardFrames, 'design/dashboard/frames/')
 await writeFrames(ORG_OUT, ASSETS, orgFrames, 'design/org-settings/frames/')

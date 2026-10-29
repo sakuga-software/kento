@@ -308,6 +308,8 @@ export const jobs = pgTable(
     index('jobs_provider_id_idx').on(table.providerId),
     // The sweep of the expired leases reads the running jobs only.
     index('jobs_running_lease_idx').on(table.leaseExpiresAt).where(sql`${table.state} = 'running'`),
+    // The dashboard (REV-14) reads the recent failures of the repositories of an org.
+    index('jobs_failed_repo_finished_idx').on(table.repoId, table.finishedAt).where(sql`${table.state} = 'failed'`),
     check('jobs_pr_number_positive', sql`${table.prNumber} > 0`),
     check('jobs_attempts_not_negative', sql`${table.attempts} >= 0`),
   ],
@@ -339,6 +341,8 @@ export const reviews = pgTable(
   (table) => [
     uniqueIndex('reviews_job_id_idx').on(table.jobId),
     index('reviews_repo_pr_idx').on(table.repoId, table.prNumber),
+    // The dashboard (REV-14): the last reviews and the cost of the day and the month of an org.
+    index('reviews_repo_created_at_idx').on(table.repoId, table.createdAt),
     check('reviews_score_range', sql`${table.score} between 1 and 5`),
   ],
 )
@@ -368,7 +372,12 @@ export const resolutions = pgTable(
     publishedAt: timestamp('published_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (table) => [uniqueIndex('resolutions_job_id_idx').on(table.jobId), index('resolutions_repo_pr_idx').on(table.repoId, table.prNumber)],
+  (table) => [
+    uniqueIndex('resolutions_job_id_idx').on(table.jobId),
+    index('resolutions_repo_pr_idx').on(table.repoId, table.prNumber),
+    // The dashboard (REV-14): the cost of the day and the month of an org.
+    index('resolutions_repo_created_at_idx').on(table.repoId, table.createdAt),
+  ],
 )
 
 /** The role of a person in an org, as GitHub gives it: an admin edits, a member reads. */
