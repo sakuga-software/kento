@@ -7,12 +7,22 @@ import type { Level, ProviderKind } from '@sakuga-review/protocol'
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { ago } from './runners.tsx'
 import { OrgSettingsSections, type OrgSectionProps } from './org-settings.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openrouter', 'openai_compatible', 'ollama']
+/** REV-28. What each type needs, all shown under the select: right whatever the choice, without JavaScript. */
+const KIND_HINTS: Record<ProviderKind, string> = {
+  anthropic: 'une clé Anthropic (sk-ant-…) ; l’URL et les modèles du type par défaut.',
+  openrouter: 'une clé OpenRouter (sk-or-…) ; l’URL et les modèles du type par défaut.',
+  openai_compatible: 'l’URL du serveur, obligatoire, et au moins un modèle par niveau.',
+  ollama: 'un serveur sur la machine d’un runner ; le service n’a jamais de clé.',
+}
+/** The order of the fields of « Ajouter un provider »: the first one in error gets the focus. */
+const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', 'apiKey', 'models']
 
 const CLOCK = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' })
 const PARTS = new Intl.DateTimeFormat('fr-FR', { hour: 'numeric', minute: '2-digit', timeZone: 'Europe/Paris' })
@@ -259,6 +269,7 @@ function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin:
                 <summary class={`button ${state === 'refused' ? 'button-primary' : ''}`}>Remplacer la clé</summary>
                 <form class="confirm-body replace-body" method="post" action={routes.providerKey.href({ id })} noValidate>
                   <input type="hidden" name="_csrf" value={csrf} />
+                  {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
                     <label class="field-label" for={`key-${id}`}>
                       Nouvelle clé {KIND_LABELS[provider.kind]}
@@ -271,6 +282,7 @@ function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin:
                       autoComplete="off"
                       spellCheck={false}
                       required
+                      autoFocus={keyError ? true : undefined}
                       aria-invalid={keyError ? 'true' : undefined}
                       aria-describedby={keyError ? `key-${id}-error` : `key-${id}-hint`}
                     />
@@ -325,7 +337,11 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
       models: { lite: '', balanced: '', heavy: '' },
     }
     let errors = form?.errors ?? {}
+    let first = firstInvalid(errors, PROVIDER_FIELDS)
+    // A key in error with the key field disabled (no KENTO_SECRETS_KEY): the way out is the box below it.
+    let focusRunnerHeld = first === 'apiKey' && !secretsConfigured
     let field = (name: ProviderField) => ({
+      ...(focusRunnerHeld ? {} : focusIf(first, name)),
       'aria-invalid': errors[name] ? ('true' as const) : undefined,
       'aria-describedby': errors[name] ? `provider-${name}-error` : `provider-${name}-hint`,
     })
@@ -346,6 +362,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
         </h2>
         <form method="post" action={routes.providerAdd.href()} noValidate autoComplete="off">
           <input type="hidden" name="_csrf" value={csrf} />
+          <FormErrors errors={errors} />
           <div class="field">
             <label class="field-label" for="provider-kind">
               Type
@@ -357,7 +374,17 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                 </option>
               ))}
             </select>
-            {message('kind', 'Ollama tourne sur la machine d’un runner : le service n’a jamais sa clé.')}
+            {errors.kind ? (
+              message('kind', '')
+            ) : (
+              <ul class="field-hint kind-hints" id="provider-kind-hint">
+                {KINDS.map((kind) => (
+                  <li>
+                    <strong>{KIND_LABELS[kind]}</strong> : {KIND_HINTS[kind]}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div class="field">
             <label class="field-label" for="provider-label">
@@ -390,7 +417,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             {message('apiKey', 'Chiffrée dès sa réception ; elle ne revient jamais dans le navigateur.')}
           </div>
           <label class="choice">
-            <input type="checkbox" name="runnerHeld" checked={values.runnerHeld ? true : undefined} />
+            <input type="checkbox" name="runnerHeld" checked={values.runnerHeld ? true : undefined} autoFocus={focusRunnerHeld ? true : undefined} />
             <span>
               <strong>La clé reste sur le runner</strong> — un runner de l’organisation l’a dans <span class="mono">PROVIDER_API_KEY</span> ; le
               service ne l’a jamais.
@@ -410,6 +437,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                   value={values.models[level]}
                   spellCheck={false}
                   placeholder={defaultModels(values.kind, level).join(', ') || 'à nommer'}
+                  autoFocus={first === 'models' && level === 'lite' ? true : undefined}
                   aria-invalid={errors.models ? 'true' : undefined}
                 />
               </div>

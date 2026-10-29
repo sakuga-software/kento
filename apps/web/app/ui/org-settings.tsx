@@ -9,6 +9,7 @@ import type { DeliveryView, OrgSettingsView } from '../org-settings/store.ts'
 import { kentoDefaults, LEVEL_KEYS, type ConfigField, type LevelModels } from '../repo-config/model.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { ago } from './runners.tsx'
 
@@ -202,6 +203,7 @@ function CapSection(handle: Handle<SectionProps>) {
     let { view, admin, csrf, form } = handle.props
     let mine = form?.field === 'caps' ? form : null
     let errors = mine?.errors ?? {}
+    let first = firstInvalid(errors, ['dailyCapUsd', 'monthlyCapUsd', 'alertPct'])
     let values = mine?.values ?? {
       dailyCapUsd: moneyInput(view.caps.dailyCapUsd),
       monthlyCapUsd: moneyInput(view.caps.monthlyCapUsd),
@@ -241,6 +243,7 @@ function CapSection(handle: Handle<SectionProps>) {
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
             <Hidden csrf={csrf} version={view.version} field="caps" />
+            <FormErrors errors={errors} />
             <div class="field">
               <label class="field-label" for="cap-day">
                 Plafond par jour ($)
@@ -252,6 +255,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 value={values.dailyCapUsd ?? ''}
                 inputMode="decimal"
                 autoComplete="off"
+                {...focusIf(first, 'dailyCapUsd')}
                 aria-invalid={errors.dailyCapUsd ? 'true' : undefined}
                 aria-describedby={describedBy('cap-day', errors.dailyCapUsd, true)}
               />
@@ -268,6 +272,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 value={values.monthlyCapUsd ?? ''}
                 inputMode="decimal"
                 autoComplete="off"
+                {...focusIf(first, 'monthlyCapUsd')}
                 aria-invalid={errors.monthlyCapUsd ? 'true' : undefined}
                 aria-describedby={describedBy('cap-month', errors.monthlyCapUsd, true)}
               />
@@ -284,6 +289,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 value={values.alertPct ?? ''}
                 inputMode="numeric"
                 autoComplete="off"
+                {...focusIf(first, 'alertPct')}
                 aria-invalid={errors.alertPct ? 'true' : undefined}
                 aria-describedby={describedBy('cap-alert', errors.alertPct, true)}
               />
@@ -331,11 +337,18 @@ function DefaultsSection(handle: Handle<SectionProps>) {
             <>
               <form method="post" action={routes.orgSettingsSave.href()}>
                 <Hidden csrf={csrf} version={view.version} field="level" />
+                <FormErrors errors={mine?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'org-level-error' : undefined}>
                   <legend class="visually-hidden">Niveau d’un push</legend>
                   {LEVEL_KEYS.map((key) => (
                     <label class="choice">
-                      <input type="radio" name="defaultLevel" value={key} checked={key === selected} />
+                      <input
+                        type="radio"
+                        name="defaultLevel"
+                        value={key}
+                        checked={key === selected}
+                        autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
+                      />
                       <span>
                         <strong class="mono">{key}</strong> — {LEVEL_HINTS[key]}
                       </span>
@@ -401,6 +414,7 @@ function LevelDefault(
   return () => {
     let { level, value, set, providers, admin, csrf, version, form } = handle.props
     let errors = form?.errors ?? {}
+    let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
     let values = form?.values ?? { provider: value.provider, model: value.model, fallback: value.fallback ?? '' }
     let id = `org-${level}`
     let selected = values.provider ?? ''
@@ -415,6 +429,7 @@ function LevelDefault(
           <>
             <form method="post" action={routes.orgSettingsSave.href()} noValidate>
               <Hidden csrf={csrf} version={version} field={`models.${level}`} />
+              <FormErrors errors={errors} />
               <div class="org-default-fields">
                 <div class="field">
                   <label class="field-label" for={`${id}-provider`}>
@@ -424,6 +439,7 @@ function LevelDefault(
                     class="input"
                     id={`${id}-provider`}
                     name="provider"
+                    {...focusIf(first, 'provider')}
                     aria-invalid={errors.provider ? 'true' : undefined}
                     aria-describedby={describedBy(`${id}-provider`, errors.provider, false)}
                   >
@@ -452,6 +468,7 @@ function LevelDefault(
                     maxLength={200}
                     autoComplete="off"
                     spellCheck={false}
+                    {...focusIf(first, 'model')}
                     aria-invalid={errors.model ? 'true' : undefined}
                     aria-describedby={describedBy(`${id}-model`, errors.model, false)}
                   />
@@ -469,6 +486,7 @@ function LevelDefault(
                     maxLength={200}
                     autoComplete="off"
                     spellCheck={false}
+                    {...focusIf(first, 'fallback')}
                     aria-invalid={errors.fallback ? 'true' : undefined}
                     aria-describedby={describedBy(`${id}-fallback`, errors.fallback, true)}
                   />
@@ -525,6 +543,7 @@ function BotsSection(handle: Handle<SectionProps>) {
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
             <Hidden csrf={csrf} version={view.version} field="trustedBots" />
+            <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
               <label class="field-label" for="trusted-bots">
                 Un login par ligne
@@ -535,6 +554,7 @@ function BotsSection(handle: Handle<SectionProps>) {
                 name="trustedBots"
                 rows={4}
                 spellCheck={false}
+                autoFocus={mine?.errors.trustedBots ? true : undefined}
                 aria-invalid={mine?.errors.trustedBots ? 'true' : undefined}
                 aria-describedby={describedBy('trusted-bots', mine?.errors.trustedBots, true)}
                 value={value}

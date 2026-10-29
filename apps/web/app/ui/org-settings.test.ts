@@ -117,6 +117,12 @@ function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, stat
   return { ...fake, request, signIn }
 }
 
+
+/** REV-28. The fields that the page focuses at load: the `id` of each element with `autofocus`. */
+function autofocused(html: string): string[] {
+  return [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bautofocus\b[^>]*>/gi)].map((m) => /\bid="([^"]+)"/.exec(m[0])?.[1] ?? '?')
+}
+
 describe('the settings of the org (REV-13)', () => {
   it('shows an admin the cost, the forms, the trusted bots and the state of the App', async () => {
     let { request, signIn } = setup()
@@ -207,6 +213,19 @@ describe('the settings of the org (REV-13)', () => {
     assert.match(html, /Un pourcentage entier, de 1 à 100/)
     assert.match(html, /aria-invalid="true"/)
     assert.deepEqual(saves, [])
+    // REV-28: the page opens on the first field in error, and says that nothing was saved.
+    assert.deepEqual(autofocused(html), ['cap-day'])
+    assert.match(html, /Rien n’est enregistré<\/strong> : 3 champs à corriger/)
+  })
+
+  it('focuses the first field in error of each form of the settings (REV-28)', async () => {
+    let { request, signIn } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    let send = async (form: Record<string, string>) => autofocused(await (await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', ...form } })).text())
+    assert.deepEqual(await send({ field: 'caps', dailyCapUsd: '', monthlyCapUsd: '', alertPct: '0' }), ['cap-alert'])
+    assert.deepEqual(await send({ field: 'trustedBots', trustedBots: 'github.com/renovate' }), ['trusted-bots'])
+    assert.deepEqual(await send({ field: 'models.heavy', provider: 'service', model: '', fallback: '' }), ['org-heavy-model'])
+    assert.deepEqual(await send({ field: 'models.lite', provider: 'not-ours', model: 'x', fallback: '' }), ['org-lite-provider'])
   })
 
   it('saves the trusted bots in lowercase, and refuses a person', async () => {

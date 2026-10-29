@@ -16,6 +16,11 @@ const ID = '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
 const NOW = new Date('2026-10-29T10:00:00Z')
 const KEY = 'sk-ant-api03-the-key-of-the-screen-test-abcd'
 
+/** REV-28. The fields that the page focuses at load: the `id` of each element with `autofocus`. */
+function autofocused(html: string): string[] {
+  return [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bautofocus\b[^>]*>/gi)].map((m) => /\bid="([^"]+)"/.exec(m[0])?.[1] ?? '?')
+}
+
 function provider(overrides: Partial<ProviderView> = {}): ProviderView {
   return {
     id: ID,
@@ -222,6 +227,35 @@ describe('the section « Providers et clés »', () => {
     let html = await response.text()
     assert.match(html, /Un nom de 1 à 60 caractères/)
     assert.ok(!html.includes(KEY))
+  })
+
+  it('focuses the first field in error of « Ajouter un provider », and announces that nothing was saved (REV-28)', async () => {
+    let { request, signIn } = setup([])
+    let { cookie, csrf } = await signIn(ALEX)
+    let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'openai_compatible', label: 'x', baseUrl: 'http://llm.example.com', apiKey: '' } })
+    assert.equal(response.status, 422)
+    let html = await response.text()
+    assert.deepEqual(autofocused(html), ['provider-baseUrl'], 'the URL comes before the key in the form')
+    assert.match(html, /role="alert"[^>]*><p><strong>Rien n’est enregistré<\/strong> : 3 champs à corriger/)
+    let page = await (await request('/settings', { cookie })).text()
+    assert.deepEqual(autofocused(page), [], 'a page without error moves no focus')
+    assert.doesNotMatch(page, /Rien n’est enregistré/)
+  })
+
+  it('focuses the key of « Remplacer la clé » after an error (REV-28)', async () => {
+    let { request, signIn } = setup([provider()])
+    let { cookie, csrf } = await signIn(ALEX)
+    let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'short' } })
+    assert.equal(response.status, 422)
+    assert.deepEqual(autofocused(await response.text()), [`key-${ID}`])
+  })
+
+  it('says under « Type » what each type needs, not only Ollama (REV-28)', async () => {
+    let { request, signIn } = setup([])
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/settings', { cookie })).text()
+    for (let kind of ['Anthropic', 'OpenRouter', 'Compatible OpenAI', 'Ollama']) assert.match(html, new RegExp(`<li><strong>${kind}</strong> : `))
+    assert.match(html, /aria-describedby="provider-kind-hint"/)
   })
 
   it('refuses a key when the service has no master key', async () => {

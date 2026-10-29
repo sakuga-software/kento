@@ -15,6 +15,7 @@ import {
 import type { ProviderOption } from '../repo-config/providers.ts'
 import type { RepoConfigView } from '../repo-config/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -268,6 +269,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
     let field: ConfigField = `models.${level}`
     let mine = ctx.form?.field === field ? ctx.form : null
     let errors = mine?.errors ?? {}
+    let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
     let current = value.value
     let values = mine?.values ?? { provider: current.provider, model: current.model, fallback: current.fallback ?? '' }
     let id = `level-${level}`
@@ -288,6 +290,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
           <>
             <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })} noValidate>
               <Hidden ctx={ctx} field={field} />
+              <FormErrors errors={errors} />
               <div class="field">
                 <label class="field-label" for={providerId}>
                   Provider
@@ -296,6 +299,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   class="input"
                   id={providerId}
                   name="provider"
+                  {...focusIf(first, 'provider')}
                   aria-invalid={errors.provider ? 'true' : undefined}
                   aria-describedby={describedBy(providerId, errors.provider, true)}
                 >
@@ -325,6 +329,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   autoComplete="off"
                   spellCheck={false}
                   required
+                  {...focusIf(first, 'model')}
                   aria-invalid={errors.model ? 'true' : undefined}
                   aria-describedby={describedBy(modelId, errors.model, false)}
                 />
@@ -342,6 +347,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   maxLength={200}
                   autoComplete="off"
                   spellCheck={false}
+                  {...focusIf(first, 'fallback')}
                   aria-invalid={errors.fallback ? 'true' : undefined}
                   aria-describedby={describedBy(fallbackId, errors.fallback, true)}
                 />
@@ -392,11 +398,18 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
           {ctx.admin ? (
             <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })}>
               <Hidden ctx={ctx} field="level" />
+              <FormErrors errors={mine?.errors ?? {}} />
               <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'default-level-error' : undefined}>
                 <legend class="visually-hidden">Niveau par défaut</legend>
                 {LEVEL_KEYS.map((key) => (
                   <label class="choice">
-                    <input type="radio" name="defaultLevel" value={key} checked={key === selected} />
+                    <input
+                      type="radio"
+                      name="defaultLevel"
+                      value={key}
+                      checked={key === selected}
+                      autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
+                    />
                     <span>
                       <strong class="mono">{key}</strong> — {LEVEL_HINTS[key]}
                     </span>
@@ -478,11 +491,27 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             <>
               <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })}>
                 <Hidden ctx={ctx} field="trigger" />
+                <FormErrors errors={triggerForm?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={triggerForm?.errors.trigger ? 'trigger-error' : undefined}>
                   <legend class="visually-hidden">Ce qui crée une review</legend>
                   {TRIGGER_CHOICES.map((choice) => (
                     <label class="choice">
-                      <input type="radio" name="trigger" value={choice.value} checked={choice.value === selectedTrigger} />
+                      <input
+                        type="radio"
+                        name="trigger"
+                        value={choice.value}
+                        checked={choice.value === selectedTrigger}
+                        autoFocus={
+                          triggerForm?.errors.trigger &&
+                          choice.value ===
+                            radioFocus(
+                              selectedTrigger,
+                              TRIGGER_CHOICES.map((c) => c.value),
+                            )
+                            ? true
+                            : undefined
+                        }
+                      />
                       <span>
                         <strong>{choice.title}</strong> — {choice.text}
                       </span>
@@ -521,6 +550,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             <>
               <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })} noValidate>
                 <Hidden ctx={ctx} field="paths" />
+                <FormErrors errors={pathsForm?.errors ?? {}} />
                 <div class="field">
                   <label class="field-label" for="config-paths">
                     Une review automatique seulement si la PR touche l’un de ces chemins
@@ -531,6 +561,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     name="paths"
                     rows={5}
                     spellCheck={false}
+                    autoFocus={pathsForm?.errors.paths ? true : undefined}
                     aria-invalid={pathsForm?.errors.paths ? 'true' : undefined}
                     aria-describedby={describedBy('config-paths', pathsForm?.errors.paths, true)}
                     value={pathsValue}
@@ -580,6 +611,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             <>
               <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })} noValidate>
                 <Hidden ctx={ctx} field="monthlyCapUsd" />
+                <FormErrors errors={capForm?.errors ?? {}} />
                 <div class="field">
                   <label class="field-label" for="config-cap">
                     Plafond des reviews automatiques, en dollars par mois
@@ -591,6 +623,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     value={capValue}
                     inputMode="decimal"
                     autoComplete="off"
+                    autoFocus={capForm?.errors.monthlyCapUsd ? true : undefined}
                     aria-invalid={capForm?.errors.monthlyCapUsd ? 'true' : undefined}
                     aria-describedby={describedBy('config-cap', capForm?.errors.monthlyCapUsd, true)}
                   />

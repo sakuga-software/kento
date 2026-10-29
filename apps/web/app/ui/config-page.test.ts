@@ -104,6 +104,12 @@ function setup(orgConfig: ConfigOverrides = {}) {
 
 const BALANCED = { field: 'models.balanced', provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: '' }
 
+
+/** REV-28. The fields that the page focuses at load: the `id` of each element with `autofocus`. */
+function autofocused(html: string): string[] {
+  return [...html.matchAll(/<(?:input|select|textarea)\b[^>]*\bautofocus\b[^>]*>/gi)].map((m) => /\bid="([^"]+)"/.exec(m[0])?.[1] ?? '?')
+}
+
 describe('the Config screen of a repository', () => {
   it('shows each level with its model, inherited from the org, and the five tabs', async () => {
     let { signIn } = setup({ models: { heavy: { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null } } })
@@ -180,6 +186,16 @@ describe('the Config screen of a repository', () => {
     let cap = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'monthlyCapUsd', monthlyCapUsd: 'beaucoup' } })
     assert.equal(cap.status, 422)
     assert.equal(saves.length, 0)
+    // REV-28: each form opens on its first field in error, with a summary for a screen reader.
+    assert.deepEqual(autofocused(html), ['level-balanced-provider'])
+    let capHtml = await cap.text()
+    assert.deepEqual(autofocused(capHtml), ['config-cap'])
+    assert.match(capHtml, /role="alert"[^>]*><p><strong>Rien n’est enregistré/)
+    let model = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'models.lite', provider: 'service', model: 'a b', fallback: '' } })
+    assert.deepEqual(autofocused(await model.text()), ['level-lite-model'])
+    let paths = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'paths', paths: '../etc' } })
+    assert.equal(paths.status, 422)
+    assert.deepEqual(autofocused(await paths.text()), ['config-paths'])
   })
 
   it('refuses a form from an older version (409): someone saved in between, nothing is overwritten', async () => {

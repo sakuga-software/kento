@@ -118,3 +118,31 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await db.end()
   }
 })
+
+// REV-28. A form sent back with its errors opens on its first field in error, in view, with the
+// focus: « Ajouter un provider » is at the bottom of a long page.
+test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
+  let errors = watchConsole(page)
+  await signIn(page, 'alex')
+  await page.goto('/settings')
+  let form = page.locator('#nouveau-provider')
+  await form.getByLabel('Type').selectOption('openai_compatible')
+  await form.getByLabel('Nom').fill('vLLM')
+  await form.getByLabel('URL du serveur').fill('http://llm.example.com/v1')
+  await form.getByRole('button', { name: 'Ajouter le provider' }).click()
+  let url = form.getByLabel('URL du serveur')
+  await expect(url).toBeFocused()
+  await expect(url).toBeInViewport()
+  await expect(form.getByRole('alert')).toContainText('Rien n’est enregistré')
+  await expect(form.getByText('Une URL en https://')).toBeVisible()
+  await expectNoAxeViolations(page)
+
+  // The limits of the org: the same rule.
+  await page.goto('/settings')
+  await page.locator('#cap-alert').fill('0')
+  await page.getByRole('button', { name: 'Enregistrer le plafond' }).click()
+  await expect(page.locator('#cap-alert')).toBeFocused()
+  await expect(page.locator('#cap-alert')).toBeInViewport()
+  // The two 422 answers are the only errors of the console.
+  expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
+})

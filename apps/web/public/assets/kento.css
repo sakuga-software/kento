@@ -1680,6 +1680,15 @@ kbd,
 .model-field + .model-field {
   margin-top: var(--space-2);
 }
+/* REV-28. What each type of provider needs, all listed: right whatever the choice, without JavaScript. */
+.kind-hints {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+/* REV-28. « Rien n’est enregistré » at the top of a form sent back with its errors. */
+.form-errors {
+  margin-bottom: var(--space-4);
+}
 
 @media (max-width: 760px) {
   .provider {
