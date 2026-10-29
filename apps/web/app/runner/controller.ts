@@ -20,11 +20,14 @@ import { createGitHub } from '../publish/github.ts'
 import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { RunnerRow, RunnerStore } from './store.ts'
-import { bearerToken, hashToken, newRunnerToken, sameSecret } from './tokens.ts'
+import { bearerToken, hashToken, newRunnerToken, REGISTRATION_TOKEN_PREFIX, sameSecret } from './tokens.ts'
 
 export interface RunnerApiDependencies {
   store: RunnerStore
-  /** The secret that `register` asks for. Null closes the registration. */
+  /**
+   * The registration token of the environment, for a runner of the service. Null closes this way;
+   * the tokens of the Runners screen work either way.
+   */
   registrationToken: string | null
   /** Null when the GitHub App is not configured: a claim then gives no job. */
   mintInstallationToken: MintInstallationToken | null
@@ -64,6 +67,31 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     actions: {
       async register({ request }) {
         let given = bearerToken(request)
+        // A token of the Runners screen: one use, one hour, and the runner gets the org, the name,
+        // the labels and the trust that the admin chose. The body gives only the version.
+        if (given?.startsWith(REGISTRATION_TOKEN_PREFIX)) {
+          let body = await readJson(request, parseRegisterRequest)
+          if (body instanceof Response) return body
+          let token = newRunnerToken()
+          let registered = await deps.store.registerWithToken({
+            registrationHash: hashToken(given),
+            version: body.version,
+            tokenHash: hashToken(token),
+          })
+          if (!registered) {
+            log('warn', 'runner.registration_refused', { reason: 'screen token unknown, used or expired' })
+            return error(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' })
+          }
+          log('info', 'runner.registered', {
+            runnerId: registered.runnerId,
+            orgId: registered.orgId,
+            name: registered.name,
+            labels: registered.labels,
+            version: body.version,
+          })
+          return json<RegisterResponse>(201, { runnerId: registered.runnerId, token })
+        }
+
         if (!deps.registrationToken || !given || !sameSecret(given, deps.registrationToken)) {
           log('warn', 'runner.registration_refused')
           return error(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' })
@@ -73,7 +101,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
 
         let token = newRunnerToken()
         let runnerId = await deps.store.createRunner({ ...body, tokenHash: hashToken(token) })
-        log('info', 'runner.registered', { runnerId, name: body.name, labels: body.labels, version: body.version })
+        log('info', 'runner.registered', { runnerId, name: body.name, labels: body.labels, version: body.version, service: true })
         return json<RegisterResponse>(201, { runnerId, token })
       },
 

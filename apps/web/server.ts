@@ -16,6 +16,7 @@ import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
+import { createRunnersAdminStore } from './app/runner/admin.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -96,6 +97,8 @@ let sweepTimer = sessionStorage
 
 let router = createAppRouter({
   auth,
+  // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
+  runnersAdmin: createRunnersAdminStore(database.sql),
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,

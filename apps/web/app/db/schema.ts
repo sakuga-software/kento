@@ -62,6 +62,11 @@ export const repos = pgTable(
     /** No job is created for a repository that is not enabled. */
     enabled: boolean('enabled').notNull().default(false),
     defaultLevel: reviewLevel('default_level').notNull().default('lite'),
+    /**
+     * The label that a runner must carry to run the jobs of this repository. Null: any runner of the
+     * org, or of the service.
+     */
+    defaultRunnerPool: text('default_runner_pool'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -69,7 +74,7 @@ export const repos = pgTable(
 )
 
 /**
- * A machine that runs jobs. It registers once with the registration token, and gets a runner token
+ * A machine that runs jobs. It registers once with a registration token, and gets a runner token
  * that the service shows once and keeps only as a hash. Setting `revoked_at` refuses the token at
  * the next call.
  */
@@ -77,6 +82,12 @@ export const runners = pgTable(
   'runners',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    /**
+     * The org whose admin made its registration token in the Runners screen: the runner runs the
+     * jobs of this org only. Null: a runner of the service, registered with
+     * KENTO_RUNNER_REGISTRATION_TOKEN; it runs the jobs of every org, and only an operator manages it.
+     */
+    orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'cascade' }),
     /** The name that the runner gave at its registration. Two runners can have the same name. */
     name: text('name').notNull(),
     labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
@@ -85,8 +96,9 @@ export const runners = pgTable(
     /** SHA-256 of the runner token, in hex. The token itself is never stored. */
     tokenHash: text('token_hash').notNull().unique(),
     /**
-     * A trusted runner without its own model key gets the key of the service with each job. Only
-     * an operator sets it, in the database: a registration never does.
+     * A trusted runner without its own model key gets the key of the service with each job. An
+     * admin of its org sets it in the Runners screen, or its registration token sets it (key mode
+     * « app »). A runner of the service: only an operator sets it, in the database.
      */
     trusted: boolean('trusted').notNull().default(false),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -94,6 +106,35 @@ export const runners = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
+  (table) => [index('runners_org_id_idx').on(table.orgId)],
+)
+
+/**
+ * A registration token made in the Runners screen. It is shown once, kept only as a hash, works
+ * once, and ends after one hour. The name, the labels and the key mode of the runner are fixed in
+ * it: the runner cannot choose them.
+ */
+export const runnerRegistrations = pgTable(
+  'runner_registrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
+    /** Key mode « app »: the runner is trusted, and gets the model key of the service. */
+    trusted: boolean('trusted').notNull(),
+    /** SHA-256 of the registration token, in hex. The token itself is never stored. */
+    tokenHash: text('token_hash').notNull().unique(),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Set by the registration of the runner: the token never works twice. */
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (table) => [index('runner_registrations_org_id_idx').on(table.orgId)],
 )
 
 /** A unit of work for a runner: one review or one resolve on one head of a pull request. */

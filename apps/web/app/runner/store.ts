@@ -64,7 +64,16 @@ export const RETRY_BACKOFF_SECONDS = 30
 
 /** What the runner API reads and writes. Tests of the routes can pass a fake. */
 export interface RunnerStore {
+  /** A runner of the service, registered with KENTO_RUNNER_REGISTRATION_TOKEN: no org. */
   createRunner(input: { name: string; labels: string[]; version: string; tokenHash: string }): Promise<string>
+  /**
+   * Uses a registration token of the Runners screen: creates the runner with the org, the name, the
+   * labels and the trust of the token, and marks the token used. Null when the token is unknown,
+   * used or expired. Two registrations with the same token at the same time make one runner.
+   */
+  registerWithToken(input: { registrationHash: string; version: string; tokenHash: string }): Promise<
+    { runnerId: string; name: string; labels: string[]; orgId: string } | null
+  >
   /** The runner of this token hash, when it is not revoked. Marks it as seen. */
   findRunner(tokenHash: string): Promise<RunnerRow | null>
   /**
@@ -112,6 +121,25 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return row!.id
     },
 
+    async registerWithToken({ registrationHash, version, tokenHash }) {
+      return sql.begin(async (tx) => {
+        // The update locks the row: a second registration with the same token waits, then sees
+        // `used_at` set and gets nothing.
+        let [registration] = await tx<{ id: string; orgId: string; name: string; labels: string[]; trusted: boolean }[]>`
+          update runner_registrations set used_at = now()
+          where token_hash = ${registrationHash} and used_at is null and expires_at > now()
+          returning id, org_id as "orgId", name, labels, trusted`
+        if (!registration) return null
+        let [runner] = await tx<{ id: string }[]>`
+          insert into runners (org_id, name, labels, version, token_hash, trusted)
+          values (${registration.orgId}, ${registration.name}, ${registration.labels}, ${version}, ${tokenHash},
+            ${registration.trusted})
+          returning id`
+        await tx`update runner_registrations set runner_id = ${runner!.id} where id = ${registration.id}`
+        return { runnerId: runner!.id, name: registration.name, labels: registration.labels, orgId: registration.orgId }
+      })
+    },
+
     async findRunner(tokenHash) {
       let [row] = await sql<RunnerRow[]>`
         update runners set last_seen_at = now()
@@ -134,7 +162,16 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           githubInstallationId: string
         })[]
       >`
-        with claimed as (
+        with me as (
+          -- A claim waits up to 30 s: the runner may have been revoked since its request began, so
+          -- it is read again here, with its trust. FOR SHARE orders the claim with a revocation:
+          -- the revocation waits for this claim and then gives its job back to the queue, or this
+          -- claim waits for the revocation and then sees it.
+          select id, org_id, labels, trusted from runners
+          where id = ${runnerId} and revoked_at is null and (${trustedOnly}::boolean = false or trusted)
+          for share
+        ),
+        claimed as (
           update jobs set
             state = 'running',
             runner_id = ${runnerId},
@@ -143,19 +180,19 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             attempts = attempts + 1,
             updated_at = now()
           where id = (
-            select id from jobs
-            where state = 'queued' and kind = any(${kinds}::job_kind[]) and base_ref is not null
-              and attempts < ${MAX_ATTEMPTS}
-              and (not_before is null or not_before <= now())
-            order by created_at
-            for update skip locked
+            select jobs.id from jobs
+            join repos on repos.id = jobs.repo_id
+            cross join me
+            where jobs.state = 'queued' and jobs.kind = any(${kinds}::job_kind[]) and jobs.base_ref is not null
+              and jobs.attempts < ${MAX_ATTEMPTS}
+              and (jobs.not_before is null or jobs.not_before <= now())
+              -- A runner of an org runs the jobs of that org only; a runner of the service, every job.
+              and (me.org_id is null or repos.org_id = me.org_id)
+              -- The pool of the repository: a runner without its label never gets the job.
+              and (repos.default_runner_pool is null or repos.default_runner_pool = any(me.labels))
+            order by jobs.created_at
+            for update of jobs skip locked
             limit 1
-          )
-          -- A claim waits up to 30 s: the runner may have been revoked since its request began.
-          -- Its trust is read here too, for the same reason.
-          and exists (
-            select 1 from runners
-            where id = ${runnerId} and revoked_at is null and (${trustedOnly}::boolean = false or trusted)
           )
           returning id, attempts, kind, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at
         )
@@ -164,9 +201,9 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
           orgs.github_installation_id as "githubInstallationId",
-          runners.trusted as "runnerTrusted"
+          me.trusted as "runnerTrusted"
         from claimed
-        join runners on runners.id = ${runnerId}
+        cross join me
         join repos on repos.id = claimed.repo_id
         join orgs on orgs.id = repos.org_id`
       if (!row) return null

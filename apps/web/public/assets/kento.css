@@ -895,3 +895,305 @@ kbd,
     transition: none !important;
   }
 }
+
+/* ---------------------------------------------------------------- Shared parts: sections, tags, states, fields (REV-10) */
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+}
+.count {
+  min-width: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunken);
+  color: var(--ink-soft);
+  font: 600 var(--text-sm) / 24px var(--font-ui);
+  text-align: center;
+}
+.hint {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper-sunken);
+  color: var(--ink-soft);
+  font-size: var(--text-xs);
+  line-height: 22px;
+}
+
+/* A state: a dot and a word. The word carries the meaning; the colour only repeats it. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  font: 600 var(--text-xs) / 22px var(--font-ui);
+  white-space: nowrap;
+}
+.status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.status-online {
+  background: var(--matsu-wash);
+  color: var(--matsu);
+}
+.status-idle,
+.status-wait {
+  background: var(--kuchiba-wash);
+  color: var(--kuchiba);
+}
+.status-stale,
+.status-revoked {
+  background: var(--paper-sunken);
+  color: var(--ink-muted);
+}
+.status-alert {
+  background: var(--shu-wash);
+  color: var(--shu);
+}
+
+.button-danger {
+  border-color: var(--shu);
+  color: var(--shu);
+}
+.button-danger-solid {
+  background: var(--shu);
+  border-color: var(--shu);
+  color: var(--on-shu);
+}
+.button-danger-solid:hover {
+  background: var(--shu-strong);
+  border-color: var(--shu-strong);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  border: 0;
+}
+.field-label {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.field-hint {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.field-error {
+  color: var(--shu);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.input {
+  width: 100%;
+  max-width: 420px;
+  min-height: var(--control-h-touch);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: var(--text-base);
+}
+.input[aria-invalid='true'] {
+  border-color: var(--shu);
+}
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 640px;
+  padding: var(--space-2) 0;
+  line-height: var(--leading-base);
+}
+.choice input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--shu);
+}
+
+/* ---------------------------------------------------------------- Runners (REV-10) */
+
+.runner-section {
+  margin-bottom: var(--space-8);
+}
+.runner-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.runner {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-1);
+}
+.runner-revoked {
+  box-shadow: none;
+  background: transparent;
+}
+.runner-expired {
+  border-color: var(--shu);
+}
+.runner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.runner-name {
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+  overflow-wrap: anywhere;
+}
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.labels-none {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.runner-facts-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+}
+.runner-facts-list dt,
+.facts dt {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  letter-spacing: 0.02em;
+}
+.runner-facts-list dd,
+.facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.runner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.confirm summary {
+  list-style: none;
+}
+.confirm summary::-webkit-details-marker {
+  display: none;
+}
+.confirm[open] summary {
+  background: var(--shu-wash);
+}
+.confirm-body {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 560px;
+  margin-top: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--shu);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+.runner-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+.facts dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.token-card,
+.new-runner {
+  margin-bottom: var(--space-8);
+}
+.new-runner > .hint {
+  margin-bottom: var(--space-4);
+}
+.token-card {
+  display: grid;
+  gap: var(--space-3);
+  border-color: var(--shu);
+}
+.token-card .banner {
+  margin-bottom: 0;
+}
+.copy-block {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+.command {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--paper-sunken);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  white-space: pre;
+  overflow-x: auto;
+  resize: vertical;
+}
+.copy-status {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 760px) {
+  .runner {
+    padding: var(--space-4);
+  }
+  .runner-facts {
+    grid-template-columns: 1fr;
+  }
+  .runner-facts-list {
+    grid-template-columns: 1fr 1fr;
+  }
+  .runner-actions .button,
+  .confirm summary {
+    min-height: var(--control-h-touch);
+  }
+}

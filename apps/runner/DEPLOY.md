@@ -29,6 +29,7 @@ COMMIT=$(git rev-parse HEAD)
 docker buildx build --platform linux/amd64,linux/arm64 \
   -f apps/runner/Dockerfile --build-arg APP_COMMIT=$COMMIT \
   -t ghcr.io/sakuga-software/kento-runner:$COMMIT \
+  -t ghcr.io/sakuga-software/kento-runner:$(node -p "require('./apps/runner/package.json').version") \
   -t ghcr.io/sakuga-software/kento-runner:latest \
   --push .
 ```
@@ -112,7 +113,24 @@ update runners set trusted = true where id = '<id of runners-host>';
    # 401
    ```
 
+## Another runner: the Runners screen (REV-10)
+
+From REV-10 on, an admin of the org adds a runner from `https://review.sakuga.dev/runners`, with no
+change to the web service: « Nouveau runner » → a name, labels and the key mode → a registration
+token shown once, valid one hour and one use, and a `docker run` to copy. The runner gets the name,
+the labels and the trust of the token, and runs the jobs of that org only. The image of the command
+is `ghcr.io/sakuga-software/kento-runner:<version of the service>`: publish that tag (section 1).
+
+The runners registered with `KENTO_RUNNER_REGISTRATION_TOKEN`, like `runners-host`, stay
+« runners du service »: they run the jobs of every org, the screen shows them, and only an operator
+trusts or revokes them, in the database, as below.
+
 ## 5. Revoke a runner
+
+A runner of the screen: « Révoquer… » on its card. Its token stops at the next call, and its
+running job goes back to the queue at once, without spending an attempt.
+
+A runner of the service:
 
 ```sql
 update runners set revoked_at = now() where id = '<id>';
@@ -133,8 +151,8 @@ needed.
 | --- | --- | --- | --- |
 | `KENTO_URL` | yes | | The web service. HTTPS only (`http://127.0.0.1` or `localhost` for a local test). |
 | `KENTO_REGISTRATION_TOKEN` | first start | | Registers the runner when the state volume has no `runner.json`. A secret. |
-| `KENTO_RUNNER_NAME` | no | host name | Shown in `runners.name`. |
-| `KENTO_RUNNER_LABELS` | no | | Comma-separated labels, kept in `runners.labels`. M2 does not route jobs by label yet. |
+| `KENTO_RUNNER_NAME` | no | host name | Shown in `runners.name`. A token of the Runners screen sets the name itself. |
+| `KENTO_RUNNER_LABELS` | no | | Comma-separated labels, kept in `runners.labels`. A token of the Runners screen sets them itself. A repository with a `default_runner_pool` gives its jobs only to a runner that has that label. |
 | `PROVIDER_KIND` | no | `openrouter` | The API of the model. M2 knows `openrouter` only. |
 | `PROVIDER_BASE_URL` | no | `https://openrouter.ai/api/v1` | Another server with the same API, HTTPS only. |
 | `PROVIDER_API_KEY` | no | | The key of the runner (key mode « runner »). With it, the service never sends its key. A secret. |

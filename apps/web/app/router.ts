@@ -10,6 +10,7 @@ import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
 import { authRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
+import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
 import { createUiControllers, type AuthDependencies } from './ui/pages.tsx'
 
@@ -26,6 +27,8 @@ export interface AppDependencies {
   runner?: RunnerApiDependencies
   /** The GitHub sign-in of the screens. Without it, every screen leads to « Connexion indisponible ». */
   auth?: AuthDependencies | null
+  /** What the Runners screen reads and writes. Without it, the screen stays empty. */
+  runnersAdmin?: RunnersAdminStore | null
 }
 
 export function createAppRouter(deps: AppDependencies) {
@@ -42,7 +45,12 @@ export function createAppRouter(deps: AppDependencies) {
     ],
   })
   router.map(routes, createController(deps))
-  let ui = createUiControllers({ version: deps.version, commit: deps.commit, auth: deps.auth ?? null })
+  let ui = createUiControllers({
+    version: deps.version,
+    commit: deps.commit,
+    auth: deps.auth ?? null,
+    runners: deps.runnersAdmin ?? null,
+  })
   router.map(pageRoutes, ui.pages)
   router.map(authRoutes, ui.signIn)
   if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))

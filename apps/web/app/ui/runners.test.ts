@@ -1,0 +1,321 @@
+import * as assert from 'remix/assert'
+import { describe, it } from 'remix/test'
+
+import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { disabledWebhook } from '../github/test-helpers.ts'
+import { createAppRouter } from '../router.ts'
+import type { RunnersAdminStore, RunnersScreen, RunnerView } from '../runner/admin.ts'
+import { hashToken } from '../runner/tokens.ts'
+import { ago, dockerCommand, newerVersion, readRegistrationForm, runnerState } from './runners.tsx'
+
+const COOKIE = '__Host-kento_session'
+const RUNNER_ID = '11111111-1111-4111-8111-111111111111'
+const REGISTRATION_ID = '22222222-2222-4222-8222-222222222222'
+const NOW = new Date('2026-10-29T10:00:00Z')
+
+function runner(overrides: Partial<RunnerView> = {}): RunnerView {
+  return {
+    id: RUNNER_ID,
+    name: 'mac-mini',
+    labels: ['macos'],
+    version: '1.2.3',
+    trusted: false,
+    orgId: ORG.id,
+    revokedAt: null,
+    lastSeenAt: new Date(NOW.getTime() - 10_000),
+    createdAt: NOW,
+    currentJob: null,
+    jobs24h: 0,
+    ...overrides,
+  }
+}
+
+/** A store in memory that records each write, with the org it was for. */
+function fakeStore(screen: Partial<RunnersScreen> = {}) {
+  let writes: string[] = []
+  let registrations: { orgId: string; name: string; labels: string[]; trusted: boolean; tokenHash: string }[] = []
+  let store: RunnersAdminStore = {
+    async screen() {
+      return { now: NOW, runners: [], registrations: [], ...screen }
+    },
+    async createRegistration(input) {
+      registrations.push(input)
+      writes.push(`create ${input.orgId} ${input.name}`)
+      return { id: REGISTRATION_ID, expiresAt: new Date(NOW.getTime() + 3600_000) }
+    },
+    async renewRegistration(input) {
+      writes.push(`renew ${input.orgId} ${input.registrationId}`)
+      if (input.registrationId !== REGISTRATION_ID) return null
+      return { id: 'new', name: 'gpu', labels: ['gpu'], trusted: false, expiresAt: NOW }
+    },
+    async discardRegistration(orgId, id) {
+      writes.push(`discard ${orgId} ${id}`)
+      return id === REGISTRATION_ID
+    },
+    async setTrusted(orgId, id, trusted) {
+      writes.push(`trust ${orgId} ${id} ${trusted}`)
+      return id === RUNNER_ID
+    },
+    async revoke(orgId, id) {
+      writes.push(`revoke ${orgId} ${id}`)
+      return id === RUNNER_ID ? { name: 'mac-mini', requeued: [] } : null
+    },
+  }
+  return { store, writes, registrations }
+}
+
+function setup(screen: Partial<RunnersScreen> = {}, orgs = [ORG]) {
+  let auth = fakeAuth({ orgs })
+  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, CAMILLE, 'member')
+  let fake = fakeStore(screen)
+  let router = createAppRouter({
+    checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
+    version: '1.2.3',
+    commit: null,
+    webhook: disabledWebhook,
+    auth: auth.deps,
+    runnersAdmin: fake.store,
+  })
+
+  function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
+    let headers = new Headers(init.headers)
+    if (init.cookie) headers.set('Cookie', init.cookie)
+    return router.fetch(
+      new Request(new URL(path, 'http://localhost'), {
+        method: init.form ? 'POST' : 'GET',
+        headers,
+        body: init.form ? new URLSearchParams(init.form) : undefined,
+      }),
+    )
+  }
+
+  async function signIn(profile = ALEX) {
+    auth.as(profile)
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let cookie = cookieOf(callback, COOKIE)!
+    let html = await (await request('/runners', { cookie })).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''
+    return { cookie, csrf }
+  }
+
+  return { ...fake, auth, request, signIn }
+}
+
+describe('the form « Nouveau runner »', () => {
+  function form(values: Record<string, string>) {
+    let data = new FormData()
+    for (let [key, value] of Object.entries(values)) data.set(key, value)
+    return data
+  }
+
+  it('reads a name, labels and the key mode', () => {
+    let read = readRegistrationForm(form({ name: 'mac-mini', labels: 'macos, arm64,macos', keyMode: 'runner' }))
+    assert.deepEqual(read.input, { name: 'mac-mini', labels: ['macos', 'arm64'], trusted: false })
+    assert.deepEqual(read.errors, {})
+    assert.equal(readRegistrationForm(form({ name: 'a', labels: '', keyMode: 'app' })).input?.trusted, true)
+  })
+
+  it('refuses a name or a label that the runner protocol refuses, and a missing key mode', () => {
+    let read = readRegistrationForm(form({ name: 'mac mini', labels: 'ok,pas bien;', keyMode: 'other' }))
+    assert.equal(read.input, null)
+    assert.ok(read.errors.name)
+    assert.ok(read.errors.labels)
+    assert.ok(read.errors.keyMode)
+    assert.ok(readRegistrationForm(form({ name: 'x', labels: Array.from({ length: 21 }, (_, i) => `l${i}`).join(','), keyMode: 'app' })).errors.labels)
+  })
+})
+
+describe('the docker run command', () => {
+  it('holds every variable of the runner and the image of the release', () => {
+    let command = dockerCommand({ kentoUrl: 'https://review.test', token: 'kento_reg_abc', name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true, version: '1.2.3' })
+    for (let part of [
+      '-e KENTO_URL=https://review.test',
+      '-e KENTO_REGISTRATION_TOKEN=kento_reg_abc',
+      '-e KENTO_RUNNER_NAME=mac-mini',
+      '-e KENTO_RUNNER_LABELS=macos,arm64',
+      '-e PROVIDER_KIND=openrouter',
+      '-e PROVIDER_BASE_URL=https://openrouter.ai/api/v1',
+      '-v kento-runner-state:/var/lib/kento-runner',
+      'ghcr.io/sakuga-software/kento-runner:1.2.3',
+    ]) {
+      assert.ok(command.includes(part), part)
+    }
+    assert.ok(!command.includes('PROVIDER_API_KEY'), 'a runner on the key of the app needs no key')
+    let own = dockerCommand({ kentoUrl: 'https://review.test', token: 't', name: 'n', labels: [], trusted: false, version: '1.2.3' })
+    assert.ok(own.includes('-e PROVIDER_API_KEY=<votre clé OpenRouter>'))
+  })
+})
+
+describe('the state of a runner', () => {
+  it('is online, idle or stale from its last call, and revoked above all', () => {
+    let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(30) }, NOW), 'online')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(90) }, NOW), 'online')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(91) }, NOW), 'idle')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(86_400) }, NOW), 'idle')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(86_401) }, NOW), 'stale')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: null }, NOW), 'stale')
+    assert.equal(runnerState({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'revoked')
+  })
+
+  it('says a newer release when its version is older, by number and not by text', () => {
+    assert.equal(newerVersion('0.9.0', '0.10.0'), '0.10.0')
+    assert.equal(newerVersion('1.2.3', '1.2.3'), null)
+    assert.equal(newerVersion('1.3.0', '1.2.9'), null)
+    assert.equal(newerVersion(null, '1.2.3'), null)
+    assert.equal(newerVersion('dev', '1.2.3'), null)
+  })
+
+  it('writes an age in French', () => {
+    assert.equal(ago(new Date(NOW.getTime() - 12_000), NOW), 'il y a 12 s')
+    assert.equal(ago(new Date(NOW.getTime() - 5 * 60_000), NOW), 'il y a 5 min')
+    assert.equal(ago(new Date(NOW.getTime() - 3 * 3600_000), NOW), 'il y a 3 h')
+    assert.equal(ago(new Date(NOW.getTime() - 4 * 86_400_000), NOW), 'il y a 4 j')
+  })
+})
+
+describe('the Runners screen', () => {
+  it('shows the runners, their state, version and job, and the forms to an admin', async () => {
+    let { request, signIn } = setup({
+      runners: [
+        runner({ trusted: true, version: '1.0.0', currentJob: { kind: 'review', repo: 'sakuga-software/sakuga-review', prNumber: 57, startedAt: NOW }, jobs24h: 14 }),
+        runner({ id: '33333333-3333-4333-8333-333333333333', name: 'runners-host', orgId: null }),
+      ],
+    })
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/runners', { cookie })).text()
+    assert.match(html, /mac-mini/)
+    assert.match(html, /En ligne/)
+    assert.match(html, /1\.2\.3 disponible/)
+    assert.match(html, /sakuga-software\/sakuga-review#57/)
+    assert.match(html, /Clé de l’app \(de confiance\)/)
+    assert.match(html, /Retirer la confiance/)
+    assert.match(html, /Révoquer mac-mini/)
+    assert.match(html, /action="\/runners\/new"/)
+    // A runner of the service shows, with no form: only an operator manages it.
+    assert.match(html, /Runner du service/)
+    assert.doesNotMatch(html, /Révoquer runners-host/)
+    assert.match(html, /Protocole/)
+    assert.match(html, /Bail et tentatives/)
+  })
+
+  it('shows a member the same list, and no form', async () => {
+    let { request, signIn } = setup({ runners: [runner()] })
+    let { cookie } = await signIn(CAMILLE)
+    let html = await (await request('/runners', { cookie })).text()
+    assert.match(html, /mac-mini/)
+    assert.match(html, /Lecture seule/)
+    assert.doesNotMatch(html, /method="post" action="\/runners/)
+    assert.doesNotMatch(html, /Nouveau runner<\/a>/)
+  })
+
+  it('shows an expired token with the help and « Nouveau token »', async () => {
+    let { request, signIn } = setup({
+      registrations: [{ id: REGISTRATION_ID, name: 'gpu', labels: ['gpu'], trusted: false, expiresAt: new Date(NOW.getTime() - 1000), createdAt: NOW }],
+    })
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/runners', { cookie })).text()
+    assert.match(html, /Token expiré/)
+    assert.match(html, /atteint review\.test en HTTPS sortant/)
+    assert.match(html, new RegExp(`action="/runners/registrations/${REGISTRATION_ID}/renew"`))
+  })
+})
+
+describe('the writes of the Runners screen', () => {
+  it('makes a registration token, shows it once and stores only its hash', async () => {
+    let { request, signIn, registrations } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    let response = await request('/runners/new', { cookie, form: { _csrf: csrf, name: 'mac-mini', labels: 'macos,arm64', keyMode: 'app' } })
+    assert.equal(response.status, 201)
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-store')
+    let html = await response.text()
+    let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_[A-Za-z0-9_-]{43})/.exec(html)?.[1]
+    assert.ok(token, 'the page shows the token in the command')
+    assert.match(html, /il ne sera plus affiché/)
+    assert.equal(registrations.length, 1)
+    assert.deepEqual(registrations[0], { orgId: ORG.id, userId: 'user-1', name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true, tokenHash: hashToken(token) })
+    // The next page does not show it again.
+    assert.doesNotMatch(await (await request('/runners', { cookie })).text(), new RegExp(token))
+  })
+
+  it('gives the form back with its errors, and makes nothing', async () => {
+    let { request, signIn, writes } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    let response = await request('/runners/new', { cookie, form: { _csrf: csrf, name: 'mac mini', labels: '', keyMode: 'app' } })
+    assert.equal(response.status, 422)
+    let html = await response.text()
+    assert.match(html, /aria-invalid="true"/)
+    assert.match(html, /value="mac mini"/)
+    assert.deepEqual(writes, [])
+  })
+
+  it('trusts, revokes, renews and discards for the org on screen only', async () => {
+    let { request, signIn, writes } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+
+    let trust = await request(`/runners/${RUNNER_ID}/trust`, { cookie, form: { _csrf: csrf, trusted: 'true' } })
+    assert.equal(trust.headers.get('Location'), '/runners?notice=trusted')
+    let revoke = await request(`/runners/${RUNNER_ID}/revoke`, { cookie, form: { _csrf: csrf } })
+    assert.equal(revoke.headers.get('Location'), '/runners?notice=revoked')
+    let renew = await request(`/runners/registrations/${REGISTRATION_ID}/renew`, { cookie, form: { _csrf: csrf } })
+    assert.equal(renew.status, 201)
+    assert.match(await renew.text(), /KENTO_REGISTRATION_TOKEN=kento_reg_/)
+    let discard = await request(`/runners/registrations/${REGISTRATION_ID}/discard`, { cookie, form: { _csrf: csrf } })
+    assert.equal(discard.headers.get('Location'), '/runners?notice=discarded')
+    assert.deepEqual(writes, [
+      `trust ${ORG.id} ${RUNNER_ID} true`,
+      `revoke ${ORG.id} ${RUNNER_ID}`,
+      `renew ${ORG.id} ${REGISTRATION_ID}`,
+      `discard ${ORG.id} ${REGISTRATION_ID}`,
+    ])
+
+    // An unknown id, or one that is not a UUID: nothing to do, and the screen says so.
+    let missing = await request('/runners/not-a-uuid/revoke', { cookie, form: { _csrf: csrf } })
+    assert.equal(missing.headers.get('Location'), '/runners?notice=missing')
+    assert.equal(writes.length, 4)
+  })
+
+  it('refuses every write to a member', async () => {
+    let { request, signIn, writes } = setup()
+    let { cookie, csrf } = await signIn(CAMILLE)
+    for (let path of ['/runners/new', `/runners/${RUNNER_ID}/trust`, `/runners/${RUNNER_ID}/revoke`, `/runners/registrations/${REGISTRATION_ID}/renew`, `/runners/registrations/${REGISTRATION_ID}/discard`]) {
+      let response = await request(path, { cookie, form: { _csrf: csrf, name: 'x', keyMode: 'app', trusted: 'true' } })
+      assert.equal(response.status, 403, path)
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a write without the CSRF token, or from another site', async () => {
+    let { request, signIn, writes } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    let forged = await request(`/runners/${RUNNER_ID}/revoke`, { cookie, form: { _csrf: 'f'.repeat(64) } })
+    assert.equal(forged.status, 403)
+    let none = await request(`/runners/${RUNNER_ID}/revoke`, { cookie, form: {} })
+    assert.equal(none.status, 403)
+    for (let headers of [{ 'Sec-Fetch-Site': 'cross-site' }, { Origin: 'https://evil.example' }] as Record<string, string>[]) {
+      let response = await request(`/runners/${RUNNER_ID}/revoke`, { cookie, headers, form: { _csrf: csrf } })
+      assert.equal(response.status, 403)
+    }
+    assert.deepEqual(writes, [])
+  })
+
+  it('refuses a write to a person who is not signed in', async () => {
+    let { request, writes } = setup()
+    let response = await request(`/runners/${RUNNER_ID}/revoke`, { form: { _csrf: 'x' } })
+    assert.ok(response.status === 401 || response.status === 403)
+    assert.deepEqual(writes, [])
+  })
+
+  it('writes for the org on screen: an admin of another org changes nothing here', async () => {
+    let { request, signIn, writes, auth } = setup({}, [ORG, OTHER_ORG])
+    auth.setRole(OTHER_ORG, ALEX, 'admin')
+    auth.setRole(ORG, ALEX, 'member')
+    let { cookie, csrf } = await signIn(ALEX)
+    // The sign-in puts the session on the org where Alex is admin.
+    await request(`/runners/${RUNNER_ID}/revoke`, { cookie, form: { _csrf: csrf } })
+    assert.deepEqual(writes, [`revoke ${OTHER_ORG.id} ${RUNNER_ID}`])
+  })
+})

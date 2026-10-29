@@ -25,6 +25,10 @@ Server-rendered HTML in French, with `remix/component`, and one small script
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
 - The theme (Papier, Sumi, Appareil) is the cookie `kento_theme` of the browser.
+- `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
+  org and of the service with their state, version, last call and jobs; registration tokens
+  (`kento_reg_…`, shown once, one use, one hour, kept as a hash); trust and revocation for an admin.
+  `public/assets/runners.js` adds « Copier la commande ».
 
 ### Sign-in, sessions and roles (`app/auth/`)
 

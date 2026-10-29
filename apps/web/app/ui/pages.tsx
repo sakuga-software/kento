@@ -15,6 +15,9 @@ import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
 import type { AuthStore, MembershipRow, UserRow } from '../auth/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { authRoutes, pageRoutes } from '../routes.ts'
+import type { RunnersAdminStore } from '../runner/admin.ts'
+import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
+import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
 import { Shell, type PageFrame, type Section, type Viewer } from './shell.tsx'
 import { SignInPage, type SignInNotice } from './sign-in.tsx'
@@ -37,6 +40,8 @@ export interface UiDependencies {
   /** The commit of the image, when the build gives it: it versions the URLs of the assets. */
   commit: string | null
   auth: AuthDependencies | null
+  /** The Runners screen (REV-10). Null: it shows its empty frame. */
+  runners?: RunnersAdminStore | null
 }
 
 interface SignedIn {
@@ -95,6 +100,12 @@ function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): S
   let signed = context.get(Signed)
   if (!signed) throw new Error('requireViewer did not run')
   return signed
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+function forbidden() {
+  return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
 }
 
 function redirect(location: string) {
@@ -210,6 +221,20 @@ export function createUiControllers(deps: UiDependencies) {
     }
   }
 
+  async function renderRunners(
+    context: { render(node: any, init?: ResponseInit): Response },
+    signed: SignedIn,
+    page: PageFrame,
+    extra: Pick<RunnersPageProps, 'created' | 'form' | 'notice'>,
+    status = 200,
+  ) {
+    let screen = await deps.runners!.screen(signed.membership.org.id)
+    return context.render(
+      <RunnersPage frame={page} screen={screen} version={deps.version} kentoUrl={auth!.publicUrl.origin} {...extra} />,
+      { status },
+    )
+  }
+
   function signInPage(theme: Theme, notice: SignInNotice | null, returnTo: string) {
     let href = auth
       ? `${authRoutes.signInGitHub.href()}${returnTo !== '/' ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`
@@ -240,10 +265,107 @@ export function createUiControllers(deps: UiDependencies) {
         let page = frame(signedOf(context), context, getCsrfToken(context))
         return context.render(<PlaceholderPage frame={page} section="findings" />)
       },
-      runners(context) {
-        let page = frame(signedOf(context), context, getCsrfToken(context))
-        return context.render(<PlaceholderPage frame={page} section="runners" />)
+      async runners(context) {
+        let signed = signedOf(context)
+        let page = frame(signed, context, getCsrfToken(context))
+        if (!deps.runners) return context.render(<PlaceholderPage frame={page} section="runners" />)
+        let notice = context.url.searchParams.get('notice')
+        return renderRunners(context, signed, page, {
+          notice: notice !== null && notice in RUNNER_NOTICES ? (notice as RunnerNotice) : null,
+        })
       },
+
+      // « Nouveau runner »: a registration token, shown on this response only. A reload posts the
+      // form again and makes another token; the first one then ends unused after its hour.
+      async runnerNew(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let page = frame(signed, context, getCsrfToken(context))
+        let { values, input, errors } = readRegistrationForm(context.get(FormData))
+        if (!input) return renderRunners(context, signed, page, { form: { values, errors } }, 422)
+        let token = newRegistrationToken()
+        let created = await store.createRegistration({
+          orgId: signed.membership.org.id,
+          userId: signed.user.id,
+          name: input.name,
+          labels: input.labels,
+          trusted: input.trusted,
+          tokenHash: hashToken(token),
+        })
+        log('info', 'runner.registration_created', {
+          registrationId: created.id,
+          org: signed.membership.org.login,
+          by: signed.user.login,
+          name: input.name,
+          labels: input.labels,
+          trusted: input.trusted,
+        })
+        return renderRunners(context, signed, page, { created: { ...input, token, expiresAt: created.expiresAt } }, 201)
+      },
+
+      async runnerRenew(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let id = context.params.id
+        if (!UUID.test(id)) return redirect(`${pageRoutes.runners.href()}?notice=missing`)
+        let token = newRegistrationToken()
+        let renewed = await store.renewRegistration({
+          orgId: signed.membership.org.id,
+          registrationId: id,
+          userId: signed.user.id,
+          tokenHash: hashToken(token),
+        })
+        if (!renewed) return redirect(`${pageRoutes.runners.href()}?notice=missing`)
+        log('info', 'runner.registration_created', {
+          registrationId: renewed.id,
+          replaces: id,
+          org: signed.membership.org.login,
+          by: signed.user.login,
+          name: renewed.name,
+          labels: renewed.labels,
+          trusted: renewed.trusted,
+        })
+        let page = frame(signed, context, getCsrfToken(context))
+        return renderRunners(context, signed, page, { created: { ...renewed, token } }, 201)
+      },
+
+      async runnerDiscard(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let id = context.params.id
+        let done = UUID.test(id) && (await store.discardRegistration(signed.membership.org.id, id))
+        if (done) log('info', 'runner.registration_discarded', { registrationId: id, by: signed.user.login })
+        return redirect(`${pageRoutes.runners.href()}?notice=${done ? 'discarded' : 'missing'}`)
+      },
+
+      async runnerTrust(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let id = context.params.id
+        let value = context.get(FormData)?.get('trusted')
+        if (value !== 'true' && value !== 'false') return new Response('Bad Request', { status: 400 })
+        let trusted = value === 'true'
+        let done = UUID.test(id) && (await store.setTrusted(signed.membership.org.id, id, trusted))
+        if (done) log('info', 'runner.trust_changed', { runnerId: id, trusted, by: signed.user.login })
+        return redirect(`${pageRoutes.runners.href()}?notice=${done ? (trusted ? 'trusted' : 'untrusted') : 'missing'}`)
+      },
+
+      async runnerRevoke(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let id = context.params.id
+        let revoked = UUID.test(id) ? await store.revoke(signed.membership.org.id, id) : null
+        if (revoked) {
+          log('info', 'runner.revoked', { runnerId: id, name: revoked.name, requeued: revoked.requeued, by: signed.user.login })
+        }
+        return redirect(`${pageRoutes.runners.href()}?notice=${revoked ? 'revoked' : 'missing'}`)
+      },
+
       settings(context) {
         let page = frame(signedOf(context), context, getCsrfToken(context))
         return context.render(<PlaceholderPage frame={page} section="settings" />)

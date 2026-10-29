@@ -352,7 +352,52 @@ signs everybody out, and that is the way to end every session now.
 Remove a person: remove them from the org on GitHub. Their access ends within 10 minutes (the role is
 read again from GitHub); `delete from users where login = '…'` ends it at once.
 
-## 11. Each later deployment
+## 11. The Runners screen (REV-10)
+
+The release with REV-10 adds the migration `0006_runner_registrations`, additive only: the table
+`runner_registrations`, the columns `runners.org_id` and `repos.default_runner_pool`. No new
+variable, and no change of the runner protocol: deploy `web`, and the runners keep running.
+`/healthz` gives `"migrations":7`.
+
+What changes:
+
+- An admin of the org makes a registration token at `/runners` (« Nouveau runner »): name, labels,
+  key mode. The token (`kento_reg_…`) is shown once with its `docker run`, works once, and ends after
+  one hour; the database keeps only its SHA-256. The runner gets the org, the name, the labels and
+  the trust of the token, whatever its environment says.
+- A runner of an org runs the jobs of that org only. A runner registered with
+  `KENTO_RUNNER_REGISTRATION_TOKEN` (no org, « Runner du service ») runs the jobs of every org, as
+  before; the screen shows it, and only an operator changes it, in the database.
+- `repos.default_runner_pool`: when set, the jobs of the repository go only to a runner with that
+  label. Null (the default, and every existing row) changes nothing.
+- « Marquer de confiance » / « Retirer la confiance »: the trust of a runner of the org, read again
+  at each claim. « Révoquer… »: the token stops at the next call, and its running job goes back to
+  the queue at once, without spending an attempt.
+- A member of the org sees the screen, and no form. Every write needs the session, its CSRF token and
+  a same-origin request.
+
+Check, after the deploy (the steps of the ticket):
+
+1. `/runners` → « Nouveau runner » → `mac-mini`, labels `macos`, « Clé de l’app » → copy the command,
+   run it on the Mac mini. The card shows « En ligne » within 30 s. Publish the runner image with its
+   version tag first ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
+2. Set the pool of `sakuga-review` to its label, then push on a pull request: the job goes to
+   `mac-mini` (`job.claimed` with its `runnerId`).
+
+   ```sql
+   update repos set default_runner_pool = 'macos' where full_name = 'sakuga-software/sakuga-review';
+   ```
+
+3. « Révoquer… » `mac-mini` during a job: the logs show `runner.revoked` with the job in `requeued`,
+   then `runner.auth_refused` for its heartbeat and claim. Set the pool back to null (or to a label of
+   `runners-host`): the job ends on `runners-host`.
+4. Make a token and start nothing: one hour later its card says « Token expiré » with the help and
+   « Nouveau token ».
+
+`KENTO_RUNNER_REGISTRATION_TOKEN` is no longer needed for a new runner: remove it once
+`runners-host` is registered (it keeps working without it).
+
+## 12. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.
