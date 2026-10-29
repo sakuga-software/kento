@@ -157,7 +157,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
 
     it('a command is refused at the limit, with a reply on the pull request', async () => {
       await sql`update orgs set daily_cap_usd = 0 where id = ${orgId}`
-      let answer = await say('@kento-ai review heavy')
+      let answer = await say('@kento-review review heavy')
       assert.equal(answer.status, 202)
       assert.equal(answer.body.outcome, 'capped')
       assert.equal((await queuedJobs()).length, 0)

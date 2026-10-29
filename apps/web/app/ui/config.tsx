@@ -98,7 +98,7 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
     title: 'Au passage en « Ready for review »',
     text: 'une review à l’ouverture d’une PR prête, à son passage en « Ready for review » et à sa réouverture ; les pushs suivants n’en créent pas.',
   },
-  { value: 'command', title: 'À la demande', text: 'aucune review automatique : seule une commande @kento-ai review en crée une.' },
+  { value: 'command', title: 'À la demande', text: 'aucune review automatique : seule une commande @kento-review en crée une.' },
 ]
 
 /**
@@ -597,7 +597,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <FieldError
                     id="config-cap"
                     error={capForm?.errors.monthlyCapUsd}
-                    hint="Vide : aucun plafond. Une commande @kento-ai review passe toujours : quelqu’un l’a demandée."
+                    hint="Vide : aucun plafond. Une commande @kento-review passe toujours : quelqu’un l’a demandée."
                   />
                 </div>
                 <button class="button button-primary" type="submit">
@@ -623,7 +623,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
           </header>
           <dl class="config-facts">
             <div>
-              <dt>Commande @kento-ai</dt>
+              <dt>Commande @kento-review</dt>
               <dd>
                 Une personne qui a le droit d’écriture sur le repo
                 {trustedBots.length > 0 ? (

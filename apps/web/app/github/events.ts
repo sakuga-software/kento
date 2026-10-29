@@ -31,7 +31,7 @@ export type WebhookCommand =
     }
   | {
       /**
-       * A command in a new comment of a pull request (`@kento-ai review heavy`). The payload holds
+       * A command in a new comment of a pull request (`@kento-review heavy`). The payload holds
        * neither the head nor the fork of the pull request, nor the permission of the commenter: the
        * command handler asks GitHub for them before it queues a job.
        */
@@ -122,7 +122,7 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
 }
 
 /**
- * `issue_comment`: a new comment of an open pull request that starts with `@kento-ai` or
+ * `issue_comment`: a new comment of an open pull request that starts with `@kento-review` or
  * `@sakuga-review`. An edited comment gives no command: a command costs money, and an edit would
  * run it again. The command handler drops the command of a repository that is not enabled: that
  * repository keeps its commands in the workflow `review.yml`.

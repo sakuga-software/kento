@@ -241,15 +241,15 @@ The release with REV-7 adds two migrations, additive only: `0003_comment_command
 claim which kinds it runs, and a runner of an earlier release, which says nothing, gets review jobs
 only. So the order web, then runner, is safe: resolve jobs wait in the queue until the new runner.
 
-A new comment of an open pull request that starts with `@kento-ai` or `@sakuga-review` is a command,
+A new comment of an open pull request that starts with `@kento-review` or `@sakuga-review` is a command,
 for the enabled repositories only (`KENTO_REPOS` before REV-9, the Repos screen since): another
 repository keeps its commands in `review.yml`.
 
 | Command | What it does |
 | --- | --- |
-| `@kento-ai review [lite\|balanced\|heavy]` | Queues a review of the current head at that level (`lite` by default; `@kento-ai` alone is `lite`). |
-| `@kento-ai review heavy force` | The same, even when the head already has a review at that level. |
-| `@kento-ai resolve [lite\|balanced\|heavy]` | Queues a resolve job: the model reads up to 20 open threads and 150 kB, answers in each, and the service resolves the threads that the code settled. |
+| `@kento-review [lite\|balanced\|heavy]` | Queues a review of the current head at that level (`lite` by default; `@kento-review` alone is `lite`). |
+| `@kento-review heavy force` | The same, even when the head already has a review at that level. |
+| `@kento-review resolve [lite\|balanced\|heavy]` | Queues a resolve job: the model reads up to 20 open threads and 150 kB, answers in each, and the service resolves the threads that the code settled. |
 
 The checks, in this order, with the reason in the logs (`webhook.ignored`, `command.not_allowed`,
 `command.refused`, `command.accepted`):
@@ -293,11 +293,11 @@ The resolve job, step by step:
 3. Publish the runner image of the same commit and recreate the runner
    ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
 4. Check on a pull request of `sakuga-software/sakuga-review`:
-   - `@kento-ai review heavy`: 👀 at once, then a review « Kentō · Niveau heavy » and 🚀.
+   - `@kento-review heavy`: 👀 at once, then a review « Kentō · Niveau heavy » and 🚀.
    - `@sakuga-review resolve`: 👀, a reply in each open thread, the fixed threads resolved, a comment
      « Kentō · résolution des fils » with the cost, and 🚀.
    - the same comment again: 😕 and the reply about `force`; no second job.
-   - `@kento-ai frobnicate`: 😕 and the list of the commands.
+   - `@kento-review frobnicate`: 😕 and the list of the commands.
    - a comment of an account without write access: no job, and `command.not_allowed` in the logs.
 
 ```sql
@@ -449,7 +449,7 @@ What changes for the cost and the rights:
   paths, and a monthly limit of the automatic reviews. Every change is a POST under `cop()` and the
   CSRF token, logged as `repo_config.saved` / `repo_config.reset` with the login and the version.
 - A limit stops only the automatic reviews (webhook outcome `skipped`, reason « monthly cost limit of
-  the repository is reached »); a command `@kento-ai review` still runs: a person with the right to
+  the repository is reached »); a command `@kento-review` still runs: a person with the right to
   write asked for it.
 - The paths read the files of the pull request on GitHub with a token `pull_requests: read` (the App
   already has it). When GitHub does not answer, the job is queued anyway.
@@ -495,7 +495,7 @@ means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provid
      « OpenRouter de Sakuga », the key of `KENTO_PROVIDER_API_KEY` (from the password manager, not
      from a log), models empty (the levels of today). « Ajouter le provider », then « Tester »: « Le
      provider a accepté la clé. » and the state « Valide ».
-   - Check that a job runs with it: `@kento-ai review` on a pull request of `sakuga-review`; the log
+   - Check that a job runs with it: `@kento-review` on a pull request of `sakuga-review`; the log
      `job.claimed` has `"provider":{"id":…,"kind":"openrouter"}` and `"keyFromService":true`, and the
      provider shows « Valide · dernier appel il y a … ».
    - `KENTO_PROVIDER_API_KEY` then only serves the orgs that have no provider. Remove it from Dokploy
@@ -505,9 +505,9 @@ means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provid
 5. **The test of the ticket**, with an Anthropic key of Sakuga:
    - « Ajouter un provider »: type Anthropic, the key, models empty (Haiku 5.5, Sonnet 5.5, Opus 5.5).
      « Tester » → « Valide ». « Utiliser pour les jobs » if OpenRouter is the default.
-   - `@kento-ai review balanced` on a pull request of `sakuga-review`: the review is published, and its
+   - `@kento-review balanced` on a pull request of `sakuga-review`: the review is published, and its
      footer gives `claude-sonnet-5-5` and a cost (from the price table, `costSource: "table"`).
-   - « Remplacer la clé » with a wrong key (`sk-ant-wrong-0000000000`), then `@kento-ai review`: the job
+   - « Remplacer la clé » with a wrong key (`sk-ant-wrong-0000000000`), then `@kento-review`: the job
      fails with `the provider « … » refused its key (401): …`, the state shows « Refusée · 401 depuis
      9 h 40 » and a banner on top of the settings. Replace it with the right key: the banner goes.
    - `docker exec` into Postgres (or the Dokploy console):
@@ -539,7 +539,7 @@ What changes for the cost and the rights:
   an alert threshold. The cost is the sum of the reviews and resolutions of every repository of the org.
   At a limit, a new job is not queued: a push answers 202 `capped` and its head gets the neutral check
   « Kentō · plafond » (« Plafond du jour atteint : pas de review », with the cost, the limit, and the
-  hour when the reviews start again); a command `@kento-ai …` gets 😕 and a reply. A job already queued or
+  hour when the reviews start again); a command `@kento-review …` gets 😕 and a reply. A job already queued or
   running finishes. The cost of a job is known only when it ends: the jobs queued just before the limit
   can take the cost a little over it. The daily limit of 10 $ of the OpenRouter key stays a second guard.
   The check has its own name: a required check « Sakuga Review » stays missing, and the pull request

@@ -510,7 +510,7 @@ function BotsSection(handle: Handle<SectionProps>) {
           </h2>
         </header>
         <p class="hint">
-          Les PR, les pushs et les commandes <span class="mono">@kento-ai</span> de ces bots comptent comme ceux d’une personne qui a le
+          Les PR, les pushs et les commandes <span class="mono">@kento-review</span> de ces bots comptent comme ceux d’une personne qui a le
           droit d’écriture. Tout autre bot est ignoré.
         </p>
         {view.trustedBots.length === 0 ? (

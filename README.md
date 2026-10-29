@@ -108,7 +108,7 @@ A new push cancels the review of the previous one.
 A comment that starts with `@sakuga-review` gives a command. The App is not a GitHub user, so the
 mention notifies nobody: the workflow reads the comment. On a repository that Kentō serves
 (enabled by an admin on the Repos screen of Kentō, `apps/web`), Kentō reads the command instead, with
-`@kento-ai` as its new name and `@sakuga-review` as an alias, and `@kento-ai review heavy force` to pay
+`@kento-review` as its new name and `@sakuga-review` as an alias, and `@kento-review heavy force` to pay
 again for a level that the head already has (see [apps/web/DEPLOY.md](apps/web/DEPLOY.md), section 9). Only a person who can write to the
 repository, or a bot of `trusted_bots`, can give a command, because a command costs money. The bot
 reacts 👀 when it starts, 🚀 when it ends and 😕 on an error or an unknown command, which also gets

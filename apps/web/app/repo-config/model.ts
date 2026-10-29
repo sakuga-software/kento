@@ -26,7 +26,7 @@ export interface LevelModels {
  * - `push`: each push of a pull request that is not a draft, and its passage to « Ready for review »;
  * - `ready`: only the opening of a pull request that is not a draft, its passage to « Ready for
  *   review », and its reopening; a later push creates nothing;
- * - `command`: nothing. Only a command in a comment (`@kento-ai review`) creates a job.
+ * - `command`: nothing. Only a command in a comment (`@kento-review`) creates a job.
  */
 export const TRIGGERS = ['push', 'ready', 'command'] as const
 export type Trigger = (typeof TRIGGERS)[number]

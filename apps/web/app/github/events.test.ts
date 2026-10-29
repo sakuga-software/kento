@@ -145,9 +145,9 @@ describe('commandFor issue_comment', () => {
   })
 
   it('an unknown command still goes to the handler, which answers with the list', () => {
-    let command = commandFor('issue_comment', issueCommentPayload({ body: '@kento-ai frobnicate' }), policy)
+    let command = commandFor('issue_comment', issueCommentPayload({ body: '@kento-review frobnicate' }), policy)
     assert.ok(command.type === 'comment_command')
-    assert.deepEqual(command.command, { verb: 'unknown', text: '@kento-ai frobnicate' })
+    assert.deepEqual(command.command, { verb: 'unknown', text: '@kento-review frobnicate' })
   })
 
   it('an edited or deleted comment gives no command', () => {
@@ -157,7 +157,7 @@ describe('commandFor issue_comment', () => {
 
   it('a comment of an issue, or a comment that is not a command, gives nothing', () => {
     assert.equal(reasonOf(issueCommentPayload({ onPullRequest: false }), 'issue_comment'), 'comment is not on a pull request')
-    assert.equal(reasonOf(issueCommentPayload({ body: 'Looks good. @kento-ai review heavy' }), 'issue_comment'), 'comment is not a command')
+    assert.equal(reasonOf(issueCommentPayload({ body: 'Looks good. @kento-review review heavy' }), 'issue_comment'), 'comment is not a command')
   })
 
   it('a comment of any repository gives the command: the handler reads whether the repository is enabled', () => {
@@ -168,7 +168,7 @@ describe('commandFor issue_comment', () => {
   it('the App itself never gives a command, even when it is trusted', () => {
     let app = { login: 'kento-review[bot]', type: 'Bot' }
     let trusting: EventPolicy = { ...policy, trustedBots: new Set(['kento-review[bot]']) }
-    let command = commandFor('issue_comment', issueCommentPayload({ user: app, body: '@kento-ai review heavy' }), trusting)
+    let command = commandFor('issue_comment', issueCommentPayload({ user: app, body: '@kento-review review heavy' }), trusting)
     assert.deepEqual(command, { type: 'ignore', reason: 'comment of the App itself' })
   })
 
@@ -187,7 +187,7 @@ describe('commandFor issue_comment', () => {
 
   it('a payload without its comment is invalid', () => {
     let payload: Record<string, unknown> = issueCommentPayload()
-    payload.comment = { body: '@kento-ai review' }
+    payload.comment = { body: '@kento-review review' }
     assert.match(reasonOf(payload, 'issue_comment'), /lacks installation, repository, number or comment/)
   })
 })

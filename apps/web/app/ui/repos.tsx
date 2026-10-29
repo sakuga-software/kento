@@ -185,7 +185,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                 l’Action sert de repli si Kentō échoue.
               </li>
               <li>
-                Une commande <code>@sakuga-review</code> reçoit alors deux réponses ; <code>@kento-ai</code> ne s’adresse qu’à Kentō.
+                Une commande <code>@sakuga-review</code> reçoit alors deux réponses ; <code>@kento-review</code> ne s’adresse qu’à Kentō.
               </li>
               <li>Désactiver le repo rend la main à review.yml seul, au push suivant. Les reviews publiées restent.</li>
             </ul>
