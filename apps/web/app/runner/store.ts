@@ -109,7 +109,10 @@ async function markValid(tx: postgres.TransactionSql, jobId: string, providerId:
   if (!providerId || !called) return
   await tx`
     update providers set last_ok_at = now(), refused_at = null, refused_status = null, refused_message = null
-    where id = ${providerId} and ${sameKey(tx, jobId)}`
+    where id = ${providerId} and ${sameKey(tx, jobId)}
+      -- REV-31. Several runners hold the key of a runner-held provider: a job that started before a
+      -- refusal says nothing about it.
+      and (not runner_held or refused_at is null or refused_at <= (select started_at from jobs where id = ${jobId}))`
 }
 
 /**
@@ -117,7 +120,8 @@ async function markValid(tx: postgres.TransactionSql, jobId: string, providerId:
  * it since. The answer to an old key says nothing about the new one.
  */
 function sameKey(tx: postgres.TransactionSql, jobId: string) {
-  return tx`key_set_at <= (select started_at from jobs where id = ${jobId})`
+  // A runner-held provider has no key in the service (key_set_at null): its state follows each job.
+  return tx`(key_set_at is null or key_set_at <= (select started_at from jobs where id = ${jobId}))`
 }
 
 /** What the runner API reads and writes. Tests of the routes can pass a fake. */
@@ -238,7 +242,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           select jobs.id, prov.id as provider_id,
             -- The service gives the key of the provider: its state follows the result of the job.
             -- A runner that calls with its own key or server says nothing about that key.
-            (prov.id is not null and not prov.runner_held and prov.kind::text is distinct from ${ownProvider}::text) as key_from_service
+            (prov.id is not null and not prov.runner_held and prov.kind::text is distinct from ${ownProvider}::text) as key_from_service,
+            -- REV-31. The key of a runner-held provider is on the runners of the org: the result of
+            -- the job says whether that key works, so the job records the provider too.
+            coalesce(prov.runner_held, false) as runner_held
           from jobs
           join repos on repos.id = jobs.repo_id
           cross join me
@@ -279,7 +286,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           update jobs set
             state = 'running',
             runner_id = ${runnerId},
-            provider_id = case when pick.key_from_service then pick.provider_id end,
+            provider_id = case when pick.key_from_service or pick.runner_held then pick.provider_id end,
             lease_expires_at = now() + ${lease}::interval,
             started_at = now(),
             attempts = attempts + 1,
@@ -380,10 +387,17 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           if (refused && job.providerId) {
             // The provider refused its key: the state of the provider says it on the screen, with a
             // banner, until an admin replaces the key or a call works again.
+            // REV-31. The key of a runner-held provider is on each runner of the org, and one of them
+            // may hold a wrong one: the message names the runner that got the refusal.
+            let message = refusalMessage(`${result.providerStatus} ${result.reason}`)
             let [provider] = await tx<{ label: string }[]>`
               update providers set refused_at = coalesce(refused_at, now()), refused_status = ${result.providerStatus!},
-                refused_message = ${refusalMessage(`${result.providerStatus} ${result.reason}`)}
+                refused_message = case when runner_held
+                  then left('runner « ' || coalesce((select name from runners where id = ${runnerId}), '?') || ' » : ' || ${message}, 300)
+                  else ${message} end
               where id = ${job.providerId} and ${sameKey(tx, jobId)}
+                -- A slow job of a runner with a wrong key never hides a later success on another runner.
+                and (not runner_held or last_ok_at is null or last_ok_at <= (select started_at from jobs where id = ${jobId}))
               returning label`
             if (provider) reason = `the provider « ${provider.label} » refused its key (${result.providerStatus}): ${result.reason}`.slice(0, 2000)
           }

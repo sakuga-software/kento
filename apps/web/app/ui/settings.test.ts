@@ -164,23 +164,49 @@ describe('the section « Providers et clés »', () => {
     assert.match(html, /Dernière réponse : 401 invalid x-api-key/)
   })
 
-  it('shows a provider that the runner holds as « Suivi par le runner », with no test', async () => {
+  it('shows a provider that the runner holds as « Clé sur le runner », neutral, with no test', async () => {
     let { request, signIn } = setup([provider({ kind: 'ollama', runnerHeld: true, keyLast4: null, models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } })])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /Suivi par le runner/)
+    assert.match(html, /class="status status-neutral">Serveur du runner/, 'a normal state is not amber (REV-31)')
     assert.match(html, /aucune : serveur du runner/)
     assert.doesNotMatch(html, /\/test"/)
-    assert.equal(providerState({ runnerHeld: true, refusedAt: NOW, lastOkAt: null }), 'runner')
+    assert.equal(providerState({ runnerHeld: true, refusedAt: null, lastOkAt: null }), 'runner')
   })
 
-  it('marks a model without a price', async () => {
+  it('shows the refusal that a runner got for a runner-held key, with its date and what to do (REV-31)', async () => {
+    let refusedAt = new Date('2026-10-29T08:00:00Z')
+    let { request, signIn } = setup([
+      provider({
+        kind: 'openai_compatible',
+        label: 'vLLM interne',
+        baseUrl: 'https://llm.internal.example/v1',
+        runnerHeld: true,
+        keyLast4: null,
+        keySetAt: null,
+        models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] },
+        refusedAt,
+        refusedStatus: 401,
+        refusedMessage: '401 Invalid API key',
+      }),
+    ])
+    assert.equal(providerState({ runnerHeld: true, refusedAt, lastOkAt: null }), 'refused')
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/settings', { cookie })).text()
+    assert.match(html, /role="alert"[^>]*><p><strong>Le runner a reçu 401 pour la clé de « vLLM interne » depuis <time datetime="2026-10-29T08:00:00.000Z">9 h 00<\/time>/)
+    assert.match(html, /class="status status-alert">Refusée sur le runner · 401 depuis/)
+    assert.match(html, /Dernière réponse : 401 Invalid API key/)
+    assert.match(html, /remplacez <span class="mono">PROVIDER_API_KEY<\/span> sur les runners de l’organisation/)
+    assert.doesNotMatch(html, /Remplacer la clé/, 'the service has no key to replace')
+  })
+
+  it('marks a model without a price as a warning that says its effect on the limit (REV-31)', async () => {
     let { request, signIn } = setup([
       provider({ kind: 'openai_compatible', baseUrl: 'https://llm.example.com/v1', models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } }),
     ])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /sans prix : compté 0 \$/)
+    assert.match(html, /<span class="tag tag-warn">sans prix : non compté dans le plafond<\/span>/)
   })
 
   it('shows a member the providers and no form', async () => {

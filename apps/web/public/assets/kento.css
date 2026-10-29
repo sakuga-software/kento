@@ -794,6 +794,11 @@ kbd,
   background: var(--paper-sunken);
   color: var(--ink-muted);
 }
+/* REV-31. A warning that is not an error: a model without a price, not counted in the limit. */
+.tag.tag-warn {
+  background: var(--kuchiba-wash);
+  color: var(--kuchiba);
+}
 
 .stack {
   display: flex;
@@ -1266,7 +1271,8 @@ kbd,
   color: var(--kuchiba);
 }
 .status-stale,
-.status-revoked {
+.status-revoked,
+.status-neutral {
   background: var(--paper-sunken);
   color: var(--ink-muted);
 }

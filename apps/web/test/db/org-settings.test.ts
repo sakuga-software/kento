@@ -130,6 +130,30 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.equal(fake.state.checkRuns.length, 1, 'no check under the limit')
     })
 
+    it('counts a job of a runner-held provider in the limit exactly as a job of the key of the service (REV-31)', async () => {
+      // REV-31: a job of a runner-held provider now records that provider in jobs.provider_id. The
+      // limit sums every review and resolution of the org and never reads jobs.provider_id: the same
+      // costs stop the same push, whatever the provider of the jobs.
+      let [held] = await sql<{ id: string }[]>`
+        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'anthropic', 'Anthropic du runner', true) returning id`
+      await spend(0.6, { providerId: held!.id })
+      await spend(0.6)
+      await sql`update orgs set daily_cap_usd = 1.2 where id = ${orgId}`
+      assert.equal((await push()).body.outcome, 'capped', '0,60 $ of the runner-held provider + 0,60 $ of the service reach 1,20 $')
+      await sql`update orgs set daily_cap_usd = 1.3 where id = ${orgId}`
+      assert.equal((await push()).body.outcome, 'queued')
+      let view = await createOrgSettingsStore(sql).read(orgId)
+      assert.equal(view!.costs.dayUsd, 1.2, 'the total of the screen is the total of the limit')
+      assert.deepEqual(
+        view!.costs.dayByProvider.map((p) => [p.label, p.usd]).sort(),
+        [
+          ['Anthropic du runner', 0.6],
+          ['Clé du service', 0.6],
+        ],
+        'only the split per provider follows jobs.provider_id',
+      )
+    })
+
     it('counts the resolutions, every repository of the org, and nothing of the day before', async () => {
       await sql`update orgs set daily_cap_usd = 1 where id = ${orgId}`
       await spend(5, { daysAgo: 1 })

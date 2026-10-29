@@ -57,10 +57,13 @@ export type ProviderNotice = keyof typeof PROVIDER_NOTICES
 
 export type ProviderState = 'runner' | 'refused' | 'valid' | 'unknown'
 
-/** The state of a provider, as the screen and the catalog of REV-12 show it. */
+/**
+ * The state of a provider, as the screen and the catalog of REV-12 show it. A refusal comes first,
+ * also for a runner-held provider: a job of a runner that got 401 or 403 records it (REV-31).
+ */
 export function providerState(provider: Pick<ProviderView, 'runnerHeld' | 'refusedAt' | 'lastOkAt'>): ProviderState {
-  if (provider.runnerHeld) return 'runner'
   if (provider.refusedAt) return 'refused'
+  if (provider.runnerHeld) return 'runner'
   if (provider.lastOkAt) return 'valid'
   return 'unknown'
 }
@@ -93,18 +96,35 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     return (
       <Shell frame={frame} section="settings" title="Réglages" lead="Ce qui vaut pour toute l’organisation.">
-        {refused.map((p) => (
-          <div class="banner banner-alert" role="alert">
-            <p>
-              <strong>
-                La clé de « {p.label} » est refusée ({p.refusedStatus}) depuis{' '}
-                <time dateTime={p.refusedAt!.toISOString()}>{since(p.refusedAt!, now)}</time>.
-              </strong>{' '}
-              {p.isDefault ? 'Les jobs de l’organisation échouent tant qu’elle n’est pas remplacée.' : 'Ce provider n’est pas celui des jobs.'}{' '}
-              {admin ? <a href={`#provider-${p.id}`}>Remplacer la clé</a> : 'Un admin de l’organisation peut la remplacer.'}
-            </p>
-          </div>
-        ))}
+        {refused.map((p) => {
+          let levels = usage(p.id)
+          let failing =
+            levels === null
+              ? p.isDefault
+                ? 'Les jobs de l’organisation échouent tant qu’elle n’est pas remplacée.'
+                : 'Ce provider n’est pas celui des jobs.'
+              : levels.length > 0
+                ? `Les jobs ${levels.length > 1 ? 'des niveaux' : 'du niveau'} ${levelList(levels)} échouent tant qu’elle n’est pas remplacée.`
+                : 'Aucun niveau de l’org ne l’utilise : seul un repo qui l’a choisi dans sa Config en est touché.'
+          return (
+            <div class="banner banner-alert" role="alert">
+              <p>
+                <strong>
+                  {p.runnerHeld ? <>Le runner a reçu {p.refusedStatus} pour la clé de « {p.label} » </> : <>La clé de « {p.label} » est refusée ({p.refusedStatus}) </>}
+                  depuis <time dateTime={p.refusedAt!.toISOString()}>{since(p.refusedAt!, now)}</time>.
+                </strong>{' '}
+                {failing}{' '}
+                {p.runnerHeld ? (
+                  <a href={`#provider-${p.id}`}>Que faire</a>
+                ) : admin ? (
+                  <a href={`#provider-${p.id}`}>Remplacer la clé</a>
+                ) : (
+                  'Un admin de l’organisation peut la remplacer.'
+                )}
+              </p>
+            </div>
+          )
+        })}
         {notice ? (
           <div class={`banner banner-${PROVIDER_NOTICES[notice.kind].tone}`} role="status">
             <p>
@@ -207,13 +227,14 @@ function SettingsNav(handle: Handle<{ org: boolean; providers: boolean; add: boo
 }
 
 const STATE_TEXT: Record<ProviderState, string> = {
-  runner: 'Suivi par le runner',
+  runner: 'Clé sur le runner',
   refused: 'Clé refusée',
   valid: 'Valide',
   unknown: 'Jamais appelé',
 }
 const STATE_CLASS: Record<ProviderState, string> = {
-  runner: 'status-wait',
+  // A key on the runner is a normal state: neutral. The amber of `status-wait` says « attention ».
+  runner: 'status-neutral',
   refused: 'status-alert',
   valid: 'status-online',
   unknown: 'status-stale',
@@ -276,7 +297,8 @@ function ProviderItem(
           <span class={`status ${STATE_CLASS[state]}`}>
             {state === 'refused' ? (
               <>
-                Refusée · {provider.refusedStatus} depuis <time dateTime={provider.refusedAt!.toISOString()}>{since(provider.refusedAt!, now)}</time>
+                {provider.runnerHeld ? 'Refusée sur le runner' : 'Refusée'} · {provider.refusedStatus} depuis{' '}
+                <time dateTime={provider.refusedAt!.toISOString()}>{since(provider.refusedAt!, now)}</time>
               </>
             ) : state === 'valid' ? (
               <>
@@ -286,7 +308,7 @@ function ProviderItem(
                 </time>
               </>
             ) : (
-              STATE_TEXT[state]
+              state === 'runner' && provider.kind === 'ollama' ? 'Serveur du runner' : STATE_TEXT[state]
             )}
           </span>
         </div>
@@ -319,7 +341,7 @@ function ProviderItem(
                   {models.map((model) => (
                     <span class="model">
                       <span class="mono">{model}</span>
-                      {costKnown(provider.kind, model) ? null : <span class="tag tag-quiet">sans prix : compté 0 $</span>}
+                      {costKnown(provider.kind, model) ? null : <span class="tag tag-warn">sans prix : non compté dans le plafond</span>}
                     </span>
                   ))}
                 </dd>
@@ -336,6 +358,12 @@ function ProviderItem(
           ) : null}
         </dl>
         {state === 'refused' && provider.refusedMessage ? <p class="hint">Dernière réponse : {provider.refusedMessage}</p> : null}
+        {provider.runnerHeld && state === 'refused' ? (
+          <p class="hint provider-todo">
+            <strong>Que faire</strong> : remplacez <span class="mono">PROVIDER_API_KEY</span> sur les runners de l’organisation qui ont{' '}
+            <span class="mono">PROVIDER_KIND={provider.kind}</span>, puis relancez une review. Le premier job qui aboutit efface ce refus.
+          </p>
+        ) : null}
         {state === 'runner' ? (
           <p class="hint">
             Le service n’a pas cette clé : un runner de l’organisation avec <span class="mono">PROVIDER_KIND={provider.kind}</span> fait

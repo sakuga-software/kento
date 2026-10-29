@@ -268,8 +268,9 @@ export const jobs = pgTable(
     /** The runner that claimed the job. */
     runnerId: uuid('runner_id').references(() => runners.id, { onDelete: 'set null' }),
     /**
-     * The provider of the org that the last claim gave the job (REV-11). Null: the key of the
-     * service, or the provider was removed since. A result marks its state (valid, key refused).
+     * The provider of the org that the last claim gave the job (REV-11): with the key that the
+     * service holds, or with the key of the runner for a runner-held provider (REV-31). Null: the key
+     * of the service, or the provider was removed since. A result marks its state (valid, key refused).
      */
     providerId: uuid('provider_id').references(() => providers.id, { onDelete: 'set null' }),
     /** `X-GitHub-Delivery` of the webhook that created the job. A redelivery creates no job. */

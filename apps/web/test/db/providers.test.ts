@@ -376,6 +376,74 @@ describe('providers and their encrypted keys', () => {
       assert.equal(provider.id, state!.id)
     })
 
+    it('a runner-held key that its provider refuses: the provider shows the refusal, and the next review clears it (REV-31)', async () => {
+      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic du runner', baseUrl: null, apiKey: null, models: {} })
+      assert.equal(provider.keySetAt, null)
+      let first = await queueJob()
+      let token = await runner({ trusted: false })
+      let held = { ...NEW_RUNNER, hasProviderKey: true, ownProvider: 'anthropic' }
+      let { job } = await claim(token, held)
+      assert.equal(job!.id, first)
+      assert.equal(job!.providers![0]!.apiKey, null, 'the service never had this key')
+      let [row] = await database.sql<{ provider_id: string | null }[]>`select provider_id from jobs where id = ${first}`
+      assert.equal(row!.provider_id, provider.id, 'the job records its runner-held provider')
+      let failed = await call(`/api/runner/jobs/${first}/result`, token, {
+        outcome: 'failed',
+        attempt: job!.attempt,
+        reason: 'no model gave a usable answer: ProviderError: Anthropic answered 401: invalid x-api-key',
+        providerStatus: 401,
+      })
+      assert.equal(failed.status, 204)
+      let [refused] = await store.list(orgId)
+      assert.ok(refused!.refusedAt, 'the screen can show the refusal')
+      assert.equal(refused!.refusedStatus, 401)
+      assert.match(refused!.refusedMessage!, /^runner « r » : 401 /, 'the runner that got the refusal is named')
+      let [reason] = await database.sql<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${first}`
+      assert.match(reason!.failure_reason, /^the provider « Anthropic du runner » refused its key \(401\)/)
+
+      let second = await queueJob()
+      let next = await claim(token, held)
+      assert.equal(next.job!.id, second)
+      assert.equal((await call(`/api/runner/jobs/${second}/result`, token, { outcome: 'done', attempt: next.job!.attempt, review: review() })).status, 204)
+      let [cleared] = await store.list(orgId)
+      assert.equal(cleared!.refusedAt, null)
+      assert.ok(cleared!.lastOkAt)
+    })
+
+    it('a runner-held provider follows the order of the jobs: an older job never overwrites a newer state (REV-31)', async () => {
+      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic du runner', baseUrl: null, apiKey: null, models: {} })
+      let held = { ...NEW_RUNNER, hasProviderKey: true, ownProvider: 'anthropic' }
+      let slow = await runner()
+      let good = await runner()
+      let first = await queueJob()
+      let a = await claim(slow, held)
+      assert.equal(a.job!.id, first)
+      let second = await queueJob()
+      let b = await claim(good, held)
+      assert.equal(b.job!.id, second)
+      await database.sql`update jobs set started_at = started_at + interval '1 second' where id = ${second}`
+      // The newer job works, then the older one comes back with 401: the provider stays valid.
+      assert.equal((await call(`/api/runner/jobs/${second}/result`, good, { outcome: 'done', attempt: b.job!.attempt, review: review() })).status, 204)
+      assert.equal((await call(`/api/runner/jobs/${first}/result`, slow, { outcome: 'failed', attempt: a.job!.attempt, reason: 'Anthropic answered 401', providerStatus: 401 })).status, 204)
+      let [state] = await store.list(orgId)
+      assert.equal(state!.refusedAt, null, 'the refusal of the older job does not hide the newer success')
+      assert.ok(state!.lastOkAt)
+
+      // The other way: a refusal, then a success of a job that started before it, keeps the refusal.
+      let third = await queueJob()
+      let c = await claim(good, held)
+      assert.equal(c.job!.id, third)
+      let fourth = await queueJob()
+      let d = await claim(slow, held)
+      assert.equal(d.job!.id, fourth)
+      await database.sql`update jobs set started_at = started_at + interval '1 second' where id = ${fourth}`
+      await database.sql`update providers set last_ok_at = null where id = ${provider.id}`
+      assert.equal((await call(`/api/runner/jobs/${fourth}/result`, slow, { outcome: 'failed', attempt: d.job!.attempt, reason: 'Anthropic answered 401', providerStatus: 401 })).status, 204)
+      assert.ok((await store.list(orgId))[0]!.refusedAt)
+      assert.equal((await call(`/api/runner/jobs/${third}/result`, good, { outcome: 'done', attempt: c.job!.attempt, review: review() })).status, 204)
+      assert.ok((await store.list(orgId))[0]!.refusedAt, 'a success of an older job does not clear a newer refusal')
+    })
+
     it('a review marks the provider valid, and clears a refusal', async () => {
       let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await store.recordRefused(provider.id, 401, 'old', provider.keySetAt)
