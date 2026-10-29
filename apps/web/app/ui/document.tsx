@@ -11,7 +11,7 @@ export interface DocumentProps {
   children?: RemixNode
 }
 
-/** The HTML document of every screen: French, the theme on `<html>`, the shared stylesheet. */
+/** The HTML document of every screen: French, the theme on `<html>`, the shared stylesheet and scripts. */
 export function Document(handle: Handle<DocumentProps>) {
   return () => {
     let { title, theme, assetVersion, children } = handle.props
@@ -35,6 +35,8 @@ export function Document(handle: Handle<DocumentProps>) {
           <link rel="stylesheet" href={`/assets/kento.css?v=${v}`} />
           {/* Blocking and tiny: it marks <html> as scripted before the first paint. */}
           <script src={`/assets/theme.js?v=${v}`}></script>
+          {/* The confirmations of the destructive actions: « Annuler » and Échap. */}
+          <script src={`/assets/confirm.js?v=${v}`} defer></script>
         </head>
         <body>{children}</body>
       </html>

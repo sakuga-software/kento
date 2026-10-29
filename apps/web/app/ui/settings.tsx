@@ -7,6 +7,7 @@ import type { Level, ProviderKind } from '@sakuga-review/protocol'
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { ago } from './runners.tsx'
 import { OrgSettingsSections, type OrgSectionProps } from './org-settings.tsx'
@@ -302,23 +303,14 @@ function ProviderItem(handle: Handle<{ provider: ProviderView; now: Date; admin:
                 </form>
               </details>
             )}
-            <details class="confirm">
-              <summary class="button button-danger">Retirer…</summary>
-              <div class="confirm-body">
-                <p>
-                  <strong>{provider.label}</strong> et sa clé seront effacés.{' '}
-                  {provider.isDefault
-                    ? 'Le plus ancien des autres providers devient celui des jobs ; sans autre provider, les jobs utilisent la clé du service.'
-                    : 'Les jobs n’utilisent pas ce provider.'}
-                </p>
-                <form method="post" action={routes.providerRemove.href({ id })}>
-                  <input type="hidden" name="_csrf" value={csrf} />
-                  <button class="button button-danger-solid" type="submit">
-                    Retirer {provider.label}
-                  </button>
-                </form>
-              </div>
-            </details>
+            <Confirm trigger="Retirer…" action={routes.providerRemove.href({ id })} csrf={csrf} submit={`Retirer ${provider.label}`}>
+              <p>
+                <strong>{provider.label}</strong> et sa clé seront effacés.{' '}
+                {provider.isDefault
+                  ? 'Le plus ancien des autres providers devient celui des jobs ; sans autre provider, les jobs utilisent la clé du service.'
+                  : 'Les jobs n’utilisent pas ce provider.'}
+              </p>
+            </Confirm>
           </div>
         ) : null}
       </li>

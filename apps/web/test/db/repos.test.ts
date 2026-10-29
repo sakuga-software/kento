@@ -111,11 +111,17 @@ describe('the Repos screen against Postgres', () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     for (let n = 1; n <= 3; n++) await publish((await push(n, n)).jobId!, 60 - n)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [3, null])
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [3, null, null])
 
     let failed = await push(10, 10)
     await sql`update jobs set state = 'failed', failure_reason = 'lease expired 2 times', finished_at = now() - interval '30 minutes' where id = ${failed.jobId!}`
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [0, 'failure'])
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'failure', 10])
+
+    // Two failed jobs at the same instant: the link names the same PR at every load (the greater id).
+    let twin = await push(12, 12)
+    await sql`update jobs set state = 'failed', finished_at = (select finished_at from jobs where id = ${failed.jobId!}) where id = ${twin.jobId!}`
+    let [last] = await sql<{ pr_number: number }[]>`select pr_number from jobs where id in (${failed.jobId!}, ${twin.jobId!}) order by id desc limit 1`
+    for (let n = 0; n < 3; n++) assert.equal((await orchard()).resetPr, last!.pr_number)
 
     await publish((await push(11, 11)).jobId!, 10)
     assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [1, 'failure'])
@@ -139,7 +145,7 @@ describe('the Repos screen against Postgres', () => {
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref, github_delivery_id)
       select repo_id, level, pr_number, head_sha, base_ref, 'twin' from jobs where id = ${first.jobId!} returning id`
     await publish(twin!.id, 10)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [0, 'double'])
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'double', 7])
 
     await sql`delete from jobs where id = ${twin!.id}`
     let [forced] = await sql<{ id: string }[]>`

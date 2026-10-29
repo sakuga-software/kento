@@ -173,7 +173,8 @@
 /*
  * Papier, the day theme: washi paper, sumi ink, and four pigments of the ukiyo-e printer.
  * shu 朱 vermilion (action, alert), ai 藍 indigo (link, focus, information),
- * matsu 松 pine (success, fixed), kuchiba 朽葉 fallen leaf (warning, read only).
+ * matsu 松 pine (success, fixed), kuchiba 朽葉 fallen leaf (warning, read only),
+ * and enji 臙脂 crimson for a destructive action only (REV-33): never the colour of the main action.
  * Every text pair is 4.5:1 or more, every border of a control 3:1 or more (see design/README.md).
  */
 :root,
@@ -196,7 +197,11 @@
   --matsu-wash: #dcebdd;
   --kuchiba: #7d520c;
   --kuchiba-wash: #f4e6c6;
+  --enji: #9a1f4a;
+  --enji-strong: #7a1538;
+  --enji-wash: #f6dde5;
   --on-shu: #fffcf5;
+  --on-enji: #fffcf5;
   --focus: #24497a;
   --shadow-1: 0 1px 2px rgb(29 27 24 / 0.06), 0 1px 1px rgb(29 27 24 / 0.04);
   --shadow-2: 0 6px 20px rgb(29 27 24 / 0.08), 0 2px 4px rgb(29 27 24 / 0.05);
@@ -222,7 +227,11 @@
   --matsu-wash: #1b2c20;
   --kuchiba: #e3b660;
   --kuchiba-wash: #33280f;
+  --enji: #ec8aa8;
+  --enji-strong: #f4b0c4;
+  --enji-wash: #3a1a26;
   --on-shu: #171614;
+  --on-enji: #171614;
   --focus: #93b6e6;
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45), 0 2px 4px rgb(0 0 0 / 0.3);
@@ -249,7 +258,11 @@
     --matsu-wash: #1b2c20;
     --kuchiba: #e3b660;
     --kuchiba-wash: #33280f;
+    --enji: #ec8aa8;
+    --enji-strong: #f4b0c4;
+    --enji-wash: #3a1a26;
     --on-shu: #171614;
+    --on-enji: #171614;
     --focus: #93b6e6;
     --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
     --shadow-2: 0 8px 24px rgb(0 0 0 / 0.45), 0 2px 4px rgb(0 0 0 / 0.3);
@@ -1263,18 +1276,22 @@ kbd,
   color: var(--shu);
 }
 
+/* A destructive action: enji, outlined to open its confirmation, solid to act (app/ui/confirm.tsx). */
 .button-danger {
-  border-color: var(--shu);
-  color: var(--shu);
+  border-color: var(--enji);
+  color: var(--enji);
+}
+.button-danger:hover {
+  background: var(--enji-wash);
 }
 .button-danger-solid {
-  background: var(--shu);
-  border-color: var(--shu);
-  color: var(--on-shu);
+  background: var(--enji);
+  border-color: var(--enji);
+  color: var(--on-enji);
 }
 .button-danger-solid:hover {
-  background: var(--shu-strong);
-  border-color: var(--shu-strong);
+  background: var(--enji-strong);
+  border-color: var(--enji-strong);
 }
 
 .field {
@@ -1417,7 +1434,7 @@ kbd,
   display: none;
 }
 .confirm[open] summary {
-  background: var(--shu-wash);
+  background: var(--enji-wash);
 }
 .confirm-body {
   display: grid;
@@ -1425,9 +1442,30 @@ kbd,
   max-width: 560px;
   margin-top: var(--space-2);
   padding: var(--space-4);
-  border: 1px solid var(--shu);
+  border: 1px solid var(--enji);
   border-radius: var(--radius-md);
   background: var(--paper);
+}
+.confirm-body p {
+  margin: 0;
+}
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+/* In a row of a table: a narrower trigger, so « Désactiver… » takes no more room than « Désactiver »
+   did (the REV-25 table fits 1440 px with an 80-character repo name). */
+.row-action .confirm > summary {
+  padding-inline: var(--space-3);
+}
+/* In a row of a table: the text wraps in the width of the action column, so the table does not grow. */
+.row-action .confirm-body {
+  width: 15rem;
+  max-width: 100%;
+  margin-left: auto;
+  white-space: normal;
+  text-align: left;
 }
 .runner-details {
   margin-bottom: var(--space-8);

@@ -92,6 +92,12 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
 
   await card.getByText('Révoquer…').click()
   await expect(card.getByText('cessera de marcher à son prochain appel')).toBeVisible()
+  // REV-33: Échap closes the confirmation and gives the focus back to « Révoquer… ».
+  await card.getByRole('button', { name: `Révoquer ${name}` }).focus()
+  await page.keyboard.press('Escape')
+  await expect(card.getByText('cessera de marcher à son prochain appel')).toBeHidden()
+  await expect(card.locator('summary', { hasText: 'Révoquer…' })).toBeFocused()
+  await card.getByText('Révoquer…').click()
   await expectNoAxeViolations(page)
   await card.getByRole('button', { name: `Révoquer ${name}` }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Runner révoqué.' })).toBeVisible()
@@ -127,6 +133,29 @@ test('a token that expires without a runner shows the help and « Nouveau token 
   await card.getByRole('button', { name: 'Nouveau token' }).click()
   await expect(page.getByRole('heading', { name: `Token de ${name}` })).toBeVisible()
   await expect(page.getByLabel('Commande docker run')).toHaveValue(/KENTO_RUNNER_LABELS=gpu/)
+})
+
+test('« Annuler le token » asks first: « Annuler » keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
+  let name = `spare-${testInfo.project.name}`
+  await signIn(page, 'alex')
+  await createToken(page, name, 'spare', 'runner')
+  await page.goto('/runners')
+  let card = page.locator('.runner', { hasText: name })
+  let trigger = card.locator('summary', { hasText: 'Annuler le token…' })
+  let act = card.getByRole('button', { name: `Annuler le token de ${name}` })
+  await trigger.click()
+  await expect(card).toContainText('cesse de marcher tout de suite')
+  await expectNoAxeViolations(page)
+  await card.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await expect(act).toBeHidden()
+  await expect(trigger).toBeFocused()
+  await page.reload()
+  await expect(page.locator('.runner', { hasText: name })).toBeVisible()
+
+  await trigger.click()
+  await act.click()
+  await expect(page.getByRole('status').filter({ hasText: 'Token d’enregistrement annulé.' })).toBeVisible()
+  await expect(page.locator('.runner', { hasText: name })).toHaveCount(0)
 })
 
 test('the form says what is wrong, and makes no token', async ({ page }) => {

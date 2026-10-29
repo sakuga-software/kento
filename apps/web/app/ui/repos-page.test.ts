@@ -24,7 +24,7 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
     workflowRef: null,
     workflowCheckedAt: new Date('2026-10-28T11:58:00Z'),
     streak: 0,
-    resetBy: null,
+    resetBy: null, resetPr: null,
     lastReview: null,
     ...fields,
   }
@@ -43,7 +43,7 @@ function setup() {
       }),
       row({
         id: FRUITBACK, fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
-        workflowPath: '.github/workflows/sakuga-review.yml', streak: 3, resetBy: 'failure',
+        workflowPath: '.github/workflows/sakuga-review.yml', streak: 3, resetBy: 'failure', resetPr: 12,
         lastReview: { prNumber: 677, score: 4, model: 'anthropic/claude-haiku-5.5', publishedAt: new Date('2026-10-28T11:00:00Z') },
       }),
     ],
@@ -134,12 +134,12 @@ describe('the Repos screen', () => {
     let { signIn } = setup()
     let admin = (await signIn(ALEX)).html
     assert.match(admin, new RegExp(`action="/repos/${ORCHARD}/enable"`))
-    assert.match(admin, new RegExp(`href="/repos\\?confirm=${FRUITBACK}#confirm-title"`))
+    assert.match(admin, new RegExp(`action="/repos/${FRUITBACK}/disable"`))
     assert.match(admin, /action="\/repos\/check"/)
 
     let member = (await signIn(CAMILLE)).html
     assert.match(member, /Lecture seule\./)
-    assert.doesNotMatch(member, /\/enable"|confirm=|action="\/repos\/check"|Gérer l’installation/)
+    assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Gérer l’installation/)
   })
 
   it('enables a repository for an admin, with CSRF, and says what the next push does', async () => {
@@ -153,12 +153,17 @@ describe('the Repos screen', () => {
     assert.match(html, /orchard est activé\.<\/strong> Le prochain push d’une PR crée un job Kentō\./)
   })
 
-  it('asks to confirm a disable, then disables and says that the published reviews stay', async () => {
+  it('asks to confirm a disable in its row, then disables and says that the published reviews stay', async () => {
     let { request, signIn, changes } = setup()
-    let { cookie, csrf } = await signIn()
-    let confirm = await (await request(`/repos?confirm=${FRUITBACK}`, { cookie })).text()
-    assert.match(confirm, /Désactiver fruitback \?/)
-    assert.match(confirm, new RegExp(`action="/repos/${FRUITBACK}/disable"`))
+    let { cookie, csrf, html: page } = await signIn()
+    // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and « Annuler ».
+    let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
+    assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Désactiver<span class="visually-hidden"> fruitback<\/span>…<\/span><\/summary>/)
+    assert.match(row, new RegExp(`action="/repos/${FRUITBACK}/disable"><input type="hidden" name="_csrf" value="${csrf}" /><button type="submit" class="button button-danger-solid">Désactiver fruitback</button>`))
+    assert.match(row, /<button type="button" data-confirm-cancel hidden class="button">Annuler<\/button>/)
+    assert.match(row, /Les reviews déjà publiées restent sur GitHub/)
+    // No destructive button has the style of the main action.
+    assert.doesNotMatch(page, /button-primary[^>]*>\s*Désactiver/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
 
     let response = await request(`/repos/${FRUITBACK}/disable`, { cookie, form: { _csrf: csrf } })
@@ -174,8 +179,8 @@ describe('the Repos screen', () => {
     let member = await signIn(CAMILLE)
     assert.equal((await request(`/repos/${ORCHARD}/enable`, { cookie: member.cookie, form: { _csrf: member.csrf } })).status, 403)
     assert.equal((await request('/repos/check', { cookie: member.cookie, form: { _csrf: member.csrf } })).status, 403)
-    // A member gets no confirmation banner either.
-    assert.doesNotMatch(await (await request(`/repos?confirm=${FRUITBACK}`, { cookie: member.cookie })).text(), /Désactiver fruitback/)
+    // A member gets no confirmation either.
+    assert.doesNotMatch(await (await request('/repos', { cookie: member.cookie })).text(), /data-confirm|\/disable"/)
 
     let admin = await signIn(ALEX)
     assert.equal((await request(`/repos/${ORCHARD}/enable`, { cookie: admin.cookie, form: {} })).status, 403)
@@ -200,6 +205,13 @@ describe('the Repos screen', () => {
 
     rows[ORG.id]![1]!.workflow = 'none'
     assert.match((await signIn()).html, /basculé/)
+  })
+
+  it('says in a note, not an alert, that a failed job set the counter back to zero, with a link to its PR', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn()
+    assert.match(html, /<span class="hint">remis à zéro après un échec sur <a href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/12" rel="noreferrer">#12<\/a><\/span>/)
+    assert.doesNotMatch(html, /hint-alert/)
   })
 
   it('« Actualiser » reads GitHub at once for an admin', async () => {

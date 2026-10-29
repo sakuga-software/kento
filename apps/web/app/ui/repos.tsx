@@ -2,6 +2,7 @@ import type { Handle } from 'remix/component'
 
 import { SWITCH_TARGET, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { Confirm } from './confirm.tsx'
 import { AlertIcon, CheckIcon, ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -22,8 +23,6 @@ export interface ReposPageProps {
   /** A check of GitHub runs in the background: the rows can change at the next load. */
   checking: boolean
   notice: ReposNotice | null
-  /** The repository that the admin is about to disable: the screen asks to confirm. */
-  confirm: RepoView | null
   /** For the dates of the screen. */
   now: Date
 }
@@ -55,7 +54,7 @@ function shortName(fullName: string, org: string): string {
  */
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
-    let { frame, repos, installationUrl, githubUrl, checking, notice, confirm, now } = handle.props
+    let { frame, repos, installationUrl, githubUrl, checking, notice, now } = handle.props
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
     let org = viewer.org.login
@@ -90,31 +89,6 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
       >
         {notice ? <Notice notice={notice} org={org} /> : null}
 
-        {confirm && admin ? (
-          <section class="banner banner-alert banner-confirm" aria-labelledby="confirm-title">
-            <AlertIcon />
-            <div class="banner-confirm-body">
-              <h2 id="confirm-title" class="banner-confirm-title">
-                Désactiver {shortName(confirm.fullName, org)} ?
-              </h2>
-              <p>
-                Aucun nouveau job ne part : le prochain push ne crée rien, et les jobs en file sont annulés. Les reviews
-                déjà publiées restent sur GitHub, et le compteur de bascule garde sa valeur.
-              </p>
-              <div class="banner-confirm-actions">
-                <form method="post" action={routes.repoDisable.href({ id: confirm.id })}>
-                  {csrf}
-                  <button class="button button-primary" type="submit">
-                    Désactiver {shortName(confirm.fullName, org)}
-                  </button>
-                </form>
-                <a class="button" href={`${routes.repos.href()}#repo-${confirm.id}`}>
-                  Annuler
-                </a>
-              </div>
-            </div>
-          </section>
-        ) : null}
 
         <p class="repos-summary" aria-live="polite">
           {repos.length} {repos.length > 1 ? 'repos' : 'repo'} · {enabled} {enabled > 1 ? 'activés' : 'activé'} ·{' '}
@@ -292,9 +266,22 @@ function RepoRow(handle: Handle<RepoRowProps>) {
         {admin ? (
           <td data-label="Action" class="row-action">
             {repo.enabled ? (
-              <a class="button" href={`${routes.repos.href()}?confirm=${repo.id}#confirm-title`}>
-                Désactiver<span class="visually-hidden"> {name}</span>
-              </a>
+              <Confirm
+                trigger={
+                  // One flex item: the gap of .button would split the visible « Désactiver… ».
+                  <span>
+                    Désactiver<span class="visually-hidden"> {name}</span>…
+                  </span>
+                }
+                action={routes.repoDisable.href({ id: repo.id })}
+                csrf={csrfToken}
+                submit={`Désactiver ${name}`}
+              >
+                <p>
+                  Aucun nouveau job ne part : le prochain push ne crée rien, et les jobs en file sont annulés. Les reviews
+                  déjà publiées restent sur GitHub, et le compteur de bascule garde sa valeur.
+                </p>
+              </Confirm>
             ) : (
               <form method="post" action={routes.repoEnable.href({ id: repo.id })}>
                 {csrfToken ? <input type="hidden" name="_csrf" value={csrfToken} /> : null}
@@ -370,7 +357,21 @@ function Switch(handle: Handle<{ repo: RepoView; admin: boolean; githubUrl: stri
           {/* The count says it in text: the bar is decorative. No inline style (CSP): a <progress>. */}
           <progress class={done ? 'switch-bar switch-done' : 'switch-bar'} max={SWITCH_TARGET} value={count} aria-hidden="true"></progress>
         </span>
-        {reset ? <span class="hint hint-alert">{reset}</span> : null}
+        {/* A note, not an alert: the counter starts again by itself at the next review. */}
+        {reset ? (
+          <span class="hint">
+            {reset}
+            {repo.resetPr !== null ? (
+              <>
+                {' '}
+                sur{' '}
+                <a href={`${githubUrl}/${repo.fullName}/pull/${repo.resetPr}`} rel="noreferrer">
+                  #{repo.resetPr}
+                </a>
+              </>
+            ) : null}
+          </span>
+        ) : null}
         {done && workflowLeft && admin && repo.defaultBranch ? (
           <a
             class="button button-small"

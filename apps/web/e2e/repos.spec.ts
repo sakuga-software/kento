@@ -65,12 +65,37 @@ test.describe('the Repos screen', () => {
       await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
       await expectNoAxeViolations(page)
 
-      await rowOf(page, 'orchard').getByRole('link', { name: 'Désactiver orchard' }).click()
-      let confirm = page.getByRole('region', { name: 'Désactiver orchard ?' })
-      await expect(confirm).toBeVisible()
-      await expect(confirm).toContainText('Les reviews déjà publiées restent sur GitHub')
+      // REV-33: the confirmation opens in the row, at the keyboard; Échap and « Annuler » close it and
+      // give the focus back to its trigger.
+      let row = rowOf(page, 'orchard')
+      let trigger = row.locator('summary', { hasText: 'Désactiver' })
+      let act = row.getByRole('button', { name: 'Désactiver orchard' })
+      await trigger.focus()
+      await page.keyboard.press('Enter')
+      await expect(row).toContainText('Les reviews déjà publiées restent sur GitHub')
+      await expect(act).toBeVisible()
       await expectNoAxeViolations(page)
-      await confirm.getByRole('button', { name: 'Désactiver orchard' }).click()
+      await page.keyboard.press('Tab')
+      await expect(act).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(act).toBeHidden()
+      await expect(trigger).toBeFocused()
+
+      await page.keyboard.press('Enter')
+      await row.getByRole('button', { name: 'Annuler' }).click()
+      await expect(act).toBeHidden()
+      await expect(trigger).toBeFocused()
+
+      // The destructive buttons have their own colour, not the one of « Activer ».
+      let colors = await page.evaluate(() => {
+        let primary = document.querySelector('.button-primary')
+        let danger = document.querySelector('.button-danger')
+        return [primary && getComputedStyle(primary).backgroundColor, danger && getComputedStyle(danger).color]
+      })
+      expect(colors[0]).not.toEqual(colors[1])
+
+      await trigger.click()
+      await act.click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard est désactivé.' })).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
 
@@ -110,7 +135,8 @@ test.describe('the Repos screen', () => {
         values (${repo!.id}, 'lite', 'failed', 21, ${'f'.repeat(40)}, 'main', 'lease expired 2 times', now())`
       await page.reload()
       await expect(orchard.getByText('0/20')).toBeVisible()
-      await expect(orchard.getByText('remis à zéro après un échec')).toBeVisible()
+      await expect(orchard.getByText('remis à zéro après un échec sur')).toBeVisible()
+      await expect(orchard.getByRole('link', { name: '#21', exact: true })).toHaveAttribute('href', /\/sakuga-software\/orchard\/pull\/21$/)
       await expect(orchard.getByRole('link', { name: /Retirer review\.yml/ })).toHaveCount(0)
     } finally {
       await sql.end()
@@ -180,7 +206,7 @@ test.describe('the Repos screen', () => {
     await expect(page.getByText('Lecture seule.')).toBeVisible()
     await expect(page.getByRole('table')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Activer/ })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: /^Désactiver/ })).toHaveCount(0)
+    await expect(page.locator('summary', { hasText: 'Désactiver' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Actualiser' })).toHaveCount(0)
     await expectNoAxeViolations(page)
   })

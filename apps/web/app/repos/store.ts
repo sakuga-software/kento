@@ -29,6 +29,8 @@ export interface RepoView {
   streak: number
   /** What set the streak back to zero last, or null when nothing did. */
   resetBy: 'failure' | 'double' | null
+  /** The pull request of the failed job or of the double publication that did it. */
+  resetPr: number | null
   /** The last review that Kentō published on GitHub. */
   lastReview: { prNumber: number; score: number; model: string; publishedAt: Date } | null
 }
@@ -82,12 +84,13 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       // for a second one on purpose, with `force`).
       let rows = await sql<Row[]>`
         with failed as (
-          select repo_id, max(coalesce(finished_at, updated_at)) as at
+          -- The last one, and of two at the same instant the same one at every load (id desc).
+          select distinct on (repo_id) repo_id, coalesce(finished_at, updated_at) as at, pr_number
           from jobs where state = 'failed' and repo_id in (select id from repos where org_id = ${orgId})
-          group by repo_id
+          order by repo_id, coalesce(finished_at, updated_at) desc, id desc
         ),
         doubled as (
-          select later.repo_id, max(later.published_at) as at
+          select distinct on (later.repo_id) later.repo_id, later.published_at as at, later.pr_number
           from reviews later
           join jobs later_job on later_job.id = later.job_id
           where later.github_review_id is not null
@@ -101,7 +104,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
                 and earlier.github_review_id is not null and earlier.id <> later.id
                 and (earlier.published_at, earlier.id) < (later.published_at, later.id)
             )
-          group by later.repo_id
+          order by later.repo_id, later.published_at desc, later.id desc
         )
         select
           repos.id, repos.github_repo_id as "githubRepoId", repos.full_name as "fullName", repos.enabled,
@@ -113,6 +116,11 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             when doubled.at is null or failed.at >= doubled.at then 'failure'
             else 'double'
           end as "resetBy",
+          case
+            when failed.at is null and doubled.at is null then null
+            when doubled.at is null or failed.at >= doubled.at then failed.pr_number
+            else doubled.pr_number
+          end as "resetPr",
           (
             select count(*) from reviews
             where reviews.repo_id = repos.id and reviews.github_review_id is not null

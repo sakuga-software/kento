@@ -80,7 +80,7 @@ describe('the check of the repositories on GitHub', () => {
     let fresh: RepoView = {
       id: 'r', githubRepoId: 1, fullName: 'sakuga-software/orchard', enabled: true, defaultLevel: 'lite', private: true,
       defaultBranch: 'main', workflow: 'none', workflowPath: null, workflowRef: null, workflowCheckedAt: new Date(),
-      streak: 0, resetBy: null, lastReview: null,
+      streak: 0, resetBy: null, resetPr: null, lastReview: null,
     }
     assert.equal(check.refreshIfStale(ORG, [fresh]), false)
     let old = { ...fresh, workflowCheckedAt: new Date(Date.now() - 11 * 60_000) }
@@ -96,7 +96,7 @@ describe('the check of the repositories on GitHub', () => {
     let neverChecked: RepoView = {
       id: 'r', githubRepoId: 3, fullName: 'sakuga-software/broken', enabled: true, defaultLevel: 'lite', private: null,
       defaultBranch: null, workflow: null, workflowPath: null, workflowRef: null, workflowCheckedAt: null,
-      streak: 0, resetBy: null, lastReview: null,
+      streak: 0, resetBy: null, resetPr: null, lastReview: null,
     }
     // A restart: no check in this process yet, and a row never checked.
     assert.equal(check.refreshIfStale(ORG, [neverChecked]), true)

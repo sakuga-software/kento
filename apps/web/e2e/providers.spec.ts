@@ -99,6 +99,10 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 
     // 5. The admin replaces the key: the refusal goes, the new last 4 characters show.
     await card.getByLabel('Nouvelle clé Anthropic').fill(`sk-ant-e2e-${project}-replaced-WXYZ`)
+    // Escape in the field keeps the form and what was typed: it closes a destructive confirmation only.
+    await card.getByLabel('Nouvelle clé Anthropic').press('Escape')
+    await expect(card.getByLabel('Nouvelle clé Anthropic')).toBeVisible()
+    await expect(card.getByLabel('Nouvelle clé Anthropic')).toHaveValue(`sk-ant-e2e-${project}-replaced-WXYZ`)
     await card.getByRole('button', { name: 'Remplacer', exact: true }).click()
     await expect(page.getByText('Clé remplacée.')).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)

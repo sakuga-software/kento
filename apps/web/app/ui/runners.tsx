@@ -5,6 +5,7 @@ import { CLAIM_WAIT_SECONDS, HEARTBEAT_SECONDS, LEASE_SECONDS, MAX_ATTEMPTS, MAX
 import { REGISTRATION_TTL_MINUTES, type RegistrationView, type RunnersScreen, type RunnerView } from '../runner/admin.ts'
 import { RETRY_BACKOFF_SECONDS } from '../runner/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { Confirm } from './confirm.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
@@ -326,12 +327,17 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
                 Nouveau token
               </button>
             </form>
-            <form method="post" action={routes.runnerDiscard.href({ id: registration.id })}>
-              <input type="hidden" name="_csrf" value={csrf} />
-              <button class="button button-ghost" type="submit">
-                Annuler le token
-              </button>
-            </form>
+            <Confirm
+              trigger="Annuler le token…"
+              action={routes.runnerDiscard.href({ id: registration.id })}
+              csrf={csrf}
+              submit={`Annuler le token de ${registration.name}`}
+            >
+              <p>
+                Le token de <strong class="mono">{registration.name}</strong> cesse de marcher tout de suite : aucun runner
+                ne pourra s’enregistrer avec. Pour enregistrer ce runner, il faudra un nouveau token.
+              </p>
+            </Confirm>
           </div>
         ) : null}
       </li>
@@ -418,22 +424,13 @@ function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: str
                 {runner.trusted ? 'Retirer la confiance' : 'Marquer de confiance'}
               </button>
             </form>
-            <details class="confirm">
-              <summary class="button button-danger">Révoquer…</summary>
-              <div class="confirm-body">
-                <p>
-                  Le token de <strong class="mono">{runner.name}</strong> cessera de marcher à son prochain appel, et son
-                  job en cours repartira en file pour un autre runner. Pour le remettre en service, il faudra un nouveau
-                  token.
-                </p>
-                <form method="post" action={routes.runnerRevoke.href({ id: runner.id })}>
-                  <input type="hidden" name="_csrf" value={csrf} />
-                  <button class="button button-danger-solid" type="submit">
-                    Révoquer {runner.name}
-                  </button>
-                </form>
-              </div>
-            </details>
+            <Confirm trigger="Révoquer…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Révoquer ${runner.name}`}>
+              <p>
+                Le token de <strong class="mono">{runner.name}</strong> cessera de marcher à son prochain appel, et son
+                job en cours repartira en file pour un autre runner. Pour le remettre en service, il faudra un nouveau
+                token.
+              </p>
+            </Confirm>
           </div>
         ) : null}
       </li>

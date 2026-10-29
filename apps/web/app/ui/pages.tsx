@@ -709,7 +709,6 @@ export function createUiControllers(deps: UiDependencies) {
               : done === 'disabled' && named
                 ? { kind: 'disabled', fullName: named.fullName, cancelled: Number(query.get('cancelled')) || 0 }
                 : null
-        let confirm = signed.membership.role === 'admin' ? (rows.find((row) => row.id === query.get('confirm') && row.enabled) ?? null) : null
         return context.render(
           <ReposPage
             frame={page}
@@ -718,7 +717,6 @@ export function createUiControllers(deps: UiDependencies) {
             githubUrl={repos.githubUrl}
             checking={checking}
             notice={notice}
-            confirm={confirm}
             now={new Date(now())}
           />,
         )
