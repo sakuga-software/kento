@@ -9,12 +9,13 @@
 # (packages/engine) and the protocol (packages/protocol) have no npm dependency; pnpm only links
 # the workspace packages.
 
-ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NODE_IMAGE=node:26-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /repo
+# The Node 25 and later images have no corepack: npm installs it.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
+RUN npm install -g corepack@latest && corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/runner/package.json apps/runner/
 COPY packages/engine/package.json packages/engine/

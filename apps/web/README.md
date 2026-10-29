@@ -5,7 +5,7 @@ The service behind `review.sakuga.dev`: `GET /healthz`, the GitHub App webhook `
 runner sends (REV-5, `app/publish/`), and the screens of milestone M3 (REV-8 and after).
 
 - [Remix 3](https://github.com/remix-run/remix): `remix/router` (fetch-router), `remix/component`,
-  `remix/node-fetch-server`. Node 24.3 or later runs the TypeScript source with `remix/node-tsx`;
+  `remix/node-fetch-server`. Node 26 or later runs the TypeScript source with `remix/node-tsx`;
   there is no build step.
 - Postgres with [drizzle](https://orm.drizzle.team): schema in `app/db/schema.ts`, SQL migrations in
   `drizzle/`, applied at startup.

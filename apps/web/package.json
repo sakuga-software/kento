@@ -16,7 +16,7 @@
     "design:board": "node --import remix/node-tsx scripts/design-board.tsx"
   },
   "engines": {
-    "node": ">=24.3.0"
+    "node": ">=26"
   },
   "dependencies": {
     "@sakuga-review/engine": "workspace:*",
@@ -27,8 +27,8 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.0",
-    "@playwright/test": "1.58.2",
-    "@types/node": "24.19.2",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
     "drizzle-kit": "0.31.11",
     "oxlint": "1.90.0",
     "typescript": "7.0.2"

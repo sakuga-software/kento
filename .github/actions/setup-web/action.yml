@@ -14,7 +14,7 @@ runs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '24'
+        node-version: '26'
 
     # The version comes from `packageManager` in the root package.json.
     - name: Setup pnpm

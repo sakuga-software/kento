@@ -16,7 +16,7 @@
  *
  * Every call after the registration sends `Authorization: Bearer <runner token>`.
  *
- * Node 24 or later runs this code as is: no build. Keep to erasable TypeScript syntax.
+ * Node 26 or later runs this code as is: no build. Keep to erasable TypeScript syntax.
  */
 import { arr, bool, int, nullable, num, obj, oneOf, optional, run, str, tagged, tuple2, type Checked } from './check.ts';
 

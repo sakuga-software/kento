@@ -190,7 +190,7 @@ one of which reasons less and found less on the bench. MiMo V2.6 Pro was the fal
 it writes about 10,000 tokens of reasoning at 35 to 50 tokens a second, so 4 to 6 minutes, and its
 providers answered `429` and timeouts under load.
 
-The script and the engine read the code and never run it. They are TypeScript that Node 24 or later
+The script and the engine read the code and never run it. They are TypeScript that Node 26 or later
 runs as is: they need `git` and Node, and no package and no build. The script imports the engine by
 its relative path, so the checkout of `review.yml` runs it with no install. Keep them to erasable
 syntax (no `enum`, no `namespace`), which Node strips without a compiler.

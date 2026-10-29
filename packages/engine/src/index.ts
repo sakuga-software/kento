@@ -4,7 +4,7 @@
  * (OpenRouter, Anthropic, a server of the OpenAI API, or Ollama); it never calls GitHub. The Action (review/sakuga-review.ts), the bench (eval/martian) and the
  * runner call it.
  *
- * Node 24 or later runs this code as is: no build. Keep to erasable TypeScript syntax, and import
+ * Node 26 or later runs this code as is: no build. Keep to erasable TypeScript syntax, and import
  * with the `.ts` extension. The Action imports it by its relative path, with no install.
  */
 export { git } from './git.ts';

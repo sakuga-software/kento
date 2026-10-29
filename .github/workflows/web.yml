@@ -57,7 +57,7 @@ jobs:
     # The job runs in a container on the network of its service, and reaches Postgres by its name.
     # No port is published on the host: a published port is a random host port, and under rootless
     # Docker it can already be taken (run 40741576267: « bind: address already in use »).
-    container: node:24-bookworm
+    container: node:26-bookworm
     services:
       postgres:
         image: postgres:18.3
@@ -88,7 +88,7 @@ jobs:
     name: Screens in a browser (Playwright, axe)
     runs-on: [self-hosted, sakuga-linux, docker]
     timeout-minutes: 15
-    container: node:24-bookworm
+    container: node:26-bookworm
     services:
       postgres:
         image: postgres:18.3

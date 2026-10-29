@@ -17,7 +17,7 @@ next. The full bench that this slice comes from is in [`../PLAN.md`](../PLAN.md)
 
 ## Run it
 
-`fetch.sh` needs `git` and `jq`; `run.ts` needs Node 24 or later, like the review.
+`fetch.sh` needs `git` and `jq`; `run.ts` needs Node 26 or later, like the review.
 
 ```bash
 eval/martian/fetch.sh eval/martian/subset-ts.json ../repos   # blobless clones, about 3 GB

@@ -6,7 +6,7 @@
  *     node review/sakuga-review.ts --repo-dir <checkout> --repository <owner/name> --pr <n> --base <sha> --head <sha>
  *
  * Environment: OPENROUTER_API_KEY, and GITHUB_TOKEN to post. See README.md.
- * Node 24 or later runs this file as is: no package, no build. Keep to erasable TypeScript syntax.
+ * Node 26 or later runs this file as is: no package, no build. Keep to erasable TypeScript syntax.
  *
  * The engine (packages/engine) builds the pack, calls the model and renders the review. This script
  * reads the threads of GitHub and posts the review: the engine never calls GitHub. It imports the

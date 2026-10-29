@@ -8,13 +8,14 @@
 # The service runs its TypeScript source with `remix/node-tsx`, as Remix 3 recommends: there is no
 # build step. It applies the pending migrations at startup (MIGRATE_ON_START, on by default).
 
-ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NODE_IMAGE=node:26-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /repo
-# corepack installs the pnpm version of `packageManager` in the root package.json.
+# The Node 25 and later images have no corepack: npm installs it. corepack installs the pnpm
+# version of `packageManager` in the root package.json.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
+RUN npm install -g corepack@latest && corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
 COPY packages/protocol/package.json packages/protocol/
