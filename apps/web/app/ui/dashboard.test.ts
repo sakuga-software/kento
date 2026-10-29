@@ -240,6 +240,21 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /Relancer en/)
   })
 
+  it('lists an offline runner first, with its state, as the Runners screen does (REV-30)', async () => {
+    let { signIn } = setup(
+      screen({
+        runners: [
+          { id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
+          { id: 'run2', name: 'hetzner-cx22', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
+        ],
+      }),
+    )
+    let { html } = await signIn(ALEX)
+    let section = html.slice(html.indexOf('id="dash-runners-title"'))
+    assert.match(section, /<span class="status status-offline">Hors ligne depuis 3 j<\/span>/)
+    assert.ok(section.indexOf('hetzner-cx22') < section.indexOf('mac-mini'), 'the offline runner comes first')
+  })
+
   it('has empty states', async () => {
     let { signIn } = setup(
       screen({

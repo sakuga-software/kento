@@ -147,6 +147,9 @@ for (let theme of ['paper', 'sumi'] as const) {
     await signIn(page, 'alex')
     await page.goto('/runners')
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+    // REV-30: the facts of the protocol are folded under « Détails techniques ».
+    await expect(page.getByRole('heading', { name: 'Protocole' })).toBeHidden()
+    await page.getByText('Détails techniques').click()
     await expect(page.getByRole('heading', { name: 'Protocole' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Bail et tentatives' })).toBeVisible()
     await expectNoAxeViolations(page)
@@ -154,6 +157,48 @@ for (let theme of ['paper', 'sumi'] as const) {
     expect(overflow).toBeLessThanOrEqual(0)
   })
 }
+
+test('a runner silent for 3 days is « Hors ligne », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
+  let name = `hetzner-${testInfo.project.name}`
+  let db = sql()
+  try {
+    await db`delete from runners where name = ${name}`
+    await db`
+      insert into runners (org_id, name, labels, version, token_hash, trusted, last_seen_at, created_at)
+      select id, ${name}, '{linux}', '0.3.9', ${`e2e-${name}`}, false, now() - interval '3 days', now() - interval '30 days'
+      from orgs where login = 'sakuga-software'`
+  } finally {
+    await db.end()
+  }
+  await signIn(page, 'alex')
+  await page.goto('/runners')
+  let first = page.getByRole('region', { name: /^Runners actifs/ }).getByRole('listitem').filter({ has: page.getByRole('heading', { level: 3 }) }).first()
+  await expect(first.getByRole('heading', { level: 3 })).toHaveText(name)
+  let state = first.getByText('Hors ligne depuis 3 j', { exact: true })
+  await expect(state).toBeVisible()
+  // The colour repeats the word: the red of an alert, as an expired token.
+  let colours = await state.evaluate((el) => {
+    let probe = document.createElement('span')
+    probe.className = 'status status-alert'
+    document.body.append(probe)
+    let alert = getComputedStyle(probe).color
+    probe.remove()
+    return { state: getComputedStyle(el).color, alert }
+  })
+  expect(colours.state).toBe(colours.alert)
+
+  let form = page.locator('#nouveau-runner')
+  await expect(form.getByRole('radio', { name: /Clé du runner/ })).toBeChecked()
+  await expect(form.getByRole('radio', { name: /Clé de l’app/ })).not.toBeChecked()
+  await expectNoAxeViolations(page)
+
+  db = sql()
+  try {
+    await db`delete from runners where name = ${name}`
+  } finally {
+    await db.end()
+  }
+})
 
 test('a member reads the runners and has no form', async ({ page, request }) => {
   await signIn(page, 'camille')

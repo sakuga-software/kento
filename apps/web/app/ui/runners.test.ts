@@ -6,7 +6,7 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import type { RunnersAdminStore, RunnersScreen, RunnerView } from '../runner/admin.ts'
 import { hashToken } from '../runner/tokens.ts'
-import { ago, dockerCommand, newerVersion, readRegistrationForm, runnerState } from './runners.tsx'
+import { ago, byState, dockerCommand, newerVersion, readRegistrationForm, runnerState, runnerStateLabel, since } from './runners.tsx'
 
 const COOKIE = '__Host-kento_session'
 const RUNNER_ID = '11111111-1111-4111-8111-111111111111'
@@ -150,15 +150,45 @@ describe('the docker run command', () => {
 })
 
 describe('the state of a runner', () => {
-  it('is online, idle or stale from its last call, and revoked above all', () => {
+  it('is online up to 90 s, late up to 1 h, offline after or never seen, and revoked above all (REV-30)', () => {
     let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
     assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(30) }, NOW), 'online')
     assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(90) }, NOW), 'online')
-    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(91) }, NOW), 'idle')
-    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(86_400) }, NOW), 'idle')
-    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(86_401) }, NOW), 'stale')
-    assert.equal(runnerState({ revokedAt: null, lastSeenAt: null }, NOW), 'stale')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(91) }, NOW), 'late')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(3600) }, NOW), 'late')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(3601) }, NOW), 'offline')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: at(3 * 86_400) }, NOW), 'offline')
+    assert.equal(runnerState({ revokedAt: null, lastSeenAt: null }, NOW), 'offline')
     assert.equal(runnerState({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'revoked')
+  })
+
+  it('names the state, and says since when a runner is offline (REV-30)', () => {
+    let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(20) }, NOW), 'En ligne')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(120) }, NOW), 'Signal en retard')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(3 * 86_400) }, NOW), 'Hors ligne depuis 3 j')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(5 * 3600) }, NOW), 'Hors ligne depuis 5 h')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: null }, NOW), 'Hors ligne')
+    assert.equal(runnerStateLabel({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'Révoqué')
+  })
+
+  it('counts the silence of an offline runner in hours, then in days after 48 h (REV-30)', () => {
+    let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
+    assert.equal(since(at(3601), NOW), '1 h')
+    assert.equal(since(at(47 * 3600), NOW), '47 h')
+    assert.equal(since(at(48 * 3600), NOW), '2 j')
+    assert.equal(since(at(3 * 86_400 + 600), NOW), '3 j')
+  })
+
+  it('lists an offline runner first, then a late one, then the online ones in their order (REV-30)', () => {
+    let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
+    let runners = [
+      { name: 'a', revokedAt: null, lastSeenAt: at(10) },
+      { name: 'b', revokedAt: null, lastSeenAt: at(600) },
+      { name: 'c', revokedAt: null, lastSeenAt: at(20) },
+      { name: 'd', revokedAt: null, lastSeenAt: at(3 * 86_400) },
+    ]
+    assert.deepEqual(byState(runners, NOW).map((r) => r.name), ['d', 'b', 'a', 'c'])
   })
 
   it('says a newer release when its version is older, by number and not by text', () => {
@@ -198,8 +228,26 @@ describe('the Runners screen', () => {
     // A runner of the service shows, with no form: only an operator manages it.
     assert.match(html, /Runner du service/)
     assert.doesNotMatch(html, /Révoquer runners-host/)
+    // REV-30: the facts of the protocol fold under « Détails techniques ».
+    assert.match(html, /<details class="runner-details"><summary>Détails techniques<\/summary>/)
     assert.match(html, /Protocole/)
     assert.match(html, /Bail et tentatives/)
+    // REV-30: « Clé du runner » is the choice by default; the key of the app is an explicit choice.
+    assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
+    assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
+  })
+
+  it('shows a runner silent for 3 days as « Hors ligne », above a runner that is online (REV-30)', async () => {
+    let { request, signIn } = setup({
+      runners: [
+        runner({ name: 'mac-host' }),
+        runner({ id: '33333333-3333-4333-8333-333333333334', name: 'hetzner-cx22', lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000) }),
+      ],
+    })
+    let { cookie } = await signIn(ALEX)
+    let html = await (await request('/runners', { cookie })).text()
+    assert.match(html, /<span class="status status-offline">Hors ligne depuis 3 j<\/span>/)
+    assert.ok(html.indexOf('hetzner-cx22') < html.indexOf('mac-host'), 'the offline runner comes first')
   })
 
   it('shows a member the same list, and no form', async () => {

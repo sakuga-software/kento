@@ -5,7 +5,7 @@ import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBann
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
 import { pageRoutes as routes } from '../routes.ts'
-import { ago, runnerState, type RunnerState } from './runners.tsx'
+import { ago, byState, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
@@ -92,13 +92,6 @@ const CAP_STATUS: Record<CapState, string> = {
   ok: 'status-online',
   alert: 'status-wait',
   reached: 'status-alert',
-}
-
-const RUNNER_TEXT: Record<RunnerState, string> = {
-  online: 'En ligne',
-  idle: 'Inactif',
-  stale: 'Dernier signal ancien',
-  revoked: 'Révoqué',
 }
 
 export interface DashboardPageProps {
@@ -588,13 +581,15 @@ function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; now: Date }
           <p class="hint">Aucun runner : les jobs attendent en file. Créez-en un dans Runners.</p>
         ) : (
           <ul class="dash-jobs">
-            {runners.map((runner) => {
-              let state = runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, now)
+            {/* As on the Runners screen: an offline runner first, then a late one (REV-30). */}
+            {byState(runners, now).map((runner) => {
+              let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
+              let state = runnerState(seen, now)
               return (
                 <li class="dash-job">
                   <div class="dash-review-head">
                     <span class="mono">{runner.name}</span>
-                    <span class={`status status-${state}`}>{RUNNER_TEXT[state]}</span>
+                    <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
                     {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
                   </div>
                   <p class="hint">

@@ -9,8 +9,8 @@ import { Shell, type PageFrame } from './shell.tsx'
 
 /** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
 export const ONLINE_SECONDS = 3 * CLAIM_WAIT_SECONDS
-/** After this, its last call is « ancien ». */
-export const STALE_SECONDS = 24 * 60 * 60
+/** After this with no call, a runner is « Hors ligne »; before it, its signal is « en retard ». */
+export const OFFLINE_SECONDS = 60 * 60
 
 export const RUNNER_IMAGE = 'ghcr.io/sakuga-software/kento-runner'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
@@ -36,7 +36,7 @@ export function readRegistrationForm(form: FormData | undefined): {
   let name = String(form?.get('name') ?? '').trim()
   let labelsText = String(form?.get('labels') ?? '').trim()
   let keyModeValue = form?.get('keyMode')
-  let keyMode: RegistrationForm['keyMode'] = keyModeValue === 'runner' ? 'runner' : 'app'
+  let keyMode: RegistrationForm['keyMode'] = keyModeValue === 'app' ? 'app' : 'runner'
   let errors: Partial<Record<'name' | 'labels' | 'keyMode', string>> = {}
   if (!NAME.test(name)) errors.name = 'Lettres, chiffres, points, tirets ou soulignés, 100 au plus.'
   let labels = [...new Set(labelsText.split(/[\s,]+/).filter(Boolean))]
@@ -67,23 +67,49 @@ export function dockerCommand(input: { kentoUrl: string; token: string; name: st
   return lines.join(' \\\n  ')
 }
 
-export type RunnerState = 'revoked' | 'online' | 'idle' | 'stale'
+/** The state of a runner from its last call. The name of each is also its class: `status-<state>`. */
+export type RunnerState = 'revoked' | 'online' | 'late' | 'offline'
 
 /** The state of a runner from its last call, as the screen shows it. */
 export function runnerState(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>, now: Date): RunnerState {
   if (runner.revokedAt) return 'revoked'
-  if (!runner.lastSeenAt) return 'stale'
+  if (!runner.lastSeenAt) return 'offline'
   let age = (now.getTime() - runner.lastSeenAt.getTime()) / 1000
   if (age <= ONLINE_SECONDS) return 'online'
-  if (age <= STALE_SECONDS) return 'idle'
-  return 'stale'
+  if (age <= OFFLINE_SECONDS) return 'late'
+  return 'offline'
 }
 
 const STATE_LABELS: Record<RunnerState, string> = {
   revoked: 'Révoqué',
   online: 'En ligne',
-  idle: 'Inactif',
-  stale: 'Dernier signal ancien',
+  late: 'Signal en retard',
+  offline: 'Hors ligne',
+}
+
+/** « En ligne », « Signal en retard », « Hors ligne depuis 3 j »: the word of the state of a runner. */
+export function runnerStateLabel(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>, now: Date): string {
+  let state = runnerState(runner, now)
+  if (state === 'offline' && runner.lastSeenAt) return `Hors ligne depuis ${since(runner.lastSeenAt, now)}`
+  return STATE_LABELS[state]
+}
+
+/** « 2 h », « 3 j »: how long a runner has been silent. Offline starts after 1 h, so the unit is the hour or the day. */
+export function since(date: Date, now: Date): string {
+  let hours = Math.floor(Math.max(0, now.getTime() - date.getTime()) / 3_600_000)
+  if (hours < 48) return `${hours} h`
+  return `${Math.floor(hours / 24)} j`
+}
+
+/** The order of the runners in service: a problem first, so that it is seen before the rest. */
+const STATE_ORDER: Record<RunnerState, number> = { offline: 0, late: 1, online: 2, revoked: 3 }
+
+/** The runners in service, those that went offline first, then late, then online; the same order otherwise. */
+export function byState<T extends { lastSeenAt: Date | null; revokedAt?: Date | null }>(runners: T[], now: Date): T[] {
+  return runners
+    .map((runner, index) => ({ runner, index, rank: STATE_ORDER[runnerState({ revokedAt: runner.revokedAt ?? null, lastSeenAt: runner.lastSeenAt }, now)] }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ runner }) => runner)
 }
 
 /** The release that a runner should run, when `version` is older than it. Null when up to date or unknown. */
@@ -150,7 +176,10 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let host = new URL(kentoUrl).host
-    let active = screen.runners.filter((runner) => !runner.revokedAt)
+    let active = byState(
+      screen.runners.filter((runner) => !runner.revokedAt),
+      screen.now,
+    )
     let revoked = screen.runners.filter((runner) => runner.revokedAt)
     return (
       <Shell
@@ -215,10 +244,13 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
           </section>
         ) : null}
 
-        <div class="runner-facts">
-          <ProtocolFacts version={version} />
-          <LeaseFacts />
-        </div>
+        <details class="runner-details">
+          <summary>Détails techniques</summary>
+          <div class="runner-facts">
+            <ProtocolFacts version={version} />
+            <LeaseFacts />
+          </div>
+        </details>
 
         {admin ? <NewRunnerForm csrf={csrf} form={form ?? null} /> : null}
         <script src={`/assets/runners.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -318,7 +350,7 @@ function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: str
       <li class={`runner runner-${state}`}>
         <div class="runner-head">
           <h3 class="runner-name mono">{runner.name}</h3>
-          <span class={`status status-${state}`}>{STATE_LABELS[state]}</span>
+          <span class={`status status-${state}`}>{runnerStateLabel(runner, now)}</span>
           {service ? <span class="tag">Runner du service</span> : null}
         </div>
         <Labels labels={runner.labels} />
@@ -331,7 +363,7 @@ function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: str
             <dt>Version</dt>
             <dd>
               <span class="mono">{runner.version ?? '—'}</span>
-              {newer ? <span class="status status-idle">{newer} disponible</span> : null}
+              {newer ? <span class="status status-wait">{newer} disponible</span> : null}
             </dd>
           </div>
           <div>
@@ -494,7 +526,8 @@ function LeaseFacts(_handle: Handle<{}>) {
 function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['form'] }>) {
   return () => {
     let { csrf, form } = handle.props
-    let values = form?.values ?? { name: '', labels: '', keyMode: 'app' as const }
+    // The runner keeps its own key unless an admin chooses to trust it with the key of the app.
+    let values = form?.values ?? { name: '', labels: '', keyMode: 'runner' as const }
     let errors = form?.errors ?? {}
     return (
       <section class="card new-runner" id="nouveau-runner" aria-labelledby="new-runner-title" tabIndex={-1}>
@@ -560,16 +593,16 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
           <fieldset class="field" aria-describedby={errors.keyMode ? 'runner-key-error' : undefined}>
             <legend class="field-label">Clé du modèle</legend>
             <label class="choice">
-              <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
-              <span>
-                <strong>Clé de l’app</strong> — le runner est de confiance et reçoit la clé du service avec chaque job.
-              </span>
-            </label>
-            <label class="choice">
               <input type="radio" name="keyMode" value="runner" checked={values.keyMode === 'runner'} />
               <span>
                 <strong>Clé du runner</strong> — la machine a sa propre clé (PROVIDER_API_KEY) ; le service n’envoie
                 jamais la sienne.
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
+              <span>
+                <strong>Clé de l’app</strong> — le runner est de confiance et reçoit la clé du service avec chaque job.
               </span>
             </label>
             {errors.keyMode ? (
