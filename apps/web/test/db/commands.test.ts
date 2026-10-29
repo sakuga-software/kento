@@ -141,7 +141,7 @@ describe('commands in the comments of a pull request', () => {
     assert.equal(fake.state.issueComments.length, 0)
     // The token of the handler can read the pull request and react; it cannot read the code.
     let token = fake.state.tokens.at(0)!
-    assert.deepEqual(token.permissions, { pull_requests: 'read', issues: 'write' })
+    assert.deepEqual(token.permissions, { pull_requests: 'write', issues: 'write' })
     assert.deepEqual(token.repositoryIds, [REPO.id])
   })
 

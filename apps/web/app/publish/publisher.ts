@@ -73,8 +73,8 @@ type EndedCommand = {
   installationId: string | number
 }
 
-/** The reaction to the comment of a command: one token with `issues: write`. */
-const REACTION_PERMISSIONS: TokenPermissions = { issues: 'write' }
+/** The reaction to the comment of a command. On a pull request, GitHub needs `pull_requests: write`. */
+const REACTION_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
 
 /** Read the threads, reply in them, post the summary and react: no `contents`. */
 export const RESOLVE_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }

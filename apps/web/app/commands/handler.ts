@@ -20,9 +20,10 @@ import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
 
 /**
  * Read the pull request and the permission of the commenter, react and reply on the comment. No
- * `contents`: the handler reads no code.
+ * `contents`: the handler reads no code. A reaction on a comment of a pull request needs
+ * `pull_requests: write`: with `read`, GitHub answers 403.
  */
-export const COMMAND_PERMISSIONS: TokenPermissions = { pull_requests: 'read', issues: 'write' }
+export const COMMAND_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
 
 /** The permissions of GitHub that can give a command. `maintain` reads as `write` in `permission`. */
 const WRITERS = new Set(['admin', 'maintain', 'write'])
