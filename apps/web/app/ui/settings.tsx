@@ -8,6 +8,7 @@ import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../pro
 import type { ProviderView } from '../providers/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { ago } from './runners.tsx'
+import { OrgSettingsSections, type OrgSectionProps } from './org-settings.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
@@ -55,7 +56,10 @@ export function providerState(provider: Pick<ProviderView, 'runnerHeld' | 'refus
 
 export interface SettingsPageProps {
   frame: PageFrame
-  providers: ProviderView[]
+  /** Null: the service has no providers section. */
+  providers: ProviderView[] | null
+  /** REV-13. The settings of the org, above the providers. Null: not configured on the service. */
+  org?: OrgSectionProps | null
   now: Date
   /** KENTO_SECRETS_KEY is set: the service can store a key. */
   secretsConfigured: boolean
@@ -69,10 +73,10 @@ export interface SettingsPageProps {
 
 export function SettingsPage(handle: Handle<SettingsPageProps>) {
   return () => {
-    let { frame, providers, now, secretsConfigured, serviceKey, notice, form, keyError } = handle.props
+    let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
-    let refused = providers.filter((p) => providerState(p) === 'refused')
+    let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
     return (
       <Shell frame={frame} section="settings" title="Réglages" lead="Ce qui vaut pour toute l’organisation.">
         {refused.map((p) => (
@@ -96,41 +100,45 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
           </div>
         ) : null}
 
-        <section class="provider-section" aria-labelledby="providers-title">
-          <h2 id="providers-title" class="section-title">
-            Providers et clés <span class="count">{providers.length}</span>
-          </h2>
-          <p class="hint provider-lead">
-            Le provider par défaut fait les reviews de l’organisation. Sa clé est chiffrée au repos (AES-256-GCM) ; l’écran
-            n’en montre que les 4 derniers caractères, et seul un runner de confiance de l’organisation la reçoit, pour un
-            job.
-          </p>
-          {!secretsConfigured ? (
-            <div class="banner banner-info" role="note">
-              <p>
-                Le chiffrement des clés n’est pas configuré sur le service (<span class="mono">KENTO_SECRETS_KEY</span>) :
-                seul un provider dont la clé reste sur le runner peut être ajouté.
-              </p>
-            </div>
-          ) : null}
-          {providers.length === 0 ? (
-            <div class="empty">
-              <p>
-                {serviceKey
-                  ? 'Aucun provider : les jobs utilisent la clé OpenRouter du service. Ajoutez le vôtre pour payer vos reviews et choisir vos modèles.'
-                  : 'Aucun provider, et le service n’a pas de clé : seul un runner avec sa propre clé fait les reviews.'}
-              </p>
-            </div>
-          ) : (
-            <ul class="provider-list">
-              {providers.map((provider) => (
-                <ProviderItem provider={provider} now={now} admin={admin} csrf={csrf} keyError={keyError?.id === provider.id ? keyError.message : null} />
-              ))}
-            </ul>
-          )}
-        </section>
+        {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
-        {admin ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
+        {providers ? (
+          <section class="provider-section" aria-labelledby="providers-title">
+            <h2 id="providers-title" class="section-title">
+              Providers et clés <span class="count">{providers.length}</span>
+            </h2>
+            <p class="hint provider-lead">
+              Le provider par défaut fait les reviews de l’organisation. Sa clé est chiffrée au repos (AES-256-GCM) ; l’écran
+              n’en montre que les 4 derniers caractères, et seul un runner de confiance de l’organisation la reçoit, pour un
+              job.
+            </p>
+            {!secretsConfigured ? (
+              <div class="banner banner-info" role="note">
+                <p>
+                  Le chiffrement des clés n’est pas configuré sur le service (<span class="mono">KENTO_SECRETS_KEY</span>) :
+                  seul un provider dont la clé reste sur le runner peut être ajouté.
+                </p>
+              </div>
+            ) : null}
+            {providers.length === 0 ? (
+              <div class="empty">
+                <p>
+                  {serviceKey
+                    ? 'Aucun provider : les jobs utilisent la clé OpenRouter du service. Ajoutez le vôtre pour payer vos reviews et choisir vos modèles.'
+                    : 'Aucun provider, et le service n’a pas de clé : seul un runner avec sa propre clé fait les reviews.'}
+                </p>
+              </div>
+            ) : (
+              <ul class="provider-list">
+                {providers.map((provider) => (
+                  <ProviderItem provider={provider} now={now} admin={admin} csrf={csrf} keyError={keyError?.id === provider.id ? keyError.message : null} />
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
+
+        {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
       </Shell>
     )
   }

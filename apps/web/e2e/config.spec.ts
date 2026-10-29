@@ -128,7 +128,7 @@ test.describe('the Config screen of a repository', () => {
 
       await page.getByRole('link', { name: 'Niveaux et passes' }).click()
       await page.getByRole('radio', { name: /balanced/ }).check()
-      await page.getByRole('button', { name: 'Enregistrer le niveau' }).click()
+      await page.getByRole('button', { name: 'Remplacer ici le niveau' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v2)' })).toBeVisible()
       await expect(page.getByText('Une passe')).toBeVisible()
       await expectNoAxeViolations(page)

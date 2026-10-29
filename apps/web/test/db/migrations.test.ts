@@ -60,14 +60,14 @@ describe('migrations', () => {
       where table_schema = 'public' order by table_name`
     assert.deepEqual(
       tables.map((t) => t.table_name),
-      ['jobs', 'memberships', 'orgs', 'providers', 'repos', 'resolutions', 'reviews', 'runner_registrations', 'runners', 'sessions', 'users'],
+      ['jobs', 'memberships', 'orgs', 'providers', 'repos', 'resolutions', 'reviews', 'runner_registrations', 'runners', 'sessions', 'users', 'webhook_deliveries'],
     )
   })
 
   it('applied a second time, changes nothing and keeps every row', async () => {
     await seed(database)
     let before = await counts(database)
-    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 10 })
+    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 11 })
 
     await runMigrations(test.url)
 
@@ -98,7 +98,7 @@ describe('migrations', () => {
       await runMigrations(test.url, next)
       await runMigrations(test.url, next)
 
-      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 11 })
+      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 12 })
       let [repo] = await database.sql<{ full_name: string; note: string }[]>`select full_name, note from repos`
       assert.deepEqual({ ...repo }, { full_name: 'sakuga-software/sakuga-review', note: 'kept' })
     } finally {
@@ -112,9 +112,47 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 10)
+      assert.equal(row!.applied, 11)
     } finally {
       await a.close()
+      await other.drop()
+    }
+  })
+
+  it('0010 keeps a level other than lite as the choice of the repository, and trusts sakuga-agent[bot] (REV-13)', async () => {
+    let other = await createTestDatabase()
+    let earlier = await mkdtemp(path.join(tmpdir(), 'kento-migrations-'))
+    let check = createDatabase(other.url, { max: 1 })
+    try {
+      // The release before REV-13: every migration up to 0009.
+      await cp(migrationsFolder, earlier, { recursive: true })
+      let journalPath = path.join(earlier, 'meta', '_journal.json')
+      let journal = JSON.parse(await readFile(journalPath, 'utf8'))
+      journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0010')
+      await writeFile(journalPath, JSON.stringify(journal))
+      await runMigrations(other.url, earlier)
+      let [org] = await check.sql<{ id: string }[]>`
+        insert into orgs (github_installation_id, github_account_id, login) values (1001, 2001, 'sakuga-software') returning id`
+      await check.sql`
+        insert into repos (org_id, github_repo_id, full_name, default_level, config) values
+          (${org!.id}, 1, 'sakuga-software/heavy', 'heavy', '{"trigger":"ready"}'),
+          (${org!.id}, 2, 'sakuga-software/lite', 'lite', '{}')`
+
+      await runMigrations(other.url)
+      let repos = await check.sql<{ full_name: string; config: unknown }[]>`select full_name, config from repos order by full_name`
+      assert.deepEqual(
+        repos.map((r) => [r.full_name, r.config]),
+        [
+          ['sakuga-software/heavy', { trigger: 'ready', level: 'heavy' }],
+          ['sakuga-software/lite', {}],
+        ],
+      )
+      let [settings] = await check.sql<{ trusted_bots: string[]; daily_cap_usd: string | null; cap_alert_pct: number }[]>`
+        select trusted_bots, daily_cap_usd, cap_alert_pct from orgs`
+      assert.deepEqual({ ...settings }, { trusted_bots: ['sakuga-agent[bot]'], daily_cap_usd: null, cap_alert_pct: 80 })
+    } finally {
+      await check.close()
+      await rm(earlier, { recursive: true, force: true })
       await other.drop()
     }
   })
@@ -134,7 +172,7 @@ describe('migrations', () => {
       let check = createDatabase(other.url, { max: 1 })
       try {
         let [row] = await check.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-        assert.equal(row!.applied, 10)
+        assert.equal(row!.applied, 11)
       } finally {
         await check.close()
       }
@@ -175,7 +213,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 10)
+    assert.equal(body.database.migrations, 11)
   })
 
   it('returns 503 when the database was never migrated', async () => {

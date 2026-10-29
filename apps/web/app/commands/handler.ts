@@ -16,6 +16,7 @@ import { enqueueCommandJob, isRepoEnabled, type CommentCommandMessage, type Hand
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { USAGE } from '../github/comment-command.ts'
 import { errorMessage, log } from '../log.ts'
+import { capSentence } from '../org-settings/notice.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
 
 /**
@@ -161,6 +162,12 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         )
       case 'skipped':
         return { outcome: 'skipped', reason: result.reason }
+      case 'capped': {
+        let { hit } = result
+        let reason = `${hit.period === 'day' ? 'daily' : 'monthly'} cost limit of the org is reached`
+        await refuse(reason, `@${message.commenter.login} ${capSentence(hit)}`)
+        return { outcome: 'capped', reason, period: hit.period, spentUsd: hit.spentUsd, capUsd: hit.capUsd, resetsAt: hit.resetsAt.toISOString() }
+      }
     }
   }
 }

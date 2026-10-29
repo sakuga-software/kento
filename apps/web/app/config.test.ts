@@ -20,7 +20,6 @@ describe('loadConfig', () => {
       version: packageJson.version,
       commit: null,
       githubWebhookSecret: null,
-      trustedBots: new Set(['sakuga-agent[bot]']),
       runnerRegistrationToken: null,
       githubApp: null,
       githubUrl: 'https://github.com',
@@ -161,7 +160,7 @@ describe('loadConfig', () => {
     assert.equal(config.commit, 'abc1234')
   })
 
-  it('reads the webhook secret and the trusted bots, and no list of repositories', () => {
+  it('reads the webhook secret, and neither a list of repositories nor of trusted bots', () => {
     let secret = ` ${'s'.repeat(40)} `
     let config = loadConfig({
       DATABASE_URL: url,
@@ -173,7 +172,8 @@ describe('loadConfig', () => {
     assert.equal(config.githubWebhookSecret, secret)
     // The Repos screen enables a repository: the variable of M2 is not read any more.
     assert.equal('kentoRepos' in config, false)
-    assert.deepEqual(config.trustedBots, new Set(['renovate[bot]', 'sakuga-agent[bot]']))
+    // REV-13: the trusted bots are a setting of each org, in the database.
+    assert.equal('trustedBots' in config, false)
   })
 
   it('refuses a short webhook secret and never prints it', () => {

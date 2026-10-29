@@ -39,7 +39,7 @@ export default defineConfig({
       command: 'node --import remix/node-tsx e2e/fake-github.ts',
       url: `http://127.0.0.1:${githubPort}/healthz`,
       reuseExistingServer: false,
-      env: { FAKE_GITHUB_PORT: String(githubPort) },
+      env: { FAKE_GITHUB_PORT: String(githubPort), KENTO_URL: `http://127.0.0.1:${port}` },
     },
     {
       command: 'node --import remix/node-tsx server.ts',

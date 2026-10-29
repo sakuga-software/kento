@@ -54,7 +54,7 @@ describe('commands in the comments of a pull request', () => {
       commit: null,
       webhook: {
         secret: TEST_SECRET,
-        trustedBots: new Set(['sakuga-agent[bot]']),
+        trustedBotsFor: async () => new Set(['sakuga-agent[bot]']),
         botLogin: BOT,
         apply: createWebhookStore(database.db, {
           handleCommentCommand: createCommandHandler({

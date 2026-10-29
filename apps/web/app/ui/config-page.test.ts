@@ -30,6 +30,7 @@ function setup(orgConfig: ConfigOverrides = {}) {
       updatedBy: null,
       updatedAt: null,
       spentThisMonthUsd: 3.42,
+      trustedBots: ['renovate[bot]'],
     },
     [ELSEWHERE]: {
       orgId: OTHER_ORG.id,
@@ -43,6 +44,7 @@ function setup(orgConfig: ConfigOverrides = {}) {
       updatedBy: null,
       updatedAt: null,
       spentThisMonthUsd: 0,
+      trustedBots: ['sakuga-agent[bot]'],
     },
   }
   let saves: { field: string; version: number }[] = []
@@ -71,7 +73,7 @@ function setup(orgConfig: ConfigOverrides = {}) {
     commit: null,
     webhook: disabledWebhook,
     auth: auth.deps,
-    repoConfig: { store, providers: serviceProviders, trustedBots: ['renovate[bot]'] },
+    repoConfig: { store, providers: serviceProviders },
   })
 
   function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
@@ -147,7 +149,8 @@ describe('the Config screen of a repository', () => {
     assert.equal(await post(1, { field: 'paths', paths: 'apps/web\n**/*.sql' }), 303)
     assert.equal(await post(2, { field: 'monthlyCapUsd', monthlyCapUsd: '12,50' }), 303)
     assert.equal(await post(3, { field: 'level', defaultLevel: 'balanced' }), 303)
-    assert.deepEqual(rows[ORCHARD]!.config, { trigger: 'ready', paths: ['apps/web', '**/*.sql'], monthlyCapUsd: 12.5 })
+    // REV-13: the level is a key of the config, and the column keeps it for an earlier release.
+    assert.deepEqual(rows[ORCHARD]!.config, { trigger: 'ready', paths: ['apps/web', '**/*.sql'], monthlyCapUsd: 12.5, level: 'balanced' })
     assert.equal(rows[ORCHARD]!.defaultLevel, 'balanced')
 
     let trigger = await (await request(`/repos/${ORCHARD}/config?tab=trigger`, { cookie })).text()
@@ -214,9 +217,27 @@ describe('the Config screen of a repository', () => {
     assert.equal((await request(`/repos/${ELSEWHERE}/config`, { cookie })).status, 404)
     assert.equal((await request('/repos/not-a-uuid/config', { cookie })).status, 404)
     assert.equal((await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'enabled' } })).status, 400)
-    assert.equal((await request(`/repos/${ORCHARD}/config/reset`, { cookie, form: { _csrf: csrf, version: '0', field: 'level' } })).status, 400)
+    assert.equal((await request(`/repos/${ORCHARD}/config/reset`, { cookie, form: { _csrf: csrf, version: '0', field: 'enabled' } })).status, 400)
     assert.equal((await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: 'x', ...BALANCED } })).status, 400)
     assert.equal(saves.length, 0)
+  })
+
+  it('inherits the level of the org, and « Revenir à l’org » takes it back (REV-13)', async () => {
+    let { request, signIn, rows } = setup({ level: 'heavy' })
+    let { cookie, csrf } = await signIn()
+    let levels = await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text()
+    assert.match(levels, /value="heavy" checked/)
+    assert.match(levels, /hérité de l’org/)
+    assert.doesNotMatch(levels, /Revenir à l’org<span class="visually-hidden"> pour le niveau/)
+    assert.equal((await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'level', defaultLevel: 'lite' } })).status, 303)
+    levels = await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text()
+    assert.match(levels, /value="lite" checked/)
+    assert.match(levels, /remplacé ici/)
+    let reset = await request(`/repos/${ORCHARD}/config/reset`, { cookie, form: { _csrf: csrf, version: '1', field: 'level' } })
+    assert.equal(reset.status, 303)
+    assert.deepEqual(rows[ORCHARD]!.config, {})
+    assert.equal(rows[ORCHARD]!.defaultLevel, 'lite')
+    assert.match(await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text(), /value="heavy" checked/)
   })
 
   it('shows the tabs of M5 empty', async () => {

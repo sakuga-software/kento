@@ -21,6 +21,9 @@ import { SettingsPage, type SettingsPageProps } from '../app/ui/settings.tsx'
 import { serviceProviders } from '../app/repo-config/providers.ts'
 import type { RepoConfigView } from '../app/repo-config/store.ts'
 import { ConfigPage, type ConfigPageProps } from '../app/ui/config.tsx'
+import type { AppStatus } from '../app/org-settings/app-status.ts'
+import type { OrgSettingsView } from '../app/org-settings/store.ts'
+import type { OrgSectionProps } from '../app/ui/org-settings.tsx'
 
 const OUT = new URL('../../../design/socle/frames/', import.meta.url)
 // From design/socle/frames/ to the assets of the app.
@@ -265,6 +268,7 @@ const orchard_CONFIG: RepoConfigView = {
   updatedBy: 'alex',
   updatedAt: new Date('2026-10-27T17:02:00Z'),
   spentThisMonthUsd: 3.42,
+  trustedBots: ['sakuga-agent[bot]', 'renovate[bot]'],
 }
 const PROVIDERS = await serviceProviders.list('org-1')
 
@@ -277,7 +281,6 @@ function configPage(theme: Theme, viewer: Viewer, extra: Partial<ConfigPageProps
       tab="models"
       notice={null}
       form={null}
-      trustedBots={['sakuga-agent[bot]']}
       {...extra}
     />
   )
@@ -298,6 +301,94 @@ const configFrames: { file: string; node: unknown }[] = [
   { file: 'config-trigger-member-sumi-390.html', node: configPage('sumi', member, { tab: 'trigger' }) },
 ]
 
+// REV-13: the settings of the org, above « Providers et clés ».
+const ORG_OUT = new URL('../../../design/org-settings/frames/', import.meta.url)
+const ORG_VIEW: OrgSettingsView = {
+  login: 'sakuga-software',
+  githubInstallationId: 58213490,
+  suspendedAt: null,
+  caps: { dailyCapUsd: 8, monthlyCapUsd: 150, alertPct: 80 },
+  trustedBots: ['sakuga-agent[bot]', 'renovate[bot]'],
+  config: { level: 'lite', models: { balanced: { provider: '00000000-0000-4000-8000-000000000020', model: 'claude-sonnet-5-5', fallback: 'claude-haiku-5-5' } } },
+  version: 3,
+  updatedBy: 'alex',
+  updatedAt: new Date('2026-10-29T13:02:00Z'),
+  repos: { total: 14, enabled: 3 },
+  costs: {
+    dayUsd: 6.71,
+    monthUsd: 84.2,
+    dayByProvider: [
+      { providerId: '00000000-0000-4000-8000-000000000020', label: 'Anthropic de Sakuga', usd: 5.94 },
+      { providerId: null, label: 'Clé du service', usd: 0.77 },
+    ],
+  },
+  deliveries: {
+    last: { deliveryId: 'd-1', event: 'pull_request', action: 'synchronize', status: 202, outcome: 'queued', reason: null, receivedAt: minutes(2) },
+    lastPullRequest: { deliveryId: 'd-1', event: 'pull_request', action: 'synchronize', status: 202, outcome: 'queued', reason: null, receivedAt: minutes(2) },
+    failures24h: 1,
+    total24h: 63,
+    lastFailure: { deliveryId: 'd-0', event: 'issue_comment', action: 'created', status: 500, outcome: 'failed', reason: 'connection terminated unexpectedly', receivedAt: minutes(190) },
+  },
+}
+const APP_STATUS: AppStatus = {
+  slug: 'kento-review',
+  name: 'Kentō Review',
+  htmlUrl: 'https://github.com/apps/kento-review',
+  deliveriesUrl: 'https://github.com/organizations/sakuga-software/settings/apps/kento-review/advanced',
+  webhook: { url: 'https://review.sakuga.dev/webhooks/github', sslVerified: true },
+  installation: {
+    permissions: { contents: 'read', pull_requests: 'write', issues: 'write', checks: 'write', members: 'read', metadata: 'read' },
+    events: ['pull_request', 'issue_comment'],
+    repositorySelection: 'all',
+    suspendedAt: null,
+    htmlUrl: 'https://github.com/organizations/sakuga-software/settings/installations/58213490',
+  },
+}
+const ORG_PROVIDER_OPTIONS = [
+  ...PROVIDERS,
+  { id: '00000000-0000-4000-8000-000000000020', label: 'Anthropic de Sakuga', hint: 'Valide · clé du service chiffrée' },
+]
+function orgSection(extra: Partial<OrgSectionProps> = {}): OrgSectionProps {
+  return {
+    view: ORG_VIEW,
+    app: { ok: true, status: APP_STATUS },
+    providers: ORG_PROVIDER_OPTIONS,
+    webhookUrl: 'https://review.sakuga.dev/webhooks/github',
+    webhookSecret: true,
+    version: '0.1.0',
+    commit: '3f22010a9c',
+    now,
+    notice: null,
+    form: null,
+    ...extra,
+  }
+}
+function orgPage(theme: Theme, viewer: Viewer, extra: Partial<OrgSectionProps> = {}, providers: ProviderView[] | null = ORG_PROVIDERS.slice(0, 1)) {
+  return <SettingsPage frame={frame(theme, viewer, '/settings')} providers={providers} org={orgSection(extra)} now={now} secretsConfigured serviceKey />
+}
+const REACHED: OrgSettingsView = { ...ORG_VIEW, costs: { ...ORG_VIEW.costs, dayUsd: 8.03 } }
+const orgFrames: { file: string; node: unknown }[] = [
+  { file: 'org-admin-paper.html', node: orgPage('paper', admin, { notice: { kind: 'saved', version: 3 } }) },
+  { file: 'org-reached-admin-sumi.html', node: orgPage('sumi', admin, { view: REACHED }) },
+  {
+    file: 'org-errors-admin-paper.html',
+    node: orgPage('paper', admin, {
+      form: { field: 'trustedBots', values: { trustedBots: 'renovate[bot]\ngithub.com/renovate' }, errors: { trustedBots: '« github.com/renovate[bot] » n’est pas le login d’un bot : le nom d’une App GitHub suivi de [bot], par exemple renovate[bot].' } },
+      app: {
+        ok: true,
+        status: {
+          ...APP_STATUS,
+          webhook: { url: 'https://kento.example.dev/webhooks/github', sslVerified: true },
+          installation: { ...APP_STATUS.installation, permissions: { ...APP_STATUS.installation.permissions, checks: 'read' }, events: ['pull_request'] },
+        },
+      },
+    }),
+  },
+  { file: 'org-member-paper-390.html', node: orgPage('paper', member) },
+  { file: 'org-admin-sumi-390.html', node: orgPage('sumi', admin) },
+  { file: 'org-noapp-admin-paper.html', node: orgPage('paper', admin, { app: { ok: false, error: 'GET /app answered 401: A JSON web token could not be decoded' } }, null) },
+]
+
 async function writeFrames(out: URL, assets: string, list: { file: string; node: unknown }[], label: string) {
   await mkdir(out, { recursive: true })
   for (let { file, node } of list) {
@@ -313,3 +404,4 @@ await writeFrames(RUNNERS_OUT, ASSETS, runnersFrames, 'design/runners/frames/')
 await writeFrames(REPOS_OUT, ASSETS, reposFrames, 'design/repos/frames/')
 await writeFrames(PROVIDERS_OUT, ASSETS, providersFrames, 'design/providers/frames/')
 await writeFrames(CONFIG_OUT, ASSETS, configFrames, 'design/config/frames/')
+await writeFrames(ORG_OUT, ASSETS, orgFrames, 'design/org-settings/frames/')

@@ -50,9 +50,31 @@ export const orgs = pgTable('orgs', {
    * key that it does not hold takes the value of Kentō. The settings of the org (REV-13) write it.
    */
   config: jsonb('config').notNull().default({}),
+  /**
+   * REV-13. The cost limits of the whole org, in dollars: the reviews and resolutions of all its
+   * repositories since the start of the UTC day, and of the UTC calendar month. At a limit, a new job
+   * is not queued (a push gets the check « Kentō · plafond », a command a reply); a job already queued
+   * or running finishes. Null: no limit.
+   */
+  dailyCapUsd: numeric('daily_cap_usd', { precision: 10, scale: 2 }),
+  monthlyCapUsd: numeric('monthly_cap_usd', { precision: 10, scale: 2 }),
+  /** The settings screen warns when the cost of the day or of the month reaches this percentage of its limit. */
+  capAlertPct: smallint('cap_alert_pct').notNull().default(80),
+  /**
+   * REV-13. The lowercase bot logins whose pull requests, pushes and commands count as a person's.
+   * It replaces the variable KENTO_TRUSTED_BOTS. An admin edits it in the settings.
+   */
+  trustedBots: text('trusted_bots').array().notNull().default(sql`'{sakuga-agent[bot]}'::text[]`),
+  /** Each change of the settings of the org writes the next version; a form sent from an older one is refused. */
+  settingsVersion: integer('settings_version').notNull().default(0),
+  settingsUpdatedBy: uuid('settings_updated_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+  settingsUpdatedAt: timestamp('settings_updated_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-})
+}, (table) => [
+  check('orgs_cap_alert_pct_range', sql`${table.capAlertPct} between 1 and 100`),
+  check('orgs_caps_not_negative', sql`coalesce(${table.dailyCapUsd}, 0) >= 0 and coalesce(${table.monthlyCapUsd}, 0) >= 0`),
+])
 
 /**
  * The review workflow that a repository still runs, as the Repos screen reads it on GitHub: none, a
@@ -401,4 +423,32 @@ export const sessions = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [index('sessions_user_id_idx').on(table.userId), index('sessions_expires_at_idx').on(table.expiresAt)],
+)
+
+/**
+ * REV-13. One webhook delivery that passed the signature: what the settings show as the last event
+ * and the failures of the last 24 hours. A delivery with a bad signature has no row: nothing in it
+ * can be trusted, not even its installation. Rows older than 30 days are deleted at each insert.
+ */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** `X-GitHub-Delivery`. A redelivery from the page of the App has the same id: it gets a row too. */
+    deliveryId: text('delivery_id').notNull(),
+    /** From `installation.id` of the payload. Null: an event without an installation (`ping`). */
+    githubInstallationId: bigint('github_installation_id', { mode: 'number' }),
+    event: text('event').notNull(),
+    action: text('action'),
+    /** The HTTP status of the answer: 2xx applied or ignored, 400 invalid, 500 failed. */
+    status: smallint('status').notNull(),
+    /** `queued`, `skipped`, `ignored`, `invalid`, `failed`… */
+    outcome: text('outcome').notNull(),
+    reason: text('reason'),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index('webhook_deliveries_installation_idx').on(table.githubInstallationId, table.receivedAt),
+    index('webhook_deliveries_received_at_idx').on(table.receivedAt),
+  ],
 )

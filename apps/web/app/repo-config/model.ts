@@ -33,6 +33,11 @@ export type Trigger = (typeof TRIGGERS)[number]
 
 /** What a repository or an org sets. Each key is optional: absent, it is inherited. */
 export interface ConfigOverrides {
+  /**
+   * REV-13. The level of the review of a push. A repository without it takes the level of its org,
+   * then the column `repos.default_level` (an earlier release wrote only that), then `lite`.
+   */
+  level?: Level
   models?: Partial<Record<Level, LevelModels>>
   trigger?: Trigger
   /**
@@ -45,7 +50,7 @@ export interface ConfigOverrides {
 }
 
 /** The keys that « Revenir à l'org » removes one by one. */
-export const CONFIG_FIELDS = ['models.lite', 'models.balanced', 'models.heavy', 'trigger', 'paths', 'monthlyCapUsd'] as const
+export const CONFIG_FIELDS = ['level', 'models.lite', 'models.balanced', 'models.heavy', 'trigger', 'paths', 'monthlyCapUsd'] as const
 export type ConfigField = (typeof CONFIG_FIELDS)[number]
 
 /** Where a value of the resolved config comes from. */
@@ -58,6 +63,7 @@ export interface Resolved<T> {
 
 /** The config that a job applies: each key resolved, with where it came from. */
 export interface ResolvedConfig {
+  level: Resolved<Level>
   models: Record<Level, Resolved<LevelModels>>
   trigger: Resolved<Trigger>
   paths: Resolved<string[]>
@@ -74,7 +80,7 @@ export function kentoDefaults(): Required<ConfigOverrides> & { models: Record<Le
     let [primary, fallback] = ENGINE_LEVELS[level].models
     models[level] = { provider: SERVICE_PROVIDER, model: primary!, fallback: fallback ?? null }
   }
-  return { models, trigger: 'push', paths: [], monthlyCapUsd: null }
+  return { level: 'lite', models, trigger: 'push', paths: [], monthlyCapUsd: null }
 }
 
 /** Resolves a key: the repository, else its org, else Kentō. */
@@ -84,11 +90,21 @@ function pick<T>(repo: T | undefined, org: T | undefined, kento: T): Resolved<T>
   return { value: kento, source: 'kento' }
 }
 
-export function resolveConfig(org: ConfigOverrides, repo: ConfigOverrides): ResolvedConfig {
+/**
+ * `columnLevel`: `repos.default_level`. A release before REV-13 kept the level of a repository only
+ * there; the migration 0010 copied every level other than `lite` into the config. A column that still
+ * differs from `lite` without a key in the config counts as a choice of the repository.
+ */
+export function resolveConfig(org: ConfigOverrides, repo: ConfigOverrides, columnLevel: Level = 'lite'): ResolvedConfig {
   let kento = kentoDefaults()
   let models = {} as Record<Level, Resolved<LevelModels>>
   for (let level of LEVEL_KEYS) models[level] = pick(repo.models?.[level], org.models?.[level], kento.models[level])
+  let level: Resolved<Level> =
+    repo.level === undefined && org.level === undefined && columnLevel !== kento.level
+      ? { value: columnLevel, source: 'repo' }
+      : pick(repo.level, org.level, kento.level)
   return {
+    level,
     models,
     trigger: pick(repo.trigger, org.trigger, kento.trigger),
     paths: pick(repo.paths, org.paths, kento.paths),
@@ -151,6 +167,7 @@ export function readOverrides(json: unknown): ConfigOverrides {
   let value = parsed(json)
   if (!isObject(value)) return {}
   let out: ConfigOverrides = {}
+  if (typeof value.level === 'string' && (LEVEL_KEYS as readonly string[]).includes(value.level)) out.level = value.level as Level
   if (isObject(value.models)) {
     let models: Partial<Record<Level, LevelModels>> = {}
     for (let level of LEVEL_KEYS) {
@@ -178,7 +195,7 @@ export function withoutField(config: ConfigOverrides, field: ConfigField): Confi
     delete out.models?.[level]
     if (out.models && Object.keys(out.models).length === 0) delete out.models
   } else {
-    delete out[field as 'trigger' | 'paths' | 'monthlyCapUsd']
+    delete out[field as 'level' | 'trigger' | 'paths' | 'monthlyCapUsd']
   }
   return out
 }
@@ -186,7 +203,7 @@ export function withoutField(config: ConfigOverrides, field: ConfigField): Confi
 /** Whether the repository sets this key itself. */
 export function hasField(config: ConfigOverrides, field: ConfigField): boolean {
   if (field.startsWith('models.')) return config.models?.[field.slice('models.'.length) as Level] !== undefined
-  return config[field as 'trigger' | 'paths' | 'monthlyCapUsd'] !== undefined
+  return config[field as 'level' | 'trigger' | 'paths' | 'monthlyCapUsd'] !== undefined
 }
 
 // --- Paths ------------------------------------------------------------------------------------

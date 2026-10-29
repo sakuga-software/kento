@@ -71,6 +71,13 @@
       "when": 1793280354783,
       "tag": "0009_providers",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793282487435,
+      "tag": "0010_org_settings",
+      "breakpoints": true
     }
   ]
 }

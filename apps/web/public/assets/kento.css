@@ -1697,3 +1697,194 @@ kbd,
     gap: var(--space-1);
   }
 }
+
+/* ---------------------------------------------------------------- Réglages de l’org (REV-13) */
+
+.org-version {
+  margin-bottom: var(--space-4);
+}
+.org-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+  margin-bottom: var(--space-8);
+}
+.tag.tag-alert {
+  background: var(--shu-wash);
+  color: var(--shu-strong);
+}
+.gauge dd {
+  display: grid;
+  gap: var(--space-1);
+}
+.gauge-bar {
+  display: block;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunken);
+}
+.gauge-fill {
+  display: block;
+  height: 100%;
+  background: var(--matsu);
+}
+.gauge-warn .gauge-fill {
+  background: var(--kuchiba);
+}
+.gauge-alert .gauge-fill {
+  background: var(--shu);
+}
+.gauge-w0 {
+  width: 0%;
+}
+.gauge-w5 {
+  width: 5%;
+}
+.gauge-w10 {
+  width: 10%;
+}
+.gauge-w15 {
+  width: 15%;
+}
+.gauge-w20 {
+  width: 20%;
+}
+.gauge-w25 {
+  width: 25%;
+}
+.gauge-w30 {
+  width: 30%;
+}
+.gauge-w35 {
+  width: 35%;
+}
+.gauge-w40 {
+  width: 40%;
+}
+.gauge-w45 {
+  width: 45%;
+}
+.gauge-w50 {
+  width: 50%;
+}
+.gauge-w55 {
+  width: 55%;
+}
+.gauge-w60 {
+  width: 60%;
+}
+.gauge-w65 {
+  width: 65%;
+}
+.gauge-w70 {
+  width: 70%;
+}
+.gauge-w75 {
+  width: 75%;
+}
+.gauge-w80 {
+  width: 80%;
+}
+.gauge-w85 {
+  width: 85%;
+}
+.gauge-w90 {
+  width: 90%;
+}
+.gauge-w95 {
+  width: 95%;
+}
+.gauge-w100 {
+  width: 100%;
+}
+.cost-list,
+.bot-list,
+.permission-list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cost-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 320px;
+}
+.permission-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+.org-defaults {
+  grid-row: span 2;
+}
+.org-default {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+.org-default > form {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+.org-default-title {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: var(--leading-md);
+}
+.org-default-fields {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.org-default-fields .field:first-child {
+  grid-column: 1 / -1;
+}
+.permission-list svg,
+.app-status .status svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.org-default .field {
+  margin-bottom: 0;
+}
+.org-default .input {
+  max-width: none;
+}
+.app-status .config-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .org-settings {
+    grid-template-columns: 1fr;
+  }
+  .org-defaults {
+    grid-row: auto;
+  }
+  .org-default-fields {
+    grid-template-columns: 1fr;
+  }
+  .org-default form {
+    width: 100%;
+  }
+  .org-default .button {
+    width: 100%;
+    min-height: var(--control-h-touch);
+    justify-content: center;
+  }
+}

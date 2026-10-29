@@ -21,6 +21,9 @@ import { createRepoCheck } from './app/repos/check.ts'
 import { createProbe } from './app/providers/probe.ts'
 import { createSecretBox } from './app/providers/secrets.ts'
 import { createProvidersStore } from './app/providers/store.ts'
+import { createAppStatusReader } from './app/org-settings/app-status.ts'
+import { createCapNotice } from './app/org-settings/notice.ts'
+import { createOrgSettingsStore } from './app/org-settings/store.ts'
 import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
@@ -122,6 +125,12 @@ if (!secrets) log('warn', 'startup.secrets_disabled', { reason: 'KENTO_SECRETS_K
 else log('info', 'startup.secrets', { keyId: secrets.keyId, previousKeys: config.secretsKeys!.previous.length })
 
 let providersStore = createProvidersStore(database.sql, secrets)
+let configProviders = createConfigProviders(providersStore, { serviceKey: config.providerApiKey !== null })
+
+// The settings of the org (REV-13): its cost limits, its defaults, its trusted bots, and the state of
+// the App on GitHub.
+let orgSettingsStore = createOrgSettingsStore(database.sql)
+let publicUrl = config.signIn?.publicUrl ?? null
 
 let router = createAppRouter({
   auth,
@@ -134,7 +143,16 @@ let router = createAppRouter({
     serviceKey: config.providerApiKey !== null,
   },
   // The Config screen of a repository (REV-12). The providers of the org come with REV-11.
-  repoConfig: { store: createRepoConfigStore(database.sql), providers: createConfigProviders(providersStore, { serviceKey: config.providerApiKey !== null }), trustedBots: [...config.trustedBots] },
+  repoConfig: { store: createRepoConfigStore(database.sql), providers: configProviders },
+  orgSettings: {
+    store: orgSettingsStore,
+    providers: configProviders,
+    readAppStatus: config.githubApp
+      ? createAppStatusReader({ appId: config.githubApp.appId, privateKey: config.githubApp.privateKey, apiUrl: config.githubApp.apiUrl, githubUrl: config.githubUrl })
+      : null,
+    webhookUrl: publicUrl ? new URL('/webhooks/github', publicUrl).toString() : null,
+    webhookSecret: config.githubWebhookSecret !== null,
+  },
   // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
   runnersAdmin: createRunnersAdminStore(database.sql),
   checkDatabase: createDatabaseCheck(database.sql),
@@ -142,13 +160,25 @@ let router = createAppRouter({
   commit: config.commit,
   webhook: {
     secret: config.githubWebhookSecret,
-    trustedBots: config.trustedBots,
+    // REV-13: the trusted bots of each org, from its settings; each delivery that passes the
+    // signature is kept 30 days for the section « App GitHub ».
+    trustedBotsFor: (installationId) => orgSettingsStore.trustedBotsFor(installationId),
+    recordDelivery: (record) => orgSettingsStore.recordDelivery(record),
     botLogin: config.botLogin,
     apply: createWebhookStore(database.db, {
       // REV-12: the paths of the config of a repository read the files of the pull request.
       listChangedFiles:
         mintInstallationToken && config.githubApp
           ? createListChangedFiles({ mintInstallationToken, apiUrl: config.githubApp.apiUrl })
+          : undefined,
+      // REV-13: a push stopped by the cost limit of its org gets the check « Kentō · plafond ».
+      onCapReached:
+        mintInstallationToken && config.githubApp
+          ? createCapNotice({
+              mintInstallationToken,
+              apiUrl: config.githubApp.apiUrl,
+              settingsUrl: publicUrl ? new URL('/settings#plafond', publicUrl).toString() : `${config.githubUrl}`,
+            })
           : undefined,
       // The commands of the comments (REV-7): `@kento review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
@@ -173,6 +203,15 @@ let router = createAppRouter({
 // REV-9: an admin enables a repository on the Repos screen. The variable of M2 changes nothing now.
 if (process.env.KENTO_REPOS !== undefined) {
   log('warn', 'startup.kento_repos_ignored', { reason: 'KENTO_REPOS is not read any more: enable a repository on the Repos screen' })
+}
+
+// REV-13: the trusted bots are a setting of each org. The variable changes nothing now: copy its
+// value into « Bots de confiance » of the settings, then remove it.
+if (process.env.KENTO_TRUSTED_BOTS !== undefined) {
+  log('warn', 'startup.kento_trusted_bots_ignored', {
+    reason: 'KENTO_TRUSTED_BOTS is not read any more: set the trusted bots of each org in its settings',
+    value: process.env.KENTO_TRUSTED_BOTS.slice(0, 500),
+  })
 }
 
 if (config.githubWebhookSecret === null) {

@@ -48,6 +48,8 @@ async function readBody(request: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString()
 }
 
+let checkRuns: object[] = []
+
 let server = http.createServer(async (request, response) => {
   let url = new URL(request.url ?? '/', 'http://fake-github')
   if (url.pathname === '/healthz') return json(response, 200, { ok: true })
@@ -113,6 +115,30 @@ let server = http.createServer(async (request, response) => {
     if (text === undefined) return json(response, 404, { message: 'Not Found' })
     return json(response, 200, { encoding: 'base64', content: Buffer.from(text).toString('base64') })
   }
+
+  // REV-13: the App and its installation, read with the JWT of the App by the settings screen.
+  if (request.method === 'GET' && url.pathname === '/app') {
+    return json(response, 200, { slug: 'kento-review', name: 'Kentō Review', html_url: 'https://github.com/apps/kento-review', owner: { login: FAKE_ORG.login, type: 'Organization' } })
+  }
+  if (request.method === 'GET' && url.pathname === `/app/installations/${FAKE_ORG.installationId}`) {
+    return json(response, 200, {
+      permissions: { contents: 'read', pull_requests: 'write', issues: 'write', checks: 'write', members: 'read', metadata: 'read' },
+      events: ['pull_request', 'issue_comment'],
+      repository_selection: 'all',
+      suspended_at: null,
+      html_url: `https://github.com/organizations/${FAKE_ORG.login}/settings/installations/${FAKE_ORG.installationId}`,
+    })
+  }
+  if (request.method === 'GET' && url.pathname === '/app/hook/config') {
+    return json(response, 200, { url: `${process.env.KENTO_URL ?? 'http://127.0.0.1:3488'}/webhooks/github`, content_type: 'json', insecure_ssl: '0' })
+  }
+  // The check runs that the service posts (« Kentō · plafond »), and a route for the tests to read them.
+  let checkRun = /^\/repos\/([^/]+\/[^/]+)\/check-runs$/.exec(url.pathname)
+  if (request.method === 'POST' && checkRun) {
+    checkRuns.push({ repo: checkRun[1]!, ...(JSON.parse(await readBody(request)) as object) })
+    return json(response, 201, { id: checkRuns.length })
+  }
+  if (request.method === 'GET' && url.pathname === '/_test/check-runs') return json(response, 200, checkRuns)
 
   let membership = /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'GET' && membership) {

@@ -41,7 +41,7 @@ describe('the config of a repository against Postgres', () => {
       checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
       version: '0.1.0',
       commit: null,
-      webhook: { secret: TEST_SECRET, trustedBots: new Set(), apply: createWebhookStore(database.db, { listChangedFiles }) },
+      webhook: { secret: TEST_SECRET, trustedBotsFor: async () => new Set(), apply: createWebhookStore(database.db, { listChangedFiles }) },
     })
   }
 

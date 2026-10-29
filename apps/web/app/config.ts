@@ -24,8 +24,6 @@ export interface Config {
    * answers 503 to every request. Never logged.
    */
   githubWebhookSecret: string | null
-  /** The bot logins whose pull requests and pushes get a review, as a person's do. */
-  trustedBots: ReadonlySet<string>
   /** The secret that a runner sends to register. Null closes the registration. */
   runnerRegistrationToken: string | null
   /** The GitHub App that makes the installation tokens of the jobs. Null: a claim gives no job. */
@@ -74,7 +72,6 @@ export const MIN_SESSION_SECRET_LENGTH = 32
 /** The shortest webhook secret that `loadConfig` accepts. `openssl rand -hex 32` gives 64 characters. */
 export const MIN_WEBHOOK_SECRET_LENGTH = 32
 
-const DEFAULT_TRUSTED_BOTS = 'sakuga-agent[bot]'
 const DEFAULT_BOT_LOGIN = 'kento-review[bot]'
 
 export class ConfigError extends Error {
@@ -170,7 +167,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     version: packageJson.version,
     commit: commit ? commit : null,
     githubWebhookSecret: githubWebhookSecret === '' ? null : githubWebhookSecret,
-    trustedBots: new Set(readList(env.KENTO_TRUSTED_BOTS ?? DEFAULT_TRUSTED_BOTS)),
     runnerRegistrationToken,
     githubApp,
     githubUrl,
@@ -250,14 +246,6 @@ function readSignIn(
 
 function isLoopback(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
-}
-
-// GitHub logins and repository names are case-insensitive: the list keeps them in lowercase.
-function readList(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter((item) => item !== '')
 }
 
 function readInteger(

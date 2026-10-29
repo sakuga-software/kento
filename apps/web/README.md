@@ -65,7 +65,6 @@ and the log names the variable, never its value.
 | `MIGRATE_ON_START`  | no       | `true`    | Apply the pending migrations before listening.                     |
 | `APP_COMMIT`        | no       |           | Commit of the image, shown by `/healthz`. The Dockerfile sets it from the build argument of the same name. |
 | `GITHUB_WEBHOOK_SECRET` | no   |           | Secret of the GitHub App webhook, 32 characters or more (`openssl rand -hex 32`). A secret: never commit it. Without it, `/webhooks/github` answers 503. |
-| `KENTO_TRUSTED_BOTS` | no      | `sakuga-agent[bot]` | Comma-separated bot logins whose pull requests and pushes get a review, as in `review.yml`. |
 | `KENTO_RUNNER_REGISTRATION_TOKEN` | no | | Secret that a runner sends to `POST /api/runner/register`, 32 characters or more. Without it, the registration answers 401. |
 | `GITHUB_APP_ID` | no | | ID of the GitHub App. With `GITHUB_APP_PRIVATE_KEY`, the service makes the installation token of each job. Without them, a claim gives no job. |
 | `GITHUB_APP_PRIVATE_KEY` | no | | PEM private key of the App; on one line, `\n` for each new line. A secret: it never leaves the service. |
@@ -110,7 +109,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | Event | Action | Effect |
 | ----- | ------ | ------ |
 | `ping` | | 200 `pong` |
-| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the default level of the repository. The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside `KENTO_TRUSTED_BOTS`, a pull request from a fork. |
+| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the level that the config of the repository resolves (repository, then org, then `lite`). The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside the trusted bots of the org (settings, REV-13), a pull request from a fork. No job (202 `capped`): the org reached its cost limit of the day or of the month; the head gets the neutral check « Kentō · plafond ». |
 | `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. |
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |

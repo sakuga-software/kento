@@ -32,6 +32,9 @@ import {
   type ConfigOverrides,
 } from '../repo-config/model.ts'
 import type { ProviderCatalog } from '../repo-config/providers.ts'
+import type { ReadAppStatus } from '../org-settings/app-status.ts'
+import { readCapsForm, readTrustedBotsForm } from '../org-settings/model.ts'
+import type { OrgSaveOutcome, OrgSettingsStore, OrgSettingsValues } from '../org-settings/store.ts'
 import type { RepoConfigStore, SaveOutcome } from '../repo-config/store.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
@@ -41,6 +44,7 @@ import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, typ
 import { ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
+import { anchorOf, ORG_FIELDS, ORG_RESET_FIELDS, type OrgField, type OrgForm, type OrgNotice, type OrgSectionProps } from './org-settings.tsx'
 import { PROVIDER_NOTICES, SettingsPage, type ProviderNotice, type SettingsPageProps } from './settings.tsx'
 import { Shell, type PageFrame, type Section, type Viewer } from './shell.tsx'
 import { SignInPage, type SignInNotice } from './sign-in.tsx'
@@ -83,8 +87,19 @@ export interface RepoConfigDependencies {
   store: RepoConfigStore
   /** The providers that an org can choose for a level. */
   providers: ProviderCatalog
-  /** KENTO_TRUSTED_BOTS, shown under « Droits ». */
-  trustedBots: string[]
+}
+
+/** The settings of the org (REV-13): limits, defaults, trusted bots, state of the App. */
+export interface OrgSettingsDependencies {
+  store: OrgSettingsStore
+  /** The providers that a default level can use: the catalog of the Config screen. */
+  providers: ProviderCatalog
+  /** Reads the App on GitHub. Null without the GitHub App. */
+  readAppStatus: ReadAppStatus | null
+  /** `<public URL>/webhooks/github`, or null without the public URL. */
+  webhookUrl: string | null
+  /** GITHUB_WEBHOOK_SECRET is set. */
+  webhookSecret: boolean
 }
 
 export interface UiDependencies {
@@ -98,6 +113,7 @@ export interface UiDependencies {
   /** The providers of the settings (REV-11). Null: the settings show their empty frame. */
   providers?: ProvidersDependencies | null
   repoConfig?: RepoConfigDependencies | null
+  orgSettings?: OrgSettingsDependencies | null
 }
 
 interface SignedIn {
@@ -300,22 +316,128 @@ export function createUiControllers(deps: UiDependencies) {
     context: { render(node: any, init?: ResponseInit): Response },
     signed: SignedIn,
     page: PageFrame,
-    extra: Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'>,
+    extra: Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'> & { orgNotice?: OrgNotice | null; orgForm?: OrgForm | null },
     status = 200,
   ) {
-    let providers = deps.providers!
-    let list = await providers.store.list(signed.membership.org.id)
+    let providers = deps.providers
+    let orgId = signed.membership.org.id
+    let list = providers ? await providers.store.list(orgId) : null
+    let org: OrgSectionProps | null = null
+    let settings = deps.orgSettings
+    let view = settings ? await settings.store.read(orgId) : null
+    if (settings && view) {
+      org = {
+        view,
+        app: settings.readAppStatus ? await settings.readAppStatus(view.githubInstallationId) : null,
+        providers: await settings.providers.list(orgId),
+        webhookUrl: settings.webhookUrl,
+        webhookSecret: settings.webhookSecret,
+        version: deps.version,
+        commit: deps.commit,
+        now: new Date(now()),
+        notice: extra.orgNotice ?? null,
+        form: extra.orgForm ?? null,
+      }
+    }
+    let { orgNotice: _notice, orgForm: _form, ...providerExtra } = extra
     return context.render(
       <SettingsPage
         frame={page}
         providers={list}
+        org={org}
         now={new Date(now())}
-        secretsConfigured={providers.secretsConfigured}
-        serviceKey={providers.serviceKey}
-        {...extra}
+        secretsConfigured={providers?.secretsConfigured ?? false}
+        serviceKey={providers?.serviceKey ?? false}
+        {...providerExtra}
       />,
       { status },
     )
+  }
+
+  type SettingsContext = Parameters<typeof getCsrfToken>[0] & {
+    get(key: typeof Signed): SignedIn | undefined
+    headers: Headers
+    url: URL
+    render(node: any, init?: ResponseInit): Response
+  } & { get(key: typeof FormData): FormData | undefined }
+
+  /**
+   * REV-13. One form of the settings of the org: the limits, the trusted bots, the level or the
+   * models of a level of the defaults. An admin only; cop() and csrf() of the session layer ran
+   * before. `reset` removes a default of the org: the repositories then inherit the value of Kentō.
+   */
+  async function changeOrgSettings(context: SettingsContext, reset: boolean) {
+    let signed = signedOf(context)
+    let settings = deps.orgSettings
+    if (!settings) return new Response('Not Found', { status: 404 })
+    if (signed.membership.role !== 'admin') {
+      log('warn', 'org_settings.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+      return forbidden()
+    }
+    let form = context.get(FormData)
+    let field = form?.get('field')
+    let versionText = form?.get('version')
+    let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
+    let known = reset ? (ORG_RESET_FIELDS as readonly unknown[]).includes(field) : (ORG_FIELDS as readonly unknown[]).includes(field)
+    if (!form || version === null || !known) return new Response('Bad Request', { status: 400 })
+    let key = field as OrgField
+    let orgId = signed.membership.org.id
+    let page = frame(signed, context, getCsrfToken(context))
+
+    let change: (current: OrgSettingsValues) => OrgSettingsValues
+    if (reset) {
+      change = (current) => ({ ...current, config: withoutField(current.config, key as ConfigField) })
+    } else {
+      let parsed =
+        key === 'caps'
+          ? readCapsForm(form)
+          : key === 'trustedBots'
+            ? readTrustedBotsForm(form)
+            : key === 'level'
+              ? readLevelForm(form)
+              : readModelsForm(form, (await settings.providers.list(orgId)).map((p) => p.id))
+      if (!parsed.ok) {
+        return renderSettings(context, signed, page, { orgForm: { field: key, values: formValues(form), errors: parsed.errors } }, 422)
+      }
+      let value = parsed.value
+      change = (current) => {
+        if (key === 'caps') return { ...current, caps: value as OrgSettingsValues['caps'] }
+        if (key === 'trustedBots') return { ...current, trustedBots: value as string[] }
+        if (key === 'level') return { ...current, config: { ...current.config, level: value as 'lite' | 'balanced' | 'heavy' } }
+        let level = key.slice('models.'.length) as 'lite' | 'balanced' | 'heavy'
+        return { ...current, config: { ...current.config, models: { ...current.config.models, [level]: value } } }
+      }
+    }
+
+    let audit: { before: OrgSettingsValues; after: OrgSettingsValues } | null = null
+    let outcome: OrgSaveOutcome = await settings.store.save(orgId, signed.user.id, version, (current) => {
+      let after = change(current)
+      audit = { before: current, after }
+      return after
+    })
+    if (outcome.kind === 'not_found') return new Response('Not Found', { status: 404 })
+    if (outcome.kind === 'conflict') {
+      log('info', 'org_settings.conflict', { login: signed.user.login, org: signed.membership.org.login, field: key, sent: version, current: outcome.version })
+      return renderSettings(
+        context,
+        signed,
+        page,
+        { orgNotice: { kind: 'conflict', version: outcome.version, updatedBy: outcome.updatedBy, updatedAt: outcome.updatedAt } },
+        409,
+      )
+    }
+    // The log keeps what changed for the cost and the rights: the limits and the bots, before and after.
+    let changed = audit as { before: OrgSettingsValues; after: OrgSettingsValues } | null
+    log('info', reset ? 'org_settings.reset' : 'org_settings.saved', {
+      login: signed.user.login,
+      org: signed.membership.org.login,
+      field: key,
+      version: outcome.version,
+      ...(key === 'caps' && changed ? { before: changed.before.caps, after: changed.after.caps } : {}),
+      ...(key === 'trustedBots' && changed ? { before: changed.before.trustedBots, after: changed.after.trustedBots } : {}),
+    })
+    let query = new URLSearchParams({ org: reset ? 'reset' : 'saved', v: String(outcome.version) })
+    return redirect(`${pageRoutes.settings.href()}?${query}#${anchorOf(key)}`)
   }
 
   /** The providers and the signed-in admin of a form of the section, or the 403 to send. */
@@ -396,7 +518,6 @@ export function createUiControllers(deps: UiDependencies) {
         tab={tab}
         notice={extra.notice ?? null}
         form={extra.form ?? null}
-        trustedBots={deps2.trustedBots}
       />,
       { status },
     )
@@ -423,15 +544,16 @@ export function createUiControllers(deps: UiDependencies) {
     let field = form?.get('field')
     let versionText = form?.get('version')
     let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
-    let known = (CONFIG_FIELDS as readonly unknown[]).includes(field) || (!reset && field === 'level')
+    let known = (CONFIG_FIELDS as readonly unknown[]).includes(field)
     if (!form || version === null || !known) return new Response('Bad Request', { status: 400 })
-    let key = field as ConfigField | 'level'
+    let key = field as ConfigField
     let tab = tabOf(key)
     let page = frame(signed, context, getCsrfToken(context))
 
     let change: (current: { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }) => { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }
     if (reset) {
-      change = (current) => ({ ...current, config: withoutField(current.config, key as ConfigField) })
+      // The column goes back to `lite` with the key: the level of the org then applies (REV-13).
+      change = (current) => ({ config: withoutField(current.config, key), defaultLevel: key === 'level' ? 'lite' : current.defaultLevel })
     } else {
       let parsed =
         key === 'level'
@@ -448,7 +570,11 @@ export function createUiControllers(deps: UiDependencies) {
       }
       let value = parsed.value
       change = (current) => {
-        if (key === 'level') return { ...current, defaultLevel: value as 'lite' | 'balanced' | 'heavy' }
+        // The column keeps the level too: a release before REV-13 reads only the column.
+        if (key === 'level') {
+          let level = value as 'lite' | 'balanced' | 'heavy'
+          return { config: { ...current.config, level }, defaultLevel: level }
+        }
         let config: ConfigOverrides = { ...current.config }
         if (key.startsWith('models.')) {
           let level = key.slice('models.'.length) as 'lite' | 'balanced' | 'heavy'
@@ -463,7 +589,7 @@ export function createUiControllers(deps: UiDependencies) {
     let outcome: SaveOutcome = await configDeps.store.save(signed.membership.org.id, id, signed.user.id, version, (current) => {
       // « Revenir à l'org » on a key that the repository does not set changes nothing, but still
       // writes a version: the person sees which version they are on.
-      if (reset && !hasField(current.config, key as ConfigField)) return current
+      if (reset && !hasField(current.config, key) && !(key === 'level' && current.defaultLevel !== 'lite')) return current
       return change(current)
     })
     if (outcome.kind === 'not_found') return new Response('Not Found', { status: 404 })
@@ -679,11 +805,22 @@ export function createUiControllers(deps: UiDependencies) {
       async settings(context) {
         let signed = signedOf(context)
         let page = frame(signed, context, getCsrfToken(context))
-        if (!deps.providers) return context.render(<PlaceholderPage frame={page} section="settings" />)
-        let notice = context.url.searchParams.get('notice')
+        if (!deps.providers && !deps.orgSettings) return context.render(<PlaceholderPage frame={page} section="settings" />)
+        let query = context.url.searchParams
+        let notice = query.get('notice')
+        let done = query.get('org')
+        let version = Number(query.get('v'))
         return renderSettings(context, signed, page, {
           notice: notice !== null && notice in PROVIDER_NOTICES ? { kind: notice as ProviderNotice } : null,
+          orgNotice: (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null,
         })
+      },
+
+      async orgSettingsSave(context) {
+        return changeOrgSettings(context, false)
+      },
+      async orgSettingsReset(context) {
+        return changeOrgSettings(context, true)
       },
 
       // REV-11. The forms of « Providers et clés »: an admin of the org on screen only. cop() and

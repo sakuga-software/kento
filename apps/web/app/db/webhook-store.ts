@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import type { Installation, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
 import { errorMessage, log } from '../log.ts'
+import { capReached, readMoney, type CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db } from './client.ts'
 import { jobs, orgs, repos, resolutions, reviews } from './schema.ts'
@@ -16,6 +17,8 @@ export type WebhookResult =
   | { outcome: 'updated'; repositories: number; cancelled: number }
   /** A command that the bot refused: no permission, an unknown command, a fork, a head already reviewed. */
   | { outcome: 'refused'; reason: string }
+  /** REV-13. The org reached its cost limit of the day or of the month: no job. */
+  | { outcome: 'capped'; reason: string; period: CapHit['period']; spentUsd: number; capUsd: number; resetsAt: string }
 
 /** The commands that write to the database. `ping`, `ignore` and `invalid` never reach the store. */
 export type StoreCommand = Exclude<WebhookCommand, { type: 'ping' | 'ignore' | 'invalid' }>
@@ -58,6 +61,11 @@ export interface StoreOptions {
    * less than a review missed.
    */
   listChangedFiles?: ListChangedFiles
+  /**
+   * REV-13. Tells the pull request of a push that the cost limit of its org stopped its review. It
+   * runs after the commit; its failure is logged and never fails the delivery.
+   */
+  onCapReached?: (command: Extract<StoreCommand, { type: 'enqueue_review' }>, hit: CapHit) => Promise<void>
 }
 
 /** The `pull_request` actions that create a job, for each trigger of the config. */
@@ -82,10 +90,18 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       let outside = await outsidePaths(db, command, options.listChangedFiles, deliveryId)
       if (outside) return outside
     }
+    if (command.type === 'enqueue_review') {
+      let result = await db.transaction((tx) => enqueueReview(tx, command, deliveryId))
+      if (result.outcome === 'capped' && options.onCapReached) {
+        let hit: CapHit = { period: result.period, spentUsd: result.spentUsd, capUsd: result.capUsd, resetsAt: new Date(result.resetsAt) }
+        await options.onCapReached(command, hit).catch((error) =>
+          log('warn', 'webhook.cap_notice_failed', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, error: errorMessage(error) }),
+        )
+      }
+      return result
+    }
     return db.transaction(async (tx) => {
       switch (command.type) {
-        case 'enqueue_review':
-          return enqueueReview(tx, command, deliveryId)
         case 'cancel_pull_request': {
           // The lock waits for an enqueue of the same repository that has not committed yet, so the
           // update below also sees its job.
@@ -177,6 +193,46 @@ async function spentThisMonth(tx: Tx, repoId: string): Promise<number> {
 }
 
 /**
+ * REV-13. What the reviews and resolutions of all the repositories of an org cost since the start of
+ * the UTC day and of the UTC month. `readOrgCosts` of app/org-settings/costs.ts gives the same totals
+ * to the screen.
+ */
+async function orgSpent(tx: Tx, orgId: string): Promise<{ dayUsd: number; monthUsd: number }> {
+  let month = sql`date_trunc('month', now() at time zone 'utc') at time zone 'utc'`
+  let day = sql`date_trunc('day', now() at time zone 'utc') at time zone 'utc'`
+  let rows = await tx.execute<{ day: string; month: string }>(sql`
+    with costs as (
+      select ${reviews.costUsd} as cost, ${reviews.createdAt} as at from ${reviews} join ${repos} on ${repos.id} = ${reviews.repoId}
+      where ${repos.orgId} = ${orgId} and ${reviews.createdAt} >= ${month}
+      union all
+      select ${resolutions.costUsd}, ${resolutions.createdAt} from ${resolutions} join ${repos} on ${repos.id} = ${resolutions.repoId}
+      where ${repos.orgId} = ${orgId} and ${resolutions.createdAt} >= ${month}
+    )
+    select coalesce(sum(cost) filter (where at >= ${day}), 0)::text as day, coalesce(sum(cost), 0)::text as month from costs`)
+  return { dayUsd: Number(rows[0]?.day ?? 0), monthUsd: Number(rows[0]?.month ?? 0) }
+}
+
+/** REV-13. The cost limit that the org reached, or null. */
+async function orgCapHit(tx: Tx, org: { id: string; dailyCapUsd: string | null; monthlyCapUsd: string | null }): Promise<CapHit | null> {
+  let caps = { dailyCapUsd: readMoney(org.dailyCapUsd), monthlyCapUsd: readMoney(org.monthlyCapUsd) }
+  if (caps.dailyCapUsd === null && caps.monthlyCapUsd === null) return null
+  // The lock of the org row orders the checks of two deliveries of the org; the costs come from the
+  // results of the runners, so the jobs already queued are not counted until they end.
+  return capReached(caps, await orgSpent(tx, org.id), new Date())
+}
+
+function capped(hit: CapHit): Extract<WebhookResult, { outcome: 'capped' }> {
+  return {
+    outcome: 'capped',
+    reason: `${hit.period === 'day' ? 'daily' : 'monthly'} cost limit of the org is reached`,
+    period: hit.period,
+    spentUsd: hit.spentUsd,
+    capUsd: hit.capUsd,
+    resetsAt: hit.resetsAt.toISOString(),
+  }
+}
+
+/**
  * Whether Kentō serves a repository: its row is enabled, and the installation is not suspended. A
  * repository that is not, or that Kentō does not know yet, keeps its commands in `review.yml`.
  */
@@ -220,6 +276,8 @@ export type CommandJobResult =
    */
   | { outcome: 'already'; jobId: string }
   | { outcome: 'skipped'; reason: string }
+  /** REV-13. The org reached its cost limit: a command does not pass it either. */
+  | { outcome: 'capped'; hit: CapHit }
 
 /**
  * Creates the job of a command: a review or a resolve. It cancels no other job: a heavy review asked during the lite
@@ -291,9 +349,13 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
       if (same) return { outcome: 'already', jobId: same.id }
     }
 
-    // The models of the config apply to a command too; its trigger, its paths and its limit do not:
-    // a person with the right to write asked for this job.
-    let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config))
+    // REV-13. The limit of the org protects its budget: a command does not pass it.
+    let hit = await orgCapHit(tx, org)
+    if (hit) return { outcome: 'capped', hit }
+
+    // The models of the config apply to a command too; its trigger, its paths and the limit of the
+    // repository do not: a person with the right to write asked for this job.
+    let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config), repo.defaultLevel)
     let [job] = await tx
       .insert(jobs)
       .values({
@@ -345,10 +407,14 @@ async function enqueueReview(
 
   // REV-12. The trigger of the config: a push of a repository set to « Ready for review » or to
   // the commands only creates nothing. The older jobs of the pull request stay.
-  let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config))
+  let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config), repo.defaultLevel)
   if (!triggerAllows(resolved.trigger.value, command.action)) {
     return { outcome: 'skipped', reason: `trigger of the config is ${resolved.trigger.value}` }
   }
+  // REV-13. The limit of the org, before the one of the repository: it is the one that protects the
+  // budget, and its check run tells the pull request.
+  let hit = await orgCapHit(tx, org)
+  if (hit) return capped(hit)
   let cap = resolved.monthlyCapUsd.value
   if (cap !== null && (await spentThisMonth(tx, repo.id)) >= cap) {
     return { outcome: 'skipped', reason: 'monthly cost limit of the repository is reached' }
@@ -386,8 +452,8 @@ async function enqueueReview(
 
   let [job] = await insertReviewJob(tx, {
     repoId: repo.id,
-    level: repo.defaultLevel,
-    config: jobConfig(resolved, repo.defaultLevel, repo.configVersion),
+    level: resolved.level.value,
+    config: jobConfig(resolved, resolved.level.value, repo.configVersion),
     prNumber: command.prNumber,
     headSha: command.headSha,
     // The runner diffs the head from its merge base with this branch.
@@ -445,7 +511,7 @@ async function upsertOrg(tx: Tx, installation: Installation, suspended: boolean 
         updatedAt: sql`now()`,
       },
     })
-    .returning({ id: orgs.id, suspendedAt: orgs.suspendedAt, config: orgs.config })
+    .returning({ id: orgs.id, suspendedAt: orgs.suspendedAt, config: orgs.config, dailyCapUsd: orgs.dailyCapUsd, monthlyCapUsd: orgs.monthlyCapUsd })
   if (!org) throw new Error('upsert of the org returned no row')
   return org
 }

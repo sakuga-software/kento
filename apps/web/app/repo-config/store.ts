@@ -2,6 +2,7 @@ import type postgres from 'postgres'
 
 import type { Level } from '@sakuga-review/protocol'
 
+import { readTrustedBots } from '../org-settings/model.ts'
 import { readOverrides, type ConfigOverrides } from './model.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -23,6 +24,8 @@ export interface RepoConfigView {
   updatedAt: Date | null
   /** What the reviews and resolutions of the repository cost since the first day of the month (UTC), in dollars. */
   spentThisMonthUsd: number
+  /** REV-13. The trusted bots of the org: they can give a command, as a person who can write. */
+  trustedBots: string[]
 }
 
 /** A change of the config: it gets the current values and returns the new ones. */
@@ -56,6 +59,7 @@ type Row = {
   updatedBy: string | null
   updatedAt: Date | string | null
   spent: string | null
+  trustedBots: string[]
 }
 
 function toDate(value: Date | string | null): Date | null {
@@ -70,7 +74,7 @@ export function createRepoConfigStore(sql: postgres.Sql): RepoConfigStore {
         select
           repos.id, repos.full_name as "fullName", repos.enabled, repos.default_level as "defaultLevel",
           repos.config, orgs.config as "orgConfig", repos.config_version as version,
-          users.login as "updatedBy", repos.config_updated_at as "updatedAt",
+          users.login as "updatedBy", repos.config_updated_at as "updatedAt", orgs.trusted_bots as "trustedBots",
           (
             select coalesce(sum(cost), 0)::text from (
               select cost_usd as cost from reviews
@@ -96,6 +100,7 @@ export function createRepoConfigStore(sql: postgres.Sql): RepoConfigStore {
         updatedBy: row.updatedBy,
         updatedAt: toDate(row.updatedAt),
         spentThisMonthUsd: Number(row.spent ?? 0),
+        trustedBots: readTrustedBots(row.trustedBots),
       }
     },
 

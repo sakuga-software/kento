@@ -39,7 +39,7 @@ describe('POST /webhooks/github against Postgres', () => {
       commit: null,
       webhook: {
         secret: TEST_SECRET,
-        trustedBots: new Set(['sakuga-agent[bot]']),
+        trustedBotsFor: async () => new Set(['sakuga-agent[bot]']),
         apply: createWebhookStore(database.db),
       },
     })

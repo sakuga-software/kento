@@ -32,6 +32,9 @@ export const pageRoutes = route({
   providerKey: post('/settings/providers/:id/key'),
   providerDefault: post('/settings/providers/:id/default'),
   providerRemove: post('/settings/providers/:id/remove'),
+  /** REV-13: the settings of the org. A member reads them; an admin changes them, one form at a time. */
+  orgSettingsSave: post('/settings/org'),
+  orgSettingsReset: post('/settings/org/reset'),
   theme: post('/preferences/theme'),
   org: post('/preferences/org'),
   signOut: post('/logout'),

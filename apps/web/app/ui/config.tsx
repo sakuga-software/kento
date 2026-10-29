@@ -31,7 +31,7 @@ const TAB_LABELS: Record<ConfigTab, string> = {
 }
 
 /** The tab of a form: where the screen goes back after it. */
-export function tabOf(field: ConfigField | 'level'): ConfigTab {
+export function tabOf(field: ConfigField): ConfigTab {
   if (field.startsWith('models.')) return 'models'
   if (field === 'level') return 'levels'
   return 'trigger'
@@ -49,7 +49,7 @@ export type ConfigNotice =
 
 /** A form sent back with its errors: its values stay, under the field that it changes. */
 export interface ConfigForm {
-  field: ConfigField | 'level'
+  field: ConfigField
   values: Record<string, string>
   errors: Record<string, string>
 }
@@ -61,8 +61,6 @@ export interface ConfigPageProps {
   tab: ConfigTab
   notice: ConfigNotice | null
   form: ConfigForm | null
-  /** KENTO_TRUSTED_BOTS: the bots that can give a command. */
-  trustedBots: string[]
 }
 
 const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })
@@ -109,11 +107,11 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
  */
 export function ConfigPage(handle: Handle<ConfigPageProps>) {
   return () => {
-    let { frame, view, providers, tab, notice, form, trustedBots } = handle.props
+    let { frame, view, providers, tab, notice, form } = handle.props
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
     let name = shortName(view.fullName, viewer.org.login)
-    let resolved = resolveConfig(view.orgConfig, view.config)
+    let resolved = resolveConfig(view.orgConfig, view.config, view.defaultLevel)
     let ctx: FormContext = { csrf: frame.csrfToken, repoId: view.id, version: view.version, admin, form }
 
     return (
@@ -155,14 +153,14 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
           {tab === 'models' ? (
             <ModelsTab resolved={resolved.models} providers={providers} ctx={ctx} />
           ) : tab === 'levels' ? (
-            <LevelsTab level={view.defaultLevel} ctx={ctx} />
+            <LevelsTab level={resolved.level} ctx={ctx} />
           ) : tab === 'trigger' ? (
             <TriggerTab
               trigger={resolved.trigger}
               paths={resolved.paths}
               cap={resolved.monthlyCapUsd}
               spent={view.spentThisMonthUsd}
-              trustedBots={trustedBots}
+              trustedBots={view.trustedBots}
               ctx={ctx}
             />
           ) : (
@@ -375,9 +373,10 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
   }
 }
 
-function LevelsTab(handle: Handle<{ level: Level; ctx: FormContext }>) {
+function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>) {
   return () => {
-    let { level, ctx } = handle.props
+    let { level: resolvedLevel, ctx } = handle.props
+    let level = resolvedLevel.value
     let mine = ctx.form?.field === 'level' ? ctx.form : null
     let selected = mine?.values.defaultLevel ?? level
     return (
@@ -387,6 +386,7 @@ function LevelsTab(handle: Handle<{ level: Level; ctx: FormContext }>) {
             <h2 class="section-title" id="default-level-title">
               Niveau par défaut
             </h2>
+            <SourceTag source={resolvedLevel.source} />
           </header>
           <p class="hint">Le niveau de la review d’un push. Une commande peut en demander un autre.</p>
           {ctx.admin ? (
@@ -409,10 +409,13 @@ function LevelsTab(handle: Handle<{ level: Level; ctx: FormContext }>) {
                 ) : null}
               </fieldset>
               <button class="button button-primary" type="submit">
-                Enregistrer le niveau
+                {resolvedLevel.source === 'repo' ? 'Enregistrer le niveau' : 'Remplacer ici'}
+                {resolvedLevel.source === 'repo' ? null : <span class="visually-hidden"> le niveau</span>}
               </button>
             </form>
-          ) : (
+          ) : null}
+          {ctx.admin && resolvedLevel.source === 'repo' ? <ResetForm ctx={ctx} field="level" label="le niveau" /> : null}
+          {ctx.admin ? null : (
             <p>
               <strong class="mono">{level}</strong> — {LEVEL_HINTS[level]}
             </p>
@@ -614,7 +617,9 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             <h2 class="section-title" id="rights-title">
               Droits
             </h2>
-            <span class="tag tag-quiet">non modifiable</span>
+            <a class="tag tag-quiet" href={`${routes.settings.href()}#bots`}>
+              réglage de l’org
+            </a>
           </header>
           <dl class="config-facts">
             <div>

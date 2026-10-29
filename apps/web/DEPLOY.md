@@ -100,7 +100,7 @@ Deploy the release with REV-3 first: without its secret the route answers 503, a
    GITHUB_WEBHOOK_SECRET=<the 64 characters>
    ```
 
-   `KENTO_TRUSTED_BOTS` defaults to `sakuga-agent[bot]`. The logs at startup show
+   The trusted bots are a setting of each org since REV-13 (section 15). The logs at startup show
    `startup.listening`, and no `startup.webhook_disabled`. Since REV-9 a repository gets jobs once an
    admin enables it on the Repos screen (section 12); before REV-9 it was `KENTO_REPOS`.
 3. GitHub → organization `sakuga-software` → **Settings → Developer settings → GitHub Apps → Sakuga
@@ -254,7 +254,7 @@ repository keeps its commands in `review.yml`.
 The checks, in this order, with the reason in the logs (`webhook.ignored`, `command.not_allowed`,
 `command.refused`, `command.accepted`):
 
-- An edited comment, a comment of the App, or of a bot outside `KENTO_TRUSTED_BOTS`: ignored.
+- An edited comment, a comment of the App, or of a bot outside the trusted bots of the org: ignored.
 - A person without `write`, `maintain` or `admin` on the repository: no job and no answer.
 - A pull request from a fork: 😕 and a short reply.
 - An unknown command: 😕 and the list of the commands.
@@ -515,7 +515,73 @@ means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provid
      4 characters, never a key.
 6. **Rotation of the master key**: see [SECURITY.md](../../SECURITY.md#the-master-key).
 
-## 15. Each later deployment
+## 15. Settings of the org: cost limit, defaults, trusted bots, state of the App (REV-13)
+
+The release with REV-13 adds the migration `0010_org_settings` and removes the variable
+`KENTO_TRUSTED_BOTS`. `/healthz` gives `"migrations":11`.
+
+What the migration does:
+
+- `orgs`: `daily_cap_usd` and `monthly_cap_usd` (`numeric(10,2)`, null: no limit), `cap_alert_pct`
+  (default 80), `trusted_bots` (`text[]`, default `{sakuga-agent[bot]}`), `settings_version`,
+  `settings_updated_by`, `settings_updated_at`, and two checks (limits not negative, alert from 1 to
+  100). Every existing org starts with no limit and trusts `sakuga-agent[bot]`: the behaviour of the
+  previous release with the default of `KENTO_TRUSTED_BOTS`.
+- A new table `webhook_deliveries`: one row per delivery that passed the signature (event, action,
+  status, outcome), kept 30 days, for « Dernier événement » and « Échecs sur 24 h ».
+- **Data migration**: the level of a repository becomes a key of its config, inherited from the org.
+  A repository whose `default_level` is not `lite` gets `config.level` with the same value, so it keeps
+  its level. The column stays and is still written: the previous release reads it after a rollback.
+
+What changes for the cost and the rights:
+
+- **Cost limit of the org.** An admin sets, in `/settings`, a limit per UTC day and per UTC month, and
+  an alert threshold. The cost is the sum of the reviews and resolutions of every repository of the org.
+  At a limit, a new job is not queued: a push answers 202 `capped` and its head gets the neutral check
+  « Kentō · plafond » (« Plafond du jour atteint : pas de review », with the cost, the limit, and the
+  hour when the reviews start again); a command `@kento …` gets 😕 and a reply. A job already queued or
+  running finishes. The cost of a job is known only when it ends: the jobs queued just before the limit
+  can take the cost a little over it. The daily limit of 10 $ of the OpenRouter key stays a second guard.
+  The check has its own name: a required check « Sakuga Review » stays missing, and the pull request
+  stays blocked until a review.
+- **Trusted bots.** The list is in the database, one per org, edited in `/settings` by an admin.
+  `KENTO_TRUSTED_BOTS` is not read any more.
+- **Defaults of the org.** The level of a push and the provider and models of each level, inherited by
+  the Config screen of each repository (« hérité de l’org »), which can replace them.
+- **State of the App.** The screen reads `GET /app`, `GET /app/installations/{id}` and
+  `GET /app/hook/config` with the JWT of the App (kept 5 minutes): no new permission.
+- Every change is a POST under `cop()` and the CSRF token, for an admin only (a member gets 403 and
+  reads the screen), logged as `org_settings.saved` / `org_settings.reset` with the login, the version,
+  and for the limits and the bots the values before and after.
+
+Steps:
+
+1. Before the deploy, note the value of `KENTO_TRUSTED_BOTS` in Dokploy → `web` → **Environment** (if
+   it is set and differs from `sakuga-agent[bot]`).
+2. Deploy `web`. The logs show `startup.migrations_applied`, and `/healthz` gives `"migrations":11`.
+   With `KENTO_TRUSTED_BOTS` still set, the log shows `startup.kento_trusted_bots_ignored` with its
+   value.
+3. Signed in as an owner of `sakuga-software`, `/settings` → « Bots de confiance »: put the bots of
+   step 1 (one per line), « Enregistrer les bots ». Then remove `KENTO_TRUSTED_BOTS` from Dokploy →
+   `web` → **Environment** and redeploy: `startup.kento_trusted_bots_ignored` is gone.
+4. `/settings` → « Plafond de coût »: set the limits (for example 8 $ per day, the ticket's value, and a
+   monthly limit), « Enregistrer le plafond ». The log `org_settings.saved` gives `before` and `after`.
+5. « App GitHub » must say « Tout est en place ». Otherwise it names what is missing: a permission
+   (App settings → **Permissions & events**, then accept it in the org), an event, or another webhook
+   URL than `https://review.sakuga.dev/webhooks/github`.
+6. The tests of the ticket:
+   - Set the daily limit to `0,01`, push a commit on an open pull request of `sakuga-review`: no review,
+     Recent Deliveries shows 202 `{"outcome":"capped",…}`, and the pull request has the check
+     « Kentō · plafond » with « Plafond du jour atteint ». The settings show the red banner. Set `8`
+     again and push: a job, then a review.
+   - Add `renovate[bot]` to the trusted bots: the next pull request or push of Renovate on `orchard`
+     gets a review (orchard enabled on the Repos screen).
+   - « Dernier push ou PR » shows the `pull_request.synchronize` of the last push, with its time.
+7. Rollback: the previous release runs on the new schema (the columns only add, `default_level` is
+   still written). It reads `KENTO_TRUSTED_BOTS` again, and has no cost limit of the org: put the
+   variable back before a rollback if the trusted bots differ from the default.
+
+## 16. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.
