@@ -15,6 +15,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 
 // The tables of milestone M2 only: orgs, repos, runners, jobs, reviews. Later tickets add their own tables
@@ -44,6 +45,11 @@ export const orgs = pgTable('orgs', {
   login: text('login').notNull(),
   /** Set when GitHub reports the installation as suspended or deleted. */
   suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+  /**
+   * The config of the org: what its repositories inherit (`ConfigOverrides` of app/repo-config). A
+   * key that it does not hold takes the value of Kentō. The settings of the org (REV-13) write it.
+   */
+  config: jsonb('config').notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 })
@@ -86,6 +92,15 @@ export const repos = pgTable(
      * org, or of the service.
      */
     defaultRunnerPool: text('default_runner_pool'),
+    /**
+     * REV-12. What the repository sets itself on its Config screen (`ConfigOverrides` of
+     * app/repo-config): a key that it does not hold is inherited from the org. Each change writes the
+     * next version, its author and its date; a form sent from an older version is refused.
+     */
+    config: jsonb('config').notNull().default({}),
+    configVersion: integer('config_version').notNull().default(0),
+    configUpdatedBy: uuid('config_updated_by').references((): AnyPgColumn => users.id, { onDelete: 'set null' }),
+    configUpdatedAt: timestamp('config_updated_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -192,6 +207,12 @@ export const jobs = pgTable(
     /** A job queued again after an expired lease waits until then before a runner can claim it (backoff). */
     notBefore: timestamp('not_before', { withTimezone: true }),
     failureReason: text('failure_reason'),
+    /**
+     * REV-12. The config that the job applies, resolved (org, then repository) when it was queued: a
+     * change of the config after that never changes a job in the queue. Null on a job queued before
+     * the column: the runner then uses the levels of the engine.
+     */
+    config: jsonb('config'),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),

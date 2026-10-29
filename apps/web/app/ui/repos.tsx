@@ -262,7 +262,12 @@ function RepoRow(handle: Handle<RepoRowProps>) {
           <Mode repo={repo} />
         </td>
         <td data-label="Niveau">
-          <span class="mono">{LEVELS[repo.defaultLevel]}</span>
+          <span class="stack">
+            <span class="mono">{LEVELS[repo.defaultLevel]}</span>
+            <a href={routes.repoConfig.href({ id: repo.id })}>
+              Config<span class="visually-hidden"> de {name}</span>
+            </a>
+          </span>
         </td>
         <td data-label="Provider · modèle">{repo.lastReview ? <ProviderModel model={repo.lastReview.model} /> : '–'}</td>
         <td data-label="Bascule">

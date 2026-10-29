@@ -15,10 +15,25 @@ import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
 import type { AuthStore, MembershipRow, UserRow } from '../auth/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { authRoutes, pageRoutes } from '../routes.ts'
+import {
+  CONFIG_FIELDS,
+  readCapForm,
+  readLevelForm,
+  readModelsForm,
+  readPathsForm,
+  readTriggerForm,
+  withoutField,
+  hasField,
+  type ConfigField,
+  type ConfigOverrides,
+} from '../repo-config/model.ts'
+import type { ProviderCatalog } from '../repo-config/providers.ts'
+import type { RepoConfigStore, SaveOutcome } from '../repo-config/store.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
 import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
+import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from './config.tsx'
 import { ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
@@ -47,6 +62,15 @@ export interface ReposDependencies {
   githubUrl: string
 }
 
+/** The Config screen of a repository (REV-12). Null: the screen answers 404. */
+export interface RepoConfigDependencies {
+  store: RepoConfigStore
+  /** The providers that an org can choose for a level. */
+  providers: ProviderCatalog
+  /** KENTO_TRUSTED_BOTS, shown under « Droits ». */
+  trustedBots: string[]
+}
+
 export interface UiDependencies {
   version: string
   /** The commit of the image, when the build gives it: it versions the URLs of the assets. */
@@ -55,6 +79,7 @@ export interface UiDependencies {
   repos?: ReposDependencies | null
   /** The Runners screen (REV-10). Null: it shows its empty frame. */
   runners?: RunnersAdminStore | null
+  repoConfig?: RepoConfigDependencies | null
 }
 
 interface SignedIn {
@@ -288,6 +313,127 @@ export function createUiControllers(deps: UiDependencies) {
     return redirect(`${pageRoutes.repos.href()}?${query}#repo-${context.params.id}`)
   }
 
+  type ConfigContext = Parameters<typeof getCsrfToken>[0] & {
+    get(key: typeof Signed): SignedIn | undefined
+    params: { id: string }
+    headers: Headers
+    url: URL
+    render(node: any, init?: ResponseInit): Response
+  }
+
+  async function renderConfig(
+    context: ConfigContext,
+    signed: SignedIn,
+    page: PageFrame,
+    tab: ConfigTab,
+    extra: { notice?: ConfigNotice | null; form?: ConfigForm | null },
+    status = 200,
+  ) {
+    let deps2 = deps.repoConfig!
+    let view = await deps2.store.read(signed.membership.org.id, context.params.id)
+    if (!view) return new Response('Not Found', { status: 404 })
+    let providers = await deps2.providers.list(signed.membership.org.id)
+    return context.render(
+      <ConfigPage
+        frame={page}
+        view={view}
+        providers={providers}
+        tab={tab}
+        notice={extra.notice ?? null}
+        form={extra.form ?? null}
+        trustedBots={deps2.trustedBots}
+      />,
+      { status },
+    )
+  }
+
+  /** The form values of a change, as the person typed them, to show again with their errors. */
+  function formValues(form: FormData | undefined): Record<string, string> {
+    let values: Record<string, string> = {}
+    for (let [key, value] of form?.entries() ?? []) if (typeof value === 'string' && key !== '_csrf') values[key] = value
+    return values
+  }
+
+  async function changeConfig(context: ConfigContext & { get(key: typeof FormData): FormData | undefined }, reset: boolean) {
+    let signed = signedOf(context)
+    let configDeps = deps.repoConfig
+    if (!configDeps) return new Response('Not Found', { status: 404 })
+    if (signed.membership.role !== 'admin') {
+      log('warn', 'repo_config.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+      return forbidden()
+    }
+    let id = context.params.id
+    if (!UUID.test(id)) return new Response('Not Found', { status: 404 })
+    let form = context.get(FormData)
+    let field = form?.get('field')
+    let versionText = form?.get('version')
+    let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
+    let known = (CONFIG_FIELDS as readonly unknown[]).includes(field) || (!reset && field === 'level')
+    if (!form || version === null || !known) return new Response('Bad Request', { status: 400 })
+    let key = field as ConfigField | 'level'
+    let tab = tabOf(key)
+    let page = frame(signed, context, getCsrfToken(context))
+
+    let change: (current: { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }) => { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }
+    if (reset) {
+      change = (current) => ({ ...current, config: withoutField(current.config, key as ConfigField) })
+    } else {
+      let parsed =
+        key === 'level'
+          ? readLevelForm(form)
+          : key === 'trigger'
+            ? readTriggerForm(form)
+            : key === 'paths'
+              ? readPathsForm(form)
+              : key === 'monthlyCapUsd'
+                ? readCapForm(form)
+                : readModelsForm(form, (await configDeps.providers.list(signed.membership.org.id)).map((p) => p.id))
+      if (!parsed.ok) {
+        return renderConfig(context, signed, page, tab, { form: { field: key, values: formValues(form), errors: parsed.errors } }, 422)
+      }
+      let value = parsed.value
+      change = (current) => {
+        if (key === 'level') return { ...current, defaultLevel: value as 'lite' | 'balanced' | 'heavy' }
+        let config: ConfigOverrides = { ...current.config }
+        if (key.startsWith('models.')) {
+          let level = key.slice('models.'.length) as 'lite' | 'balanced' | 'heavy'
+          config.models = { ...config.models, [level]: value }
+        } else {
+          ;(config as Record<string, unknown>)[key] = value
+        }
+        return { ...current, config }
+      }
+    }
+
+    let outcome: SaveOutcome = await configDeps.store.save(signed.membership.org.id, id, signed.user.id, version, (current) => {
+      // « Revenir à l'org » on a key that the repository does not set changes nothing, but still
+      // writes a version: the person sees which version they are on.
+      if (reset && !hasField(current.config, key as ConfigField)) return current
+      return change(current)
+    })
+    if (outcome.kind === 'not_found') return new Response('Not Found', { status: 404 })
+    if (outcome.kind === 'conflict') {
+      log('info', 'repo_config.conflict', { login: signed.user.login, repoId: id, field: key, sent: version, current: outcome.version })
+      return renderConfig(
+        context,
+        signed,
+        page,
+        tab,
+        { notice: { kind: 'conflict', version: outcome.version, updatedBy: outcome.updatedBy, updatedAt: outcome.updatedAt } },
+        409,
+      )
+    }
+    log('info', reset ? 'repo_config.reset' : 'repo_config.saved', {
+      login: signed.user.login,
+      org: signed.membership.org.login,
+      repo: outcome.fullName,
+      field: key,
+      version: outcome.version,
+    })
+    let query = new URLSearchParams({ tab, done: reset ? 'reset' : 'saved', v: String(outcome.version) })
+    return redirect(`${pageRoutes.repoConfig.href({ id })}?${query}`)
+  }
+
   let pages = createController(pageRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
     actions: {
@@ -349,6 +495,26 @@ export function createUiControllers(deps: UiDependencies) {
           // The check logs its error.
           return redirect(`${pageRoutes.repos.href()}?done=check_failed`)
         }
+      },
+      // REV-12. The Config screen of a repository: a member reads it, an admin changes it.
+      async repoConfig(context) {
+        let signed = signedOf(context)
+        if (!deps.repoConfig || !UUID.test(context.params.id)) return new Response('Not Found', { status: 404 })
+        let page = frame(signed, context, getCsrfToken(context))
+        let query = context.url.searchParams
+        let tab = query.get('tab')
+        let done = query.get('done')
+        let version = Number(query.get('v'))
+        let notice: ConfigNotice | null =
+          (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null
+        return renderConfig(context, signed, page, isConfigTab(tab) ? tab : 'models', { notice })
+      },
+      // cop() and csrf() of the session layer ran before.
+      async repoConfigSave(context) {
+        return changeConfig(context, false)
+      },
+      async repoConfigReset(context) {
+        return changeConfig(context, true)
       },
       findings(context) {
         let page = frame(signedOf(context), context, getCsrfToken(context))

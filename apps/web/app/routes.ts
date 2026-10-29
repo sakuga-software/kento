@@ -14,6 +14,10 @@ export const pageRoutes = route({
   repoEnable: post('/repos/:id/enable'),
   repoDisable: post('/repos/:id/disable'),
   reposCheck: post('/repos/check'),
+  /** REV-12: the config of a repository. A member reads it; an admin changes it, one key at a time. */
+  repoConfig: get('/repos/:id/config'),
+  repoConfigSave: post('/repos/:id/config'),
+  repoConfigReset: post('/repos/:id/config/reset'),
   findings: get('/findings'),
   runners: get('/runners'),
   runnerNew: post('/runners/new'),

@@ -1,9 +1,11 @@
 import type { JobKind, Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
-import type { Installation, Repository, WebhookCommand } from '../github/events.ts'
+import type { Installation, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
+import { errorMessage, log } from '../log.ts'
+import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db } from './client.ts'
-import { jobs, orgs, repos, resolutions } from './schema.ts'
+import { jobs, orgs, repos, resolutions, reviews } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -44,9 +46,29 @@ export const CANCEL_REASON = {
 
 type CancelReason = (typeof CANCEL_REASON)[keyof typeof CANCEL_REASON]
 
+/** The paths of the files that a pull request changes, as GitHub lists them. Null: GitHub did not answer. */
+export type ListChangedFiles = (command: Extract<StoreCommand, { type: 'enqueue_review' }>) => Promise<string[] | null>
+
 export interface StoreOptions {
   /** The commands of the comments (REV-7). Without it, a command is skipped. */
   handleCommentCommand?: HandleCommentCommand
+  /**
+   * REV-12. Reads the changed files of a pull request, for a repository whose config has paths.
+   * Without it, or when GitHub does not answer, the paths filter nothing: a review too many costs
+   * less than a review missed.
+   */
+  listChangedFiles?: ListChangedFiles
+}
+
+/** The `pull_request` actions that create a job, for each trigger of the config. */
+const TRIGGER_ACTIONS: Record<Trigger, readonly ReviewAction[]> = {
+  push: ['opened', 'synchronize', 'reopened', 'ready_for_review'],
+  ready: ['opened', 'reopened', 'ready_for_review'],
+  command: [],
+}
+
+export function triggerAllows(trigger: Trigger, action: ReviewAction): boolean {
+  return TRIGGER_ACTIONS[trigger].includes(action)
 }
 
 /** Applies each command in one transaction. A command of a comment goes to its handler. */
@@ -55,6 +77,10 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
     if (command.type === 'comment_command') {
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
       return options.handleCommentCommand(command, deliveryId)
+    }
+    if (command.type === 'enqueue_review' && options.listChangedFiles) {
+      let outside = await outsidePaths(db, command, options.listChangedFiles, deliveryId)
+      if (outside) return outside
     }
     return db.transaction(async (tx) => {
       switch (command.type) {
@@ -104,6 +130,50 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       }
     })
   }
+}
+
+/**
+ * REV-12. A pull request that changes no file under the paths of the config of its repository gets
+ * no automatic job. It reads GitHub, so it runs before the transaction, which holds the lock of the
+ * repository: a change of the paths in between counts at the next push.
+ */
+async function outsidePaths(
+  db: Db,
+  command: Extract<StoreCommand, { type: 'enqueue_review' }>,
+  listChangedFiles: ListChangedFiles,
+  deliveryId: string,
+): Promise<WebhookResult | null> {
+  let [row] = await db
+    .select({ enabled: repos.enabled, config: repos.config, orgConfig: orgs.config })
+    .from(repos)
+    .innerJoin(orgs, eq(orgs.id, repos.orgId))
+    .where(eq(repos.githubRepoId, command.repository.githubRepoId))
+  if (!row?.enabled) return null
+  let resolved = resolveConfig(readOverrides(row.orgConfig), readOverrides(row.config))
+  let patterns = resolved.paths.value
+  if (patterns.length === 0 || !triggerAllows(resolved.trigger.value, command.action)) return null
+  let files: string[] | null
+  try {
+    files = await listChangedFiles(command)
+  } catch (error) {
+    files = null
+    log('warn', 'webhook.changed_files_failed', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, error: errorMessage(error) })
+  }
+  if (files === null || pathsMatch(patterns, files)) return null
+  return { outcome: 'skipped', reason: 'no changed file under the paths of the config' }
+}
+
+/**
+ * What the reviews and resolutions of a repository cost since the first day of the month (UTC), in
+ * dollars. A cost that the runner did not know counts 0.
+ */
+async function spentThisMonth(tx: Tx, repoId: string): Promise<number> {
+  let month = sql`date_trunc('month', now() at time zone 'utc') at time zone 'utc'`
+  let rows = await tx.execute<{ total: string }>(sql`select
+    coalesce((select sum(${reviews.costUsd}) from ${reviews} where ${reviews.repoId} = ${repoId} and ${reviews.createdAt} >= ${month}), 0)
+    + coalesce((select sum(${resolutions.costUsd}) from ${resolutions} where ${resolutions.repoId} = ${repoId} and ${resolutions.createdAt} >= ${month}), 0)
+    as total`)
+  return Number(rows[0]?.total ?? 0)
 }
 
 /**
@@ -221,12 +291,16 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
       if (same) return { outcome: 'already', jobId: same.id }
     }
 
+    // The models of the config apply to a command too; its trigger, its paths and its limit do not:
+    // a person with the right to write asked for this job.
+    let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config))
     let [job] = await tx
       .insert(jobs)
       .values({
         repoId: repo.id,
         kind: input.kind,
         level: input.level,
+        config: jobConfig(resolved, input.level, repo.configVersion),
         state: 'queued',
         prNumber: input.prNumber,
         headSha: input.headSha,
@@ -269,6 +343,17 @@ async function enqueueReview(
   let [delivered] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.githubDeliveryId, deliveryId))
   if (delivered) return { outcome: 'duplicate', reason: 'delivery already created a job' }
 
+  // REV-12. The trigger of the config: a push of a repository set to « Ready for review » or to
+  // the commands only creates nothing. The older jobs of the pull request stay.
+  let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config))
+  if (!triggerAllows(resolved.trigger.value, command.action)) {
+    return { outcome: 'skipped', reason: `trigger of the config is ${resolved.trigger.value}` }
+  }
+  let cap = resolved.monthlyCapUsd.value
+  if (cap !== null && (await spentThisMonth(tx, repo.id)) >= cap) {
+    return { outcome: 'skipped', reason: 'monthly cost limit of the repository is reached' }
+  }
+
   // GitHub sends no push event for a closed pull request, but a captured signed push can come back
   // with a new delivery id. While the last job of the pull request was cancelled by its close, only
   // a `reopened` event queues a job.
@@ -302,6 +387,7 @@ async function enqueueReview(
   let [job] = await insertReviewJob(tx, {
     repoId: repo.id,
     level: repo.defaultLevel,
+    config: jobConfig(resolved, repo.defaultLevel, repo.configVersion),
     prNumber: command.prNumber,
     headSha: command.headSha,
     // The runner diffs the head from its merge base with this branch.
@@ -359,7 +445,7 @@ async function upsertOrg(tx: Tx, installation: Installation, suspended: boolean 
         updatedAt: sql`now()`,
       },
     })
-    .returning({ id: orgs.id, suspendedAt: orgs.suspendedAt })
+    .returning({ id: orgs.id, suspendedAt: orgs.suspendedAt, config: orgs.config })
   if (!org) throw new Error('upsert of the org returned no row')
   return org
 }
@@ -388,5 +474,5 @@ function upsertRepoRows(tx: Tx, orgId: string, repositories: Repository[]) {
       target: repos.githubRepoId,
       set: { orgId, fullName: sql`excluded.full_name`, updatedAt: sql`now()` },
     })
-    .returning({ id: repos.id, defaultLevel: repos.defaultLevel, enabled: repos.enabled })
+    .returning({ id: repos.id, defaultLevel: repos.defaultLevel, enabled: repos.enabled, config: repos.config, configVersion: repos.configVersion })
 }

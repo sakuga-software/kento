@@ -429,7 +429,43 @@ columns of `repos`: `private`, `default_branch`, `workflow`, `workflow_path`, `w
 At 20/20, « Retirer review.yml » opens the deletion of the file on GitHub: the person commits it on a
 branch and merges it like any change. Kentō never writes the repository itself.
 
-## 13. Each later deployment
+## 13. The Config screen of a repository (REV-12)
+
+The release with REV-12 adds the migration `0008_repo_config`, additive only: `orgs.config` and
+`repos.config` (`jsonb`, default `{}`), `repos.config_version` (default 0), `config_updated_by`,
+`config_updated_at`, and `jobs.config` (null on a job queued before it). `/healthz` gives one migration
+more. No data migration: every repository starts at « config v0 », everything inherited, which is
+the behaviour of the previous release (each push, the models of the engine, no limit).
+
+**Deploy `web` before the runners.** A runner of this release sends `features: ['providers',
+'models']` in its claim; a service of an earlier release refuses that claim (400). A runner of an
+earlier release keeps working with this service: it gets no `models` key, runs the models of the
+engine, and the log says `job.models_not_sent`.
+
+What changes for the cost and the rights:
+
+- An admin of the org (not a member) sets, per repository, the provider and the models of each
+  level, the default level, the trigger (each push, « Ready for review » only, commands only), the
+  paths, and a monthly limit of the automatic reviews. Every change is a POST under `cop()` and the
+  CSRF token, logged as `repo_config.saved` / `repo_config.reset` with the login and the version.
+- A limit stops only the automatic reviews (webhook outcome `skipped`, reason « monthly cost limit of
+  the repository is reached »); a command `@kento review` still runs: a person with the right to
+  write asked for it.
+- The paths read the files of the pull request on GitHub with a token `pull_requests: read` (the App
+  already has it). When GitHub does not answer, the job is queued anyway.
+
+Check, signed in as an owner of `sakuga-software`, on `orchard` (the tests of the ticket):
+
+1. `/repos` → « Config » of orchard → « Provider et modèles »: set the model of `balanced` to
+   `anthropic/claude-sonnet-5.5` (or another one), « Remplacer ici », then « Niveaux et passes » →
+   `balanced`. Push a commit: the review that Kentō publishes names the model and OpenRouter in its
+   footer.
+2. « Revenir à l’org » on `balanced`: the next push takes the value of the org again.
+3. « Déclenchement » → « Au passage en « Ready for review » »: a push on a draft creates no job, the
+   passage to « Ready for review » creates one, and a later push none (webhook outcome `skipped`,
+   « trigger of the config is ready »).
+
+## 14. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

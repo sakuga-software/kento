@@ -168,10 +168,12 @@ export type Model = { kind: ProviderKind; apiKey: string | undefined; baseUrl: s
  * which only a trusted runner gets.
  */
 export function chooseModel(job: Job, own: JobDependencies['config']['provider']): Model {
+  // REV-12: the config of the repository chose the provider and the models of the level.
+  const chosen = job.models ? [job.models.model, ...(job.models.fallback ? [job.models.fallback] : [])] : undefined;
   if (job.providers !== undefined) {
-    const wanted = job.providers[0];
-    if (!wanted) throw new Error('the job names no provider');
-    const config = providerLevelConfig(job.level, wanted.kind, wanted.models);
+    const wanted = job.models ? job.providers.find((p) => p.id === job.models!.provider) : job.providers[0];
+    if (!wanted) throw new Error(job.models ? `the provider ${job.models.provider} that the config chose is not in the job` : 'the job names no provider');
+    const config = providerLevelConfig(job.level, wanted.kind, chosen ?? wanted.models);
     if (own.own === wanted.kind) {
       return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
     }
@@ -180,10 +182,14 @@ export function chooseModel(job: Job, own: JobDependencies['config']['provider']
     }
     return { kind: wanted.kind, apiKey: wanted.apiKey, baseUrl: wanted.baseUrl ?? undefined, config };
   }
-  // A service of an earlier release: an OpenRouter key, the runner's own first.
+  // A service of an earlier release: an OpenRouter key, the runner's own first. Without `providers`,
+  // the only provider that a config can name is the one of the service.
+  if (job.models && job.models.provider !== 'service') {
+    throw new Error(`the provider ${job.models.provider} that the config chose is not in the job`);
+  }
   const apiKey = (own.own === 'openrouter' ? own.apiKey : null) ?? job.provider?.apiKey;
   if (!apiKey) throw new Error('no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted');
-  return { kind: 'openrouter', apiKey, baseUrl: own.own === 'openrouter' ? own.baseUrl : undefined, config: providerLevelConfig(job.level, 'openrouter') };
+  return { kind: 'openrouter', apiKey, baseUrl: own.own === 'openrouter' ? own.baseUrl : undefined, config: providerLevelConfig(job.level, 'openrouter', chosen) };
 }
 
 type Checkout = Awaited<ReturnType<typeof clonePullRequest>>;

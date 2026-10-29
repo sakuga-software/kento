@@ -1467,3 +1467,115 @@ kbd,
     min-height: var(--control-h-touch);
   }
 }
+
+/* ---------------------------------------------------------------- Config of a repository (REV-12) */
+
+.config-tabs {
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.config-tabs ul {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.config-tabs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-touch);
+  padding: 0 var(--space-3);
+  border-bottom: 3px solid transparent;
+  color: var(--ink-soft);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.config-tabs a:hover {
+  color: var(--ink);
+}
+.config-tabs a[aria-current='page'] {
+  border-bottom-color: var(--shu);
+  color: var(--ink);
+}
+.config-intro {
+  max-width: 72ch;
+  margin-bottom: var(--space-4);
+}
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+.config-card {
+  display: grid;
+  gap: var(--space-3);
+}
+.config-card > form {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+.config-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.config-card-head .section-title {
+  margin-bottom: 0;
+}
+.config-card .field {
+  width: 100%;
+}
+.config-card .input {
+  max-width: none;
+}
+.config-paths {
+  min-height: 120px;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+.config-card .input.config-cap {
+  max-width: 180px;
+}
+.config-facts {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.config-facts dt {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+}
+.config-facts dd {
+  margin: 0;
+}
+.config-paths-list {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+@media (max-width: 760px) {
+  /* The five tabs wrap: the tab on screen is never scrolled out of sight. */
+  .config-tabs ul {
+    flex-wrap: wrap;
+  }
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+  .config-card > form,
+  .config-card > form .button,
+  .config-card form .button {
+    width: 100%;
+  }
+  .config-card .button {
+    min-height: var(--control-h-touch);
+    justify-content: center;
+  }
+}

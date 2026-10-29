@@ -209,3 +209,17 @@ test('a result: the status of a refused key, and where the cost comes from', () 
   assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), costSource: 'unknown', costUsd: 0 } }).ok);
   assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), costSource: 'guess' } }).ok, false);
 });
+
+test('a job carries the models of the config of its repository, or none (REV-12)', () => {
+  assert.ok(parseClaimRequest({ hasProviderKey: true, features: ['providers', 'models'], ownProvider: null }).ok);
+  const models = { provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: 'z-ai/glm-5.3' };
+  assert.deepEqual(parseJob({ ...job(), models }), { ok: true, value: { ...job(), models } });
+  assert.ok(parseJob({ ...job(), models: { provider: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11', model: 'claude-sonnet-5-5', fallback: null } }).ok);
+  // A job without the key: what a runner without the feature gets.
+  assert.deepEqual(parseJob(job()), { ok: true, value: job() });
+  // A model is never an option of a command, nor holds a space; a provider is `service` or an id.
+  assert.equal(parseJob({ ...job(), models: { ...models, model: '-x' } }).ok, false);
+  assert.equal(parseJob({ ...job(), models: { ...models, fallback: 'a b' } }).ok, false);
+  assert.equal(parseJob({ ...job(), models: { ...models, provider: 'openrouter' } }).ok, false);
+  assert.equal(parseJob({ ...job(), models: { provider: 'service', model: 'x' } }).ok, false);
+});

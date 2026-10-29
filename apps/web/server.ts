@@ -14,6 +14,9 @@ import { createPublisher } from './app/publish/publisher.ts'
 import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
 import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
 import { createAuthStore } from './app/auth/store.ts'
+import { createListChangedFiles } from './app/repo-config/changed-files.ts'
+import { serviceProviders } from './app/repo-config/providers.ts'
+import { createRepoConfigStore } from './app/repo-config/store.ts'
 import { createRepoCheck } from './app/repos/check.ts'
 import { createReposStore } from './app/repos/store.ts'
 import { createAppRouter } from './app/router.ts'
@@ -112,6 +115,8 @@ let repos = {
 let router = createAppRouter({
   auth,
   repos,
+  // The Config screen of a repository (REV-12). The providers of the org come with REV-11.
+  repoConfig: { store: createRepoConfigStore(database.sql), providers: serviceProviders, trustedBots: [...config.trustedBots] },
   // The Runners screen (REV-10): registration tokens, trust and revocation, for the admins of an org.
   runnersAdmin: createRunnersAdminStore(database.sql),
   checkDatabase: createDatabaseCheck(database.sql),
@@ -122,6 +127,11 @@ let router = createAppRouter({
     trustedBots: config.trustedBots,
     botLogin: config.botLogin,
     apply: createWebhookStore(database.db, {
+      // REV-12: the paths of the config of a repository read the files of the pull request.
+      listChangedFiles:
+        mintInstallationToken && config.githubApp
+          ? createListChangedFiles({ mintInstallationToken, apiUrl: config.githubApp.apiUrl })
+          : undefined,
       // The commands of the comments (REV-7): `@kento review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
         db: database.db,

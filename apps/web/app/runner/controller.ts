@@ -18,6 +18,7 @@ import { createController } from 'remix/router'
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
+import { jobModels } from '../repo-config/model.ts'
 import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { RunnerRow, RunnerStore } from './store.ts'
@@ -185,6 +186,20 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               kind: job.kind,
               ...(resolve ? { threads: resolve.threads.length } : {}),
             })
+            // REV-12. The models of the config, to a runner that reads them, and only when the job
+            // also carries their provider: `service`, or an entry of `providers`. Else the runner
+            // would fail the job; it runs the models of the engine instead, and the log says why.
+            let models = jobModels(job.config)
+            let wantsModels = body.features?.includes('models') ?? false
+            let reachable = models !== null && (providers ? providers.some((p) => p.id === models.provider) : models.provider === 'service')
+            if (models && (!wantsModels || !reachable)) {
+              log('warn', 'job.models_not_sent', {
+                jobId: job.id,
+                runnerId: runner.id,
+                provider: models.provider,
+                reason: wantsModels ? 'the job does not carry the provider of the config' : 'runner does not read the models of the config',
+              })
+            }
             let message = {
               id: job.id,
               attempt: job.attempt,
@@ -195,6 +210,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               leaseExpiresAt: job.leaseExpiresAt.toISOString(),
               provider,
               ...(providers ? { providers } : {}),
+              ...(models && wantsModels && reachable ? { models } : {}),
             }
             return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
           }

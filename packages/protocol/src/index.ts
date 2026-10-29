@@ -60,8 +60,10 @@ export type ProviderKind = (typeof PROVIDER_KINDS)[number];
  *
  * - `providers`: the job can carry `providers` (several kinds of provider, their base URL and their
  *   models), and the result of a failure can carry `providerStatus`, and a review its `costSource`.
+ * - `models`: the job can carry `models`, the provider and the models that the config of its
+ *   repository chose for its level (REV-12).
  */
-export const FEATURES = ['providers'] as const;
+export const FEATURES = ['providers', 'models'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -137,6 +139,15 @@ export type ResolveInput = { threads: ResolveThread[]; open: number; waiting: nu
 export type JobProvider = { id: string; kind: ProviderKind; apiKey: string | null; baseUrl: string | null; models: string[] };
 
 /**
+ * The models of a job, with the feature `models` (REV-12): what the config of its repository chose
+ * for its level, resolved (org, then repository) when the job was queued. `provider` is the `id` of
+ * an entry of `providers`, or `service`; `fallback` is a second model of the same provider, that
+ * takes over when the call of `model` fails. They replace the models of the provider for the level;
+ * the other settings of the level (reasoning, limits, context) stay.
+ */
+export type JobModels = { provider: string; model: string; fallback: string | null };
+
+/**
  * A job, as the runner receives it.
  *
  * - `installationToken`: a GitHub token for this repository only, with `contents: read`, valid one
@@ -144,7 +155,9 @@ export type JobProvider = { id: string; kind: ProviderKind; apiKey: string | nul
  * - `provider`: for a runner of an earlier release only: the OpenRouter key of the service. Only a
  *   trusted runner without its own key gets it; otherwise it is null and the runner uses its own key.
  *   A runner with the feature `providers` gets null here, and reads `providers`.
- * - `providers`: with the feature `providers` only. The runner calls the first one.
+ * - `providers`: with the feature `providers` only. The runner calls the first one, or the one that
+ *   `models` names.
+ * - `models`: with the feature `models` only, and only for a job queued with a config (REV-12).
  * - `attempt`: the number of this claim of the job, from 1. The heartbeat and the result send it.
  */
 type JobBase = {
@@ -157,6 +170,7 @@ type JobBase = {
   leaseExpiresAt: string;
   provider: { kind: 'openrouter'; apiKey: string } | null;
   providers?: JobProvider[];
+  models?: JobModels;
 };
 
 /** A review job has no `resolve` key: a runner of an earlier release reads it as before. */
@@ -198,6 +212,13 @@ const jobBase = {
   leaseExpiresAt: isoDate,
   provider: nullable(obj({ kind: oneOf(['openrouter'] as const), apiKey: str({ min: 1, max: 500 }) })),
   providers: optional(arr(jobProvider, { max: 4 })),
+  models: optional(
+    obj({
+      provider: str({ min: 1, max: 36, pattern: /^(service|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/ }),
+      model: str({ min: 1, max: 200, pattern: MODEL_ID }),
+      fallback: nullable(str({ min: 1, max: 200, pattern: MODEL_ID })),
+    }),
+  ),
 };
 const resolveComment = obj({
   id: int({ min: 1, max: Number.MAX_SAFE_INTEGER }),

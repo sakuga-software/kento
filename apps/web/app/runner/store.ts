@@ -25,6 +25,8 @@ export interface ClaimedJob {
   githubInstallationId: number
   /** Whether the runner is trusted now, read in the statement that claims the job. */
   runnerTrusted: boolean
+  /** REV-12. The config resolved when the job was queued (`JobConfig`), or null for a job queued before it. */
+  config: unknown
 }
 
 /**
@@ -194,14 +196,14 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             for update of jobs skip locked
             limit 1
           )
-          returning id, attempts, kind, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at
+          returning id, attempts, kind, repo_id, level, pr_number, head_sha, base_ref, lease_expires_at, config
         )
         select
           claimed.id, claimed.attempts as "attempt", claimed.kind, claimed.level, claimed.pr_number as "prNumber", claimed.head_sha as "headSha",
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
           orgs.github_installation_id as "githubInstallationId",
-          me.trusted as "runnerTrusted"
+          me.trusted as "runnerTrusted", claimed.config
         from claimed
         cross join me
         join repos on repos.id = claimed.repo_id

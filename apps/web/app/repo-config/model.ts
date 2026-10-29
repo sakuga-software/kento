@@ -1,0 +1,305 @@
+import { LEVELS as ENGINE_LEVELS } from '@sakuga-review/engine/levels'
+import type { Level } from '@sakuga-review/protocol'
+
+// The config of a repository (REV-12) and of its org: what each key means, how the screen and the
+// service read the JSON of the database, and how a repository inherits from its org. No database,
+// no network.
+//
+// A key that a config does not hold is inherited: the repository takes the value of its org, and
+// the org the value of Kentō. « Revenir à l'org » removes the key from the config of the repository.
+
+export const LEVEL_KEYS = ['lite', 'balanced', 'heavy'] as const satisfies readonly Level[]
+
+/**
+ * The provider of a level, its model, and the model of the same provider that takes over when the
+ * call fails. `provider`: `service` (the key of the service, OpenRouter), or the id of a provider of
+ * the org (REV-11).
+ */
+export interface LevelModels {
+  provider: string
+  model: string
+  fallback: string | null
+}
+
+/**
+ * What creates a review job without a command:
+ * - `push`: each push of a pull request that is not a draft, and its passage to « Ready for review »;
+ * - `ready`: only the opening of a pull request that is not a draft, its passage to « Ready for
+ *   review », and its reopening; a later push creates nothing;
+ * - `command`: nothing. Only a command in a comment (`@kento review`) creates a job.
+ */
+export const TRIGGERS = ['push', 'ready', 'command'] as const
+export type Trigger = (typeof TRIGGERS)[number]
+
+/** What a repository or an org sets. Each key is optional: absent, it is inherited. */
+export interface ConfigOverrides {
+  models?: Partial<Record<Level, LevelModels>>
+  trigger?: Trigger
+  /**
+   * Paths of the repository, as patterns (`apps/web/**`, `*.md`). A pull request that changes no file
+   * under one of them gets no automatic job. Empty: every path.
+   */
+  paths?: string[]
+  /** The most that the automatic reviews of the repository can cost in a calendar month (UTC), in dollars. Null: no limit. */
+  monthlyCapUsd?: number | null
+}
+
+/** The keys that « Revenir à l'org » removes one by one. */
+export const CONFIG_FIELDS = ['models.lite', 'models.balanced', 'models.heavy', 'trigger', 'paths', 'monthlyCapUsd'] as const
+export type ConfigField = (typeof CONFIG_FIELDS)[number]
+
+/** Where a value of the resolved config comes from. */
+export type Source = 'repo' | 'org' | 'kento'
+
+export interface Resolved<T> {
+  value: T
+  source: Source
+}
+
+/** The config that a job applies: each key resolved, with where it came from. */
+export interface ResolvedConfig {
+  models: Record<Level, Resolved<LevelModels>>
+  trigger: Resolved<Trigger>
+  paths: Resolved<string[]>
+  monthlyCapUsd: Resolved<number | null>
+}
+
+/** The provider of the service: OpenRouter, with the key of the service or of the runner (REV-11 names it `service`). */
+export const SERVICE_PROVIDER = 'service'
+
+/** The values of Kentō: the levels of the engine, every push, every path, no limit. */
+export function kentoDefaults(): Required<ConfigOverrides> & { models: Record<Level, LevelModels> } {
+  let models = {} as Record<Level, LevelModels>
+  for (let level of LEVEL_KEYS) {
+    let [primary, fallback] = ENGINE_LEVELS[level].models
+    models[level] = { provider: SERVICE_PROVIDER, model: primary!, fallback: fallback ?? null }
+  }
+  return { models, trigger: 'push', paths: [], monthlyCapUsd: null }
+}
+
+/** Resolves a key: the repository, else its org, else Kentō. */
+function pick<T>(repo: T | undefined, org: T | undefined, kento: T): Resolved<T> {
+  if (repo !== undefined) return { value: repo, source: 'repo' }
+  if (org !== undefined) return { value: org, source: 'org' }
+  return { value: kento, source: 'kento' }
+}
+
+export function resolveConfig(org: ConfigOverrides, repo: ConfigOverrides): ResolvedConfig {
+  let kento = kentoDefaults()
+  let models = {} as Record<Level, Resolved<LevelModels>>
+  for (let level of LEVEL_KEYS) models[level] = pick(repo.models?.[level], org.models?.[level], kento.models[level])
+  return {
+    models,
+    trigger: pick(repo.trigger, org.trigger, kento.trigger),
+    paths: pick(repo.paths, org.paths, kento.paths),
+    monthlyCapUsd: pick(repo.monthlyCapUsd, org.monthlyCapUsd, kento.monthlyCapUsd),
+  }
+}
+
+/** What the service writes in `jobs.config` and sends to the runner: the models of the level of the job. */
+export interface JobConfig {
+  /** The version of the config of the repository when the job was queued; 0 before the first change. */
+  repoConfigVersion: number
+  models: LevelModels
+  /** Where the models came from, for the logs. */
+  source: Source
+}
+
+export function jobConfig(resolved: ResolvedConfig, level: Level, repoConfigVersion: number): JobConfig {
+  let models = resolved.models[level]
+  return { repoConfigVersion, models: models.value, source: models.source }
+}
+
+// --- The JSON of the database -----------------------------------------------------------------
+
+/** As MODEL_ID of the protocol (REV-11): an id of a model at its provider. */
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/
+const PROVIDER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+export const MAX_PATHS = 20
+export const MAX_PATH_LENGTH = 200
+/** The highest monthly limit that the screen takes: the column of the costs holds less than 10,000 dollars a review. */
+export const MAX_CAP_USD = 100_000
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** A `jsonb` value as postgres.js gives it next to drizzle: parsed, or still a JSON string. */
+function parsed(value: unknown): unknown {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function readLevelModels(value: unknown): LevelModels | null {
+  if (!isObject(value)) return null
+  let { provider, model, fallback } = value
+  if (typeof provider !== 'string' || !PROVIDER.test(provider)) return null
+  if (typeof model !== 'string' || !MODEL.test(model)) return null
+  if (fallback !== null && (typeof fallback !== 'string' || !MODEL.test(fallback))) return null
+  return { provider, model, fallback }
+}
+
+/**
+ * Reads a config of the database. A key with a wrong value is dropped, and so inherited: a row that
+ * an older or newer release wrote never stops the enqueue of a job.
+ */
+export function readOverrides(json: unknown): ConfigOverrides {
+  let value = parsed(json)
+  if (!isObject(value)) return {}
+  let out: ConfigOverrides = {}
+  if (isObject(value.models)) {
+    let models: Partial<Record<Level, LevelModels>> = {}
+    for (let level of LEVEL_KEYS) {
+      let entry = readLevelModels(value.models[level])
+      if (entry) models[level] = entry
+    }
+    if (Object.keys(models).length > 0) out.models = models
+  }
+  if (typeof value.trigger === 'string' && (TRIGGERS as readonly string[]).includes(value.trigger)) out.trigger = value.trigger as Trigger
+  if (Array.isArray(value.paths) && value.paths.length <= MAX_PATHS && value.paths.every((p) => typeof p === 'string' && checkPattern(p) === null)) {
+    out.paths = value.paths as string[]
+  }
+  if (value.monthlyCapUsd === null) out.monthlyCapUsd = null
+  else if (typeof value.monthlyCapUsd === 'number' && Number.isFinite(value.monthlyCapUsd) && value.monthlyCapUsd >= 0 && value.monthlyCapUsd <= MAX_CAP_USD) {
+    out.monthlyCapUsd = value.monthlyCapUsd
+  }
+  return out
+}
+
+/** The config without one key: « Revenir à l'org ». */
+export function withoutField(config: ConfigOverrides, field: ConfigField): ConfigOverrides {
+  let out: ConfigOverrides = { ...config, ...(config.models ? { models: { ...config.models } } : {}) }
+  if (field.startsWith('models.')) {
+    let level = field.slice('models.'.length) as Level
+    delete out.models?.[level]
+    if (out.models && Object.keys(out.models).length === 0) delete out.models
+  } else {
+    delete out[field as 'trigger' | 'paths' | 'monthlyCapUsd']
+  }
+  return out
+}
+
+/** Whether the repository sets this key itself. */
+export function hasField(config: ConfigOverrides, field: ConfigField): boolean {
+  if (field.startsWith('models.')) return config.models?.[field.slice('models.'.length) as Level] !== undefined
+  return config[field as 'trigger' | 'paths' | 'monthlyCapUsd'] !== undefined
+}
+
+// --- Paths ------------------------------------------------------------------------------------
+
+/** Why a pattern is refused, or null. */
+export function checkPattern(pattern: string): string | null {
+  if (pattern.length === 0) return 'un motif vide'
+  if (pattern.length > MAX_PATH_LENGTH) return `plus de ${MAX_PATH_LENGTH} caractères`
+  if (pattern.startsWith('/')) return 'un chemin commence sans « / », depuis la racine du repo'
+  if (pattern.includes('\\') || [...pattern].some((char) => char.charCodeAt(0) < 0x20)) return 'une barre oblique inverse ou un caractère de contrôle'
+  if (pattern.split('/').includes('..')) return '« .. » ne désigne rien dans un repo'
+  return null
+}
+
+/**
+ * A pattern as a regular expression: `**` matches any number of folders, `*` and `?` stay in one
+ * name. A pattern with no `*`, `?` or final `/` also matches the files under it, as a folder.
+ */
+export function patternToRegExp(pattern: string): RegExp {
+  let source = ''
+  for (let i = 0; i < pattern.length; i++) {
+    let char = pattern[i]!
+    if (char === '*' && pattern[i + 1] === '*') {
+      // `**/` matches zero or more folders; a final `**` matches the rest.
+      if (pattern[i + 2] === '/') {
+        source += '(?:.*/)?'
+        i += 2
+      } else {
+        source += '.*'
+        i += 1
+      }
+    } else if (char === '*') source += '[^/]*'
+    else if (char === '?') source += '[^/]'
+    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  let folder = pattern.endsWith('/') || !/[*?]/.test(pattern)
+  return new RegExp(`^${source}${folder ? (pattern.endsWith('/') ? '.*' : '(?:/.*)?') : ''}$`)
+}
+
+/** Whether one of the changed files is under one of the patterns. No pattern: every path counts. */
+export function pathsMatch(patterns: readonly string[], files: readonly string[]): boolean {
+  if (patterns.length === 0) return true
+  let regexps = patterns.map(patternToRegExp)
+  return files.some((file) => regexps.some((re) => re.test(file)))
+}
+
+// --- The forms of the screen ------------------------------------------------------------------
+
+export type FormResult<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string> }
+
+function field(form: FormData, name: string): string {
+  let value = form.get(name)
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * The form of one level: the provider, its model, then the fallback model (empty: none). The
+ * provider must be one of `providers`, the providers that the org can use.
+ */
+export function readModelsForm(form: FormData, providers: readonly string[]): FormResult<LevelModels> {
+  let errors: Record<string, string> = {}
+  let provider = field(form, 'provider')
+  let model = field(form, 'model')
+  let fallback = field(form, 'fallback')
+  if (!providers.includes(provider)) errors.provider = 'Choisissez un provider de l’org.'
+  if (model === '') errors.model = 'Indiquez un modèle.'
+  else if (!MODEL.test(model)) errors.model = MODEL_HELP
+  if (fallback !== '' && !MODEL.test(fallback)) errors.fallback = MODEL_HELP
+  else if (fallback !== '' && fallback === model) errors.fallback = 'Le repli doit être un autre modèle, ou rester vide.'
+  if (Object.keys(errors).length > 0) return { ok: false, errors }
+  return { ok: true, value: { provider, model, fallback: fallback === '' ? null : fallback } }
+}
+
+const MODEL_HELP = 'Un identifiant de modèle : lettres, chiffres et « . _ : / @ - », 200 caractères au plus.'
+
+export function readTriggerForm(form: FormData): FormResult<Trigger> {
+  let value = field(form, 'trigger')
+  if (!(TRIGGERS as readonly string[]).includes(value)) return { ok: false, errors: { trigger: 'Choisissez un déclenchement.' } }
+  return { ok: true, value: value as Trigger }
+}
+
+export function readPathsForm(form: FormData): FormResult<string[]> {
+  let lines = field(form, 'paths')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  let unique = [...new Set(lines)]
+  if (unique.length > MAX_PATHS) return { ok: false, errors: { paths: `${MAX_PATHS} motifs au plus.` } }
+  for (let pattern of unique) {
+    let problem = checkPattern(pattern)
+    if (problem) return { ok: false, errors: { paths: `« ${pattern.slice(0, 60)} » : ${problem}.` } }
+  }
+  return { ok: true, value: unique }
+}
+
+/** The monthly limit: a number of dollars with a comma or a dot, or empty for no limit. */
+export function readCapForm(form: FormData): FormResult<number | null> {
+  let raw = field(form, 'monthlyCapUsd').replace(/\s/g, '').replace(',', '.')
+  if (raw === '') return { ok: true, value: null }
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return { ok: false, errors: { monthlyCapUsd: 'Un montant en dollars, par exemple 25 ou 12,50 ; vide pour aucun plafond.' } }
+  let value = Number(raw)
+  if (value > MAX_CAP_USD) return { ok: false, errors: { monthlyCapUsd: `${MAX_CAP_USD.toLocaleString('fr-FR')} $ au plus.` } }
+  return { ok: true, value }
+}
+
+export function readLevelForm(form: FormData): FormResult<Level> {
+  let value = field(form, 'defaultLevel')
+  if (!(LEVEL_KEYS as readonly string[]).includes(value)) return { ok: false, errors: { defaultLevel: 'Choisissez un niveau.' } }
+  return { ok: true, value: value as Level }
+}
+
+/** The models of `jobs.config`, as the claim sends them. Null: a job queued before REV-12, or a value that is not a config. */
+export function jobModels(json: unknown): LevelModels | null {
+  let value = parsed(json)
+  return isObject(value) ? readLevelModels(value.models) : null
+}

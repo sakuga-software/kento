@@ -490,7 +490,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -620,11 +620,53 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models'], ownProvider: 'ollama' });
 });
 
 test('the protocol and the engine know the same providers', async () => {
   const engine = await import('@sakuga-review/engine');
   const protocol = await import('@sakuga-review/protocol');
   assert.deepEqual([...protocol.PROVIDER_KINDS], [...engine.PROVIDER_KINDS]);
+});
+
+// --- models of the config of the repository (REV-12) -------------------------------------------
+
+test('the models of the config replace those of the level, and the fallback takes over (REV-12)', async () => {
+  const { api, results } = fakeApi();
+  const asked: string[] = [];
+  const stub = (async (url: string, init: RequestInit) => {
+    asked.push(JSON.parse(String(init.body)).model);
+    // The first model fails: the fallback of the config answers.
+    if (asked.length === 1) return new Response('{"error":{"message":"overloaded"}}', { status: 503 });
+    return stubModel().fetch(url, init);
+  }) as typeof fetch;
+  const models = { provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: 'z-ai/glm-5.3' };
+  // A service without `providers`: the key of the runner, at OpenRouter.
+  assert.equal(await runJob(job({ level: 'balanced', models }), deps(api, stub, RUNNER_KEY)), 'done');
+  assert.deepEqual([...new Set(asked)], ['anthropic/claude-sonnet-5.5', 'z-ai/glm-5.3']);
+  assert.equal(results[0]!.outcome === 'done' && results[0]!.review.model, 'z-ai/glm-5.3');
+});
+
+test('with providers, the models of the config pick their provider by id (REV-12)', async () => {
+  const { api } = fakeApi();
+  const model = stubAnthropic();
+  const service = { id: 'service', kind: 'openrouter' as const, apiKey: SERVICE_KEY, baseUrl: null, models: [] };
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null };
+  assert.equal(await runJob(job({ providers: [service, anthropicProvider(ANTHROPIC_KEY)], models }), deps(api, model.fetch)), 'done');
+  assert.equal(model.calls[0]!.url, 'https://api.anthropic.com/v1/messages');
+  assert.equal(model.calls[0]!.body.model, 'claude-sonnet-5-5');
+});
+
+test('a config whose provider is not in the job fails it with the reason, and calls no model (REV-12)', async () => {
+  const model = stubModel();
+  const one = fakeApi();
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null };
+  assert.equal(await runJob(job({ models }), deps(one.api, model.fetch, RUNNER_KEY)), 'failed');
+  const two = fakeApi();
+  const service = { id: 'service', kind: 'openrouter' as const, apiKey: SERVICE_KEY, baseUrl: null, models: [] };
+  assert.equal(await runJob(job({ providers: [service], models }), deps(two.api, model.fetch, RUNNER_KEY)), 'failed');
+  assert.deepEqual(model.keys, [], 'no model call');
+  for (const { results } of [one, two]) {
+    assert.equal(results[0]!.outcome === 'failed' && results[0]!.reason, `the provider ${PROVIDER_ID} that the config chose is not in the job`);
+  }
 });

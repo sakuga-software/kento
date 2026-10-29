@@ -16,6 +16,9 @@ import { SignInPage } from '../app/ui/sign-in.tsx'
 import type { Theme } from '../app/ui/theme.ts'
 import type { RunnersScreen } from '../app/runner/admin.ts'
 import { RunnersPage } from '../app/ui/runners.tsx'
+import { serviceProviders } from '../app/repo-config/providers.ts'
+import type { RepoConfigView } from '../app/repo-config/store.ts'
+import { ConfigPage, type ConfigPageProps } from '../app/ui/config.tsx'
 
 const OUT = new URL('../../../design/socle/frames/', import.meta.url)
 // From design/socle/frames/ to the assets of the app.
@@ -204,6 +207,57 @@ const reposFrames: { file: string; node: unknown }[] = [
   { file: 'repos-member-sumi-390.html', node: reposPage('sumi', member) },
 ]
 
+// REV-12: the Config screen of orchard.
+const CONFIG_OUT = new URL('../../../design/config/frames/', import.meta.url)
+const orchard_CONFIG: RepoConfigView = {
+  id: 'r-orchard',
+  fullName: 'sakuga-software/orchard',
+  enabled: true,
+  defaultLevel: 'lite',
+  config: {
+    models: { balanced: { provider: 'service', model: 'anthropic/claude-sonnet-5.6', fallback: 'anthropic/claude-sonnet-5.5' } },
+    trigger: 'ready',
+    paths: ['apps/web', '**/*.sql'],
+    monthlyCapUsd: 25,
+  },
+  orgConfig: {},
+  version: 7,
+  updatedBy: 'alex',
+  updatedAt: new Date('2026-10-27T17:02:00Z'),
+  spentThisMonthUsd: 3.42,
+}
+const PROVIDERS = await serviceProviders.list('org-1')
+
+function configPage(theme: Theme, viewer: Viewer, extra: Partial<ConfigPageProps> = {}) {
+  return (
+    <ConfigPage
+      frame={frame(theme, viewer, '/repos/r-orchard/config')}
+      view={orchard_CONFIG}
+      providers={PROVIDERS}
+      tab="models"
+      notice={null}
+      form={null}
+      trustedBots={['sakuga-agent[bot]']}
+      {...extra}
+    />
+  )
+}
+
+const configFrames: { file: string; node: unknown }[] = [
+  { file: 'config-models-admin-paper.html', node: configPage('paper', admin) },
+  { file: 'config-trigger-admin-sumi.html', node: configPage('sumi', admin, { tab: 'trigger' }) },
+  { file: 'config-levels-admin-paper.html', node: configPage('paper', admin, { tab: 'levels', notice: { kind: 'saved', version: 8 } }) },
+  {
+    file: 'config-conflict-admin-sumi.html',
+    node: configPage('sumi', admin, {
+      notice: { kind: 'conflict', version: 8, updatedBy: 'camille', updatedAt: new Date('2026-10-27T17:05:00Z') },
+      form: { field: 'models.heavy', values: { provider: 'service', model: 'claude opus', fallback: '' }, errors: { model: 'Un identifiant de modèle : lettres, chiffres et « . _ : / @ - », 200 caractères au plus.' } },
+    }),
+  },
+  { file: 'config-models-admin-paper-390.html', node: configPage('paper', admin) },
+  { file: 'config-trigger-member-sumi-390.html', node: configPage('sumi', member, { tab: 'trigger' }) },
+]
+
 async function writeFrames(out: URL, assets: string, list: { file: string; node: unknown }[], label: string) {
   await mkdir(out, { recursive: true })
   for (let { file, node } of list) {
@@ -217,3 +271,4 @@ async function writeFrames(out: URL, assets: string, list: { file: string; node:
 await writeFrames(OUT, ASSETS, frames, 'design/socle/frames/')
 await writeFrames(RUNNERS_OUT, ASSETS, runnersFrames, 'design/runners/frames/')
 await writeFrames(REPOS_OUT, ASSETS, reposFrames, 'design/repos/frames/')
+await writeFrames(CONFIG_OUT, ASSETS, configFrames, 'design/config/frames/')

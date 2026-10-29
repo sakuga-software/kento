@@ -57,6 +57,13 @@
       "when": 1793269132455,
       "tag": "0007_repos_screen",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793273932764,
+      "tag": "0008_repo_config",
+      "breakpoints": true
     }
   ]
 }

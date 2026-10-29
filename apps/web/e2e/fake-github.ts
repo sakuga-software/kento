@@ -7,6 +7,9 @@ import * as http from 'node:http'
 
 export const FAKE_ORG = { installationId: 4242, accountId: 9000, login: 'sakuga-software' }
 
+/** The webhook secret of the server of the tests: e2e/config.spec.ts signs its events with it. */
+export const E2E_WEBHOOK_SECRET = 'e2e-webhook-secret-0123456789abcdef'
+
 /** The accounts of the fake, and their role in the org: `null` is not a member. */
 export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' | 'member' | null }> = {
   alex: { id: 101, name: 'Alex Martin', role: 'admin' },
