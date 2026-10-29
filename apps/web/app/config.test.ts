@@ -27,6 +27,55 @@ describe('loadConfig', () => {
       githubUrl: 'https://github.com',
       providerApiKey: null,
       botLogin: 'sakuga-review[bot]',
+      signIn: null,
+    })
+  })
+
+  describe('the GitHub sign-in', () => {
+    let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    let app = {
+      DATABASE_URL: url,
+      GITHUB_APP_ID: '12345',
+      GITHUB_APP_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    }
+    let signIn = {
+      KENTO_PUBLIC_URL: 'https://review.sakuga.dev/',
+      GITHUB_APP_CLIENT_ID: 'Iv23liesB1xzywavcnv2',
+      GITHUB_APP_CLIENT_SECRET: 'client-secret-value-never-printed',
+      KENTO_SESSION_SECRET: `${'s'.repeat(32)}, ${'t'.repeat(40)}`,
+    }
+
+    it('reads its four variables, with the App', () => {
+      let config = loadConfig({ ...app, ...signIn })
+      assert.equal(config.signIn?.publicUrl.href, 'https://review.sakuga.dev/')
+      assert.equal(config.signIn?.clientId, 'Iv23liesB1xzywavcnv2')
+      assert.deepEqual(config.signIn?.sessionSecrets, ['s'.repeat(32), 't'.repeat(40)])
+      assert.equal(config.signIn?.oauthUrl, 'https://github.com')
+      assert.equal(config.signIn?.apiUrl, 'https://api.github.com')
+    })
+
+    it('names the missing variables, and needs the App, never printing a value', () => {
+      let { GITHUB_APP_CLIENT_SECRET: _secret, ...partial } = signIn
+      let error = errorOf(() => loadConfig({ ...app, ...partial }))
+      assert.match(error.message, /the GitHub sign-in also needs GITHUB_APP_CLIENT_SECRET/)
+      assert.throws(() => loadConfig({ DATABASE_URL: url, ...signIn }), /needs GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY/)
+      let short = errorOf(() => loadConfig({ ...app, ...signIn, KENTO_SESSION_SECRET: 'short-secret' }))
+      assert.match(short.message, /KENTO_SESSION_SECRET must have at least 32 characters/)
+      assert.doesNotMatch(short.message, /short-secret|client-secret-value/)
+    })
+
+    it('wants the https origin of the service, or http on the machine itself', () => {
+      for (let value of ['http://review.sakuga.dev', 'https://review.sakuga.dev/app', 'https://u:p@review.sakuga.dev', 'review']) {
+        assert.throws(() => loadConfig({ ...app, ...signIn, KENTO_PUBLIC_URL: value }), /KENTO_PUBLIC_URL must be/, value)
+      }
+      assert.equal(loadConfig({ ...app, ...signIn, KENTO_PUBLIC_URL: 'http://127.0.0.1:3488' }).signIn?.publicUrl.origin, 'http://127.0.0.1:3488')
+    })
+
+    it('signs in on a fake GitHub of this machine over plain HTTP, and on GITHUB_URL otherwise', () => {
+      let local = loadConfig({ ...app, ...signIn, GITHUB_API_URL: 'http://127.0.0.1:55492' })
+      assert.equal(local.signIn?.oauthUrl, 'http://127.0.0.1:55492')
+      let enterprise = loadConfig({ ...app, ...signIn, GITHUB_API_URL: 'https://ghe.example.com/api/v3' })
+      assert.equal(enterprise.signIn?.oauthUrl, 'https://ghe.example.com')
     })
   })
 
@@ -163,3 +212,12 @@ describe('loadConfig', () => {
     assert.throws(() => loadConfig({}), /DATABASE_URL is required/)
   })
 })
+
+function errorOf(fn: () => unknown): Error {
+  try {
+    fn()
+  } catch (error) {
+    return error as Error
+  }
+  throw new Error('expected an error')
+}

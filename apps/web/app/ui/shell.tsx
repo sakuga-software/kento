@@ -5,6 +5,7 @@ import { Document } from './document.tsx'
 import {
   DashboardIcon,
   EyeIcon,
+  SignOutIcon,
   FindingsIcon,
   MarkGlyph,
   ReposIcon,
@@ -31,7 +32,10 @@ export interface Viewer {
   avatarUrl: string | null
   /** An admin of the org edits; a member reads. */
   role: 'admin' | 'member'
-  org: { login: string }
+  /** The org on screen. */
+  org: { id: string; login: string }
+  /** Every org where the person is a member; more than one shows a switch. */
+  orgs: { id: string; login: string }[]
 }
 
 /** What every screen gives to the frame. */
@@ -74,12 +78,7 @@ export function Shell(handle: Handle<ShellProps>) {
         <div class="shell">
           <aside class="sidebar" aria-label="Kentō">
             <Mark />
-            {viewer ? (
-              <div class="org">
-                <span class="org-label">Organisation</span>
-                <span class="org-name">{viewer.org.login}</span>
-              </div>
-            ) : null}
+            {viewer ? <OrgCard frame={frame} viewer={viewer} /> : null}
             <nav class="nav" aria-label="Navigation principale">
               <ul>
                 {NAV.map(({ key, label, href, Icon }) => (
@@ -190,9 +189,43 @@ export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
   }
 }
 
+/** The org on screen; a switch when the person is a member of several. */
+function OrgCard(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
+  return () => {
+    let { frame, viewer } = handle.props
+    if (viewer.orgs.length < 2) {
+      return (
+        <div class="org">
+          <span class="org-label">Organisation</span>
+          <span class="org-name">{viewer.org.login}</span>
+        </div>
+      )
+    }
+    return (
+      <form class="org" method="post" action={routes.org.href()}>
+        {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
+        <input type="hidden" name="returnTo" value={frame.path} />
+        <label class="org-label" for="org-switch">
+          Organisation
+        </label>
+        <select class="org-select" id="org-switch" name="orgId">
+          {viewer.orgs.map((org) => (
+            <option value={org.id} selected={org.id === viewer.org.id}>
+              {org.login}
+            </option>
+          ))}
+        </select>
+        <button class="button" type="submit">
+          Changer
+        </button>
+      </form>
+    )
+  }
+}
+
 function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
   return () => {
-    let { viewer } = handle.props
+    let { frame, viewer } = handle.props
     return (
       <div class="who">
         {viewer.avatarUrl ? (
@@ -204,6 +237,12 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
           <span class="who-login">{viewer.login}</span>
           <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Membre'}</span>
         </div>
+        <form method="post" action={routes.signOut.href()}>
+          {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
+          <button class="button button-ghost" type="submit" aria-label="Se déconnecter" title="Se déconnecter">
+            <SignOutIcon />
+          </button>
+        </form>
       </div>
     )
   }

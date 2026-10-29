@@ -304,7 +304,55 @@ where github_comment_id is not null order by created_at desc limit 5;
 select pr_number, left(head_sha, 8), model, cost_usd, published_at from resolutions order by created_at desc limit 5;
 ```
 
-## 10. Each later deployment
+## 10. GitHub sign-in of the screens (REV-8)
+
+The screens of `review.sakuga.dev` sign in with the **user authorization of the GitHub App** « Sakuga
+Review » (the same App, no OAuth App). Deploy the release with REV-8 first: its migration
+`0005_users_sessions` adds the tables `users`, `memberships` and `sessions`. Without the variables
+below, every screen leads to « Connexion indisponible », and nobody gets in: that is safe.
+
+1. GitHub → organization `sakuga-software` → **Settings → Developer settings → GitHub Apps → Sakuga
+   Review → General**:
+   - **Callback URL**: add `https://review.sakuga.dev/auth/github/callback`.
+   - **Expire user authorization tokens**: on (the default). Kentō uses the user token once and
+     keeps none.
+   - **Request user authorization (OAuth) during installation**: off.
+   - **Client secrets → Generate a new client secret**. Copy it once; keep it only in Dokploy.
+   - Note the **Client ID** at the top (`Iv23liesB1xzywavcnv2`).
+   - **Save changes**.
+2. Same App → **Permissions & events → Organization permissions → Members: Read-only**. Save. An owner
+   of `sakuga-software` accepts the new permission (GitHub sends a mail; or **Settings → GitHub Apps →
+   Sakuga Review → Review request**). Without it, nobody but the owner of a personal account can sign
+   in, and the logs show `auth.sign_in_refused`.
+3. Dokploy → `web` → **Environment**, add, then **Deploy**:
+
+   ```sh
+   KENTO_PUBLIC_URL=https://review.sakuga.dev
+   GITHUB_APP_CLIENT_ID=Iv23liesB1xzywavcnv2
+   GITHUB_APP_CLIENT_SECRET=<the client secret of step 1>
+   KENTO_SESSION_SECRET=<openssl rand -hex 32>
+   ```
+
+   `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY` (section 6) are needed too: the service reads the role
+   of a person with an installation token. A missing variable of the four stops the start with
+   `startup.config_invalid` naming it. The log `startup.listening` shows `"signIn": true`.
+4. Check, in this order:
+   - Open `https://review.sakuga.dev/` in a private window: it goes to « Se connecter à Kentō ».
+   - « Continuer avec GitHub » → GitHub asks to authorize « Sakuga Review » once → back on the
+     dashboard, with `alex` and « Admin » at the bottom of the sidebar. The log has
+     `auth.signed_in` with `sakuga-software:admin`.
+   - A member of the org who is not an owner sees « Lecture seule » on every screen.
+   - An account outside of `sakuga-software` comes back to « Accès refusé », and `users` has no row
+     for it.
+
+Rotate the session secret: put the new one first and keep the old one after a comma
+(`KENTO_SESSION_SECRET=<new>,<old>`), deploy; remove the old one 7 days later. Removing it at once
+signs everybody out, and that is the way to end every session now.
+
+Remove a person: remove them from the org on GitHub. Their access ends within 10 minutes (the role is
+read again from GitHub); `delete from users where login = '…'` ends it at once.
+
+## 11. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

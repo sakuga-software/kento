@@ -5,7 +5,7 @@ import { AlertIcon, GitHubIcon, MarkGlyph } from './icons.tsx'
 import type { Theme } from './theme.ts'
 
 /** Why the sign-in page is shown again. Each one has its sentence below. */
-export type SignInNotice = 'not_member' | 'failed' | 'signed_out' | 'expired' | 'disabled'
+export type SignInNotice = 'not_member' | 'failed' | 'signed_out' | 'expired' | 'disabled' | 'unavailable'
 
 const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; text: string }> = {
   not_member: {
@@ -27,6 +27,11 @@ const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; tex
     tone: 'info',
     title: 'Vous êtes déconnecté.',
     text: 'À bientôt.',
+  },
+  unavailable: {
+    tone: 'alert',
+    title: 'GitHub ne répond pas.',
+    text: 'Kentō ne peut pas confirmer votre rôle dans l’organisation. Votre session est gardée : réessayez dans une minute.',
   },
   disabled: {
     tone: 'alert',

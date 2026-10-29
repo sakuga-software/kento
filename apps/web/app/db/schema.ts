@@ -9,6 +9,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   timestamp,
@@ -204,4 +205,58 @@ export const resolutions = pgTable(
     createdAt: createdAt(),
   },
   (table) => [uniqueIndex('resolutions_job_id_idx').on(table.jobId), index('resolutions_repo_pr_idx').on(table.repoId, table.prNumber)],
+)
+
+/** The role of a person in an org, as GitHub gives it: an admin edits, a member reads. */
+export const orgRole = pgEnum('org_role', ['admin', 'member'])
+
+/** A person who signed in with GitHub. Kentō keeps no GitHub token of theirs. */
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** The id of the GitHub account: it never changes, unlike the login. */
+  githubId: bigint('github_id', { mode: 'number' }).notNull().unique(),
+  login: text('login').notNull(),
+  name: text('name'),
+  avatarUrl: text('avatar_url'),
+  lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+})
+
+/**
+ * The role of a user in an org, read from GitHub at sign-in and again when `checked_at` is older
+ * than a few minutes. GitHub is the source: a row is a cache, deleted when GitHub says the person
+ * left the org.
+ */
+export const memberships = pgTable(
+  'memberships',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    role: orgRole('role').notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.orgId] }), index('memberships_org_id_idx').on(table.orgId)],
+)
+
+/**
+ * A browser session. The cookie holds a random id, signed; the table keeps only its SHA-256, so a
+ * copy of the table opens no session. A row ends at `expires_at`, at sign-out, or with its user.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    idHash: text('id_hash').primaryKey(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** The data of `remix/session`: the signed-in user, the CSRF token, the org on screen. */
+    data: jsonb('data').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index('sessions_user_id_idx').on(table.userId), index('sessions_expires_at_idx').on(table.expiresAt)],
 )

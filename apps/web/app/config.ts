@@ -40,7 +40,29 @@ export interface Config {
    * and the reviews of the bot with it.
    */
   botLogin: string
+  /**
+   * The GitHub sign-in of the screens, with the user authorization of the GitHub App. Null when
+   * one of its variables is missing: every screen then shows « Connexion indisponible ».
+   */
+  signIn: SignInConfig | null
 }
+
+export interface SignInConfig {
+  /** The origin of the service as the browser sees it, `https://review.sakuga.dev`. */
+  publicUrl: URL
+  clientId: string
+  /** A secret: never logged. */
+  clientSecret: string
+  /** Signs the session cookie. The first one signs; every one verifies, for a rotation. Secrets. */
+  sessionSecrets: string[]
+  /** Where the browser authorizes: `https://github.com`, a GitHub Enterprise Server, or a local fake. */
+  oauthUrl: string
+  /** The GitHub API, the one of GITHUB_API_URL. */
+  apiUrl: string
+}
+
+/** The shortest session secret that `loadConfig` accepts. */
+export const MIN_SESSION_SECRET_LENGTH = 32
 
 /** The shortest webhook secret that `loadConfig` accepts. `openssl rand -hex 32` gives 64 characters. */
 export const MIN_WEBHOOK_SECRET_LENGTH = 32
@@ -124,6 +146,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     problems.push('GITHUB_URL must be on the server of GITHUB_API_URL')
   }
 
+  let signIn = readSignIn(env, githubApp, githubUrl, problems)
+
   if (problems.length > 0) {
     throw new ConfigError(`Invalid configuration: ${problems.join('; ')}`)
   }
@@ -146,7 +170,79 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     githubUrl,
     providerApiKey: env.KENTO_PROVIDER_API_KEY?.trim() || null,
     botLogin,
+    signIn,
   }
+}
+
+const SIGN_IN_VARIABLES = ['KENTO_PUBLIC_URL', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET', 'KENTO_SESSION_SECRET'] as const
+
+/**
+ * The sign-in needs its four variables and the GitHub App (its installation tokens read the role of
+ * a person in each org). None of them: the sign-in is off. Some of them: a configuration error that
+ * names the missing ones.
+ */
+function readSignIn(
+  env: Record<string, string | undefined>,
+  githubApp: Config['githubApp'],
+  githubUrl: string,
+  problems: string[],
+): SignInConfig | null {
+  let values = Object.fromEntries(SIGN_IN_VARIABLES.map((name) => [name, env[name]?.trim() ?? ''])) as Record<
+    (typeof SIGN_IN_VARIABLES)[number],
+    string
+  >
+  let missing = SIGN_IN_VARIABLES.filter((name) => values[name] === '')
+  if (missing.length === SIGN_IN_VARIABLES.length) return null
+  if (missing.length > 0) {
+    problems.push(`the GitHub sign-in also needs ${missing.join(', ')}`)
+    return null
+  }
+  if (!githubApp) {
+    problems.push('the GitHub sign-in needs GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY, to read the role of a person')
+    return null
+  }
+
+  let publicUrl: URL | null = null
+  try {
+    publicUrl = new URL(values.KENTO_PUBLIC_URL)
+  } catch {
+    // Reported below.
+  }
+  // HTTPS, except on the machine itself: the session cookie is Secure.
+  if (
+    !publicUrl ||
+    !(publicUrl.protocol === 'https:' || (publicUrl.protocol === 'http:' && isLoopback(publicUrl.hostname))) ||
+    publicUrl.pathname !== '/' ||
+    publicUrl.search !== '' ||
+    publicUrl.username !== ''
+  ) {
+    problems.push('KENTO_PUBLIC_URL must be the https:// origin of the service, with no path')
+    return null
+  }
+
+  let sessionSecrets = values.KENTO_SESSION_SECRET.split(',').map((secret) => secret.trim())
+  if (sessionSecrets.some((secret) => secret.length < MIN_SESSION_SECRET_LENGTH)) {
+    problems.push(`KENTO_SESSION_SECRET must have at least ${MIN_SESSION_SECRET_LENGTH} characters in each of its comma-separated secrets`)
+    return null
+  }
+
+  // A fake GitHub on this machine, for the tests in a browser, is served over plain HTTP: it signs
+  // in on the same address as its API. Any other server signs in on GITHUB_URL, over HTTPS.
+  let api = new URL(githubApp.apiUrl)
+  let oauthUrl = api.protocol === 'http:' && isLoopback(api.hostname) ? api.origin : githubUrl
+
+  return {
+    publicUrl: new URL(publicUrl.origin),
+    clientId: values.GITHUB_APP_CLIENT_ID,
+    clientSecret: values.GITHUB_APP_CLIENT_SECRET,
+    sessionSecrets,
+    oauthUrl,
+    apiUrl: githubApp.apiUrl.replace(/\/+$/, ''),
+  }
+}
+
+function isLoopback(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
 }
 
 // GitHub logins and repository names are case-insensitive: the list keeps them in lowercase.

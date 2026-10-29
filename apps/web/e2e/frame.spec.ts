@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { expectNoAxeViolations, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 const SCREENS = [
   { path: '/', title: 'Tableau de bord' },
@@ -11,6 +11,11 @@ const SCREENS = [
 ]
 
 test.describe('the frame of the screens', () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page, 'alex')
+    await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+  })
+
   for (let theme of ['paper', 'sumi'] as const) {
     test(`every screen passes axe in the theme ${theme}`, async ({ page, context, baseURL }) => {
       let errors = watchConsole(page)
@@ -83,6 +88,7 @@ test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
   test('the theme form applies the choice with « Appliquer »', async ({ page }) => {
+    await signIn(page, 'alex')
     await page.goto('/runners')
     let theme = page.getByRole('group', { name: 'Thème' }).locator('visible=true')
     await theme.getByText('Sumi', { exact: true }).click()

@@ -1,5 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page } from '@playwright/test'
+import postgres from 'postgres'
+
+import { FAKE_ORG } from './fake-github.ts'
 
 /** Fails on any WCAG 2.2 A or AA violation that axe finds on the page. */
 export async function expectNoAxeViolations(page: Page) {
@@ -16,4 +19,32 @@ export function watchConsole(page: Page): string[] {
   })
   page.on('pageerror', (error) => errors.push(error.message))
   return errors
+}
+
+/**
+ * Signs in through the sign-in page and the fake GitHub, as one of its accounts
+ * (e2e/fake-github.ts), and puts the org of the fake in the database first.
+ */
+export async function signIn(page: Page, login: 'alex' | 'camille' | 'stranger') {
+  await seedOrg()
+  await page.goto('/login')
+  await page.getByRole('link', { name: 'Continuer avec GitHub' }).click()
+  await page.getByRole('link', { name: `Authorize as ${login}` }).click()
+}
+
+let seeded = false
+
+async function seedOrg() {
+  if (seeded) return
+  let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
+  try {
+    await sql`
+      insert into orgs (github_installation_id, github_account_id, login)
+      values (${FAKE_ORG.installationId}, ${FAKE_ORG.accountId}, ${FAKE_ORG.login})
+      on conflict (github_installation_id) do nothing
+    `
+    seeded = true
+  } finally {
+    await sql.end()
+  }
 }

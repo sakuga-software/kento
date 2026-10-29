@@ -8,10 +8,10 @@ import { createController } from './actions/controller.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
-import { pageRoutes, routes } from './routes.ts'
+import { authRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import { runnerRoutes } from './runner/routes.ts'
-import { createPagesController } from './ui/pages.tsx'
+import { createUiControllers, type AuthDependencies } from './ui/pages.tsx'
 
 /** The stylesheet, the fonts and the one script of the screens, under `/assets/`. */
 const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url))
@@ -24,6 +24,8 @@ export interface AppDependencies {
   webhook: WebhookDependencies
   /** The runner API. Without it, its routes answer 404. */
   runner?: RunnerApiDependencies
+  /** The GitHub sign-in of the screens. Without it, every screen leads to « Connexion indisponible ». */
+  auth?: AuthDependencies | null
 }
 
 export function createAppRouter(deps: AppDependencies) {
@@ -40,7 +42,9 @@ export function createAppRouter(deps: AppDependencies) {
     ],
   })
   router.map(routes, createController(deps))
-  router.map(pageRoutes, createPagesController({ version: deps.version, commit: deps.commit }))
+  let ui = createUiControllers({ version: deps.version, commit: deps.commit, auth: deps.auth ?? null })
+  router.map(pageRoutes, ui.pages)
+  router.map(authRoutes, ui.signIn)
   if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))
   return router
 }

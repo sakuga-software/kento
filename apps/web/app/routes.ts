@@ -6,7 +6,7 @@ export const routes = route({
   githubWebhook: post('/webhooks/github'),
 })
 
-/** The screens, and the forms of their frame. */
+/** The screens, and the forms of their frame. A signed-in member of an org only. */
 export const pageRoutes = route({
   home: get('/'),
   repos: get('/repos'),
@@ -14,4 +14,13 @@ export const pageRoutes = route({
   runners: get('/runners'),
   settings: get('/settings'),
   theme: post('/preferences/theme'),
+  org: post('/preferences/org'),
+  signOut: post('/logout'),
+})
+
+/** The GitHub sign-in. Open to anyone. */
+export const authRoutes = route({
+  signIn: get('/login'),
+  signInGitHub: get('/login/github'),
+  callback: get('/auth/github/callback'),
 })

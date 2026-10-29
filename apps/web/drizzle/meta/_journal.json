@@ -36,6 +36,13 @@
       "when": 1793218321054,
       "tag": "0004_resolutions",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793222178272,
+      "tag": "0005_users_sessions",
+      "breakpoints": true
     }
   ]
 }

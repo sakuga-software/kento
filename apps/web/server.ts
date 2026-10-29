@@ -11,7 +11,11 @@ import { runMigrations } from './app/db/migrate.ts'
 import { createInstallationTokenMinter } from './app/github/installation-token.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
+import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
+import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
+import { createAuthStore } from './app/auth/store.ts'
 import { createAppRouter } from './app/router.ts'
+import { authRoutes } from './app/routes.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -57,7 +61,41 @@ let publisher =
       })
     : null
 
+// The GitHub sign-in of the screens (REV-8). Without its variables, every screen says that the
+// sign-in is not configured, and nobody gets in.
+let sessionStorage = config.signIn ? createPostgresSessionStorage(database.sql) : null
+let auth =
+  config.signIn && config.githubApp && sessionStorage
+    ? {
+        publicUrl: config.signIn.publicUrl,
+        sessionSecrets: config.signIn.sessionSecrets,
+        sessionStorage,
+        provider: createGitHubSignIn({
+          clientId: config.signIn.clientId,
+          clientSecret: config.signIn.clientSecret,
+          redirectUri: new URL(authRoutes.callback.href(), config.signIn.publicUrl),
+          oauthUrl: config.signIn.oauthUrl,
+          apiUrl: config.signIn.apiUrl,
+        }),
+        store: createAuthStore(database.sql),
+        lookupRole: createRoleLookup(config.githubApp),
+      }
+    : null
+
+// Expired sessions leave the table every hour.
+let sweepTimer = sessionStorage
+  ? setInterval(() => {
+      sessionStorage
+        .sweep()
+        .then((deleted) => {
+          if (deleted > 0) log('info', 'sessions.swept', { deleted })
+        })
+        .catch((error) => log('warn', 'sessions.sweep_failed', { error: errorMessage(error) }))
+    }, 60 * 60 * 1000).unref()
+  : null
+
 let router = createAppRouter({
+  auth,
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,
@@ -113,6 +151,7 @@ server.listen(config.port, config.host, () => {
     commit: config.commit,
     kentoRepos: [...config.kentoRepos],
     publisher: publisher !== null,
+    signIn: auth !== null,
   })
   publisher?.start()
 })
@@ -126,6 +165,7 @@ function shutdown(signal: NodeJS.Signals) {
   server.close(async () => {
     await stopLeaseSweeper()
     // A publication in progress ends before the database closes.
+    if (sweepTimer) clearInterval(sweepTimer)
     await publisher?.stop()
     await database.close()
     log('info', 'shutdown.done')

@@ -25,6 +25,25 @@ Server-rendered HTML in French, with `remix/component`, and one small script
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
 - The theme (Papier, Sumi, Appareil) is the cookie `kento_theme` of the browser.
+
+### Sign-in, sessions and roles (`app/auth/`)
+
+- `GET /login` → `GET /login/github` → GitHub → `GET /auth/github/callback`: the user authorization of
+  the GitHub App, authorization code with PKCE and `state`. The user token reads `GET /user` once and
+  is dropped.
+- The role comes from GitHub, never from Kentō: `GET /orgs/{org}/memberships/{login}` with an
+  installation token limited to `members: read`. `admin` edits, `member` reads (the « Lecture seule »
+  banner), `pending` or absent gets nothing. The owner of a personal account is its admin. Someone in
+  none of the orgs of the App is refused, and nothing is written. The role is read again after 10
+  minutes; while GitHub fails, the last one holds 1 hour, then the access ends.
+- Sessions in Postgres (`sessions`): a random id in a signed cookie (`__Host-kento_session`, HttpOnly,
+  Secure, SameSite=Lax, 7 days), only its SHA-256 in the table. A new id at the sign-in, the row
+  deleted at sign-out. A visit writes nothing: only a signed-in session or a sign-in on its way (10
+  minutes) has a row. Expired rows leave every hour.
+- Forms: `cop()` (Sec-Fetch-Site, Origin) and the CSRF token of the session (`csrf()`, the hidden
+  `_csrf` field). The webhook and the runner API are outside of it.
+- Logs: `auth.signed_in`, `auth.sign_in_refused`, `auth.sign_in_failed`, `auth.signed_out`,
+  `auth.access_lost`, `auth.role_check_failed`, `sessions.swept`. No token or secret.
 - REV-9, REV-10, REV-13, REV-14 and REV-18 fill the screens; each one is an empty « Bientôt ici »
   until then.
 
@@ -51,6 +70,13 @@ and the log names the variable, never its value.
 | `GITHUB_URL` | no | the server of `GITHUB_API_URL` | The GitHub server where the runners clone, HTTPS only. It must be on the server of `GITHUB_API_URL` (github.com for `api.github.com`), else the service refuses to start: the installation token of one server never goes to another. |
 | `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service. Sent with a job only to a trusted runner that has no key of its own. A secret. |
 | `KENTO_BOT_LOGIN` | no | `sakuga-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
+| `KENTO_PUBLIC_URL` | for the sign-in | | The https origin of the service as the browser sees it, `https://review.sakuga.dev`. It makes the callback URL, the expected `Origin` of a form, and the `Secure` session cookie. `http://` only on `localhost` or `127.0.0.1`. |
+| `GITHUB_APP_CLIENT_ID` | for the sign-in | | Client ID of the GitHub App, for its user authorization. |
+| `GITHUB_APP_CLIENT_SECRET` | for the sign-in | | Client secret of the GitHub App. A secret. |
+| `KENTO_SESSION_SECRET` | for the sign-in | | Signs the session cookie, 32 characters or more. Comma-separated for a rotation: the first signs, all verify. A secret. |
+
+The sign-in needs its four variables together, plus `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`.
+None of them: the screens say « Connexion indisponible ».
 
 ## `GET /healthz`
 
@@ -179,7 +205,7 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @saku
 | `pnpm -F @sakuga-review/web test`          | Unit tests, no database.                                     |
 | `pnpm -F @sakuga-review/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
 | `pnpm -F @sakuga-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
-| `pnpm -F @sakuga-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px. Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @sakuga-review/web exec playwright install chromium` once. |
+| `pnpm -F @sakuga-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @sakuga-review/web exec playwright install chromium` once. |
 | `pnpm -F @sakuga-review/web design:board`  | Writes the frames of `design/socle/` from the components. |
 
 `test:db` creates one throwaway database per test file on the server of `TEST_DATABASE_URL`, and
