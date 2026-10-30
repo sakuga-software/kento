@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { levelConfig, LEVELS, reviewPullRequest, type Answer } from '../src/index.ts';
+import { fingerprint, levelConfig, LEVELS, reviewPullRequest, type Answer } from '../src/index.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 let repo = '';
@@ -76,6 +76,11 @@ test('reviews from the merge base, anchors the findings and gives the score and 
   assert.deepEqual(
     { anchor: result.findings[0].anchor, blocking: result.findings[0].blocking, range: result.findings[0].suggestion_range },
     { anchor: 2, blocking: true, range: [2, 2] },
+  );
+  // The fingerprint reads the code of the file at the head, not the line number.
+  assert.equal(
+    result.findings[0].fingerprint,
+    fingerprint(result.findings[0], ['export function sum(a: number, b: number) {', '  return a - b;', '}', '']),
   );
   assert.equal(result.score, 2, 'a blocking finding caps the score at 2');
   assert.equal(result.verdict, 'REQUEST_CHANGES');

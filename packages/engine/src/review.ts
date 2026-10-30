@@ -1,4 +1,5 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
+import { fingerprint } from './fingerprint.ts';
 import { anchor, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { levelConfig, type Level, type LevelConfig } from './levels.ts';
@@ -16,8 +17,16 @@ export type ReviewInput = ModelClient & {
   config?: LevelConfig;
 };
 
-/** A finding with where it goes: the changed line it anchors on, and the lines of its suggestion. */
-export type ReviewedFinding = Finding & { anchor: number | null; blocking: boolean; suggestion_range: [number, number] | null };
+/**
+ * A finding with where it goes: the changed line it anchors on, and the lines of its suggestion. Its
+ * fingerprint finds it again on the next push, when its lines moved (fingerprint.ts).
+ */
+export type ReviewedFinding = Finding & {
+  anchor: number | null;
+  blocking: boolean;
+  suggestion_range: [number, number] | null;
+  fingerprint: string;
+};
 
 export type ReviewResult = {
   level: Level;
@@ -58,11 +67,13 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
   const { pack, skipped } = buildPack(input.repoDir, base, input.head, config.context);
   const lines = changedLines(input.repoDir, base, input.head);
   const { answer, usage } = await askModel(input, config, pack);
+  const fileAt = headFiles(input.repoDir, input.head);
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),
     blocking: isBlocking(f, lines),
     suggestion_range: anchor(f, lines) === f.line ? suggestionRange(f, lines) : null,
+    fingerprint: fingerprint(f, fileAt(f.path)),
   }));
   return {
     level: input.level,
@@ -78,5 +89,23 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
     skipped,
     pack,
     lines,
+  };
+}
+
+/** The lines of a file at the head, read once per path. Null: the file is not at the head. */
+function headFiles(repoDir: string, head: string): (path: string) => string[] | null {
+  const cache = new Map<string, string[] | null>();
+  return (path) => {
+    const clean = path.replace(/^\/+/, '');
+    if (!cache.has(clean)) {
+      let lines: string[] | null = null;
+      try {
+        lines = git(repoDir, 'show', `${head}:${clean}`).split('\n');
+      } catch {
+        // A path that the model made up, or a file that the pull request deleted.
+      }
+      cache.set(clean, lines);
+    }
+    return cache.get(clean)!;
   };
 }

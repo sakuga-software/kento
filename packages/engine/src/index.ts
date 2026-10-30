@@ -7,6 +7,7 @@
  * Node 26 or later runs this code as is: no build. Keep to erasable TypeScript syntax, and import
  * with the `.ts` extension. The Action imports it by its relative path, with no install.
  */
+export { codeAround, fingerprint, FINGERPRINT, normalizeTitle } from './fingerprint.ts';
 export { git } from './git.ts';
 export { diffStart, fileChangedSince, fileDiff, inHistory } from './history.ts';
 export { defaultModels, isLevel, LEVEL_COST_CENTS, LEVELS, levelConfig, levelCost, providerLevelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';

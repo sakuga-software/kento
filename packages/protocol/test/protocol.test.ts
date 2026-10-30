@@ -69,6 +69,17 @@ test('a result with a wrong score, an extra key or a missing key fails, with the
   assert.deepEqual(!checked.ok && checked.errors.sort(), ['$.review.extra: is not allowed', '$.review.model: is required', '$.review.score: must be from 1 to 5']);
 });
 
+test('a finding can carry a fingerprint of 16 hexadecimal characters, and nothing else in that key', () => {
+  const withPrint = review();
+  withPrint.findings[0].fingerprint = '0123456789abcdef';
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: withPrint }).ok, true);
+  withPrint.findings[0].fingerprint = '0123456789ABCDEF';
+  assert.deepEqual(parseResultRequest({ outcome: 'done', attempt: 1, review: withPrint }), {
+    ok: false,
+    errors: ['$.review.findings[0].fingerprint: has a wrong format'],
+  });
+});
+
 test('a result with an unknown outcome, a bad finding or too many findings fails', () => {
   assert.equal(parseResultRequest({ outcome: 'maybe' }).ok, false);
   assert.equal(parseResultRequest(null).ok, false);

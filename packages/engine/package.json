@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./findings": "./src/findings.ts",
+    "./fingerprint": "./src/fingerprint.ts",
     "./levels": "./src/levels.ts",
     "./render": "./src/render.ts",
     "./threads": "./src/threads.ts",

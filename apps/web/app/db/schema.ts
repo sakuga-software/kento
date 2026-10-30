@@ -464,3 +464,107 @@ export const webhookDeliveries = pgTable(
     index('webhook_deliveries_received_at_idx').on(table.receivedAt),
   ],
 )
+
+/**
+ * REV-16. The status of a finding on its pull request.
+ *
+ * - `open`: the last review found it, or no review since showed that it is gone.
+ * - `fixed`: a review did not find it again, and its file changed since the review that last found it.
+ * - `stale`: the pull request closed while the finding was open.
+ * - `dismissed`: a person said that it is wrong (with a reason, or a 👎 on its comment). It never
+ *   gets a comment again, even when a review finds it again.
+ * - `wontfix`: a person said that it is right, and that it stays.
+ */
+export const findingStatus = pgEnum('finding_status', ['open', 'fixed', 'stale', 'dismissed', 'wontfix'])
+
+/** What changed the status of a finding. `reopened`: back to `open`, by a review or by a person. */
+export const findingEventType = pgEnum('finding_event_type', ['opened', 'reopened', 'fixed', 'stale', 'dismissed', 'wontfix'])
+
+/**
+ * REV-16. A finding of a pull request, from the first review that found it to its last status. The
+ * reviews of the next pushes find it again by its fingerprint: the path, the rule or the title, and
+ * the code around its line (packages/engine/src/fingerprint.ts). Its fields (line, severity, title)
+ * are those of the last review that found it.
+ */
+export const findings = pgTable(
+  'findings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    /** 16 hexadecimal characters. A review finds the finding again by it first. */
+    fingerprint: text('fingerprint').notNull(),
+    /**
+     * The key of the finding in the hidden marker of its comment (`findingKey` of the engine: the
+     * path and the title). A review finds the finding again by it when the fingerprint changed.
+     */
+    key: text('key').notNull(),
+    /** REV-19. The rule that the finding applies, when it has one: the fingerprint then reads it instead of the title. */
+    ruleId: uuid('rule_id'),
+    path: text('path').notNull(),
+    line: integer('line').notNull(),
+    title: text('title').notNull(),
+    severity: text('severity').notNull(),
+    category: text('category').notNull(),
+    confidence: smallint('confidence').notNull(),
+    status: findingStatus('status').notNull().default('open'),
+    /** Why a person dismissed the finding, or said that it stays. */
+    statusReason: text('status_reason'),
+    firstReviewId: uuid('first_review_id').references(() => reviews.id, { onDelete: 'set null' }),
+    lastReviewId: uuid('last_review_id').references(() => reviews.id, { onDelete: 'set null' }),
+    /** The head of the first review that found it. */
+    firstSeenSha: text('first_seen_sha').notNull(),
+    /** The head of the last review that found it: a file that changed since then can show it fixed. */
+    lastSeenSha: text('last_seen_sha').notNull(),
+    /** The first comment of its thread on GitHub, or null when the finding has no inline comment. */
+    githubCommentId: bigint('github_comment_id', { mode: 'number' }),
+    /** The node id of its review thread (`PRRT_…`). */
+    githubThreadId: text('github_thread_id'),
+    /** When the sweep last read the reactions of its comment (a 👎 dismisses it). */
+    reactionsCheckedAt: timestamp('reactions_checked_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // A review reads the findings of its pull request.
+    index('findings_repo_pr_idx').on(table.repoId, table.prNumber),
+    // The lists of findings (REV-17, REV-18) page by creation, newest first.
+    index('findings_repo_created_at_idx').on(table.repoId, table.createdAt, table.id),
+    // The sweep of the reactions reads the open findings that have a comment.
+    index('findings_open_comment_idx')
+      .on(table.reactionsCheckedAt)
+      .where(sql`${table.status} = 'open' and ${table.githubCommentId} is not null`),
+    // The removal of a review sets these to null; REV-18 reads the findings of a review.
+    index('findings_first_review_idx').on(table.firstReviewId),
+    index('findings_last_review_idx').on(table.lastReviewId),
+    check('findings_pr_number_positive', sql`${table.prNumber} > 0`),
+    check('findings_severity', sql`${table.severity} in ('critical', 'major', 'minor')`),
+    check('findings_confidence_range', sql`${table.confidence} between 0 and 100`),
+    check('findings_reason_with_status', sql`${table.statusReason} is null or ${table.status} in ('dismissed', 'wontfix')`),
+  ],
+)
+
+/**
+ * REV-16. Each change of the status of a finding: the review that made it (null for a person or the
+ * sweep), its type, and who: `kento`, or the GitHub login of a person.
+ */
+export const findingEvents = pgTable(
+  'finding_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    findingId: uuid('finding_id')
+      .notNull()
+      .references(() => findings.id, { onDelete: 'cascade' }),
+    reviewId: uuid('review_id').references(() => reviews.id, { onDelete: 'set null' }),
+    type: findingEventType('type').notNull(),
+    actor: text('actor').notNull(),
+    reason: text('reason'),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index('finding_events_finding_created_at_idx').on(table.findingId, table.createdAt, table.id),
+    index('finding_events_review_idx').on(table.reviewId),
+  ],
+)

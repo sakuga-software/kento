@@ -359,6 +359,7 @@ export function payload(result: ReviewResult, withCostSource = false): ReviewPay
       anchor: f.anchor,
       blocking: f.blocking,
       suggestion_range: f.suggestion_range,
+      fingerprint: f.fingerprint,
     })),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),

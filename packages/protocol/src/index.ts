@@ -283,6 +283,12 @@ export type ReviewFinding = {
   anchor: number | null;
   blocking: boolean;
   suggestion_range: [number, number] | null;
+  /**
+   * The fingerprint of the finding (packages/engine/src/fingerprint.ts): the path, the rule or the
+   * title, and the code around the line at the head. A runner of an earlier release sends none; the
+   * service then computes one without the code.
+   */
+  fingerprint?: string;
 };
 
 /** The review of a job: what `reviewPullRequest` of packages/engine returns, without the pack. */
@@ -356,6 +362,7 @@ const finding = obj({
   anchor: nullable(line),
   blocking: bool,
   suggestion_range: nullable(tuple2(line, line)),
+  fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
 });
 const review = obj({
   level: oneOf(LEVELS),
