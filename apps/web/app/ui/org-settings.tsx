@@ -13,6 +13,7 @@ import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
+import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine } from './form-fields.tsx'
 import { agoOrDate, moneyInput, plural, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { appStatusReason, deliveryReason, reasonSentence, TechDetails } from './reasons.tsx'
@@ -75,10 +76,7 @@ const ACCESS: Record<'read' | 'write', string> = { read: 'lecture', write: 'écr
 
 /** « réglages v3, modifiés par alex le 29 oct. à 15:02 ». */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  if (view.version === 0) return 'réglages v0, les valeurs de Kentō'
-  let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
-  let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
-  return `réglages v${view.version}, modifiés${by}${at}`
+  return versionLine({ name: 'réglages', changed: 'modifiés', empty: 'réglages v0, les valeurs de Kentō' }, view)
 }
 
 const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'du jour', month: 'du mois' }
@@ -132,38 +130,6 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
 }
 
 type SectionProps = OrgSectionProps & { admin: boolean; csrf: string }
-
-function Hidden(handle: Handle<{ csrf: string; version: number; field: OrgField }>) {
-  return () => (
-    <>
-      <input type="hidden" name="_csrf" value={handle.props.csrf} />
-      <input type="hidden" name="version" value={String(handle.props.version)} />
-      <input type="hidden" name="field" value={handle.props.field} />
-    </>
-  )
-}
-
-function FieldMessage(handle: Handle<{ id: string; error?: string; hint?: string }>) {
-  return () => {
-    let { id, error, hint } = handle.props
-    if (error) {
-      return (
-        <p class="field-error" id={`${id}-error`}>
-          {error}
-        </p>
-      )
-    }
-    return hint ? (
-      <p class="field-hint" id={`${id}-hint`}>
-        {hint}
-      </p>
-    ) : null
-  }
-}
-
-function describedBy(id: string, error: string | undefined, hint: boolean): string | undefined {
-  return error ? `${id}-error` : hint ? `${id}-hint` : undefined
-}
 
 /** One cost against its limit: the words carry it, the bar only repeats it. */
 function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null; alertPct: number }>) {
@@ -253,7 +219,7 @@ function CapSection(handle: Handle<SectionProps>) {
         </p>
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
-            <Hidden csrf={csrf} version={view.version} field="caps" />
+            <VersionFields csrf={csrf} version={view.version} field="caps" />
             <FormErrors errors={errors} />
             <div class="field">
               <label class="field-label" for="cap-day">
@@ -347,7 +313,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
           {admin ? (
             <>
               <form method="post" action={routes.orgSettingsSave.href()}>
-                <Hidden csrf={csrf} version={view.version} field="level" />
+                <VersionFields csrf={csrf} version={view.version} field="level" />
                 <FormErrors errors={mine?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'org-level-error' : undefined}>
                   <legend class="visually-hidden">Niveau d’un push</legend>
@@ -376,7 +342,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                   Enregistrer le niveau
                 </button>
               </form>
-              {view.config.level !== undefined ? <ResetForm csrf={csrf} version={view.version} field="level" label="le niveau" /> : null}
+              {view.config.level !== undefined ? <OrgReset csrf={csrf} version={view.version} field="level" label="le niveau" /> : null}
             </>
           ) : (
             <p>
@@ -407,18 +373,8 @@ function OrgSource(handle: Handle<{ set: boolean }>) {
   return () => (handle.props.set ? <span class="tag tag-info">réglé pour l’org</span> : <span class="tag tag-quiet">valeur de Kentō</span>)
 }
 
-function ResetForm(handle: Handle<{ csrf: string; version: number; field: OrgField; label: string }>) {
-  return () => {
-    let { csrf, version, field, label } = handle.props
-    return (
-      <form method="post" action={routes.orgSettingsReset.href()}>
-        <Hidden csrf={csrf} version={version} field={field} />
-        <button class="button" type="submit">
-          Revenir à Kentō<span class="visually-hidden"> pour {label}</span>
-        </button>
-      </form>
-    )
-  }
+function OrgReset(handle: Handle<{ csrf: string; version: number; field: OrgField; label: string }>) {
+  return () => <ResetForm action={routes.orgSettingsReset.href()} to="Kentō" {...handle.props} />
 }
 
 function LevelDefault(
@@ -453,7 +409,7 @@ function LevelDefault(
         {admin ? (
           <>
             <form method="post" action={routes.orgSettingsSave.href()} noValidate>
-              <Hidden csrf={csrf} version={version} field={`models.${level}`} />
+              <VersionFields csrf={csrf} version={version} field={`models.${level}`} />
               <FormErrors errors={errors} />
               <div class="org-default-fields">
                 <div class="field">
@@ -527,7 +483,7 @@ function LevelDefault(
                 Enregistrer<span class="visually-hidden"> le modèle {level}</span>
               </button>
             </form>
-            {set ? <ResetForm csrf={csrf} version={version} field={`models.${level}`} label={level} /> : null}
+            {set ? <OrgReset csrf={csrf} version={version} field={`models.${level}`} label={level} /> : null}
           </>
         ) : null}
       </div>
@@ -562,7 +518,7 @@ function BotsSection(handle: Handle<SectionProps>) {
         )}
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
-            <Hidden csrf={csrf} version={view.version} field="trustedBots" />
+            <VersionFields csrf={csrf} version={view.version} field="trustedBots" />
             <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
               <label class="field-label" for="trusted-bots">

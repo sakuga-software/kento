@@ -1,4 +1,4 @@
-import type { Handle, RemixNode } from 'remix/component'
+import type { Handle } from 'remix/component'
 
 import { levelCost } from '@sakuga-review/engine/levels'
 import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@sakuga-review/protocol'
@@ -19,6 +19,7 @@ import type { RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
+import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine as sharedVersionLine } from './form-fields.tsx'
 import { moneyInput, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
@@ -89,10 +90,7 @@ export interface ConfigPageProps {
 
 /** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
 export function versionLine(view: Pick<RepoConfigView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  if (view.version === 0) return 'config v0, tout est hérité de l’organisation'
-  let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
-  let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
-  return `config v${view.version}, modifiée${by}${at}`
+  return sharedVersionLine({ name: 'config', changed: 'modifiée', empty: 'config v0, tout est hérité de l’organisation' }, view)
 }
 
 function shortName(fullName: string, org: string): string {
@@ -215,16 +213,7 @@ interface FormContext {
 }
 
 function Hidden(handle: Handle<{ ctx: FormContext; field: string }>) {
-  return () => {
-    let { ctx, field } = handle.props
-    return (
-      <>
-        {ctx.csrf ? <input type="hidden" name="_csrf" value={ctx.csrf} /> : null}
-        <input type="hidden" name="version" value={String(ctx.version)} />
-        <input type="hidden" name="field" value={field} />
-      </>
-    )
-  }
+  return () => <VersionFields csrf={handle.props.ctx.csrf} version={handle.props.ctx.version} field={handle.props.field} />
 }
 
 /** « hérité de l’org » or « remplacé ici ». The word carries the meaning; the colour only repeats it. */
@@ -234,40 +223,12 @@ function SourceTag(handle: Handle<{ source: Source }>) {
 }
 
 /** « Revenir à l’org »: a form of its own, shown only for a value that the repository sets. */
-function ResetForm(handle: Handle<{ ctx: FormContext; field: ConfigField; label: string }>) {
+function RepoReset(handle: Handle<{ ctx: FormContext; field: ConfigField; label: string }>) {
   return () => {
     let { ctx, field, label } = handle.props
-    return (
-      <form method="post" action={routes.repoConfigReset.href({ id: ctx.repoId })}>
-        <Hidden ctx={ctx} field={field} />
-        <button class="button" type="submit">
-          Revenir à l’org<span class="visually-hidden"> pour {label}</span>
-        </button>
-      </form>
-    )
+    let action = routes.repoConfigReset.href({ id: ctx.repoId })
+    return <ResetForm action={action} csrf={ctx.csrf} version={ctx.version} field={field} to="l’org" label={label} />
   }
-}
-
-function FieldError(handle: Handle<{ id: string; error: string | undefined; hint?: RemixNode }>) {
-  return () => {
-    let { id, error, hint } = handle.props
-    if (error) {
-      return (
-        <p class="field-error" id={`${id}-error`}>
-          {error}
-        </p>
-      )
-    }
-    return hint ? (
-      <p class="field-hint" id={`${id}-hint`}>
-        {hint}
-      </p>
-    ) : null
-  }
-}
-
-function describedBy(id: string, error: string | undefined, hint: boolean): string | undefined {
-  return error ? `${id}-error` : hint ? `${id}-hint` : undefined
 }
 
 function ModelsTab(handle: Handle<{ resolved: Record<Level, Resolved<LevelModels>>; providers: ProviderOption[]; ctx: FormContext }>) {
@@ -343,7 +304,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                     </option>
                   ) : null}
                 </select>
-                <FieldError id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'Ce provider n’est plus dans l’organisation.'} />
+                <FieldMessage id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'Ce provider n’est plus dans l’organisation.'} />
               </div>
               <div class="field">
                 <label class="field-label" for={modelId}>
@@ -362,7 +323,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   aria-invalid={errors.model ? 'true' : undefined}
                   aria-describedby={describedBy(modelId, errors.model, false)}
                 />
-                <FieldError id={modelId} error={errors.model} />
+                <FieldMessage id={modelId} error={errors.model} />
               </div>
               <div class="field">
                 <label class="field-label" for={fallbackId}>
@@ -380,7 +341,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   aria-invalid={errors.fallback ? 'true' : undefined}
                   aria-describedby={describedBy(fallbackId, errors.fallback, true)}
                 />
-                <FieldError id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Laissez vide pour ne pas en avoir." />
+                <FieldMessage id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Laissez vide pour ne pas en avoir." />
               </div>
               {value.source === 'kento' && effective.origin === 'default' ? (
                 <p class="hint">Remplacer ici fixe ce choix pour le repo, et le niveau ne suivra plus le provider « Par défaut ».</p>
@@ -390,7 +351,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 <span class="visually-hidden"> pour {level}</span>
               </button>
             </form>
-            {value.source === 'repo' ? <ResetForm ctx={ctx} field={field} label={level} /> : null}
+            {value.source === 'repo' ? <RepoReset ctx={ctx} field={field} label={level} /> : null}
           </>
         ) : null}
       </section>
@@ -446,7 +407,7 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
               </button>
             </form>
           ) : null}
-          {ctx.admin && resolvedLevel.source === 'repo' ? <ResetForm ctx={ctx} field="level" label="le niveau" /> : null}
+          {ctx.admin && resolvedLevel.source === 'repo' ? <RepoReset ctx={ctx} field="level" label="le niveau" /> : null}
           {ctx.admin ? null : (
             <p>
               <strong class="mono">{level}</strong>. {LEVEL_HINTS[level]}
@@ -547,7 +508,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <span class="visually-hidden"> le déclenchement</span>
                 </button>
               </form>
-              {trigger.source === 'repo' ? <ResetForm ctx={ctx} field="trigger" label="le déclenchement" /> : null}
+              {trigger.source === 'repo' ? <RepoReset ctx={ctx} field="trigger" label="le déclenchement" /> : null}
             </>
           ) : (
             <p>
@@ -585,7 +546,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     aria-describedby={describedBy('config-paths', pathsForm?.errors.paths, true)}
                     value={pathsValue}
                   ></textarea>
-                  <FieldError
+                  <FieldMessage
                     id="config-paths"
                     error={pathsForm?.errors.paths}
                     hint={
@@ -601,7 +562,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <span class="visually-hidden"> les chemins</span>
                 </button>
               </form>
-              {paths.source === 'repo' ? <ResetForm ctx={ctx} field="paths" label="les chemins" /> : null}
+              {paths.source === 'repo' ? <RepoReset ctx={ctx} field="paths" label="les chemins" /> : null}
             </>
           ) : paths.value.length === 0 ? (
             <p>Tous les chemins.</p>
@@ -646,7 +607,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     aria-invalid={capForm?.errors.monthlyCapUsd ? 'true' : undefined}
                     aria-describedby={describedBy('config-cap', capForm?.errors.monthlyCapUsd, true)}
                   />
-                  <FieldError
+                  <FieldMessage
                     id="config-cap"
                     error={capForm?.errors.monthlyCapUsd}
                     hint="Laissez vide pour n’avoir aucun plafond. Une commande @kento-review passe toujours, car quelqu’un l’a demandée."
@@ -657,7 +618,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <span class="visually-hidden"> le plafond</span>
                 </button>
               </form>
-              {cap.source === 'repo' ? <ResetForm ctx={ctx} field="monthlyCapUsd" label="le plafond" /> : null}
+              {cap.source === 'repo' ? <RepoReset ctx={ctx} field="monthlyCapUsd" label="le plafond" /> : null}
             </>
           ) : (
             <p>{cap.value === null ? 'Aucun plafond.' : `${usd(cap.value)} par mois.`}</p>
