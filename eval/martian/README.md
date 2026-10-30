@@ -31,6 +31,8 @@ does not answer for a pair, the summary line counts it in `judge errors`: run th
 - `REVIEW_TIMEOUT_MS` sets the time limit of one model call (480 s by default here).
 - `REVIEW_MAX_PRICE` (`prompt,completion`, in dollars a million tokens) sets the price cap. The cap of
   production (0.5 / 3.5) excludes some models, for example Gemini 3.8 Flash.
+- A value of these variables, or of `REVIEW_MAX_TOKENS`, that is not a valid number stops the run
+  at its start with the name of the variable.
 
 **Cost**: about $0.20–0.50 of review and $0.30–0.80 of judge for each model and run. The key of the
 bench is the key of CI: a run that uses the daily limit stops the reviews of the whole organization

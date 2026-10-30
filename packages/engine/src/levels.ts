@@ -88,19 +88,38 @@ export type LevelEnv = Partial<Record<'REVIEW_MODELS' | 'REVIEW_EFFORT' | 'REVIE
  * The configuration of a level. The bench sets REVIEW_MODELS, REVIEW_EFFORT, REVIEW_MAX_TOKENS,
  * REVIEW_TIMEOUT_MS and REVIEW_MAX_PRICE ("prompt,completion"). The caller passes the environment, or
  * nothing for the levels as they are.
+ *
+ * A number that is not valid throws: before, `REVIEW_MAX_PRICE=1` sent no completion cap and `x`
+ * sent NaN, which JSON writes as null, and the call went out with a wrong cap and no message.
  */
 export function levelConfig(level: Level, env: LevelEnv = {}): LevelConfig {
   const config = { ...LEVELS[level] };
   if (env.REVIEW_MODELS) config.models = env.REVIEW_MODELS.split(',');
   const effort = env.REVIEW_EFFORT;
   if (effort === 'low' || effort === 'medium' || effort === 'high') config.effort = effort;
-  if (env.REVIEW_MAX_TOKENS) config.maxTokens = Number(env.REVIEW_MAX_TOKENS);
-  if (env.REVIEW_TIMEOUT_MS) config.timeoutsMs = config.models.map(() => Number(env.REVIEW_TIMEOUT_MS));
-  if (env.REVIEW_MAX_PRICE) {
-    const [prompt, completion] = env.REVIEW_MAX_PRICE.split(',').map(Number);
-    config.maxPrice = { prompt: prompt!, completion: completion! };
+  if (env.REVIEW_MAX_TOKENS) {
+    const maxTokens = Number(env.REVIEW_MAX_TOKENS);
+    if (!Number.isInteger(maxTokens) || maxTokens <= 0) throw new Error(`REVIEW_MAX_TOKENS must be a whole number above 0, not "${env.REVIEW_MAX_TOKENS}"`);
+    config.maxTokens = maxTokens;
   }
+  if (env.REVIEW_TIMEOUT_MS) {
+    const timeoutMs = Number(env.REVIEW_TIMEOUT_MS);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error(`REVIEW_TIMEOUT_MS must be a number of milliseconds above 0, not "${env.REVIEW_TIMEOUT_MS}"`);
+    config.timeoutsMs = config.models.map(() => timeoutMs);
+  }
+  if (env.REVIEW_MAX_PRICE) config.maxPrice = readMaxPrice(env.REVIEW_MAX_PRICE);
   return config;
+}
+
+/** `prompt,completion`: two numbers of dollars a million tokens, 0 or more (0: free models only). */
+function readMaxPrice(value: string): LevelConfig['maxPrice'] {
+  const parts = value.split(',').map((part) => part.trim());
+  const [prompt, completion] = parts.map(Number);
+  const valid = (n: number | undefined, text: string | undefined) => text !== '' && Number.isFinite(n) && n! >= 0;
+  if (parts.length !== 2 || !valid(prompt, parts[0]) || !valid(completion, parts[1])) {
+    throw new Error(`REVIEW_MAX_PRICE must be "prompt,completion", two numbers of dollars a million tokens (for example "0.5,3.5"), not "${value}"`);
+  }
+  return { prompt: prompt!, completion: completion! };
 }
 
 /**

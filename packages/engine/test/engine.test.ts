@@ -125,6 +125,30 @@ test('a level reads the environment only when the caller passes it', () => {
   }
 });
 
+test('REVIEW_MAX_PRICE takes two numbers of 0 or more, and refuses the rest with its name (REV-61)', () => {
+  assert.deepEqual(levelConfig('lite', { REVIEW_MAX_PRICE: ' 0.5 , 3.5 ' }).maxPrice, { prompt: 0.5, completion: 3.5 });
+  assert.deepEqual(levelConfig('lite', { REVIEW_MAX_PRICE: '0,0' }).maxPrice, { prompt: 0, completion: 0 });
+  // An empty variable keeps the cap of the level, as before.
+  assert.deepEqual(levelConfig('lite', { REVIEW_MAX_PRICE: '' }).maxPrice, LEVELS.lite.maxPrice);
+  for (const value of ['1', 'x', '1,x', '1,', ',2', '1,2,3', '-1,2', '1,Infinity', '1;2']) {
+    assert.throws(() => levelConfig('lite', { REVIEW_MAX_PRICE: value }), (error: Error) => {
+      assert.match(error.message, /^REVIEW_MAX_PRICE must be "prompt,completion"/);
+      assert.ok(error.message.endsWith(`not "${value}"`), error.message);
+      return true;
+    }, value);
+  }
+});
+
+test('REVIEW_MAX_TOKENS and REVIEW_TIMEOUT_MS refuse a value that is not a number above 0 (REV-61)', () => {
+  assert.equal(levelConfig('lite', { REVIEW_MAX_TOKENS: '8000' }).maxTokens, 8000);
+  for (const value of ['x', '0', '-5', '1.5']) {
+    assert.throws(() => levelConfig('lite', { REVIEW_MAX_TOKENS: value }), /^Error: REVIEW_MAX_TOKENS must be a whole number above 0/, value);
+  }
+  for (const value of ['x', '0', '-1', 'Infinity']) {
+    assert.throws(() => levelConfig('lite', { REVIEW_TIMEOUT_MS: value }), /^Error: REVIEW_TIMEOUT_MS must be a number of milliseconds above 0/, value);
+  }
+});
+
 test('the engine never calls GitHub and reads no environment', () => {
   const dir = join(import.meta.dirname, '..', 'src');
   for (const file of readdirSync(dir)) {
