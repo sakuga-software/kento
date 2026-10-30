@@ -184,3 +184,55 @@ export async function listFindingEvents(
     limit ${limit + 1}`
   return page(rows, limit)
 }
+
+/** The statuses that a person sets. `open` is « Rouvrir ». */
+export const PERSON_STATUSES = ['dismissed', 'wontfix', 'open'] as const
+export type PersonStatus = (typeof PERSON_STATUSES)[number]
+
+/** The longest reason of a dismissal. */
+export const REASON_MAX = 500
+
+export type StatusChange =
+  | { outcome: 'changed'; finding: Finding }
+  /** The finding already has this status: no event. */
+  | { outcome: 'unchanged'; finding: Finding }
+  | { outcome: 'not_found' }
+  /** `dismissed` needs a reason; a reason is at most REASON_MAX characters. */
+  | { outcome: 'invalid'; reason: string }
+
+/**
+ * A person sets the status of a finding of their org: `dismissed` with a reason, `wontfix` with an
+ * optional reason, or `open` again (« Rouvrir »). Each change writes one event with the person's
+ * GitHub login. A dismissed finding never gets a comment again, even when a review finds it again.
+ */
+export async function setFindingStatus(
+  sql: postgres.Sql,
+  input: { orgId: string; findingId: string; status: PersonStatus; reason?: string | null; actor: string },
+): Promise<StatusChange> {
+  if (!PERSON_STATUSES.includes(input.status)) return { outcome: 'invalid', reason: 'unknown status' }
+  let reason = input.status === 'open' ? null : input.reason?.trim() || null
+  if (input.status === 'dismissed' && !reason) return { outcome: 'invalid', reason: 'a dismissal needs a reason' }
+  if (reason && reason.length > REASON_MAX) return { outcome: 'invalid', reason: `the reason is longer than ${REASON_MAX} characters` }
+  if (!UUID.test(input.findingId)) return { outcome: 'not_found' }
+
+  let changed = await sql.begin(async (tx) => {
+    let [current] = await tx<{ status: FindingStatus; statusReason: string | null }[]>`
+      select findings.status, findings.status_reason as "statusReason"
+      from findings join repos on repos.id = findings.repo_id
+      where findings.id = ${input.findingId} and repos.org_id = ${input.orgId}
+      for update of findings`
+    if (!current) return null
+    if (current.status === input.status && current.statusReason === reason) return false
+    await tx`
+      update findings set status = ${input.status}, status_reason = ${reason}, updated_at = now()
+      where id = ${input.findingId}`
+    let type: FindingEventType = input.status === 'open' ? 'reopened' : input.status
+    await tx`
+      insert into finding_events (finding_id, type, actor, reason)
+      values (${input.findingId}, ${type}, ${input.actor}, ${reason})`
+    return true
+  })
+  if (changed === null) return { outcome: 'not_found' }
+  let finding = (await getFinding(sql, { orgId: input.orgId, id: input.findingId }))!
+  return { outcome: changed ? 'changed' : 'unchanged', finding }
+}

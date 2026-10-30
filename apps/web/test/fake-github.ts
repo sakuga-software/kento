@@ -67,6 +67,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     /** The tokens that the App can mint, by permission. A permission outside the list answers 422. */
     appPermissions: new Set(['contents', 'pull_requests', 'issues', 'checks']),
     tokens: [] as { installationId: number; repositoryIds: number[]; permissions: Record<string, string>; token: string }[],
+    /** REV-16. Runs while GitHub takes a review: what a person does meanwhile. */
+    onReview: null as null | (() => Promise<void>),
     /** The review API answers 502, as during an outage of GitHub. */
     failReviews: false,
     /** The review API refuses the inline comments (a line outside the diff). */
@@ -221,6 +223,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if (rest === `${prPath}/reviews` && method === 'POST') {
       if (state.failReviews) return json(502, { message: 'Bad Gateway' })
       if (body.comments.length && state.refuseInline) return json(422, { message: 'Line could not be resolved' })
+      if (state.onReview) await state.onReview()
       let id = nextId++
       let reviewState = { REQUEST_CHANGES: 'CHANGES_REQUESTED', APPROVE: 'APPROVED', COMMENT: 'COMMENTED' }[body.event as string]!
       state.reviews.push({ id, user: BOT, state: reviewState, commitId: body.commit_id, body: body.body, comments: body.comments.length })
@@ -257,7 +260,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       return json(200, {})
     }
     if ((m = /^\/pulls\/\d+\/reviews\/(\d+)\/comments$/.exec(rest)) && method === 'GET') {
-      return json(200, state.comments.filter((c) => c.reviewId === Number(m![1])).map((c) => ({ id: c.id, body: c.body })))
+      return json(200, state.comments.filter((c) => c.reviewId === Number(m![1])).map((c) => ({ id: c.id, body: c.body, path: c.path, line: c.line })))
     }
     if ((m = /^\/commits\/([0-9a-f]+)$/.exec(rest)) && method === 'GET') {
       let subject = state.commits[m[1]!]

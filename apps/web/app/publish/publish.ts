@@ -31,6 +31,17 @@ import {
 } from '@sakuga-review/engine/render'
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 
+import type { FindingsLedger, LedgerEntry } from '../findings/ledger.ts'
+import {
+  adoptThreads,
+  fingerprintOf,
+  liveThread,
+  matchFindings,
+  type BotThread,
+  type Match,
+  type StoredFinding,
+} from '../findings/lifecycle.ts'
+import { KENTO_ACTOR } from '../findings/store.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { GitHubError, type GitHub } from './github.ts'
 
@@ -44,9 +55,6 @@ const POSTER: Poster = { by: BY, handle: `@${COMMAND_NAMES[0]}` }
 // Each inline comment is a thread that a person must resolve, so only the sure findings get one.
 const INLINE_CONFIDENCE = 70
 const MAX_INLINE = 5
-// Two models word one defect differently, so the key of the title differs. An open thread of the
-// bot a few lines away on the same file already carries the finding.
-const NEAR_THREAD_LINES = 3
 
 const SCORE_COLOUR = ['', 'b60205', 'd93f0b', 'fbca04', 'a2d9a5', '0e8a16']
 const LABEL_PREFIX = 'review: '
@@ -67,18 +75,10 @@ export interface PublishOutcome {
   inline: number
   resolved: number
   score: number
-}
-
-type Thread = {
-  id: string
-  resolved: boolean
-  path: string
-  /** The line of the thread at the head, or null when its line is gone. */
-  line: number | null
-  key: string
-  commit: string | undefined
-  commentId: number
-  answered: boolean
+  /** REV-16. The open findings that this review shows fixed. */
+  fixed: number
+  /** REV-16. The findings found again that a person dismissed or kept: the review leaves them out. */
+  suppressed: number
 }
 
 type InlineComment = {
@@ -120,8 +120,10 @@ export function usageOf(review: ReviewPayload): Usage {
 
 /**
  * Publishes the review. Every step before the review itself can throw: nothing is posted yet, and the
- * caller can try again. The steps after it (dismissal, description, label, check) are logged when
- * they fail and do not throw: the review is on GitHub, and a second one would repeat it.
+ * caller can try again. The write of the findings (REV-16) can throw too, before the review is
+ * marked: the next try finds the review by its marker and writes them again. The steps after it
+ * (dismissal, description, label, check) are logged when they fail and do not throw: the review is
+ * on GitHub, and a second one would repeat it.
  */
 export async function publishReview(
   github: GitHub,
@@ -137,38 +139,33 @@ export async function publishReview(
     marker?: string
     /** Called once the review is on GitHub, before the steps that follow it. */
     onPosted?: (reviewId: number) => Promise<void>
+    /**
+     * REV-16. The findings of the pull request in the database. Without it, the findings live in the
+     * threads of the bot only, as before the table.
+     */
+    findings?: FindingsLedger
     warn?: (event: string, fields: Record<string, unknown>) => void
   } = {},
 ): Promise<PublishOutcome> {
   let { owner, name, pr } = target
   let warn = options.warn ?? (() => {})
   let repo = `/repos/${owner}/${name}`
-  let answer = answerOf(review)
   let usage = usageOf(review)
   let level = review.level
   let head = review.head
   let threads = await botThreads(github, target)
-  // A thread that the bot answered as gone no longer carries its finding: a finding that comes back
-  // gets a new thread, and the block links it. The Action keeps such a thread.
-  let openThreads = new Map(threads.filter((t) => !t.resolved && !t.answered).map((t) => [t.key, t]))
   let threadUrl = (commentId: number) => `${target.webUrl}/${owner}/${name}/pull/${pr}#discussion_r${commentId}`
 
-  let nearThread = (f: Finding) => {
-    let line = anchorOf(f)
-    let path = f.path.replace(/^\/+/, '')
-    return threads.find(
-      (t) =>
-        !t.resolved &&
-        !t.answered &&
-        t.path === path &&
-        t.line !== null &&
-        line !== null &&
-        Math.abs(t.line - line) <= NEAR_THREAD_LINES,
-    )
-  }
-  // The threads that a finding of this review still carries: by its key, or by its position. A
-  // thread outside this set can be declared gone.
-  let keysNow = new Set(answer.findings.flatMap((f) => [findingKey(f), nearThread(f)?.key ?? '']).filter(Boolean))
+  // REV-16. The findings of the pull request: those of the database, and the open threads of an
+  // earlier release that the database does not hold yet.
+  let ledger = options.findings ?? null
+  let known = ledger ? await ledger.load() : []
+  let stored = [...known, ...adoptThreads(known, threads)]
+  let { matches, unmatched } = matchFindings(review.findings, stored, threads)
+  // A finding that a person dismissed or kept gets no comment, and the review leaves it out.
+  let shown = matches.filter((m) => !m.suppressed)
+  let matchOf = new Map<Finding, Match>(shown.map((m) => [m.finding as Finding, m]))
+  let answer: Answer = { ...answerOf(review), findings: shown.map((m) => m.finding) }
 
   let ordered = [...answer.findings].sort(
     (a, b) =>
@@ -180,7 +177,7 @@ export async function publishReview(
   let comments: InlineComment[] = []
   for (let f of ordered) {
     // A finding that an open thread already carries is not posted again.
-    if (openThreads.has(findingKey(f)) || nearThread(f)) continue
+    if (matchOf.get(f)?.carrier) continue
     let line = anchorOf(f)
     if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null
@@ -190,23 +187,29 @@ export async function publishReview(
     comments.push(comment)
   }
 
-  // A thread closes only when its file changed since the comment and the finding did not come back.
-  // A finding that the model did not repeat is not a fixed finding: the same code can be read twice.
-  // A thread whose commit a force-push removed stays open: nothing tells what changed since.
+  // An open finding that this review did not find again is fixed only when its file changed since
+  // the review that last found it: the same code can be read twice, and a model can miss a finding.
+  // A finding whose commit a force-push removed stays open: nothing tells what changed since.
   // The threads to close are found before the review, for its note on a force-push; they are closed
   // only once the review is on GitHub, so that a review that fails to post closes nothing.
   let changedSince = filesChangedSince(github, repo, head)
-  let toClose: Thread[] = []
+  let fixed: StoredFinding[] = []
+  let toClose: BotThread[] = []
   let gone = 0
-  // An error on one thread (the compare API) leaves that thread open and never stops the review.
-  for (let t of threads) {
-    if (t.resolved || t.answered || keysNow.has(t.key)) continue
+  // An error on one finding (the compare API) leaves it open and never stops the review.
+  for (let s of unmatched) {
+    // A stale finding of a reopened pull request is fixed the same way, and its thread closed.
+    if (s.status !== 'open' && s.status !== 'stale') continue
+    let thread = liveThread(s, threads)
     try {
-      let changed = await changedSince(t.commit, t.path)
-      if (changed === null) gone++
-      if (changed) toClose.push(t)
+      let changed = await changedSince(s.lastSeenSha || undefined, s.path)
+      if (changed === null && thread) gone++
+      if (changed) {
+        fixed.push(s)
+        if (thread) toClose.push(thread)
+      }
     } catch (error) {
-      warn('publish.thread_failed', { thread: t.id, error: String(error) })
+      warn('publish.thread_failed', { thread: thread?.id ?? null, finding: s.id, error: String(error) })
     }
   }
 
@@ -245,6 +248,30 @@ export async function publishReview(
       warn('publish.step_failed', { step: stepName, error: String(error) })
     }
   }
+
+  // REV-16. The comments and the findings are written before the review is marked as posted, and
+  // their failure throws: the review stays unmarked, and the next try finds it by its marker, posts
+  // nothing, and writes them again. A finding is never left out of the database by a lost write.
+  //
+  // The comment of each new finding of this review: by the key in its marker, and by its line when
+  // two findings of one file share a title (and so a key).
+  let newThreads = new Map<Finding, number>()
+  if (inline.length) {
+    let posted: { id: number; body: string; line?: number | null }[] =
+      (await github.rest('GET', `${reviewsPath}/${found.id}/comments?per_page=100`)) ?? []
+    let free = posted.flatMap((c) => {
+      let key = FINDING_KEY.exec(c.body)?.[1]
+      return key ? [{ id: c.id, key, line: c.line ?? null }] : []
+    })
+    for (let f of inline) {
+      let key = findingKey(f)
+      let hit = free.find((c) => c.key === key && c.line === anchorOf(f)) ?? free.find((c) => c.key === key)
+      if (!hit) continue
+      newThreads.set(f, hit.id)
+      free.splice(free.indexOf(hit), 1)
+    }
+  }
+  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head))
 
   // The caller marks the review as posted. A failure there must not skip the description, the
   // label and the check of a review that is already on GitHub.
@@ -290,18 +317,8 @@ export async function publishReview(
 
   await step('description', async () => {
     // Each finding links to its thread: a new comment of this review, or the open thread that carries it.
-    let postedComments: { id: number; body: string }[] = inline.length
-      ? ((await github.rest('GET', `${reviewsPath}/${found.id}/comments?per_page=100`)) ?? [])
-      : []
-    let newThreads = new Map(
-      postedComments.flatMap((c) => {
-        let key = FINDING_KEY.exec(c.body)
-        return key ? [[key[1]!, c.id] as const] : []
-      }),
-    )
     let links: Link[] = ordered.map((f) => {
-      let key = findingKey(f)
-      let id = newThreads.get(key) ?? openThreads.get(key)?.commentId ?? nearThread(f)?.commentId
+      let id = newThreads.get(f) ?? matchOf.get(f)?.carrier?.commentId
       return { finding: f, url: id ? threadUrl(id) : null }
     })
     let commit: { commit?: { message?: string } } = await github.rest('GET', `${repo}/commits/${head}`)
@@ -341,7 +358,78 @@ export async function publishReview(
     })
   }
 
-  return { reviewId: found.id, state: found.state, inline: alreadyPosted ? 0 : comments.length, resolved, score: value }
+  return {
+    reviewId: found.id,
+    state: found.state,
+    inline: alreadyPosted ? 0 : comments.length,
+    resolved,
+    score: value,
+    fixed: fixed.length,
+    suppressed: matches.length - shown.length,
+  }
+}
+
+/**
+ * The changes of a review to the findings of its pull request: each finding of the review (new,
+ * found again, or open again), each open finding that it shows fixed, and the threads of an earlier
+ * release that the database does not hold yet.
+ */
+export function ledgerEntries(
+  matches: readonly Match[],
+  fixed: readonly StoredFinding[],
+  unmatched: readonly StoredFinding[],
+  newThreads: ReadonlyMap<Finding, number>,
+  head: string,
+): LedgerEntry[] {
+  let entries: LedgerEntry[] = []
+  for (let m of matches) {
+    let f = m.finding
+    let s = m.stored
+    let key = findingKey(f)
+    let comment = newThreads.get(f) ?? null
+    let ruleId = (f as { rule_id?: string }).rule_id ?? s?.ruleId ?? null
+    entries.push({
+      id: s?.id ?? null,
+      values: {
+        fingerprint: fingerprintOf(f),
+        key,
+        ruleId,
+        path: f.path.replace(/^\/+/, ''),
+        line: f.anchor ?? f.line,
+        title: f.title,
+        severity: f.severity,
+        category: f.category,
+        confidence: f.confidence,
+        status: s && !m.reopened ? s.status : 'open',
+        statusReason: s && !m.reopened ? s.statusReason : null,
+        loadedStatus: s?.loadedStatus ?? null,
+        lastSeenSha: head,
+        githubCommentId: comment ?? s?.githubCommentId ?? null,
+        githubThreadId: comment ? null : (m.carrier?.id ?? s?.githubThreadId ?? null),
+      },
+      events:
+        s === null || s.id === null
+          ? [{ type: 'opened', actor: KENTO_ACTOR }]
+          : m.reopened
+            ? [{ type: 'reopened', actor: KENTO_ACTOR }]
+            : [],
+    })
+  }
+  let fixedSet = new Set(fixed)
+  for (let s of fixed) {
+    let { id, ...values } = s
+    entries.push({
+      id,
+      values: { ...values, status: 'fixed' },
+      events: id === null ? [{ type: 'opened', actor: KENTO_ACTOR }, { type: 'fixed', actor: KENTO_ACTOR }] : [{ type: 'fixed', actor: KENTO_ACTOR }],
+    })
+  }
+  for (let s of unmatched) {
+    if (s.id !== null || fixedSet.has(s)) continue
+    let { id: _, ...values } = s
+    entries.push({ id: null, values, events: [{ type: 'opened', actor: KENTO_ACTOR }] })
+  }
+  return entries
 }
 
 /**
@@ -418,7 +506,7 @@ async function listReviews(github: GitHub, reviewsPath: string): Promise<ListedR
 }
 
 /** The review threads that the bot opened on the pull request. */
-async function botThreads(github: GitHub, target: PublishTarget): Promise<Thread[]> {
+async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThread[]> {
   let query = `
     query($owner: String!, $name: String!, $number: Int!, $after: String) {
       repository(owner: $owner, name: $name) {
@@ -435,7 +523,7 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<Thread
     }`
   // GraphQL gives the login of an App without `[bot]`.
   let logins = new Set([target.botLogin, target.botLogin.replace(/\[bot\]$/, '')])
-  let threads: Thread[] = []
+  let threads: BotThread[] = []
   let after: string | null = null
   for (;;) {
     let data: any = await github.graphql(query, { owner: target.owner, name: target.name, number: target.pr, after })
@@ -453,6 +541,7 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<Thread
         key: key[1]!,
         commit: first.commit?.oid,
         commentId: first.databaseId,
+        body: first.body,
         // A later comment of the bot in the thread is its reply that the finding is gone.
         answered: node.comments.nodes
           .slice(1)
@@ -474,7 +563,7 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: `Score de confiance de ${BY} (5 : prête à merger)`,
+      description: 'Score de confiance de Sakuga Review (5 : prête à merger)',
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { codeAround, fingerprint, FINGERPRINT, normalizeTitle } from '../src/fingerprint.ts';
+import { headFiles } from '../src/review.ts';
 
 const FILE = ['import x from "x";', '', 'export function sum(a, b) {', '  return a - b;', '}', ''];
 const finding = { path: 'src/sum.ts', line: 4, title: 'La somme soustrait' };
@@ -40,4 +41,19 @@ test('the code around a line skips the blank lines and collapses the spaces; no 
   assert.equal(codeAround(FILE, 0), '');
   assert.equal(codeAround(FILE, 99), '');
   assert.equal(codeAround(null, 3), '');
+});
+
+test('a file that git cannot read is logged, and its fingerprint reads no code; a missing file is not logged', () => {
+  const logs: string[] = [];
+  const failing = (_repo: string, ...args: string[]) => {
+    const path = args[1]!.split(':')[1];
+    if (path === 'big.bin') throw new Error('spawnSync git ENOBUFS: maxBuffer length exceeded');
+    throw Object.assign(new Error('Command failed'), { stderr: `fatal: path '${path}' does not exist in 'abc'` });
+  };
+  const fileAt = headFiles('/repo', 'abc', (m) => logs.push(m), failing);
+  assert.equal(fileAt('big.bin'), null);
+  assert.equal(fileAt('gone.ts'), null);
+  assert.equal(fileAt('big.bin'), null, 'read once per path');
+  assert.equal(logs.length, 1);
+  assert.match(logs[0]!, /^fingerprint of big\.bin without its code: git show failed: .*maxBuffer/);
 });

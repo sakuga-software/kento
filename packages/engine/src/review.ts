@@ -79,7 +79,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
   answer.findings = answer.findings.map((f) => applyRule(f, rules));
-  const fileAt = headFiles(input.repoDir, input.head);
+  const fileAt = headFiles(input.repoDir, input.head, input.log ?? ((message) => process.stderr.write(`${message}\n`)));
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),
@@ -105,17 +105,30 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
   };
 }
 
-/** The lines of a file at the head, read once per path. Null: the file is not at the head. */
-function headFiles(repoDir: string, head: string): (path: string) => string[] | null {
+/**
+ * The lines of a file at the head, read once per path. Null: the file is not at the head (a path that
+ * the model made up, or a file that the pull request deleted), or git could not read it. The
+ * fingerprint then reads the path and the rule or title only; any failure other than a missing file
+ * (a file over the buffer of git, a broken checkout) is logged, so that it is never silent.
+ */
+export function headFiles(
+  repoDir: string,
+  head: string,
+  log: (message: string) => void,
+  read: (repo: string, ...args: string[]) => string = git,
+): (path: string) => string[] | null {
   const cache = new Map<string, string[] | null>();
   return (path) => {
     const clean = path.replace(/^\/+/, '');
     if (!cache.has(clean)) {
       let lines: string[] | null = null;
       try {
-        lines = git(repoDir, 'show', `${head}:${clean}`).split('\n');
-      } catch {
-        // A path that the model made up, or a file that the pull request deleted.
+        lines = read(repoDir, 'show', `${head}:${clean}`).split('\n');
+      } catch (error) {
+        const message = String((error as { stderr?: unknown }).stderr || error);
+        if (!/does not exist in|exists on disk, but not in/.test(message)) {
+          log(`fingerprint of ${clean} without its code: git show failed: ${message.trim().slice(0, 300)}`);
+        }
       }
       cache.set(clean, lines);
     }

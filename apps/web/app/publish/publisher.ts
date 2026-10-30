@@ -12,6 +12,7 @@ import type postgres from 'postgres'
 
 import { react, type Reaction } from '../commands/handler.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
+import { createFindingsLedger } from '../findings/ledger.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { publishResolution } from '../resolve/publish.ts'
@@ -58,6 +59,7 @@ export type PublishResult =
 
 type Pending = {
   id: string
+  repoId: string
   prNumber: number
   headSha: string
   result: ReviewPayload | string
@@ -181,6 +183,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
             update reviews set published_at = now(), github_review_id = ${id}
             where id = ${row.id}`
         },
+        findings: createFindingsLedger(deps.sql, { repoId: row.repoId, prNumber: row.prNumber, reviewId: row.id, head: row.headSha }),
         warn: (event, fields) => log('warn', event, { reviewId: row.id, ...fields }),
       },
     )
@@ -194,6 +197,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       score: outcome.score,
       inline: outcome.inline,
       resolved: outcome.resolved,
+      fixed: outcome.fixed,
+      suppressed: outcome.suppressed,
       check: checks !== null,
     })
     await answerCommand(github, row, 'rocket')
@@ -398,7 +403,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       if (!lock?.locked) return []
       try {
         let rows = await connection<Pending[]>`
-          select reviews.id, reviews.pr_number as "prNumber", reviews.head_sha as "headSha", reviews.result,
+          select reviews.id, reviews.repo_id as "repoId", reviews.pr_number as "prNumber", reviews.head_sha as "headSha", reviews.result,
             repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
             orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
             jobs.github_comment_id as "commentId"

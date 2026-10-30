@@ -2,6 +2,7 @@ import type { JobKind, Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import type { Installation, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
+import { KENTO_ACTOR } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { capReached, readMoney, type CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
@@ -113,6 +114,16 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
           if (!repo) return { outcome: 'skipped', reason: 'unknown repository' }
           let where = and(eq(jobs.repoId, repo.id), eq(jobs.prNumber, command.prNumber))
           let cancelled = await cancelActive(tx, where, CANCEL_REASON.closed)
+          // REV-16. The open findings of a closed pull request become `stale`. A review after a reopen
+          // opens again the ones that it finds.
+          await tx.execute(sql`
+            with staled as (
+              update findings set status = 'stale', updated_at = now()
+              where repo_id = ${repo.id} and pr_number = ${command.prNumber} and status = 'open'
+              returning id
+            )
+            insert into finding_events (finding_id, type, actor)
+            select id, 'stale', ${KENTO_ACTOR} from staled`)
           return { outcome: 'cancelled', cancelled }
         }
         case 'upsert_installation': {
