@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { ROLE_GRACE_MS } from '../auth/access.ts'
+import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { SESSION_TTL_MS } from '../auth/session-storage.ts'
 import { cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
 import { spyStore, webhookDeps } from '../github/test-helpers.ts'
@@ -105,7 +105,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     assert.match(html, /href="\/login"/)
   })
 
-  it('shows the 404 of a person not signed in when the session has expired', async () => {
+  it('shows the 404 of a person not signed in when the session has expired, and leaves the session alone', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn()
     auth.clock.now += SESSION_TTL_MS + 1000
@@ -114,6 +114,21 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     let html = await response.text()
     assert.match(html, /<h1>Cette page n’existe pas<\/h1>/)
     assert.doesNotMatch(html, /alex/)
+    assert.equal(cookieOf(response, COOKIE), null, 'an unknown URL does not touch the session')
+  })
+
+  it('never signs out a person who left the org on an unknown URL: the screens do', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn()
+    auth.setRole(ORG, ALEX, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    let response = await request('/nope', { cookie, headers: BROWSER })
+    assert.equal(response.status, 404)
+    assert.match(await response.text(), /<h1>Cette page n’existe pas<\/h1>/)
+    assert.equal(cookieOf(response, COOKIE), null, 'an unknown URL does not touch the session')
+    let screen = await request('/', { cookie, headers: BROWSER })
+    assert.equal(screen.status, 303)
+    assert.match(screen.headers.get('Location') ?? '', /notice=expired/)
   })
 
   it('answers the 503 of the screens when GitHub has not confirmed the role for over an hour, and keeps the session', async () => {

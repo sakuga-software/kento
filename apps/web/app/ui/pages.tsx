@@ -281,54 +281,67 @@ export function createUiControllers(deps: UiDependencies) {
   }
 
   /**
-   * Every screen needs a signed-in member of an org. The role comes from GitHub again when it is
-   * older than ten minutes: a person removed from the org on GitHub loses the access.
+   * The signed-in member of the request, read without changing the session. The role comes from
+   * GitHub again when it is older than ten minutes: a person removed from the org on GitHub loses
+   * the access.
    */
+  async function readViewer(
+    context: { get(key: typeof Session): Session | undefined },
+  ): Promise<
+    | { kind: 'signed'; signed: SignedIn; orgMoved: boolean }
+    | { kind: 'anonymous' | 'expired' | 'gone' }
+    | { kind: 'unconfirmed'; login: string; orgs: number }
+  > {
+    if (!auth) return { kind: 'anonymous' }
+    let session = sessionOf(context)
+    let record = readSessionAuth(session)
+    if (!record) return { kind: 'anonymous' }
+    if (record.signedInAt + SESSION_TTL_MS <= now()) return { kind: 'expired' }
+    let user = await auth.store.findUser(record.userId)
+    if (!user) return { kind: 'gone' }
+    let { memberships, unconfirmed } = await currentMemberships(auth.store, auth.lookupRole, user, now())
+    // GitHub has not answered for over an hour: no access, but no sign-out either. The session
+    // works again as soon as GitHub confirms the role.
+    if (memberships.length === 0 && unconfirmed > 0) return { kind: 'unconfirmed', login: user.login, orgs: unconfirmed }
+    if (memberships.length === 0) return { kind: 'gone' }
+    let orgId = session.get('orgId')
+    let membership = memberships.find((m) => m.org.id === orgId)
+    // The org of the session is gone (left on GitHub, or suspended): the first org that remains.
+    return { kind: 'signed', signed: { user, membership: membership ?? memberships[0]!, memberships }, orgMoved: !membership }
+  }
+
+  /** The 503 of the screens while GitHub does not confirm the role. */
+  async function roleUnconfirmed(context: { headers: Headers }, login: string, orgs: number) {
+    log('warn', 'auth.role_unconfirmed', { login, orgs })
+    let html = await renderToString(
+      <SignInPage
+        theme={readTheme(context.headers.get('Cookie'))}
+        version={deps.version}
+        assetVersion={assetVersion}
+        signInHref={null}
+        notice="unavailable"
+      />,
+    )
+    return new Response(`<!DOCTYPE html>${html}`, {
+      status: 503,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '60' },
+    })
+  }
+
+  /** Every screen needs a signed-in member of an org. */
   let requireViewer: Middleware = async (context, next) => {
     let path = `${context.url.pathname}${context.url.search}`
     let isGet = context.request.method === 'GET' || context.request.method === 'HEAD'
-    if (!auth) return isGet ? toSignIn(path) : new Response('Unauthorized', { status: 401 })
-    let session = sessionOf(context)
-    let record = readSessionAuth(session)
-    if (!record || record.signedInAt + SESSION_TTL_MS <= now()) {
-      if (record) session.destroy()
-      return isGet ? toSignIn(path, record ? 'expired' : undefined) : new Response('Unauthorized', { status: 401 })
+    let viewer = await readViewer(context)
+    if (viewer.kind === 'unconfirmed') return roleUnconfirmed(context, viewer.login, viewer.orgs)
+    if (viewer.kind !== 'signed') {
+      if (viewer.kind !== 'anonymous') sessionOf(context).destroy()
+      let notice: SignInNotice | undefined = viewer.kind === 'anonymous' ? undefined : 'expired'
+      return isGet ? toSignIn(path, notice) : new Response('Unauthorized', { status: 401 })
     }
-    let user = await auth.store.findUser(record.userId)
-    let { memberships, unconfirmed } = user
-      ? await currentMemberships(auth.store, auth.lookupRole, user, now())
-      : { memberships: [], unconfirmed: 0 }
-    if (user && memberships.length === 0 && unconfirmed > 0) {
-      // GitHub has not answered for over an hour: no access, but no sign-out either. The session
-      // works again as soon as GitHub confirms the role.
-      log('warn', 'auth.role_unconfirmed', { login: user.login, orgs: unconfirmed })
-      let html = await renderToString(
-        <SignInPage
-          theme={readTheme(context.headers.get('Cookie'))}
-          version={deps.version}
-          assetVersion={assetVersion}
-          signInHref={null}
-          notice="unavailable"
-        />,
-      )
-      return new Response(`<!DOCTYPE html>${html}`, {
-        status: 503,
-        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '60' },
-      })
-    }
-    if (!user || memberships.length === 0) {
-      session.destroy()
-      return isGet ? toSignIn(path, 'expired') : new Response('Unauthorized', { status: 401 })
-    }
-    let orgId = session.get('orgId')
-    let membership = memberships.find((m) => m.org.id === orgId)
-    if (!membership) {
-      // The org of the session is gone (left on GitHub, or suspended): the session moves to the
-      // first org that remains, and stays there, so the org on screen and the role match.
-      membership = memberships[0]!
-      session.set('orgId', membership.org.id)
-    }
-    context.set(Signed, { user, membership, memberships })
+    // The session moves to the org on screen, and stays there, so the org and the role match.
+    if (viewer.orgMoved) sessionOf(context).set('orgId', viewer.signed.membership.org.id)
+    context.set(Signed, viewer.signed)
     return next()
   }
 
@@ -1196,15 +1209,12 @@ export function createUiControllers(deps: UiDependencies) {
    * person is signed in or not; either way the 404 stays, in the frame, in French.
    */
   let optionalViewer: Middleware = async (context, next) => {
-    let passed = false
-    let response = await requireViewer(context, async () => {
-      passed = true
-      return next()
-    })
-    if (passed) return response
-    // GitHub has not confirmed the role for over an hour: the 503 of the screens says so, and the
-    // session stays. A 404 page would offer a sign-in that cannot help.
-    if (response.status === 503) return response
+    // Reads the session and changes nothing in it: an unknown URL never signs a person out.
+    let viewer = await readViewer(context)
+    // GitHub has not confirmed the role for over an hour: the 503 of the screens says so. A 404
+    // page would offer a sign-in that cannot help.
+    if (viewer.kind === 'unconfirmed') return roleUnconfirmed(context, viewer.login, viewer.orgs)
+    if (viewer.kind === 'signed') context.set(Signed, viewer.signed)
     return next()
   }
 
