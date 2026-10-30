@@ -58,7 +58,8 @@ export interface PageFrame {
 
 export interface ShellProps {
   frame: PageFrame
-  section: Section
+  /** The current item of the navigation. None: a page outside of it (REV-40, a 404). */
+  section?: Section
   title: string
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */

@@ -8,7 +8,7 @@ import { createController } from './actions/controller.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
-import { authRoutes, pageRoutes, routes } from './routes.ts'
+import { authRoutes, fallbackRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
@@ -49,8 +49,30 @@ export interface AppDependencies {
   orgSettings?: OrgSettingsDependencies | null
 }
 
+/**
+ * The paths of machines: the runner API, the webhook, the health check and the files. A miss there
+ * keeps the plain answer of the router, whoever asks.
+ */
+const MACHINE_PATHS = /^\/(?:api|webhooks|healthz|assets)(?:\/|$)/
+
+/**
+ * REV-40. A GET of a browser (it accepts HTML) outside of the paths of machines. Only such a request
+ * gets the 404 page of the screens.
+ */
+export function isPageRequest(request: Request, url: URL): boolean {
+  if (request.method !== 'GET' && request.method !== 'HEAD') return false
+  if (MACHINE_PATHS.test(url.pathname)) return false
+  return (request.headers.get('Accept') ?? '').includes('text/html')
+}
+
 export function createAppRouter(deps: AppDependencies) {
+  // The 404 page needs the session and the frame of the screens: its own router, with their middleware.
+  let fallback = createRouter({ middleware: [render()] })
   let router = createRouter({
+    defaultHandler: (context) =>
+      isPageRequest(context.request, context.url)
+        ? fallback.fetch(context.request)
+        : new Response(`Not Found: ${context.url.pathname}`, { status: 404 }),
     middleware: [
       requestLogger(),
       staticFiles(PUBLIC_DIR, {
@@ -76,6 +98,7 @@ export function createAppRouter(deps: AppDependencies) {
   })
   router.map(pageRoutes, ui.pages)
   router.map(authRoutes, ui.signIn)
+  fallback.map(fallbackRoutes, ui.notFound)
   if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))
   return router
 }

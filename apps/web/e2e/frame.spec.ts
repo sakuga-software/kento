@@ -84,6 +84,46 @@ test.describe('the frame of the screens', () => {
   })
 })
 
+// REV-40. A 404 keeps the frame of Kentō, in French, with a way out.
+test.describe('a page that does not exist', () => {
+  for (let theme of ['paper', 'sumi'] as const) {
+    test(`an unknown repository and an unknown page answer 404 in the frame, and pass axe (${theme})`, async ({ page, context, baseURL }) => {
+      await signIn(page, 'alex')
+      await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+      let errors = watchConsole(page)
+      await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
+
+      let config = await page.goto('/repos/00000000-0000-0000-0000-000000000000/config')
+      expect(config?.status()).toBe(404)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
+      await expect(page.getByRole('heading', { level: 1, name: 'Ce repo n’est plus dans l’installation' })).toBeVisible()
+      await expectNoAxeViolations(page)
+      await page.getByRole('main').getByRole('link', { name: 'Voir les repos' }).click()
+      await expect(page).toHaveURL(/\/repos$/)
+      await expect(page.getByRole('heading', { level: 1, name: 'Repos' })).toBeVisible()
+
+      let unknown = await page.goto('/nope')
+      expect(unknown?.status()).toBe(404)
+      await expect(page.getByRole('heading', { level: 1, name: 'Cette page n’existe pas' })).toBeVisible()
+      await expectNoAxeViolations(page)
+      await page.getByRole('main').getByRole('link', { name: 'Retour au tableau de bord' }).click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+
+      // The two 404 are on purpose; nothing else may fail.
+      expect(errors.filter((e) => !e.includes('status of 404'))).toEqual([])
+    })
+  }
+
+  test('a person who is not signed in gets the 404 too, with the sign-in as the way out', async ({ page }) => {
+    let response = await page.goto('/nope')
+    expect(response?.status()).toBe(404)
+    await expect(page.getByRole('heading', { level: 1, name: 'Cette page n’existe pas' })).toBeVisible()
+    await expectNoAxeViolations(page)
+    await page.getByRole('link', { name: 'Se connecter à Kentō' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Se connecter à Kentō' })).toBeVisible()
+  })
+})
+
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 

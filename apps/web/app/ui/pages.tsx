@@ -14,7 +14,7 @@ import type { GitHubProfile, LookupRole } from '../auth/github.ts'
 import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
 import type { AuthStore, MembershipRow, UserRow } from '../auth/store.ts'
 import { errorMessage, log } from '../log.ts'
-import { authRoutes, pageRoutes } from '../routes.ts'
+import { authRoutes, fallbackRoutes, pageRoutes } from '../routes.ts'
 import { readKeyForm, readProviderForm } from '../providers/form.ts'
 import type { Probe } from '../providers/probe.ts'
 import { SecretsError } from '../providers/secrets.ts'
@@ -44,6 +44,7 @@ import type { ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardStore, RetryOutcome } from '../dashboard/store.ts'
 import { DASHBOARD_NOTICES, DashboardPage, type DashboardNotice } from './dashboard.tsx'
 import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from './config.tsx'
+import { ErrorPage, type ErrorExit, type ErrorKind } from './not-found.tsx'
 import { readRepoList, repoListQuery, ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
@@ -206,6 +207,10 @@ export function installationUrl(githubUrl: string, org: { login: string; githubI
   return `${githubUrl}/organizations/${encodeURIComponent(org.login)}/settings/installations/${org.githubInstallationId}`
 }
 
+const SETTINGS_EXIT: ErrorExit = { href: pageRoutes.settings.href(), label: 'Revenir aux réglages' }
+const REPOS_EXIT: ErrorExit = { href: pageRoutes.repos.href(), label: 'Voir les repos' }
+const RUNNERS_EXIT: ErrorExit = { href: pageRoutes.runners.href(), label: 'Revenir aux runners' }
+
 function forbidden() {
   return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
 }
@@ -346,6 +351,19 @@ export function createUiControllers(deps: UiDependencies) {
     }
   }
 
+  type PageContext = Parameters<typeof getCsrfToken>[0] & {
+    get(key: typeof Signed): SignedIn | undefined
+    headers: Headers
+    url: URL
+    render(node: any, init?: ResponseInit): Response
+  }
+
+  /** REV-40. A 404 or a 400 of a screen, in the frame, with a link out. */
+  function errorPage(context: PageContext, status: 400 | 404, kind: ErrorKind, section?: Section, exit?: ErrorExit) {
+    let page = frame(signedOf(context), context, getCsrfToken(context))
+    return context.render(<ErrorPage frame={page} kind={kind} section={section} exit={exit} />, { status })
+  }
+
   async function renderRunners(
     context: { render(node: any, init?: ResponseInit): Response },
     signed: SignedIn,
@@ -417,7 +435,7 @@ export function createUiControllers(deps: UiDependencies) {
   async function changeOrgSettings(context: SettingsContext, reset: boolean) {
     let signed = signedOf(context)
     let settings = deps.orgSettings
-    if (!settings) return new Response('Not Found', { status: 404 })
+    if (!settings) return errorPage(context, 404, 'page', 'settings', SETTINGS_EXIT)
     if (signed.membership.role !== 'admin') {
       log('warn', 'org_settings.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
       return forbidden()
@@ -427,7 +445,7 @@ export function createUiControllers(deps: UiDependencies) {
     let versionText = form?.get('version')
     let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
     let known = reset ? (ORG_RESET_FIELDS as readonly unknown[]).includes(field) : (ORG_FIELDS as readonly unknown[]).includes(field)
-    if (!form || version === null || !known) return new Response('Bad Request', { status: 400 })
+    if (!form || version === null || !known) return errorPage(context, 400, 'form', 'settings', SETTINGS_EXIT)
     let key = field as OrgField
     let orgId = signed.membership.org.id
     let page = frame(signed, context, getCsrfToken(context))
@@ -463,7 +481,7 @@ export function createUiControllers(deps: UiDependencies) {
       audit = { before: current, after }
       return after
     })
-    if (outcome.kind === 'not_found') return new Response('Not Found', { status: 404 })
+    if (outcome.kind === 'not_found') return errorPage(context, 404, 'page', 'settings', SETTINGS_EXIT)
     if (outcome.kind === 'conflict') {
       log('info', 'org_settings.conflict', { login: signed.user.login, org: signed.membership.org.login, field: key, sent: version, current: outcome.version })
       return renderSettings(
@@ -523,7 +541,7 @@ export function createUiControllers(deps: UiDependencies) {
     )
   }
 
-  async function setRepoEnabled(context: { get(key: typeof Signed): SignedIn | undefined; params: { id: string }; url: URL }, enabled: boolean) {
+  async function setRepoEnabled(context: PageContext & { params: { id: string } }, enabled: boolean) {
     let signed = signedOf(context)
     if (signed.membership.role !== 'admin') {
       log('warn', 'repos.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
@@ -531,7 +549,7 @@ export function createUiControllers(deps: UiDependencies) {
     }
     let store = deps.repos?.store
     let result = store ? await store.setEnabled(signed.membership.org.id, context.params.id, enabled) : null
-    if (!result) return new Response('Not Found', { status: 404 })
+    if (!result) return errorPage(context, 404, 'repo', 'repos')
     log('info', enabled ? 'repos.enabled' : 'repos.disabled', {
       login: signed.user.login,
       org: signed.membership.org.login,
@@ -565,7 +583,7 @@ export function createUiControllers(deps: UiDependencies) {
   ) {
     let deps2 = deps.repoConfig!
     let view = await deps2.store.read(signed.membership.org.id, context.params.id)
-    if (!view) return new Response('Not Found', { status: 404 })
+    if (!view) return errorPage(context, 404, 'repo', 'repos')
     let providers = await deps2.providers.list(signed.membership.org.id)
     return context.render(
       <ConfigPage
@@ -590,19 +608,21 @@ export function createUiControllers(deps: UiDependencies) {
   async function changeConfig(context: ConfigContext & { get(key: typeof FormData): FormData | undefined }, reset: boolean) {
     let signed = signedOf(context)
     let configDeps = deps.repoConfig
-    if (!configDeps) return new Response('Not Found', { status: 404 })
+    if (!configDeps) return errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
     if (signed.membership.role !== 'admin') {
       log('warn', 'repo_config.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
       return forbidden()
     }
     let id = context.params.id
-    if (!UUID.test(id)) return new Response('Not Found', { status: 404 })
+    if (!UUID.test(id)) return errorPage(context, 404, 'repo', 'repos')
     let form = context.get(FormData)
     let field = form?.get('field')
     let versionText = form?.get('version')
     let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
     let known = (CONFIG_FIELDS as readonly unknown[]).includes(field)
-    if (!form || version === null || !known) return new Response('Bad Request', { status: 400 })
+    if (!form || version === null || !known) {
+      return errorPage(context, 400, 'form', 'repos', { href: pageRoutes.repoConfig.href({ id }), label: 'Revenir à la config du repo' })
+    }
     let key = field as ConfigField
     let tab = tabOf(key)
     let page = frame(signed, context, getCsrfToken(context))
@@ -649,7 +669,7 @@ export function createUiControllers(deps: UiDependencies) {
       if (reset && !hasField(current.config, key) && !(key === 'level' && current.defaultLevel !== 'lite')) return current
       return change(current)
     })
-    if (outcome.kind === 'not_found') return new Response('Not Found', { status: 404 })
+    if (outcome.kind === 'not_found') return errorPage(context, 404, 'repo', 'repos')
     if (outcome.kind === 'conflict') {
       log('info', 'repo_config.conflict', { login: signed.user.login, repoId: id, field: key, sent: version, current: outcome.version })
       return renderConfig(
@@ -703,7 +723,7 @@ export function createUiControllers(deps: UiDependencies) {
           return forbidden()
         }
         let level = context.get(FormData)?.get('level')
-        if (level !== 'lite' && level !== 'balanced' && level !== 'heavy') return new Response('Bad Request', { status: 400 })
+        if (level !== 'lite' && level !== 'balanced' && level !== 'heavy') return errorPage(context, 400, 'form', 'dashboard')
         let id = context.params.id
         let orgId = signed.membership.org.id
         let outcome: RetryOutcome | { kind: 'github_failed' }
@@ -796,7 +816,8 @@ export function createUiControllers(deps: UiDependencies) {
       // REV-12. The Config screen of a repository: a member reads it, an admin changes it.
       async repoConfig(context) {
         let signed = signedOf(context)
-        if (!deps.repoConfig || !UUID.test(context.params.id)) return new Response('Not Found', { status: 404 })
+        if (!deps.repoConfig) return errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
+        if (!UUID.test(context.params.id)) return errorPage(context, 404, 'repo', 'repos')
         let page = frame(signed, context, getCsrfToken(context))
         let query = context.url.searchParams
         let tab = query.get('tab')
@@ -899,7 +920,7 @@ export function createUiControllers(deps: UiDependencies) {
         if (!store || signed.membership.role !== 'admin') return forbidden()
         let id = context.params.id
         let value = context.get(FormData)?.get('trusted')
-        if (value !== 'true' && value !== 'false') return new Response('Bad Request', { status: 400 })
+        if (value !== 'true' && value !== 'false') return errorPage(context, 400, 'form', 'runners', RUNNERS_EXIT)
         let trusted = value === 'true'
         let done = UUID.test(id) && (await store.setTrusted(signed.membership.org.id, id, trusted))
         if (done) log('info', 'runner.trust_changed', { runnerId: id, trusted, by: signed.user.login })
@@ -1170,7 +1191,44 @@ export function createUiControllers(deps: UiDependencies) {
     },
   })
 
-  return { pages, signIn }
+  /**
+   * REV-40. A page request that no route matches: the router sends it here (see `router.ts`). The
+   * person is signed in or not; either way the 404 stays, in the frame, in French.
+   */
+  let optionalViewer: Middleware = async (context, next) => {
+    let passed = false
+    let response = await requireViewer(context, async () => {
+      passed = true
+      return next()
+    })
+    if (passed) return response
+    // GitHub has not confirmed the role for over an hour: the 503 of the screens says so, and the
+    // session stays. A 404 page would offer a sign-in that cannot help.
+    if (response.status === 503) return response
+    return next()
+  }
+
+  let notFound = createController(fallbackRoutes, {
+    middleware: [securityHeaders(), ...sessionLayer, optionalViewer],
+    actions: {
+      notFound(context) {
+        let signed = context.get(Signed)
+        let page: PageFrame = signed
+          ? frame(signed, context, getCsrfToken(context))
+          : {
+              theme: readTheme(context.headers.get('Cookie')),
+              version: deps.version,
+              assetVersion,
+              viewer: null,
+              csrfToken: null,
+              path: `${context.url.pathname}${context.url.search}`,
+            }
+        return context.render(<ErrorPage frame={page} kind="page" />, { status: 404 })
+      },
+    },
+  })
+
+  return { pages, signIn, notFound }
 }
 
 /** A path of this site, or `/`: never another origin (`//host`, `/\host`, a scheme). */

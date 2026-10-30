@@ -42,6 +42,14 @@ export const pageRoutes = route({
   signOut: post('/logout'),
 })
 
+/**
+ * REV-40. A page that no route matches, for a browser. The router dispatches to it only from its
+ * default handler: the routes of machines keep their own answers.
+ */
+export const fallbackRoutes = route({
+  notFound: get('*path'),
+})
+
 /** The GitHub sign-in. Open to anyone. */
 export const authRoutes = route({
   signIn: get('/login'),
