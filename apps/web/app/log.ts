@@ -5,7 +5,9 @@ type Level = 'info' | 'warn' | 'error'
  * container output, and Grafana can filter on `level` and `event`.
  */
 export function log(level: Level, event: string, fields: Record<string, unknown> = {}): void {
-  let line = JSON.stringify({ time: new Date().toISOString(), level, event, ...fields })
+  // A field never replaces the time, the level or the event of the line.
+  let own = { time: new Date().toISOString(), level, event }
+  let line = JSON.stringify(Object.assign({ ...own }, fields, own))
   if (level === 'info') {
     process.stdout.write(`${line}\n`)
   } else {

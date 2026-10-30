@@ -290,7 +290,9 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         await answer('rocket')
       } catch (error) {
         log('error', 'resolve.publication_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
-        await answer('confused').catch(() => {})
+        await answer('confused').catch((answerError) =>
+          log('warn', 'resolve.answer_failed', { ...fields, error: errorMessage(answerError) }),
+        )
       }
     }
   }

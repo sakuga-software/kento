@@ -724,7 +724,7 @@ export function createUiControllers(deps: UiDependencies) {
           login: signed.user.login,
           org: signed.membership.org.login,
           failedJobId: id,
-          level,
+          reviewLevel: level,
           outcome: outcome.kind,
           ...('jobId' in outcome ? { jobId: outcome.jobId } : {}),
         })

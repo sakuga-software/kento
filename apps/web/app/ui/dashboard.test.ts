@@ -419,6 +419,29 @@ describe('the dashboard', () => {
     assert.deepEqual(retries, [`${ORG.id} ${JOB_ID} heavy null`])
   })
 
+  it('logs a retry at level info, with the review level in its own field', async () => {
+    let { signIn, request } = setup(screen(), { kind: 'queued', jobId: 'new' }, null)
+    let { cookie, csrf } = await signIn(ALEX)
+    let out = ''
+    let write = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string) => {
+      out += chunk
+      return true
+    }) as typeof process.stdout.write
+    try {
+      await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'heavy' } })
+    } finally {
+      process.stdout.write = write
+    }
+    let line = out
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l))
+      .find((l) => l.event === 'dashboard.retry')
+    assert.equal(line?.level, 'info')
+    assert.equal(line?.reviewLevel, 'heavy')
+  })
+
   it('maps each outcome of a retry to its notice', async () => {
     for (let [kind, notice] of [
       ['already', 'already'],
