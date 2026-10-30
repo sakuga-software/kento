@@ -189,16 +189,17 @@ function setup(
 }
 
 describe('the words of the dashboard', () => {
-  it('says why a job failed, in French for the reasons of the service', () => {
-    assert.equal(failureText({ reason: 'lease expired 2 times', runnerName: 'runners-host' }), 'le runner a cessé de répondre pendant le job deux fois, en dernier runners-host')
-    assert.equal(failureText({ reason: 'lease expired 1 times', runnerName: null }), 'le runner a cessé de répondre pendant le job une fois')
-    assert.equal(
-      failureText({ reason: 'the provider « Anthropic » refused its key (401): unauthorized', runnerName: null }),
-      'le provider « Anthropic » a refusé sa clé (401)',
-    )
-    assert.equal(failureText({ reason: 'clone failed', runnerName: 'x' }), '« clone failed »')
-    assert.equal(failureText({ reason: null, runnerName: null }), 'aucune raison enregistrée')
-    assert.ok(failureText({ reason: 'x'.repeat(400), runnerName: null }).endsWith('… »'))
+  it('says why a job failed and what to do, in French (app/ui/reasons.test.ts has the whole table)', () => {
+    assert.deepEqual(failureText({ reason: 'lease expired 2 times', runnerName: 'runners-host' }), {
+      text: 'le runner a cessé de répondre pendant le job deux fois, en dernier runners-host',
+      action: 'Vérifiez sur l’écran Runners qu’un runner est en ligne, puis relancez.',
+      raw: null,
+    })
+    let refused = failureText({ reason: 'the provider « Anthropic » refused its key (401): unauthorized', runnerName: null })
+    assert.equal(refused.text, 'le provider « Anthropic » a refusé sa clé, code 401')
+    assert.equal(refused.raw, 'the provider « Anthropic » refused its key (401): unauthorized')
+    assert.equal(failureText({ reason: 'clone failed', runnerName: 'x' }).text, 'le runner n’a pas pu cloner le repo')
+    assert.equal(failureText({ reason: null, runnerName: null }).text, 'aucune raison enregistrée')
   })
 
   it('places a spend against its limit and the alert threshold', () => {

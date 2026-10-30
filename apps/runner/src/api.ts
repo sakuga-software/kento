@@ -98,6 +98,6 @@ async function failure(response: Response, action: string): Promise<Error> {
 }
 
 function checked<T>(result: Checked<T>, action: string): T {
-  if (!result.ok) throw new Error(`${action}: the answer of the service is not the protocol: ${result.errors.slice(0, 5).join('; ')}`);
+  if (!result.ok) throw new Error(`${action}: the service answer does not match the runner protocol (${result.errors.slice(0, 5).join('; ')}); run the runner version that the Runners screen shows`);
   return result.value;
 }

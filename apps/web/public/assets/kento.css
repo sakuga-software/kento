@@ -2829,6 +2829,29 @@ kbd,
   }
 }
 
+/* The text of the service under an error, folded (app/ui/reasons.tsx). */
+.tech-details {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+}
+.tech-details summary {
+  width: fit-content;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+/* In the flex line of a delivery, the reason and its details take a line each. */
+.app-status .delivery-reason,
+.app-status dd > .tech-details {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+.tech-details code {
+  display: block;
+  margin-top: var(--space-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 /* ---------------------------------------------------------------- The screen of a pull request (REV-17) */
 
 .crumbs {

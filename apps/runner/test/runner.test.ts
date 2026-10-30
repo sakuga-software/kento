@@ -452,6 +452,27 @@ test('registers once, keeps the token in runner.json with mode 600, and reads it
   assertNoSecretInLogs();
 });
 
+test('a start with no token says where to get one, and calls nothing', async () => {
+  const stateDir = join(root, 'state-empty');
+  let calls = 0;
+  const doFetch = (async () => (calls++, Response.json({}, { status: 201 }))) as unknown as typeof fetch;
+  const config = { stateDir, kentoUrl: 'https://review.example', registrationToken: null, name: 'runners-host', labels: [] };
+  await assert.rejects(runnerToken(config, doFetch), /KENTO_REGISTRATION_TOKEN is not set: set it to a token from the Runners screen/);
+  assert.equal(calls, 0);
+});
+
+test('an answer that is not the protocol tells which runner to run; the request stays the same', async () => {
+  const sent: { url: string; body: unknown }[] = [];
+  const doFetch = (async (url: string, init: RequestInit) => {
+    sent.push({ url, body: JSON.parse(String(init.body)) });
+    return Response.json({ id: 42 }, { status: 201 });
+  }) as typeof fetch;
+  const config = { stateDir: join(root, 'state-bad'), kentoUrl: 'https://review.example', registrationToken: 'registration-secret', name: 'runners-host', labels: ['linux'] };
+  await assert.rejects(runnerToken(config, doFetch), /^Error: register: the service answer does not match the runner protocol \(.+\); run the runner version that the Runners screen shows$/);
+  assert.deepEqual(sent.map((s) => s.url), ['https://review.example/api/runner/register']);
+  assert.deepEqual(Object.keys(sent[0]!.body as object).sort(), ['labels', 'name', 'version']);
+});
+
 test('the configuration wants an https service and a known provider, and never prints a value', () => {
   const config = loadConfig({ KENTO_URL: 'https://review.sakuga.dev/', KENTO_RUNNER_LABELS: 'linux, x64', KENTO_RUNNER_NAME: 'runners-host', PROVIDER_API_KEY: RUNNER_KEY });
   assert.equal(config.kentoUrl, 'https://review.sakuga.dev');

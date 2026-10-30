@@ -15,6 +15,7 @@ import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { agoOrDate, moneyInput, plural, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
+import { appStatusReason, deliveryReason, reasonSentence, TechDetails } from './reasons.tsx'
 
 /** The forms of the section, each one a `field` of `POST /settings/org`. */
 export const ORG_FIELDS = ['caps', 'trustedBots', 'level', 'models.lite', 'models.balanced', 'models.heavy'] as const
@@ -598,13 +599,15 @@ function DeliveryLine(handle: Handle<{ delivery: DeliveryView | null; now: Date 
   return () => {
     let { delivery, now } = handle.props
     if (!delivery) return <>Aucun depuis 30 jours.</>
+    let reason = deliveryReason(delivery)
     return (
       <>
         <span class="mono">{deliveryText(delivery)}</span>{' '}
         <time dateTime={delivery.receivedAt.toISOString()} title={when(delivery.receivedAt)}>
           {agoOrDate(delivery.receivedAt, now)}
         </time>
-        {delivery.reason ? <span class="hint">, {delivery.reason}</span> : null}
+        {reason ? <span class="hint delivery-reason">{reasonSentence(reason)}</span> : null}
+        <TechDetails raw={reason?.raw ?? null} />
       </>
     )
   }
@@ -614,6 +617,7 @@ function AppSection(handle: Handle<SectionProps>) {
   return () => {
     let { view, app, webhookUrl, webhookSecret, version, commit, now } = handle.props
     let status = app?.ok ? app.status : null
+    let appError = app && !app.ok ? appStatusReason(app.error) : null
     let permissions = status ? checkPermissions(status.installation.permissions) : []
     let missing = status ? missingEvents(status.installation.events) : []
     let urlMismatch = status?.webhook && webhookUrl ? status.webhook.url !== webhookUrl : false
@@ -640,10 +644,11 @@ function AppSection(handle: Handle<SectionProps>) {
             <span class="status status-stale">État GitHub inconnu</span>
           )}
         </header>
-        {app && !app.ok ? (
-          <p class="hint" role="note">
-            GitHub n’a pas répondu sur l’App : {app.error}
-          </p>
+        {appError ? (
+          <div class="hint" role="note">
+            <p>{reasonSentence(appError)}</p>
+            <TechDetails raw={appError.raw} />
+          </div>
         ) : null}
         {!app ? (
           <p class="hint" role="note">
@@ -704,10 +709,10 @@ function AppSection(handle: Handle<SectionProps>) {
             <dd>
               <strong>{view.deliveries.failures24h}</strong> sur {view.deliveries.total24h} {plural(view.deliveries.total24h, 'livraison')}
               {view.deliveries.lastFailure ? (
-                <span class="hint">
-                  {' '}
-                  · dernier échec <DeliveryLine delivery={view.deliveries.lastFailure} now={now} />
-                </span>
+                <>
+                  <span class="hint"> · dernier échec </span>
+                  <DeliveryLine delivery={view.deliveries.lastFailure} now={now} />
+                </>
               ) : null}
             </dd>
           </div>

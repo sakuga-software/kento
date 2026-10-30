@@ -7,6 +7,7 @@ import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
+import { jobReason, reasonSentence, TechDetails, type Reason } from './reasons.tsx'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -21,28 +22,14 @@ export const DASHBOARD_NOTICES = {
   closed: 'La PR est fermée sur GitHub, donc rien n’est relancé.',
   capped: 'Le plafond de coût de l’organisation est atteint, donc rien n’est relancé. Un admin le change dans Réglages.',
   github_failed: 'GitHub n’a pas répondu et rien n’est relancé. Réessayez dans un instant.',
-  missing: 'Ce job n’existe plus, n’a pas échoué, ou son repo n’est plus activé.',
+  missing: 'Rien n’est relancé. Ce job a changé depuis votre dernier affichage, ou son repo n’est plus activé. Relancez-le depuis la liste ci-dessous, ou activez son repo sur l’écran Repos.',
 } as const
 export type DashboardNotice = keyof typeof DASHBOARD_NOTICES
 
 
-/**
- * The reason of a failure, in words. The service writes « lease expired N times » (the runner stopped
- * sending its signal during the job) and « the provider
- * « X » refused its key (401): … »; any other reason is the text of the runner, quoted.
- */
-export function failureText(job: Pick<FailedJob, 'reason' | 'runnerName'>): string {
-  let reason = job.reason?.trim() ?? ''
-  if (!reason) return 'aucune raison enregistrée'
-  let lease = /^lease expired (\d+) times?$/.exec(reason)
-  if (lease) {
-    let n = Number(lease[1])
-    let times = n === 1 ? 'une fois' : n === 2 ? 'deux fois' : n === 3 ? 'trois fois' : `${n} fois`
-    return `le runner a cessé de répondre pendant le job ${times}${job.runnerName ? `, en dernier ${job.runnerName}` : ''}`
-  }
-  let refused = /^the provider « (.+) » refused its key \((\d{3})\)/.exec(reason)
-  if (refused) return `le provider « ${refused[1]} » a refusé sa clé (${refused[2]})`
-  return `« ${reason.length > 300 ? `${reason.slice(0, 300)}…` : reason} »`
+/** The reason of a failure, in words, with what to do (app/ui/reasons.tsx). */
+export function failureText(job: Pick<FailedJob, 'reason' | 'runnerName'>): Reason {
+  return jobReason(job.reason, job.runnerName)
 }
 
 export type CapState = 'none' | 'ok' | 'alert' | 'reached'
@@ -381,13 +368,15 @@ function Tile(handle: Handle<{ label: string; value: string; alert?: boolean }>)
 function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolean; csrf: string; githubUrl: string }>) {
   return () => {
     let { banner, admin, csrf, githubUrl } = handle.props
+    let reason = failureText(banner)
     return (
       <section class="banner banner-alert dash-failure" aria-labelledby="failure-title">
         <div class="banner-confirm-body">
           <h2 id="failure-title" class="banner-confirm-title">
             La review {banner.level} de <span class="mono">{banner.repo}#{banner.prNumber}</span> a échoué
           </h2>
-          <p>Raison : {failureText(banner)}.</p>
+          <p>Raison : {reason.text}. {reason.action}</p>
+          <TechDetails raw={reason.raw} />
           <p>
             {banner.previous
               ? `La review précédente (${banner.previous.score}/5, publiée le ${clock(banner.previous.publishedAt)}) reste publiée sur la PR.`
@@ -814,7 +803,9 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
           <p class="hint">Aucun job en échec sur 7 jours.</p>
         ) : (
           <ul class="dash-jobs">
-            {failures.map((job) => (
+            {failures.map((job) => {
+              let reason = failureText(job)
+              return (
               <li class="dash-job">
                 <div class="dash-review-head">
                   <a class="mono" href={prUrl(githubUrl, job.repo, job.prNumber)}>
@@ -828,10 +819,12 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
                   ) : null}
                 </div>
                 <p class="hint">
-                  {failureText(job)} · {job.attempts} {plural(job.attempts, 'tentative')}
+                  {job.attempts} {plural(job.attempts, 'tentative')} · {reasonSentence(reason)}
                 </p>
+                <TechDetails raw={reason.raw} />
               </li>
-            ))}
+              )
+            })}
           </ul>
         )}
       </section>

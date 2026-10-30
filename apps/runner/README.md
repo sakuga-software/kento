@@ -293,7 +293,7 @@ Remove the container and the volume, then register again with a new token, as in
 | `startup.config_invalid` with `PROVIDER_KIND must be one of openrouter, anthropic, openai_compatible, ollama` | A typo in `PROVIDER_KIND`. |
 | `startup.config_invalid` with `PROVIDER_BASE_URL must be an https:// URL` | An `http://` URL for a provider other than Ollama. |
 | `startup.config_invalid` with `KENTO_RUNNER_LABELS must be at most 20 labels…` | A label with a space or another character. |
-| `runner.stopped` with `no runner token in /var/lib/kento-runner/runner.json, and KENTO_REGISTRATION_TOKEN is not set` | The volume is new or missing, and the command has no registration token. Create a token and use its command. |
+| `runner.stopped` with `no runner token in /var/lib/kento-runner/runner.json, and KENTO_REGISTRATION_TOKEN is not set: …` | The volume is new or missing, and the command has no registration token. Create a token and use its command. |
 
 ### The runner cannot reach the service
 

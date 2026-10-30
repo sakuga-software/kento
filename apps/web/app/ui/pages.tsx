@@ -1187,7 +1187,7 @@ export function createUiControllers(deps: UiDependencies) {
         } catch (error) {
           if (!(error instanceof SecretsError)) throw error
           log('error', 'providers.key_unreadable', { providerId: id, error: error.message })
-          return failed('La clé ne se déchiffre pas avec la clé maître du service.')
+          return failed('La clé ne se déchiffre pas avec la clé maître du service. Remplacez la clé, ou vérifiez KENTO_SECRETS_KEY sur le service.')
         }
         if (!found) return toSettings('missing')
         if (found.apiKey === null) return failed('Ce provider se teste depuis le runner qui le tient.')

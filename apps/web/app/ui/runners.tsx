@@ -154,7 +154,7 @@ export const RUNNER_NOTICES = {
   trusted: 'Le runner reçoit maintenant la clé du service quand il n’a pas la sienne.',
   untrusted: 'Le runner ne reçoit plus la clé du service.',
   discarded: 'Token d’enregistrement annulé.',
-  missing: 'Ce runner ou ce token n’existe plus, ou a déjà changé.',
+  missing: 'Rien n’a changé. Ce runner ou ce token a été modifié ou supprimé depuis votre dernier affichage. Voyez son état ci-dessous, puis refaites l’action s’il le faut.',
   revoked_silent: 'Runners muets révoqués. Leurs tokens ne marchent plus, et leurs jobs en cours sont repartis en file.',
 } as const
 export type RunnerNotice = keyof typeof RUNNER_NOTICES

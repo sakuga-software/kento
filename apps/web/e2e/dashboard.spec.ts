@@ -102,7 +102,7 @@ test.describe('the dashboard', () => {
 
     let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
     await expect(banner).toBeVisible()
-    await expect(banner.getByText('Raison : le runner a cessé de répondre pendant le job deux fois, en dernier runners-host.')).toBeVisible()
+    await expect(banner.getByText('Raison : le runner a cessé de répondre pendant le job deux fois, en dernier runners-host. Vérifiez sur l’écran Runners qu’un runner est en ligne, puis relancez.')).toBeVisible()
     await expect(banner.getByText(/La review précédente \(3\/5, publiée le .*\) reste publiée sur la PR\./)).toBeVisible()
     await expect(banner.getByRole('link', { name: 'Voir la PR' })).toHaveAttribute('href', /\/sakuga-software\/dash-e2e\/pull\/41$/)
     // The estimate of balanced: the mean of the balanced reviews of the repository.

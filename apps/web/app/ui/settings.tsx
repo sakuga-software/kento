@@ -39,7 +39,7 @@ export const PROVIDER_NOTICES = {
   tested_ok: { tone: 'ok', text: 'Le provider a accepté la clé.' },
   tested_refused: { tone: 'alert', text: 'Le provider a refusé la clé.' },
   test_failed: { tone: 'alert', text: 'Le test n’a pas abouti, et l’état du provider ne change pas.' },
-  missing: { tone: 'alert', text: 'Ce provider n’existe plus, ou a déjà changé.' },
+  missing: { tone: 'alert', text: 'Rien n’a changé. Ce provider a été modifié ou retiré depuis votre dernier affichage. Voyez son état ci-dessous, puis refaites l’action s’il le faut.' },
 } as const
 export type ProviderNotice = keyof typeof PROVIDER_NOTICES
 

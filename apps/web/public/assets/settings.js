@@ -9,7 +9,8 @@ function openTarget() {
     return
   }
   const target = id ? document.getElementById(id) : null
-  const details = target?.querySelector('details') ?? target?.closest('details')
+  // The technical details of an error stay folded: they are not the section that the link opens.
+  const details = target?.querySelector('details:not(.tech-details)') ?? target?.closest('details')
   if (!details || details.open) return
   details.open = true
   target.scrollIntoView()
