@@ -54,9 +54,10 @@ try {
  * log keeps one line that says what to do.
  */
 async function refused(): Promise<void> {
-  if (stop.signal.aborted) return;
-  const timer = setInterval(() => {}, 1 << 30);
-  await new Promise((resolve) => stop.signal.addEventListener('abort', resolve, { once: true }));
-  clearInterval(timer);
+  if (!stop.signal.aborted) {
+    const timer = setInterval(() => {}, 1 << 30);
+    await new Promise((resolve) => stop.signal.addEventListener('abort', resolve, { once: true }));
+    clearInterval(timer);
+  }
   log('info', 'shutdown.done');
 }

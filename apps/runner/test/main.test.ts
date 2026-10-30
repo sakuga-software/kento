@@ -15,10 +15,10 @@ before(() => {
 after(() => rmSync(root, { recursive: true, force: true }));
 
 /** Starts `node src/main.ts` against a service that answers 401 to everything, and reads its log. */
-async function startRefused(env: Record<string, string>) {
+async function startRefused(env: Record<string, string>, delayMs = 0) {
   const server = createServer((request, response) => {
     request.resume();
-    response.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}');
+    setTimeout(() => response.writeHead(401, { 'Content-Type': 'application/json' }).end('{"error":"unauthorized"}'), delayMs);
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port;
@@ -67,6 +67,23 @@ test('a refused runner token says how to register again, and waits until it is s
     run.child.kill('SIGTERM');
     assert.equal(await run.exited, 1);
     assert.equal(run.lines().at(-1)!.event, 'shutdown.done');
+  } finally {
+    run.child.kill('SIGKILL');
+    run.close();
+  }
+});
+
+test('a stop that comes before the refusal still ends with shutdown.done', async () => {
+  // The service answers late: SIGTERM arrives while the registration is in flight.
+  const run = await startRefused({ KENTO_REGISTRATION_TOKEN: 'kento_reg_expired-0000000000000000', KENTO_STATE_DIR: mkdtempSync(join(root, 'state-')) }, 1000);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    run.child.kill('SIGTERM');
+    assert.equal(await run.exited, 1);
+    assert.deepEqual(
+      run.lines().map((line) => line.event),
+      ['shutdown.started', 'runner.registration_refused', 'shutdown.done'],
+    );
   } finally {
     run.child.kill('SIGKILL');
     run.close();
