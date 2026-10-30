@@ -223,8 +223,8 @@ The same steps change a variable of the runner, for example a new `PROVIDER_API_
    The token of the runner stops working at its next call. Its job in progress goes back to the
    queue at once, for another runner, without counting as an attempt. The runner moves to
    **Révoqués**.
-2. On the machine, the runner logs `runner.token_refused` and stops. Docker starts it again
-   (`--restart unless-stopped`), and it stops again. Remove the container and its volume:
+2. On the machine, the runner logs `runner.token_refused` once, and then waits without calling the
+   service until you stop it. Remove the container and its volume:
 
    ```sh
    docker rm -f kento-runner
@@ -248,14 +248,12 @@ runner removes its tokens and keys from every line.
 The card in **Tokens en attente** says « Token expiré » when no runner registered within the hour. A
 token that a runner already used fails the same way.
 
-On the machine, the runner stops with:
+On the machine, the runner logs this line once, then waits without calling the service until you
+stop it:
 
 ```json
-{"level":"error","event":"runner.token_refused","error":"the service refused the runner token: it is wrong or revoked. Remove runner.json to register again."}
+{"level":"error","event":"runner.registration_refused","error":"the service refused the registration token: it expired after one hour, was already used, or was cancelled. Create a new token on the Runners screen, then remove this container and start the command of the new token."}
 ```
-
-At this point the volume holds no `runner.json`: the message names the runner token, but the
-service refused the registration token. Docker restarts the runner, and the same line comes back.
 
 1. On the card, click **Nouveau token**. The screen shows a new token and its command, with the same
    name, labels and key mode.
@@ -276,11 +274,12 @@ curl -sS https://review.sakuga.dev/healthz
 ### `runner.token_refused` after `startup.ready`
 
 The runner registered, then the service refused its token (401). The runner was revoked, or its
-`runner.json` belongs to another service. The log shows, on each restart:
+`runner.json` belongs to another service. The log shows these lines, then the runner waits until
+you stop it:
 
 ```json
 {"level":"info","event":"startup.ready",…}
-{"level":"error","event":"runner.token_refused","error":"the service refused the runner token: it is wrong or revoked. Remove runner.json to register again."}
+{"level":"error","event":"runner.token_refused","error":"the service refused the runner token: the runner was revoked, or runner.json belongs to another service. Remove this container and its state volume, then register again with a new token from the Runners screen."}
 ```
 
 Remove the container and the volume, then register again with a new token, as in

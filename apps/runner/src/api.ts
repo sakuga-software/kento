@@ -21,6 +21,14 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * The service refused the registration token (401): it expired, it was already used, or an admin
+ * cancelled it. The runner has no token of its own yet.
+ */
+export class RegistrationRefusedError extends UnauthorizedError {
+  override name = 'RegistrationRefusedError';
+}
+
+/**
  * The service no longer gives this attempt of the job to the runner (409, or 404 for a job that is
  * gone): its lease ended and the job went back to the queue or to another runner, or the job was
  * cancelled or finished. The runner stops the job and sends nothing more.
@@ -46,6 +54,7 @@ export type KentoApi = {
 
 export async function register(baseUrl: string, registrationToken: string, body: RegisterRequest, doFetch: typeof fetch = fetch): Promise<RegisterResponse> {
   const response = await post(doFetch, baseUrl, PATHS.register, registrationToken, body, AbortSignal.timeout(30_000));
+  if (response.status === 401) throw new RegistrationRefusedError('register: the service refused the registration token');
   if (response.status !== 201) throw await failure(response, 'register');
   return checked(parseRegisterResponse(await response.json()), 'register');
 }

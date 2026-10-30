@@ -140,7 +140,8 @@ update runners set revoked_at = now() where id = '<id>';
 ```
 
 The next call of the runner gets 401 (a claim in progress ends within 30 s). The runner logs
-`runner.token_refused` and stops; it does not register again on its own. A job that it held goes
+`runner.token_refused` and waits until it is stopped; it does not register again on its own, and a
+restart policy does not start it in a loop. A job that it held goes
 back to the queue when its lease ends (at most 2 min after the last heartbeat, see
 [Leases and attempts](#leases-and-attempts)).
 
