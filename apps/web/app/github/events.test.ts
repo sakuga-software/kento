@@ -41,6 +41,22 @@ describe('commandFor pull_request', () => {
     })
   })
 
+  it('a new base moves the jobs of the pull request to it', () => {
+    let payload = pullRequestPayload({ action: 'edited', baseRef: 'main', changes: { base: { ref: { from: 'rev-17/pr-sheet' } } } })
+    assert.deepEqual(commandFor('pull_request', payload, policy), {
+      type: 'retarget_pull_request',
+      installation,
+      repository,
+      prNumber: 24,
+      baseRef: 'main',
+    })
+  })
+
+  it('an edit of the title or of the body changes no job', () => {
+    let payload = pullRequestPayload({ action: 'edited', changes: { title: { from: 'old title' } } })
+    assert.equal(reasonOf(payload), 'pull_request edited without a new base')
+  })
+
   it('other actions create no job', () => {
     assert.match(reasonOf(pullRequestPayload({ action: 'labeled' })), /action labeled creates no job/)
   })

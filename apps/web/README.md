@@ -112,6 +112,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | `ping` | | 200 `pong` |
 | `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the level that the config of the repository resolves (repository, then org, then `lite`). The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside the trusted bots of the org (settings, REV-13), a pull request from a fork. No job (202 `capped`): the org reached its cost limit of the day or of the month; the head gets the neutral check « Kentō · plafond ». |
 | `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. |
+| `pull_request` | `edited` with a new base | 202 `retargeted`: the queued and failed jobs of the pull request take the new base branch (a stacked pull request moves to the base of its parent when the branch of the parent is deleted). Other edits: 202 `ignored`. |
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |
 | `installation_repositories` | `added` / `removed` | Upserts / deletes the repositories (a deleted repository takes its jobs and reviews with it). |

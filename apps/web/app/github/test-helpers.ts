@@ -48,6 +48,10 @@ export function pullRequestPayload(
     author?: { login: string; type: string }
     headRepoId?: number | null
     repo?: typeof REPO
+    /** The branch that the pull request targets. */
+    baseRef?: string
+    /** The `changes` of an `edited` action: `{ base: { ref: { from } } }` for a new base. */
+    changes?: Record<string, unknown>
   } = {},
 ) {
   let repo = options.repo ?? REPO
@@ -60,8 +64,9 @@ export function pullRequestPayload(
       draft: options.draft ?? false,
       user: options.author ?? { login: 'alex', type: 'User' },
       head: { sha: options.head ?? headSha(1), ref: 'feature', repo: headRepoId === null ? null : { id: headRepoId } },
-      base: { sha: headSha(999), ref: 'main', repo: { id: repo.id } },
+      base: { sha: headSha(999), ref: options.baseRef ?? 'main', repo: { id: repo.id } },
     },
+    ...(options.changes ? { changes: options.changes } : {}),
     repository: repo,
     sender: options.sender ?? { login: 'alex', type: 'User' },
     installation: { id: 1001, node_id: 'MDIz' },

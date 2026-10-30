@@ -201,6 +201,35 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal((await jobRows()).length, 0)
   })
 
+  it('a new base of the pull request goes to its queued and failed jobs, not to a finished review', async () => {
+    // A stacked pull request: GitHub moves it to main when its parent merges and the branch of the
+    // parent is deleted. A job that still names the old branch fails its clone (fruitback #724).
+    let parent = 'fru-popup/fru-525-popup-layout-parent'
+    await post(pullRequestPayload({ head: headSha(1), baseRef: parent }))
+    await sql`update jobs set state = 'done' where head_sha = ${headSha(1)}`
+    await post(pullRequestPayload({ head: headSha(2), baseRef: parent }))
+    await sql`update jobs set state = 'failed' where head_sha = ${headSha(2)}`
+    await post(pullRequestPayload({ head: headSha(3), baseRef: parent }))
+    assert.deepEqual((await jobRows()).map((row) => [row.head_sha, row.state, row.base_ref]), [
+      [headSha(1), 'done', parent],
+      [headSha(2), 'failed', parent],
+      [headSha(3), 'queued', parent],
+    ])
+
+    let { status, body } = await post(pullRequestPayload({ action: 'edited', head: headSha(3), baseRef: 'main', changes: { base: { ref: { from: parent } } } }))
+    assert.equal(status, 202)
+    assert.deepEqual(body, { outcome: 'retargeted', jobs: 2 })
+    assert.deepEqual((await jobRows()).map((row) => [row.head_sha, row.state, row.base_ref]), [
+      [headSha(1), 'done', parent],
+      [headSha(2), 'failed', 'main'],
+      [headSha(3), 'queued', 'main'],
+    ])
+
+    // An edit of the title moves nothing.
+    let title = await post(pullRequestPayload({ action: 'edited', head: headSha(3), baseRef: 'main', changes: { title: { from: 'old' } } }))
+    assert.equal(title.body.outcome, 'ignored')
+  })
+
   it('a closed pull request cancels its queued job, and a reopen on the same head queues it again', async () => {
     await post(pullRequestPayload({ head: headSha(1) }))
     let { body } = await post(pullRequestPayload({ action: 'closed', head: headSha(1) }))

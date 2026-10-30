@@ -15,6 +15,8 @@ export type WebhookResult =
   | { outcome: 'duplicate'; reason: string }
   | { outcome: 'skipped'; reason: string }
   | { outcome: 'cancelled'; cancelled: number }
+  /** The jobs of a pull request that took its new base. */
+  | { outcome: 'retargeted'; jobs: number }
   | { outcome: 'updated'; repositories: number; cancelled: number }
   /** A command that the bot refused: no permission, an unknown command, a fork, a head already reviewed. */
   | { outcome: 'refused'; reason: string }
@@ -125,6 +127,31 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
             insert into finding_events (finding_id, type, actor)
             select id, 'stale', ${KENTO_ACTOR} from staled`)
           return { outcome: 'cancelled', cancelled }
+        }
+        case 'retarget_pull_request': {
+          // The same lock as a close: an enqueue that has not committed yet gets the new base too.
+          let [repo] = await tx
+            .select({ id: repos.id })
+            .from(repos)
+            .where(eq(repos.githubRepoId, command.repository.githubRepoId))
+            .for('update')
+          if (!repo) return { outcome: 'skipped', reason: 'unknown repository' }
+          // A queued job clones the base when it runs, and a retry of a failed job copies its base.
+          // The old branch can be gone: a stacked pull request moves to the base of its parent when
+          // the branch of the parent is deleted.
+          let moved = await tx
+            .update(jobs)
+            .set({ baseRef: command.baseRef })
+            .where(
+              and(
+                eq(jobs.repoId, repo.id),
+                eq(jobs.prNumber, command.prNumber),
+                inArray(jobs.state, ['queued', 'failed']),
+                ne(jobs.baseRef, command.baseRef),
+              ),
+            )
+            .returning({ id: jobs.id })
+          return { outcome: 'retargeted', jobs: moved.length }
         }
         case 'upsert_installation': {
           let org = await upsertOrg(tx, command.installation, command.suspended)

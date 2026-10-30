@@ -44,6 +44,11 @@ export type WebhookCommand =
       command: CommentCommand
     }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
+  /**
+   * The pull request targets a new branch: GitHub moves a stacked pull request to the base of its
+   * parent when the parent merges and its branch goes. The jobs that still read the base take it.
+   */
+  | { type: 'retarget_pull_request'; installation: Installation; repository: Repository; prNumber: number; baseRef: string }
   | { type: 'upsert_installation'; installation: Installation; repositories: Repository[]; suspended: boolean }
   | { type: 'delete_installation'; installation: Installation }
   | { type: 'add_repositories'; installation: Installation; repositories: Repository[] }
@@ -95,6 +100,13 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
 
   if (action === 'closed') {
     return { type: 'cancel_pull_request', installation, repository, prNumber }
+  }
+  if (action === 'edited') {
+    // An edit of the title or of the body changes no job. Only a new base has `changes.base`.
+    if (!obj(obj(payload.changes)?.base)) return { type: 'ignore', reason: 'pull_request edited without a new base' }
+    let baseRef = str(obj(pr.base)?.ref)
+    if (baseRef === null) return { type: 'invalid', reason: 'pull_request payload lacks base.ref' }
+    return { type: 'retarget_pull_request', installation, repository, prNumber, baseRef }
   }
   if (!isReviewAction(action)) {
     return { type: 'ignore', reason: `pull_request action ${action ?? '(none)'} creates no job` }
