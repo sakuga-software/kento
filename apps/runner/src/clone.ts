@@ -1,6 +1,6 @@
-// The clone of a pull request: a bare repository with the history of the base and the head and no
-// blob, then the blobs of the head in one batch. No checkout, so no file of the pull request is
-// written, and no hook or script of the pull request runs.
+// The clone of a pull request: a bare repository with the history of the base and the head. No
+// checkout, so no file of the pull request is written, and no hook or script of the pull request
+// runs.
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -16,8 +16,7 @@ export type Checkout = {
 };
 
 /**
- * The environment of every git command of a job, and of the engine while it reads the clone (a
- * partial clone fetches a missing blob on demand, with the same header).
+ * The environment of every git command of a job, and of the engine while it reads the clone.
  *
  * The token goes in an HTTP header that git reads from the environment: never in a URL, a command
  * line or a file of the clone. Only the host of the clone URL gets it. The global and system
@@ -106,8 +105,9 @@ export function isTransientGitError(error: unknown): boolean {
 
 /**
  * Fetches the head commit and the base branch of a pull request into a new bare repository under
- * `workDir`: every commit and tree, and the blobs of the head only. The engine reads the base side
- * of the diff from blobs that git fetches in one batch when it diffs.
+ * `workDir`, with every object. It is not a partial clone (`--filter=blob:none`): GitHub can refuse
+ * to send a blob that a partial clone asks for by its id (« did not send all necessary objects »),
+ * on every attempt (#104, #106).
  *
  * After a transient error, a new attempt starts in a new directory, after each delay of
  * `retryDelaysMs`. An abort of `signal` stops the wait, and no new attempt starts.
@@ -152,20 +152,10 @@ async function cloneOnce(options: { workDir: string; cloneUrl: string; headSha: 
       '--no-tags',
       '--no-write-fetch-head',
       '--recurse-submodules=no',
-      '--filter=blob:none',
       'origin',
       options.headSha,
       `+refs/heads/${options.baseRef}:${baseTracking}`,
     ]);
-    // The engine greps the tree of the head. In a partial clone, git grep fetches each missing blob
-    // on its own: 200 files make 200 fetches. One batch first makes that zero.
-    const blobs = (await run(repoDir, env, ['ls-tree', '-r', '--format=%(objecttype) %(objectname)', options.headSha]))
-      .split('\n')
-      .filter((line) => line.startsWith('blob '))
-      .map((line) => line.slice(5));
-    if (blobs.length > 0) {
-      await run(repoDir, env, ['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--recurse-submodules=no', '--filter=blob:none', '--stdin', 'origin'], `${blobs.join('\n')}\n`);
-    }
     const base = (await run(repoDir, env, ['rev-parse', '--verify', `${baseTracking}^{commit}`])).trim();
     return { repoDir, base, head: options.headSha, remove };
   } catch (error) {

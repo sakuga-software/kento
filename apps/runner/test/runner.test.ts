@@ -27,7 +27,7 @@ let logs: string[] = [];
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-// A repository that serves the pull request over file://, with what a partial clone needs.
+// A repository that serves the pull request over file://. The head is fetched by its id.
 before(() => {
   root = mkdtempSync(join(tmpdir(), 'kento-runner-test-'));
   source = join(root, 'source');
@@ -35,6 +35,7 @@ before(() => {
   git(source, 'init', '-q', '-b', 'main');
   git(source, 'config', 'user.email', 'test@example.com');
   git(source, 'config', 'user.name', 'Test');
+  // As GitHub, the source accepts a filter: a clone that asks for one would be partial.
   git(source, 'config', 'uploadpack.allowFilter', 'true');
   git(source, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
   writeFileSync(join(source, 'sum.ts'), 'export function sum(a: number, b: number) {\n  return a + b;\n}\n');
@@ -152,7 +153,7 @@ function assertNoSecretInLogs() {
   }
 }
 
-test('a job: partial clone, review by the engine with the stub model, result to the service', async () => {
+test('a job: clone, review by the engine with the stub model, result to the service', async () => {
   const { api, results } = fakeApi();
   const model = stubModel();
   const outcome = await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model.fetch));
@@ -285,6 +286,7 @@ test('the clone is bare, and keeps the token out of the remote URL and the files
     assert.equal(checkout.base, base);
     assert.equal(git(checkout.repoDir, 'config', '--get', 'remote.origin.url'), `file://${source}`);
     assert.equal(git(checkout.repoDir, 'rev-parse', '--is-bare-repository'), 'true', 'no checkout: no file of the pull request is written');
+    assert.equal(git(checkout.repoDir, 'rev-list', '--objects', '--missing=print', '--all', head).split('\n').filter((line) => line.startsWith('?')).length, 0, 'every object of the head and of the base is in the clone: no blob to fetch later');
     const grep = spawnSync('grep', ['-rl', INSTALLATION_TOKEN, checkout.repoDir], { encoding: 'utf8' });
     assert.equal(grep.status, 1, `grep found the token in: ${grep.stdout}`);
   } finally {
