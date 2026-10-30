@@ -2,6 +2,7 @@ import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
+import { createDashboardStore } from '../../app/dashboard/store.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
@@ -228,6 +229,23 @@ describe('POST /webhooks/github against Postgres', () => {
     // An edit of the title moves nothing.
     let title = await post(pullRequestPayload({ action: 'edited', head: headSha(3), baseRef: 'main', changes: { title: { from: 'old' } } }))
     assert.equal(title.body.outcome, 'ignored')
+  })
+
+  it('« Relancer » of the dashboard queues its job as a push does, on the new base of the pull request (REV-47)', async () => {
+    let parent = 'fru-popup/fru-525-popup-layout-parent'
+    await post(pullRequestPayload({ head: headSha(1), baseRef: parent }))
+    await sql`update jobs set state = 'failed', finished_at = now() where head_sha = ${headSha(1)}`
+    await post(pullRequestPayload({ action: 'edited', head: headSha(1), baseRef: 'main', changes: { base: { ref: { from: parent } } } }))
+    let [failed] = await sql<{ id: string; orgId: string }[]>`
+      select jobs.id, repos.org_id as "orgId" from jobs join repos on repos.id = jobs.repo_id where jobs.state = 'failed'`
+    let outcome = await createDashboardStore(database).retry(failed!.orgId, failed!.id, 'balanced', headSha(1))
+    assert.equal(outcome.kind, 'queued')
+    let [retried] = await sql<(JobRow & { id: string })[]>`
+      select id, pr_number, head_sha, base_ref, state, level, kind, github_delivery_id from jobs where id = ${(outcome as { jobId: string }).jobId}`
+    assert.deepEqual(
+      { ...retried, id: undefined },
+      { id: undefined, pr_number: 24, head_sha: headSha(1), base_ref: 'main', state: 'queued', level: 'balanced', kind: 'review', github_delivery_id: null },
+    )
   })
 
   it('a closed pull request cancels its queued job, and a reopen on the same head queues it again', async () => {

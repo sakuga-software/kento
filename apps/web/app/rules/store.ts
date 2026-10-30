@@ -2,6 +2,7 @@ import type postgres from 'postgres'
 
 import { MAX_JOB_RULES } from '@sakuga-review/protocol'
 
+import { toDate } from '../db/rows.ts'
 import type { RuleValues, SeverityFloor } from './model.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -55,10 +56,6 @@ export interface RulesStore {
 }
 
 type Row = Omit<RuleView, 'disabledAt' | 'updatedAt' | 'version'> & { disabledAt: Date | string | null; updatedAt: Date | string; version: number | string }
-
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}
 
 function view(row: Row): RuleView {
   return {

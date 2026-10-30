@@ -11,6 +11,7 @@ import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { react, type Reaction } from '../commands/handler.ts'
+import { jsonOf } from '../db/rows.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
 import { createFindingsLedger } from '../findings/ledger.ts'
 import { sweepReactions } from '../findings/reactions.ts'
@@ -146,7 +147,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   let lastReactionSweep = 0
 
   async function publishOne(row: Pending): Promise<PublishResult> {
-    let review: ReviewPayload = typeof row.result === 'string' ? JSON.parse(row.result) : row.result
+    let review = jsonOf<ReviewPayload>(row.result)
     let [owner, name] = row.fullName.split('/') as [string, string]
     let github: GitHub | null = null
     let skip = async (reason: 'closed' | 'superseded' | 'suspended'): Promise<PublishResult> => {
@@ -255,7 +256,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       join orgs on orgs.id = repos.org_id`
     for (let row of rows) {
       let fields = { resolutionId: row.id, jobId: row.jobId, repo: row.fullName, pr: row.prNumber, head: row.headSha }
-      let payload: ResolvePayload = typeof row.result === 'string' ? JSON.parse(row.result) : row.result
+      let payload = jsonOf<ResolvePayload>(row.result)
       let github: GitHub | null = null
       let answer = async (content: Reaction) => {
         if (github && row.commentId !== null) {

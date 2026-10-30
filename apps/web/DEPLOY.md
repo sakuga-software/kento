@@ -602,7 +602,7 @@ the head.
 The cost of the day and of the month is the sum of `reviews.cost_usd` and `resolutions.cost_usd` of
 the repositories of the org since 00:00 UTC (the first of the month, UTC), per provider of the job.
 The limits and the alert threshold are those of the settings of the org (section 15); the totals are
-`readOrgCosts` of `app/org-settings/costs.ts`, the same as the settings screen.
+`readOrgCosts` of `app/db/costs.ts`, the same as the settings screen and the limit at the enqueue.
 
 Check, signed in as an owner of `sakuga-software`:
 

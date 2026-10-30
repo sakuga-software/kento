@@ -1,10 +1,12 @@
+import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
-import { readOrgCosts, SERVICE_KEY_LABEL } from '../../app/org-settings/costs.ts'
+import * as schema from '../../app/db/schema.ts'
+import { readOrgCosts, SERVICE_KEY_LABEL } from '../../app/db/costs.ts'
 import { createDashboardStore, type DashboardStore } from '../../app/dashboard/store.ts'
 import { createTestDatabase } from './helpers.ts'
 
@@ -68,7 +70,7 @@ describe('the dashboard of an org', () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 4 })
-    store = createDashboardStore(database.sql)
+    store = createDashboardStore(database)
     let [a] = await database.sql<{ id: string }[]>`
       insert into orgs (github_installation_id, github_account_id, login) values (91, 2001, 'sakuga-software') returning id`
     let [b] = await database.sql<{ id: string }[]>`
@@ -182,6 +184,28 @@ describe('the dashboard of an org', () => {
     assert.equal((await store.screen(org)).banner, null)
   })
 
+  it('« Relancer » freezes the models of the config of the org and of the repository in its job (REV-47)', async () => {
+    // The retry reads the two `jsonb` configs through drizzle: they must reach readOverrides as objects.
+    let opus = { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null }
+    let sonnet = { provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: null }
+    await database.sql`update orgs set config = ${JSON.stringify({ models: { lite: opus } })}::text::jsonb where id = ${org}`
+    await database.sql`update repos set config = ${JSON.stringify({ models: { heavy: sonnet } })}::text::jsonb, config_version = 4 where id = ${repo}`
+    try {
+      let failed = await job({ state: 'failed', finishedAgo: '5 minutes', createdAgo: '20 minutes' })
+      let lite = await store.retry(org, failed, 'lite', null)
+      let heavy = await store.retry(org, failed, 'heavy', null)
+      let configs = await database.sql<{ level: string; config: unknown }[]>`
+        select level, config from jobs where id in (${(lite as { jobId: string }).jobId}, ${(heavy as { jobId: string }).jobId}) order by level desc`
+      assert.deepEqual(configs.map((c) => [c.level, c.config]), [
+        ['heavy', { repoConfigVersion: 4, models: sonnet, source: 'repo' }],
+        ['lite', { repoConfigVersion: 4, models: opus, source: 'org' }],
+      ])
+    } finally {
+      await database.sql`update orgs set config = '{}' where id = ${org}`
+      await database.sql`update repos set config = '{}', config_version = 0 where id = ${repo}`
+    }
+  })
+
   it('refuses a retry of another org, of a job that did not fail, of a stale head, or of a disabled repository', async () => {
     let theirs = await job({ repoId: otherRepo, state: 'failed', finishedAgo: '1 minute' })
     assert.deepEqual(await store.retry(org, theirs, 'lite', null), { kind: 'not_found' })
@@ -253,7 +277,7 @@ describe('the dashboard of an org', () => {
     try {
       let [zone] = await kiritimati<{ tz: string }[]>`select current_setting('TimeZone') as tz`
       assert.equal(zone!.tz, 'Pacific/Kiritimati')
-      for (let read of [store, createDashboardStore(kiritimati)]) {
+      for (let read of [store, createDashboardStore({ sql: kiritimati, db: drizzle(kiritimati, { schema }) })]) {
         let { week } = await read.screen(org)
         let [today] = await database.sql<{ day: string }[]>`select to_char(now() at time zone 'utc', 'YYYY-MM-DD') as day`
         let last = week.at(-1)!
@@ -319,7 +343,7 @@ describe('the dashboard of an org', () => {
     let theirs = await job({ repoId: otherRepo, createdAgo: '5 minutes' })
     await review(theirs, { cost: 9, createdAgo: '1 minute' })
 
-    let costs = await readOrgCosts(database.sql, org)
+    let costs = await readOrgCosts(database.db, org)
     let [truth] = await database.sql<{ total: string }[]>`
       select (select coalesce(sum(cost_usd), 0) from reviews join repos on repos.id = reviews.repo_id
           where repos.org_id = ${org} and reviews.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc')

@@ -4,10 +4,11 @@ import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import type { Installation, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
-import { capReached, readMoney, type CapHit } from '../org-settings/model.ts'
+import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
-import type { Db } from './client.ts'
-import { jobs, orgs, repos, resolutions, reviews } from './schema.ts'
+import type { Db, Tx } from './client.ts'
+import { orgCapHit, readRepoMonthCost } from './costs.ts'
+import { jobs, orgs, repos, resolutions } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -31,8 +32,6 @@ export type ApplyWebhook = (command: StoreCommand, deliveryId: string) => Promis
 /** A command in a comment. It asks GitHub before it writes: it runs out of the transaction of the store. */
 export type CommentCommandMessage = Extract<StoreCommand, { type: 'comment_command' }>
 export type HandleCommentCommand = (command: CommentCommandMessage, deliveryId: string) => Promise<WebhookResult>
-
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
 const ACTIVE_STATES = ['queued', 'running'] as const
 
@@ -215,48 +214,6 @@ async function outsidePaths(
   }
   if (files === null || pathsMatch(patterns, files)) return null
   return { outcome: 'skipped', reason: 'no changed file under the paths of the config' }
-}
-
-/**
- * What the reviews and resolutions of a repository cost since the first day of the month (UTC), in
- * dollars. A cost that the runner did not know counts 0.
- */
-async function spentThisMonth(tx: Tx, repoId: string): Promise<number> {
-  let month = sql`date_trunc('month', now() at time zone 'utc') at time zone 'utc'`
-  let rows = await tx.execute<{ total: string }>(sql`select
-    coalesce((select sum(${reviews.costUsd}) from ${reviews} where ${reviews.repoId} = ${repoId} and ${reviews.createdAt} >= ${month}), 0)
-    + coalesce((select sum(${resolutions.costUsd}) from ${resolutions} where ${resolutions.repoId} = ${repoId} and ${resolutions.createdAt} >= ${month}), 0)
-    as total`)
-  return Number(rows[0]?.total ?? 0)
-}
-
-/**
- * REV-13. What the reviews and resolutions of all the repositories of an org cost since the start of
- * the UTC day and of the UTC month. `readOrgCosts` of app/org-settings/costs.ts gives the same totals
- * to the screen.
- */
-async function orgSpent(tx: Tx, orgId: string): Promise<{ dayUsd: number; monthUsd: number }> {
-  let month = sql`date_trunc('month', now() at time zone 'utc') at time zone 'utc'`
-  let day = sql`date_trunc('day', now() at time zone 'utc') at time zone 'utc'`
-  let rows = await tx.execute<{ day: string; month: string }>(sql`
-    with costs as (
-      select ${reviews.costUsd} as cost, ${reviews.createdAt} as at from ${reviews} join ${repos} on ${repos.id} = ${reviews.repoId}
-      where ${repos.orgId} = ${orgId} and ${reviews.createdAt} >= ${month}
-      union all
-      select ${resolutions.costUsd}, ${resolutions.createdAt} from ${resolutions} join ${repos} on ${repos.id} = ${resolutions.repoId}
-      where ${repos.orgId} = ${orgId} and ${resolutions.createdAt} >= ${month}
-    )
-    select coalesce(sum(cost) filter (where at >= ${day}), 0)::text as day, coalesce(sum(cost), 0)::text as month from costs`)
-  return { dayUsd: Number(rows[0]?.day ?? 0), monthUsd: Number(rows[0]?.month ?? 0) }
-}
-
-/** REV-13. The cost limit that the org reached, or null. */
-async function orgCapHit(tx: Tx, org: { id: string; dailyCapUsd: string | null; monthlyCapUsd: string | null }): Promise<CapHit | null> {
-  let caps = { dailyCapUsd: readMoney(org.dailyCapUsd), monthlyCapUsd: readMoney(org.monthlyCapUsd) }
-  if (caps.dailyCapUsd === null && caps.monthlyCapUsd === null) return null
-  // The lock of the org row orders the checks of two deliveries of the org; the costs come from the
-  // results of the runners, so the jobs already queued are not counted until they end.
-  return capReached(caps, await orgSpent(tx, org.id), new Date())
 }
 
 function capped(hit: CapHit): Extract<WebhookResult, { outcome: 'capped' }> {
@@ -454,7 +411,7 @@ async function enqueueReview(
   let hit = await orgCapHit(tx, org)
   if (hit) return capped(hit)
   let cap = resolved.monthlyCapUsd.value
-  if (cap !== null && (await spentThisMonth(tx, repo.id)) >= cap) {
+  if (cap !== null && (await readRepoMonthCost(tx, repo.id)) >= cap) {
     return { outcome: 'skipped', reason: 'monthly cost limit of the repository is reached' }
   }
 

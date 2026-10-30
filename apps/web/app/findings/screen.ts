@@ -6,6 +6,7 @@
 // the page come from one more query on the same filters.
 import type postgres from 'postgres'
 
+import { toDate } from '../db/rows.ts'
 import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, PAGE_MAX, UUID, type FindingStatus } from './store.ts'
 
@@ -100,8 +101,6 @@ type Row = Omit<FindingRow, 'githubCommentId' | 'createdAt' | 'updatedAt'> & {
   updatedAt: Date | string
   cursorAt: string
 }
-
-const toDate = (value: Date | string) => (value instanceof Date ? value : new Date(value))
 
 function toRow(row: Row): FindingRow {
   let out: Partial<Row> = { ...row }

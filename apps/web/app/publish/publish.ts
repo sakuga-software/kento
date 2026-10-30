@@ -45,6 +45,7 @@ import {
 import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
+import { resolveReviewThread, reviewThreadPages } from '../github/graphql.ts'
 import { GitHubError, type GitHub } from './github.ts'
 
 /** The name of the check run, as the job of review.yml names it. */
@@ -304,7 +305,7 @@ export async function publishReview(
   for (let t of toClose) {
     await step('thread', async () => {
       try {
-        await github.graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: t.id })
+        await resolveReviewThread(github, t.id)
       } catch (error) {
         // GitHub refuses this mutation to an App that cannot write the contents. The reply tells the
         // person who resolves the thread why it can go.
@@ -530,32 +531,24 @@ async function listReviews(github: GitHub, reviewsPath: string): Promise<ListedR
   }
 }
 
+type ThreadNode = {
+  id: string
+  isResolved: boolean
+  path: string
+  line: number | null
+  comments: { nodes: { databaseId: number; body: string; author: { login: string } | null; commit: { oid: string } | null }[] }
+}
+
 /** The review threads that the bot opened on the pull request. */
 async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThread[]> {
-  let query = `
-    query($owner: String!, $name: String!, $number: Int!, $after: String) {
-      repository(owner: $owner, name: $name) {
-        pullRequest(number: $number) {
-          reviewThreads(first: 100, after: $after) {
-            pageInfo { hasNextPage endCursor }
-            nodes {
-              id isResolved path line
-              comments(first: 50) { nodes { databaseId body author { login } commit { oid } } }
-            }
-          }
-        }
-      }
-    }`
   // GraphQL gives the login of an App without `[bot]`.
   let logins = new Set([target.botLogin, target.botLogin.replace(/\[bot\]$/, '')])
   let threads: BotThread[] = []
-  let after: string | null = null
-  for (;;) {
-    let data: any = await github.graphql(query, { owner: target.owner, name: target.name, number: target.pr, after })
-    let page = data.repository.pullRequest.reviewThreads
-    for (let node of page.nodes) {
+  let fields = 'id isResolved path line comments(first: 50) { nodes { databaseId body author { login } commit { oid } } }'
+  for await (let nodes of reviewThreadPages<ThreadNode>(github, target, fields)) {
+    for (let node of nodes) {
       let first = node.comments.nodes[0]
-      if (!first || !logins.has(first.author?.login)) continue
+      if (!first || !logins.has(first.author?.login ?? '')) continue
       let key = FINDING_KEY.exec(first.body)
       if (!key) continue
       threads.push({
@@ -568,14 +561,11 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
         commentId: first.databaseId,
         body: first.body,
         // A later comment of the bot in the thread is its reply that the finding is gone.
-        answered: node.comments.nodes
-          .slice(1)
-          .some((c: { body: string; author?: { login: string } }) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? '')),
+        answered: node.comments.nodes.slice(1).some((c) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? '')),
       })
     }
-    if (!page.pageInfo.hasNextPage) return threads
-    after = page.pageInfo.endCursor
   }
+  return threads
 }
 
 /** One label `review: N/5` on the pull request, created on the first use in a repository. */

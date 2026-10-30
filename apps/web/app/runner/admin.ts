@@ -2,6 +2,8 @@ import type postgres from 'postgres'
 
 import { CLAIM_WAIT_SECONDS, type JobKind } from '@sakuga-review/protocol'
 
+import { toDate } from '../db/rows.ts'
+
 /** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
 export const ONLINE_SECONDS = 3 * CLAIM_WAIT_SECONDS
 /** After this with no call, a runner is « Hors ligne »; before it, its signal is « en retard ». */
@@ -87,13 +89,6 @@ export interface RunnersAdminStore {
    * screen was read stays. Their running jobs go back to the queue, as with `revoke`.
    */
   revokeSilent(orgId: string, runnerIds: string[]): Promise<{ names: string[]; requeued: string[] }>
-}
-
-function toDate(value: Date | string): Date
-function toDate(value: Date | string | null): Date | null
-function toDate(value: Date | string | null): Date | null {
-  if (value === null) return null
-  return value instanceof Date ? value : new Date(value)
 }
 
 export function createRunnersAdminStore(sql: postgres.Sql): RunnersAdminStore {

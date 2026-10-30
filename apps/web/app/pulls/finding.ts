@@ -5,6 +5,7 @@ import { findingKey } from '@sakuga-review/engine/findings'
 import type { Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { toDate } from '../db/rows.ts'
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { decodeCursor, encodeCursor, cursorAt, UUID, type FindingEventType, type FindingStatus, type Page } from '../findings/store.ts'
 import { fetchWithin, SCREEN_GITHUB_TIMEOUT_MS } from '../github/fetch.ts'
@@ -46,7 +47,6 @@ export interface HistoryEvent {
   createdAt: Date
 }
 
-const toDate = (value: Date | string): Date => (value instanceof Date ? value : new Date(value))
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 
 /** The finding `id` of the org, or null. */

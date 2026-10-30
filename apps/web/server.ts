@@ -142,7 +142,7 @@ let configProviders = createConfigProviders(providersStore, { serviceKey: config
 
 // The settings of the org (REV-13): its cost limits, its defaults, its trusted bots, and the state of
 // the App on GitHub.
-let orgSettingsStore = createOrgSettingsStore(database.sql)
+let orgSettingsStore = createOrgSettingsStore(database)
 let publicUrl = config.signIn?.publicUrl ?? null
 
 let router = createAppRouter({
@@ -169,7 +169,7 @@ let router = createAppRouter({
     serviceKey: config.providerApiKey !== null,
   },
   // The Config screen of a repository (REV-12). The providers of the org come with REV-11.
-  repoConfig: { store: createRepoConfigStore(database.sql), providers: configProviders },
+  repoConfig: { store: createRepoConfigStore(database), providers: configProviders },
   // The rules of the repositories and of the org (REV-19), on the Config screen and in the settings.
   rules: createRulesStore(database.sql),
   orgSettings: {
@@ -185,7 +185,7 @@ let router = createAppRouter({
   runnersAdmin: createRunnersAdminStore(database.sql),
   // The dashboard (REV-14): reviews, failures, queue, cost of the day and runners of the org.
   dashboard: {
-    store: createDashboardStore(database.sql),
+    store: createDashboardStore(database),
     githubUrl: config.githubUrl,
     readPullRequest:
       mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,

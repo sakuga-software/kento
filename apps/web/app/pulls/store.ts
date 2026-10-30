@@ -9,6 +9,7 @@ import { findingKey } from '@sakuga-review/engine/findings'
 import type { Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { toDate } from '../db/rows.ts'
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, UUID, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
 import { readEstimates, rerunReview, type RerunOutcome } from './rerun.ts'
@@ -116,14 +117,6 @@ export interface PullsStore {
 }
 
 const num = (value: string | number | null): number | null => (value === null ? null : Number(value))
-
-// The client of drizzle reads a timestamp as a string, and refuses a Date as a parameter.
-function toDate(value: Date | string): Date
-function toDate(value: Date | string | null): Date | null
-function toDate(value: Date | string | null): Date | null {
-  if (value === null) return null
-  return value instanceof Date ? value : new Date(value)
-}
 
 export function createPullsStore(sql: postgres.Sql): PullsStore {
   return {

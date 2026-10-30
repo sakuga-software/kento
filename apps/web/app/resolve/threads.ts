@@ -4,6 +4,7 @@
 import { cleanBody, markerResolve } from '@sakuga-review/engine/threads'
 import { MAX_RESOLVE_THREADS, type ResolveInput, type ResolveThread } from '@sakuga-review/protocol'
 
+import { reviewThreadPages } from '../github/graphql.ts'
 import type { TokenPermissions } from '../github/installation-token.ts'
 import type { GitHub } from '../publish/github.ts'
 
@@ -12,22 +13,10 @@ export const THREADS_PERMISSIONS: TokenPermissions = { pull_requests: 'read' }
 
 // A long thread keeps its first comment and its newest ones: the reply of a resolve, with its marker,
 // is among the newest.
-const QUERY = `
-  fragment threadComment on PullRequestReviewComment { databaseId body author { login __typename } originalCommit { oid } }
-  query($owner: String!, $name: String!, $number: Int!, $after: String) {
-    repository(owner: $owner, name: $name) {
-      pullRequest(number: $number) {
-        reviewThreads(first: 100, after: $after) {
-          pageInfo { hasNextPage endCursor }
-          nodes {
-            id isResolved path line originalLine
-            opener: comments(first: 1) { nodes { ...threadComment } }
-            recent: comments(last: 29) { nodes { ...threadComment } }
-          }
-        }
-      }
-    }
-  }`
+const FRAGMENTS = 'fragment threadComment on PullRequestReviewComment { databaseId body author { login __typename } originalCommit { oid } }'
+const FIELDS = `id isResolved path line originalLine
+  opener: comments(first: 1) { nodes { ...threadComment } }
+  recent: comments(last: 29) { nodes { ...threadComment } }`
 
 type Comment = { databaseId: number; body: string; author: { login: string; __typename: string } | null; originalCommit: { oid: string } | null }
 type Node = {
@@ -57,12 +46,9 @@ export type OpenThread = {
 export async function readOpenThreads(github: GitHub, fullName: string, pr: number): Promise<OpenThread[]> {
   let [owner, name] = fullName.split('/') as [string, string]
   let open: OpenThread[] = []
-  let after: string | null = null
-  for (let page = 0; page < MAX_PAGES; page++) {
-    let data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: Node[] } } } } =
-      await github.graphql(QUERY, { owner, name, number: pr, after })
-    let threads = data.repository.pullRequest.reviewThreads
-    for (let node of threads.nodes) {
+  let pages = 0
+  for await (let nodes of reviewThreadPages<Node>(github, { owner, name, pr }, FIELDS, FRAGMENTS)) {
+    for (let node of nodes) {
       let first = node.opener.nodes[0]
       if (node.isResolved || !first) continue
       let comments = [first, ...node.recent.nodes.filter((c) => c.databaseId !== first.databaseId)]
@@ -83,8 +69,7 @@ export async function readOpenThreads(github: GitHub, fullName: string, pr: numb
         }),
       })
     }
-    if (!threads.pageInfo.hasNextPage) break
-    after = threads.pageInfo.endCursor
+    if (++pages >= MAX_PAGES) break
   }
   return open
 }

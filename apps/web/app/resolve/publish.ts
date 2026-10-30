@@ -9,12 +9,12 @@ import { costLine } from '@sakuga-review/engine/render'
 import { markerResolve } from '@sakuga-review/engine/threads'
 import { MAX_RESOLVE_THREADS, type ResolvePayload } from '@sakuga-review/protocol'
 
+import { resolveReviewThread } from '../github/graphql.ts'
 import type { GitHub } from '../publish/github.ts'
+import { BY } from '../publish/publish.ts'
 import { plural } from '../ui/format.ts'
 import { readOpenThreads } from './threads.ts'
 
-/** The service that answers, in the summary. */
-const BY = 'Kentō'
 const MAX_PACK_KB = 150
 
 export interface ResolveTarget {
@@ -78,7 +78,7 @@ export async function publishResolution(
     if (close) {
       if (writer) {
         try {
-          await writer.graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: thread.id })
+          await resolveReviewThread(writer, thread.id)
           resolved = true
         } catch (error) {
           warn('resolve.thread_not_resolved', { thread: thread.id, error: String(error).slice(0, 300) })

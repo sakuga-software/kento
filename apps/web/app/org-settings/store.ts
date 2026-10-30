@@ -1,8 +1,10 @@
 import type postgres from 'postgres'
 
+import type { Database } from '../db/client.ts'
+import { readOrgCosts, type OrgCosts } from '../db/costs.ts'
+import { toDate } from '../db/rows.ts'
 import type { DeliveryRecord } from '../github/webhook.ts'
 import { readOverrides, type ConfigOverrides } from '../repo-config/model.ts'
-import { readOrgCosts, type OrgCosts } from './costs.ts'
 import { DEFAULT_TRUSTED_BOTS, readMoney, readTrustedBots, type OrgCaps } from './model.ts'
 
 /** A delivery of the webhook, as the section « App GitHub » shows it. */
@@ -72,15 +74,11 @@ export interface OrgSettingsStore {
 
 type DeliveryRow = Omit<DeliveryView, 'receivedAt'> & { receivedAt: Date | string }
 
-function toDate(value: Date | string | null): Date | null {
-  return value === null ? null : value instanceof Date ? value : new Date(value)
-}
-
 function delivery(row: DeliveryRow | undefined): DeliveryView | null {
   return row ? { ...row, status: Number(row.status), receivedAt: toDate(row.receivedAt)! } : null
 }
 
-export function createOrgSettingsStore(sql: postgres.Sql): OrgSettingsStore {
+export function createOrgSettingsStore({ sql, db }: Pick<Database, 'sql' | 'db'>): OrgSettingsStore {
   async function lastDelivery(installationId: number, where: postgres.PendingQuery<postgres.Row[]> | null): Promise<DeliveryView | null> {
     let [row] = await sql<DeliveryRow[]>`
       select delivery_id as "deliveryId", event, action, status, outcome, reason, received_at as "receivedAt"
@@ -135,7 +133,7 @@ export function createOrgSettingsStore(sql: postgres.Sql): OrgSettingsStore {
         updatedBy: row.updatedBy,
         updatedAt: toDate(row.updatedAt),
         repos: { total: Number(row.total), enabled: Number(row.enabled) },
-        costs: await readOrgCosts(sql, orgId),
+        costs: await readOrgCosts(db, orgId),
         deliveries: {
           last: await lastDelivery(installationId, null),
           lastPullRequest: await lastDelivery(installationId, sql`and event = 'pull_request'`),

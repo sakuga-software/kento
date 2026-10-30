@@ -2,6 +2,7 @@ import type postgres from 'postgres'
 
 import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_JOB_RULES, type JobKind, type JobRule, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
 
+import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'
 import { log } from '../log.ts'
 import { leftOutReason, sendablePaths } from '../rules/model.ts'
@@ -185,12 +186,6 @@ export interface RunnerStore {
 
 const lease = `${LEASE_SECONDS} seconds`
 const backoff = `${RETRY_BACKOFF_SECONDS} seconds`
-
-// drizzle replaces the parsers and serializers of the shared postgres client: a timestamp comes
-// back as text, and a JSON value goes in as text with a cast.
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
-}
 
 export function createRunnerStore(sql: postgres.Sql): RunnerStore {
   return {
@@ -535,7 +530,7 @@ async function citedRules(
   let ids = [...new Set(findings.flatMap((f) => (f.rule_id ? [f.rule_id] : [])))]
   if (!ids.length) return findings
   let [row] = await tx<{ sent: unknown }[]>`select sent_rules as sent from jobs where id = ${jobId}`
-  let raw = typeof row?.sent === 'string' ? JSON.parse(row.sent) : row?.sent
+  let raw = jsonOf<unknown>(row?.sent)
   let carried = Array.isArray(raw)
   let sent = carried ? (raw as { id?: unknown; title?: unknown }[]) : []
   let titles = new Map(sent.flatMap((r) => (typeof r.id === 'string' && typeof r.title === 'string' ? [[r.id, r.title] as const] : [])))

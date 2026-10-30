@@ -79,7 +79,7 @@ describe('the config of a repository against Postgres', () => {
 
   describe('the store of the screen', () => {
     it('starts at v0 with nothing set, then each save writes the next version, its author and its date', async () => {
-      let store = createRepoConfigStore(sql)
+      let store = createRepoConfigStore(database)
       let view = await store.read(orgId, repoId)
       assert.equal(view!.version, 0)
       assert.deepEqual(view!.config, {})
@@ -99,7 +99,7 @@ describe('the config of a repository against Postgres', () => {
     })
 
     it('refuses a save from an older version, and writes nothing', async () => {
-      let store = createRepoConfigStore(sql)
+      let store = createRepoConfigStore(database)
       await store.save(orgId, repoId, userId, 0, (current) => ({ ...current, config: { trigger: 'command' } }))
       let stale = await store.save(orgId, repoId, userId, 0, (current) => ({ ...current, config: { trigger: 'push' } }))
       assert.equal(stale.kind, 'conflict')
@@ -109,7 +109,7 @@ describe('the config of a repository against Postgres', () => {
     })
 
     it('two saves from the same version at once: one is written, the other is refused', async () => {
-      let store = createRepoConfigStore(sql)
+      let store = createRepoConfigStore(database)
       let outcomes = await Promise.all([
         store.save(orgId, repoId, userId, 0, (current) => ({ ...current, config: { trigger: 'ready' } })),
         store.save(orgId, repoId, userId, 0, (current) => ({ ...current, config: { trigger: 'command' } })),
@@ -119,7 +119,7 @@ describe('the config of a repository against Postgres', () => {
     })
 
     it('never reads nor writes the repository of another org', async () => {
-      let store = createRepoConfigStore(sql)
+      let store = createRepoConfigStore(database)
       let [other] = await sql<{ id: string }[]>`
         insert into orgs (github_installation_id, github_account_id, login) values (1002, 2002, 'orchard') returning id`
       assert.equal(await store.read(other!.id, repoId), null)
@@ -140,7 +140,7 @@ describe('the config of a repository against Postgres', () => {
         values (${old!.id}, ${repoId}, 1, ${headSha(2)}, 4, 'm', 100, '{}', now() - interval '40 days')`
       await sql`insert into resolutions (job_id, repo_id, pr_number, head_sha, model, cost_usd, result)
         values (${resolveJob!.id}, ${repoId}, 1, ${headSha(3)}, 'm', 0.5, '{}')`
-      assert.equal((await createRepoConfigStore(sql).read(orgId, repoId))!.spentThisMonthUsd, 1.75)
+      assert.equal((await createRepoConfigStore(database).read(orgId, repoId))!.spentThisMonthUsd, 1.75)
     })
   })
 

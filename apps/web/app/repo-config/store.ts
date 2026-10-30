@@ -1,7 +1,8 @@
-import type postgres from 'postgres'
-
 import type { Level } from '@sakuga-review/protocol'
 
+import type { Database } from '../db/client.ts'
+import { readRepoMonthCost } from '../db/costs.ts'
+import { toDate } from '../db/rows.ts'
 import { readTrustedBots } from '../org-settings/model.ts'
 import { readOverrides, type ConfigOverrides } from './model.ts'
 
@@ -58,15 +59,10 @@ type Row = {
   version: number
   updatedBy: string | null
   updatedAt: Date | string | null
-  spent: string | null
   trustedBots: string[]
 }
 
-function toDate(value: Date | string | null): Date | null {
-  return value === null ? null : value instanceof Date ? value : new Date(value)
-}
-
-export function createRepoConfigStore(sql: postgres.Sql): RepoConfigStore {
+export function createRepoConfigStore({ sql, db }: Pick<Database, 'sql' | 'db'>): RepoConfigStore {
   return {
     async read(orgId, repoId) {
       if (!UUID.test(repoId)) return null
@@ -74,16 +70,7 @@ export function createRepoConfigStore(sql: postgres.Sql): RepoConfigStore {
         select
           repos.id, repos.full_name as "fullName", repos.enabled, repos.default_level as "defaultLevel",
           repos.config, orgs.config as "orgConfig", repos.config_version as version,
-          users.login as "updatedBy", repos.config_updated_at as "updatedAt", orgs.trusted_bots as "trustedBots",
-          (
-            select coalesce(sum(cost), 0)::text from (
-              select cost_usd as cost from reviews
-              where reviews.repo_id = repos.id and reviews.created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-              union all
-              select cost_usd from resolutions
-              where resolutions.repo_id = repos.id and resolutions.created_at >= date_trunc('month', now() at time zone 'utc') at time zone 'utc'
-            ) costs
-          ) as spent
+          users.login as "updatedBy", repos.config_updated_at as "updatedAt", orgs.trusted_bots as "trustedBots"
         from repos
         join orgs on orgs.id = repos.org_id
         left join users on users.id = repos.config_updated_by
@@ -99,7 +86,7 @@ export function createRepoConfigStore(sql: postgres.Sql): RepoConfigStore {
         version: Number(row.version),
         updatedBy: row.updatedBy,
         updatedAt: toDate(row.updatedAt),
-        spentThisMonthUsd: Number(row.spent ?? 0),
+        spentThisMonthUsd: await readRepoMonthCost(db, row.id),
         trustedBots: readTrustedBots(row.trustedBots),
       }
     },

@@ -1,9 +1,12 @@
 import type { JobKind, Level } from '@sakuga-review/protocol'
-import type postgres from 'postgres'
+import { sql as query } from 'drizzle-orm'
 
+import type { Database } from '../db/client.ts'
+import { orgCapHit, readOrgCosts, type OrgCostsDetail } from '../db/costs.ts'
+import { toDate } from '../db/rows.ts'
+import { insertReviewJob } from '../db/webhook-store.ts'
 import { jobConfig, readOverrides, resolveConfig } from '../repo-config/model.ts'
-import { readOrgCosts, type OrgCostsDetail } from '../org-settings/costs.ts'
-import { capReached, readMoney, type CapPeriod, type OrgCaps } from '../org-settings/model.ts'
+import { readMoney, type CapPeriod, type OrgCaps } from '../org-settings/model.ts'
 import { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
 /** The days of the chart « Reviews publiées », today included. */
@@ -184,18 +187,11 @@ export interface DashboardStore {
   retry(orgId: string, jobId: string, level: Level, githubHead: string | null): Promise<RetryOutcome>
 }
 
-function toDate(value: Date | string): Date
-function toDate(value: Date | string | null): Date | null
-function toDate(value: Date | string | null): Date | null {
-  if (value === null) return null
-  return value instanceof Date ? value : new Date(value)
-}
-
 function num(value: string | number | null): number | null {
   return value === null ? null : Number(value)
 }
 
-export function createDashboardStore(sql: postgres.Sql): DashboardStore {
+export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>): DashboardStore {
   async function failures(orgId: string): Promise<FailedJob[]> {
     let rows = await sql<
       {
@@ -528,7 +524,7 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
         banner(failed),
         week(orgId),
         recent(orgId),
-        readOrgCosts(sql, orgId),
+        readOrgCosts(db, orgId),
         readCaps(orgId),
         queue(orgId),
         runners(orgId),
@@ -576,26 +572,25 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
     // config of today. As a command does, it skips the trigger, the paths and the monthly limit of
     // the repository: an admin asked for it.
     async retry(orgId, jobId, level, githubHead) {
-      return sql.begin(async (tx) => {
+      return db.transaction(async (tx) => {
         // The lock of the org first, as the upsert of a push or a command takes it: the check of the
         // cost limit of the org sees their jobs in the same order.
-        await tx`select 1 from orgs where id = ${orgId} for update`
+        await tx.execute(query`select 1 from orgs where id = ${orgId} for update`)
         // The lock of the repository orders this insert with a push and a command of the same
         // repository (they lock it too, by their upsert): the check of an active job sees theirs.
-        let [failed] = await tx<
-          {
-            repoId: string
-            prNumber: number
-            headSha: string
-            baseRef: string | null
-            orgConfig: unknown
-            repoConfig: unknown
-            configVersion: number
-            defaultLevel: Level
-            dailyCapUsd: string | null
-            monthlyCapUsd: string | null
-          }[]
-        >`
+        // The base is the one of the failed job: a new base of the pull request moves it there (REV-57).
+        let [failed] = await tx.execute<{
+          repoId: string
+          prNumber: number
+          headSha: string
+          baseRef: string | null
+          orgConfig: unknown
+          repoConfig: unknown
+          configVersion: number
+          defaultLevel: Level
+          dailyCapUsd: string | null
+          monthlyCapUsd: string | null
+        }>(query`
           select jobs.repo_id as "repoId", jobs.pr_number as "prNumber", jobs.head_sha as "headSha", jobs.base_ref as "baseRef", orgs.config as "orgConfig", repos.config as "repoConfig", repos.config_version as "configVersion",
             repos.default_level as "defaultLevel", orgs.daily_cap_usd as "dailyCapUsd", orgs.monthly_cap_usd as "monthlyCapUsd"
           from jobs
@@ -603,36 +598,36 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
           join orgs on orgs.id = repos.org_id
           where jobs.id = ${jobId} and repos.org_id = ${orgId} and jobs.state = 'failed' and jobs.kind = 'review'
             and repos.enabled and orgs.suspended_at is null
-          for update of repos`
+          for update of repos`)
         if (!failed || failed.baseRef === null) return { kind: 'not_found' } as const
         // GitHub knows a push that Kentō did not get (a disabled repository, a lost delivery).
         if (githubHead !== null && githubHead !== failed.headSha) return { kind: 'stale' } as const
-        let [newer] = await tx`
+        let [newer] = await tx.execute(query`
           select 1 from jobs
           where repo_id = ${failed.repoId} and pr_number = ${failed.prNumber} and head_sha <> ${failed.headSha}
             and created_at > (select created_at from jobs where id = ${jobId})
-          limit 1`
+          limit 1`)
         if (newer) return { kind: 'stale' } as const
-        let [active] = await tx<{ id: string }[]>`
+        let [active] = await tx.execute<{ id: string }>(query`
           select id from jobs
           where repo_id = ${failed.repoId} and pr_number = ${failed.prNumber} and head_sha = ${failed.headSha}
             and kind = 'review' and level = ${level} and state in ('queued', 'running')
-          limit 1`
+          limit 1`)
         if (active) return { kind: 'already', jobId: active.id } as const
         // REV-13. Like a command, a retry does not pass the cost limit of the org.
-        let limits = { dailyCapUsd: readMoney(failed.dailyCapUsd), monthlyCapUsd: readMoney(failed.monthlyCapUsd) }
-        if (limits.dailyCapUsd !== null || limits.monthlyCapUsd !== null) {
-          let hit = capReached(limits, await readOrgCosts(tx as unknown as postgres.Sql, orgId), new Date())
-          if (hit) return { kind: 'capped', period: hit.period } as const
-        }
+        let hit = await orgCapHit(tx, { id: orgId, dailyCapUsd: failed.dailyCapUsd, monthlyCapUsd: failed.monthlyCapUsd })
+        if (hit) return { kind: 'capped', period: hit.period } as const
         let resolved = resolveConfig(readOverrides(failed.orgConfig), readOverrides(failed.repoConfig), failed.defaultLevel)
-        let config = jobConfig(resolved, level, Number(failed.configVersion))
-        let [job] = await tx<{ id: string }[]>`
-          insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref, config)
-          values (${failed.repoId}, 'review', ${level}, 'queued', ${failed.prNumber}, ${failed.headSha}, ${failed.baseRef},
-            ${JSON.stringify(config)}::text::jsonb)
-          returning id`
-        return { kind: 'queued', jobId: job!.id } as const
+        let [job] = await insertReviewJob(tx, {
+          repoId: failed.repoId,
+          level,
+          config: jobConfig(resolved, level, Number(failed.configVersion)),
+          prNumber: Number(failed.prNumber),
+          headSha: failed.headSha,
+          baseRef: failed.baseRef,
+        })
+        if (!job) throw new Error('insert of the retry job returned no row')
+        return { kind: 'queued', jobId: job.id } as const
       })
     },
   }

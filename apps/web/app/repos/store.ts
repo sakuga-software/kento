@@ -1,5 +1,6 @@
 import type postgres from 'postgres'
 
+import { toDate } from '../db/rows.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import type { DetectedWorkflow, WorkflowMode } from './workflow.ts'
 
@@ -115,10 +116,6 @@ type Row = Omit<RepoView, 'githubRepoId' | 'streak' | 'lastReview' | 'workflowCh
   lastScore: number | null
   lastModel: string | null
   lastPublishedAt: Date | string | null
-}
-
-function toDate(value: Date | string): Date {
-  return value instanceof Date ? value : new Date(value)
 }
 
 /** `%`, `_` and `\\` stand for themselves in a search. */
