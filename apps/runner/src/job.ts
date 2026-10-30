@@ -31,6 +31,8 @@ export type JobDependencies = {
   cloneUrl?: (job: Job) => string;
   /** The protocols that git may use: `https`, or `file` in a test. */
   gitProtocols?: string;
+  /** Replaces the waits between the attempts of a clone in a test. */
+  cloneRetryDelaysMs?: readonly number[];
   heartbeatMs?: number;
   /** Aborts the job, for example when the runner stops. */
   signal?: AbortSignal;
@@ -204,7 +206,16 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
   const env = gitEnvironment(cloneUrl, job.installationToken.token, deps.gitProtocols);
   let checkout;
   try {
-    checkout = await clonePullRequest({ workDir: deps.config.workDir, cloneUrl, headSha: job.pullRequest.headSha, baseRef: job.pullRequest.baseRef, env });
+    checkout = await clonePullRequest({
+      workDir: deps.config.workDir,
+      cloneUrl,
+      headSha: job.pullRequest.headSha,
+      baseRef: job.pullRequest.baseRef,
+      env,
+      retryDelaysMs: deps.cloneRetryDelaysMs,
+      onRetry: (attempt, error) => log('warn', 'job.clone_retry', { jobId: job.id, attempt, error: errorMessage(error) }),
+      signal,
+    });
   } catch (error) {
     throw new Error(`clone failed: ${errorMessage(error)}`);
   }

@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { redact } from './log.ts';
 
 export type Checkout = {
@@ -76,9 +77,40 @@ function run(cwd: string, env: Record<string, string>, args: string[], input?: s
 }
 
 /**
+ * The waits before the second and the third attempt of a clone. Just after a push, GitHub can
+ * answer a fetch with « did not send all necessary objects »: the same fetch works seconds later.
+ */
+export const CLONE_RETRY_DELAYS_MS = [3_000, 10_000];
+
+/**
+ * The errors of git that a new attempt can fix: an incomplete pack, a cut connection, a 5xx of the
+ * server. A refused token, a missing repository or a missing branch fail again: no new attempt.
+ */
+const TRANSIENT = [
+  /did not send all necessary objects/i,
+  /early EOF/i,
+  /RPC failed/i,
+  /remote end hung up unexpectedly/i,
+  /unexpected disconnect/i,
+  /Connection (?:reset|refused|timed out)/i,
+  /Could not resolve host/i,
+  /Operation timed out/i,
+  /returned error: 5\d\d/i,
+  /HTTP\/2 stream \d+ was not closed cleanly/i,
+];
+
+export function isTransientGitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return TRANSIENT.some((pattern) => pattern.test(message));
+}
+
+/**
  * Fetches the head commit and the base branch of a pull request into a new bare repository under
  * `workDir`: every commit and tree, and the blobs of the head only. The engine reads the base side
  * of the diff from blobs that git fetches in one batch when it diffs.
+ *
+ * After a transient error, a new attempt starts in a new directory, after each delay of
+ * `retryDelaysMs`. An abort of `signal` stops the wait, and no new attempt starts.
  */
 export async function clonePullRequest(options: {
   workDir: string;
@@ -86,7 +118,27 @@ export async function clonePullRequest(options: {
   headSha: string;
   baseRef: string;
   env: Record<string, string>;
+  retryDelaysMs?: readonly number[];
+  /** Whether a new attempt can fix the error. By default, `isTransientGitError`. */
+  transient?: (error: unknown) => boolean;
+  onRetry?: (attempt: number, error: unknown) => void;
+  signal?: AbortSignal;
 }): Promise<Checkout> {
+  const delays = options.retryDelaysMs ?? CLONE_RETRY_DELAYS_MS;
+  const transient = options.transient ?? isTransientGitError;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await cloneOnce(options);
+    } catch (error) {
+      const delay = delays[attempt - 1];
+      if (delay === undefined || !transient(error) || options.signal?.aborted) throw error;
+      options.onRetry?.(attempt, error);
+      await sleep(delay, undefined, { signal: options.signal });
+    }
+  }
+}
+
+async function cloneOnce(options: { workDir: string; cloneUrl: string; headSha: string; baseRef: string; env: Record<string, string> }): Promise<Checkout> {
   const repoDir = await mkdtemp(join(options.workDir, 'job-'));
   const remove = () => rm(repoDir, { recursive: true, force: true });
   try {

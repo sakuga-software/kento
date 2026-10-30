@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync, readdirSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { after, afterEach, before, beforeEach, test } from 'node:test';
 import type { Answer } from '@sakuga-review/engine';
 import { parseResultRequest, type Job, type ResultRequest } from '@sakuga-review/protocol';
 import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
-import { clonePullRequest, gitEnvironment } from '../src/clone.ts';
+import { clonePullRequest, gitEnvironment, isTransientGitError } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
 import { chooseModel, runJob } from '../src/job.ts';
 import { output, redact } from '../src/log.ts';
@@ -142,6 +142,7 @@ const deps = (api: ReturnType<typeof fakeApi>['api'], modelFetch: typeof fetch, 
   config: { workDir: join(root, 'work'), provider: { kind: 'openrouter' as const, baseUrl: undefined, apiKey, own: apiKey ? ('openrouter' as const) : null } },
   cloneUrl: () => `file://${source}`,
   gitProtocols: 'file',
+  cloneRetryDelaysMs: [],
 });
 
 function assertNoSecretInLogs() {
@@ -291,6 +292,88 @@ test('the clone is bare, and keeps the token out of the remote URL and the files
   }
 });
 
+test('a clone that fails once starts again, and leaves one directory', async () => {
+  const work = mkdtempSync(join(root, 'retry-'));
+  const late = join(root, 'late-source');
+  const url = `file://${late}`;
+  const retries: number[] = [];
+  const checkout = await clonePullRequest({
+    workDir: work,
+    cloneUrl: url,
+    headSha: head,
+    baseRef: 'main',
+    env: gitEnvironment(url, INSTALLATION_TOKEN, 'file'),
+    retryDelaysMs: [10, 10],
+    transient: () => true,
+    // The repository appears after the first attempt, as the objects of a push reach every server of GitHub.
+    onRetry: (attempt) => {
+      retries.push(attempt);
+      symlinkSync(source, late);
+    },
+  });
+  try {
+    assert.deepEqual(retries, [1]);
+    assert.equal(checkout.base, base);
+    assert.deepEqual(readdirSync(work), [basename(checkout.repoDir)], 'the failed attempt leaves nothing');
+  } finally {
+    await checkout.remove();
+  }
+});
+
+test('a clone that keeps failing stops after its last attempt', async () => {
+  const work = mkdtempSync(join(root, 'retry-'));
+  const url = `file://${join(root, 'never')}`;
+  const retries: number[] = [];
+  await assert.rejects(
+    clonePullRequest({ workDir: work, cloneUrl: url, headSha: head, baseRef: 'main', env: gitEnvironment(url, INSTALLATION_TOKEN, 'file'), retryDelaysMs: [1, 1], transient: () => true, onRetry: (attempt) => retries.push(attempt) }),
+    /git fetch failed/,
+  );
+  assert.deepEqual(retries, [1, 2]);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test('a clone error that a new attempt cannot fix fails at once', async () => {
+  const work = mkdtempSync(join(root, 'retry-'));
+  const url = `file://${join(root, 'never')}`;
+  const retries: number[] = [];
+  await assert.rejects(
+    clonePullRequest({ workDir: work, cloneUrl: url, headSha: head, baseRef: 'main', env: gitEnvironment(url, INSTALLATION_TOKEN, 'file'), retryDelaysMs: [60_000], onRetry: (attempt) => retries.push(attempt) }),
+    /git fetch failed/,
+  );
+  assert.deepEqual(retries, []);
+});
+
+test('an abort stops the wait between two attempts of a clone', async () => {
+  const work = mkdtempSync(join(root, 'retry-'));
+  const url = `file://${join(root, 'never')}`;
+  const controller = new AbortController();
+  const started = Date.now();
+  await assert.rejects(
+    clonePullRequest({ workDir: work, cloneUrl: url, headSha: head, baseRef: 'main', env: gitEnvironment(url, INSTALLATION_TOKEN, 'file'), retryDelaysMs: [60_000], transient: () => true, onRetry: () => controller.abort(), signal: controller.signal }),
+    { name: 'AbortError' },
+  );
+  assert.ok(Date.now() - started < 10_000, 'the wait of 60 s did not run');
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test('only the transient errors of git start a new attempt', () => {
+  for (const message of [
+    "git fetch failed (1): fatal: bad revision 'a1745bf8'\nerror: https://github.com/o/r.git did not send all necessary objects",
+    'git fetch failed (128): error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly',
+    'git fetch failed (128): fatal: unable to access \'https://github.com/o/r.git/\': The requested URL returned error: 502',
+    'git fetch failed (128): fatal: early EOF',
+  ]) {
+    assert.ok(isTransientGitError(new Error(message)), message);
+  }
+  for (const message of [
+    "git fetch failed (128): fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 401",
+    "git fetch failed (128): fatal: couldn't find remote ref refs/heads/gone",
+    "git fetch failed (128): fatal: 'never' does not appear to be a git repository",
+  ]) {
+    assert.ok(!isTransientGitError(new Error(message)), message);
+  }
+});
+
 test('git sends the token as a basic header, and a failed clone leaves nothing', async () => {
   const seen: (string | undefined)[] = [];
   const server: Server = createServer((request: IncomingMessage, response) => {
@@ -303,7 +386,7 @@ test('git sends the token as a basic header, and a failed clone leaves nothing',
     const url = `http://127.0.0.1:${port}/o/r.git`;
     const work = mkdtempSync(join(root, 'http-'));
     await assert.rejects(
-      clonePullRequest({ workDir: work, cloneUrl: url, headSha: head, baseRef: 'main', env: gitEnvironment(url, INSTALLATION_TOKEN, 'http') }),
+      clonePullRequest({ workDir: work, cloneUrl: url, headSha: head, baseRef: 'main', env: gitEnvironment(url, INSTALLATION_TOKEN, 'http'), retryDelaysMs: [] }),
       (error: Error) => !error.message.includes(INSTALLATION_TOKEN),
     );
     assert.ok(seen.length >= 1);
