@@ -40,6 +40,7 @@ import { readRuleForm } from '../rules/model.ts'
 import type { RuleOutcome, RulesStore } from '../rules/store.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
+import type { FindingsScreenStore } from '../findings/screen.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
 import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
 import type { ReadPullRequest } from '../dashboard/github.ts'
@@ -49,6 +50,7 @@ import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, typ
 import { isRuleNotice, type RuleFormState, type RuleNotice } from './rules.tsx'
 import { ErrorPage, type ErrorExit, type ErrorKind } from './not-found.tsx'
 import { readRepoList, repoListQuery, ReposPage, type ReposNotice } from './repos.tsx'
+import { FindingsPage, readFindingList } from './findings.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
 import { anchorOf, ORG_FIELDS, ORG_RESET_FIELDS, type OrgField, type OrgForm, type OrgNotice, type OrgSectionProps } from './org-settings.tsx'
@@ -77,6 +79,13 @@ export interface ReposDependencies {
   /** Reads the repositories on GitHub. Null without the GitHub App. */
   check: RepoCheck | null
   /** `https://github.com`, or the GitHub Enterprise Server. */
+  githubUrl: string
+}
+
+/** The Findings screen (REV-18). Null: the screen shows its empty frame. */
+export interface FindingsDependencies {
+  store: FindingsScreenStore
+  /** `https://github.com`, or the GitHub Enterprise Server: the links to the pull requests. */
   githubUrl: string
 }
 
@@ -128,6 +137,8 @@ export interface UiDependencies {
   commit: string | null
   auth: AuthDependencies | null
   repos?: ReposDependencies | null
+  /** REV-18. The Findings screen. Null: it shows its empty frame. */
+  findings?: FindingsDependencies | null
   /** The Runners screen (REV-10). Null: it shows its empty frame. */
   runners?: RunnersAdminStore | null
   /** The providers of the settings (REV-11). Null: the settings show their empty frame. */
@@ -967,9 +978,18 @@ export function createUiControllers(deps: UiDependencies) {
       async repoConfigReset(context) {
         return changeConfig(context, true)
       },
-      findings(context) {
-        let page = frame(signedOf(context), context, getCsrfToken(context))
-        return context.render(<PlaceholderPage frame={page} section="findings" />)
+      // REV-18. A member reads the findings of the org; the filters and the page are in the query.
+      async findings(context) {
+        let signed = signedOf(context)
+        let page = frame(signed, context, getCsrfToken(context))
+        let findings = deps.findings
+        if (!findings) return context.render(<PlaceholderPage frame={page} section="findings" />)
+        let orgId = signed.membership.org.id
+        let list = readFindingList(context.url.searchParams)
+        let [result, facets] = await Promise.all([findings.store.list(orgId, list), findings.store.facets(orgId)])
+        return context.render(
+          <FindingsPage frame={page} page={result} facets={facets} list={list} githubUrl={findings.githubUrl} now={new Date(now())} />,
+        )
       },
       async runners(context) {
         let signed = signedOf(context)

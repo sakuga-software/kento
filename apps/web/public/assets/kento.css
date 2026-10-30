@@ -1145,6 +1145,115 @@ kbd,
   }
 }
 
+/* ---------------------------------------------------------------- The Findings screen (REV-18) */
+
+.findings-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.findings-filter {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 240px;
+}
+.findings-filter-search {
+  flex-basis: 240px;
+  max-width: 360px;
+}
+.findings-filter .input {
+  max-width: none;
+  min-height: var(--control-h);
+}
+.findings-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.findings-views {
+  margin-bottom: var(--space-4);
+}
+.findings-views ul {
+  display: inline-flex;
+}
+.finding-cell {
+  max-width: 56ch;
+}
+.finding-title {
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.finding-path {
+  overflow-wrap: anywhere;
+}
+.finding-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.findings-table td:nth-child(5),
+.findings-table th:nth-child(5) {
+  text-align: right;
+}
+
+@media (max-width: 760px) {
+  /* The search on its own line, the three lists and the buttons two by two. */
+  .findings-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+  .findings-filter {
+    max-width: none;
+  }
+  .findings-filter-search {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .findings-filter-actions {
+    flex-wrap: nowrap;
+  }
+  .findings-filter .input,
+  .findings-filter-actions .button {
+    min-height: var(--control-h-touch);
+  }
+  /* A card: the finding on top, then its facts two by two. */
+  .findings-table tbody th {
+    order: -1;
+  }
+  .findings-table td:nth-child(5) {
+    text-align: left;
+  }
+  .findings-table td:nth-child(1)::before {
+    content: 'Priorité';
+  }
+  .findings-table td:nth-child(3)::before {
+    content: 'PR';
+  }
+  .findings-table td:nth-child(4)::before {
+    content: 'Source';
+  }
+  .findings-table td:nth-child(5)::before {
+    content: 'Confiance';
+  }
+  .findings-table td:nth-child(6)::before {
+    content: 'Retrouvé';
+  }
+  .findings-table td:nth-child(7)::before {
+    content: 'Depuis';
+  }
+  .finding-cell {
+    max-width: none;
+  }
+}
+
 /* ---------------------------------------------------------------- Mobile (390 px and up to 760 px) */
 
 @media (max-width: 760px) {

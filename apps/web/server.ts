@@ -27,6 +27,7 @@ import { createAppStatusReader } from './app/org-settings/app-status.ts'
 import { createCapNotice } from './app/org-settings/notice.ts'
 import { createOrgSettingsStore } from './app/org-settings/store.ts'
 import { createReposStore } from './app/repos/store.ts'
+import { createFindingsScreenStore } from './app/findings/screen.ts'
 import { createAppRouter } from './app/router.ts'
 import { authRoutes } from './app/routes.ts'
 import { appInstallUrl } from './app/ui/pages.tsx'
@@ -145,6 +146,8 @@ let publicUrl = config.signIn?.publicUrl ?? null
 let router = createAppRouter({
   auth,
   repos,
+  // The Findings screen (REV-18): the findings of the org, filtered and paged in SQL.
+  findings: { store: createFindingsScreenStore(database.sql), githubUrl: config.githubUrl },
   // The section « Providers et clés » of the settings (REV-11).
   providers: {
     store: providersStore,

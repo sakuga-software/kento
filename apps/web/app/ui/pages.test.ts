@@ -197,12 +197,12 @@ describe('the GitHub sign-in', () => {
     assert.ok(picker.searchParams.get('state'))
   })
 
-  it('names Findings in the sidebar with « Bientôt » and no link, and leaves it out of the tab bar (REV-32)', async () => {
+  it('links Findings in the sidebar and in the tab bar, with no « Bientôt » left (REV-18)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/', { cookie })).text()
-    assert.doesNotMatch(html, /href="\/findings"/)
-    assert.match(html, /<span class="nav-soon">.*?Findings<span class="tag tag-quiet">Bientôt<\/span><span class="visually-hidden"> : pas encore disponible<\/span><\/span>/s)
+    assert.equal(html.match(/href="\/findings"/g)?.length, 2)
+    assert.doesNotMatch(html, /nav-soon/)
   })
 
   it('says the sign-in failed when GitHub cannot tell, and lets nobody in', async () => {

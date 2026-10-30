@@ -18,6 +18,7 @@ import {
   createUiControllers,
   type AuthDependencies,
   type DashboardDependencies,
+  type FindingsDependencies,
   type OrgSettingsDependencies,
   type ProvidersDependencies,
   type RepoConfigDependencies,
@@ -39,6 +40,8 @@ export interface AppDependencies {
   auth?: AuthDependencies | null
   /** The Repos screen. Without it, the screen shows its empty frame. */
   repos?: ReposDependencies | null
+  /** The Findings screen (REV-18). Without it, the screen shows its empty frame. */
+  findings?: FindingsDependencies | null
   /** What the Runners screen reads and writes. Without it, the screen stays empty. */
   runnersAdmin?: RunnersAdminStore | null
   /** The section « Providers et clés » of the settings (REV-11). Without it, the settings stay empty. */
@@ -97,6 +100,7 @@ export function createAppRouter(deps: AppDependencies) {
     auth: deps.auth ?? null,
     runners: deps.runnersAdmin ?? null,
     repos: deps.repos ?? null,
+    findings: deps.findings ?? null,
     providers: deps.providers ?? null,
     repoConfig: deps.repoConfig ?? null,
     dashboard: deps.dashboard ?? null,

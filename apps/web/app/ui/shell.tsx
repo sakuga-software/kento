@@ -24,8 +24,7 @@ export type Section = 'dashboard' | 'repos' | 'findings' | 'runners' | 'settings
 const NAV: { key: Section; label: string; href: string; Icon: typeof DashboardIcon; soon?: boolean }[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href(), Icon: DashboardIcon },
   { key: 'repos', label: 'Repos', href: routes.repos.href(), Icon: ReposIcon },
-  // REV-18 fills the Findings screen.
-  { key: 'findings', label: 'Findings', href: routes.findings.href(), Icon: FindingsIcon, soon: true },
+  { key: 'findings', label: 'Findings', href: routes.findings.href(), Icon: FindingsIcon },
   { key: 'runners', label: 'Runners', href: routes.runners.href(), Icon: RunnersIcon },
   { key: 'settings', label: 'Réglages', href: routes.settings.href(), Icon: SettingsIcon },
 ]
