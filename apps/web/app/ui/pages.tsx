@@ -1015,7 +1015,7 @@ export function createUiControllers(deps: UiDependencies) {
           runnerHeld: added.runnerHeld,
           isDefault: added.isDefault,
         })
-        return toSettings('added', added.id)
+        return toSettings(added.kind === 'ollama' ? 'added_ollama' : added.runnerHeld ? 'added_runner' : 'added', added.id)
       },
 
       // The answer of a test is the page itself, with the message of the probe: it never goes

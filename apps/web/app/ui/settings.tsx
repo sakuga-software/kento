@@ -28,6 +28,9 @@ const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', '
 /** What the section says after a form, from `?notice=`. */
 export const PROVIDER_NOTICES = {
   added: { tone: 'ok', text: 'Provider ajouté. Testez-le pour vérifier la clé.' },
+  // No « Tester » for these two: the service has no key, and cannot reach the server of a runner.
+  added_runner: { tone: 'ok', text: 'Provider ajouté. Sa clé reste sur le runner : le premier job d’un runner qui l’a dira si elle marche.' },
+  added_ollama: { tone: 'ok', text: 'Provider ajouté. Son serveur est sur le réseau d’un runner : le premier job d’un runner avec PROVIDER_KIND=ollama dira s’il répond.' },
   replaced: { tone: 'ok', text: 'Clé remplacée. L’ancienne n’est plus gardée.' },
   default: { tone: 'ok', text: 'Ce provider est maintenant « Par défaut » : les niveaux sans provider choisi l’utilisent.' },
   removed: { tone: 'info', text: 'Provider retiré, avec sa clé.' },

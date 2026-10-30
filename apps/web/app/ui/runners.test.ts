@@ -224,6 +224,8 @@ describe('the Runners screen', () => {
     // REV-30: « Clé du runner » is the choice by default; the key of the app is an explicit choice.
     assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
+    // REV-51: no screen sets the pool of a repository, so the help of the labels does not name it.
+    assert.doesNotMatch(html, /pool/i)
   })
 
   it('shows a runner offline for 2 h above a runner that is online, in a table, with the counts by state (REV-30, REV-37)', async () => {

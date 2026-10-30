@@ -673,7 +673,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
               </p>
             ) : (
               <p class="field-hint" id="runner-labels-hint">
-                Séparés par des virgules. Un repo dont le pool est l’un d’eux peut lui donner ses jobs.
+                Séparés par des virgules. Ils s’affichent sur la carte du runner.
               </p>
             )}
           </div>

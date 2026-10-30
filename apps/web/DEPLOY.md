@@ -478,7 +478,7 @@ an admin adds a provider.
 Which provider a job uses: the one that the config of the repository or of the org chose for the
 level (section 13, « Provider et modèles », which lists the providers of the org); `service` there
 means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provider of the org
-(« Utiliser pour les jobs » in `/settings`), else `KENTO_PROVIDER_API_KEY`.
+(« Mettre par défaut » in `/settings`), else `KENTO_PROVIDER_API_KEY`.
 
 1. **Generate the master key** on your machine: `openssl rand -base64 32`. Keep it in the password
    manager (« Kentō · KENTO_SECRETS_KEY »). Never paste it in a ticket, a chat or a commit.
@@ -504,7 +504,7 @@ means `KENTO_PROVIDER_API_KEY`. With no choice in the config, the default provid
      runner with its own key.
 5. **The test of the ticket**, with an Anthropic key of Sakuga:
    - « Ajouter un provider »: type Anthropic, the key, models empty (Haiku 5.5, Sonnet 5.5, Opus 5.5).
-     « Tester » → « Valide ». « Utiliser pour les jobs » if OpenRouter is the default.
+     « Tester » → « Valide ». « Mettre par défaut » if OpenRouter is the default.
    - `@kento-review balanced` on a pull request of `sakuga-review`: the review is published, and its
      footer gives `claude-sonnet-5-5` and a cost (from the price table, `costSource: "table"`).
    - « Remplacer la clé » with a wrong key (`sk-ant-wrong-0000000000`), then `@kento-review`: the job

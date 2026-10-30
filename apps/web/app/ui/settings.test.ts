@@ -246,6 +246,23 @@ describe('the section « Providers et clés »', () => {
     assert.deepEqual(writes, [`add ${ORG.id} anthropic`])
   })
 
+  it('asks to test only a provider that « Tester » can test: not a key on the runner, not Ollama (REV-51)', async () => {
+    let { request, signIn } = setup([])
+    let { cookie, csrf } = await signIn(ALEX)
+    let held = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'Anthropic', runnerHeld: 'on' } })
+    assert.match(held.headers.get('Location') ?? '', /^\/settings\?notice=added_runner#provider-/)
+    let ollama = await request('/settings/providers', {
+      cookie,
+      form: { _csrf: csrf, kind: 'ollama', label: 'GPU', baseUrl: 'http://gpu.lan:11434', models_lite: 'qwen3', models_balanced: 'qwen3', models_heavy: 'qwen3' },
+    })
+    assert.match(ollama.headers.get('Location') ?? '', /^\/settings\?notice=added_ollama#provider-/)
+    for (let notice of ['added_runner', 'added_ollama']) {
+      let html = await (await request(`/settings?notice=${notice}`, { cookie })).text()
+      assert.match(html, /Provider ajouté\./, notice)
+      assert.doesNotMatch(html, /Testez-le/, notice)
+    }
+  })
+
   it('folds « Ajouter un provider » behind a button, and opens it on an error (REV-29)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
