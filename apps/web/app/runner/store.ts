@@ -1,8 +1,9 @@
 import type postgres from 'postgres'
 
-import { LEASE_SECONDS, MAX_ATTEMPTS, type JobKind, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
+import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_JOB_RULES, RULE_PATH_MAX, RULE_PATHS_MAX, type JobKind, type JobRule, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
+import { log } from '../log.ts'
 import { refusalMessage } from '../providers/store.ts'
 
 /** A runner, as an authenticated call sees it. */
@@ -152,6 +153,22 @@ export interface RunnerStore {
    */
   releaseJob(jobId: string, runnerId: string, attempt: number, reason: string): Promise<'queued' | 'failed' | 'lease_lost'>
   heartbeat(jobId: string, runnerId: string, attempt: number): Promise<HeartbeatOutcome>
+  /**
+   * REV-19. The active rules of the repository of a job, then those of its org, at most
+   * MAX_JOB_RULES. The claim reads them just after it takes the job, not when the job is queued: a
+   * rule disabled while the job waited is not sent. A rule disabled after this read still applies
+   * to this job, as a rule disabled during its run.
+   */
+  jobRules(jobId: string): Promise<JobRule[]>
+  /**
+   * REV-19. Keeps the rules that this claim sends to its runner, on the job: the result can cite
+   * these only, with the title that they had then.
+   */
+  recordSentRules(jobId: string, runnerId: string, attempt: number, rules: JobRule[]): Promise<void>
+  /**
+   * Stores the result of an attempt. A finding of a review keeps its `rule_id` only when it names a
+   * rule of the repository of the job or of its org, and then gets the title of that rule.
+   */
   storeResult(
     jobId: string,
     runnerId: string,
@@ -290,6 +307,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             lease_expires_at = now() + ${lease}::interval,
             started_at = now(),
             attempts = attempts + 1,
+            -- REV-19. Each claim starts with no rule sent: only the claim of this attempt fills it.
+            sent_rules = null,
             updated_at = now()
           from pick
           where jobs.id = pick.id
@@ -356,6 +375,28 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       if (!row.holds || row.state === 'queued' || row.state === 'running') return { kind: 'lease_lost' }
       if (row.state === 'cancelled') return { kind: 'cancelled', leaseExpiresAt: toDate(row.leaseExpiresAt ?? new Date()) }
       return { kind: 'finished' }
+    },
+
+    async jobRules(jobId) {
+      let rows = await sql<JobRule[]>`
+        select rules.id, case when rules.repo_id is null then 'org' else 'repo' end as scope,
+          rules.title, rules.body as text, rules.paths, rules.severity_floor as "severityFloor"
+        from jobs
+        join repos on repos.id = jobs.repo_id
+        join rules on rules.org_id = repos.org_id and (rules.repo_id = repos.id or rules.repo_id is null)
+        where jobs.id = ${jobId} and rules.active
+        -- The rules of the repository first: the engine drops the last ones when the pack is full.
+        order by rules.repo_id is null, rules.created_at, rules.id
+        limit ${MAX_JOB_RULES}`
+      // The screens check each pattern; a row written another way never makes the job fail the
+      // check of the runner: a pattern out of the limits of the protocol is left out.
+      return rows.map((r) => ({ ...r, paths: r.paths.filter((p) => p.length >= 1 && p.length <= RULE_PATH_MAX).slice(0, RULE_PATHS_MAX) }))
+    },
+
+    async recordSentRules(jobId, runnerId, attempt, rules) {
+      await sql`
+        update jobs set sent_rules = ${JSON.stringify(rules)}::jsonb
+        where id = ${jobId} and runner_id = ${runnerId} and attempts = ${attempt}`
     },
 
     async storeResult(jobId, runnerId, attempt, result) {
@@ -428,6 +469,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
         await markValid(tx, jobId, job.providerId, true)
+        review = { ...review, findings: await citedRules(tx, jobId, review.findings) }
         await tx`
           insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
           values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${review.score},
@@ -466,4 +508,35 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return out
     },
   }
+}
+
+/**
+ * REV-19. The findings, each with the rule that it cites when the claim of this attempt sent that rule
+ * (`jobs.sent_rules`): `rule_id` stays, and `rule_title` is the title that the rule had when it was
+ * sent. A rule disabled, changed or removed while the job ran stays cited as the runner got it: the
+ * model applied it, and its floor is already in the severity. Any other `rule_id` (a rule that the
+ * job did not carry) is dropped, and the log says which: a runner can never make a finding cite it.
+ */
+async function citedRules(
+  tx: postgres.TransactionSql,
+  jobId: string,
+  findings: ReviewPayload['findings'],
+): Promise<(ReviewPayload['findings'][number] & { rule_title?: string })[]> {
+  let ids = [...new Set(findings.flatMap((f) => (f.rule_id ? [f.rule_id] : [])))]
+  if (!ids.length) return findings
+  let [row] = await tx<{ sent: unknown }[]>`select sent_rules as sent from jobs where id = ${jobId}`
+  let raw = typeof row?.sent === 'string' ? JSON.parse(row.sent) : row?.sent
+  let carried = Array.isArray(raw)
+  let sent = carried ? (raw as { id?: unknown; title?: unknown }[]) : []
+  let titles = new Map(sent.flatMap((r) => (typeof r.id === 'string' && typeof r.title === 'string' ? [[r.id, r.title] as const] : [])))
+  let dropped = ids.filter((id) => !titles.has(id))
+  if (dropped.length) {
+    // No list: this attempt was sent no rule at all (a runner without the feature `rules`).
+    let reason = carried ? 'the job did not carry this rule' : 'this attempt was sent no rules'
+    log('warn', 'job.rule_citation_dropped', { jobId, rules: dropped, reason })
+  }
+  return findings.map(({ rule_id, ...f }) => {
+    let title = rule_id ? titles.get(rule_id) : undefined
+    return title !== undefined ? { ...f, rule_id: rule_id!, rule_title: title } : f
+  })
 }

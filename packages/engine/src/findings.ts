@@ -26,6 +26,13 @@ export type Finding = {
   scenario: string;
   fix: string;
   suggestion: string;
+  /**
+   * REV-19. The rule that the finding applies. The model gives the reference of a rule of the pack
+   * (`R1`) or null; the engine replaces it with the id of the rule, or removes it (rules.ts).
+   */
+  rule_id?: string | null;
+  /** The title of that rule, that the service adds when it stores the review. */
+  rule_title?: string;
 };
 export type Answer = {
   confidence_score: number;
@@ -75,6 +82,20 @@ const FINDING_SCHEMA = {
   required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion'],
   additionalProperties: false,
 };
+/**
+ * The answer schema. With the references of the rules of the pack (REV-19), each finding also gives
+ * `rule_id`: one of these references, or null. Without rules, the schema stays as before.
+ */
+export function answerSchema(ruleRefs: readonly string[] = []) {
+  if (!ruleRefs.length) return ANSWER_SCHEMA;
+  const finding = {
+    ...FINDING_SCHEMA,
+    properties: { ...FINDING_SCHEMA.properties, rule_id: { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] } },
+    required: [...FINDING_SCHEMA.required, 'rule_id'],
+  };
+  return { ...ANSWER_SCHEMA, properties: { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } } };
+}
+
 export const ANSWER_SCHEMA = {
   type: 'object',
   properties: {

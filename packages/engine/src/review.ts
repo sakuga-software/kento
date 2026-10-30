@@ -1,10 +1,11 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { fingerprint } from './fingerprint.ts';
-import { anchor, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
+import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { levelConfig, type Level, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
+import { applyRule, type PackedRule, type Rule } from './rules.ts';
 
 export type ReviewInput = ModelClient & {
   /** A checkout of the repository with the history of the base and the head. */
@@ -15,6 +16,11 @@ export type ReviewInput = ModelClient & {
   level: Level;
   /** The configuration of the level: `levelConfig(level)` when it is not given. */
   config?: LevelConfig;
+  /**
+   * REV-19. The rules of the repository and of its org, from the caller only: never from the
+   * checkout. The pack holds those whose paths the change touches.
+   */
+  rules?: readonly Rule[];
 };
 
 /**
@@ -48,6 +54,8 @@ export type ReviewResult = {
   /** The files that the pack left out, with their reason. */
   skipped: string[];
   pack: string;
+  /** The rules that the pack held, with the reference that the model cites. */
+  rules: PackedRule[];
   /** The changed lines of each file at the head: a comment can go on these lines only. */
   lines: ChangedLines;
 };
@@ -64,9 +72,13 @@ export function mergeBase(repoDir: string, base: string, head: string): string {
 export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResult> {
   const config = input.config ?? levelConfig(input.level);
   const base = mergeBase(input.repoDir, input.base, input.head);
-  const { pack, skipped } = buildPack(input.repoDir, base, input.head, config.context);
+  const { pack, skipped, rules } = buildPack(input.repoDir, base, input.head, config.context, input.rules);
   const lines = changedLines(input.repoDir, base, input.head);
-  const { answer, usage } = await askModel(input, config, pack);
+  const { answer, usage } = await askModel(input, config, pack, answerSchema(rules.map((r) => r.ref)));
+  // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
+  // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
+  // see the rule.
+  answer.findings = answer.findings.map((f) => applyRule(f, rules));
   const fileAt = headFiles(input.repoDir, input.head);
   const findings = answer.findings.map((f) => ({
     ...f,
@@ -88,6 +100,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
     usage,
     skipped,
     pack,
+    rules,
     lines,
   };
 }

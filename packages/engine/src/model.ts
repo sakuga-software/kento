@@ -66,8 +66,9 @@ export async function askJson<T>(
   throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
 }
 
-export async function askModel(client: ModelClient, config: LevelConfig, pack: string): Promise<Reply> {
-  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema: ANSWER_SCHEMA });
+/** The review call. `schema`: the answer schema, `ANSWER_SCHEMA` or the one with the rules of the pack. */
+export async function askModel(client: ModelClient, config: LevelConfig, pack: string, schema: object = ANSWER_SCHEMA): Promise<Reply> {
+  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema });
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;
 }

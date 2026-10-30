@@ -222,23 +222,27 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
 }
 
 async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload> {
-  return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) =>
-    payload(
-      await reviewPullRequest({
-        repoDir: checkout.repoDir,
-        base: checkout.base,
-        head: checkout.head,
-        level: job.level,
-        config: model.config,
-        kind: model.kind,
-        apiKey: model.apiKey,
-        baseUrl: model.baseUrl,
-        fetch,
-        log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
-      }),
-      job.providers !== undefined,
-    ),
-  );
+  return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) => {
+    const result = await reviewPullRequest({
+      repoDir: checkout.repoDir,
+      base: checkout.base,
+      head: checkout.head,
+      level: job.level,
+      config: model.config,
+      kind: model.kind,
+      apiKey: model.apiKey,
+      baseUrl: model.baseUrl,
+      // REV-19. The rules come with the job, from the service: never from the checkout.
+      rules: job.rules ?? [],
+      fetch,
+      log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
+    });
+    if (job.rules !== undefined) {
+      // The trace of the rules: those that the job carried, and those that the pack held.
+      log('info', 'job.rules', { jobId: job.id, received: job.rules.map((r) => r.id), packed: result.rules.map((r) => r.id) });
+    }
+    return payload(result, job.providers !== undefined);
+  });
 }
 
 /**
@@ -360,6 +364,8 @@ export function payload(result: ReviewResult, withCostSource = false): ReviewPay
       blocking: f.blocking,
       suggestion_range: f.suggestion_range,
       fingerprint: f.fingerprint,
+      // A finding without a rule sends no key: a service of an earlier release refuses a key it does not know.
+      ...(f.rule_id ? { rule_id: f.rule_id } : {}),
     })),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),

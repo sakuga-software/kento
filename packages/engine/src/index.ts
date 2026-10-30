@@ -25,6 +25,7 @@ export {
 export {
   anchor,
   ANSWER_SCHEMA,
+  answerSchema,
   CATEGORIES,
   changedLines,
   deeperReview,
@@ -43,6 +44,8 @@ export {
   type Usage,
 } from './findings.ts';
 export { buildContext, buildPack } from './pack.ts';
+export { pathsMatch, patternToRegExp } from './paths.ts';
+export { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
 export { askJson, askModel, OPENROUTER_BASE_URL, type ModelClient, type Reply, type Schema } from './model.ts';
 export {
   BLOCK_END,

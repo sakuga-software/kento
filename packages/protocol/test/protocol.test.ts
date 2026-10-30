@@ -234,3 +234,42 @@ test('a job carries the models of the config of its repository, or none (REV-12)
   assert.equal(parseJob({ ...job(), models: { ...models, provider: 'openrouter' } }).ok, false);
   assert.equal(parseJob({ ...job(), models: { provider: 'service', model: 'x' } }).ok, false);
 });
+
+// --- rules (REV-19) ---------------------------------------------------------------------------
+
+const RULE = {
+  id: '5d0e6c1a-8b7f-4e2d-9c3b-1f2a3b4c5d6e',
+  scope: 'repo',
+  title: 'Toute migration drizzle a un index pour chaque FK',
+  text: 'Chaque clé étrangère ajoutée par une migration a son index.',
+  paths: ['**/migrations/**'],
+  severityFloor: 'major',
+};
+
+test('a job carries the rules of its repository and of its org, with the feature rules (REV-19)', () => {
+  assert.ok(parseClaimRequest({ hasProviderKey: true, features: ['providers', 'models', 'rules'], ownProvider: null }).ok);
+  const rules = [RULE, { ...RULE, id: '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f', scope: 'org', paths: [], severityFloor: null }];
+  assert.deepEqual(parseJob({ ...job(), rules }), { ok: true, value: { ...job(), rules } });
+  assert.ok(parseJob({ ...job(), rules: [] }).ok);
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, id: 'R1' }] }).ok, false, 'the id of a rule is the uuid of the service');
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, scope: 'diff' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, severityFloor: 'info' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, title: '' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, text: 'x'.repeat(4001) }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rules: [{ ...RULE, paths: Array(21).fill('a/**') }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rules: Array(51).fill(RULE) }).ok, false);
+});
+
+test('a finding may cite a rule by its id; a finding of an earlier runner, with no rule_id, still passes (REV-19)', () => {
+  // A runner already deployed sends findings without `rule_id`: the service still takes them.
+  const earlier = review();
+  assert.ok(!('rule_id' in earlier.findings[0]!));
+  assert.deepEqual(parseResultRequest({ outcome: 'done', attempt: 1, review: earlier }), { ok: true, value: { outcome: 'done', attempt: 1, review: earlier } });
+  const cited = review();
+  cited.findings[0]!.rule_id = RULE.id;
+  assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: cited }).ok);
+  for (const ruleId of ['R1', null, '', 42]) {
+    const bad = { ...review(), findings: [{ ...review().findings[0]!, rule_id: ruleId }] };
+    assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: bad }).ok, false, String(ruleId));
+  }
+});

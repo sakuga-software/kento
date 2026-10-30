@@ -297,6 +297,13 @@ export const jobs = pgTable(
      * the column: the runner then uses the levels of the engine.
      */
     config: jsonb('config'),
+    /**
+     * REV-19. The rules that the last claim sent to its runner (`JobRule[]` of the protocol), as they
+     * were then. A finding of the result can cite one of these only, and keeps its title even when
+     * the rule is changed or removed since. Null: no rule sent (a runner without the feature `rules`,
+     * a resolve job, or a job claimed before the column).
+     */
+    sentRules: jsonb('sent_rules'),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -566,5 +573,49 @@ export const findingEvents = pgTable(
   (table) => [
     index('finding_events_finding_created_at_idx').on(table.findingId, table.createdAt, table.id),
     index('finding_events_review_idx').on(table.reviewId),
+  ],
+)
+
+/**
+ * REV-19. A rule of a repository (`repo_id` set) or of its whole org (`repo_id` null). An admin writes
+ * it on the Config screen of the repository or in the settings of the org. The claim of a review job
+ * sends the active rules of the repository and of its org to a runner that reads them; the engine
+ * keeps those whose paths the diff touches. A rule never comes from the code of a pull request.
+ *
+ * - `paths`: globs of the paths that it covers (`**` style). Empty: every path.
+ * - `severity_floor`: a finding that cites the rule has at least this severity. Null: no floor.
+ * - `active`: false stops sending the rule. `disabled_by` and `disabled_at` say who and when.
+ * - `version`: each change writes the next one; a form sent from an older version is refused.
+ */
+export const rules = pgTable(
+  'rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    repoId: uuid('repo_id').references(() => repos.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    paths: text('paths').array().notNull().default(sql`'{}'::text[]`),
+    severityFloor: text('severity_floor'),
+    active: boolean('active').notNull().default(true),
+    disabledBy: uuid('disabled_by').references(() => users.id, { onDelete: 'set null' }),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    version: integer('version').notNull().default(0),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // The rules of a repository, and the rules of an org (no repository): the two reads of a claim.
+    index('rules_repo_id_idx').on(table.repoId).where(sql`${table.repoId} is not null`),
+    index('rules_org_id_idx').on(table.orgId).where(sql`${table.repoId} is null`),
+    check('rules_title_length', sql`char_length(${table.title}) between 1 and 200`),
+    check('rules_body_length', sql`char_length(${table.body}) between 1 and 4000`),
+    check('rules_paths_count', sql`cardinality(${table.paths}) <= 20`),
+    check('rules_severity_floor', sql`${table.severityFloor} is null or ${table.severityFloor} in ('critical', 'major', 'minor')`),
+    check('rules_disabled_when_inactive', sql`${table.active} = (${table.disabledAt} is null)`),
   ],
 )

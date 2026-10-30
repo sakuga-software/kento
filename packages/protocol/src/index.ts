@@ -47,6 +47,10 @@ export const RUNNER_TOKEN_PREFIX = 'kento_rt_';
 export const LEVELS = ['lite', 'balanced', 'heavy'] as const;
 export type Level = (typeof LEVELS)[number];
 
+export const SEVERITIES = ['critical', 'major', 'minor'] as const;
+export const CATEGORIES = ['bug', 'security', 'data', 'contract', 'test'] as const;
+export const VERDICTS = ['REQUEST_CHANGES', 'APPROVE', 'COMMENT'] as const;
+
 /**
  * The providers of models that a runner can call (packages/engine/src/providers.ts). A runner of an
  * earlier release knows `openrouter` only.
@@ -62,8 +66,10 @@ export type ProviderKind = (typeof PROVIDER_KINDS)[number];
  *   models), and the result of a failure can carry `providerStatus`, and a review its `costSource`.
  * - `models`: the job can carry `models`, the provider and the models that the config of its
  *   repository chose for its level (REV-12).
+ * - `rules`: a review job can carry `rules`, the active rules of its repository and of its org
+ *   (REV-19), and a finding of the result can cite one with `rule_id`.
  */
-export const FEATURES = ['providers', 'models'] as const;
+export const FEATURES = ['providers', 'models', 'rules'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -147,6 +153,26 @@ export type JobProvider = { id: string; kind: ProviderKind; apiKey: string | nul
  */
 export type JobModels = { provider: string; model: string; fallback: string | null };
 
+/** A job carries at most this many rules. */
+export const MAX_JOB_RULES = 50;
+
+/**
+ * A rule of the repository or of its org (REV-19), with the feature `rules`. An admin writes it in
+ * the screens of Kentō: it never comes from the code of the pull request.
+ *
+ * - `paths`: globs of the paths that the rule covers (`db/migrations/**`). The engine sends the rule
+ *   to the model only when a changed file matches one of them. Empty: every path.
+ * - `severityFloor`: a finding that cites the rule has at least this severity. Null: no floor.
+ */
+export type JobRule = {
+  id: string;
+  scope: 'repo' | 'org';
+  title: string;
+  text: string;
+  paths: string[];
+  severityFloor: (typeof SEVERITIES)[number] | null;
+};
+
 /**
  * A job, as the runner receives it.
  *
@@ -158,6 +184,7 @@ export type JobModels = { provider: string; model: string; fallback: string | nu
  * - `providers`: with the feature `providers` only. The runner calls the first one, or the one that
  *   `models` names.
  * - `models`: with the feature `models` only, and only for a job queued with a config (REV-12).
+ * - `rules`: with the feature `rules` only, on a review job (REV-19). Absent: the review has no rule.
  * - `attempt`: the number of this claim of the job, from 1. The heartbeat and the result send it.
  */
 type JobBase = {
@@ -171,6 +198,7 @@ type JobBase = {
   provider: { kind: 'openrouter'; apiKey: string } | null;
   providers?: JobProvider[];
   models?: JobModels;
+  rules?: JobRule[];
 };
 
 /** A review job has no `resolve` key: a runner of an earlier release reads it as before. */
@@ -193,6 +221,19 @@ const jobProvider = obj({
   models: arr(str({ min: 1, max: 200, pattern: MODEL_ID }), { max: 5 }),
 });
 const attempt = int({ min: 1, max: 1000 });
+// The limits of the table `rules` of the service.
+export const RULE_TITLE_MAX = 200;
+export const RULE_TEXT_MAX = 4000;
+export const RULE_PATHS_MAX = 20;
+export const RULE_PATH_MAX = 300;
+const jobRule = obj({
+  id: uuid,
+  scope: oneOf(['repo', 'org'] as const),
+  title: str({ min: 1, max: RULE_TITLE_MAX }),
+  text: str({ min: 1, max: RULE_TEXT_MAX }),
+  paths: arr(str({ min: 1, max: RULE_PATH_MAX }), { max: RULE_PATHS_MAX }),
+  severityFloor: nullable(oneOf(SEVERITIES)),
+});
 const jobBase = {
   id: uuid,
   attempt,
@@ -219,6 +260,7 @@ const jobBase = {
       fallback: nullable(str({ min: 1, max: 200, pattern: MODEL_ID })),
     }),
   ),
+  rules: optional(arr(jobRule, { max: MAX_JOB_RULES })),
 };
 const resolveComment = obj({
   id: int({ min: 1, max: Number.MAX_SAFE_INTEGER }),
@@ -264,10 +306,6 @@ export const parseHeartbeatResponse = (value: unknown): Checked<HeartbeatRespons
 
 // --- Result -----------------------------------------------------------------------------------
 
-export const SEVERITIES = ['critical', 'major', 'minor'] as const;
-export const CATEGORIES = ['bug', 'security', 'data', 'contract', 'test'] as const;
-export const VERDICTS = ['REQUEST_CHANGES', 'APPROVE', 'COMMENT'] as const;
-
 export type ReviewFinding = {
   path: string;
   start_line: number;
@@ -283,6 +321,11 @@ export type ReviewFinding = {
   anchor: number | null;
   blocking: boolean;
   suggestion_range: [number, number] | null;
+  /**
+   * REV-19. The rule of the job that the finding applies (`JobRule.id`). Absent when the finding
+   * cites no rule, and always absent from a runner of an earlier release.
+   */
+  rule_id?: string;
   /**
    * The fingerprint of the finding (packages/engine/src/fingerprint.ts): the path, the rule or the
    * title, and the code around the line at the head. A runner of an earlier release sends none; the
@@ -362,6 +405,7 @@ const finding = obj({
   anchor: nullable(line),
   blocking: bool,
   suggestion_range: nullable(tuple2(line, line)),
+  rule_id: optional(uuid),
   fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
 });
 const review = obj({

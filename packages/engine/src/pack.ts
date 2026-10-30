@@ -1,6 +1,7 @@
 // The pack: the first message of the review, with the diff, the docs of the repository and the context.
 import { git } from './git.ts';
 import type { ContextKind } from './levels.ts';
+import { rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
 
 // The pack that the model reads, at most. A larger pull request loses its largest files first.
 const MAX_PACK_BYTES = 240_000;
@@ -257,13 +258,26 @@ function numstat(repo: string, base: string, head: string): { added: string; rem
   return rows;
 }
 
-/** The first message of the review, and the files left out with their reason. */
-export function buildPack(repo: string, base: string, head: string, contextKind: ContextKind): { pack: string; skipped: string[] } {
+/**
+ * The first message of the review, the files left out with their reason, and the rules that it holds
+ * (REV-19): the rules of the caller whose paths a changed file matches.
+ */
+export function buildPack(
+  repo: string,
+  base: string,
+  head: string,
+  contextKind: ContextKind,
+  rules: readonly Rule[] = [],
+): { pack: string; skipped: string[]; rules: PackedRule[] } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
   const renamedFrom = new Map<string, string>();
-  for (const { added, removed, path, from } of numstat(repo, base, head)) {
+  const changes = numstat(repo, base, head);
+  // A rule covers a file of the change, even one that the pack leaves out, and the old path of a rename.
+  const touched = changes.flatMap(({ path, from }) => (from ? [from, path] : [path]));
+  const { section: rulesText, packed, skipped: rulesSkipped } = rulesSection(rulesForPaths(rules, touched));
+  for (const { added, removed, path, from } of changes) {
     if (SKIP.test(path)) skipped.push(`${path} : fichier généré ou binaire`);
     else if (added !== '-' && Number(added) + Number(removed) > MAX_FILE_CHANGED_LINES)
       skipped.push(`${path} : plus de ${MAX_FILE_CHANGED_LINES} lignes modifiées`);
@@ -285,7 +299,7 @@ export function buildPack(repo: string, base: string, head: string, contextKind:
   }
 
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
-  const budget = MAX_PACK_BYTES - docs.length - commits.length - 2000;
+  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - commits.length - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
@@ -297,6 +311,7 @@ export function buildPack(repo: string, base: string, head: string, contextKind:
   const parts = [`# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`];
   if (skipped.length) parts.push(`## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n`);
   parts.push(docs);
+  parts.push(rulesText);
   parts.push(
     '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
       'A test file shows three lines of context.\n\n```diff\n',
@@ -313,5 +328,5 @@ export function buildPack(repo: string, base: string, head: string, contextKind:
       context,
     );
   }
-  return { pack: parts.join(''), skipped };
+  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed };
 }

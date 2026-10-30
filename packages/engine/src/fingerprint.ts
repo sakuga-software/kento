@@ -14,7 +14,7 @@ export const CONTEXT_LINES = 1;
 /** A fingerprint: 16 hexadecimal characters. */
 export const FINGERPRINT = /^[0-9a-f]{16}$/;
 
-export type FingerprintInput = { path: string; line: number; title: string; rule_id?: string };
+export type FingerprintInput = { path: string; line: number; title: string; rule_id?: string | null };
 
 /** The title without case, accents, punctuation or extra spaces: two wordings of one title can match. */
 export function normalizeTitle(title: string): string {

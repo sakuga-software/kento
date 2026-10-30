@@ -22,6 +22,8 @@ function badges(finding: Finding): string {
 
 export function inlineBody(finding: Finding, withSuggestion: boolean): string {
   const out = [`${badges(finding)} **${finding.title}**`, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
+  // REV-19. The rule of the repository or of the org that the finding applies.
+  if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');

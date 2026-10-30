@@ -490,7 +490,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -620,7 +620,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules'], ownProvider: 'ollama' });
 });
 
 test('the protocol and the engine know the same providers', async () => {
@@ -669,4 +669,61 @@ test('a config whose provider is not in the job fails it with the reason, and ca
   for (const { results } of [one, two]) {
     assert.equal(results[0]!.outcome === 'failed' && results[0]!.reason, `the provider ${PROVIDER_ID} that the config chose is not in the job`);
   }
+});
+
+// --- rules of the repository and of the org (REV-19) --------------------------------------------
+
+const RULE_ID = '5d0e6c1a-8b7f-4e2d-9c3b-1f2a3b4c5d6e';
+const OTHER_RULE_ID = '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f';
+
+/** A model that cites `cite` in its finding, and records the pack and the schema of each call. */
+function stubRuleModel(cite: string | null) {
+  const bodies: any[] = [];
+  const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    bodies.push(body);
+    const content = answer();
+    content.findings = content.findings.map((f) => ({ ...f, severity: 'minor', rule_id: cite }));
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  return { fetch: stub, bodies };
+}
+
+const rule = (overrides: Record<string, unknown> = {}) => ({
+  id: RULE_ID,
+  scope: 'repo' as const,
+  title: 'Une somme additionne',
+  text: 'Toute fonction `sum` additionne ses arguments.',
+  paths: ['*.ts'],
+  severityFloor: 'major' as const,
+  ...overrides,
+});
+
+test('a job with rules: the pack holds the rules that the diff touches, and a finding cites one by its id', async () => {
+  const { api, results } = fakeApi();
+  const model = stubRuleModel('R1');
+  const rules = [rule(), rule({ id: OTHER_RULE_ID, title: 'Index des FK', paths: ['**/migrations/**'] })];
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, rules }), deps(api, model.fetch));
+
+  const pack = model.bodies[0].messages.at(-1).content as string;
+  assert.match(pack, /### R1 · Une somme additionne/);
+  assert.doesNotMatch(pack, /Index des FK/, 'a rule whose paths the diff does not touch is not in the pack');
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  assert.equal(result.review.findings[0]!.rule_id, RULE_ID);
+  assert.equal(result.review.findings[0]!.severity, 'major', 'the floor of the rule raises a minor finding');
+  const trace = logs.map((l) => JSON.parse(l)).find((l) => l.event === 'job.rules');
+  assert.deepEqual({ received: trace.received, packed: trace.packed }, { received: [RULE_ID, OTHER_RULE_ID], packed: [RULE_ID] });
+});
+
+test('a job of a service of an earlier release has no rules: the result has no rule_id key', async () => {
+  const { api, results } = fakeApi();
+  const model = stubRuleModel('R1');
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model.fetch));
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  assert.ok(!('rule_id' in result.review.findings[0]!), 'a finding without a rule sends no rule_id');
+  assert.ok(!JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema has no rule_id without rules');
 });

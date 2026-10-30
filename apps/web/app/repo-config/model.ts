@@ -218,37 +218,8 @@ export function checkPattern(pattern: string): string | null {
   return null
 }
 
-/**
- * A pattern as a regular expression: `**` matches any number of folders, `*` and `?` stay in one
- * name. A pattern with no `*`, `?` or final `/` also matches the files under it, as a folder.
- */
-export function patternToRegExp(pattern: string): RegExp {
-  let source = ''
-  for (let i = 0; i < pattern.length; i++) {
-    let char = pattern[i]!
-    if (char === '*' && pattern[i + 1] === '*') {
-      // `**/` matches zero or more folders; a final `**` matches the rest.
-      if (pattern[i + 2] === '/') {
-        source += '(?:.*/)?'
-        i += 2
-      } else {
-        source += '.*'
-        i += 1
-      }
-    } else if (char === '*') source += '[^/]*'
-    else if (char === '?') source += '[^/]'
-    else source += char.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  }
-  let folder = pattern.endsWith('/') || !/[*?]/.test(pattern)
-  return new RegExp(`^${source}${folder ? (pattern.endsWith('/') ? '.*' : '(?:/.*)?') : ''}$`)
-}
-
-/** Whether one of the changed files is under one of the patterns. No pattern: every path counts. */
-export function pathsMatch(patterns: readonly string[], files: readonly string[]): boolean {
-  if (patterns.length === 0) return true
-  let regexps = patterns.map(patternToRegExp)
-  return files.some((file) => regexps.some((re) => re.test(file)))
-}
+// The patterns of the trigger and of the rules of REV-19 have one meaning: packages/engine/src/paths.ts.
+export { pathsMatch, patternToRegExp } from '@sakuga-review/engine/paths'
 
 // --- The forms of the screen ------------------------------------------------------------------
 

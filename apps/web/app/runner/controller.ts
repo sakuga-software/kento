@@ -10,6 +10,7 @@ import {
   type HeartbeatResponse,
   type Job,
   type JobProvider,
+  type JobRule,
   type RegisterResponse,
   type ResolveInput,
 } from '@sakuga-review/protocol'
@@ -151,9 +152,17 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             secrets: secrets !== null,
           })
           if (job) {
+            let wantsRules = body.features?.includes('rules') ?? false
+            let rules: JobRule[] | null = null
+            let stage = 'rules'
             let installationToken
             let resolve: ResolveInput | null = null
             try {
+              // REV-19. The rules of a review job, read at once after the claim (see jobRules), and
+              // kept on the job when they go to the runner: the result can cite only these.
+              rules = job.kind === 'review' ? await deps.store.jobRules(job.id) : []
+              if (wantsRules && job.kind === 'review') await deps.store.recordSentRules(job.id, runner.id, job.attempt, rules)
+              stage = 'installation token'
               installationToken = await mint({
                 installationId: job.githubInstallationId,
                 githubRepoId: job.githubRepoId,
@@ -169,14 +178,18 @@ export function createRunnerController(deps: RunnerApiDependencies) {
                 resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
               }
             } catch (cause) {
-              // The job cannot run without a token or its threads. It counts as an attempt: queued
-              // again after the backoff, or failed after the last attempt.
-              let reason = `${installationToken ? 'review threads' : 'installation token'}: ${errorMessage(cause)}`.slice(0, 1000)
+              // The job cannot run without its rules, a token or its threads. It counts as an attempt:
+              // queued again after the backoff, or failed after the last attempt.
+              if (installationToken) stage = 'review threads'
+              let reason = `${stage}: ${errorMessage(cause)}`.slice(0, 1000)
               let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
-              log('error', 'job.installation_token_failed', {
+              // The event names the step that failed; `job.installation_token_failed` keeps its name
+              // for the token and the threads, as the dashboards of Grafana read it.
+              log('error', stage === 'rules' ? 'job.rules_failed' : 'job.installation_token_failed', {
                 jobId: job.id,
                 runnerId: runner.id,
                 attempt: job.attempt,
+                stage,
                 state: released,
                 error: reason,
               })
@@ -245,6 +258,14 @@ export function createRunnerController(deps: RunnerApiDependencies) {
                 reason: wantsModels ? 'the job does not carry the provider of the config' : 'runner does not read the models of the config',
               })
             }
+            // A runner of an earlier release refuses a job with a key that it does not know: it gets
+            // no rules, and the log says so.
+            let jobRules = rules ?? []
+            if (jobRules.length && !wantsRules) {
+              log('warn', 'job.rules_not_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.length, reason: 'runner does not read the rules' })
+            } else if (jobRules.length) {
+              log('info', 'job.rules_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.map((r) => r.id) })
+            }
             let message = {
               id: job.id,
               attempt: job.attempt,
@@ -256,6 +277,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
               provider,
               ...(providers ? { providers } : {}),
               ...(models && wantsModels && reachable ? { models } : {}),
+              ...(wantsRules && job.kind === 'review' ? { rules: jobRules } : {}),
             }
             return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
           }
