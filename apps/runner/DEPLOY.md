@@ -42,7 +42,32 @@ The package is private by default: keep it private. `runners-host` pulls it with
 
 ## 2. Start the runner on runners-host
 
-The host runs Docker rootless. Log in once as the user that runs it:
+**The runner never runs in the Docker of the CI jobs.** On `runners-host`, the GitHub Actions
+runners run as `ghrunner`, and every CI job can call its rootless Docker. A job there could
+`docker exec` into a Kentō runner, or mount its volume, and read its token. A trusted runner gets the
+key of the provider and an installation token with each job. So Kentō has its own user, `kento`,
+with its own rootless Docker and a home in mode 700 (REV-60). `ghrunner` has no sudo and gets
+« permission denied » on the socket of `kento`.
+
+Create the user once, as `ubuntu` (the same steps as `~/setup.sh` for `ghrunner`):
+
+```sh
+sudo useradd -m -s /bin/bash kento && sudo chmod 700 /home/kento
+echo "kento:231072:65536" | sudo tee -a /etc/subuid /etc/subgid
+sudo loginctl enable-linger kento
+# Wait for the session bus. As ubuntu, test it with sudo: /run/user/<uid> is in mode 700.
+until sudo test -S /run/user/$(id -u kento)/bus; do sleep 1; done
+k() { sudo -n -u kento env XDG_RUNTIME_DIR=/run/user/$(id -u kento) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u kento)/bus "$@"; }
+k dockerd-rootless-setuptool.sh install
+k systemctl --user enable --now docker
+```
+
+Every command below runs as `kento`, with
+`XDG_RUNTIME_DIR=/run/user/$(id -u kento) DOCKER_HOST=unix:///run/user/$(id -u kento)/docker.sock`.
+Without a token `read:packages`, build the image in that Docker from `git archive origin/main`
+(section 1, without `--push`), with the tag `kento-runner:latest`.
+
+Log in once, if the image comes from ghcr.io:
 
 ```sh
 echo <token read:packages> | docker login ghcr.io -u <github user> --password-stdin
