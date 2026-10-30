@@ -9,6 +9,9 @@ import { ExternalIcon } from './icons.tsx'
 import { pullHref, pullUrl, SEVERITY_BADGES, statusClass } from './pull.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
+/** A member decides on a finding as an admin does (REV-17). */
+export const MEMBER_CAN = 'vous dismissez, gardez (wontfix) ou rouvrez un finding'
+
 /** The words of each event of the history. */
 export const EVENT_LABELS: Record<FindingEventType, string> = {
   opened: 'posté',
@@ -54,7 +57,7 @@ export function FindingPage(handle: Handle<FindingPageProps>) {
     let thread = threadUrl(githubUrl, finding)
     let review = finding.review
     return (
-      <Shell frame={frame} section="repos" title={finding.title || 'Finding sans titre'}>
+      <Shell frame={frame} section="repos" title={finding.title || 'Finding sans titre'} memberCan={MEMBER_CAN}>
         <nav class="crumbs" aria-label="Fil d’Ariane">
           <a href={pageRoutes.repos.href()}>Repos</a>
           <span aria-hidden="true">/</span>

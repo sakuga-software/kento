@@ -192,7 +192,7 @@ const CODE_CACHE_FILES = 32
 /** The lines around `line` of the text of a file, or why there are none. */
 export function excerptOf(text: string, line: number): CodeRead {
   if (text === '') return { kind: 'empty' }
-  let all = text.split('\n')
+  let all = text.split(/\r?\n/)
   // A finding with no line (a thread of an earlier release, with no anchor) shows the start of its file.
   let at = line >= 1 ? line : CODE_CONTEXT + 1
   if (at > all.length) return { kind: 'short', length: all.length }

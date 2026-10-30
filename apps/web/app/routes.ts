@@ -62,6 +62,13 @@ export const pullRoutes = route({
   pull: get('/repos/:id/pulls/:number'),
   /** One finding: where it comes from, its code, its history, its thread on GitHub. */
   finding: get('/findings/:id'),
+  /**
+   * A member of the org dismisses a finding with one of four reasons, keeps it (wontfix) or reopens
+   * it. Each one writes an event, and the bot says so in the thread of the finding on GitHub.
+   */
+  findingDismiss: post('/findings/:id/dismiss'),
+  findingWontfix: post('/findings/:id/wontfix'),
+  findingReopen: post('/findings/:id/reopen'),
 })
 
 /**

@@ -63,6 +63,8 @@ export interface ShellProps {
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */
   actions?: RemixNode
+  /** REV-17. What a member can do on this screen, in place of « seuls les admins … modifient ». */
+  memberCan?: string
   children?: RemixNode
 }
 
@@ -72,7 +74,7 @@ export interface ShellProps {
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
-    let { frame, section, title, lead, actions, children } = handle.props
+    let { frame, section, title, lead, actions, children, memberCan } = handle.props
     let { viewer } = frame
     let readOnly = viewer?.role === 'member'
     return (
@@ -130,8 +132,9 @@ export function Shell(handle: Handle<ShellProps>) {
                 <div class="banner" role="status">
                   <EyeIcon />
                   <p>
-                    <strong>Lecture seule.</strong> Vous êtes membre de {viewer.org.login} : vous voyez tout, et seuls
-                    les admins de l’organisation modifient.
+                    <strong>Lecture seule.</strong> Vous êtes membre de {viewer.org.login} : vous voyez tout
+                    {memberCan ? `, ${memberCan}` : ''}, et seuls les admins de l’organisation modifient
+                    {memberCan ? ' le reste' : ''}.
                   </p>
                 </div>
               ) : null}

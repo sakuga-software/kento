@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
+import { replyText } from '../app/findings/dismiss.ts'
 import { PULL_NUMBER, PULL_REPO, seedPull } from './pull-seed.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
@@ -111,5 +112,48 @@ test('the detail of a finding: source, model, scenario, its code at its line, hi
   await expect(page.getByRole('heading', { name: 'Feuille d’exposition' })).toBeVisible()
   await page.goBack()
   await expectNoAxeViolations(page)
+  expect(errors).toEqual([])
+})
+
+const GITHUB = `http://127.0.0.1:${process.env.E2E_GITHUB_PORT ?? 3499}`
+
+test('a member dismisses a finding as « Faux positif »: status, reply in the GitHub thread, history; then reopens it', async ({ page }) => {
+  let errors = watchConsole(page)
+  let before = ((await (await fetch(`${GITHUB}/_test/replies`)).json()) as unknown[]).length
+  await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
+  await page.getByRole('link', { name: 'Le jeton de session n’expire jamais' }).click()
+
+  await page.getByText('Marquer dismissed…').click()
+  await page.getByRole('radio', { name: 'Faux positif' }).check()
+  await page.getByRole('button', { name: 'Marquer dismissed', exact: true }).click()
+
+  await expect(page.getByRole('status').filter({ hasText: 'Finding marqué dismissed.' })).toContainText('La réponse est postée sur le fil GitHub.')
+  await expect(page.locator('.finding-tags')).toContainText('dismissed')
+  await expect(page.locator('.finding-tags')).toContainText('Motif : Faux positif')
+  let history = page.getByRole('region', { name: 'Historique' }).getByRole('listitem')
+  await expect(history.last()).toContainText('@camille · « Faux positif »')
+  let replies = (await (await fetch(`${GITHUB}/_test/replies`)).json()) as { repo: string; pr: number; commentId: number; body: string }[]
+  expect(replies.slice(before)).toEqual([
+    {
+      repo: 'sakuga-software/orchard',
+      pr: 142,
+      commentId: 914201,
+      body: replyText('dismissed', 'Faux positif', 'camille'),
+    },
+  ])
+  await expectNoAxeViolations(page)
+
+  await page.getByRole('button', { name: 'Rouvrir' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Finding rouvert.' })).toBeVisible()
+  await expect(page.locator('.finding-tags')).toContainText('ouvert')
+  await expect(history.last()).toContainText('@camille')
+
+  // « Marquer wontfix » shares the form of the page with « Marquer dismissed »: its button posts to /wontfix.
+  await page.getByText('Marquer wontfix…').click()
+  await page.getByRole('button', { name: 'Marquer wontfix', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Finding marqué wontfix.' })).toBeVisible()
+  await expect(page.locator('.finding-tags')).toContainText('wontfix')
+  await page.getByRole('button', { name: 'Rouvrir' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Finding rouvert.' })).toBeVisible()
   expect(errors).toEqual([])
 })

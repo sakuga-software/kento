@@ -8,6 +8,7 @@ import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
 import type { PullHeader } from '../pulls/github.ts'
 import type { PullSheet, PullsStore, PullSummary } from '../pulls/store.ts'
 import { createAppRouter } from '../router.ts'
+import { DISMISS_REASONS, replyText } from '../findings/dismiss.ts'
 import { codeText } from './finding.tsx'
 import { readPullQuery, scoreProgress } from './pull.tsx'
 
@@ -71,7 +72,7 @@ function sheet(): PullSheet {
 
 const FINDING_ID = '33333333-3333-4333-8333-333333333333'
 
-function detail(): FindingDetail {
+function detail(status: FindingDetail['status'] = 'dismissed'): FindingDetail {
   return {
     id: FINDING_ID,
     target: summary().target,
@@ -81,8 +82,8 @@ function detail(): FindingDetail {
     severity: 'major',
     category: 'bug',
     confidence: 88,
-    status: 'dismissed',
-    statusReason: 'Faux positif',
+    status,
+    statusReason: status === 'dismissed' ? 'Faux positif' : null,
     rule: { id: 'rule-1', title: 'Pas de jeton sans expiration' },
     fingerprint: 'a1',
     firstSeenSha: 'a'.repeat(40),
@@ -92,11 +93,13 @@ function detail(): FindingDetail {
   }
 }
 
-function setup(options: { header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null } = {}) {
+function setup(options: { header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status'] } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let asked: string[] = []
+  let decisions: string[] = []
+  let replies: string[] = []
   let store: PullsStore = {
     async summary(orgId, repoId, prNumber) {
       asked.push(`${orgId} ${repoId} ${prNumber}`)
@@ -108,7 +111,13 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
     },
     async finding(orgId, id) {
       asked.push(`finding ${orgId} ${id}`)
-      return id === FINDING_ID ? detail() : null
+      return id === FINDING_ID ? detail(options.status) : null
+    },
+    async setStatus(input) {
+      decisions.push(`${input.orgId} ${input.findingId} ${input.status} ${input.reason} ${input.actor}`)
+      if (input.findingId !== FINDING_ID) return { outcome: 'not_found' }
+      if (options.unchanged) return { outcome: 'unchanged', finding: {} as never }
+      return { outcome: 'changed', finding: {} as never }
     },
     async history(_orgId, _id, cursor) {
       if (cursor === 'bad') throw new InvalidCursorError()
@@ -145,6 +154,13 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
               if (options.code instanceof Error) throw options.code
               return options.code ?? { kind: 'lines', excerpt: { start: input.line - 1, lines: ['  let token = sign(user)', '  return { token }', '}'] } }
             },
+      postReply:
+        options.reply === null
+          ? null
+          : async (target, body) => {
+              if (options.reply instanceof Error) throw options.reply
+              replies.push(`${target.fullName}#${target.prNumber} ${target.commentId} ${body}`)
+            },
       now: () => NOW.getTime(),
     },
   })
@@ -157,7 +173,15 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookieOf(start, COOKIE))
     return cookieOf(callback, COOKIE)!
   }
-  return { request, signIn, asked }
+  let post = (path: string, cookie: string, form: Record<string, string>) =>
+    router.fetch(
+      new Request(new URL(path, 'http://localhost'), {
+        method: 'POST',
+        headers: { Cookie: cookie, Origin: 'https://review.test' },
+        body: new URLSearchParams(form),
+      }),
+    )
+  return { request, signIn, asked, post, decisions, replies }
 }
 
 const PATH = `/repos/${REPO_ID}/pulls/142`
@@ -260,6 +284,100 @@ describe('the detail of a finding', () => {
     let response = await request(`${DETAIL}?historique=bad`, await signIn())
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), DETAIL)
+  })
+})
+
+describe('the decisions on a finding', () => {
+  const DETAIL = `/findings/${FINDING_ID}`
+
+  async function member(options: Parameters<typeof setup>[0] = {}) {
+    let t = setup(options)
+    let cookie = await t.signIn(CAMILLE)
+    let html = await (await t.request(DETAIL, cookie)).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)![1]!
+    return { ...t, cookie, csrf, html }
+  }
+
+  it('offers a member « Marquer dismissed… » with the reasons of REV-18, and « Marquer wontfix… »', async () => {
+    let { html } = await member({ status: 'open' })
+    assert.doesNotMatch(html, />Rouvrir</)
+    assert.match(html, /Marquer dismissed…/)
+    assert.match(html, /Marquer wontfix…/)
+    // The reasons of the dialog of REV-18, shared with the Findings screen, and « Autre ».
+    for (let reason of DISMISS_REASONS) assert.match(html, new RegExp(`value="${reason}"`))
+    assert.match(html, /value="other"/)
+    assert.match(html, new RegExp(`name="ids" value="${FINDING_ID}"`))
+    assert.match(html, /vous dismissez, gardez \(wontfix\) ou rouvrez un finding/)
+  })
+
+  it('a member dismisses with a reason: the status changes, then the bot replies in the thread', async () => {
+    let { post, cookie, csrf, decisions, replies } = await member()
+    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'Faux positif' })
+    assert.equal(response.status, 303)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
+    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Faux positif camille`])
+    assert.deepEqual(replies, [`sakuga-software/orchard#142 914201 ${replyText('dismissed', 'Faux positif', 'camille')}`])
+  })
+
+  it('takes « Autre » with a reason of the person', async () => {
+    let { post, cookie, csrf, decisions } = await member({ status: 'open' })
+    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'other', other: 'Code généré' })
+    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
+    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Code généré camille`])
+  })
+
+  it('refuses an unknown reason, the id of another finding, and a form without its token', async () => {
+    let { post, cookie, csrf, decisions } = await member()
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'Parce que' })).status, 400)
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: '44444444-4444-4444-8444-444444444444', status: 'dismissed', reason: 'Faux positif' })).status, 400)
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { ids: FINDING_ID, status: 'dismissed', reason: 'Faux positif' })).status, 403)
+    assert.deepEqual(decisions, [])
+  })
+
+  it('posts nothing on GitHub when the status does not change', async () => {
+    let { post, cookie, csrf, replies } = await member({ unchanged: true })
+    let response = await post(`${DETAIL}/wontfix`, cookie, { _csrf: csrf })
+    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=unchanged`)
+    assert.deepEqual(replies, [])
+  })
+
+  it('keeps the new status when GitHub refuses the reply, and says so', async () => {
+    let { post, cookie, csrf, decisions, request } = await member({ reply: new Error('502') })
+    let response = await post(`${DETAIL}/reopen`, cookie, { _csrf: csrf })
+    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=open&github=failed`)
+    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} open null camille`])
+    let html = await (await request(response.headers.get('Location')!, cookie)).text()
+    assert.match(html, /La réponse n’a pas pu être postée sur GitHub/)
+  })
+
+  it('posts each button of a confirmation to its own action, through the one form of the page', async () => {
+    let { html } = await member({ status: 'open' })
+    let form = `finding-${FINDING_ID}`
+    let buttons = [...html.matchAll(/<button[^>]*type="submit"[^>]*>(Marquer dismissed|Marquer wontfix)<\/button>/g)].map((m) => m[0])
+    assert.equal(buttons.length, 2)
+    assert.match(buttons[0]!, new RegExp(`form="${form}"`))
+    assert.match(buttons[0]!, new RegExp(`formaction="/findings/${FINDING_ID}/dismiss"`))
+    assert.match(buttons[1]!, new RegExp(`form="${form}"`))
+    assert.match(buttons[1]!, new RegExp(`formaction="/findings/${FINDING_ID}/wontfix"`))
+  })
+
+  it('offers « Rouvrir » only for a finding dismissed or kept', async () => {
+    let { html } = await member({ status: 'dismissed' })
+    assert.match(html, />Rouvrir</)
+    assert.doesNotMatch(html, /Marquer dismissed…/)
+  })
+
+  it('does not set aside a finding that a push fixed, as the Findings screen does not', async () => {
+    let { post, cookie, csrf, decisions, replies } = await member({ status: 'fixed' })
+    let response = await post(`${DETAIL}/wontfix`, cookie, { _csrf: csrf, ids: FINDING_ID })
+    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=fixed`)
+    assert.deepEqual(decisions, [])
+    assert.deepEqual(replies, [])
+  })
+
+  it('answers 404 for a finding of another org', async () => {
+    let { post, cookie, csrf } = await member()
+    assert.equal((await post('/findings/44444444-4444-4444-8444-444444444444/wontfix', cookie, { _csrf: csrf })).status, 404)
   })
 })
 

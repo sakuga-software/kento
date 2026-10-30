@@ -54,6 +54,11 @@ describe('createReadCode', () => {
     assert.equal(calls.length, 2)
   })
 
+  it('cuts the lines of a file with CRLF ends without their carriage return', async () => {
+    let { read } = setup(() => Response.json({ encoding: 'base64', content: Buffer.from('a\r\nb\r\nc').toString('base64') }))
+    assert.deepEqual(await read(TARGET, { path: 'x', sha: 's', line: 2 }), { kind: 'lines', excerpt: { start: 1, lines: ['a', 'b', 'c'] } })
+  })
+
   it('shows the start of the file for a finding with no line', async () => {
     let { read } = setup(() => Response.json({ encoding: 'base64', content: Buffer.from(file).toString('base64') }))
     let excerpt = await read(TARGET, { path: 'x', sha: 's', line: 0 })

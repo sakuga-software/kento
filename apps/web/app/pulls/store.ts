@@ -9,7 +9,7 @@ import { findingKey } from '@sakuga-review/engine/findings'
 import type { Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
-import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, UUID, type FindingStatus, type Page } from '../findings/store.ts'
+import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, UUID, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
 import { sheetCells, type Cell, type ResultFinding, type SheetEvent } from './sheet.ts'
 
@@ -106,6 +106,8 @@ export interface PullsStore {
   finding(orgId: string, id: string): Promise<FindingDetail | null>
   /** A page of the history of a finding of the org, oldest first. */
   history(orgId: string, findingId: string, cursor: string | null): Promise<Page<HistoryEvent>>
+  /** A person of the org sets the status of a finding: one event, with their login. */
+  setStatus(input: { orgId: string; findingId: string; status: PersonStatus; reason: string | null; actor: string }): Promise<StatusChange>
 }
 
 const num = (value: string | number | null): number | null => (value === null ? null : Number(value))
@@ -122,6 +124,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
   return {
     finding: (orgId, id) => readFindingDetail(sql, orgId, id),
     history: (orgId, findingId, cursor) => readFindingHistory(sql, { orgId, findingId, cursor }),
+    setStatus: (input) => setFindingStatus(sql, input),
 
     async summary(orgId, repoId, prNumber) {
       if (!UUID.test(repoId) || !Number.isSafeInteger(prNumber) || prNumber <= 0) return null

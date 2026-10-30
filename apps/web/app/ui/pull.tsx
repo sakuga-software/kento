@@ -74,7 +74,12 @@ export function PullPage(handle: Handle<PullPageProps>) {
     let total = FINDING_STATUSES.reduce((n, s) => n + summary.byStatus[s], 0)
     let base = header?.baseRef || summary.baseRef
     return (
-      <Shell frame={frame} section="repos" title={`${repoName} #${target.prNumber}${header?.title ? ` · ${header.title}` : ''}`}>
+      <Shell
+        frame={frame}
+        section="repos"
+        title={`${repoName} #${target.prNumber}${header?.title ? ` · ${header.title}` : ''}`}
+        memberCan="vous dismissez, gardez (wontfix) ou rouvrez un finding depuis son détail"
+      >
         <nav class="crumbs" aria-label="Fil d’Ariane">
           <a href={pageRoutes.repos.href()}>Repos</a>
           <span aria-hidden="true">/</span>
