@@ -266,7 +266,9 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
                   <tr>
                     <th scope="row" class="sheet-finding">
                       <div class="sheet-finding-body">
-                        <span class="sheet-title">{finding.title || 'Sans titre'}</span>
+                        <a class="sheet-title" href={pullRoutes.finding.href({ id: finding.id })}>
+                          {finding.title || 'Sans titre'}
+                        </a>
                         <span class="sheet-where mono">
                           {finding.path}:{finding.line}
                         </span>

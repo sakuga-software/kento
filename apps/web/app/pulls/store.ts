@@ -9,7 +9,8 @@ import { findingKey } from '@sakuga-review/engine/findings'
 import type { Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
-import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, UUID, type FindingStatus } from '../findings/store.ts'
+import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, UUID, type FindingStatus, type Page } from '../findings/store.ts'
+import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
 import { sheetCells, type Cell, type ResultFinding, type SheetEvent } from './sheet.ts'
 
 /** The reviews of a page of the sheet. Six columns fit at 1440 px with the title of each row. */
@@ -101,6 +102,10 @@ export interface PullsStore {
     target: PullTarget,
     page: { reviewsCursor?: string | null; rowsCursor?: string | null; statuses?: readonly FindingStatus[] },
   ): Promise<PullSheet>
+  /** One finding of the org, with the last review that found it. */
+  finding(orgId: string, id: string): Promise<FindingDetail | null>
+  /** A page of the history of a finding of the org, oldest first. */
+  history(orgId: string, findingId: string, cursor: string | null): Promise<Page<HistoryEvent>>
 }
 
 const num = (value: string | number | null): number | null => (value === null ? null : Number(value))
@@ -115,6 +120,9 @@ function toDate(value: Date | string | null): Date | null {
 
 export function createPullsStore(sql: postgres.Sql): PullsStore {
   return {
+    finding: (orgId, id) => readFindingDetail(sql, orgId, id),
+    history: (orgId, findingId, cursor) => readFindingHistory(sql, { orgId, findingId, cursor }),
+
     async summary(orgId, repoId, prNumber) {
       if (!UUID.test(repoId) || !Number.isSafeInteger(prNumber) || prNumber <= 0) return null
       let [row] = await sql<

@@ -116,6 +116,39 @@ describe('pulls store', () => {
     assert.deepEqual(sheet.rows[0]!.cells.map((c) => c.state), ['posted'])
   })
 
+  it('reads the detail of a finding: its last review, its scenario and fix, its rule', async () => {
+    let store = createPullsStore(database.sql)
+    let moved = (await store.finding(seeded.orgId, seeded.findings.A))!
+    assert.equal(moved.title, 'Le jeton de session n’expire jamais')
+    assert.equal(moved.line, 47)
+    assert.deepEqual(
+      moved.review && { number: moved.review.number, level: moved.review.level, model: moved.review.model, scenario: moved.review.scenario, fix: moved.review.fix },
+      { number: 4, level: 'lite', model: 'claude-haiku-4-5', scenario: 'Scénario de A.', fix: 'Piste de A.' },
+    )
+    assert.equal(moved.rule, null)
+    assert.equal(moved.githubCommentId, 914201)
+    let [other] = await database.sql<{ id: string }[]>`select id from orgs where login = 'someone-else'`
+    assert.equal(await store.finding(other!.id, seeded.findings.A), null)
+  })
+
+  it('pages the history of a finding oldest first, with the R number of each review', async () => {
+    let store = createPullsStore(database.sql)
+    let history = await store.history(seeded.orgId, seeded.findings.C, null)
+    assert.deepEqual(
+      history.items.map((e) => `${e.type} ${e.actor} ${e.review ?? '-'} ${e.reason ?? ''}`.trim()),
+      ['opened kento 1', 'dismissed camille - Faux positif'],
+    )
+    assert.ok(history.items[0]!.createdAt instanceof Date)
+    for (let n = 0; n < 25; n++) {
+      await database.sql`insert into finding_events (finding_id, type, actor) values (${seeded.findings.C}, 'wontfix', 'alex')`
+    }
+    let first = await store.history(seeded.orgId, seeded.findings.C, null)
+    assert.equal(first.items.length, 20)
+    let second = await store.history(seeded.orgId, seeded.findings.C, first.nextCursor)
+    assert.equal(second.items.length, 7)
+    assert.equal(second.nextCursor, null)
+  })
+
   it('pages the reviews from the newest back, and reads the review before the page for a move', async () => {
     let store = createPullsStore(database.sql)
     // Four more reviews of the same head, each finding A again at line 47: ten reviews in all.

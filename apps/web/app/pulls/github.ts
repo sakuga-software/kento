@@ -1,6 +1,7 @@
 // REV-17. The header of the screen of a pull request: its title, its author and its branches, which
 // only GitHub holds. One read per pull request and minute at most: a person who opens a finding and
 // comes back makes no second call.
+import { fetchWithin, SCREEN_GITHUB_TIMEOUT_MS } from '../github/fetch.ts'
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'
 import type { PullTarget } from './store.ts'
@@ -39,7 +40,7 @@ export function createReadPullHeader(deps: {
       githubRepoId: target.githubRepoId,
       permissions: { pull_requests: 'read' },
     })
-    let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+    let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: fetchWithin(SCREEN_GITHUB_TIMEOUT_MS, deps.fetch) })
     let pr: {
       title?: unknown
       state?: unknown

@@ -7,6 +7,8 @@ import { errorMessage, log } from '../log.ts'
 import { pullRoutes } from '../routes.ts'
 import type { ScreenKit } from '../ui/pages.tsx'
 import { pullHref, PullPage, readPullQuery } from '../ui/pull.tsx'
+import { FindingPage, findingHref } from '../ui/finding.tsx'
+import type { CodeRead, ReadCode } from './finding.ts'
 import type { PullHeader, ReadPullHeader } from './github.ts'
 import type { PullsStore } from './store.ts'
 
@@ -17,6 +19,8 @@ export interface PullsDependencies {
   githubUrl: string
   /** Reads the title, the author and the branches. Null without the GitHub App. */
   readHeader: ReadPullHeader | null
+  /** Reads the code around the line of a finding. Null without the GitHub App. */
+  readCode?: ReadCode | null
   now?: () => number
 }
 
@@ -56,6 +60,40 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
             header={header}
             sheet={sheet}
             query={query}
+            githubUrl={deps.githubUrl}
+            now={new Date(now())}
+          />,
+        )
+      },
+
+      async finding(context) {
+        let signed = kit.signed(context)
+        let finding = deps ? await deps.store.finding(signed.orgId, context.params.id) : null
+        if (!deps || !finding) return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
+        let cursor = context.url.searchParams.get('historique') || null
+        let history
+        try {
+          history = await deps.store.history(signed.orgId, finding.id, cursor)
+        } catch (error) {
+          if (!(error instanceof InvalidCursorError)) throw error
+          return kit.redirect(findingHref(finding.id))
+        }
+        let code: CodeRead | 'failed' | undefined = undefined
+        if (deps.readCode) {
+          try {
+            code = await deps.readCode(finding.target, { path: finding.path, sha: finding.lastSeenSha, line: finding.line })
+          } catch (error) {
+            code = 'failed'
+            log('warn', 'finding.code_failed', { repo: finding.target.fullName, finding: finding.id, error: errorMessage(error) })
+          }
+        }
+        return context.render(
+          <FindingPage
+            frame={kit.frame(context)}
+            finding={finding}
+            history={history}
+            historyCursor={cursor}
+            code={code}
             githubUrl={deps.githubUrl}
             now={new Date(now())}
           />,

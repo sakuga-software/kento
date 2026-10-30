@@ -58,6 +58,8 @@ export const pageRoutes = route({
  */
 export const pullRoutes = route({
   pull: get('/repos/:id/pulls/:number'),
+  /** One finding: where it comes from, its code, its history, its thread on GitHub. */
+  finding: get('/findings/:id'),
 })
 
 /**

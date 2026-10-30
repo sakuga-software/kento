@@ -51,6 +51,15 @@ const FAKE_PULL_DETAILS: Record<string, { title: string; user: { login: string }
   'sakuga-software/orchard#142': { title: 'Sessions : expiration et rotation des clés', user: { login: 'camille' }, head: { ref: 'feat/session-expiry' } },
 }
 
+/** Lines of the files of orchard, by number, for the code of a finding (REV-17). */
+const FAKE_SOURCE: Record<number, string> = {
+  44: 'export function createSession(user: User) {',
+  45: '  let token = sign({ sub: user.id })',
+  46: '  sessions.set(token, user)',
+  47: "  return { token, expiresAt: null } // no expiry",
+  48: '}',
+}
+
 let codes = new Map<string, { login: string; challenge: string; redirectUri: string }>()
 
 function json(response: http.ServerResponse, status: number, body: unknown) {
@@ -130,6 +139,15 @@ let server = http.createServer(async (request, response) => {
     let text = files[contents[2]]
     if (text === undefined) return json(response, 404, { message: 'Not Found' })
     return json(response, 200, { encoding: 'base64', content: Buffer.from(text).toString('base64') })
+  }
+
+  // REV-17: a file of orchard at any commit, for the code of a finding. Line N reads `// line N`,
+  // with the code of orchard #142 around its findings.
+  let source = /^\/repos\/sakuga-software\/orchard\/contents\/(src\/.+)$/.exec(url.pathname)
+  if (request.method === 'GET' && source) {
+    if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
+    let lines = Array.from({ length: 120 }, (_, i) => FAKE_SOURCE[i + 1] ?? `// line ${i + 1}`)
+    return json(response, 200, { encoding: 'base64', content: Buffer.from(lines.join('\n')).toString('base64') })
   }
 
   let pull = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(url.pathname)

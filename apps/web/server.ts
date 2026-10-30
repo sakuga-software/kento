@@ -34,6 +34,7 @@ import { appInstallUrl } from './app/ui/pages.tsx'
 import { createRunnersAdminStore } from './app/runner/admin.ts'
 import { createDashboardStore } from './app/dashboard/store.ts'
 import { createReadPullRequest } from './app/dashboard/github.ts'
+import { createReadCode } from './app/pulls/finding.ts'
 import { createReadPullHeader } from './app/pulls/github.ts'
 import { createPullsStore } from './app/pulls/store.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
@@ -183,6 +184,7 @@ let router = createAppRouter({
     store: createPullsStore(database.sql),
     githubUrl: config.githubUrl,
     readHeader: mintInstallationToken && config.githubApp ? createReadPullHeader({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
+    readCode: mintInstallationToken && config.githubApp ? createReadCode({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
   },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
