@@ -41,6 +41,7 @@ import type { RuleOutcome, RulesStore } from '../rules/store.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
+import { readStatusForm, type BulkStatus, type StatusOutcome } from '../findings/dismiss.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
 import { hashToken, newRegistrationToken } from '../runner/tokens.ts'
 import type { ReadPullRequest } from '../dashboard/github.ts'
@@ -50,7 +51,7 @@ import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, typ
 import { isRuleNotice, type RuleFormState, type RuleNotice } from './rules.tsx'
 import { ErrorPage, type ErrorExit, type ErrorKind } from './not-found.tsx'
 import { readRepoList, repoListQuery, ReposPage, type ReposNotice } from './repos.tsx'
-import { FindingsPage, readFindingList } from './findings.tsx'
+import { findingListQuery, FindingsPage, readFindingList, readFindingsNotice } from './findings.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
 import { anchorOf, ORG_FIELDS, ORG_RESET_FIELDS, type OrgField, type OrgForm, type OrgNotice, type OrgSectionProps } from './org-settings.tsx'
@@ -85,6 +86,11 @@ export interface ReposDependencies {
 /** The Findings screen (REV-18). Null: the screen shows its empty frame. */
 export interface FindingsDependencies {
   store: FindingsScreenStore
+  /**
+   * REV-18. Sets findings dismissed or wontfix, and replies in their threads. Null: the screen only
+   * reads (a test of the routes without a database).
+   */
+  setStatus?: ((input: { orgId: string; ids: string[]; status: BulkStatus; reason: string | null; actor: string }) => Promise<StatusOutcome>) | null
   /** `https://github.com`, or the GitHub Enterprise Server: the links to the pull requests. */
   githubUrl: string
 }
@@ -1006,8 +1012,40 @@ export function createUiControllers(deps: UiDependencies) {
             precision={precision}
             githubUrl={findings.githubUrl}
             now={new Date(now())}
+            notice={readFindingsNotice(context.url.searchParams)}
           />,
         )
+      },
+      // REV-18. « Marquer dismissed » and « Marquer wontfix » of the Findings screen: an admin of the
+      // org on screen only. cop() and csrf() of the session layer ran before.
+      async findingsStatus(context) {
+        let signed = signedOf(context)
+        let setStatus = deps.findings?.setStatus
+        if (!setStatus || signed.membership.role !== 'admin') return forbidden()
+        let form = context.get(FormData)
+        // Back to the list on screen: its query, read again, so that nothing else comes through.
+        let back = findingListQuery(readFindingList(new URLSearchParams(String(form?.get('back') ?? ''))))
+        let read = readStatusForm(form)
+        if (!read.ok) {
+          back.set('error', read.error)
+          return redirect(`${pageRoutes.findings.href()}?${back}`)
+        }
+        let outcome = await setStatus({ orgId: signed.membership.org.id, ids: read.ids, status: read.status, reason: read.reason, actor: signed.user.login })
+        log('info', 'findings.status_set', {
+          login: signed.user.login,
+          org: signed.membership.org.login,
+          status: read.status,
+          asked: read.ids.length,
+          ...outcome,
+        })
+        back.set('done', read.status)
+        back.set('n', String(outcome.changed))
+        if (outcome.unchanged) back.set('same', String(outcome.unchanged))
+        if (outcome.fixed) back.set('fixed', String(outcome.fixed))
+        if (outcome.failed) back.set('failed', String(outcome.failed))
+        if (outcome.replied) back.set('replied', String(outcome.replied))
+        if (outcome.unreplied) back.set('unreplied', String(outcome.unreplied))
+        return redirect(`${pageRoutes.findings.href()}?${back}`)
       },
       async runners(context) {
         let signed = signedOf(context)

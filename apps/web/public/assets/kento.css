@@ -1254,6 +1254,76 @@ kbd,
   }
 }
 
+/* REV-18. The selection of findings and its actions: « Marquer dismissed… » and « Marquer wontfix ». */
+.findings-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.findings-selected {
+  flex: 1 1 200px;
+  align-self: center;
+  margin: 0;
+}
+.finding-select {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.finding-select-gap {
+  flex: none;
+  width: 20px;
+}
+.finding-select input[type='checkbox'] {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--shu);
+}
+/* Not a destruction: the colours of a plain dialog, not those of confirm.tsx. */
+.confirm.dismiss-dialog[open] > summary {
+  background: var(--paper-sunken);
+}
+/* On a wide screen the dialog opens over the table, under its trigger, and moves nothing. */
+.dismiss-dialog {
+  position: relative;
+}
+.dismiss-dialog .confirm-body {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  width: 360px;
+  border-color: var(--line-strong);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+}
+@media (max-width: 760px) {
+  .findings-bulk .dismiss-dialog {
+    flex-basis: 100%;
+  }
+  .dismiss-dialog .confirm-body {
+    position: static;
+    width: auto;
+  }
+  .findings-bulk .button {
+    min-height: var(--control-h-touch);
+  }
+}
+.dismiss-reasons {
+  margin: 0;
+}
+.dismiss-reasons .choice {
+  min-height: 32px;
+  align-items: center;
+}
+.dismiss-reasons .input {
+  margin-top: var(--space-1);
+}
+
 /* REV-18. The precision of the reviews: on Findings, on the dashboard, and in a cell of Repos. */
 .precision {
   margin-bottom: var(--space-8);

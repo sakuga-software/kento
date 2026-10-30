@@ -98,4 +98,34 @@ test.describe('the Findings screen', () => {
       expect(errors).toEqual([])
     })
   }
+
+  test('an admin dismisses two findings « Hors sujet »: both threads get the reply, and the reason counts two more', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'alex')
+    await seed()
+    let replies = async () =>
+      (await (await fetch(`http://127.0.0.1:${process.env.E2E_GITHUB_PORT ?? 3499}/_test/replies`)).json()) as { commentId: number; body: string }[]
+    let before = (await replies()).length
+
+    await page.goto('/findings')
+    let reasons = page.getByRole('region', { name: 'Précision · 30 derniers jours' })
+    await expect(reasons.getByRole('link', { name: 'Hors sujet' }).locator('xpath=..')).toContainText('3')
+    await page.getByRole('checkbox', { name: /Constat 01/ }).check()
+    await page.getByRole('checkbox', { name: /Constat 02/ }).check()
+    await expect(page.getByText('2 findings cochés')).toBeVisible()
+    await page.getByText('Marquer dismissed…').click()
+    await page.getByRole('radio', { name: 'Hors sujet' }).check()
+    await expectNoAxeViolations(page)
+    await page.getByRole('button', { name: 'Marquer dismissed', exact: true }).click()
+
+    await expect(page.getByText('2 findings marqués dismissed.')).toBeVisible()
+    await expect(page.getByText('2 réponses postées dans les fils GitHub.')).toBeVisible()
+    await expect(reasons.getByRole('link', { name: 'Hors sujet' }).locator('xpath=..')).toContainText('5')
+    let posted = (await replies()).slice(before)
+    expect(posted.map((r) => r.commentId).sort()).toEqual([900001, 900002])
+    expect(posted[0]!.body).toContain('par @alex sur Kentō. Motif : « Hors sujet »')
+    await expect(page.getByRole('link', { name: /Open\s*58/ })).toBeVisible()
+    await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
+  })
 })

@@ -21,6 +21,8 @@ export const pageRoutes = route({
   repoConfigSave: post('/repos/:id/config'),
   repoConfigReset: post('/repos/:id/config/reset'),
   findings: get('/findings'),
+  /** REV-18: an admin marks the findings checked on the Findings screen dismissed or wontfix. */
+  findingsStatus: post('/findings/status'),
   runners: get('/runners'),
   runnerNew: post('/runners/new'),
   runnerRenew: post('/runners/registrations/:id/renew'),

@@ -11,9 +11,13 @@ import {
   type FindingView,
   type Severity,
 } from '../findings/screen.ts'
+import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
+import { REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { reasonText, type PrecisionReport } from '../findings/precision.ts'
 import { agoOrDate, plural } from './format.ts'
+import { DismissDialog } from './dismiss-dialog.tsx'
+import { AlertIcon, CheckIcon } from './icons.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -40,7 +44,46 @@ export interface FindingsPageProps {
   githubUrl: string
   /** For the dates of the screen. */
   now: Date
+  /** What the screen says after « Marquer dismissed » or « Marquer wontfix », from the query of the redirect. */
+  notice?: FindingsNotice | null
 }
+
+/** The answer of a change of status: how many changed, and how many replies GitHub got. */
+export type FindingsNotice =
+  | { kind: 'done'; status: BulkStatus; changed: number; unchanged: number; fixed: number; failed: number; replied: number; unreplied: number }
+  | { kind: 'error'; error: 'none' | 'too_many' | 'status' | 'reason' | 'reason_long' }
+
+const NOTICE_ERRORS: Record<Extract<FindingsNotice, { kind: 'error' }>['error'], string> = {
+  none: 'Cochez au moins un finding, puis choisissez l’action.',
+  too_many: `Au plus ${BULK_MAX} findings à la fois.`,
+  status: 'Choisissez « Marquer dismissed » ou « Marquer wontfix ».',
+  reason: 'Choisissez un motif, ou écrivez-le dans « Autre ».',
+  reason_long: `Le motif tient en ${REASON_MAX} caractères au plus.`,
+}
+
+/** The notice that a query of the screen carries, after a form. */
+export function readFindingsNotice(query: URLSearchParams): FindingsNotice | null {
+  let done = query.get('done')
+  let count = (name: string) => Math.max(0, Math.trunc(Number(query.get(name)) || 0))
+  if (done === 'dismissed' || done === 'wontfix') {
+    return {
+      kind: 'done',
+      status: done,
+      changed: count('n'),
+      unchanged: count('same'),
+      fixed: count('fixed'),
+      failed: count('failed'),
+      replied: count('replied'),
+      unreplied: count('unreplied'),
+    }
+  }
+  let error = query.get('error')
+  if (error && error in NOTICE_ERRORS) return { kind: 'error', error: error as keyof typeof NOTICE_ERRORS }
+  return null
+}
+
+/** The id of the form of the selection: its checkboxes sit in the rows of the table. */
+const BULK_FORM = 'findings-bulk'
 
 const VIEW_LABELS: Record<FindingView, string> = {
   open: 'Open',
@@ -130,11 +173,14 @@ function hasFilters(list: FindingList): boolean {
  */
 export function FindingsPage(handle: Handle<FindingsPageProps>) {
   return () => {
-    let { frame, page, facets, list, precision, githubUrl, now } = handle.props
+    let { frame, page, facets, list, precision, githubUrl, now, notice } = handle.props
     let org = frame.viewer!.org.login
+    // REV-18: an admin sets findings aside; a member reads.
+    let admin = frame.viewer!.role === 'admin'
     let none = page.counts.all === 0 && !hasFilters(list)
     return (
       <Shell frame={frame} section="findings" title="Findings" lead="Chaque finding des reviews de Kentō, et ce qu’il est devenu.">
+        {notice ? <Notice notice={notice} /> : null}
         {none ? (
           <section class="empty" aria-labelledby="empty-title">
             <h2 id="empty-title">Aucun finding pour l’instant</h2>
@@ -168,6 +214,8 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
             {page.rows.length === 0 ? (
               <Empty page={page} list={list} />
             ) : (
+              <>
+              {admin ? <BulkBar csrf={frame.csrfToken} back={findingListQuery(list).toString()} assetVersion={frame.assetVersion} /> : null}
               <div class="table-wrap">
                 <table class="table findings-table">
                   <caption class="visually-hidden">
@@ -176,7 +224,17 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                   <thead>
                     <tr>
                       <th scope="col">Priorité</th>
-                      <th scope="col">Finding</th>
+                      <th scope="col">
+                        {admin ? (
+                          <span class="finding-select">
+                            {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
+                            <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Sélectionner tous les findings de la page" />
+                            Finding
+                          </span>
+                        ) : (
+                          'Finding'
+                        )}
+                      </th>
                       <th scope="col">PR</th>
                       <th scope="col">Source</th>
                       <th scope="col">Confiance</th>
@@ -186,11 +244,12 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                   </thead>
                   <tbody>
                     {page.rows.map((row) => (
-                      <FindingTableRow row={row} org={org} githubUrl={githubUrl} now={now} />
+                      <FindingTableRow row={row} org={org} githubUrl={githubUrl} now={now} select={admin} />
                     ))}
                   </tbody>
                 </table>
               </div>
+              </>
             )}
             <Pager page={page} list={list} />
           </>
@@ -322,9 +381,9 @@ function Empty(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
   }
 }
 
-function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUrl: string; now: Date }>) {
+function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUrl: string; now: Date; select: boolean }>) {
   return () => {
-    let { row, org, githubUrl, now } = handle.props
+    let { row, org, githubUrl, now, select } = handle.props
     let priority = PRIORITY[row.severity]
     let pullUrl = `${githubUrl}/${row.repo}/pull/${row.prNumber}`
     let seenAgain = row.lastSeenSha !== row.firstSeenSha
@@ -336,6 +395,20 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
           </span>
         </td>
         <th scope="row">
+          <span class={select ? 'finding-select' : undefined}>
+          {select && row.status !== 'fixed' ? (
+            <input
+              type="checkbox"
+              name="ids"
+              value={row.id}
+              form={BULK_FORM}
+              id={`select-${row.id}`}
+              aria-label={`Sélectionner « ${row.title} »`}
+            />
+          ) : select ? (
+            // A finding fixed by a push is not set aside by hand: its place stays, so the titles line up.
+            <span class="finding-select-gap" aria-hidden="true"></span>
+          ) : null}
           <span class="stack finding-cell">
             {row.githubCommentId !== null ? (
               <a class="finding-title" href={`${pullUrl}#discussion_r${row.githubCommentId}`} rel="noreferrer">
@@ -353,6 +426,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
                 {row.statusReason ? <span class="hint">{row.statusReason}</span> : null}
               </span>
             ) : null}
+          </span>
           </span>
         </th>
         <td>
@@ -429,6 +503,68 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
           <span aria-hidden="true"></span>
         )}
       </nav>
+    )
+  }
+}
+
+/**
+ * REV-18. The actions on the findings checked in the table: « Marquer dismissed… » with the dialog of
+ * the reason (shared with the screen of a pull request), and « Marquer wontfix ». Each finding
+ * changed gets a reply in its thread on GitHub.
+ */
+function BulkBar(handle: Handle<{ csrf: string | null; back: string; assetVersion: string }>) {
+  return () => {
+    let { csrf, back, assetVersion } = handle.props
+    return (
+      <div class="findings-bulk" role="group" aria-label="Actions sur les findings cochés">
+        <form id={BULK_FORM} method="post" action={routes.findingsStatus.href()} hidden>
+          {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
+          <input type="hidden" name="back" value={back} />
+        </form>
+        <p class="hint findings-selected" data-selected aria-live="polite">
+          Cochez des findings pour les marquer.
+        </p>
+        <DismissDialog id="bulk" form={BULK_FORM} trigger="Marquer dismissed…" submit="Marquer dismissed" />
+        <button class="button" type="submit" form={BULK_FORM} name="status" value="wontfix">
+          Marquer wontfix
+        </button>
+        <script src={`/assets/findings.js?v=${encodeURIComponent(assetVersion)}`} defer></script>
+      </div>
+    )
+  }
+}
+
+function Notice(handle: Handle<{ notice: FindingsNotice }>) {
+  return () => {
+    let { notice } = handle.props
+    if (notice.kind === 'error') {
+      return (
+        <div class="banner banner-alert" role="alert">
+          <AlertIcon />
+          <p>
+            <strong>Rien n’a changé.</strong> {NOTICE_ERRORS[notice.error]}
+          </p>
+        </div>
+      )
+    }
+    let { status, changed, unchanged, fixed, failed, replied, unreplied } = notice
+    let alert = unreplied > 0 || failed > 0
+    return (
+      <div class={alert ? 'banner banner-alert' : 'banner banner-ok'} role="status">
+        {alert ? <AlertIcon /> : <CheckIcon />}
+        <p>
+          <strong>
+            {changed} {plural(changed, 'finding marqué', 'findings marqués')} {status}.
+          </strong>{' '}
+          {replied > 0 ? `${replied} ${plural(replied, 'réponse postée', 'réponses postées')} dans les fils GitHub. ` : ''}
+          {unreplied > 0
+            ? `${unreplied} ${plural(unreplied, 'fil n’a pas reçu', 'fils n’ont pas reçu')} de réponse : GitHub a refusé ou n’a pas répondu ; le statut est enregistré quand même. `
+            : ''}
+          {unchanged > 0 ? `${unchanged} ${plural(unchanged, 'avait', 'avaient')} déjà ce statut et ce motif. ` : ''}
+          {fixed > 0 ? `${fixed} ${plural(fixed, 'finding fixed est resté', 'findings fixed sont restés')} tel quel : un push l’a corrigé. ` : ''}
+          {failed > 0 ? `${failed} ${plural(failed, 'finding n’a pas pu', 'findings n’ont pas pu')} être enregistré : réessayez.` : ''}
+        </p>
+      </div>
     )
   }
 }

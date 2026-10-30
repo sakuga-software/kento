@@ -74,6 +74,8 @@ async function readBody(request: http.IncomingMessage): Promise<string> {
 }
 
 let checkRuns: object[] = []
+/** REV-18. The replies posted in the threads of findings, oldest first. */
+const replies: { repo: string; pr: number; commentId: number; body: string }[] = []
 
 let server = http.createServer(async (request, response) => {
   let url = new URL(request.url ?? '/', 'http://fake-github')
@@ -187,6 +189,15 @@ let server = http.createServer(async (request, response) => {
     return json(response, 201, { id: checkRuns.length })
   }
   if (request.method === 'GET' && url.pathname === '/_test/check-runs') return json(response, 200, checkRuns)
+  // REV-18: the replies in the threads of findings (« Marquer dismissed »), and a route for the tests to read them.
+  let reply = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/comments\/(\d+)\/replies$/.exec(url.pathname)
+  if (request.method === 'POST' && reply) {
+    if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
+    let { body } = JSON.parse(await readBody(request)) as { body: string }
+    replies.push({ repo: reply[1]!, pr: Number(reply[2]), commentId: Number(reply[3]), body })
+    return json(response, 201, { id: 5_000_000 + replies.length })
+  }
+  if (request.method === 'GET' && url.pathname === '/_test/replies') return json(response, 200, replies)
 
   let membership = /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'GET' && membership) {
