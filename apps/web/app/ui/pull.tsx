@@ -1,4 +1,4 @@
-import { LEVELS, type Level } from '@sakuga-review/protocol'
+import { isOneOf, LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
 import { FINDING_STATUSES, type FindingStatus } from '../findings/store.ts'
@@ -36,7 +36,7 @@ export interface PullQuery {
 
 /** Reads `?statut=open&statut=fixed&avant=…&suite=…`. An unknown status is left out. */
 export function readPullQuery(query: URLSearchParams): PullQuery {
-  let statuses = query.getAll('statut').filter((s): s is FindingStatus => (FINDING_STATUSES as readonly string[]).includes(s))
+  let statuses = query.getAll('statut').filter((s): s is FindingStatus => isOneOf(FINDING_STATUSES, s))
   return { statuses: [...new Set(statuses)], reviews: query.get('avant') || null, rows: query.get('suite') || null }
 }
 

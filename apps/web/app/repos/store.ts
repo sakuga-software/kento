@@ -1,3 +1,4 @@
+import { UUID as LOWER_UUID, type Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
@@ -6,8 +7,6 @@ import type { DetectedWorkflow, WorkflowMode } from './workflow.ts'
 
 /** The reviews that Kentō must publish in a row, with no failure and no double publication, before review.yml goes. */
 export const SWITCH_TARGET = 20
-
-export type Level = 'lite' | 'balanced' | 'heavy'
 
 /** One row of the Repos screen. */
 export interface RepoView {
@@ -106,7 +105,8 @@ export interface ReposStore {
   saveCheck(orgId: string, repos: CheckedRepo[]): Promise<void>
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Postgres reads a uuid in any case: an id in upper case finds the row too.
+const UUID = new RegExp(LOWER_UUID.source, 'i')
 
 type Row = Omit<RepoView, 'githubRepoId' | 'streak' | 'lastReview' | 'workflowCheckedAt'> & {
   githubRepoId: string

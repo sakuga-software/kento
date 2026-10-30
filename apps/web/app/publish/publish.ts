@@ -12,7 +12,6 @@ import {
   findingKey,
   isBlocking,
   score,
-  SEVERITY_ORDER,
   verdict,
   type Answer,
   type Finding,
@@ -29,7 +28,7 @@ import {
   type Link,
   type Poster,
 } from '@sakuga-review/engine/render'
-import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import { SEVERITIES, type ReviewFinding, type ReviewPayload } from '@sakuga-review/protocol'
 
 import type { FindingsLedger, LedgerEntry } from '../findings/ledger.ts'
 import {
@@ -191,7 +190,7 @@ export async function publishReview(
   let ordered = [...answer.findings].sort(
     (a, b) =>
       Number(isBlocking(b, anchorOf)) - Number(isBlocking(a, anchorOf)) ||
-      SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) ||
+      SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
       b.confidence - a.confidence,
   )
   let inline: Finding[] = []

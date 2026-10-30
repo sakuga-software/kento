@@ -4,7 +4,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { ANSWER_SCHEMA, answerSchema, applyRule, inlineBody, MAX_RULES_BYTES, reviewPullRequest, rulesForPaths, rulesSection, type Answer, type Finding, type Rule } from '../src/index.ts';
+import { ANSWER_SCHEMA, answerSchema } from '../src/findings.ts';
+import { inlineBody, reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
+import { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type Rule } from '../src/rules.ts';
 
 const MIGRATION_RULE: Rule = {
   id: '5d0e6c1a-8b7f-4e2d-9c3b-1f2a3b4c5d6e',

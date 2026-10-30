@@ -4,7 +4,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { fingerprint, levelConfig, LEVELS, reviewPullRequest, type Answer } from '../src/index.ts';
+import { fingerprint } from '../src/fingerprint.ts';
+import { levelConfig, reviewPullRequest, type Answer } from '../src/index.ts';
+import { LEVELS } from '../src/levels.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 let repo = '';

@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ANSWER_SCHEMA, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
-import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type ProviderKind, type Schema } from './providers.ts';
+import type { ProviderKind } from '../../protocol/src/index.ts';
+import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type Schema } from './providers.ts';
 
 export { OPENROUTER_BASE_URL, type Schema } from './providers.ts';
 

@@ -8,7 +8,6 @@ import {
   ProviderError,
   providerLevelConfig,
   type LevelConfig,
-  type ProviderKind,
   RESOLVE_SCHEMA,
   resolvePack,
   reviewPullRequest,
@@ -16,7 +15,7 @@ import {
   type ReviewResult,
   type ThreadVerdict,
 } from '@sakuga-review/engine';
-import { HEARTBEAT_SECONDS, type CostSource, type Job, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
+import { HEARTBEAT_SECONDS, type CostSource, type Job, type ProviderKind, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';

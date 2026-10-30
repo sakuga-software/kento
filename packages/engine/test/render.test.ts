@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { descriptionBlock, LEVEL_COST_CENTS, levelCost, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
+import { descriptionBlock, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
+import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {
   path: 'src/auth.ts',

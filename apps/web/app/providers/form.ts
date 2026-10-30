@@ -1,9 +1,7 @@
 import { defaultModels } from '@sakuga-review/engine/levels'
-import { MODEL_ID, PROVIDER_KINDS, type Level, type ProviderKind } from '@sakuga-review/protocol'
+import { isProviderKind, LEVELS, MODEL_ID, type Level, type ProviderKind } from '@sakuga-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
-
-const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
   openrouter: 'OpenRouter',
@@ -67,7 +65,7 @@ export function readProviderForm(form: FormData | undefined): {
   errors: Partial<Record<ProviderField, string>>
 } {
   let kindValue = String(form?.get('kind') ?? '')
-  let kind = (PROVIDER_KINDS as readonly string[]).includes(kindValue) ? (kindValue as ProviderKind) : 'anthropic'
+  let kind: ProviderKind = isProviderKind(kindValue) ? kindValue : 'anthropic'
   let label = String(form?.get('label') ?? '').trim()
   let baseUrl = String(form?.get('baseUrl') ?? '').trim()
   let apiKey = String(form?.get('apiKey') ?? '').trim()

@@ -1,13 +1,13 @@
 import type { Handle } from 'remix/component'
 
 import { levelCost } from '@sakuga-review/engine/levels'
-import type { Level } from '@sakuga-review/protocol'
+import { LEVELS, type Level } from '@sakuga-review/protocol'
 
 import type { AppStatus } from '../org-settings/app-status.ts'
 import { capAlerts, capReached, checkPermissions, missingEvents, REQUIRED_EVENTS, type CapPeriod } from '../org-settings/model.ts'
 import { resetWhen } from '../org-settings/notice.ts'
 import type { DeliveryView, OrgSettingsView } from '../org-settings/store.ts'
-import { kentoDefaults, LEVEL_KEYS, SERVICE_PROVIDER, type ConfigField, type LevelModels } from '../repo-config/model.ts'
+import { kentoDefaults, SERVICE_PROVIDER, type ConfigField, type LevelModels } from '../repo-config/model.ts'
 import { effectiveLevel, type EffectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
@@ -196,7 +196,7 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
 export function orgEffectiveLevels(view: Pick<OrgSettingsView, 'config'>, providers: readonly ProviderOption[]): Record<Level, EffectiveLevel> {
   let kento = kentoDefaults()
   let out = {} as Record<Level, EffectiveLevel>
-  for (let level of LEVEL_KEYS) {
+  for (let level of LEVELS) {
     let set = view.config.models?.[level]
     out[level] = effectiveLevel(level, set ? { value: set, source: 'org' } : { value: kento.models[level], source: 'kento' }, providers)
   }
@@ -351,14 +351,14 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                 <FormErrors errors={mine?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'org-level-error' : undefined}>
                   <legend class="visually-hidden">Niveau d’un push</legend>
-                  {LEVEL_KEYS.map((key) => (
+                  {LEVELS.map((key) => (
                     <label class="choice">
                       <input
                         type="radio"
                         name="defaultLevel"
                         value={key}
                         checked={key === selected}
-                        autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
+                        autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
                       />
                       <span>
                         <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
@@ -384,7 +384,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
             </p>
           )}
         </div>
-        {LEVEL_KEYS.map((key) => (
+        {LEVELS.map((key) => (
           <LevelDefault
             level={key}
             value={view.config.models?.[key] ?? kento.models[key]}

@@ -2,12 +2,12 @@
 // review that found it (its model, its scenario and its fix), the code around its line on GitHub, and
 // the history of its status. Every read takes the org of the session.
 import { findingKey } from '@sakuga-review/engine/findings'
-import type { Level } from '@sakuga-review/protocol'
+import { UUID, type Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
 import type { MintInstallationToken } from '../github/installation-token.ts'
-import { decodeCursor, encodeCursor, cursorAt, UUID, type FindingEventType, type FindingStatus, type Page } from '../findings/store.ts'
+import { decodeCursor, encodeCursor, cursorAt, type FindingEventType, type FindingStatus, type Page } from '../findings/store.ts'
 import { fetchWithin, SCREEN_GITHUB_TIMEOUT_MS } from '../github/fetch.ts'
 import { createGitHub } from '../publish/github.ts'
 import type { PullTarget } from './store.ts'

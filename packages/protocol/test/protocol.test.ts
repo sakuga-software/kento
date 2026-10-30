@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseClaimRequest, parseHeartbeatRequest, parseJob, parseRegisterRequest, parseResultRequest, type Job, type ReviewPayload } from '../src/index.ts';
+import {
+  isLevel,
+  isOneOf,
+  isProviderKind,
+  LEVELS,
+  parseClaimRequest,
+  parseHeartbeatRequest,
+  parseJob,
+  parseRegisterRequest,
+  parseResultRequest,
+  SHA as SHA_PATTERN,
+  UUID,
+  type Job,
+  type ReviewPayload,
+} from '../src/index.ts';
 
 const SHA = 'a'.repeat(40);
 
@@ -272,4 +286,37 @@ test('a finding may cite a rule by its id; a finding of an earlier runner, with 
     const bad = { ...review(), findings: [{ ...review().findings[0]!, rule_id: ruleId }] };
     assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: bad }).ok, false, String(ruleId));
   }
+});
+
+// --- Shared values (REV-46) ----------------------------------------------------------------
+
+test('isOneOf accepts a string of the list only', () => {
+  assert.equal(isOneOf(LEVELS, 'heavy'), true);
+  assert.equal(isOneOf(LEVELS, 'Heavy'), false);
+  assert.equal(isOneOf(LEVELS, 'toString'), false);
+  assert.equal(isOneOf(LEVELS, undefined), false);
+  assert.equal(isOneOf(LEVELS, ['lite']), false);
+  assert.equal(isLevel('balanced'), true);
+  assert.equal(isLevel(''), false);
+  assert.equal(isProviderKind('ollama'), true);
+  assert.equal(isProviderKind('OLLAMA'), false);
+});
+
+test('UUID and SHA take the lower-case forms only, as the checks of the messages', () => {
+  assert.equal(UUID.test('0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11'), true);
+  assert.equal(UUID.test('0B9C4A52-3F1E-4C55-9A43-2F1A3F0F6B11'), false);
+  assert.equal(UUID.test('0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b1'), false);
+  assert.equal(SHA_PATTERN.test(SHA), true);
+  assert.equal(SHA_PATTERN.test('a'.repeat(64)), true);
+  assert.equal(SHA_PATTERN.test('a'.repeat(41)), false);
+  assert.equal(SHA_PATTERN.test('A'.repeat(40)), false);
+});
+
+test('a provider id of a job is `service` or a uuid, and nothing around them', () => {
+  const withProvider = (id: string) => parseJob({ ...job(), providers: [{ id, kind: 'anthropic', apiKey: null, baseUrl: null, models: [] }] }).ok;
+  assert.equal(withProvider('service'), true);
+  assert.equal(withProvider('0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11'), true);
+  assert.equal(withProvider('services'), false);
+  assert.equal(withProvider('x0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11'), false);
+  assert.equal(withProvider('0B9C4A52-3F1E-4C55-9A43-2F1A3F0F6B11'), false);
 });

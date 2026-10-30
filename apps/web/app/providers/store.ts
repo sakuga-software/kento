@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type postgres from 'postgres'
 
-import type { ProviderKind } from '@sakuga-review/protocol'
+import { UUID, type ProviderKind } from '@sakuga-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
 import { last4, providerAad, SecretsError, type SecretBox } from './secrets.ts'
@@ -95,7 +95,6 @@ export function refusalMessage(message: string): string {
     .slice(0, 300)
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** `box` is null when KENTO_SECRETS_KEY is not set: a key can then be neither stored nor read. */
 export function createProvidersStore(sql: postgres.Sql, box: SecretBox | null): ProvidersStore {

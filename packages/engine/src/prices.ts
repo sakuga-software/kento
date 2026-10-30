@@ -1,7 +1,7 @@
 // The prices of the models whose provider does not give the cost of a call, and the cost of a call
 // from its tokens. OpenRouter gives the cost in its answer; Ollama runs on a machine of the runner and
 // costs nothing. A model that is not here costs 0, and the review says that its cost is not known.
-import type { ProviderKind } from './providers.ts';
+import type { ProviderKind } from '../../protocol/src/index.ts';
 
 /** Dollars a million tokens. */
 export type Price = {
@@ -14,9 +14,6 @@ export type Price = {
   /** Above `threshold` prompt tokens, every token of the call has the prices of `above`. */
   longContext?: { threshold: number; above: Omit<Price, 'longContext'> };
 };
-
-/** Where the cost of a call comes from. */
-export type CostSource = 'provider' | 'table' | 'free' | 'unknown';
 
 /**
  * The first-party prices of Anthropic (2026-10-06). A cache write of 5 minutes costs 1.25 times the

@@ -7,7 +7,7 @@
 // each thread (a bot or a person) comes from GitHub, not from the runner.
 import { costLine } from '@sakuga-review/engine/render'
 import { markerResolve } from '@sakuga-review/engine/threads'
-import { MAX_RESOLVE_THREADS, type ResolvePayload } from '@sakuga-review/protocol'
+import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS, type ResolvePayload } from '@sakuga-review/protocol'
 
 import { resolveReviewThread } from '../github/graphql.ts'
 import type { GitHub } from '../publish/github.ts'
@@ -15,7 +15,7 @@ import { BY } from '../publish/publish.ts'
 import { plural } from '../ui/format.ts'
 import { readOpenThreads } from './threads.ts'
 
-const MAX_PACK_KB = 150
+const MAX_PACK_KB = MAX_RESOLVE_PACK_BYTES / 1000
 
 export interface ResolveTarget {
   fullName: string

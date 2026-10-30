@@ -1,15 +1,15 @@
 import type { Handle } from 'remix/component'
 
+import { isOneOf, SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
+
 import {
   FINDING_VIEWS,
   SEARCH_MAX,
-  SEVERITIES,
   type FindingFacets,
   type FindingQuery,
   type FindingRow,
   type FindingScreenPage,
   type FindingView,
-  type Severity,
 } from '../findings/screen.ts'
 import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
 import { REASON_MAX } from '../findings/store.ts'
@@ -119,8 +119,6 @@ const STATUS_TAGS: Record<FindingRow['status'], string> = {
   stale: 'tag-warn',
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
 /** The list that a query of the screen asks for. A value that the screen does not know is ignored. */
 export function readFindingList(query: URLSearchParams): FindingList {
   let view = query.get('status')
@@ -128,9 +126,9 @@ export function readFindingList(query: URLSearchParams): FindingList {
   let repo = query.get('repo')
   let rule = query.get('rule')
   return {
-    view: FINDING_VIEWS.includes(view as FindingView) ? (view as FindingView) : 'open',
+    view: isOneOf(FINDING_VIEWS, view) ? view : 'open',
     repoId: repo && UUID.test(repo) ? repo : null,
-    severity: SEVERITIES.includes(severity as Severity) ? (severity as Severity) : null,
+    severity: isOneOf(SEVERITIES, severity) ? severity : null,
     ruleId: rule && UUID.test(rule) ? rule : null,
     reason: reasonText(query.get('reason') ?? '') || null,
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),

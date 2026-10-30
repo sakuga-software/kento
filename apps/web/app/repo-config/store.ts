@@ -1,4 +1,4 @@
-import type { Level } from '@sakuga-review/protocol'
+import { UUID as LOWER_UUID, type Level } from '@sakuga-review/protocol'
 
 import type { Database } from '../db/client.ts'
 import { readRepoMonthCost } from '../db/costs.ts'
@@ -6,7 +6,8 @@ import { toDate } from '../db/rows.ts'
 import { readTrustedBots } from '../org-settings/model.ts'
 import { readOverrides, type ConfigOverrides } from './model.ts'
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Postgres reads a uuid in any case: an id in upper case finds the row too.
+const UUID = new RegExp(LOWER_UUID.source, 'i')
 
 /** What the Config screen of a repository reads. */
 export interface RepoConfigView {

@@ -8,7 +8,7 @@ import { pullRoutes } from '../routes.ts'
 import type { ScreenKit } from '../ui/pages.tsx'
 import { pullHref, PullPage, readPullQuery, RERUN_NOTICES, type RerunNotice } from '../ui/pull.tsx'
 import type { ReadPullRequest } from '../dashboard/github.ts'
-import { LEVELS, type Level } from '@sakuga-review/protocol'
+import { isLevel } from '@sakuga-review/protocol'
 import { FindingPage, findingHref } from '../ui/finding.tsx'
 import { FINDING_NOTICES, FindingActions, FindingNoticeView, GITHUB_NOTICES, type FindingNotice, type GithubNotice } from '../ui/finding-actions.tsx'
 import { readStatusForm, replyText, type ThreadReplier } from '../findings/dismiss.ts'
@@ -191,7 +191,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
         let summary = deps && /^\d{1,9}$/.test(context.params.number) ? await deps.store.summary(signed.orgId, context.params.id, prNumber) : null
         if (!deps || !summary) return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
         let level = context.get(FormData)?.get('level')
-        if (typeof level !== 'string' || !(LEVELS as readonly string[]).includes(level)) return kit.errorPage(context, 400, 'form', 'repos')
+        if (!isLevel(level)) return kit.errorPage(context, 400, 'form', 'repos')
         let notice: RerunNotice
         let jobId: string | null = null
         let now: Awaited<ReturnType<ReadPullRequest>> | null = null
@@ -207,7 +207,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
         if (githubFailed) notice = 'github_failed'
         else if (now && !now.open) notice = 'closed'
         else {
-          let outcome = await deps.store.rerun({ orgId: signed.orgId, repoId: summary.target.repoId, prNumber, level: level as Level, githubHead: now?.headSha ?? null })
+          let outcome = await deps.store.rerun({ orgId: signed.orgId, repoId: summary.target.repoId, prNumber, level, githubHead: now?.headSha ?? null })
           if ('jobId' in outcome) jobId = outcome.jobId
           notice = outcome.kind === 'not_found' ? 'missing' : outcome.kind
         }

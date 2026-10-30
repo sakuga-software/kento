@@ -1,6 +1,7 @@
 // The review as a reader sees it: the inline comments, the body of the review and the block of the description.
 import { anchor, deeperReview, diagram, findingKey, isBlocking, score, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
-import { levelCost, type Level } from './levels.ts';
+import type { Level } from '../../protocol/src/index.ts';
+import { levelCost } from './levels.ts';
 
 // The markers that the next review reads back in the comments and the description.
 export const MARKER_SUMMARY = '<!-- sakuga-review:summary -->';

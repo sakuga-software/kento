@@ -1,3 +1,5 @@
+import { isOneOf } from '@sakuga-review/protocol'
+
 /** Papier (day), Sumi (night), or the theme of the device. */
 export type Theme = 'paper' | 'sumi' | 'system'
 
@@ -16,7 +18,7 @@ export const THEME_COOKIE = 'kento_theme'
 const THEME_COOKIE_MAX_AGE = 31_536_000
 
 export function isTheme(value: unknown): value is Theme {
-  return typeof value === 'string' && (THEMES as readonly string[]).includes(value)
+  return isOneOf(THEMES, value)
 }
 
 /** The theme of a request: its cookie, else the theme of the device. */

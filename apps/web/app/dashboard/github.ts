@@ -1,3 +1,5 @@
+import { SHA } from '@sakuga-review/protocol'
+
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'
 
@@ -26,7 +28,7 @@ export function createReadPullRequest(deps: { mintInstallationToken: MintInstall
     let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
     let pr: { state?: unknown; head?: { sha?: unknown } } = await github.rest('GET', `/repos/${fullName}/pulls/${prNumber}`)
     let headSha = pr.head?.sha
-    if (typeof headSha !== 'string' || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(headSha)) {
+    if (typeof headSha !== 'string' || !SHA.test(headSha)) {
       throw new Error('GitHub gave a pull request without head.sha')
     }
     return { open: pr.state === 'open', headSha }

@@ -2,7 +2,7 @@
 // or `@kento-review resolve [lite|balanced|heavy]`. `@sakuga-review` is the old name of the bot, and
 // stays an alias. Pure functions: no database, no network.
 import { levelCost } from '@sakuga-review/engine/levels'
-import { LEVELS, type Level } from '@sakuga-review/protocol'
+import { isLevel, type Level } from '@sakuga-review/protocol'
 
 export type CommentCommand =
   | {
@@ -17,9 +17,7 @@ export type CommentCommand =
 export const COMMAND_NAMES = ['kento-review', 'sakuga-review'] as const
 
 // The name, then the end of the word: `@kentobot` and `@sakuga-review-ci` are other accounts.
-const MENTION = /^\s*@(kento-review|sakuga-review)(?![\w-])/i
-
-const isLevel = (word: string): word is Level => (LEVELS as readonly string[]).includes(word)
+const MENTION = new RegExp(`^\\s*@(${COMMAND_NAMES.join('|')})(?![\\w-])`, 'i')
 
 /**
  * The command of a comment, or null when the comment does not start with a name of the bot. Only

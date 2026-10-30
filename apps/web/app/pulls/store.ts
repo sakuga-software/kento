@@ -6,11 +6,11 @@
 // page from the first finding on. The result of a review is read for the columns of the page only,
 // and only the few fields of its findings that the sheet compares.
 import { findingKey } from '@sakuga-review/engine/findings'
-import type { Level } from '@sakuga-review/protocol'
+import { UUID, type Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
-import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, UUID, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
+import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
 import { readEstimates, rerunReview, type RerunOutcome } from './rerun.ts'
 import { sheetCells, type Cell, type ResultFinding, type SheetEvent } from './sheet.ts'

@@ -1,3 +1,5 @@
+import { SHA } from '@sakuga-review/protocol'
+
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
 
 // Turns a verified webhook into one command for the store. The functions here read the payload
@@ -127,7 +129,7 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
 
   let headSha = str(head?.sha)
   let baseRef = str(base?.ref)
-  if (headSha === null || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(headSha) || baseRef === null) {
+  if (headSha === null || !SHA.test(headSha) || baseRef === null) {
     return { type: 'invalid', reason: 'pull_request payload lacks head.sha or base.ref' }
   }
   return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef }

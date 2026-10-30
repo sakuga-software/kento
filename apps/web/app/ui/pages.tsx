@@ -9,6 +9,8 @@ import { session as sessionMiddleware } from 'remix/middleware/session'
 import { createContextKey, createController, type Middleware } from 'remix/router'
 import { Session, type SessionStorage } from 'remix/session'
 
+import { UUID, type Level } from '@sakuga-review/protocol'
+
 import { currentMemberships, decideSignIn, saveSignInRoles } from '../auth/access.ts'
 import type { GitHubProfile, LookupRole } from '../auth/github.ts'
 import { readSessionAuth, SESSION_TTL_MS } from '../auth/session-storage.ts'
@@ -216,8 +218,6 @@ function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): S
 
 /** A login of GitHub: what the page « Accès refusé » accepts to show from its cookie. */
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** REV-19. What a page shows of the rules after a form: the notice, or the form with its errors. */
 type RulesExtra = { form: RuleFormState | null; notice: RuleNotice | null; noticeRule: string | null }
@@ -523,8 +523,8 @@ export function createUiControllers(deps: UiDependencies) {
       change = (current) => {
         if (key === 'caps') return { ...current, caps: value as OrgSettingsValues['caps'] }
         if (key === 'trustedBots') return { ...current, trustedBots: value as string[] }
-        if (key === 'level') return { ...current, config: { ...current.config, level: value as 'lite' | 'balanced' | 'heavy' } }
-        let level = key.slice('models.'.length) as 'lite' | 'balanced' | 'heavy'
+        if (key === 'level') return { ...current, config: { ...current.config, level: value as Level } }
+        let level = key.slice('models.'.length) as Level
         return { ...current, config: { ...current.config, models: { ...current.config.models, [level]: value } } }
       }
     }
@@ -696,7 +696,7 @@ export function createUiControllers(deps: UiDependencies) {
     let tab = tabOf(key)
     let page = frame(signed, context, getCsrfToken(context))
 
-    let change: (current: { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }) => { config: ConfigOverrides; defaultLevel: 'lite' | 'balanced' | 'heavy' }
+    let change: (current: { config: ConfigOverrides; defaultLevel: Level }) => { config: ConfigOverrides; defaultLevel: Level }
     if (reset) {
       // The column goes back to `lite` with the key: the level of the org then applies (REV-13).
       change = (current) => ({ config: withoutField(current.config, key), defaultLevel: key === 'level' ? 'lite' : current.defaultLevel })
@@ -718,12 +718,12 @@ export function createUiControllers(deps: UiDependencies) {
       change = (current) => {
         // The column keeps the level too: a release before REV-13 reads only the column.
         if (key === 'level') {
-          let level = value as 'lite' | 'balanced' | 'heavy'
+          let level = value as Level
           return { config: { ...current.config, level }, defaultLevel: level }
         }
         let config: ConfigOverrides = { ...current.config }
         if (key.startsWith('models.')) {
-          let level = key.slice('models.'.length) as 'lite' | 'balanced' | 'heavy'
+          let level = key.slice('models.'.length) as Level
           config.models = { ...config.models, [level]: value }
         } else {
           ;(config as Record<string, unknown>)[key] = value

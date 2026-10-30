@@ -729,12 +729,6 @@ test('the loop says what it can read and which provider it holds', async () => {
   assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules'], ownProvider: 'ollama' });
 });
 
-test('the protocol and the engine know the same providers', async () => {
-  const engine = await import('@sakuga-review/engine');
-  const protocol = await import('@sakuga-review/protocol');
-  assert.deepEqual([...protocol.PROVIDER_KINDS], [...engine.PROVIDER_KINDS]);
-});
-
 // --- models of the config of the repository (REV-12) -------------------------------------------
 
 test('the models of the config replace those of the level, and the fallback takes over (REV-12)', async () => {

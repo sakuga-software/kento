@@ -1,5 +1,8 @@
 import { createPrivateKey, sign, type KeyObject } from 'node:crypto'
 
+/** The REST API of github.com, when the config names no other (GitHub Enterprise Server). */
+export const GITHUB_API_URL = 'https://api.github.com'
+
 /** A GitHub token for one repository: a runner clones with it, the service publishes with it. */
 export interface InstallationToken {
   token: string
@@ -45,7 +48,7 @@ export function createInstallationTokenMinter(options: {
   fetch?: typeof globalThis.fetch
   now?: () => number
 }): MintInstallationToken {
-  let apiUrl = (options.apiUrl ?? 'https://api.github.com').replace(/\/+$/, '')
+  let apiUrl = (options.apiUrl ?? GITHUB_API_URL).replace(/\/+$/, '')
   let doFetch = options.fetch ?? globalThis.fetch
   let now = options.now ?? Date.now
 

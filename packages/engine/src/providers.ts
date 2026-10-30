@@ -2,14 +2,8 @@
 // cost. OpenRouter, Anthropic, a server with the API of OpenAI, and Ollama each have their adapter.
 import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
-import { costFromTable, type CostSource } from './prices.ts';
-
-export const PROVIDER_KINDS = ['openrouter', 'anthropic', 'openai_compatible', 'ollama'] as const;
-export type ProviderKind = (typeof PROVIDER_KINDS)[number];
-
-export function isProviderKind(value: unknown): value is ProviderKind {
-  return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value);
-}
+import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
+import { costFromTable } from './prices.ts';
 
 /** The API of OpenRouter. A caller can give another base with the same API, for example a proxy. */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';

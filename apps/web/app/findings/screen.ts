@@ -4,18 +4,16 @@
 // page starts after the last row of the page before (or ends before the first row of the page
 // after): its cost does not grow with the page number. The counts of the tabs and the position of
 // the page come from one more query on the same filters.
+import { SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
 import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
-import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, PAGE_MAX, UUID, type FindingStatus } from './store.ts'
+import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, PAGE_MAX, type FindingStatus } from './store.ts'
 
 /** The tabs of the screen: one status, the closed ones (every status but `open`), or all. */
 export const FINDING_VIEWS = ['open', 'fixed', 'dismissed', 'wontfix', 'stale', 'closed', 'all'] as const
 export type FindingView = (typeof FINDING_VIEWS)[number]
-
-export const SEVERITIES = ['critical', 'major', 'minor'] as const
-export type Severity = (typeof SEVERITIES)[number]
 
 /** The rows of one page of the screen. */
 export const FINDINGS_PAGE_SIZE = 50

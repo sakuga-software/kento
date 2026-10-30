@@ -1,7 +1,6 @@
 // The levels of a review: the model, its reasoning, its limits and the context of the pack.
-import type { ProviderKind } from './providers.ts';
+import type { Level, ProviderKind } from '../../protocol/src/index.ts';
 
-export type Level = 'lite' | 'balanced' | 'heavy';
 export type ContextKind = 'full' | 'definitions';
 export type LevelConfig = {
   /** The model that answers, then the one that takes over when it fails. */
@@ -102,10 +101,6 @@ export function levelConfig(level: Level, env: LevelEnv = {}): LevelConfig {
     config.maxPrice = { prompt: prompt!, completion: completion! };
   }
   return config;
-}
-
-export function isLevel(value: string | undefined): value is Level {
-  return value === 'lite' || value === 'balanced' || value === 'heavy';
 }
 
 /**

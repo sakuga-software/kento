@@ -1,5 +1,5 @@
 import { LEVELS as ENGINE_LEVELS } from '@sakuga-review/engine/levels'
-import type { Level, ProviderKind } from '@sakuga-review/protocol'
+import { isLevel, isOneOf, LEVELS, type Level, type ProviderKind } from '@sakuga-review/protocol'
 
 // The config of a repository (REV-12) and of its org: what each key means, how the screen and the
 // service read the JSON of the database, and how a repository inherits from its org. No database,
@@ -7,8 +7,6 @@ import type { Level, ProviderKind } from '@sakuga-review/protocol'
 //
 // A key that a config does not hold is inherited: the repository takes the value of its org, and
 // the org the value of Kentō. « Revenir à l'org » removes the key from the config of the repository.
-
-export const LEVEL_KEYS = ['lite', 'balanced', 'heavy'] as const satisfies readonly Level[]
 
 /**
  * The provider of a level, its model, and the model of the same provider that takes over when the
@@ -76,7 +74,7 @@ export const SERVICE_PROVIDER = 'service'
 /** The values of Kentō: the levels of the engine, every push, every path, no limit. */
 export function kentoDefaults(): Required<ConfigOverrides> & { models: Record<Level, LevelModels> } {
   let models = {} as Record<Level, LevelModels>
-  for (let level of LEVEL_KEYS) {
+  for (let level of LEVELS) {
     let [primary, fallback] = ENGINE_LEVELS[level].models
     models[level] = { provider: SERVICE_PROVIDER, model: primary!, fallback: fallback ?? null }
   }
@@ -98,7 +96,7 @@ function pick<T>(repo: T | undefined, org: T | undefined, kento: T): Resolved<T>
 export function resolveConfig(org: ConfigOverrides, repo: ConfigOverrides, columnLevel: Level = 'lite'): ResolvedConfig {
   let kento = kentoDefaults()
   let models = {} as Record<Level, Resolved<LevelModels>>
-  for (let level of LEVEL_KEYS) models[level] = pick(repo.models?.[level], org.models?.[level], kento.models[level])
+  for (let level of LEVELS) models[level] = pick(repo.models?.[level], org.models?.[level], kento.models[level])
   let level: Resolved<Level> =
     repo.level === undefined && org.level === undefined && columnLevel !== kento.level
       ? { value: columnLevel, source: 'repo' }
@@ -167,16 +165,16 @@ export function readOverrides(json: unknown): ConfigOverrides {
   let value = parsed(json)
   if (!isObject(value)) return {}
   let out: ConfigOverrides = {}
-  if (typeof value.level === 'string' && (LEVEL_KEYS as readonly string[]).includes(value.level)) out.level = value.level as Level
+  if (isLevel(value.level)) out.level = value.level
   if (isObject(value.models)) {
     let models: Partial<Record<Level, LevelModels>> = {}
-    for (let level of LEVEL_KEYS) {
+    for (let level of LEVELS) {
       let entry = readLevelModels(value.models[level])
       if (entry) models[level] = entry
     }
     if (Object.keys(models).length > 0) out.models = models
   }
-  if (typeof value.trigger === 'string' && (TRIGGERS as readonly string[]).includes(value.trigger)) out.trigger = value.trigger as Trigger
+  if (isOneOf(TRIGGERS, value.trigger)) out.trigger = value.trigger
   if (Array.isArray(value.paths) && value.paths.length <= MAX_PATHS && value.paths.every((p) => typeof p === 'string' && checkPattern(p) === null)) {
     out.paths = value.paths as string[]
   }
@@ -270,8 +268,8 @@ const ID_FORM_HELP = {
 
 export function readTriggerForm(form: FormData): FormResult<Trigger> {
   let value = field(form, 'trigger')
-  if (!(TRIGGERS as readonly string[]).includes(value)) return { ok: false, errors: { trigger: 'Choisissez un déclenchement.' } }
-  return { ok: true, value: value as Trigger }
+  if (!isOneOf(TRIGGERS, value)) return { ok: false, errors: { trigger: 'Choisissez un déclenchement.' } }
+  return { ok: true, value }
 }
 
 export function readPathsForm(form: FormData): FormResult<string[]> {
@@ -300,8 +298,8 @@ export function readCapForm(form: FormData): FormResult<number | null> {
 
 export function readLevelForm(form: FormData): FormResult<Level> {
   let value = field(form, 'defaultLevel')
-  if (!(LEVEL_KEYS as readonly string[]).includes(value)) return { ok: false, errors: { defaultLevel: 'Choisissez un niveau.' } }
-  return { ok: true, value: value as Level }
+  if (!isLevel(value)) return { ok: false, errors: { defaultLevel: 'Choisissez un niveau.' } }
+  return { ok: true, value }
 }
 
 /** The models of `jobs.config`, as the claim sends them. Null: a job queued before REV-12, or a value that is not a config. */

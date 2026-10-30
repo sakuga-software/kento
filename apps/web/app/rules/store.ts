@@ -1,11 +1,12 @@
 import type postgres from 'postgres'
 
-import { MAX_JOB_RULES } from '@sakuga-review/protocol'
+import { MAX_JOB_RULES, UUID as LOWER_UUID } from '@sakuga-review/protocol'
 
 import { toDate } from '../db/rows.ts'
 import type { RuleValues, SeverityFloor } from './model.ts'
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+// Postgres reads a uuid in any case: an id in upper case finds the row too.
+const UUID = new RegExp(LOWER_UUID.source, 'i')
 
 /**
  * A repository or its org holds at most this many rules, disabled ones included: a job carries

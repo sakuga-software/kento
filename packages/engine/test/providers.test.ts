@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { askJson, costFromTable, costKnown, costLine, defaultModels, levelConfig, ProviderError, providerLevelConfig, refusedKey } from '../src/index.ts';
+import { askJson, costLine, levelConfig, ProviderError, providerLevelConfig } from '../src/index.ts';
+import { defaultModels } from '../src/levels.ts';
+import { costFromTable, costKnown } from '../src/prices.ts';
+import { refusedKey } from '../src/providers.ts';
 
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
 

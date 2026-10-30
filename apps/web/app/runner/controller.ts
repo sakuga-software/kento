@@ -5,6 +5,7 @@ import {
   parseHeartbeatRequest,
   parseRegisterRequest,
   parseResultRequest,
+  UUID,
   type ApiError,
   type Checked,
   type HeartbeatResponse,
@@ -16,7 +17,7 @@ import {
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
 
-import type { MintInstallationToken } from '../github/installation-token.ts'
+import { GITHUB_API_URL, type MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
@@ -54,7 +55,6 @@ export interface RunnerApiDependencies {
   claimPollMs?: number
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export function createRunnerController(deps: RunnerApiDependencies) {
   let claimWaitMs = deps.claimWaitMs ?? CLAIM_WAIT_SECONDS * 1000
@@ -174,7 +174,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
                   githubRepoId: job.githubRepoId,
                   permissions: THREADS_PERMISSIONS,
                 })
-                let github = createGitHub({ apiUrl: deps.githubApiUrl ?? 'https://api.github.com', token: threadsToken.token, fetch: deps.fetch })
+                let github = createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: threadsToken.token, fetch: deps.fetch })
                 resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
               }
             } catch (cause) {

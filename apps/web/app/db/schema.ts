@@ -1,3 +1,4 @@
+import type { Level } from '@sakuga-review/protocol'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -197,7 +198,7 @@ export const runnerRegistrations = pgTable(
 export const providerKind = pgEnum('provider_kind', ['openrouter', 'anthropic', 'openai_compatible', 'ollama'])
 
 /** The models of a provider at each level, the first one first. A level that is not here: the defaults of the kind. */
-export type ProviderModels = Partial<Record<'lite' | 'balanced' | 'heavy', string[]>>
+export type ProviderModels = Partial<Record<Level, string[]>>
 
 /**
  * A provider of models of an org, with its key encrypted (REV-11). The key is AES-256-GCM under the

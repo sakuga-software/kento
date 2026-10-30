@@ -1,4 +1,5 @@
 // The answer to the open threads: the pack of each thread with its code now and its diff since.
+import { MAX_RESOLVE_PACK_BYTES } from '../../protocol/src/index.ts';
 import { git } from './git.ts';
 import { diffStart, fileDiff } from './history.ts';
 import { cleanBody, cut, markerResolve } from './threads.ts';
@@ -9,10 +10,8 @@ export type ThreadComment = { id: number; author: string; isBot: boolean; body: 
 export type OpenThread = { id: string; path: string; line: number | null; comments: ThreadComment[] };
 export type ThreadVerdict = { id: string; verdict: 'fixed' | 'answered' | 'open'; reply: string };
 
-export const MAX_THREADS = 20;
 const MAX_THREAD_DIFF_BYTES = 6000;
 const THREAD_CODE_RADIUS = 25;
-export const MAX_RESOLVE_PACK_BYTES = 150_000;
 // A minified or generated line can hold thousands of characters.
 const MAX_CODE_LINE_CHARS = 400;
 

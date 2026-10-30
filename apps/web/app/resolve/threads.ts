@@ -2,7 +2,7 @@
 // (REV-7). The query is the one of `resolve` in review/sakuga-review.ts. The runner gets the threads
 // in the job, already cleaned: it never reads GitHub with a token that can see the pull request.
 import { cleanBody, markerResolve } from '@sakuga-review/engine/threads'
-import { MAX_RESOLVE_THREADS, type ResolveInput, type ResolveThread } from '@sakuga-review/protocol'
+import { MAX_RESOLVE_THREADS, SHA, type ResolveInput, type ResolveThread } from '@sakuga-review/protocol'
 
 import { reviewThreadPages } from '../github/graphql.ts'
 import type { TokenPermissions } from '../github/installation-token.ts'
@@ -32,7 +32,6 @@ type Node = {
 /** GitHub caps a pull request at a few thousand threads: 50 pages is far beyond. */
 const MAX_PAGES = 50
 
-const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/
 
 /** An open thread as GitHub gives it: the comments keep their raw body. */
 export type OpenThread = {

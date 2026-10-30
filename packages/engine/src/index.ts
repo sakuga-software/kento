@@ -5,72 +5,36 @@
  * runner call it.
  *
  * Node 26 or later runs this code as is: no build. Keep to erasable TypeScript syntax, and import
- * with the `.ts` extension. The Action imports it by its relative path, with no install.
+ * with the `.ts` extension. The Action imports it by its relative path, with no install: so the
+ * engine imports packages/protocol (the levels, the providers, the severities) by its relative path too.
  */
-export { codeAround, fingerprint, FINGERPRINT, normalizeTitle } from './fingerprint.ts';
 export { git } from './git.ts';
-export { diffStart, fileChangedSince, fileDiff, inHistory } from './history.ts';
-export { defaultModels, isLevel, LEVEL_COST_CENTS, LEVELS, levelConfig, levelCost, providerLevelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';
-export { costFromTable, costKnown, priceOf, type CostSource, type Price } from './prices.ts';
-export {
-  ANTHROPIC_BASE_URL,
-  defaultBaseUrl,
-  isProviderKind,
-  OLLAMA_BASE_URL,
-  PROVIDER_KINDS,
-  ProviderError,
-  refusedKey,
-  type ProviderKind,
-} from './providers.ts';
+export { fileChangedSince } from './history.ts';
+export { levelConfig, providerLevelConfig, type LevelConfig } from './levels.ts';
+export { ProviderError } from './providers.ts';
 export {
   anchor,
-  ANSWER_SCHEMA,
-  answerSchema,
-  CATEGORIES,
-  changedLines,
-  deeperReview,
-  diagram,
   findingKey,
   isBlocking,
   score,
-  SEVERITY_ORDER,
   suggestionRange,
   verdict,
   type Answer,
-  type Anchors,
   type ChangedLines,
   type Finding,
-  type Severity,
   type Usage,
 } from './findings.ts';
-export { buildContext, buildPack } from './pack.ts';
-export { pathsMatch, patternToRegExp } from './paths.ts';
-export { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
-export { askJson, askModel, OPENROUTER_BASE_URL, type ModelClient, type Reply, type Schema } from './model.ts';
+export { buildPack } from './pack.ts';
+export { askJson } from './model.ts';
+export { costLine, descriptionBlock, FINDING_KEY, inlineBody, MARKER_GONE, REVIEW_COUNT, reviewBody, withBlock, type Link } from './render.ts';
+export { markerResolve, RESOLVE_SCHEMA, resolvePack, type OpenThread, type ThreadVerdict } from './resolve.ts';
+export { mergeBase, reviewPullRequest, type ReviewResult } from './review.ts';
+// The Action (review/sakuga-review.ts) imports these from the engine by their old names. They go away
+// with it (REV-24); the apps import them from packages/protocol.
 export {
-  BLOCK_END,
-  BLOCK_START,
-  costLine,
-  descriptionBlock,
-  FINDING_KEY,
-  inlineBody,
-  MARKER_GONE,
-  MARKER_SUMMARY,
-  REVIEW_COUNT,
-  reviewBody,
-  withBlock,
-  type Link,
-  type Poster,
-} from './render.ts';
-export {
-  cleanBody,
-  markerResolve,
+  isLevel,
   MAX_RESOLVE_PACK_BYTES,
-  MAX_THREADS,
-  RESOLVE_SCHEMA,
-  resolvePack,
-  type OpenThread,
-  type ThreadComment,
-  type ThreadVerdict,
-} from './resolve.ts';
-export { mergeBase, reviewPullRequest, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
+  MAX_RESOLVE_THREADS as MAX_THREADS,
+  SEVERITIES as SEVERITY_ORDER,
+  type Level,
+} from '../../protocol/src/index.ts';

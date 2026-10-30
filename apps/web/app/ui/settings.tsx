@@ -2,7 +2,7 @@ import type { Handle } from 'remix/component'
 
 import { defaultModels } from '@sakuga-review/engine/levels'
 import { costKnown } from '@sakuga-review/engine/prices'
-import type { Level, ProviderKind } from '@sakuga-review/protocol'
+import { LEVELS, type Level, type ProviderKind } from '@sakuga-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
@@ -15,7 +15,6 @@ import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
-const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openrouter', 'openai_compatible', 'ollama']
 /** REV-28. What each type needs, all shown under the select: right whatever the choice, without JavaScript. */
 const KIND_HINTS: Record<ProviderKind, string> = {

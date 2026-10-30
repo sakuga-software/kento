@@ -2,7 +2,7 @@
 import { hostname } from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PROVIDER_KINDS, type ProviderKind } from '@sakuga-review/protocol';
+import { isProviderKind, PROVIDER_KINDS, type ProviderKind } from '@sakuga-review/protocol';
 
 export type Config = {
   /** The web service, for example https://review.sakuga.dev. */
@@ -50,7 +50,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (!/^[A-Za-z0-9._-]{1,100}$/.test(name)) problems.push('KENTO_RUNNER_NAME must be letters, digits, dots, dashes or underscores');
 
   const kind = (env.PROVIDER_KIND ?? 'openrouter').trim();
-  if (!(PROVIDER_KINDS as readonly string[]).includes(kind)) problems.push(`PROVIDER_KIND must be one of ${PROVIDER_KINDS.join(', ')}`);
+  if (!isProviderKind(kind)) problems.push(`PROVIDER_KIND must be one of ${PROVIDER_KINDS.join(', ')}`);
 
   const baseUrl = (env.PROVIDER_BASE_URL ?? '').trim() || undefined;
   // HTTPS: the key travels in a header. Ollama has no key, and often runs on this machine or on the

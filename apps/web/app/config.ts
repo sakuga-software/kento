@@ -2,7 +2,7 @@ import type { KeyObject } from 'node:crypto'
 
 import packageJson from '../package.json' with { type: 'json' }
 
-import { readPrivateKey } from './github/installation-token.ts'
+import { GITHUB_API_URL, readPrivateKey } from './github/installation-token.ts'
 import { readMasterKeys, SecretsError } from './providers/secrets.ts'
 
 /** The settings of the service. `loadConfig` reads them once, at startup. */
@@ -125,7 +125,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       problems.push('GITHUB_APP_PRIVATE_KEY must be the PEM private key of the App')
     }
     // GitHub Enterprise Server (with GITHUB_URL), or a fake GitHub in a local test.
-    let apiUrl = env.GITHUB_API_URL?.trim() || 'https://api.github.com'
+    let apiUrl = env.GITHUB_API_URL?.trim() || GITHUB_API_URL
     if (!/^https?:\/\/[^\s@]+$/.test(apiUrl)) problems.push('GITHUB_API_URL must be an http(s) URL')
     if (privateKey && /^\d+$/.test(appId)) githubApp = { appId, privateKey, apiUrl }
   }
@@ -138,7 +138,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
   // Server (https://<host>/api/v3 and https://<host>). Without GITHUB_URL, it is the server of
   // GITHUB_API_URL. HTTPS only: the runner refuses any other clone URL.
-  let githubHost = githubServerHost(env.GITHUB_API_URL?.trim() || 'https://api.github.com')
+  let githubHost = githubServerHost(env.GITHUB_API_URL?.trim() || GITHUB_API_URL)
   let githubUrl = (env.GITHUB_URL?.trim() || (githubHost ? `https://${githubHost}` : '')).replace(/\/+$/, '')
   if (githubHost === null) {
     // Name the variable that is wrong, once, even without the GitHub App.

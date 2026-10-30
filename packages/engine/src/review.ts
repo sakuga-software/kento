@@ -2,7 +2,8 @@
 import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
-import { levelConfig, type Level, type LevelConfig } from './levels.ts';
+import type { Level } from '../../protocol/src/index.ts';
+import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';

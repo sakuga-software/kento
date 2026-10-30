@@ -1,5 +1,5 @@
 import { defaultModels } from '@sakuga-review/engine/levels'
-import type { Level } from '@sakuga-review/protocol'
+import { UUID, type Level } from '@sakuga-review/protocol'
 
 import { SERVICE_PROVIDER, type LevelModels, type Resolved } from './model.ts'
 import type { ProviderOption } from './providers.ts'
@@ -18,7 +18,6 @@ import type { ProviderOption } from './providers.ts'
 //
 // test/db/effective-provider.test.ts checks this rule against the claim of the service.
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Why the level runs on this provider. */
 export type EffectiveOrigin =

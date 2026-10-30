@@ -1,8 +1,7 @@
 // The findings of a review: the answer schema, the lines that a finding anchors on, the score and the verdict.
 import { createHash } from 'node:crypto';
 import { git } from './git.ts';
-import type { Level } from './levels.ts';
-import type { CostSource } from './prices.ts';
+import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
 
 // A finding blocks the merge at this severity and confidence.
 const BLOCKING_SEVERITIES = new Set(['critical', 'major']);
@@ -11,16 +10,12 @@ const BLOCKING_CONFIDENCE = 70;
 // A finding can anchor on a changed line this far from the line the model named.
 const ANCHOR_DISTANCE = 10;
 
-export const SEVERITY_ORDER = ['critical', 'major', 'minor'] as const;
-export const CATEGORIES = ['bug', 'security', 'data', 'contract', 'test'] as const;
-
-export type Severity = (typeof SEVERITY_ORDER)[number];
 export type Finding = {
   path: string;
   start_line: number;
   line: number;
   severity: Severity;
-  category: (typeof CATEGORIES)[number];
+  category: Category;
   confidence: number;
   title: string;
   scenario: string;
@@ -71,7 +66,7 @@ const FINDING_SCHEMA = {
     path: { type: 'string' },
     start_line: { type: 'integer' },
     line: { type: 'integer' },
-    severity: { type: 'string', enum: SEVERITY_ORDER },
+    severity: { type: 'string', enum: SEVERITIES },
     category: { type: 'string', enum: CATEGORIES },
     confidence: { type: 'integer' },
     title: { type: 'string' },

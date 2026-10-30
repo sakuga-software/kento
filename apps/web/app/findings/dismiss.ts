@@ -2,11 +2,12 @@
 // screen (several at once) or from the screen of a pull request (REV-17, one at a time). Each change
 // is one event with the person's login (store.ts), then one reply in the thread of the finding on
 // GitHub, posted as the replies of a resolve job are (resolve/publish.ts).
+import { isOneOf, UUID } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'
-import { REASON_MAX, setFindingStatus, UUID, type FindingStatus } from './store.ts'
+import { REASON_MAX, setFindingStatus, type FindingStatus } from './store.ts'
 
 /** The reasons that the dialog offers; « Autre » takes a reason of the person. */
 export const DISMISS_REASONS = ['Faux positif', 'Hors sujet', 'Déjà connu', 'Style, pas un défaut'] as const
@@ -36,7 +37,7 @@ export function readStatusForm(form: FormData | null | undefined): StatusForm {
   if (status !== 'dismissed' && status !== 'wontfix') return { ok: false, error: 'status' }
   let choice = String(form?.get('reason') ?? '').trim()
   let reason = choice === OTHER_REASON ? String(form?.get('other') ?? '').trim() : choice
-  if (reason && choice !== OTHER_REASON && !(DISMISS_REASONS as readonly string[]).includes(reason)) return { ok: false, error: 'reason' }
+  if (reason && choice !== OTHER_REASON && !isOneOf(DISMISS_REASONS, reason)) return { ok: false, error: 'reason' }
   if (reason.length > REASON_MAX) return { ok: false, error: 'reason_long' }
   if (status === 'dismissed' && !reason) return { ok: false, error: 'reason' }
   return { ok: true, ids, status, reason: reason || null }

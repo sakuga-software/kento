@@ -9,7 +9,7 @@ import { createDatabaseCheck } from './app/db/health.ts'
 import { startJobsPurge } from './app/db/retention.ts'
 import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
-import { createInstallationTokenMinter } from './app/github/installation-token.ts'
+import { createInstallationTokenMinter, GITHUB_API_URL } from './app/github/installation-token.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
 import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
@@ -229,7 +229,7 @@ let router = createAppRouter({
       handleCommentCommand: createCommandHandler({
         db: database.db,
         mintInstallationToken,
-        apiUrl: config.githubApp?.apiUrl ?? 'https://api.github.com',
+        apiUrl: config.githubApp?.apiUrl ?? GITHUB_API_URL,
       }),
     }),
   },

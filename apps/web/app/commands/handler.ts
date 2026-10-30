@@ -11,6 +11,8 @@
 //   the same comment posts no second reply.
 // - Nothing for a person who cannot write to the repository: the bot does not answer every comment
 //   of every visitor. The log says why.
+import { SHA } from '@sakuga-review/protocol'
+
 import type { Db } from '../db/client.ts'
 import { enqueueCommandJob, isRepoEnabled, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
@@ -115,7 +117,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
     if (pr.head?.repo?.id !== message.repository.githubRepoId) {
       return refuse('pull request from a fork', `@${message.commenter.login} Kentō ne relit pas une PR qui vient d'un fork.`)
     }
-    if (typeof pr.head.sha !== 'string' || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(pr.head.sha) || typeof pr.base?.ref !== 'string') {
+    if (typeof pr.head.sha !== 'string' || !SHA.test(pr.head.sha) || typeof pr.base?.ref !== 'string') {
       throw new Error('GitHub gave a pull request without head.sha or base.ref')
     }
 

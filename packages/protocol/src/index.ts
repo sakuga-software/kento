@@ -44,11 +44,23 @@ export const MAX_BODY_BYTES = 1_000_000;
 /** A runner token starts with this prefix, so that a secret scanner can find a leaked one. */
 export const RUNNER_TOKEN_PREFIX = 'kento_rt_';
 
+/**
+ * True when `value` is one of `list`. It narrows a string read from a form, a URL, a comment or the
+ * environment to the type of the list.
+ */
+export function isOneOf<const T extends readonly string[]>(list: T, value: unknown): value is T[number] {
+  return typeof value === 'string' && list.includes(value);
+}
+
 export const LEVELS = ['lite', 'balanced', 'heavy'] as const;
 export type Level = (typeof LEVELS)[number];
+export const isLevel = (value: unknown): value is Level => isOneOf(LEVELS, value);
 
+/** The severities of a finding, the most severe first. */
 export const SEVERITIES = ['critical', 'major', 'minor'] as const;
+export type Severity = (typeof SEVERITIES)[number];
 export const CATEGORIES = ['bug', 'security', 'data', 'contract', 'test'] as const;
+export type Category = (typeof CATEGORIES)[number];
 export const VERDICTS = ['REQUEST_CHANGES', 'APPROVE', 'COMMENT'] as const;
 
 /**
@@ -57,6 +69,7 @@ export const VERDICTS = ['REQUEST_CHANGES', 'APPROVE', 'COMMENT'] as const;
  */
 export const PROVIDER_KINDS = ['openrouter', 'anthropic', 'openai_compatible', 'ollama'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf(PROVIDER_KINDS, value);
 
 /**
  * What a runner can read in a job beyond the first release. A runner of an earlier release sends
@@ -76,8 +89,15 @@ export type Feature = (typeof FEATURES)[number];
 export const COST_SOURCES = ['provider', 'table', 'free', 'unknown'] as const;
 export type CostSource = (typeof COST_SOURCES)[number];
 
-const uuid = str({ max: 36, pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/ });
-const sha = str({ max: 64, pattern: /^[0-9a-f]{40}([0-9a-f]{24})?$/ });
+/** A uuid as Postgres writes it: lower case. */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** The id of a git commit: SHA-1 (40 characters) or SHA-256 (64), lower case. */
+export const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+/** The id of a provider in a job: `service`, or the uuid of a provider of the org. */
+const PROVIDER_ID = new RegExp(`^(service|${UUID.source.slice(1, -1)})$`);
+
+const uuid = str({ max: 36, pattern: UUID });
+const sha = str({ max: 64, pattern: SHA });
 const label = str({ min: 1, max: 64, pattern: /^[A-Za-z0-9._-]+$/ });
 const isoDate = str({ max: 40, pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/ });
 const text = (max: number) => str({ max });
@@ -105,6 +125,8 @@ export type JobKind = (typeof JOB_KINDS)[number];
 
 /** A job `resolve` holds at most this many threads, as the Action. */
 export const MAX_RESOLVE_THREADS = 20;
+/** The pack of a job `resolve` holds at most this many bytes (packages/engine/src/resolve.ts). */
+export const MAX_RESOLVE_PACK_BYTES = 150_000;
 
 /**
  * - `hasProviderKey`: the runner has its own key for the model. The service then never sends its
@@ -170,7 +192,7 @@ export type JobRule = {
   title: string;
   text: string;
   paths: string[];
-  severityFloor: (typeof SEVERITIES)[number] | null;
+  severityFloor: Severity | null;
 };
 
 /**
@@ -213,7 +235,7 @@ const claimRequest = obj({
 /** A model id at a provider: `claude-opus-5-5`, `anthropic/claude-haiku-5.5`, `qwen3:32b`. */
 export const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}$/;
 const jobProvider = obj({
-  id: str({ min: 1, max: 36, pattern: /^(service|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/ }),
+  id: str({ min: 1, max: 36, pattern: PROVIDER_ID }),
   kind: oneOf(PROVIDER_KINDS),
   apiKey: nullable(str({ min: 1, max: 500 })),
   // HTTPS, or HTTP for a server on a private network (Ollama): the runner checks it again.
@@ -255,7 +277,7 @@ const jobBase = {
   providers: optional(arr(jobProvider, { max: 4 })),
   models: optional(
     obj({
-      provider: str({ min: 1, max: 36, pattern: /^(service|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/ }),
+      provider: str({ min: 1, max: 36, pattern: PROVIDER_ID }),
       model: str({ min: 1, max: 200, pattern: MODEL_ID }),
       fallback: nullable(str({ min: 1, max: 200, pattern: MODEL_ID })),
     }),
@@ -310,8 +332,8 @@ export type ReviewFinding = {
   path: string;
   start_line: number;
   line: number;
-  severity: (typeof SEVERITIES)[number];
-  category: (typeof CATEGORIES)[number];
+  severity: Severity;
+  category: Category;
   confidence: number;
   title: string;
   scenario: string;

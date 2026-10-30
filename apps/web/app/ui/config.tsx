@@ -1,10 +1,9 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { levelCost } from '@sakuga-review/engine/levels'
-import { MAX_JOB_RULES, type Level } from '@sakuga-review/protocol'
+import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@sakuga-review/protocol'
 
 import {
-  LEVEL_KEYS,
   MAX_PATHS,
   resolveConfig,
   type ConfigField,
@@ -51,7 +50,7 @@ export function tabOf(field: ConfigField): ConfigTab {
 }
 
 export function isConfigTab(value: unknown): value is ConfigTab {
-  return typeof value === 'string' && (CONFIG_TABS as readonly string[]).includes(value)
+  return isOneOf(CONFIG_TABS, value)
 }
 
 export type ConfigNotice =
@@ -281,7 +280,7 @@ function ModelsTab(handle: Handle<{ resolved: Record<Level, Resolved<LevelModels
           mis en file.
         </p>
         <div class="config-grid">
-          {LEVEL_KEYS.map((level) => (
+          {LEVELS.map((level) => (
             <LevelCard level={level} value={resolved[level]} providers={providers} ctx={ctx} />
           ))}
         </div>
@@ -421,14 +420,14 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
               <FormErrors errors={mine?.errors ?? {}} />
               <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'default-level-error' : undefined}>
                 <legend class="visually-hidden">Niveau par défaut</legend>
-                {LEVEL_KEYS.map((key) => (
+                {LEVELS.map((key) => (
                   <label class="choice">
                     <input
                       type="radio"
                       name="defaultLevel"
                       value={key}
                       checked={key === selected}
-                      autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
+                      autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
                     />
                     <span>
                       <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}

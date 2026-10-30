@@ -4,7 +4,8 @@
 // A rule comes from the caller only: the service reads it from its database, where an admin wrote it.
 // The engine never reads a rule from the checkout. A pull request can write text that looks like a
 // rule; the pack shows it as code under review, and a finding can cite only a rule of the caller.
-import { SEVERITY_ORDER, type Finding, type Severity } from './findings.ts';
+import { SEVERITIES, type Severity } from '../../protocol/src/index.ts';
+import type { Finding } from './findings.ts';
 import { pathsMatch } from './paths.ts';
 
 /**
@@ -83,6 +84,6 @@ export function applyRule(finding: Finding, packed: readonly PackedRule[]): Find
   const rule = key ? packed.find((r) => r.ref.toLowerCase() === key.toLowerCase() || r.id === key) : undefined;
   if (!rule) return rest;
   const floor = rule.severityFloor;
-  const severity = floor && SEVERITY_ORDER.indexOf(floor) < SEVERITY_ORDER.indexOf(finding.severity) ? floor : finding.severity;
+  const severity = floor && SEVERITIES.indexOf(floor) < SEVERITIES.indexOf(finding.severity) ? floor : finding.severity;
   return { ...rest, severity, rule_id: rule.id };
 }

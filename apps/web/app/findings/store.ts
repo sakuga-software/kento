@@ -3,6 +3,7 @@
 // paged: at most PAGE_MAX rows, and a cursor for the next page.
 //
 // Each read takes the org of the session: a finding of another org is never found.
+import { UUID } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 export const FINDING_STATUSES = ['open', 'fixed', 'stale', 'dismissed', 'wontfix'] as const
@@ -72,7 +73,6 @@ export class InvalidCursorError extends Error {
   }
 }
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // The cursor holds `created_at` as Postgres writes it (to the microsecond) and the id of the last
 // row: a Date of JavaScript keeps milliseconds only, and two rows of one millisecond would be lost.
