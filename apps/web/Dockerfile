@@ -26,6 +26,10 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @sakuga-review/web...
 
 FROM ${NODE_IMAGE}
+# The service runs with node alone. The npm of the base image only adds the vulnerabilities of its
+# own dependencies: remove npm, npx and corepack.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000

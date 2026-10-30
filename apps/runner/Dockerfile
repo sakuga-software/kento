@@ -24,6 +24,10 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @sakuga-review/runner...
 
 FROM ${NODE_IMAGE}
+# The runner runs with node and git alone. The npm of the base image only adds the vulnerabilities
+# of its own dependencies: remove npm, npx and corepack.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 # git reads the pull request; ca-certificates lets it and Node speak HTTPS. Nothing else: the runner
 # never builds or runs the code of a pull request.
 RUN apt-get update \
