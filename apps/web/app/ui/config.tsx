@@ -19,6 +19,7 @@ import type { RepoConfigView } from '../repo-config/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
+import { moneyInput, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -68,15 +69,6 @@ export interface ConfigPageProps {
   tab: ConfigTab
   notice: ConfigNotice | null
   form: ConfigForm | null
-}
-
-const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })
-const TIME = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
-const USD = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
-
-/** « le 27 oct. à 18:02 ». */
-function when(date: Date): string {
-  return `le ${DATE.format(date)} à ${TIME.format(date)}`
 }
 
 /** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
@@ -484,7 +476,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
     let capForm = form('monthlyCapUsd')
     let selectedTrigger = triggerForm?.values.trigger ?? trigger.value
     let pathsValue = pathsForm?.values.paths ?? paths.value.join('\n')
-    let capValue = capForm?.values.monthlyCapUsd ?? (cap.value === null ? '' : Number.isInteger(cap.value) ? String(cap.value) : cap.value.toFixed(2).replace('.', ','))
+    let capValue = capForm?.values.monthlyCapUsd ?? moneyInput(cap.value)
     let reached = cap.value !== null && spent >= cap.value
     return (
       <div class="config-grid">
@@ -611,8 +603,8 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             <SourceTag source={cap.source} />
           </header>
           <p class={reached ? 'hint hint-alert' : 'hint'}>
-            Dépensé ce mois-ci : {USD.format(spent)}
-            {cap.value !== null ? ` sur ${USD.format(cap.value)}` : ''}
+            Dépensé ce mois-ci : {usd(spent)}
+            {cap.value !== null ? ` sur ${usd(cap.value)}` : ''}
             {reached ? ' : plafond atteint, plus de review automatique jusqu’au 1er du mois.' : '.'}
           </p>
           {ctx.admin ? (
@@ -649,7 +641,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
               {cap.source === 'repo' ? <ResetForm ctx={ctx} field="monthlyCapUsd" label="le plafond" /> : null}
             </>
           ) : (
-            <p>{cap.value === null ? 'Aucun plafond.' : `${USD.format(cap.value)} par mois.`}</p>
+            <p>{cap.value === null ? 'Aucun plafond.' : `${usd(cap.value)} par mois.`}</p>
           )}
         </section>
 

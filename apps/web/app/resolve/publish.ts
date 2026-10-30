@@ -10,6 +10,7 @@ import { markerResolve } from '@sakuga-review/engine/threads'
 import { MAX_RESOLVE_THREADS, type ResolvePayload } from '@sakuga-review/protocol'
 
 import type { GitHub } from '../publish/github.ts'
+import { plural } from '../ui/format.ts'
 import { readOpenThreads } from './threads.ts'
 
 /** The service that answers, in the summary. */
@@ -29,8 +30,6 @@ export interface ResolveOutcome {
   /** Threads that the code settled, which the App could not resolve: no `contents: write`. */
   toResolve: number
 }
-
-const plural = (n: number, word: string) => `${word}${n > 1 ? 's' : ''}`
 
 /**
  * Posts the answer of a resolve job. `writer` is a GitHub with `contents: write`, which
@@ -128,7 +127,7 @@ export async function publishResolution(
         : []),
       ...(skipped
         ? [
-            `${skipped} autre${skipped > 1 ? 's' : ''} ${plural(skipped, 'fil')} ${plural(skipped, 'ouvert')} attend${skipped > 1 ? 'ent' : ''} : ` +
+            `${skipped} ${plural(skipped, 'autre')} ${plural(skipped, 'fil')} ${plural(skipped, 'ouvert')} ${plural(skipped, 'attend', 'attendent')} : ` +
               `une commande traite au plus ${MAX_RESOLVE_THREADS} fils et ${MAX_PACK_KB} ko. Relancez \`@kento-review resolve\`.`,
             '',
           ]

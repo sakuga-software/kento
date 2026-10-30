@@ -2,11 +2,12 @@ import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
 import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview } from '../dashboard/store.ts'
+import { agoOrDate, agoShort, clock, duration, elapsed, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
 import { pageRoutes as routes } from '../routes.ts'
-import { ago, byState, runnerState, runnerStateLabel } from './runners.tsx'
+import { byState, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
@@ -24,24 +25,6 @@ export const DASHBOARD_NOTICES = {
 } as const
 export type DashboardNotice = keyof typeof DASHBOARD_NOTICES
 
-const USD = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const USD_SMALL = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', minimumFractionDigits: 3, maximumFractionDigits: 3 })
-const CLOCK = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' })
-const SECONDS = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Europe/Paris' })
-const DAY = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
-
-/** « 0,12 $ »; under one dollar and above zero, three decimals: « 0,004 $ ». */
-export function money(usd: number): string {
-  return usd > 0 && usd < 0.1 ? USD_SMALL.format(usd) : USD.format(usd)
-}
-
-/** « 42 s », « 3 min 05 s ». */
-export function duration(ms: number): string {
-  let seconds = Math.round(ms / 1000)
-  if (seconds < 60) return `${seconds} s`
-  let minutes = Math.floor(seconds / 60)
-  return `${minutes} min ${String(seconds % 60).padStart(2, '0')} s`
-}
 
 /**
  * The reason of a failure, in words. The service writes « lease expired N times » and « the provider
@@ -261,7 +244,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
       <Shell frame={frame} section="dashboard" title="Tableau de bord" lead="Ce qui tourne, ce qui a échoué, et ce que ça coûte.">
         <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
           <p class="dash-updated hint">
-            <span data-updated={screen.now.toISOString()}>Mis à jour à {SECONDS.format(screen.now)}</span>
+            <span data-updated={screen.now.toISOString()}>Mis à jour à {hourSeconds(screen.now)}</span>
             {' · '}
             <a href={routes.home.href()}>Actualiser</a>
           </p>
@@ -336,7 +319,7 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
             Mise en route
           </h2>
           <span class="hint">
-            {done} étape{done > 1 ? 's' : ''} sur {steps.length}
+            {done} {plural(done, 'étape')} sur {steps.length}
           </span>
         </div>
         <p class="hint setup-lead">
@@ -405,7 +388,7 @@ function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolea
           <p>Raison : {failureText(banner)}.</p>
           <p>
             {banner.previous
-              ? `La review précédente (${banner.previous.score}/5, publiée le ${CLOCK.format(banner.previous.publishedAt)}) reste publiée sur la PR.`
+              ? `La review précédente (${banner.previous.score}/5, publiée le ${clock(banner.previous.publishedAt)}) reste publiée sur la PR.`
               : 'Aucune review n’est encore publiée sur cette PR.'}
           </p>
           {banner.retry ? (
@@ -429,7 +412,7 @@ function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolea
                       <input type="hidden" name="level" value={level} />
                       <button class={`button ${level === banner.level ? 'button-primary' : ''}`} type="submit">
                         Relancer en {LEVEL_LABEL[level]}
-                        <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${money(estimate)}`}</span>
+                        <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
                       </button>
                     </form>
                   )
@@ -458,8 +441,8 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
           <span class={`status ${CAP_STATUS[state]}`}>{CAP_TEXT[state]}</span>
         </div>
         <p class="dash-cost-value">
-          {money(usd)}
-          {cap !== null ? <span class="dash-cost-cap"> sur {money(cap)}</span> : null}
+          {usdPrecise(usd)}
+          {cap !== null ? <span class="dash-cost-cap"> sur {usdPrecise(cap)}</span> : null}
         </p>
         {cap !== null && cap > 0 ? (
           <meter
@@ -472,7 +455,7 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
             optimum={0}
             value={Math.min(usd, cap)}
           >
-            {money(usd)} sur {money(cap)}
+            {usdPrecise(usd)} sur {usdPrecise(cap)}
           </meter>
         ) : null}
         {cap !== null ? <p class="hint">Alerte à {alertPct} % du plafond.</p> : null}
@@ -516,8 +499,8 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
               {costs.monthByProvider.map((provider) => (
                 <tr>
                   <th scope="row">{provider.label}</th>
-                  <td class="num">{money(costs.dayByProvider.find((p) => p.providerId === provider.providerId && p.label === provider.label)?.usd ?? 0)}</td>
-                  <td class="num">{money(provider.usd)}</td>
+                  <td class="num">{usdPrecise(costs.dayByProvider.find((p) => p.providerId === provider.providerId && p.label === provider.label)?.usd ?? 0)}</td>
+                  <td class="num">{usdPrecise(provider.usd)}</td>
                 </tr>
               ))}
             </tbody>
@@ -557,7 +540,7 @@ function WeekSection(handle: Handle<{ week: DayStats[] }>) {
             let h = n === 0 ? 0 : Math.max(4, Math.round((n / max) * height))
             return (
               <rect class="dash-bar" x={i * slot + (slot - bar) / 2} y={height - h} width={bar} height={h} rx={2}>
-                <title>{`${DAY.format(new Date(`${day.day}T00:00:00Z`))} : ${n} publiée${n > 1 ? 's' : ''}`}</title>
+                <title>{`${weekday(day.day)} : ${n} ${plural(n, 'publiée')}`}</title>
               </rect>
             )
           })}
@@ -580,7 +563,7 @@ function WeekSection(handle: Handle<{ week: DayStats[] }>) {
             <tbody>
               {[...week].reverse().map((day) => (
                 <tr>
-                  <th scope="row">{DAY.format(new Date(`${day.day}T00:00:00Z`))}</th>
+                  <th scope="row">{weekday(day.day)}</th>
                   <td>
                     <strong>{total(day)}</strong>
                     {total(day) > 0 ? (
@@ -642,7 +625,7 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; githubUrl: strin
                     </div>
                     <div>
                       <dt>Coût</dt>
-                      <dd>{review.costUsd === null ? 'inconnu' : money(review.costUsd)}</dd>
+                      <dd>{review.costUsd === null ? 'inconnu' : usdPrecise(review.costUsd)}</dd>
                     </div>
                     <div>
                       <dt>Durée</dt>
@@ -651,8 +634,8 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; githubUrl: strin
                     <div>
                       <dt>Date</dt>
                       <dd>
-                        <time dateTime={review.createdAt.toISOString()} title={CLOCK.format(review.createdAt)}>
-                          {ago(review.createdAt, now)}
+                        <time dateTime={review.createdAt.toISOString()} title={clock(review.createdAt)}>
+                          {agoOrDate(review.createdAt, now)}
                         </time>
                       </dd>
                     </div>
@@ -692,23 +675,23 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
           {running ? (
             <>
               Sur <span class="mono">{job.runnerName}</span> depuis{' '}
-              <time dateTime={job.startedAt!.toISOString()}>{ago(job.startedAt!, now).replace('il y a ', '')}</time> · tentative{' '}
-              {job.attempts} · bail jusqu’à <time dateTime={job.leaseExpiresAt!.toISOString()}>{SECONDS.format(job.leaseExpiresAt!)}</time>
+              <time dateTime={job.startedAt!.toISOString()}>{elapsed(job.startedAt!, now)}</time> · tentative{' '}
+              {job.attempts} · bail jusqu’à <time dateTime={job.leaseExpiresAt!.toISOString()}>{hourSeconds(job.leaseExpiresAt!)}</time>
               {job.runnerSeenAt ? (
                 <>
                   {' '}
-                  · dernier signal <time dateTime={job.runnerSeenAt.toISOString()}>{ago(job.runnerSeenAt, now)}</time>
+                  · dernier signal <time dateTime={job.runnerSeenAt.toISOString()}>{agoShort(job.runnerSeenAt, now)}</time>
                 </>
               ) : null}
             </>
           ) : (
             <>
-              En file <time dateTime={job.createdAt.toISOString()}>{ago(job.createdAt, now).replace('il y a ', 'depuis ')}</time>
-              {job.attempts > 0 ? ` · ${job.attempts} tentative${job.attempts > 1 ? 's' : ''} déjà` : ''}
+              En file <time dateTime={job.createdAt.toISOString()}>depuis {elapsed(job.createdAt, now)}</time>
+              {job.attempts > 0 ? ` · ${job.attempts} ${plural(job.attempts, 'tentative')} déjà` : ''}
               {waiting ? (
                 <>
                   {' '}
-                  · reprise à <time dateTime={job.notBefore!.toISOString()}>{SECONDS.format(job.notBefore!)}</time>
+                  · reprise à <time dateTime={job.notBefore!.toISOString()}>{hourSeconds(job.notBefore!)}</time>
                 </>
               ) : null}
             </>
@@ -789,9 +772,9 @@ function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; now: Date }
                     {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
                   </div>
                   <p class="hint">
-                    {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} job${runner.running > 1 ? 's' : ''} en cours`} · dernier
+                    {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
                     signal{' '}
-                    {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{ago(runner.lastSeenAt, now)}</time> : 'jamais'}
+                    {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
                   </p>
                 </li>
               )
@@ -824,12 +807,12 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
                   <span class="tag">{job.kind === 'resolve' ? 'résolution' : job.level}</span>
                   {job.finishedAt ? (
                     <time class="hint" dateTime={job.finishedAt.toISOString()}>
-                      {ago(job.finishedAt, now)}
+                      {agoOrDate(job.finishedAt, now)}
                     </time>
                   ) : null}
                 </div>
                 <p class="hint">
-                  {failureText(job)} · {job.attempts} tentative{job.attempts > 1 ? 's' : ''}
+                  {failureText(job)} · {job.attempts} {plural(job.attempts, 'tentative')}
                 </p>
               </li>
             ))}

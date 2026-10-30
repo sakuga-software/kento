@@ -7,7 +7,7 @@ import type { PullRequestNow, ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } from '../dashboard/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { capState, duration, failureText, money, setupSteps } from './dashboard.tsx'
+import { capState, failureText, setupSteps } from './dashboard.tsx'
 
 const COOKIE = '__Host-kento_session'
 const NOW = new Date('2026-10-29T10:00:00Z')
@@ -182,14 +182,6 @@ describe('the words of the dashboard', () => {
     assert.equal(failureText({ reason: 'clone failed', runnerName: 'x' }), '« clone failed »')
     assert.equal(failureText({ reason: null, runnerName: null }), 'aucune raison enregistrée')
     assert.ok(failureText({ reason: 'x'.repeat(400), runnerName: null }).endsWith('… »'))
-  })
-
-  it('writes dollars and durations', () => {
-    assert.equal(money(0.004).replace(/\s/g, ' '), '0,004 $')
-    assert.equal(money(12.5).replace(/\s/g, ' '), '12,50 $')
-    assert.equal(money(0).replace(/\s/g, ' '), '0,00 $')
-    assert.equal(duration(42_000), '42 s')
-    assert.equal(duration(185_000), '3 min 05 s')
   })
 
   it('places a spend against its limit and the alert threshold', () => {

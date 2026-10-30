@@ -6,7 +6,7 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import type { RunnersAdminStore, RunnersScreen, RunnerView } from '../runner/admin.ts'
 import { hashToken } from '../runner/tokens.ts'
-import { ago, byState, dockerCommand, newerVersion, readRegistrationForm, runnerState, runnerStateLabel, since } from './runners.tsx'
+import { byState, dockerCommand, newerVersion, readRegistrationForm, runnerState, runnerStateLabel } from './runners.tsx'
 
 const COOKIE = '__Host-kento_session'
 const RUNNER_ID = '11111111-1111-4111-8111-111111111111'
@@ -172,14 +172,6 @@ describe('the state of a runner', () => {
     assert.equal(runnerStateLabel({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'Révoqué')
   })
 
-  it('counts the silence of an offline runner in hours, then in days after 48 h (REV-30)', () => {
-    let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
-    assert.equal(since(at(3601), NOW), '1 h')
-    assert.equal(since(at(47 * 3600), NOW), '47 h')
-    assert.equal(since(at(48 * 3600), NOW), '2 j')
-    assert.equal(since(at(3 * 86_400 + 600), NOW), '3 j')
-  })
-
   it('lists an offline runner first, then a late one, then the online ones in their order (REV-30)', () => {
     let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
     let runners = [
@@ -197,13 +189,6 @@ describe('the state of a runner', () => {
     assert.equal(newerVersion('1.3.0', '1.2.9'), null)
     assert.equal(newerVersion(null, '1.2.3'), null)
     assert.equal(newerVersion('dev', '1.2.3'), null)
-  })
-
-  it('writes an age in French', () => {
-    assert.equal(ago(new Date(NOW.getTime() - 12_000), NOW), 'il y a 12 s')
-    assert.equal(ago(new Date(NOW.getTime() - 5 * 60_000), NOW), 'il y a 5 min')
-    assert.equal(ago(new Date(NOW.getTime() - 3 * 3600_000), NOW), 'il y a 3 h')
-    assert.equal(ago(new Date(NOW.getTime() - 4 * 86_400_000), NOW), 'il y a 4 j')
   })
 })
 

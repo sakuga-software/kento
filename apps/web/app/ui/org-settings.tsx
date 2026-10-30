@@ -5,7 +5,7 @@ import type { Level } from '@sakuga-review/protocol'
 
 import type { AppStatus } from '../org-settings/app-status.ts'
 import { capAlerts, capReached, checkPermissions, missingEvents, REQUIRED_EVENTS, type CapPeriod } from '../org-settings/model.ts'
-import { formatUsd, resetWhen } from '../org-settings/notice.ts'
+import { resetWhen } from '../org-settings/notice.ts'
 import type { DeliveryView, OrgSettingsView } from '../org-settings/store.ts'
 import { kentoDefaults, LEVEL_KEYS, SERVICE_PROVIDER, type ConfigField, type LevelModels } from '../repo-config/model.ts'
 import { effectiveLevel, type EffectiveLevel } from '../repo-config/effective.ts'
@@ -13,8 +13,8 @@ import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
+import { agoOrDate, moneyInput, plural, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
-import { ago } from './runners.tsx'
 
 /** The forms of the section, each one a `field` of `POST /settings/org`. */
 export const ORG_FIELDS = ['caps', 'trustedBots', 'level', 'models.lite', 'models.balanced', 'models.heavy'] as const
@@ -72,25 +72,12 @@ const PERMISSION_LABELS: Record<string, string> = {
 }
 const ACCESS: Record<'read' | 'write', string> = { read: 'lecture', write: 'écriture' }
 
-const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })
-const TIME = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
-
-function when(date: Date): string {
-  return `le ${DATE.format(date)} à ${TIME.format(date)}`
-}
-
 /** « réglages v3, modifiés par alex le 29 oct. à 15:02 ». */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
   if (view.version === 0) return 'réglages v0 : les valeurs de Kentō'
   let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
   let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
   return `réglages v${view.version}, modifiés${by}${at}`
-}
-
-/** « 3,42 $ » for the input of a limit: a comma, no symbol. */
-function moneyInput(value: number | null): string {
-  if (value === null) return ''
-  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace('.', ',')
 }
 
 const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'du jour', month: 'du mois' }
@@ -114,7 +101,7 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
             <AlertIcon />
             <p>
               <strong>
-                Plafond {PERIOD_TEXT[hit.period]} atteint : {formatUsd(hit.spentUsd)} sur {formatUsd(hit.capUsd)}.
+                Plafond {PERIOD_TEXT[hit.period]} atteint : {usd(hit.spentUsd)} sur {usd(hit.capUsd)}.
               </strong>{' '}
               Aucun nouveau job n’est lancé ; les jobs en cours finissent, et les reviews reprennent {resetWhen(hit.resetsAt)}.{' '}
               {admin ? <a href="#plafond">Relever le plafond</a> : 'Un admin de l’organisation peut le relever.'}
@@ -125,8 +112,8 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
           <div class="banner banner-info" role="status">
             <AlertIcon />
             <p>
-              <strong>Seuil d’alerte {PERIOD_TEXT[period]} atteint</strong> : {formatUsd(period === 'day' ? spent.dayUsd : spent.monthUsd)} sur{' '}
-              {formatUsd((period === 'day' ? view.caps.dailyCapUsd : view.caps.monthlyCapUsd)!)} ({view.caps.alertPct} %).
+              <strong>Seuil d’alerte {PERIOD_TEXT[period]} atteint</strong> : {usd(period === 'day' ? spent.dayUsd : spent.monthUsd)} sur{' '}
+              {usd((period === 'day' ? view.caps.dailyCapUsd : view.caps.monthlyCapUsd)!)} ({view.caps.alertPct} %).
             </p>
           </div>
         ))}
@@ -188,7 +175,7 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
         <dt>{label}</dt>
         <dd>
           <span class="gauge-value">
-            <strong>{formatUsd(spent)}</strong> {cap === null ? 'sans plafond' : `sur ${formatUsd(cap)} (${pct} %)`}
+            <strong>{usd(spent)}</strong> {cap === null ? 'sans plafond' : `sur ${usd(cap)} (${pct} %)`}
           </span>
           {pct === null ? null : (
             <span class={`gauge-bar gauge-${tone}`} aria-hidden="true">
@@ -250,7 +237,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 <ul class="cost-list">
                   {view.costs.dayByProvider.map((p) => (
                     <li>
-                      <span>{p.label}</span> <strong>{formatUsd(p.usd)}</strong>
+                      <span>{p.label}</span> <strong>{usd(p.usd)}</strong>
                     </li>
                   ))}
                 </ul>
@@ -324,8 +311,8 @@ function CapSection(handle: Handle<SectionProps>) {
           </form>
         ) : (
           <p>
-            {view.caps.dailyCapUsd === null ? 'Aucun plafond par jour' : `${formatUsd(view.caps.dailyCapUsd)} par jour`},{' '}
-            {view.caps.monthlyCapUsd === null ? 'aucun par mois' : `${formatUsd(view.caps.monthlyCapUsd)} par mois`} ; alerte à{' '}
+            {view.caps.dailyCapUsd === null ? 'Aucun plafond par jour' : `${usd(view.caps.dailyCapUsd)} par jour`},{' '}
+            {view.caps.monthlyCapUsd === null ? 'aucun par mois' : `${usd(view.caps.monthlyCapUsd)} par mois`} ; alerte à{' '}
             {view.caps.alertPct} %.
           </p>
         )}
@@ -615,7 +602,7 @@ function DeliveryLine(handle: Handle<{ delivery: DeliveryView | null; now: Date 
       <>
         <span class="mono">{deliveryText(delivery)}</span>{' '}
         <time dateTime={delivery.receivedAt.toISOString()} title={when(delivery.receivedAt)}>
-          {ago(delivery.receivedAt, now)}
+          {agoOrDate(delivery.receivedAt, now)}
         </time>
         {delivery.reason ? <span class="hint"> — {delivery.reason}</span> : null}
       </>
@@ -646,7 +633,7 @@ function AppSection(handle: Handle<SectionProps>) {
               </span>
             ) : (
               <span class="status status-alert">
-                <AlertIcon /> {problems} point{problems > 1 ? 's' : ''} à corriger
+                <AlertIcon /> {problems} {plural(problems, 'point')} à corriger
               </span>
             )
           ) : (
@@ -676,9 +663,8 @@ function AppSection(handle: Handle<SectionProps>) {
                   {view.login} · n° {view.githubInstallationId}
                 </>
               )}
-              {suspended ? <span class="tag tag-alert">suspendue</span> : null} · {view.repos.total} repo{view.repos.total > 1 ? 's' : ''} visibles
-              {status ? (status.installation.repositorySelection === 'all' ? ' (tous)' : ' (choisis)') : ''}, {view.repos.enabled} activé
-              {view.repos.enabled > 1 ? 's' : ''}
+              {suspended ? <span class="tag tag-alert">suspendue</span> : null} · {view.repos.total} {plural(view.repos.total, 'repo')} visibles
+              {status ? (status.installation.repositorySelection === 'all' ? ' (tous)' : ' (choisis)') : ''}, {view.repos.enabled} {plural(view.repos.enabled, 'activé')}
             </dd>
           </div>
           <div>
@@ -716,7 +702,7 @@ function AppSection(handle: Handle<SectionProps>) {
           <div>
             <dt>Échecs sur 24 h</dt>
             <dd>
-              <strong>{view.deliveries.failures24h}</strong> sur {view.deliveries.total24h} livraison{view.deliveries.total24h > 1 ? 's' : ''}
+              <strong>{view.deliveries.failures24h}</strong> sur {view.deliveries.total24h} {plural(view.deliveries.total24h, 'livraison')}
               {view.deliveries.lastFailure ? (
                 <span class="hint">
                   {' '}

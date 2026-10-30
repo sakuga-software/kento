@@ -6,6 +6,7 @@ import { REGISTRATION_TTL_MINUTES, type RegistrationView, type RunnersScreen, ty
 import { RETRY_BACKOFF_SECONDS } from '../runner/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { agoShort, clock, elapsed, hour } from './format.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
@@ -91,15 +92,8 @@ const STATE_LABELS: Record<RunnerState, string> = {
 /** « En ligne », « Signal en retard », « Hors ligne depuis 3 j »: the word of the state of a runner. */
 export function runnerStateLabel(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>, now: Date): string {
   let state = runnerState(runner, now)
-  if (state === 'offline' && runner.lastSeenAt) return `Hors ligne depuis ${since(runner.lastSeenAt, now)}`
+  if (state === 'offline' && runner.lastSeenAt) return `Hors ligne depuis ${elapsed(runner.lastSeenAt, now)}`
   return STATE_LABELS[state]
-}
-
-/** « 2 h », « 3 j »: how long a runner has been silent. Offline starts after 1 h, so the unit is the hour or the day. */
-export function since(date: Date, now: Date): string {
-  let hours = Math.floor(Math.max(0, now.getTime() - date.getTime()) / 3_600_000)
-  if (hours < 48) return `${hours} h`
-  return `${Math.floor(hours / 24)} j`
 }
 
 /** The order of the runners in service: a problem first, so that it is seen before the rest. */
@@ -125,20 +119,6 @@ export function newerVersion(version: string | null, latest: string): string | n
   }
   return null
 }
-
-/** « il y a 12 s », « il y a 5 min », « il y a 3 h », « il y a 2 j ». */
-export function ago(date: Date, now: Date): string {
-  let seconds = Math.max(0, Math.round((now.getTime() - date.getTime()) / 1000))
-  if (seconds < 60) return `il y a ${seconds} s`
-  let minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `il y a ${minutes} min`
-  let hours = Math.floor(minutes / 60)
-  if (hours < 48) return `il y a ${hours} h`
-  return `il y a ${Math.floor(hours / 24)} j`
-}
-
-const CLOCK = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' })
-const HOUR = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
 
 /** What the screen says after a form, from `?notice=`. */
 export const RUNNER_NOTICES = {
@@ -272,7 +252,7 @@ function CreatedToken(handle: Handle<{ created: CreatedRegistration; kentoUrl: s
         <div class="banner banner-alert" role="status">
           <p>
             <strong>Copiez-le maintenant :</strong> il ne sera plus affiché. Il sert une fois, jusqu’à{' '}
-            <time dateTime={created.expiresAt.toISOString()}>{HOUR.format(created.expiresAt)}</time>.
+            <time dateTime={created.expiresAt.toISOString()}>{hour(created.expiresAt)}</time>.
           </p>
         </div>
         <p class="hint">
@@ -308,13 +288,13 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
         <p class="hint">
           {expired ? (
             <>
-              Le token a expiré à <time dateTime={registration.expiresAt.toISOString()}>{CLOCK.format(registration.expiresAt)}</time>{' '}
+              Le token a expiré à <time dateTime={registration.expiresAt.toISOString()}>{clock(registration.expiresAt)}</time>{' '}
               sans qu’aucun runner ne s’enregistre. Vérifiez que le conteneur atteint {host} en HTTPS sortant, puis
               créez un nouveau token.
             </>
           ) : (
             <>
-              Valable jusqu’à <time dateTime={registration.expiresAt.toISOString()}>{HOUR.format(registration.expiresAt)}</time>.{' '}
+              Valable jusqu’à <time dateTime={registration.expiresAt.toISOString()}>{hour(registration.expiresAt)}</time>.{' '}
               {registration.trusted ? 'Clé de l’app.' : 'Clé du runner.'}
             </>
           )}
@@ -376,8 +356,8 @@ function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: str
             <dt>Dernier signal</dt>
             <dd>
               {runner.lastSeenAt ? (
-                <time dateTime={runner.lastSeenAt.toISOString()} title={CLOCK.format(runner.lastSeenAt)}>
-                  {ago(runner.lastSeenAt, now)}
+                <time dateTime={runner.lastSeenAt.toISOString()} title={clock(runner.lastSeenAt)}>
+                  {agoShort(runner.lastSeenAt, now)}
                 </time>
               ) : (
                 'jamais'
@@ -407,7 +387,7 @@ function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: str
             <div>
               <dt>Révoqué</dt>
               <dd>
-                <time dateTime={runner.revokedAt.toISOString()}>{CLOCK.format(runner.revokedAt)}</time>
+                <time dateTime={runner.revokedAt.toISOString()}>{clock(runner.revokedAt)}</time>
               </dd>
             </div>
           ) : null}

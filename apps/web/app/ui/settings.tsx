@@ -9,7 +9,7 @@ import type { ProviderView } from '../providers/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
-import { ago } from './runners.tsx'
+import { agoShort, clock, hourOrDate } from './format.ts'
 import { OrgSettingsSections, orgEffectiveLevels, type OrgSectionProps } from './org-settings.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -24,23 +24,6 @@ const KIND_HINTS: Record<ProviderKind, string> = {
 }
 /** The order of the fields of « Ajouter un provider »: the first one in error gets the focus. */
 const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', 'apiKey', 'models']
-
-const CLOCK = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Paris' })
-const PARTS = new Intl.DateTimeFormat('fr-FR', { hour: 'numeric', minute: '2-digit', timeZone: 'Europe/Paris' })
-
-/** « 9 h 40 », as the ticket writes it: the hour in Paris. */
-export function frenchHour(date: Date): string {
-  let parts = PARTS.formatToParts(date)
-  let hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0)
-  let minute = parts.find((p) => p.type === 'minute')?.value ?? '00'
-  return `${hour} h ${minute}`
-}
-
-/** « 9 h 40 » today, « 28/10/2026 9 h 40 » before. */
-function since(date: Date, now: Date): string {
-  let day = (d: Date) => d.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })
-  return day(date) === day(now) ? frenchHour(date) : `${day(date)} ${frenchHour(date)}`
-}
 
 /** What the section says after a form, from `?notice=`. */
 export const PROVIDER_NOTICES = {
@@ -111,7 +94,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
               <p>
                 <strong>
                   {p.runnerHeld ? <>Le runner a reçu {p.refusedStatus} pour la clé de « {p.label} » </> : <>La clé de « {p.label} » est refusée ({p.refusedStatus}) </>}
-                  depuis <time dateTime={p.refusedAt!.toISOString()}>{since(p.refusedAt!, now)}</time>.
+                  depuis <time dateTime={p.refusedAt!.toISOString()}>{hourOrDate(p.refusedAt!, now)}</time>.
                 </strong>{' '}
                 {failing}{' '}
                 {p.runnerHeld ? (
@@ -298,13 +281,13 @@ function ProviderItem(
             {state === 'refused' ? (
               <>
                 {provider.runnerHeld ? 'Refusée sur le runner' : 'Refusée'} · {provider.refusedStatus} depuis{' '}
-                <time dateTime={provider.refusedAt!.toISOString()}>{since(provider.refusedAt!, now)}</time>
+                <time dateTime={provider.refusedAt!.toISOString()}>{hourOrDate(provider.refusedAt!, now)}</time>
               </>
             ) : state === 'valid' ? (
               <>
                 Valide · dernier appel{' '}
-                <time dateTime={provider.lastOkAt!.toISOString()} title={CLOCK.format(provider.lastOkAt!)}>
-                  {ago(provider.lastOkAt!, now)}
+                <time dateTime={provider.lastOkAt!.toISOString()} title={clock(provider.lastOkAt!)}>
+                  {agoShort(provider.lastOkAt!, now)}
                 </time>
               </>
             ) : (
@@ -352,7 +335,7 @@ function ProviderItem(
             <div>
               <dt>Clé posée</dt>
               <dd>
-                <time dateTime={provider.keySetAt.toISOString()}>{CLOCK.format(provider.keySetAt)}</time>
+                <time dateTime={provider.keySetAt.toISOString()}>{clock(provider.keySetAt)}</time>
               </dd>
             </div>
           ) : null}

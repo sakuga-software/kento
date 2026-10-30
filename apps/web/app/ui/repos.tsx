@@ -3,6 +3,7 @@ import type { Handle } from 'remix/component'
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { agoOrDate, plural } from './format.ts'
 import { AlertIcon, CheckIcon, ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -76,18 +77,6 @@ function reposHref(list: Partial<RepoList>): string {
 
 const LEVELS: Record<RepoView['defaultLevel'], string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' }
 
-const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
-
-/** « il y a 4 min », « il y a 2 h », or a date. */
-export function ago(date: Date, now: Date): string {
-  let minutes = Math.max(0, Math.round((now.getTime() - date.getTime()) / 60_000))
-  if (minutes < 1) return 'à l’instant'
-  if (minutes < 60) return `il y a ${minutes} min`
-  let hours = Math.round(minutes / 60)
-  if (hours < 24) return `il y a ${hours} h`
-  return `le ${DATE.format(date)}`
-}
-
 /** The name of a repository without its owner, when the owner is the org on screen. */
 function shortName(fullName: string, org: string): string {
   let [owner, name] = fullName.split('/') as [string, string]
@@ -136,14 +125,14 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
 
 
         <p class="repos-summary" aria-live="polite">
-          {all} {all > 1 ? 'repos' : 'repo'} · {enabled} {enabled > 1 ? 'activés' : 'activé'} ·{' '}
+          {all} {plural(all, 'repo')} · {enabled} {plural(enabled, 'activé')} ·{' '}
           {checking ? (
             // REV-26: public/assets/repos.js reads the screen again until the check is over.
             <span data-recheck="">
               vérification en cours sur GitHub · <a href={routes.repos.href()}>Recharger</a>
             </span>
           ) : checkedAt
-              ? `vérifiés sur GitHub ${ago(checkedAt, now)}`
+              ? `vérifiés sur GitHub ${agoOrDate(checkedAt, now)}`
               : 'pas encore vérifiés sur GitHub'}
         </p>
 
@@ -334,7 +323,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               <a href={`${repoUrl}/pull/${repo.lastReview.prNumber}`} rel="noreferrer">
                 #{repo.lastReview.prNumber} · {repo.lastReview.score}/5
               </a>
-              <span class="hint">{ago(repo.lastReview.publishedAt, now)}</span>
+              <span class="hint">{agoOrDate(repo.lastReview.publishedAt, now)}</span>
             </span>
           ) : (
             '–'
