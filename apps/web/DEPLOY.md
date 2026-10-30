@@ -615,7 +615,45 @@ Check, signed in as an owner of `sakuga-software`:
    « le bail a expiré deux fois sur <runner> ». « Relancer en balanced » queues a job; the banner says
    « Relance en balanced en file », and goes away when its review is published.
 
-## 17. Each later deployment
+## 17. Comment of a failed job (REV-35)
+
+The release with REV-35 adds the migration `0012_failure_notice`: the column
+`jobs.failure_noticed_at`, additive only. `/healthz` gives `"migrations":13`. No new variable.
+
+A job that fails for good (a failed result, the expired lease of its last attempt, or a job that its
+runner gives back at its last attempt) used to leave
+no trace on the pull request, except 😕 on the comment of a command. Now the publisher posts one
+comment on the pull request for each failed review or resolve job: the level, the commit, the first
+line of `jobs.failure_reason` (300 characters at most, the keys and the long tokens masked), the
+command that runs it again, and a link to the Config screen of the repository when
+`KENTO_PUBLIC_URL` is set. For a command, the comment names its author, and the comment of the
+command still gets 😕. The comment carries a hidden `<!-- kento:failure <job id> -->`.
+
+The publisher marks the job before it posts, so a job gets one comment at most, and only one try.
+In the logs:
+
+- `job.failure_noticed`: the comment is on the pull request.
+- `job.failure_notice_skipped`, with `reason` `closed` or `superseded`: the pull request is closed, or
+  a newer push moved its head. The job is marked, with no comment.
+- `job.failure_notice_failed` (warn): GitHub refused the token, the pull request or the comment. The
+  job is marked and gets no second try.
+- `job.failure_commenter_unknown` (warn): the comment of the command is gone; the comment names nobody.
+
+Only a failure of the last 30 minutes gets a comment, so the deploy posts nothing for older failures.
+A failed result does not wake the publisher: the comment comes with its next run, within 30 seconds.
+A cancelled job, or a job of a suspended installation, gets no comment. The test is
+`apps/web/test/db/failure-notice.test.ts`.
+
+Check: on a pull request of a test repository, set a model that the provider does not know on its
+Config screen, push a commit, and wait for the failure. The pull request gets « Kentō · review en
+échec » with the 404 of the provider, and the logs `job.failure_noticed`.
+
+```sql
+select level, state, left(head_sha, 8), left(failure_reason, 80), failure_noticed_at from jobs
+where state = 'failed' order by finished_at desc limit 5;
+```
+
+## 18. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

@@ -1,0 +1,1 @@
+ALTER TABLE "jobs" ADD COLUMN "failure_noticed_at" timestamp with time zone;

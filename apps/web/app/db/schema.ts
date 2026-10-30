@@ -289,6 +289,8 @@ export const jobs = pgTable(
     /** A job queued again after an expired lease waits until then before a runner can claim it (backoff). */
     notBefore: timestamp('not_before', { withTimezone: true }),
     failureReason: text('failure_reason'),
+    /** When the publisher took the failed job to post its comment on the pull request. Once per job. */
+    failureNoticedAt: timestamp('failure_noticed_at', { withTimezone: true }),
     /**
      * REV-12. The config that the job applies, resolved (org, then repository) when it was queued: a
      * change of the config after that never changes a job in the queue. Null on a job queued before

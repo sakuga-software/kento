@@ -5,6 +5,8 @@
 // `reviews.published_at` set and `github_review_id` set: the review is on GitHub.
 // `reviews.published_at` set and `github_review_id` null: the review was not published, on purpose
 // (the pull request is closed, or a newer push moved its head). The log line says why.
+//
+// A job that failed for good gets one comment on its pull request: `jobs.failure_noticed_at`.
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
@@ -13,6 +15,8 @@ import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { publishResolution } from '../resolve/publish.ts'
+import { pageRoutes } from '../routes.ts'
+import { failureComment } from './failure.ts'
 import { createGitHub, type GitHub } from './github.ts'
 import { publishReview } from './publish.ts'
 
@@ -40,6 +44,8 @@ export interface PublisherDependencies {
   webUrl?: string
   /** The login of the App on GitHub. */
   botLogin: string
+  /** The origin of Kentō, for the link to the config in the comment of a failed job. Null: no link. */
+  publicUrl?: URL | null
   fetch?: typeof globalThis.fetch
   /** How often the timer looks for a review to publish. */
   intervalMs?: number
@@ -68,6 +74,21 @@ type EndedCommand = {
   id: string
   state: string
   commentId: string | number
+  fullName: string
+  githubRepoId: string | number
+  installationId: string | number
+}
+
+/** A job that failed after its last attempt: the publisher tells its pull request why, once. */
+type FailedJobRow = {
+  id: string
+  kind: 'review' | 'resolve'
+  level: string
+  prNumber: number
+  headSha: string
+  failureReason: string | null
+  commentId: string | number | null
+  repoId: string
   fullName: string
   githubRepoId: string | number
   installationId: string | number
@@ -308,6 +329,66 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
     }
   }
 
+  /**
+   * One comment on the pull request of each job that failed after its last attempt: why, and how to
+   * run it again. The row is marked before the comment, so a failure in the middle never posts it
+   * twice. No comment when the pull request is closed or a newer push moved its head.
+   */
+  async function noticeFailedJobs(connection: postgres.Sql) {
+    let rows = await connection<FailedJobRow[]>`
+      with taken as (
+        update jobs set failure_noticed_at = now()
+        where id in (
+          select jobs.id from jobs
+          join repos on repos.id = jobs.repo_id
+          join orgs on orgs.id = repos.org_id
+          where jobs.state = 'failed' and jobs.failure_noticed_at is null
+            and jobs.finished_at > now() - ${MAX_AGE}::interval and orgs.suspended_at is null
+          order by jobs.finished_at
+          limit 20
+        )
+        returning id, kind, level, pr_number, head_sha, failure_reason, github_comment_id, repo_id
+      )
+      select taken.id, taken.kind, taken.level, taken.pr_number as "prNumber", taken.head_sha as "headSha",
+        taken.failure_reason as "failureReason", taken.github_comment_id as "commentId", taken.repo_id as "repoId",
+        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
+      from taken
+      join repos on repos.id = taken.repo_id
+      join orgs on orgs.id = repos.org_id`
+    for (let row of rows) {
+      let fields = { jobId: row.id, kind: row.kind, repo: row.fullName, pr: row.prNumber, head: row.headSha }
+      try {
+        let token = await deps.mintInstallationToken({
+          installationId: Number(row.installationId),
+          githubRepoId: Number(row.githubRepoId),
+          permissions: REACTION_PERMISSIONS,
+        })
+        let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+        let pr: { state: string; head: { sha: string } } = await github.rest('GET', `/repos/${row.fullName}/pulls/${row.prNumber}`)
+        if (pr.state !== 'open' || pr.head.sha !== row.headSha) {
+          log('info', 'job.failure_notice_skipped', { ...fields, reason: pr.state !== 'open' ? 'closed' : 'superseded' })
+          continue
+        }
+        let commenter: string | null = null
+        if (row.commentId !== null) {
+          try {
+            let comment: { user: { login: string } | null } = await github.rest('GET', `/repos/${row.fullName}/issues/comments/${row.commentId}`)
+            commenter = comment.user?.login ?? null
+          } catch (error) {
+            log('warn', 'job.failure_commenter_unknown', { ...fields, commentId: Number(row.commentId), error: errorMessage(error) })
+          }
+        }
+        let configUrl = deps.publicUrl ? new URL(pageRoutes.repoConfig.href({ id: row.repoId }), deps.publicUrl).toString() : null
+        let body = failureComment({ ...row, commenter, configUrl })
+        await github.rest('POST', `/repos/${row.fullName}/issues/${row.prNumber}/comments`, { body })
+        log('info', 'job.failure_noticed', { ...fields, command: row.commentId !== null })
+      } catch (error) {
+        // One try: the row is already marked.
+        log('warn', 'job.failure_notice_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
+      }
+    }
+  }
+
   async function publishPending(): Promise<PublishResult[]> {
     let connection = await deps.sql.reserve()
     try {
@@ -358,6 +439,11 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           await answerEndedCommands(connection)
         } catch (error) {
           log('error', 'command.answers_failed', { error: errorMessage(error) })
+        }
+        try {
+          await noticeFailedJobs(connection)
+        } catch (error) {
+          log('error', 'job.failure_notices_failed', { error: errorMessage(error) })
         }
         return results
       } finally {

@@ -48,6 +48,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     },
     /** The permission of each login on the repository, as `collaborators/:login/permission` gives it. Missing: 404. */
     permissions: new Map<string, string>(),
+    /** The author of each comment of a person on the pull request, as `issues/comments/:id` gives it. Missing: 404. */
+    commentAuthors: new Map<number, string>(),
     /** The reactions of the App on the comments of the pull request: `commentId:content`. */
     reactions: new Set<string>(),
     /** The next comments of the pull request answer 502, as during an outage of GitHub. */
@@ -175,6 +177,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       return permission === undefined
         ? json(404, { message: 'Not Found' })
         : json(200, { permission: permission === 'maintain' ? 'write' : permission === 'triage' ? 'read' : permission, role_name: permission })
+    }
+    if ((m = /^\/issues\/comments\/(\d+)$/.exec(rest)) && method === 'GET') {
+      let author = state.commentAuthors.get(Number(m[1]))
+      return author === undefined ? json(404, { message: 'Not Found' }) : json(200, { id: Number(m[1]), user: { login: author } })
     }
     if ((m = /^\/issues\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'POST') {
       if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })

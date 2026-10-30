@@ -73,6 +73,7 @@ let publisher =
         apiUrl: config.githubApp.apiUrl,
         webUrl: config.githubUrl,
         botLogin: config.botLogin,
+        publicUrl: config.signIn?.publicUrl ?? null,
       })
     : null
 
