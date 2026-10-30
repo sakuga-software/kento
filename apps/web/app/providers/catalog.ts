@@ -6,7 +6,7 @@ import type { ProvidersStore, ProviderView } from './store.ts'
 /** The line under the name of a provider on the Config screen: where its key is, and its state. */
 function hint(provider: ProviderView): string {
   let state = providerState(provider)
-  let where = `${KIND_LABELS[provider.kind]}${provider.isDefault ? ', provider par défaut de l’org' : ''}`
+  let where = `${KIND_LABELS[provider.kind]}${provider.isDefault ? ', provider par défaut de l’organisation' : ''}`
   switch (state) {
     case 'runner':
       return `${where} · clé sur le runner`

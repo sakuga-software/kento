@@ -210,7 +210,14 @@ describe('the Runners screen', () => {
     assert.match(html, /En ligne/)
     assert.match(html, /1\.2\.3 disponible/)
     assert.match(html, /sakuga-software\/sakuga-review#57/)
-    assert.match(html, /Clé de l’app \(de confiance\)/)
+    assert.match(html, /Clé du service \(de confiance\)/)
+    // REV-43: one name for the key of the service, and no word of the runner protocol.
+    assert.doesNotMatch(html, /Clé de l’app|clé de l’app/)
+    assert.doesNotMatch(html, /claim|Heartbeat|heartbeat|\bBail\b|\bbail\b|en hash|Corps maximal/)
+    assert.match(html, /Attente d’un job/)
+    assert.match(html, /Taille maximale d’une requête/)
+    assert.match(html, /seule son empreinte est gardée/)
+    assert.doesNotMatch(html, / — /)
     assert.match(html, /Retirer la confiance/)
     assert.match(html, /Révoquer mac-mini/)
     assert.match(html, /action="\/runners\/new"/)
@@ -220,7 +227,7 @@ describe('the Runners screen', () => {
     // REV-30: the facts of the protocol fold under « Détails techniques ».
     assert.match(html, /<details class="runner-details"><summary>Détails techniques<\/summary>/)
     assert.match(html, /Protocole/)
-    assert.match(html, /Bail et tentatives/)
+    assert.match(html, /Réservation et tentatives/)
     // REV-30: « Clé du runner » is the choice by default; the key of the app is an explicit choice.
     assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
@@ -309,7 +316,7 @@ describe('the writes of the Runners screen', () => {
     let html = await response.text()
     let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_[A-Za-z0-9_-]{43})/.exec(html)?.[1]
     assert.ok(token, 'the page shows the token in the command')
-    assert.match(html, /il ne sera plus affiché/)
+    assert.match(html, /Il ne sera plus affiché/)
     assert.equal(registrations.length, 1)
     assert.deepEqual(registrations[0], { orgId: ORG.id, userId: 'user-1', name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true, tokenHash: hashToken(token) })
     // The next page does not show it again.

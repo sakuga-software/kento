@@ -31,14 +31,14 @@ const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', '
 export const PROVIDER_NOTICES = {
   added: { tone: 'ok', text: 'Provider ajouté. Testez-le pour vérifier la clé.' },
   // No « Tester » for these two: the service has no key, and cannot reach the server of a runner.
-  added_runner: { tone: 'ok', text: 'Provider ajouté. Sa clé reste sur le runner : le premier job d’un runner qui l’a dira si elle marche.' },
-  added_ollama: { tone: 'ok', text: 'Provider ajouté. Son serveur est sur le réseau d’un runner : le premier job d’un runner avec PROVIDER_KIND=ollama dira s’il répond.' },
+  added_runner: { tone: 'ok', text: 'Provider ajouté. Sa clé reste sur le runner, et le premier job d’un runner qui l’a dira si elle marche.' },
+  added_ollama: { tone: 'ok', text: 'Provider ajouté. Son serveur est sur le réseau d’un runner. Le premier job d’un runner avec PROVIDER_KIND=ollama dira s’il répond.' },
   replaced: { tone: 'ok', text: 'Clé remplacée. L’ancienne n’est plus gardée.' },
-  default: { tone: 'ok', text: 'Ce provider est maintenant « Par défaut » : les niveaux sans provider choisi l’utilisent.' },
+  default: { tone: 'ok', text: 'Ce provider est maintenant « Par défaut ». Les niveaux sans provider choisi l’utilisent.' },
   removed: { tone: 'info', text: 'Provider retiré, avec sa clé.' },
   tested_ok: { tone: 'ok', text: 'Le provider a accepté la clé.' },
   tested_refused: { tone: 'alert', text: 'Le provider a refusé la clé.' },
-  test_failed: { tone: 'alert', text: 'Le test n’a pas abouti : l’état du provider ne change pas.' },
+  test_failed: { tone: 'alert', text: 'Le test n’a pas abouti, et l’état du provider ne change pas.' },
   missing: { tone: 'alert', text: 'Ce provider n’existe plus, ou a déjà changé.' },
 } as const
 export type ProviderNotice = keyof typeof PROVIDER_NOTICES
@@ -95,7 +95,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
                 : 'Ce provider n’est pas celui des jobs.'
               : levels.length > 0
                 ? `Les jobs ${levels.length > 1 ? 'des niveaux' : 'du niveau'} ${levelList(levels)} échouent tant qu’elle n’est pas remplacée.`
-                : 'Aucun niveau de l’org ne l’utilise : seul un repo qui l’a choisi dans sa Config en est touché.'
+                : 'Aucun niveau de l’organisation ne l’utilise. Seul un repo qui l’a choisi dans sa Config en est touché.'
           return (
             <div class="banner banner-alert" role="alert">
               <p>
@@ -173,8 +173,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
               <div class="empty">
                 <p>
                   {serviceKey
-                    ? 'Aucun provider : les jobs utilisent la clé OpenRouter du service. Ajoutez le vôtre pour payer vos reviews et choisir vos modèles.'
-                    : 'Aucun provider, et le service n’a pas de clé : seul un runner avec sa propre clé fait les reviews.'}
+                    ? 'Aucun provider. Les jobs utilisent la clé OpenRouter du service. Ajoutez le vôtre pour payer vos reviews et choisir vos modèles.'
+                    : 'Aucun provider, et le service n’a pas de clé. Seul un runner avec sa propre clé fait les reviews.'}
                 </p>
               </div>
             ) : (
@@ -273,14 +273,15 @@ function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] 
       return (
         <p class="hint provider-usage">
           {levels.length === LEVELS.length ? (
-            <>Fait les niveaux {levelList(levels)} de l’org.</>
+            <>Fait les niveaux {levelList(levels)} de l’organisation.</>
           ) : levels.length > 0 ? (
             <>
-              Fait les niveaux {levelList(levels)} de l’org ; {levelList(others)} {others.length > 1 ? 'ont' : 'a'} un autre provider, choisi
+              Fait les niveaux {levelList(levels)} de l’organisation. {others.length > 1 ? 'Les niveaux' : 'Le niveau'} {levelList(others)}{' '}
+              {others.length > 1 ? 'ont' : 'a'} un autre provider, choisi
               dans {defaults}.
             </>
           ) : (
-            <>Aucun niveau de l’org ne l’utilise : chacun a son provider, choisi dans {defaults}.</>
+            <>Aucun niveau de l’organisation ne l’utilise. Chacun a son provider, choisi dans {defaults}.</>
           )}{' '}
           Un repo peut choisir le sien dans sa Config.
         </p>
@@ -288,7 +289,7 @@ function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] 
     }
     return levels.length > 0 ? (
       <p class="hint provider-usage">
-        Choisi pour {levels.length > 1 ? 'les niveaux' : 'le niveau'} {levelList(levels)} de l’org, dans {defaults}.
+        Choisi pour {levels.length > 1 ? 'les niveaux' : 'le niveau'} {levelList(levels)} de l’organisation, dans {defaults}.
       </p>
     ) : null
   }
@@ -335,7 +336,7 @@ function ProviderItem(
                   ••••{provider.keyLast4}
                 </span>
               ) : provider.kind === 'ollama' ? (
-                'aucune : serveur du runner'
+                'aucune, serveur du runner'
               ) : (
                 'sur le runner (PROVIDER_API_KEY)'
               )}
@@ -373,13 +374,13 @@ function ProviderItem(
         {state === 'refused' && provider.refusedMessage ? <p class="hint">Dernière réponse : {provider.refusedMessage}</p> : null}
         {provider.runnerHeld && state === 'refused' ? (
           <p class="hint provider-todo">
-            <strong>Que faire</strong> : remplacez <span class="mono">PROVIDER_API_KEY</span> sur les runners de l’organisation qui ont{' '}
+            <strong>Que faire.</strong> Remplacez <span class="mono">PROVIDER_API_KEY</span> sur les runners de l’organisation qui ont{' '}
             <span class="mono">PROVIDER_KIND={provider.kind}</span>, puis relancez une review. Le premier job qui aboutit efface ce refus.
           </p>
         ) : null}
         {state === 'runner' ? (
           <p class="hint">
-            Le service n’a pas cette clé : un runner de l’organisation avec <span class="mono">PROVIDER_KIND={provider.kind}</span> fait
+            Le service n’a pas cette clé. Un runner de l’organisation avec <span class="mono">PROVIDER_KIND={provider.kind}</span> fait
             ses jobs, et son état se lit dans ses jobs.
           </p>
         ) : null}
@@ -537,7 +538,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               URL du serveur
             </label>
             <input class="input mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
-            {message('baseUrl', 'Vide : l’URL du type. Obligatoire pour un serveur compatible OpenAI. HTTPS, sauf Ollama.')}
+            {message('baseUrl', 'Laissez vide pour l’URL du type. Obligatoire pour un serveur compatible OpenAI. HTTPS, sauf Ollama.')}
           </div>
           <div class="field">
             <label class="field-label" for="provider-apiKey">
@@ -558,7 +559,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           <label class="choice">
             <input type="checkbox" name="runnerHeld" checked={values.runnerHeld ? true : undefined} autoFocus={focusRunnerHeld ? true : undefined} />
             <span>
-              <strong>La clé reste sur le runner</strong> — un runner de l’organisation l’a dans <span class="mono">PROVIDER_API_KEY</span> ; le
+              <strong>La clé reste sur le runner.</strong> Un runner de l’organisation l’a dans <span class="mono">PROVIDER_API_KEY</span> ; le
               service ne l’a jamais.
             </span>
           </label>
@@ -581,7 +582,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                 />
               </div>
             ))}
-            {message('models', 'Séparés par des virgules, le premier d’abord. Vide : les modèles par défaut du type (Anthropic, OpenRouter).')}
+            {message('models', 'Séparés par des virgules, le premier d’abord. Laissez vide pour les modèles par défaut du type (Anthropic, OpenRouter).')}
           </fieldset>
           <button class="button button-primary" type="submit">
             Ajouter le provider

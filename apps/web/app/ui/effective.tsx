@@ -4,7 +4,7 @@ import { originText, providerLine, type EffectiveLevel } from '../repo-config/ef
 import type { Source } from '../repo-config/model.ts'
 
 /**
- * REV-27. « Prochain job : Anthropic de Sakuga · clé du runner · claude-haiku-4-5, repli … — le
+ * REV-27. « Prochain job : Anthropic de Sakuga · clé du runner · claude-haiku-4-5, repli … · le
  * provider « Par défaut » de Providers et clés ». The same words in Réglages and in Config.
  */
 export function EffectiveLine(handle: Handle<{ effective: EffectiveLevel; scope: 'org' | 'repo'; source: Source }>) {
@@ -21,7 +21,7 @@ export function EffectiveLine(handle: Handle<{ effective: EffectiveLevel; scope:
         ) : effective.model ? (
           ', sans repli'
         ) : null}
-        <span class="hint"> — {originText(effective, scope, source)}</span>
+        <span class="hint"> · {originText(effective, scope, source)}</span>
         {effective.configured ? (
           <span class="hint">
             {' '}

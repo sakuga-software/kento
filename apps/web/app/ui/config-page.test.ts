@@ -115,7 +115,7 @@ describe('the Config screen of a repository', () => {
     let { signIn } = setup({ models: { heavy: { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null } } })
     let { html } = await signIn()
     assert.match(html, /<title>Config de orchard · Kentō<\/title>/)
-    assert.match(html, /config v0 : tout est hérité de l’org/)
+    assert.match(html, /config v0, tout est hérité de l’organisation/)
     for (let tab of ['Provider et modèles', 'Niveaux et passes', 'Déclenchement', 'Règles', 'Assignation']) assert.match(html, new RegExp(tab))
     assert.match(html, /aria-current="page">Provider et modèles/)
     assert.match(html, /value="anthropic\/claude-haiku-5\.5"/)
@@ -143,7 +143,7 @@ describe('the Config screen of a repository', () => {
     let reset = await request(`/repos/${ORCHARD}/config/reset`, { cookie, form: { _csrf: csrf2, version: '1', field: 'models.balanced' } })
     assert.equal(reset.status, 303)
     assert.deepEqual(rows[ORCHARD]!.config, {})
-    assert.match(await (await request(reset.headers.get('Location')!, { cookie })).text(), /Valeur de l’org reprise<\/strong> \(v2\)/)
+    assert.match(await (await request(reset.headers.get('Location')!, { cookie })).text(), /Valeur de l’organisation reprise<\/strong> \(v2\)/)
   })
 
   it('sets the trigger, the paths, the limit and the default level, each with its own form', async () => {
@@ -169,6 +169,11 @@ describe('the Config screen of a repository', () => {
     let levels = await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text()
     assert.match(levels, /value="balanced" checked/)
     assert.match(levels, /Une passe/)
+    // REV-43: « Bientôt » and no milestone of the team; a label ends with a period, not an em dash.
+    assert.doesNotMatch(levels.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b|bench/, 'the paths of the icons aside')
+    assert.match(levels, /<span class="tag tag-quiet">Bientôt<\/span>/)
+    assert.match(levels, /<strong class="mono">lite<\/strong>\. Rapide et le moins cher, environ 1 centime par review\./)
+    assert.doesNotMatch(levels + trigger, / — /)
   })
 
   it('sends a wrong form back with its values and its errors (422), and writes nothing', async () => {
@@ -180,7 +185,7 @@ describe('the Config screen of a repository', () => {
     })
     assert.equal(response.status, 422)
     let html = await response.text()
-    assert.match(html, /Choisissez un provider de l’org\./)
+    assert.match(html, /Choisissez un provider de l’organisation\./)
     assert.match(html, /value="a b"/)
     assert.match(html, /aria-invalid="true"/)
     let cap = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'monthlyCapUsd', monthlyCapUsd: 'beaucoup' } })
@@ -258,7 +263,7 @@ describe('the Config screen of a repository', () => {
     assert.match(await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text(), /value="heavy" checked/)
   })
 
-  it('names the tabs of M5 with « Bientôt » and no link (REV-32)', async () => {
+  it('names the tabs to come with « Bientôt » and no link (REV-32)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()
     let html = await (await request(`/repos/${ORCHARD}/config`, { cookie })).text()
@@ -268,11 +273,11 @@ describe('the Config screen of a repository', () => {
     assert.match(html, /<span class="config-tab-soon">Assignation<span class="tag tag-quiet">Bientôt<\/span><span class="visually-hidden"> : pas encore disponible<\/span><\/span>/)
   })
 
-  it('shows the tabs of M5 empty', async () => {
+  it('shows the tabs to come empty, with no milestone name (REV-43)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()
-    assert.match(await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text(), /arrivent avec M5/)
-    assert.match(await (await request(`/repos/${ORCHARD}/config?tab=assignment`, { cookie })).text(), /arrivent avec M5/)
+    assert.match(await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text(), /arrivent bientôt\./)
+    assert.match(await (await request(`/repos/${ORCHARD}/config?tab=assignment`, { cookie })).text(), /arrivent bientôt\./)
   })
 })
 
@@ -285,7 +290,7 @@ describe('the provider « Par défaut » in Config (REV-27)', () => {
         id: DEFAULT_ID,
         kind: 'anthropic',
         label: 'Anthropic de Sakuga',
-        hint: 'Anthropic, provider par défaut de l’org · clé sur le runner',
+        hint: 'Anthropic, provider par défaut de l’organisation · clé sur le runner',
         isDefault: true,
         keyFrom: 'clé du runner',
         serviceHoldsKey: false,
@@ -300,14 +305,14 @@ describe('the provider « Par défaut » in Config (REV-27)', () => {
     let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))
     assert.match(lite, /<strong>Anthropic de Sakuga · clé du runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>, sans repli/)
     assert.match(lite, new RegExp(`<option value="${DEFAULT_ID}" selected>`))
-    assert.match(lite, /Remplacer ici fixe ce choix pour le repo : le niveau ne suivra plus le provider « Par défaut »/)
+    assert.match(lite, /Remplacer ici fixe ce choix pour le repo, et le niveau ne suivra plus le provider « Par défaut »/)
   })
 
   it('a level that the org chose shows no such warning', async () => {
     let { signIn } = setup({ models: { lite: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } } }, catalog)
     let { html } = await signIn()
     let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))
-    assert.match(lite, /choisi pour l’org/)
+    assert.match(lite, /choisi pour l’organisation/)
     assert.doesNotMatch(lite, /ne suivra plus le provider/)
   })
 

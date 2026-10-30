@@ -92,7 +92,7 @@ test.describe('the settings of the org', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
     let cap = page.getByRole('region', { name: 'Plafond de coût' })
     await expect(cap.getByText('0,02 $', { exact: false }).first()).toBeVisible()
-    await expect(page.getByText('réglages v0 : les valeurs de Kentō')).toBeVisible()
+    await expect(page.getByText('réglages v0, les valeurs de Kentō')).toBeVisible()
     await expectNoAxeViolations(page)
 
     await cap.getByLabel('Plafond par jour ($)').fill('0,01')

@@ -240,7 +240,7 @@ export function readModelsForm(form: FormData, providers: readonly { id: string;
   let model = field(form, 'model')
   let fallback = field(form, 'fallback')
   let kind = providers.find((p) => p.id === provider)?.kind
-  if (!kind) errors.provider = 'Choisissez un provider de l’org.'
+  if (!kind) errors.provider = 'Choisissez un provider de l’organisation.'
   if (model === '') errors.model = 'Indiquez un modèle.'
   else if (!MODEL.test(model)) errors.model = MODEL_HELP
   else if (kind && wrongIdForm(kind, model)) errors.model = ID_FORM_HELP[kind as 'openrouter' | 'anthropic']

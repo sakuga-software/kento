@@ -190,8 +190,8 @@ function setup(
 
 describe('the words of the dashboard', () => {
   it('says why a job failed, in French for the reasons of the service', () => {
-    assert.equal(failureText({ reason: 'lease expired 2 times', runnerName: 'runners-host' }), 'le bail a expiré deux fois sur runners-host')
-    assert.equal(failureText({ reason: 'lease expired 1 times', runnerName: null }), 'le bail a expiré une fois')
+    assert.equal(failureText({ reason: 'lease expired 2 times', runnerName: 'runners-host' }), 'le runner a cessé de répondre pendant le job deux fois, en dernier runners-host')
+    assert.equal(failureText({ reason: 'lease expired 1 times', runnerName: null }), 'le runner a cessé de répondre pendant le job une fois')
     assert.equal(
       failureText({ reason: 'the provider « Anthropic » refused its key (401): unauthorized', runnerName: null }),
       'le provider « Anthropic » a refusé sa clé (401)',
@@ -296,7 +296,7 @@ describe('the dashboard', () => {
     let { html } = await signIn(ALEX)
     assert.deepEqual([...new Set(reads)], [ORG.id])
     assert.match(html, /La review lite de <span class="mono">sakuga-software\/orchard#128<\/span> a échoué/)
-    assert.match(html, /le bail a expiré deux fois sur runners-host/)
+    assert.match(html, /le runner a cessé de répondre pendant le job deux fois, en dernier runners-host/)
     assert.match(html, /La review précédente \(3\/5, publiée le/)
     assert.match(html, /href="https:\/\/github.com\/sakuga-software\/orchard\/pull\/128"/)
     assert.match(html, /action="\/jobs\/11111111-1111-4111-8111-111111111111\/retry"/)
@@ -309,9 +309,14 @@ describe('the dashboard', () => {
     assert.match(html, /2 reviews ou résolutions du mois sans coût/)
     assert.match(html, /Sur <span class="mono">mac-mini<\/span>/)
     assert.match(html, /tentative 2/)
+    // REV-43: the queue says « réservé jusqu’à » with a hint, never the « bail » of the runner protocol.
+    assert.match(html, /<span title="Sans signal du runner avant cette heure, le job repart en file.">\s*réservé jusqu’à <time/)
+    assert.doesNotMatch(html, /\bbail\b/)
     assert.match(html, /href="\/runners"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/config"/)
-    assert.match(html, /à partir de 10 findings clos/)
+    assert.match(html, /Bientôt\. La part des findings confirmés/)
+    assert.doesNotMatch(html.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b/, 'no milestone of the team on screen, the paths of the icons aside (REV-43)')
+    assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
     assert.match(html, /encore sur\s*<code>review.yml<\/code>/)
     assert.match(html, /src="\/assets\/dashboard.js\?v=1.2.3"/)
   })
@@ -320,7 +325,7 @@ describe('the dashboard', () => {
     let { signIn } = setup()
     let { html } = await signIn(CAMILLE)
     assert.match(html, /Lecture seule/)
-    assert.match(html, /le bail a expiré deux fois/)
+    assert.match(html, /le runner a cessé de répondre pendant le job deux fois/)
     assert.doesNotMatch(html, /\/retry"/)
     assert.doesNotMatch(html, /Relancer en/)
   })

@@ -213,7 +213,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
               </li>
               <li>Un job en échec remet le compteur à zéro ; une double publication aussi.</li>
               <li>
-                À {SWITCH_TARGET}/{SWITCH_TARGET}, « Retirer review.yml » ouvre la suppression du fichier sur GitHub : le commit
+                À {SWITCH_TARGET}/{SWITCH_TARGET}, « Retirer review.yml » ouvre la suppression du fichier sur GitHub. Le commit
                 qui le retire termine la bascule.
               </li>
             </ul>
@@ -222,7 +222,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
             <h2 id="fallback-title">Repli pendant la transition</h2>
             <ul>
               <li>
-                Tant que review.yml reste dans le repo, l’Action relit aussi chaque push : la PR reçoit deux reviews, et celle de
+                Tant que review.yml reste dans le repo, l’Action relit aussi chaque push. La PR reçoit alors deux reviews, et celle de
                 l’Action sert de repli si Kentō échoue.
               </li>
               <li>
@@ -347,7 +347,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
                 submit={`Désactiver ${name}`}
               >
                 <p>
-                  Aucun nouveau job ne part : le prochain push ne crée rien, et les jobs en file sont annulés. Les reviews
+                  Aucun nouveau job ne part. Le prochain push ne crée rien, et les jobs en file sont annulés. Les reviews
                   déjà publiées restent sur GitHub, et le compteur de bascule garde sa valeur.
                 </p>
               </Confirm>

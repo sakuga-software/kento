@@ -116,7 +116,7 @@ test.describe('the Config screen of a repository', () => {
 
       await page.getByRole('link', { name: 'Config de orchard' }).click()
       await expect(page.getByRole('heading', { level: 1, name: 'Config de orchard' })).toBeVisible()
-      await expect(page.getByText('config v0 : tout est hérité de l’org')).toBeVisible()
+      await expect(page.getByText('config v0, tout est hérité de l’organisation')).toBeVisible()
       let balanced = page.getByRole('region', { name: 'balanced' })
       await expect(balanced.getByText('hérité de l’org')).toBeVisible()
       await expect(balanced.getByLabel('Modèle', { exact: true })).toHaveValue('anthropic/claude-sonnet-5.5')
@@ -152,7 +152,7 @@ test.describe('the Config screen of a repository', () => {
       // « Revenir à l'org »: the next push takes the value of the org (here, of Kentō).
       await page.getByRole('link', { name: 'Provider et modèles' }).click()
       await page.getByRole('button', { name: 'Revenir à l’org pour balanced' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'Valeur de l’org reprise (v3)' })).toBeVisible()
+      await expect(page.getByRole('status').filter({ hasText: 'Valeur de l’organisation reprise (v3)' })).toBeVisible()
       await expect(page.getByRole('region', { name: 'balanced' }).getByText('hérité de l’org')).toBeVisible()
       expect((await pullRequest(page, { action: 'synchronize', head: head(2) })).outcome).toBe('queued')
       let last = (await jobsOforchard()).at(-1)!

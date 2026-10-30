@@ -102,7 +102,7 @@ test.describe('the dashboard', () => {
 
     let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
     await expect(banner).toBeVisible()
-    await expect(banner.getByText('Raison : le bail a expiré deux fois sur runners-host.')).toBeVisible()
+    await expect(banner.getByText('Raison : le runner a cessé de répondre pendant le job deux fois, en dernier runners-host.')).toBeVisible()
     await expect(banner.getByText(/La review précédente \(3\/5, publiée le .*\) reste publiée sur la PR\./)).toBeVisible()
     await expect(banner.getByRole('link', { name: 'Voir la PR' })).toHaveAttribute('href', /\/sakuga-software\/dash-e2e\/pull\/41$/)
     // The estimate of balanced: the mean of the balanced reviews of the repository.
@@ -140,7 +140,7 @@ test.describe('the dashboard', () => {
     await expectNoAxeViolations(page)
 
     await banner.getByRole('button', { name: /Relancer en balanced/ }).click()
-    await expect(page.getByText('Review relancée : le job est en file.')).toBeVisible()
+    await expect(page.getByText('Review relancée. Le job est en file.')).toBeVisible()
     await expect(page.getByText('Relance en balanced en file')).toBeVisible()
     await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
 
@@ -162,7 +162,7 @@ test.describe('the dashboard', () => {
     }
     await page.goto('/')
     await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Échecs récents' }).getByText('le bail a expiré deux fois sur runners-host')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Échecs récents' }).getByText('le runner a cessé de répondre pendant le job deux fois, en dernier runners-host')).toBeVisible()
     expect(errors).toEqual([])
   })
 

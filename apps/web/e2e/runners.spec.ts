@@ -35,7 +35,7 @@ async function createToken(page: Page, name: string, labels: string, keyMode: 'a
   let form = page.locator('#nouveau-runner')
   await form.getByLabel('Nom').fill(name)
   await form.getByLabel('Labels').fill(labels)
-  await form.getByRole('radio', { name: keyMode === 'app' ? /Clé de l’app/ : /Clé du runner/ }).check()
+  await form.getByRole('radio', { name: keyMode === 'app' ? /Clé du service/ : /Clé du runner/ }).check()
   await form.getByRole('button', { name: 'Créer le token' }).click()
   await expect(page.getByRole('heading', { name: `Token de ${name}` })).toBeVisible()
   let command = await page.getByLabel('Commande docker run').inputValue()
@@ -54,7 +54,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   expect(command).toContain('-e KENTO_RUNNER_LABELS=macos,arm64')
   expect(command).toContain('-e PROVIDER_API_KEY=<votre clé OpenRouter>')
   expect(command).toMatch(/ghcr\.io\/sakuga-software\/kento-runner:\d+\.\d+\.\d+$/)
-  await expect(page.getByText('il ne sera plus affiché')).toBeVisible()
+  await expect(page.getByText('Il ne sera plus affiché')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Copier la commande' })).toBeVisible()
   await expectNoAxeViolations(page)
 
@@ -88,8 +88,8 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   expect((await request.post('/api/runner/register', { headers: { Authorization: `Bearer ${token}` }, data: { name: 'x', labels: [], version: '0.0.1' } })).status()).toBe(401)
 
   await card.getByRole('button', { name: 'Marquer de confiance' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'reçoit maintenant la clé de l’app' })).toBeVisible()
-  await expect(card.getByText('Clé de l’app (de confiance)')).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'reçoit maintenant la clé du service' })).toBeVisible()
+  await expect(card.getByText('Clé du service (de confiance)')).toBeVisible()
 
   await card.getByText('Révoquer…').click()
   await expect(card.getByText('cessera de marcher à son prochain appel')).toBeVisible()
@@ -181,7 +181,7 @@ for (let theme of ['paper', 'sumi'] as const) {
     await expect(page.getByRole('heading', { name: 'Protocole' })).toBeHidden()
     await page.getByText('Détails techniques').click()
     await expect(page.getByRole('heading', { name: 'Protocole' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Bail et tentatives' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Réservation et tentatives' })).toBeVisible()
     await expectNoAxeViolations(page)
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
@@ -219,7 +219,7 @@ test('a runner offline for 2 h is « Hors ligne », in red, at the top; a new to
 
   let form = page.locator('#nouveau-runner')
   await expect(form.getByRole('radio', { name: /Clé du runner/ })).toBeChecked()
-  await expect(form.getByRole('radio', { name: /Clé de l’app/ })).not.toBeChecked()
+  await expect(form.getByRole('radio', { name: /Clé du service/ })).not.toBeChecked()
   await expectNoAxeViolations(page)
 
   db = sql()

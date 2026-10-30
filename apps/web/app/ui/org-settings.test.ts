@@ -216,7 +216,7 @@ describe('the settings of the org (REV-13)', () => {
     assert.deepEqual(rows[OTHER_ORG.id]!.caps, { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 }, 'the other org keeps its limits')
     let html = await (await request('/settings?org=saved&v=1', { cookie })).text()
     assert.match(html, /Réglages enregistrés/)
-    assert.match(html, /Plafond du jour atteint : 1,50\s\$ sur 0,01\s\$/)
+    assert.match(html, /Plafond du jour atteint, 1,50\s\$ sur 0,01\s\$/)
     assert.match(html, /réglages v1, modifiés par alex/)
   })
 
@@ -290,7 +290,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'models.lite', provider: 'not-ours', model: 'x', fallback: '' } })
     assert.equal(response.status, 422)
-    assert.match(await response.text(), /Choisissez un provider de l’org/)
+    assert.match(await response.text(), /Choisissez un provider de l’organisation/)
     assert.deepEqual(saves, [])
   })
 
@@ -325,7 +325,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie } = await signIn(CAMILLE)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /4 points à corriger/)
-    assert.match(html, /Checks : écriture<span class="field-error"> — accordé : lecture/)
+    assert.match(html, /Checks : écriture<span class="field-error">, accordé : lecture/)
     assert.match(html, /issue_comment : non abonné/)
     assert.match(html, /Kentō attend <span class="mono">https:\/\/review\.sakuga\.dev\/webhooks\/github/)
     assert.match(html, /SSL non vérifié/)
@@ -347,7 +347,7 @@ describe('one rule for the provider of a level (REV-27)', () => {
     id: DEFAULT_ID,
     kind: 'anthropic' as const,
     label: 'Anthropic de Sakuga',
-    hint: 'Anthropic, provider par défaut de l’org · clé sur le runner',
+    hint: 'Anthropic, provider par défaut de l’organisation · clé sur le runner',
     isDefault: true,
     keyFrom: 'clé du runner',
     serviceHoldsKey: false,
@@ -377,8 +377,8 @@ describe('one rule for the provider of a level (REV-27)', () => {
     let html = await (await request('/settings', { cookie })).text()
     let heavy = html.slice(html.indexOf('id="org-heavy"'))
     assert.match(heavy, /<strong>OpenRouter · clé du service<\/strong> · <span class="mono">anthropic\/claude-opus-5.5<\/span>/)
-    assert.match(heavy, /choisi pour l’org ; ne suit pas le provider « Par défaut »/)
-    assert.match(html, /La clé OpenRouter du service a aussi sa limite de 10 \$ par jour/)
+    assert.match(heavy, /choisi pour l’organisation, ne suit pas le provider « Par défaut »/)
+    assert.match(html, /La clé OpenRouter du service a aussi sa propre limite de 10 \$ par jour/)
   })
 })
 

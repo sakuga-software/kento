@@ -151,8 +151,8 @@ export function newerVersion(version: string | null, latest: string): string | n
 /** What the screen says after a form, from `?notice=`. */
 export const RUNNER_NOTICES = {
   revoked: 'Runner révoqué. Son token ne marche plus, et son job en cours est reparti en file.',
-  trusted: 'Le runner reçoit maintenant la clé de l’app quand il n’a pas la sienne.',
-  untrusted: 'Le runner ne reçoit plus la clé de l’app.',
+  trusted: 'Le runner reçoit maintenant la clé du service quand il n’a pas la sienne.',
+  untrusted: 'Le runner ne reçoit plus la clé du service.',
   discarded: 'Token d’enregistrement annulé.',
   missing: 'Ce runner ou ce token n’existe plus, ou a déjà changé.',
   revoked_silent: 'Runners muets révoqués. Leurs tokens ne marchent plus, et leurs jobs en cours sont repartis en file.',
@@ -316,7 +316,7 @@ function CreatedToken(handle: Handle<{ created: CreatedRegistration; kentoUrl: s
         </h2>
         <div class="banner banner-alert" role="status">
           <p>
-            <strong>Copiez-le maintenant :</strong> il ne sera plus affiché. Il sert une fois, jusqu’à{' '}
+            <strong>Copiez-le maintenant.</strong> Il ne sera plus affiché. Il sert une fois, jusqu’à{' '}
             <time dateTime={created.expiresAt.toISOString()}>{hour(created.expiresAt)}</time>.
           </p>
         </div>
@@ -360,7 +360,7 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
           ) : (
             <>
               Valable jusqu’à <time dateTime={registration.expiresAt.toISOString()}>{hour(registration.expiresAt)}</time>.{' '}
-              {registration.trusted ? 'Clé de l’app.' : 'Clé du runner.'}
+              {registration.trusted ? 'Clé du service.' : 'Clé du runner.'}
             </>
           )}
         </p>
@@ -379,7 +379,7 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
               submit={`Annuler le token de ${registration.name}`}
             >
               <p>
-                Le token de <strong class="mono">{registration.name}</strong> cesse de marcher tout de suite : aucun runner
+                Le token de <strong class="mono">{registration.name}</strong> cesse de marcher tout de suite. Aucun runner
                 ne pourra s’enregistrer avec. Pour enregistrer ce runner, il faudra un nouveau token.
               </p>
             </Confirm>
@@ -462,7 +462,7 @@ function RunnerRow(
         <td data-label="État">
           <span class={`status status-${state}`}>{runnerStateLabel(runner, now)}</span>
         </td>
-        <td data-label="Clé du modèle">{runner.trusted ? 'Clé de l’app (de confiance)' : 'Clé du runner'}</td>
+        <td data-label="Clé du modèle">{runner.trusted ? 'Clé du service (de confiance)' : 'Clé du runner'}</td>
         <td data-label="Version">
           <span class="stack">
             <span class="mono">{runner.version ?? '—'}</span>
@@ -556,21 +556,21 @@ function ProtocolFacts(handle: Handle<{ version: string }>) {
           </dd>
         </div>
         <div>
-          <dt>Attente d’un claim</dt>
+          <dt>Attente d’un job</dt>
           <dd>{CLAIM_WAIT_SECONDS} s</dd>
         </div>
         <div>
-          <dt>Heartbeat</dt>
+          <dt>Signal pendant un job</dt>
           <dd>toutes les {HEARTBEAT_SECONDS} s</dd>
         </div>
         <div>
-          <dt>Corps maximal</dt>
+          <dt>Taille maximale d’une requête</dt>
           <dd>{Math.round(MAX_BODY_BYTES / 1000)} ko</dd>
         </div>
         <div>
           <dt>Token du runner</dt>
           <dd>
-            <span class="mono">{RUNNER_TOKEN_PREFIX}…</span>, gardé en hash
+            <span class="mono">{RUNNER_TOKEN_PREFIX}…</span>, seule son empreinte est gardée
           </dd>
         </div>
         <div>
@@ -586,12 +586,12 @@ function LeaseFacts(_handle: Handle<{}>) {
   return () => (
     <section class="card facts" aria-labelledby="lease-title">
       <h2 id="lease-title" class="section-title">
-        Bail et tentatives
+        Réservation et tentatives
       </h2>
       <dl>
         <div>
-          <dt>Bail</dt>
-          <dd>{LEASE_SECONDS} s, prolongé à chaque heartbeat</dd>
+          <dt>Réservation d’un job</dt>
+          <dd>{LEASE_SECONDS} s, prolongée à chaque signal du runner</dd>
         </div>
         <div>
           <dt>Tentatives</dt>
@@ -613,7 +613,7 @@ function LeaseFacts(_handle: Handle<{}>) {
 function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['form'] }>) {
   return () => {
     let { csrf, form } = handle.props
-    // The runner keeps its own key unless an admin chooses to trust it with the key of the app.
+    // The runner keeps its own key unless an admin chooses to trust it with the key of the service.
     let values = form?.values ?? { name: '', labels: '', keyMode: 'runner' as const }
     let errors = form?.errors ?? {}
     return (
@@ -622,7 +622,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
           Nouveau runner
         </h2>
         <p class="hint">
-          Le nom, les labels et la clé sont figés dans le token : le runner ne peut pas les changer. Le token sert une
+          Le nom, les labels et la clé sont figés dans le token, et le runner ne peut pas les changer. Le token sert une
           fois, pendant {REGISTRATION_TTL_MINUTES} min.
         </p>
         <form method="post" action={routes.runnerNew.href()} noValidate>
@@ -682,14 +682,14 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
             <label class="choice">
               <input type="radio" name="keyMode" value="runner" checked={values.keyMode === 'runner'} />
               <span>
-                <strong>Clé du runner</strong> — la machine a sa propre clé (PROVIDER_API_KEY) ; le service n’envoie
+                <strong>Clé du runner.</strong> La machine a sa propre clé (PROVIDER_API_KEY), et le service n’envoie
                 jamais la sienne.
               </span>
             </label>
             <label class="choice">
               <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
               <span>
-                <strong>Clé de l’app</strong> — le runner est de confiance et reçoit la clé du service avec chaque job.
+                <strong>Clé du service.</strong> Le runner est de confiance et reçoit la clé du service avec chaque job.
               </span>
             </label>
             {errors.keyMode ? (

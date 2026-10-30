@@ -2,7 +2,7 @@ import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
 import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview, RunnerCounts } from '../dashboard/store.ts'
-import { agoOrDate, agoShort, clock, duration, elapsed, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
+import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
@@ -15,19 +15,20 @@ export const REFRESH_SECONDS = 10
 
 /** What the dashboard says after « Relancer », from `?notice=`. */
 export const DASHBOARD_NOTICES = {
-  retried: 'Review relancée : le job est en file.',
+  retried: 'Review relancée. Le job est en file.',
   already: 'Une review de ce niveau est déjà en file ou en cours sur ce commit.',
-  stale: 'Un push plus récent a remplacé ce commit : sa review suit le nouveau commit.',
-  closed: 'La PR est fermée sur GitHub : rien n’est relancé.',
-  capped: 'Le plafond de coût de l’organisation est atteint : rien n’est relancé. Un admin le change dans Réglages.',
-  github_failed: 'GitHub n’a pas répondu : rien n’est relancé, réessayez dans un instant.',
+  stale: 'Un push plus récent a remplacé ce commit. Sa review suit le nouveau commit.',
+  closed: 'La PR est fermée sur GitHub, donc rien n’est relancé.',
+  capped: 'Le plafond de coût de l’organisation est atteint, donc rien n’est relancé. Un admin le change dans Réglages.',
+  github_failed: 'GitHub n’a pas répondu et rien n’est relancé. Réessayez dans un instant.',
   missing: 'Ce job n’existe plus, n’a pas échoué, ou son repo n’est plus activé.',
 } as const
 export type DashboardNotice = keyof typeof DASHBOARD_NOTICES
 
 
 /**
- * The reason of a failure, in words. The service writes « lease expired N times » and « the provider
+ * The reason of a failure, in words. The service writes « lease expired N times » (the runner stopped
+ * sending its signal during the job) and « the provider
  * « X » refused its key (401): … »; any other reason is the text of the runner, quoted.
  */
 export function failureText(job: Pick<FailedJob, 'reason' | 'runnerName'>): string {
@@ -37,7 +38,7 @@ export function failureText(job: Pick<FailedJob, 'reason' | 'runnerName'>): stri
   if (lease) {
     let n = Number(lease[1])
     let times = n === 1 ? 'une fois' : n === 2 ? 'deux fois' : n === 3 ? 'trois fois' : `${n} fois`
-    return `le bail a expiré ${times}${job.runnerName ? ` sur ${job.runnerName}` : ''}`
+    return `le runner a cessé de répondre pendant le job ${times}${job.runnerName ? `, en dernier ${job.runnerName}` : ''}`
   }
   let refused = /^the provider « (.+) » refused its key \((\d{3})\)/.exec(reason)
   if (refused) return `le provider « ${refused[1]} » a refusé sa clé (${refused[2]})`
@@ -128,7 +129,7 @@ export function setupSteps(
           key: 'app',
           title: 'Installer l’App GitHub',
           state: 'todo',
-          text: 'L’installation est suspendue sur GitHub : aucun push ne crée de job. Un propriétaire de l’organisation la réactive.',
+          text: 'L’installation est suspendue sur GitHub, et aucun push ne crée de job. Un propriétaire de l’organisation la réactive.',
           action: install,
         }
       : {
@@ -151,14 +152,14 @@ export function setupSteps(
             key: 'provider',
             title: 'Ajouter un provider',
             state: 'done',
-            text: 'Aucun provider : un runner de confiance reçoit la clé du service. Ajoutez le vôtre pour payer vos propres reviews.',
+            text: 'Aucun provider. Un runner de confiance reçoit la clé du service. Ajoutez le vôtre pour payer vos propres reviews.',
             action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
           }
         : {
             key: 'provider',
             title: 'Ajouter un provider',
             state: 'todo',
-            text: 'Aucun provider, et pas de clé du service : un runner n’a pas de modèle à appeler.',
+            text: 'Aucun provider, et pas de clé du service. Un runner n’a pas de modèle à appeler.',
             action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
           },
     online > 0
@@ -176,7 +177,7 @@ export function setupSteps(
             state: 'wait',
             text:
               registered > 0
-                ? 'Un runner est enregistré, mais aucun n’est en ligne : les jobs l’attendent en file.'
+                ? 'Un runner est enregistré, mais aucun n’est en ligne. Les jobs l’attendent en file.'
                 : 'Un token d’enregistrement attend son runner.',
             action: { label: 'Voir les runners', href: routes.runners.href() },
           }
@@ -184,7 +185,7 @@ export function setupSteps(
             key: 'runner',
             title: 'Enregistrer un runner',
             state: 'todo',
-            text: 'Aucun runner : les jobs attendraient en file.',
+            text: 'Aucun runner. Les jobs attendraient en file.',
             action: { label: 'Créer un runner', href: routes.runners.href() },
           },
     setup.enabledRepos > 0
@@ -199,7 +200,7 @@ export function setupSteps(
           key: 'repo',
           title: 'Activer un repo',
           state: 'todo',
-          text: 'Aucun repo activé : un push ne crée aucun job.',
+          text: 'Aucun repo activé. Un push ne crée aucun job.',
           action: { label: 'Activer un repo', href: routes.repos.href() },
         },
     jobs > 0
@@ -209,8 +210,8 @@ export function setupSteps(
           state: 'wait',
           text:
             queue.runningCount > 0
-              ? 'En attente de la première review : un runner fait le job.'
-              : 'En attente de la première review : le job est en file, un runner en ligne le prendra.',
+              ? 'En attente de la première review. Un runner fait le job.'
+              : 'En attente de la première review. Le job est en file, et un runner en ligne le prendra.',
           action: null,
         }
       : {
@@ -286,7 +287,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
                 Précision par repo
               </h2>
               <div class="empty">
-                <p>La part des findings confirmés, par repo, s’affichera ici à partir de 10 findings clos (M4).</p>
+                <p>Bientôt. La part des findings confirmés, par repo, s’affichera ici à partir de 10 findings clos.</p>
               </div>
             </section>
           </div>
@@ -298,7 +299,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
                   {screen.workflowRepos.length === 1 ? '1 repo est encore sur' : `${screen.workflowRepos.length} repos sont encore sur`}{' '}
                   <code>review.yml</code>
                 </strong>{' '}
-                ({screen.workflowRepos.join(', ')}) : leurs findings ne sont pas suivis ici. <a href={routes.repos.href()}>Voir les repos</a>
+                ({screen.workflowRepos.join(', ')}). Leurs findings ne sont pas suivis ici. <a href={routes.repos.href()}>Voir les repos</a>
               </p>
             </div>
           ) : null}
@@ -396,8 +397,8 @@ function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolea
             <p>
               <strong>
                 Relance en {banner.retry.level} {banner.retry.state === 'queued' ? 'en file' : 'en cours'}
-              </strong>{' '}
-              : ce bandeau disparaît quand sa review est publiée.
+              </strong>
+              . Ce bandeau disparaît quand sa review est publiée.
             </p>
           ) : null}
           <div class="banner-confirm-actions">
@@ -479,7 +480,7 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
         </div>
         {caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
           <p class="hint">
-            Aucun plafond pour l’organisation : un admin le fixe dans <a href={routes.settings.href()}>Réglages</a>.
+            Aucun plafond pour l’organisation. Un admin le fixe dans <a href={routes.settings.href()}>Réglages</a>.
           </p>
         ) : null}
         {costs.monthByProvider.length > 0 ? (
@@ -512,7 +513,7 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
         {costs.monthUnknown > 0 ? (
           <p class="hint">
             {costs.monthUnknown === 1 ? '1 review ou résolution' : `${costs.monthUnknown} reviews ou résolutions`} du mois sans coût
-            connu : comptées 0 $.
+            connu, comptées 0 $.
           </p>
         ) : null}
       </section>
@@ -599,7 +600,7 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; githubUrl: strin
         </h2>
         {recent.length === 0 ? (
           <div class="empty">
-            <p>Aucune review pour l’instant. Activez un repo dans <a href={routes.repos.href()}>Repos</a> : son prochain push en lance une.</p>
+            <p>Aucune review pour l’instant. Activez un repo dans <a href={routes.repos.href()}>Repos</a>, et son prochain push en lancera une.</p>
           </div>
         ) : (
           <ul class="dash-reviews">
@@ -677,7 +678,10 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
             <>
               Sur <span class="mono">{job.runnerName}</span> depuis{' '}
               <time dateTime={job.startedAt!.toISOString()}>{elapsed(job.startedAt!, now)}</time> · tentative{' '}
-              {job.attempts} · bail jusqu’à <time dateTime={job.leaseExpiresAt!.toISOString()}>{hourSeconds(job.leaseExpiresAt!)}</time>
+              {job.attempts} ·{' '}
+              <span title="Sans signal du runner avant cette heure, le job repart en file.">
+                réservé jusqu’à <time dateTime={job.leaseExpiresAt!.toISOString()}>{hour(job.leaseExpiresAt!)}</time>
+              </span>
               {job.runnerSeenAt ? (
                 <>
                   {' '}
@@ -759,7 +763,7 @@ function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; counts: Run
           </a>
         </div>
         {total === 0 ? (
-          <p class="hint">Aucun runner : les jobs attendent en file. Créez-en un dans Runners.</p>
+          <p class="hint">Aucun runner. Les jobs attendent en file. Créez-en un dans Runners.</p>
         ) : (
           <>
             <p class="runner-counts">{countsText(counts)}</p>

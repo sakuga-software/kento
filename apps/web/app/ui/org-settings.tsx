@@ -57,9 +57,9 @@ export interface OrgSectionProps {
 }
 
 const LEVEL_HINTS: Record<Level, string> = {
-  lite: `Rapide, le moins cher : ${levelCost('lite')} une review.`,
-  balanced: `Avec le code autour du changement : ${levelCost('balanced')}.`,
-  heavy: `Plus de raisonnement : ${levelCost('heavy')}.`,
+  lite: `Rapide et le moins cher, ${levelCost('lite')} par review.`,
+  balanced: `Lit aussi le code autour du changement, ${levelCost('balanced')}.`,
+  heavy: `Raisonne plus longtemps, ${levelCost('heavy')}.`,
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -74,7 +74,7 @@ const ACCESS: Record<'read' | 'write', string> = { read: 'lecture', write: 'écr
 
 /** « réglages v3, modifiés par alex le 29 oct. à 15:02 ». */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  if (view.version === 0) return 'réglages v0 : les valeurs de Kentō'
+  if (view.version === 0) return 'réglages v0, les valeurs de Kentō'
   let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
   let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
   return `réglages v${view.version}, modifiés${by}${at}`
@@ -101,9 +101,9 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
             <AlertIcon />
             <p>
               <strong>
-                Plafond {PERIOD_TEXT[hit.period]} atteint : {usd(hit.spentUsd)} sur {usd(hit.capUsd)}.
+                Plafond {PERIOD_TEXT[hit.period]} atteint, {usd(hit.spentUsd)} sur {usd(hit.capUsd)}.
               </strong>{' '}
-              Aucun nouveau job n’est lancé ; les jobs en cours finissent, et les reviews reprennent {resetWhen(hit.resetsAt)}.{' '}
+              Aucun nouveau job n’est lancé. Les jobs en cours finissent, et les reviews reprennent {resetWhen(hit.resetsAt)}.{' '}
               {admin ? <a href="#plafond">Relever le plafond</a> : 'Un admin de l’organisation peut le relever.'}
             </p>
           </div>
@@ -112,7 +112,7 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
           <div class="banner banner-info" role="status">
             <AlertIcon />
             <p>
-              <strong>Seuil d’alerte {PERIOD_TEXT[period]} atteint</strong> : {usd(period === 'day' ? spent.dayUsd : spent.monthUsd)} sur{' '}
+              <strong>Seuil d’alerte {PERIOD_TEXT[period]} atteint</strong>, {usd(period === 'day' ? spent.dayUsd : spent.monthUsd)} sur{' '}
               {usd((period === 'day' ? view.caps.dailyCapUsd : view.caps.monthlyCapUsd)!)} ({view.caps.alertPct} %).
             </p>
           </div>
@@ -246,9 +246,9 @@ function CapSection(handle: Handle<SectionProps>) {
           </div>
         </dl>
         <p class="hint">
-          Au plafond, aucun nouveau job n’est mis en file : un push reçoit le check « Kentō · plafond », une commande une réponse. Les
+          Au plafond, aucun nouveau job n’est mis en file. Un push reçoit le check « Kentō · plafond », et une commande reçoit une réponse. Les
           jobs déjà en file ou en cours finissent.
-          {usesServiceKey(handle.props) ? ' La clé OpenRouter du service a aussi sa limite de 10 $ par jour : un second garde-fou pour les niveaux qui l’utilisent.' : null}
+          {usesServiceKey(handle.props) ? ' La clé OpenRouter du service a aussi sa propre limite de 10 $ par jour, pour les niveaux qui l’utilisent.' : null}
         </p>
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
@@ -269,7 +269,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 aria-invalid={errors.dailyCapUsd ? 'true' : undefined}
                 aria-describedby={describedBy('cap-day', errors.dailyCapUsd, true)}
               />
-              <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Remis à zéro chaque nuit à minuit UTC. Vide : aucun plafond." />
+              <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Remis à zéro chaque nuit à minuit UTC. Laissez vide pour n’avoir aucun plafond." />
             </div>
             <div class="field">
               <label class="field-label" for="cap-month">
@@ -286,7 +286,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 aria-invalid={errors.monthlyCapUsd ? 'true' : undefined}
                 aria-describedby={describedBy('cap-month', errors.monthlyCapUsd, true)}
               />
-              <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Le mois calendaire, en UTC. Vide : aucun plafond." />
+              <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Le mois calendaire, en UTC. Laissez vide pour n’avoir aucun plafond." />
             </div>
             <div class="field">
               <label class="field-label" for="cap-alert">
@@ -360,7 +360,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                         autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
                       />
                       <span>
-                        <strong class="mono">{key}</strong> — {LEVEL_HINTS[key]}
+                        <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
                       </span>
                     </label>
                   ))}
@@ -379,7 +379,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
             </>
           ) : (
             <p>
-              <strong class="mono">{level}</strong> — {LEVEL_HINTS[level]}
+              <strong class="mono">{level}</strong>. {LEVEL_HINTS[level]}
             </p>
           )}
         </div>
@@ -514,12 +514,12 @@ function LevelDefault(
                     aria-invalid={errors.fallback ? 'true' : undefined}
                     aria-describedby={describedBy(`${id}-fallback`, errors.fallback, true)}
                   />
-                  <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Vide : pas de repli." />
+                  <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Laissez vide pour ne pas avoir de repli." />
                 </div>
               </div>
               {set ? null : (
                 <p class="hint">
-                  Enregistrer fixe ce choix pour l’org : le niveau ne suivra plus le provider « Par défaut ».
+                  Enregistrer fixe ce choix pour l’organisation, et le niveau ne suivra plus le provider « Par défaut ».
                 </p>
               )}
               <button class="button" type="submit">
@@ -604,7 +604,7 @@ function DeliveryLine(handle: Handle<{ delivery: DeliveryView | null; now: Date 
         <time dateTime={delivery.receivedAt.toISOString()} title={when(delivery.receivedAt)}>
           {agoOrDate(delivery.receivedAt, now)}
         </time>
-        {delivery.reason ? <span class="hint"> — {delivery.reason}</span> : null}
+        {delivery.reason ? <span class="hint">, {delivery.reason}</span> : null}
       </>
     )
   }
@@ -647,7 +647,7 @@ function AppSection(handle: Handle<SectionProps>) {
         ) : null}
         {!app ? (
           <p class="hint" role="note">
-            Le service n’a pas d’App GitHub (<span class="mono">GITHUB_APP_ID</span>) : il ne lit ni ses permissions ni son webhook.
+            Le service n’a pas d’App GitHub (<span class="mono">GITHUB_APP_ID</span>). Il ne lit ni ses permissions ni son webhook.
           </p>
         ) : null}
         <dl class="config-facts">
@@ -683,8 +683,8 @@ function AppSection(handle: Handle<SectionProps>) {
             <dt>Signature</dt>
             <dd>
               {webhookSecret
-                ? 'Vérifiée sur chaque livraison (X-Hub-Signature-256) ; une livraison mal signée reçoit 401 et n’est pas gardée.'
-                : 'Non configurée (GITHUB_WEBHOOK_SECRET) : le webhook répond 503.'}
+                ? 'Vérifiée sur chaque livraison (X-Hub-Signature-256). Une livraison mal signée reçoit 401 et n’est pas gardée.'
+                : 'Non configurée (GITHUB_WEBHOOK_SECRET), et le webhook répond 503.'}
             </dd>
           </div>
           <div>
@@ -706,7 +706,7 @@ function AppSection(handle: Handle<SectionProps>) {
               {view.deliveries.lastFailure ? (
                 <span class="hint">
                   {' '}
-                  — dernier : <DeliveryLine delivery={view.deliveries.lastFailure} now={now} />
+                  · dernier échec <DeliveryLine delivery={view.deliveries.lastFailure} now={now} />
                 </span>
               ) : null}
             </dd>
@@ -719,7 +719,7 @@ function AppSection(handle: Handle<SectionProps>) {
                   {permissions.map((p) => (
                     <li>
                       {p.ok ? <CheckIcon /> : <AlertIcon />} {PERMISSION_LABELS[p.name] ?? p.name} : {ACCESS[p.needed]}
-                      {p.ok ? null : <span class="field-error"> — accordé : {p.granted ? ACCESS[p.granted] : 'rien'}</span>}
+                      {p.ok ? null : <span class="field-error">, accordé : {p.granted ? ACCESS[p.granted] : 'rien'}</span>}
                     </li>
                   ))}
                 </ul>
@@ -757,7 +757,7 @@ function AppSection(handle: Handle<SectionProps>) {
             <a class="button" href={status.deliveriesUrl}>
               Rejouer depuis la page de l’App
             </a>{' '}
-            <span class="hint">« Recent Deliveries » → une livraison → « Redeliver ».</span>
+            <span class="hint">Ouvrez « Recent Deliveries », choisissez une livraison, puis « Redeliver ».</span>
           </p>
         ) : null}
       </section>
@@ -776,7 +776,7 @@ function Notice(handle: Handle<{ notice: OrgNotice }>) {
           <AlertIcon />
           <p>
             <strong>Les réglages ont changé entre-temps</strong> (v{notice.version}, modifiés{by}
-            {at}). Rien n’a été enregistré : relisez les valeurs ci-dessous, puis recommencez.
+            {at}). Rien n’a été enregistré. Relisez les valeurs ci-dessous, puis recommencez.
           </p>
         </div>
       )

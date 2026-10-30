@@ -46,7 +46,7 @@ export function serviceOption(serviceKey: boolean): ProviderOption {
         id: SERVICE_PROVIDER,
         kind: 'openrouter',
         label: 'OpenRouter · clé du runner',
-        hint: 'La clé OpenRouter du runner : le service n’en a pas.',
+        hint: 'La clé OpenRouter du runner. Le service n’en a pas.',
         isDefault: false,
         keyFrom: 'clé du runner',
         serviceHoldsKey: false,

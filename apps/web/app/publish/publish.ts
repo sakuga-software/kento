@@ -563,7 +563,7 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: 'Score de confiance de Sakuga Review (5 : prête à merger)',
+      description: 'Score de confiance de Sakuga Review (5 : prête à fusionner)',
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []

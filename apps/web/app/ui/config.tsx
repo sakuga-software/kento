@@ -90,7 +90,7 @@ export interface ConfigPageProps {
 
 /** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
 export function versionLine(view: Pick<RepoConfigView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  if (view.version === 0) return 'config v0 : tout est hérité de l’org'
+  if (view.version === 0) return 'config v0, tout est hérité de l’organisation'
   let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
   let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
   return `config v${view.version}, modifiée${by}${at}`
@@ -102,19 +102,19 @@ function shortName(fullName: string, org: string): string {
 }
 
 const LEVEL_HINTS: Record<Level, string> = {
-  lite: `Rapide, le moins cher : ${levelCost('lite')} une review.`,
-  balanced: `Avec le code autour du changement : ${levelCost('balanced')}.`,
-  heavy: `Plus de raisonnement : ${levelCost('heavy')}.`,
+  lite: `Rapide et le moins cher, ${levelCost('lite')} par review.`,
+  balanced: `Lit aussi le code autour du changement, ${levelCost('balanced')}.`,
+  heavy: `Raisonne plus longtemps, ${levelCost('heavy')}.`,
 }
 
 const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
-  { value: 'push', title: 'À chaque push', text: 'chaque push d’une PR qui n’est pas un brouillon, et son passage en « Ready for review ».' },
+  { value: 'push', title: 'À chaque push', text: 'Chaque push d’une PR qui n’est pas un brouillon, et son passage en « Ready for review ».' },
   {
     value: 'ready',
     title: 'Au passage en « Ready for review »',
-    text: 'une review à l’ouverture d’une PR prête, à son passage en « Ready for review » et à sa réouverture ; les pushs suivants n’en créent pas.',
+    text: 'Une review à l’ouverture d’une PR prête, à son passage en « Ready for review » et à sa réouverture. Les pushs suivants n’en créent pas.',
   },
-  { value: 'command', title: 'À la demande', text: 'aucune review automatique : seule une commande @kento-review en crée une.' },
+  { value: 'command', title: 'À la demande', text: 'Aucune review automatique. Seule une commande @kento-review en crée une.' },
 ]
 
 /**
@@ -196,8 +196,8 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
               <h2 id="later-title">Bientôt ici</h2>
               <p>
                 {tab === 'rules'
-                  ? 'Les règles du repo et de l’org, envoyées au modèle selon les chemins du diff, arrivent avec M5.'
-                  : 'Les règles d’assignation (qui déclenche quoi, à quel niveau) arrivent avec M5.'}
+                  ? 'Les règles du repo et de l’organisation, envoyées au modèle selon les chemins du diff, arrivent bientôt.'
+                  : 'Les règles d’assignation (qui déclenche quoi, à quel niveau) arrivent bientôt.'}
               </p>
             </section>
           )}
@@ -344,7 +344,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                     </option>
                   ) : null}
                 </select>
-                <FieldError id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'Ce provider n’est plus dans l’org.'} />
+                <FieldError id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'Ce provider n’est plus dans l’organisation.'} />
               </div>
               <div class="field">
                 <label class="field-label" for={modelId}>
@@ -381,10 +381,10 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   aria-invalid={errors.fallback ? 'true' : undefined}
                   aria-describedby={describedBy(fallbackId, errors.fallback, true)}
                 />
-                <FieldError id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Vide : pas de repli." />
+                <FieldError id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Laissez vide pour ne pas en avoir." />
               </div>
               {value.source === 'kento' && effective.origin === 'default' ? (
-                <p class="hint">Remplacer ici fixe ce choix pour le repo : le niveau ne suivra plus le provider « Par défaut ».</p>
+                <p class="hint">Remplacer ici fixe ce choix pour le repo, et le niveau ne suivra plus le provider « Par défaut ».</p>
               ) : null}
               <button class="button" type="submit">
                 {value.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
@@ -431,7 +431,7 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
                       autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVEL_KEYS) ? true : undefined}
                     />
                     <span>
-                      <strong class="mono">{key}</strong> — {LEVEL_HINTS[key]}
+                      <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
                     </span>
                   </label>
                 ))}
@@ -450,7 +450,7 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
           {ctx.admin && resolvedLevel.source === 'repo' ? <ResetForm ctx={ctx} field="level" label="le niveau" /> : null}
           {ctx.admin ? null : (
             <p>
-              <strong class="mono">{level}</strong> — {LEVEL_HINTS[level]}
+              <strong class="mono">{level}</strong>. {LEVEL_HINTS[level]}
             </p>
           )}
         </section>
@@ -459,7 +459,7 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
             <h2 class="section-title" id="passes-title">
               Passes et vérification
             </h2>
-            <span class="tag tag-quiet">jusqu’à M5</span>
+            <span class="tag tag-quiet">Bientôt</span>
           </header>
           <dl class="config-facts">
             <div>
@@ -471,7 +471,7 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
               <dd>Aucune</dd>
             </div>
           </dl>
-          <p class="hint">Les passes multiples et la vérification des findings arrivent avec M5, mesurées sur le bench.</p>
+          <p class="hint">Les passes multiples et la vérification des findings arrivent bientôt.</p>
         </section>
       </div>
     )
@@ -533,7 +533,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                         }
                       />
                       <span>
-                        <strong>{choice.title}</strong> — {choice.text}
+                        <strong>{choice.title}</strong>. {choice.text}
                       </span>
                     </label>
                   ))}
@@ -552,7 +552,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             </>
           ) : (
             <p>
-              <strong>{TRIGGER_CHOICES.find((c) => c.value === trigger.value)!.title}</strong> —{' '}
+              <strong>{TRIGGER_CHOICES.find((c) => c.value === trigger.value)!.title}</strong>.{' '}
               {TRIGGER_CHOICES.find((c) => c.value === trigger.value)!.text}
             </p>
           )}
@@ -592,7 +592,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     hint={
                       <>
                         Un motif par ligne depuis la racine, {MAX_PATHS} au plus : <code>apps/web</code> (un dossier),{' '}
-                        <code>**/*.sql</code>, <code>src/*.ts</code>. Vide : tous les chemins.
+                        <code>**/*.sql</code>, <code>src/*.ts</code>. Laissez vide pour relire tous les chemins.
                       </>
                     }
                   />
@@ -650,7 +650,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <FieldError
                     id="config-cap"
                     error={capForm?.errors.monthlyCapUsd}
-                    hint="Vide : aucun plafond. Une commande @kento-review passe toujours : quelqu’un l’a demandée."
+                    hint="Laissez vide pour n’avoir aucun plafond. Une commande @kento-review passe toujours, car quelqu’un l’a demandée."
                   />
                 </div>
                 <button class="button button-primary" type="submit">
@@ -691,7 +691,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             </div>
             <div>
               <dt>PR d’un fork</dt>
-              <dd>Aucun job tant qu’un admin ne l’autorise pas : le code d’un fork n’est pas celui du repo.</dd>
+              <dd>Aucun job tant qu’un admin ne l’autorise pas, car le code d’un fork n’est pas celui du repo.</dd>
             </div>
           </dl>
         </section>
@@ -768,7 +768,7 @@ function Notice(handle: Handle<{ notice: ConfigNotice }>) {
           <AlertIcon />
           <p>
             <strong>La config a changé entre-temps</strong> (v{notice.version}, modifiée{by}
-            {at}). Rien n’a été enregistré : relisez les valeurs ci-dessous, puis recommencez.
+            {at}). Rien n’a été enregistré. Relisez les valeurs ci-dessous, puis recommencez.
           </p>
         </div>
       )
@@ -777,7 +777,7 @@ function Notice(handle: Handle<{ notice: ConfigNotice }>) {
       <div class="banner banner-ok" role="status">
         <CheckIcon />
         <p>
-          <strong>{notice.kind === 'saved' ? 'Config enregistrée' : 'Valeur de l’org reprise'}</strong> (v{notice.version}).
+          <strong>{notice.kind === 'saved' ? 'Config enregistrée' : 'Valeur de l’organisation reprise'}</strong> (v{notice.version}).
           Le prochain job l’applique ; un job déjà en file garde la sienne.
         </p>
       </div>

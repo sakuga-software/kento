@@ -70,11 +70,11 @@ export function originText(effective: EffectiveLevel, scope: 'org' | 'repo', sou
     case 'default':
       return 'le provider « Par défaut » de Providers et clés'
     case 'service':
-      return 'aucun provider dans l’org : la clé OpenRouter'
+      return 'aucun provider dans l’organisation, donc la clé OpenRouter'
     case 'missing':
-      return 'le provider choisi n’existe plus : la clé OpenRouter le remplace'
+      return 'le provider choisi n’existe plus, et la clé OpenRouter le remplace'
     case 'chosen':
-      if (scope === 'repo') return source === 'repo' ? 'choisi pour ce repo' : 'choisi pour l’org'
-      return 'choisi pour l’org ; ne suit pas le provider « Par défaut »'
+      if (scope === 'repo') return source === 'repo' ? 'choisi pour ce repo' : 'choisi pour l’organisation'
+      return 'choisi pour l’organisation, ne suit pas le provider « Par défaut »'
   }
 }
