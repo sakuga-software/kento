@@ -39,6 +39,14 @@ export const pageRoutes = route({
   /** REV-13: the settings of the org. A member reads them; an admin changes them, one form at a time. */
   orgSettingsSave: post('/settings/org'),
   orgSettingsReset: post('/settings/org/reset'),
+  /**
+   * REV-19: the rules of a repository (the field `repo` of the form) or of the org (`repo` empty). A
+   * member reads them on the Config screen and in the settings; an admin changes them.
+   */
+  ruleAdd: post('/rules'),
+  ruleSave: post('/rules/:id'),
+  ruleActive: post('/rules/:id/active'),
+  ruleRemove: post('/rules/:id/remove'),
   theme: post('/preferences/theme'),
   org: post('/preferences/org'),
   signOut: post('/logout'),

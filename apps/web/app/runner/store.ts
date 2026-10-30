@@ -1,9 +1,10 @@
 import type postgres from 'postgres'
 
-import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_JOB_RULES, RULE_PATH_MAX, RULE_PATHS_MAX, type JobKind, type JobRule, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
+import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_JOB_RULES, type JobKind, type JobRule, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
 import { log } from '../log.ts'
+import { leftOutReason, sendablePaths } from '../rules/model.ts'
 import { refusalMessage } from '../providers/store.ts'
 
 /** A runner, as an authenticated call sees it. */
@@ -388,9 +389,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         -- The rules of the repository first: the engine drops the last ones when the pack is full.
         order by rules.repo_id is null, rules.created_at, rules.id
         limit ${MAX_JOB_RULES}`
-      // The screens check each pattern; a row written another way never makes the job fail the
-      // check of the runner: a pattern out of the limits of the protocol is left out.
-      return rows.map((r) => ({ ...r, paths: r.paths.filter((p) => p.length >= 1 && p.length <= RULE_PATH_MAX).slice(0, RULE_PATHS_MAX) }))
+      // A row written outside the screens never makes the job fail the check of the runner
+      // (leftOutReason of app/rules/model.ts); the screens show such a rule as left out.
+      let sent: JobRule[] = []
+      for (let r of rows) {
+        let reason = leftOutReason(r)
+        if (reason) {
+          log('warn', 'job.rule_left_out', { jobId, ruleId: r.id, reason: reason === 'no_pattern' ? 'no pattern within the limits of the protocol' : 'title or text beyond the limits of the protocol' })
+          continue
+        }
+        sent.push({ ...r, paths: sendablePaths(r.paths) })
+      }
+      return sent
     },
 
     async recordSentRules(jobId, runnerId, attempt, rules) {

@@ -8,6 +8,7 @@ import { createController } from './actions/controller.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
+import type { RulesStore } from './rules/store.ts'
 import { authRoutes, fallbackRoutes, pageRoutes, routes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
@@ -47,6 +48,8 @@ export interface AppDependencies {
   dashboard?: DashboardDependencies | null
   /** The settings of the org (REV-13). Without them, the settings show the providers only. */
   orgSettings?: OrgSettingsDependencies | null
+  /** The rules of the repositories and of the org (REV-19). Without them, the tab Règles says « Bientôt ». */
+  rules?: RulesStore | null
 }
 
 /**
@@ -95,6 +98,7 @@ export function createAppRouter(deps: AppDependencies) {
     repoConfig: deps.repoConfig ?? null,
     dashboard: deps.dashboard ?? null,
     orgSettings: deps.orgSettings ?? null,
+    rules: deps.rules ?? null,
   })
   router.map(pageRoutes, ui.pages)
   router.map(authRoutes, ui.signIn)

@@ -16,19 +16,24 @@ import {
 import { effectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import type { RepoConfigView } from '../repo-config/store.ts'
+import type { RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { moneyInput, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
+import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
-/** The tabs of the screen, in their order. Rules and assignment come with M5. */
+/** The tabs of the screen, in their order. Rules come with REV-19, assignment with M5. */
 export const CONFIG_TABS = ['models', 'levels', 'trigger', 'rules', 'assignment'] as const
 export type ConfigTab = (typeof CONFIG_TABS)[number]
 
-/** REV-32. The tabs that come with M5: named in the bar, with « Bientôt » and no link. */
-const SOON_TABS: readonly ConfigTab[] = ['rules', 'assignment']
+/**
+ * REV-32. The tabs that come with M5: named in the bar, with « Bientôt » and no link. Règles is one
+ * of them only on a service without the rules (REV-19).
+ */
+const SOON_TABS: readonly ConfigTab[] = ['assignment']
 
 const TAB_LABELS: Record<ConfigTab, string> = {
   models: 'Provider et modèles',
@@ -62,6 +67,16 @@ export interface ConfigForm {
   errors: Record<string, string>
 }
 
+/** REV-19. The tab Règles: the rules of the repository, and what else goes to the model. */
+export interface ConfigRules {
+  list: RuleView[]
+  /** The active rules of the org: they go with the reviews of this repository too. */
+  orgActive: number
+  form: RuleFormState | null
+  notice: RuleNotice | null
+  noticeRule: string | null
+}
+
 export interface ConfigPageProps {
   frame: PageFrame
   view: RepoConfigView
@@ -69,6 +84,8 @@ export interface ConfigPageProps {
   tab: ConfigTab
   notice: ConfigNotice | null
   form: ConfigForm | null
+  /** Null: the service has no rules; the tab says « Bientôt ». */
+  rules?: ConfigRules | null
 }
 
 /** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
@@ -106,7 +123,8 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
  */
 export function ConfigPage(handle: Handle<ConfigPageProps>) {
   return () => {
-    let { frame, view, providers, tab, notice, form } = handle.props
+    let { frame, view, providers, tab, notice, form, rules } = handle.props
+    let soon = (key: ConfigTab) => SOON_TABS.includes(key) || (key === 'rules' && !rules)
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
     let name = shortName(view.fullName, viewer.org.login)
@@ -140,7 +158,7 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
           <ul>
             {CONFIG_TABS.map((key) => (
               <li>
-                {SOON_TABS.includes(key) && key !== tab ? (
+                {soon(key) && key !== tab ? (
                   <span class="config-tab-soon">
                     {TAB_LABELS[key]}
                     <span class="tag tag-quiet">Bientôt</span>
@@ -171,6 +189,8 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
               trustedBots={view.trustedBots}
               ctx={ctx}
             />
+          ) : tab === 'rules' && rules ? (
+            <RulesTab rules={rules} repoId={view.id} name={name} admin={admin} csrf={frame.csrfToken} />
           ) : (
             <section class="empty" aria-labelledby="later-title">
               <h2 id="later-title">Bientôt ici</h2>
@@ -675,6 +695,63 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
             </div>
           </dl>
         </section>
+      </div>
+    )
+  }
+}
+
+/**
+ * REV-19. « Règles »: the rules of the repository, and a reminder of what else goes to the model with
+ * them: the rules of the org, and CLAUDE.md and AGENTS.md of the repository.
+ */
+function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: string; admin: boolean; csrf: string | null }>) {
+  return () => {
+    let { rules, repoId, name, admin, csrf } = handle.props
+    let active = rules.list.filter((r) => r.active).length
+    return (
+      <div class="rules-layout">
+        <section class="card config-card" id="rules" aria-labelledby="rules-title" tabIndex={-1}>
+          <header class="config-card-head">
+            <h2 class="section-title" id="rules-title">
+              Règles de {name} <span class="count">{active}</span>
+            </h2>
+          </header>
+          <p class="hint">
+            Le modèle vérifie chaque règle une par une, seulement quand la PR touche l’un de ses chemins. Un constat qui
+            applique une règle la nomme dans son commentaire.
+          </p>
+          <RulesList
+            scope="repo"
+            repoId={repoId}
+            rules={rules.list}
+            admin={admin}
+            csrf={csrf}
+            form={rules.form}
+            notice={rules.notice}
+            noticeRule={rules.noticeRule}
+          />
+        </section>
+        <aside class="card config-card rules-also" aria-labelledby="rules-also-title">
+          <h2 class="section-title" id="rules-also-title">
+            Part aussi au modèle
+          </h2>
+          <ul class="rules-also-list">
+            <li>
+              <a href={`${routes.settings.href()}#regles`}>
+                {rules.orgActive === 0 ? 'Aucune règle d’org' : rules.orgActive === 1 ? '1 règle d’org active' : `${rules.orgActive} règles d’org actives`}
+              </a>
+              , selon les mêmes chemins.
+            </li>
+            <li>
+              <span class="mono">CLAUDE.md</span> et <span class="mono">AGENTS.md</span> à la racine du repo, s’ils font 400 lignes
+              au plus.
+            </li>
+          </ul>
+          <p class="hint">
+            Les règles viennent de cet écran et des réglages de l’org, jamais du code d’une PR : un texte de la PR qui ressemble à
+            une règle reste du code à relire.
+          </p>
+        </aside>
       </div>
     )
   }

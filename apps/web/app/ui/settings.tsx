@@ -11,6 +11,8 @@ import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
 import { OrgSettingsSections, orgEffectiveLevels, type OrgSectionProps } from './org-settings.tsx'
+import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
+import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const LEVELS: readonly Level[] = ['lite', 'balanced', 'heavy']
@@ -69,11 +71,13 @@ export interface SettingsPageProps {
   form?: { values: ProviderFormValues; errors: Partial<Record<ProviderField, string>> } | null
   /** The provider whose « Remplacer la clé » failed, with its message. */
   keyError?: { id: string; message: string } | null
+  /** REV-19. The rules of the org. Null: the service has no rules. */
+  rules?: { list: RuleView[]; form: RuleFormState | null; notice: RuleNotice | null; noticeRule: string | null } | null
 }
 
 export function SettingsPage(handle: Handle<SettingsPageProps>) {
   return () => {
-    let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError } = handle.props
+    let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError, rules } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
@@ -121,9 +125,31 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         <div class="settings-layout">
-          <SettingsNav org={!!org} providers={!!providers} add={admin && !!providers} />
+          <SettingsNav org={!!org} rules={!!rules} providers={!!providers} add={admin && !!providers} />
           <div class="settings-content">
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
+
+        {rules ? (
+          <section class="card config-card" id="regles" aria-labelledby="org-rules-title" tabIndex={-1}>
+            <h2 id="org-rules-title" class="section-title">
+              Règles d’org <span class="count">{rules.list.filter((r) => r.active).length}</span>
+            </h2>
+            <p class="hint">
+              Elles partent avec la review de chaque repo de l’organisation, après les règles du repo, quand la PR touche l’un de
+              leurs chemins. Les règles d’un seul repo s’écrivent dans sa Config, onglet Règles.
+            </p>
+            <RulesList
+              scope="org"
+              repoId={null}
+              rules={rules.list}
+              admin={admin}
+              csrf={csrf}
+              form={rules.form}
+              notice={rules.notice}
+              noticeRule={rules.noticeRule}
+            />
+          </section>
+        ) : null}
 
         {providers ? (
           <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
@@ -182,9 +208,9 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
  * on a wide screen and at its top on a phone. Each section keeps its anchor: #plafond, #defauts,
  * #bots, #app, #providers, #nouveau-provider.
  */
-function SettingsNav(handle: Handle<{ org: boolean; providers: boolean; add: boolean }>) {
+function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: boolean; add: boolean }>) {
   return () => {
-    let { org, providers, add } = handle.props
+    let { org, rules, providers, add } = handle.props
     let links: [string, string][] = [
       ...(org
         ? ([
@@ -194,6 +220,7 @@ function SettingsNav(handle: Handle<{ org: boolean; providers: boolean; add: boo
             ['#app', 'App GitHub'],
           ] as [string, string][])
         : []),
+      ...(rules ? ([['#regles', 'Règles d’org']] as [string, string][]) : []),
       ...(providers ? ([['#providers', 'Providers et clés']] as [string, string][]) : []),
       ...(add ? ([['#nouveau-provider', 'Ajouter un provider']] as [string, string][]) : []),
     ]

@@ -36,6 +36,8 @@ import type { ReadAppStatus } from '../org-settings/app-status.ts'
 import { readCapsForm, readTrustedBotsForm } from '../org-settings/model.ts'
 import type { OrgSaveOutcome, OrgSettingsStore, OrgSettingsValues } from '../org-settings/store.ts'
 import type { RepoConfigStore, SaveOutcome } from '../repo-config/store.ts'
+import { readRuleForm } from '../rules/model.ts'
+import type { RuleOutcome, RulesStore } from '../rules/store.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { ReposStore } from '../repos/store.ts'
 import type { RunnersAdminStore } from '../runner/admin.ts'
@@ -44,6 +46,7 @@ import type { ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardStore, RetryOutcome } from '../dashboard/store.ts'
 import { DASHBOARD_NOTICES, DashboardPage, type DashboardNotice } from './dashboard.tsx'
 import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from './config.tsx'
+import { isRuleNotice, type RuleFormState, type RuleNotice } from './rules.tsx'
 import { ErrorPage, type ErrorExit, type ErrorKind } from './not-found.tsx'
 import { readRepoList, repoListQuery, ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
@@ -132,6 +135,8 @@ export interface UiDependencies {
   repoConfig?: RepoConfigDependencies | null
   dashboard?: DashboardDependencies | null
   orgSettings?: OrgSettingsDependencies | null
+  /** REV-19. The rules of the repositories and of the org. Null: the tab Règles says « Bientôt ». */
+  rules?: RulesStore | null
 }
 
 interface SignedIn {
@@ -196,6 +201,16 @@ function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): S
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** REV-19. What a page shows of the rules after a form: the notice, or the form with its errors. */
+type RulesExtra = { form: RuleFormState | null; notice: RuleNotice | null; noticeRule: string | null }
+
+/** The notice of the rules from the query of a page: `?rules=added&rule=<id>`. */
+function rulesNotice(query: URLSearchParams): RulesExtra {
+  let notice = query.get('rules')
+  let rule = query.get('rule')
+  return { form: null, notice: isRuleNotice(notice) ? notice : null, noticeRule: rule && UUID.test(rule) ? rule : null }
+}
 
 /** REV-32. The page of GitHub that installs the App `slug` on an org (`config.appSlug`). */
 export function appInstallUrl(githubUrl: string, slug: string): string {
@@ -395,7 +410,7 @@ export function createUiControllers(deps: UiDependencies) {
     context: { render(node: any, init?: ResponseInit): Response },
     signed: SignedIn,
     page: PageFrame,
-    extra: Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'> & { orgNotice?: OrgNotice | null; orgForm?: OrgForm | null },
+    extra: Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'> & { orgNotice?: OrgNotice | null; orgForm?: OrgForm | null; rules?: RulesExtra },
     status = 200,
   ) {
     let providers = deps.providers
@@ -418,12 +433,21 @@ export function createUiControllers(deps: UiDependencies) {
         form: extra.orgForm ?? null,
       }
     }
-    let { orgNotice: _notice, orgForm: _form, ...providerExtra } = extra
+    let { orgNotice: _notice, orgForm: _form, rules: rulesExtra, ...providerExtra } = extra
+    let rules = deps.rules
+      ? {
+          list: await deps.rules.list(orgId, null),
+          form: rulesExtra?.form ?? null,
+          notice: rulesExtra?.notice ?? null,
+          noticeRule: rulesExtra?.noticeRule ?? null,
+        }
+      : null
     return context.render(
       <SettingsPage
         frame={page}
         providers={list}
         org={org}
+        rules={rules}
         now={new Date(now())}
         secretsConfigured={providers?.secretsConfigured ?? false}
         serviceKey={providers?.serviceKey ?? false}
@@ -587,17 +611,31 @@ export function createUiControllers(deps: UiDependencies) {
   }
 
   async function renderConfig(
-    context: ConfigContext,
+    context: SettingsContext,
     signed: SignedIn,
     page: PageFrame,
     tab: ConfigTab,
-    extra: { notice?: ConfigNotice | null; form?: ConfigForm | null },
-    status = 200,
+    extra: { notice?: ConfigNotice | null; form?: ConfigForm | null; rules?: RulesExtra },
+    status: number,
+    repoId: string,
   ) {
     let deps2 = deps.repoConfig!
-    let view = await deps2.store.read(signed.membership.org.id, context.params.id)
+    let orgId = signed.membership.org.id
+    let view = await deps2.store.read(orgId, repoId)
     if (!view) return errorPage(context, 404, 'repo', 'repos')
-    let providers = await deps2.providers.list(signed.membership.org.id)
+    let providers = await deps2.providers.list(orgId)
+    // REV-19. The tab Règles reads the rules; the other tabs only need to know that it exists.
+    let rules = deps.rules
+      ? tab === 'rules'
+        ? {
+            list: await deps.rules.list(orgId, view.id),
+            orgActive: await deps.rules.activeOrgRules(orgId),
+            form: extra.rules?.form ?? null,
+            notice: extra.rules?.notice ?? null,
+            noticeRule: extra.rules?.noticeRule ?? null,
+          }
+        : { list: [], orgActive: 0, form: null, notice: null, noticeRule: null }
+      : null
     return context.render(
       <ConfigPage
         frame={page}
@@ -606,6 +644,7 @@ export function createUiControllers(deps: UiDependencies) {
         tab={tab}
         notice={extra.notice ?? null}
         form={extra.form ?? null}
+        rules={rules}
       />,
       { status },
     )
@@ -656,7 +695,7 @@ export function createUiControllers(deps: UiDependencies) {
                 ? readCapForm(form)
                 : readModelsForm(form, await configDeps.providers.list(signed.membership.org.id))
       if (!parsed.ok) {
-        return renderConfig(context, signed, page, tab, { form: { field: key, values: formValues(form), errors: parsed.errors } }, 422)
+        return renderConfig(context, signed, page, tab, { form: { field: key, values: formValues(form), errors: parsed.errors } }, 422, id)
       }
       let value = parsed.value
       change = (current) => {
@@ -692,6 +731,7 @@ export function createUiControllers(deps: UiDependencies) {
         tab,
         { notice: { kind: 'conflict', version: outcome.version, updatedBy: outcome.updatedBy, updatedAt: outcome.updatedAt } },
         409,
+        id,
       )
     }
     log('info', reset ? 'repo_config.reset' : 'repo_config.saved', {
@@ -703,6 +743,86 @@ export function createUiControllers(deps: UiDependencies) {
     })
     let query = new URLSearchParams({ tab, done: reset ? 'reset' : 'saved', v: String(outcome.version) })
     return redirect(`${pageRoutes.repoConfig.href({ id })}?${query}`)
+  }
+
+  /** REV-19. Where a form of a rule goes back: the tab Règles of its repository, or the section Règles d’org. */
+  function rulesBack(repoId: string | null, notice: RuleNotice, ruleId: string | null) {
+    let query = new URLSearchParams({ rules: notice })
+    if (ruleId) query.set('rule', ruleId)
+    let anchor = ruleId && notice !== 'removed' ? `rule-${ruleId}` : repoId ? 'rules' : 'regles'
+    if (repoId) {
+      query.set('tab', 'rules')
+      return redirect(`${pageRoutes.repoConfig.href({ id: repoId })}?${query}#${anchor}`)
+    }
+    return redirect(`${pageRoutes.settings.href()}?${query}#${anchor}`)
+  }
+
+  /**
+   * REV-19. A form of a rule: add, save, disable or enable, remove. An admin of the org only; cop()
+   * and csrf() of the session layer ran before. The field `repo` names the repository of the rule,
+   * or is empty for a rule of the org.
+   */
+  async function changeRule(context: SettingsContext & { params: { id?: string } }, action: 'add' | 'save' | 'active' | 'remove') {
+    let signed = signedOf(context)
+    let store = deps.rules
+    if (!store) return new Response('Not Found', { status: 404 })
+    let login = signed.user.login
+    let org = signed.membership.org
+    if (signed.membership.role !== 'admin') {
+      log('warn', 'rules.change_refused', { login, org: org.login, action, reason: 'not an admin' })
+      return forbidden()
+    }
+    let form = context.get(FormData)
+    let repoField = form?.get('repo') ?? context.url.searchParams.get('repo') ?? ''
+    if (typeof repoField !== 'string' || (repoField !== '' && !UUID.test(repoField))) return new Response('Bad Request', { status: 400 })
+    let repoId = repoField === '' ? null : repoField
+    // The rules of a repository live on its Config screen: without that screen, there is none to write.
+    if (repoId !== null && !deps.repoConfig) return new Response('Not Found', { status: 404 })
+    let ruleId = action === 'add' ? null : (context.params.id ?? '')
+    if (ruleId !== null && !UUID.test(ruleId)) return new Response('Not Found', { status: 404 })
+    let versionText = form?.get('version')
+    let version = typeof versionText === 'string' && /^\d{1,9}$/.test(versionText) ? Number(versionText) : null
+    if (!form || ((action === 'save' || action === 'active') && version === null)) return new Response('Bad Request', { status: 400 })
+
+    if (action === 'remove') {
+      let removed = await store.remove(org.id, ruleId!)
+      if (removed) log('info', 'rules.removed', { login, org: org.login, ruleId, repoId: removed.repoId, title: removed.title })
+      return rulesBack(removed ? removed.repoId : repoId, removed ? 'removed' : 'missing', null)
+    }
+
+    let outcome: RuleOutcome
+    if (action === 'active') {
+      let active = form.get('active')
+      if (active !== 'true' && active !== 'false') return new Response('Bad Request', { status: 400 })
+      outcome = await store.setActive(org.id, ruleId!, signed.user.id, version!, active === 'true')
+      if (outcome.kind === 'saved') {
+        log('info', active === 'true' ? 'rules.enabled' : 'rules.disabled', { login, org: org.login, ruleId, repoId: outcome.repoId, version: outcome.version })
+        return rulesBack(outcome.repoId, active === 'true' ? 'enabled' : 'disabled', ruleId)
+      }
+    } else {
+      let parsed = readRuleForm(form)
+      if (!parsed.ok) {
+        let rules: RulesExtra = { form: { ruleId, values: formValues(form), errors: parsed.errors }, notice: null, noticeRule: null }
+        let page = frame(signed, context, getCsrfToken(context))
+        if (repoId) {
+          return renderConfig(context, signed, page, 'rules', { rules }, 422, repoId)
+        }
+        return renderSettings(context, signed, page, { rules }, 422)
+      }
+      outcome = action === 'add' ? await store.create(org.id, repoId, signed.user.id, parsed.value) : await store.update(org.id, ruleId!, signed.user.id, version!, parsed.value)
+      if (outcome.kind === 'saved') {
+        log('info', action === 'add' ? 'rules.added' : 'rules.saved', { login, org: org.login, ruleId: outcome.id, repoId: outcome.repoId, version: outcome.version })
+        return rulesBack(outcome.repoId, action === 'add' ? 'added' : 'saved', outcome.id)
+      }
+    }
+    if (outcome.kind === 'conflict') {
+      log('info', 'rules.conflict', { login, org: org.login, ruleId, sent: version, current: outcome.version })
+      return rulesBack(repoId, 'conflict', ruleId)
+    }
+    if (outcome.kind === 'full') return rulesBack(repoId, 'full', null)
+    // A rule removed meanwhile, or a repository of another org.
+    if (action === 'add') return new Response('Not Found', { status: 404 })
+    return rulesBack(repoId, 'missing', null)
   }
 
   let pages = createController(pageRoutes, {
@@ -838,7 +958,7 @@ export function createUiControllers(deps: UiDependencies) {
         let version = Number(query.get('v'))
         let notice: ConfigNotice | null =
           (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null
-        return renderConfig(context, signed, page, isConfigTab(tab) ? tab : 'models', { notice })
+        return renderConfig(context, signed, page, isConfigTab(tab) ? tab : 'models', { notice, rules: rulesNotice(query) }, 200, context.params.id)
       },
       // cop() and csrf() of the session layer ran before.
       async repoConfigSave(context) {
@@ -969,7 +1089,7 @@ export function createUiControllers(deps: UiDependencies) {
       async settings(context) {
         let signed = signedOf(context)
         let page = frame(signed, context, getCsrfToken(context))
-        if (!deps.providers && !deps.orgSettings) return context.render(<PlaceholderPage frame={page} section="settings" />)
+        if (!deps.providers && !deps.orgSettings && !deps.rules) return context.render(<PlaceholderPage frame={page} section="settings" />)
         let query = context.url.searchParams
         let notice = query.get('notice')
         let done = query.get('org')
@@ -977,6 +1097,7 @@ export function createUiControllers(deps: UiDependencies) {
         return renderSettings(context, signed, page, {
           notice: notice !== null && notice in PROVIDER_NOTICES ? { kind: notice as ProviderNotice } : null,
           orgNotice: (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null,
+          rules: rulesNotice(query),
         })
       },
 
@@ -985,6 +1106,19 @@ export function createUiControllers(deps: UiDependencies) {
       },
       async orgSettingsReset(context) {
         return changeOrgSettings(context, true)
+      },
+      // REV-19. The forms of the rules, from the tab Règles of a repository or from the settings.
+      async ruleAdd(context) {
+        return changeRule(context, 'add')
+      },
+      async ruleSave(context) {
+        return changeRule(context, 'save')
+      },
+      async ruleActive(context) {
+        return changeRule(context, 'active')
+      },
+      async ruleRemove(context) {
+        return changeRule(context, 'remove')
       },
 
       // REV-11. The forms of « Providers et clés »: an admin of the org on screen only. cop() and

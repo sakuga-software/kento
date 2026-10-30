@@ -17,6 +17,7 @@ import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
 import { createConfigProviders } from './app/providers/catalog.ts'
 import { createRepoConfigStore } from './app/repo-config/store.ts'
+import { createRulesStore } from './app/rules/store.ts'
 import { createRepoCheck } from './app/repos/check.ts'
 import { createProbe } from './app/providers/probe.ts'
 import { createSecretBox } from './app/providers/secrets.ts'
@@ -150,6 +151,8 @@ let router = createAppRouter({
   },
   // The Config screen of a repository (REV-12). The providers of the org come with REV-11.
   repoConfig: { store: createRepoConfigStore(database.sql), providers: configProviders },
+  // The rules of the repositories and of the org (REV-19), on the Config screen and in the settings.
+  rules: createRulesStore(database.sql),
   orgSettings: {
     store: orgSettingsStore,
     providers: configProviders,

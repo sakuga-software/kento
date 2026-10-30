@@ -317,6 +317,20 @@ describe('rules of a repository and of its org (REV-19)', () => {
     assert.deepEqual(job.rules?.[0]?.paths, ['ok/**'])
   })
 
+  it('leaves out a rule that the check of the runner would refuse, or that would cover every path', async () => {
+    // 150 emoji: 150 characters for Postgres, 300 UTF-16 units for the protocol (at most 200).
+    await addRule({ title: '🙂'.repeat(150) })
+    await database.sql`
+      insert into rules (org_id, repo_id, title, body, paths)
+      values (${orgId}, ${repoId}, 'Motifs trop longs', 'Texte', ${['x'.repeat(301)]})`
+    let kept = await addRule({ title: 'Valide', paths: ['src/**'] })
+    let token = await register()
+    await queueJob()
+    let response = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
+    let job = (await response.json()) as Job
+    assert.deepEqual(job.rules?.map((r) => r.id), [kept])
+  })
+
   it('refuses a rule out of its limits', async () => {
     await assert.rejects(addRule({ title: '' }), /rules_title_length/)
     await assert.rejects(addRule({ title: 'x', floor: 'info' }), /rules_severity_floor/)
