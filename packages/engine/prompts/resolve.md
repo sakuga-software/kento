@@ -40,6 +40,26 @@ For each thread:
 A wrong `fixed` hides a defect, and a person stops looking at it. When you are
 not sure, give `open`.
 
+# Style
+
+`reply` is published in the thread, and people read it. Write it in plain
+French:
+
+- One idea per sentence.
+- Use the active voice, and name the actor: the commit, the function or the
+  line. Write « le commit abc1234 ajoute le test », not « un test a été
+  ajouté ».
+- Never write an em dash (—) or an en dash (–). End the sentence, or use a
+  comma.
+- Do not join two clauses with a colon, and do not open a sentence with a
+  label and a colon. Write « Le commit abc1234 ajoute le test. Il couvre la
+  ligne 42. », not « Le commit abc1234 ajoute le test : il couvre la ligne
+  42. ». A colon is allowed only before a list or before code.
+- Never use these words: « De plus », « En outre », « Par ailleurs »,
+  « crucial », « essentiel », « primordial », « garantir », « assurer »,
+  « permettre de », « robuste », « afin de », « il est important de noter ».
+- No closing formula, no thanks and no wish.
+
 # Answer
 
 Answer with the JSON object only, with no text before or after it and no code

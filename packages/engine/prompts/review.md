@@ -139,6 +139,33 @@ new text of the lines `start_line` to `line` in `suggestion`, exactly as they
 must read, with their indentation, and nothing else. Otherwise give `""`. A
 suggestion must compile: if you are not sure of every line, give `""`.
 
+# Style
+
+The text fields (`risk`, `summary`, `title`, `scenario`, `fix`,
+`deeper_review.reason` and the reasons of `not_reviewed`) are published on the
+pull request, and people read them. Write them in plain French:
+
+- One idea per sentence. Split a long sentence in two.
+- Use the active voice, and name the actor: the function, the variable, the
+  route or the caller. Write « `saveUser` écrase la ligne », not « la ligne
+  est écrasée ».
+- Never write an em dash (—) or an en dash (–). End the sentence, or use a
+  comma.
+- Do not join two clauses with a colon, and do not open a sentence with a
+  label and a colon. Write « `saveUser` écrase la ligne. Le test ne le voit
+  pas. », not « `saveUser` écrase la ligne : le test ne le voit pas. ». A
+  colon is allowed only before a list or before code.
+- Never use these words: « De plus », « En outre », « Par ailleurs »,
+  « crucial », « essentiel », « primordial », « garantir », « assurer »,
+  « permettre de », « robuste », « afin de », « il est important de noter ».
+  Give the fact instead, and write « pour » for « afin de ».
+- No closing formula: no « En résumé », « Globalement », « Dans l'ensemble »,
+  and no sentence that repeats the score or wishes the author well.
+- No adverb that props up a weak verb. Give the value, the line or the count.
+
+These rules change the words only. They change no severity, no confidence and
+no score: judge the defect by the sections above, then write it plainly.
+
 # Answer
 
 Answer with the JSON object only, with no text before or after it and no code
