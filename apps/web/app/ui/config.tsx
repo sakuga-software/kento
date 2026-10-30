@@ -1,7 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { levelCost } from '@sakuga-review/engine/levels'
-import type { Level } from '@sakuga-review/protocol'
+import { MAX_JOB_RULES, type Level } from '@sakuga-review/protocol'
 
 import {
   LEVEL_KEYS,
@@ -708,6 +708,8 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
   return () => {
     let { rules, repoId, name, admin, csrf } = handle.props
     let active = rules.list.filter((r) => r.active).length
+    // A job carries MAX_JOB_RULES rules at most: those of the repository first, then those of the org.
+    let over = active + rules.orgActive - MAX_JOB_RULES
     return (
       <div class="rules-layout">
         <section class="card config-card" id="rules" aria-labelledby="rules-title" tabIndex={-1}>
@@ -716,6 +718,17 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
               Règles de {name} <span class="count">{active}</span>
             </h2>
           </header>
+          {over > 0 ? (
+            <div class="banner banner-alert" role="note">
+              <AlertIcon />
+              <p>
+                <strong>
+                  Un job envoie {MAX_JOB_RULES} règles au plus : {over === 1 ? 'la dernière règle d’org active ne part pas' : `les ${over} dernières règles d’org actives ne partent pas`}
+                </strong>{' '}
+                avec les reviews de ce repo. Les règles du repo passent d’abord ; désactivez-en ou supprimez-en pour faire de la place.
+              </p>
+            </div>
+          ) : null}
           <p class="hint">
             Le modèle vérifie chaque règle une par une, seulement quand la PR touche l’un de ses chemins. Un constat qui
             applique une règle la nomme dans son commentaire.

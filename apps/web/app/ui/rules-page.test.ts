@@ -236,6 +236,22 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.equal(rules.rows().length, 0)
   })
 
+  it('says when the rules of the repository and of the org pass what a job carries', async () => {
+    let { request, signIn, rules } = setup()
+    let { cookie } = await signIn()
+    for (let i = 0; i < 30; i++) await rules.store.create(ORG.id, ORCHARD, 'u', { title: `Repo ${i}`, body: 'x', paths: [], severityFloor: null })
+    for (let i = 0; i < 22; i++) await rules.store.create(ORG.id, null, 'u', { title: `Org ${i}`, body: 'x', paths: [], severityFloor: null })
+    let html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
+    assert.match(html, /Un job envoie 50 règles au plus : les 2 dernières règles d’org actives ne partent pas/)
+    let org = rules.rows().find((r) => r.title === 'Org 21')!
+    await rules.store.setActive(ORG.id, org.id, 'u', 1, false)
+    html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
+    assert.match(html, /la dernière règle d’org active ne part pas/)
+    await rules.store.setActive(ORG.id, rules.rows().find((r) => r.title === 'Org 20')!.id, 'u', 1, false)
+    html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
+    assert.doesNotMatch(html, /Un job envoie 50 règles au plus/)
+  })
+
   it('shows a rule that no job sends, written outside the screens, with what to fix', async () => {
     let { request, signIn, rules } = setup()
     let { cookie } = await signIn()
