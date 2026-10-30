@@ -363,4 +363,53 @@ describe('the dashboard of an org', () => {
     assert.equal(queue.running[0]!.attempts, 2)
     assert.ok(queue.running[0]!.leaseExpiresAt)
   })
+
+  it('bounds the card « Runners » in SQL and counts all the runners in service of the org and of the service (REV-37)', async () => {
+    let sql = database.sql
+    try {
+      await sql`
+        insert into runners (org_id, name, token_hash, last_seen_at)
+        select ${org}, 'ci-' || lpad(g::text, 2, '0'), 'hash-ci-' || g, now() - (g || ' hours')::interval - interval '2 hours'
+        from generate_series(1, 27) g`
+      await sql`insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'late-one', 'hash-late', now() - interval '10 minutes')`
+      await sql`insert into runners (org_id, name, token_hash, last_seen_at, revoked_at) values (${org}, 'gone', 'hash-gone', now(), now())`
+      await sql`insert into runners (name, token_hash, last_seen_at) values ('em-service', 'hash-service', null)`
+      let screen = await store.screen(org)
+      // runners-host online, late-one late, 27 ci runners and the service runner never seen offline.
+      assert.deepEqual(screen.runnerCounts, { online: 1, late: 1, offline: 28 })
+      // The same states as the screen: runnerState() of each runner of the list gives its group.
+      let { runnerState } = await import('../../app/ui/runners.tsx')
+      let byScreen = { online: 0, late: 0, offline: 0 }
+      let all = await sql<{ lastSeenAt: Date | string | null }[]>`
+        select last_seen_at as "lastSeenAt" from runners where (org_id = ${org} or org_id is null) and revoked_at is null`
+      for (let row of all) {
+        let state = runnerState({ revokedAt: null, lastSeenAt: row.lastSeenAt === null ? null : new Date(row.lastSeenAt) }, screen.now)
+        if (state !== 'revoked') byScreen[state]++
+      }
+      assert.deepEqual(screen.runnerCounts, byScreen)
+      assert.deepEqual(
+        screen.runners.map((r) => r.name),
+        ['late-one', 'runners-host', 'ci-01', 'ci-02', 'ci-03', 'ci-04', 'ci-05'],
+      )
+    } finally {
+      await sql`delete from runners where name like 'ci-%' or name in ('late-one', 'gone', 'em-service')`
+    }
+  })
+
+  it('keeps a late runner on the card when more online runners than the limit are there (REV-37)', async () => {
+    let sql = database.sql
+    try {
+      await sql`
+        insert into runners (org_id, name, token_hash, last_seen_at)
+        select ${org}, 'up-' || lpad(g::text, 2, '0'), 'hash-up-' || g, now() - (g || ' seconds')::interval
+        from generate_series(1, 12) g`
+      await sql`insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'late-one', 'hash-late', now() - interval '10 minutes')`
+      let screen = await store.screen(org)
+      assert.deepEqual(screen.runnerCounts, { online: 13, late: 1, offline: 0 })
+      assert.equal(screen.runners.length, 10)
+      assert.equal(screen.runners[0]!.name, 'late-one')
+    } finally {
+      await sql`delete from runners where name like 'up-%' or name = 'late-one'`
+    }
+  })
 })

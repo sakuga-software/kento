@@ -1574,6 +1574,63 @@ kbd,
   white-space: normal;
   text-align: left;
 }
+/* REV-37. The runners in a table: the name over its labels, the state and the signal on one line. */
+.runner-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.runner-section-head .section-title {
+  margin: 0;
+}
+.runner-counts {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+.dash-section .runner-counts {
+  margin-bottom: var(--space-3);
+}
+.runner-ident {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+.runners-table .runner-name,
+.runners-table .status,
+.runners-table time {
+  white-space: nowrap;
+}
+.runners-table .runner-name {
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+}
+.runners-table .num {
+  font-variant-numeric: tabular-nums;
+}
+.runners-table .runner-actions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+.runner-silent {
+  margin-top: var(--space-4);
+}
+.runner-silent > summary {
+  width: fit-content;
+  color: var(--ink-soft);
+  font-weight: 600;
+  cursor: pointer;
+}
+.runner-silent-body {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.runner-silent-action {
+  justify-self: start;
+}
 .runner-details {
   margin-bottom: var(--space-8);
 }

@@ -27,6 +27,8 @@ export const pageRoutes = route({
   runnerDiscard: post('/runners/registrations/:id/discard'),
   runnerTrust: post('/runners/:id/trust'),
   runnerRevoke: post('/runners/:id/revoke'),
+  /** REV-37: an admin revokes the runners silent for 24 hours, at once. */
+  runnersRevokeSilent: post('/runners/revoke-silent'),
   settings: get('/settings'),
   /** REV-11: the providers of the org and their encrypted keys. An admin only. */
   providerAdd: post('/settings/providers'),

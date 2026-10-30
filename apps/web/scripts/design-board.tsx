@@ -386,6 +386,7 @@ const DASHBOARD: DashboardScreen = {
     { id: 'u2', name: 'runners-host', orgId: null, lastSeenAt: dAgo(9), running: 1 },
     { id: 'u3', name: 'portable-alex', orgId: 'org-1', lastSeenAt: dAgo(60 * 47), running: 0 },
   ],
+  runnerCounts: { online: 2, late: 0, offline: 1 },
   workflowRepos: ['sakuga-software/fruitback', 'sakuga-software/orchard'],
   setup: { published: true, suspended: false, enabledRepos: 4, providers: 1, pendingRegistrations: 0 },
 }
@@ -399,6 +400,7 @@ const EMPTY_DASHBOARD: DashboardScreen = {
   caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 },
   queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
   runners: [],
+  runnerCounts: { online: 0, late: 0, offline: 0 },
   workflowRepos: [],
   // REV-26: a new org, with the list « Mise en route ».
   setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },

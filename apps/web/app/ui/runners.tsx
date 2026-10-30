@@ -2,17 +2,15 @@ import type { Handle } from 'remix/component'
 
 import { CLAIM_WAIT_SECONDS, HEARTBEAT_SECONDS, LEASE_SECONDS, MAX_ATTEMPTS, MAX_BODY_BYTES, RUNNER_TOKEN_PREFIX } from '@sakuga-review/protocol'
 
-import { REGISTRATION_TTL_MINUTES, type RegistrationView, type RunnersScreen, type RunnerView } from '../runner/admin.ts'
+import { OFFLINE_SECONDS, ONLINE_SECONDS, REGISTRATION_TTL_MINUTES, SILENT_HOURS, type RegistrationView, type RunnersScreen, type RunnerView } from '../runner/admin.ts'
 import { RETRY_BACKOFF_SECONDS } from '../runner/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { agoShort, clock, elapsed, hour } from './format.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
-/** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
-export const ONLINE_SECONDS = 3 * CLAIM_WAIT_SECONDS
-/** After this with no call, a runner is « Hors ligne »; before it, its signal is « en retard ». */
-export const OFFLINE_SECONDS = 60 * 60
+// The dashboard store counts the runners by state in SQL with the same limits (REV-37).
+export { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
 export const RUNNER_IMAGE = 'ghcr.io/sakuga-software/kento-runner'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
@@ -107,6 +105,36 @@ export function byState<T extends { lastSeenAt: Date | null; revokedAt?: Date | 
     .map(({ runner }) => runner)
 }
 
+/**
+ * REV-37. A runner in service with no call for `SILENT_HOURS` (never seen: created that long ago).
+ * The Runners screen folds these away, with one action to revoke them.
+ */
+export function isSilent(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt' | 'createdAt'>, now: Date): boolean {
+  if (runner.revokedAt) return false
+  let last = runner.lastSeenAt ?? runner.createdAt
+  return now.getTime() - last.getTime() >= SILENT_HOURS * 3_600_000
+}
+
+/** « 1 en ligne · 1 en retard · 27 hors ligne »: the runners in service by state, the empty states left out. */
+export function stateCounts(runners: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>[], now: Date): string {
+  let counts = { online: 0, late: 0, offline: 0 }
+  for (let runner of runners) {
+    let state = runnerState(runner, now)
+    if (state !== 'revoked') counts[state]++
+  }
+  return countsText(counts)
+}
+
+/** « 1 en ligne · 27 hors ligne », from counts by state. */
+export function countsText(counts: { online: number; late: number; offline: number }): string {
+  let parts = [
+    counts.online > 0 ? `${counts.online} en ligne` : null,
+    counts.late > 0 ? `${counts.late} en retard` : null,
+    counts.offline > 0 ? `${counts.offline} hors ligne` : null,
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : 'aucun en service'
+}
+
 /** The release that a runner should run, when `version` is older than it. Null when up to date or unknown. */
 export function newerVersion(version: string | null, latest: string): string | null {
   let parse = (v: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(v)?.slice(1).map(Number) ?? null
@@ -127,6 +155,7 @@ export const RUNNER_NOTICES = {
   untrusted: 'Le runner ne reçoit plus la clé de l’app.',
   discarded: 'Token d’enregistrement annulé.',
   missing: 'Ce runner ou ce token n’existe plus, ou a déjà changé.',
+  revoked_silent: 'Runners muets révoqués. Leurs tokens ne marchent plus, et leurs jobs en cours sont repartis en file.',
 } as const
 export type RunnerNotice = keyof typeof RUNNER_NOTICES
 
@@ -157,10 +186,14 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let host = new URL(kentoUrl).host
+    let inService = screen.runners.filter((runner) => !runner.revokedAt)
+    // REV-37: the runners silent for a day fold away, so that the ones that work are seen first.
     let active = byState(
-      screen.runners.filter((runner) => !runner.revokedAt),
+      inService.filter((runner) => !isSilent(runner, screen.now)),
       screen.now,
     )
+    let silent = inService.filter((runner) => isSilent(runner, screen.now))
+    let silentOfOrg = silent.filter((runner) => runner.orgId !== null)
     let revoked = screen.runners.filter((runner) => runner.revokedAt)
     return (
       <Shell
@@ -196,20 +229,56 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         ) : null}
 
         <section class="runner-section" aria-labelledby="runners-title">
-          <h2 id="runners-title" class="section-title">
-            Runners actifs <span class="count">{active.length}</span>
-          </h2>
-          {active.length === 0 ? (
+          <div class="runner-section-head">
+            <h2 id="runners-title" class="section-title">
+              Runners
+            </h2>
+            <p class="runner-counts">{stateCounts(inService, screen.now)}</p>
+          </div>
+          {inService.length === 0 ? (
             <div class="empty">
               <p>Aucun runner. Créez un token avec « Nouveau runner », puis lancez la commande sur la machine.</p>
             </div>
+          ) : active.length === 0 ? (
+            <p class="hint">Aucun runner n’a appelé depuis {SILENT_HOURS} h.</p>
           ) : (
-            <ul class="runner-list">
-              {active.map((runner) => (
-                <RunnerItem runner={runner} now={screen.now} version={version} admin={admin} csrf={csrf} />
-              ))}
-            </ul>
+            <RunnersTable runners={active} now={screen.now} version={version} admin={admin} csrf={csrf} caption="Runners en service" />
           )}
+          {silent.length > 0 ? (
+            <details class="runner-silent">
+              <summary>
+                {silent.length} {silent.length > 1 ? `runners muets depuis plus de ${SILENT_HOURS} h` : `runner muet depuis plus de ${SILENT_HOURS} h`}
+              </summary>
+              <div class="runner-silent-body">
+                {admin && silentOfOrg.length > 0 ? (
+                  <div class="runner-silent-action">
+                    {/* The ids that the screen shows: the store revokes those still silent, no other. The
+                        button of the confirmation posts this form; its action is also the form's own. */}
+                    <form id="revoke-silent" method="post" action={routes.runnersRevokeSilent.href()} hidden>
+                      <input type="hidden" name="_csrf" value={csrf} />
+                      {silentOfOrg.map((runner) => (
+                        <input type="hidden" name="id" value={runner.id} />
+                      ))}
+                    </form>
+                    <Confirm
+                      trigger={silentOfOrg.length > 1 ? `Révoquer ces ${silentOfOrg.length} runners…` : 'Révoquer ce runner…'}
+                      action={routes.runnersRevokeSilent.href()}
+                      csrf={null}
+                      form="revoke-silent"
+                      submit={silentOfOrg.length > 1 ? `Révoquer ${silentOfOrg.length} runners` : `Révoquer ${silentOfOrg[0]!.name}`}
+                    >
+                      <p>
+                        Leurs tokens cesseront de marcher, et un job qu’ils tiendraient encore repartira en file. Un runner qui
+                        a appelé depuis l’affichage de la page reste en service. Pour remettre l’un d’eux en service, il faudra
+                        un nouveau token.
+                      </p>
+                    </Confirm>
+                  </div>
+                ) : null}
+                <RunnersTable runners={silent} now={screen.now} version={version} admin={admin} csrf={csrf} caption={`Runners muets depuis plus de ${SILENT_HOURS} h`} />
+              </div>
+            </details>
+          ) : null}
         </section>
 
         {revoked.length > 0 ? (
@@ -217,11 +286,7 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
             <h2 id="revoked-title" class="section-title">
               Révoqués <span class="count">{revoked.length}</span>
             </h2>
-            <ul class="runner-list">
-              {revoked.map((runner) => (
-                <RunnerItem runner={runner} now={screen.now} version={version} admin={false} csrf={csrf} />
-              ))}
-            </ul>
+            <RunnersTable runners={revoked} now={screen.now} version={version} admin={false} csrf={csrf} caption="Runners révoqués" />
           </section>
         ) : null}
 
@@ -325,95 +390,140 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
   }
 }
 
-function RunnerItem(handle: Handle<{ runner: RunnerView; now: Date; version: string; admin: boolean; csrf: string }>) {
+interface RunnersTableProps {
+  runners: RunnerView[]
+  now: Date
+  version: string
+  admin: boolean
+  csrf: string
+  caption: string
+}
+
+/**
+ * REV-37. The runners in a dense table at 1440 px; under 760 px each row is a card, each cell under
+ * its column name (the `.table` of Repos). A revoked runner shows the date of its revocation in
+ * place of the actions.
+ */
+function RunnersTable(handle: Handle<RunnersTableProps>) {
   return () => {
-    let { runner, now, version, admin, csrf } = handle.props
+    let { runners, now, version, admin, csrf, caption } = handle.props
+    let revoked = runners.some((runner) => runner.revokedAt)
+    let actions = admin && runners.some((runner) => runner.orgId !== null && !runner.revokedAt)
+    return (
+      <div class="table-wrap">
+        <table class="table runners-table">
+          <caption class="visually-hidden">{caption}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Runner</th>
+              <th scope="col">État</th>
+              <th scope="col">Clé du modèle</th>
+              <th scope="col">Version</th>
+              <th scope="col">Dernier signal</th>
+              <th scope="col">Job en cours</th>
+              <th scope="col">Jobs sur 24 h</th>
+              {revoked ? <th scope="col">Révoqué</th> : null}
+              {actions ? (
+                <th scope="col">
+                  <span class="visually-hidden">Actions</span>
+                </th>
+              ) : null}
+            </tr>
+          </thead>
+          <tbody>
+            {runners.map((runner) => (
+              <RunnerRow runner={runner} now={now} version={version} admin={admin} csrf={csrf} revokedColumn={revoked} actionsColumn={actions} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+}
+
+function RunnerRow(
+  handle: Handle<{ runner: RunnerView; now: Date; version: string; admin: boolean; csrf: string; revokedColumn: boolean; actionsColumn: boolean }>,
+) {
+  return () => {
+    let { runner, now, version, admin, csrf, revokedColumn, actionsColumn } = handle.props
     let state = runnerState(runner, now)
     let newer = state === 'revoked' ? null : newerVersion(runner.version, version)
     let service = runner.orgId === null
     let manage = admin && !service && state !== 'revoked'
     return (
-      <li class={`runner runner-${state}`}>
-        <div class="runner-head">
-          <h3 class="runner-name mono">{runner.name}</h3>
+      <tr id={`runner-${runner.id}`} class={`runner-row runner-${state}`}>
+        <th scope="row" data-label="Runner">
+          <div class="runner-ident">
+            <span class="runner-name mono">{runner.name}</span>
+            {service ? <span class="tag">Runner du service</span> : null}
+            <Labels labels={runner.labels} />
+          </div>
+        </th>
+        <td data-label="État">
           <span class={`status status-${state}`}>{runnerStateLabel(runner, now)}</span>
-          {service ? <span class="tag">Runner du service</span> : null}
-        </div>
-        <Labels labels={runner.labels} />
-        <dl class="runner-facts-list">
-          <div>
-            <dt>Clé du modèle</dt>
-            <dd>{runner.trusted ? 'Clé de l’app (de confiance)' : 'Clé du runner'}</dd>
-          </div>
-          <div>
-            <dt>Version</dt>
-            <dd>
-              <span class="mono">{runner.version ?? '—'}</span>
-              {newer ? <span class="status status-wait">{newer} disponible</span> : null}
-            </dd>
-          </div>
-          <div>
-            <dt>Dernier signal</dt>
-            <dd>
-              {runner.lastSeenAt ? (
-                <time dateTime={runner.lastSeenAt.toISOString()} title={clock(runner.lastSeenAt)}>
-                  {agoShort(runner.lastSeenAt, now)}
-                </time>
-              ) : (
-                'jamais'
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Job en cours</dt>
-            <dd>
-              {runner.currentJob ? (
-                <span>
-                  <span class="mono">
-                    {runner.currentJob.repo}#{runner.currentJob.prNumber}
-                  </span>{' '}
-                  · {runner.currentJob.kind === 'resolve' ? 'résolution' : 'review'}
-                </span>
-              ) : (
-                'aucun'
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>Jobs sur 24 h</dt>
-            <dd>{runner.jobs24h}</dd>
-          </div>
-          {runner.revokedAt ? (
-            <div>
-              <dt>Révoqué</dt>
-              <dd>
-                <time dateTime={runner.revokedAt.toISOString()}>{clock(runner.revokedAt)}</time>
-              </dd>
-            </div>
-          ) : null}
-        </dl>
-        {service && state !== 'revoked' ? (
-          <p class="hint">Enregistré par la variable d’environnement du service : l’opérateur le gère (DEPLOY.md).</p>
+        </td>
+        <td data-label="Clé du modèle">{runner.trusted ? 'Clé de l’app (de confiance)' : 'Clé du runner'}</td>
+        <td data-label="Version">
+          <span class="stack">
+            <span class="mono">{runner.version ?? '—'}</span>
+            {newer ? <span class="status status-wait">{newer} disponible</span> : null}
+          </span>
+        </td>
+        <td data-label="Dernier signal">
+          {runner.lastSeenAt ? (
+            <time dateTime={runner.lastSeenAt.toISOString()} title={clock(runner.lastSeenAt)}>
+              {agoShort(runner.lastSeenAt, now)}
+            </time>
+          ) : (
+            'jamais'
+          )}
+        </td>
+        <td data-label="Job en cours">
+          {runner.currentJob ? (
+            <span class="stack">
+              <span class="mono">
+                {runner.currentJob.repo}#{runner.currentJob.prNumber}
+              </span>
+              <span class="hint">{runner.currentJob.kind === 'resolve' ? 'résolution' : 'review'}</span>
+            </span>
+          ) : (
+            'aucun'
+          )}
+        </td>
+        <td data-label="Jobs sur 24 h" class="num">
+          {runner.jobs24h}
+        </td>
+        {revokedColumn ? (
+          <td data-label="Révoqué">
+            {runner.revokedAt ? <time dateTime={runner.revokedAt.toISOString()}>{clock(runner.revokedAt)}</time> : '–'}
+          </td>
         ) : null}
-        {manage ? (
-          <div class="runner-actions">
-            <form method="post" action={routes.runnerTrust.href({ id: runner.id })}>
-              <input type="hidden" name="_csrf" value={csrf} />
-              <input type="hidden" name="trusted" value={runner.trusted ? 'false' : 'true'} />
-              <button class="button" type="submit">
-                {runner.trusted ? 'Retirer la confiance' : 'Marquer de confiance'}
-              </button>
-            </form>
-            <Confirm trigger="Révoquer…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Révoquer ${runner.name}`}>
-              <p>
-                Le token de <strong class="mono">{runner.name}</strong> cessera de marcher à son prochain appel, et son
-                job en cours repartira en file pour un autre runner. Pour le remettre en service, il faudra un nouveau
-                token.
-              </p>
-            </Confirm>
-          </div>
+        {actionsColumn ? (
+          <td data-label="Actions" class="row-action">
+            {manage ? (
+              <div class="runner-actions">
+                <form method="post" action={routes.runnerTrust.href({ id: runner.id })}>
+                  <input type="hidden" name="_csrf" value={csrf} />
+                  <input type="hidden" name="trusted" value={runner.trusted ? 'false' : 'true'} />
+                  <button class="button button-small" type="submit">
+                    {runner.trusted ? 'Retirer la confiance' : 'Marquer de confiance'}
+                    <span class="visually-hidden"> à {runner.name}</span>
+                  </button>
+                </form>
+                <Confirm trigger="Révoquer…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Révoquer ${runner.name}`}>
+                  <p>
+                    Le token de <strong class="mono">{runner.name}</strong> cessera de marcher à son prochain appel, et son
+                    job en cours repartira en file pour un autre runner. Pour le remettre en service, il faudra un nouveau
+                    token.
+                  </p>
+                </Confirm>
+              </div>
+            ) : service && state !== 'revoked' ? (
+              <span class="hint">géré par l’opérateur</span>
+            ) : null}
+          </td>
         ) : null}
-      </li>
+      </tr>
     )
   }
 }

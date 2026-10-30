@@ -76,7 +76,8 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
 
   let runnerToken = await startRunner(request, token)
   await page.reload()
-  let card = page.locator('.runner', { has: page.getByRole('heading', { name, exact: true }) })
+  // REV-37: a row of the table of the runners (a card under 760 px).
+  let card = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(`^${name}`) }) })
   await expect(card.getByText('En ligne', { exact: true })).toBeVisible()
   await expect(card.getByText('Clé du runner', { exact: true })).toBeVisible()
   await expect(card.getByText(/disponible$/)).toBeVisible()
@@ -102,7 +103,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   await card.getByRole('button', { name: `Révoquer ${name}` }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Runner révoqué.' })).toBeVisible()
   let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Révoqués/ }) })
-  await expect(revoked.getByRole('heading', { name, exact: true })).toBeVisible()
+  await expect(revoked.getByRole('rowheader', { name: new RegExp(`^${name}`) })).toBeVisible()
 
   // The runner gets 401 at its next call.
   let claim = await request.post('/api/runner/jobs/claim', { headers: { Authorization: `Bearer ${runnerToken}` }, data: { hasProviderKey: true } })
@@ -187,23 +188,23 @@ for (let theme of ['paper', 'sumi'] as const) {
   })
 }
 
-test('a runner silent for 3 days is « Hors ligne », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
+test('a runner offline for 2 h is « Hors ligne », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
   let name = `hetzner-${testInfo.project.name}`
   let db = sql()
   try {
     await db`delete from runners where name = ${name}`
     await db`
       insert into runners (org_id, name, labels, version, token_hash, trusted, last_seen_at, created_at)
-      select id, ${name}, '{linux}', '0.3.9', ${`e2e-${name}`}, false, now() - interval '3 days', now() - interval '30 days'
+      select id, ${name}, '{linux}', '0.3.9', ${`e2e-${name}`}, false, now() - interval '2 hours', now() - interval '30 days'
       from orgs where login = 'sakuga-software'`
   } finally {
     await db.end()
   }
   await signIn(page, 'alex')
   await page.goto('/runners')
-  let first = page.getByRole('region', { name: /^Runners actifs/ }).getByRole('listitem').filter({ has: page.getByRole('heading', { level: 3 }) }).first()
-  await expect(first.getByRole('heading', { level: 3 })).toHaveText(name)
-  let state = first.getByText('Hors ligne depuis 3 j', { exact: true })
+  let first = page.getByRole('table', { name: 'Runners en service' }).locator('tbody tr').first()
+  await expect(first.getByRole('rowheader')).toHaveText(new RegExp(`^${name}`))
+  let state = first.getByText('Hors ligne depuis 2 h', { exact: true })
   await expect(state).toBeVisible()
   // The colour repeats the word: the red of an alert, as an expired token.
   let colours = await state.evaluate((el) => {
@@ -224,6 +225,52 @@ test('a runner silent for 3 days is « Hors ligne », in red, at the top; a new 
   db = sql()
   try {
     await db`delete from runners where name = ${name}`
+  } finally {
+    await db.end()
+  }
+})
+
+test('the runners silent for a day are folded away, and revoked together after a confirmation (REV-37)', async ({ page }, testInfo) => {
+  let prefix = `ci-${testInfo.project.name}-`
+  let db = sql()
+  try {
+    await db`delete from runners where name like ${`${prefix}%`}`
+    await db`
+      insert into runners (org_id, name, labels, version, token_hash, last_seen_at, created_at)
+      select orgs.id, ${prefix} || g, '{linux}', '0.3.9', ${`e2e-${prefix}`} || g, now() - (g || ' days')::interval, now() - interval '30 days'
+      from orgs, generate_series(1, 3) g where login = 'sakuga-software'`
+  } finally {
+    await db.end()
+  }
+  await signIn(page, 'alex')
+  await page.goto('/runners')
+  await expect(page.getByRole('heading', { level: 2, name: 'Runners', exact: true })).toBeVisible()
+  await expect(page.locator('.runner-counts').first()).toContainText('hors ligne')
+  let silent = page.locator('details.runner-silent')
+  await expect(silent.locator('> summary')).toHaveText(/runners? muets? depuis plus de 24 h/)
+  await expect(silent.getByRole('rowheader', { name: new RegExp(`^${prefix}1`) })).toBeHidden()
+  await silent.locator('> summary').click()
+  await expect(silent.getByRole('rowheader', { name: new RegExp(`^${prefix}1`) })).toBeVisible()
+  await expect(silent.getByText('Hors ligne depuis 3 j', { exact: true }).first()).toBeVisible()
+
+  let trigger = silent.locator('summary', { hasText: /^Révoquer ce/ })
+  await trigger.click()
+  await expect(silent.getByText('Un runner qui a appelé depuis l’affichage de la page reste en service.')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+  await expectNoAxeViolations(page)
+  await trigger.click()
+  await silent.getByRole('button', { name: /^Révoquer \d+ runners$|^Révoquer ci-/ }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Runners muets révoqués.' })).toBeVisible()
+  await expect(page.locator('details.runner-silent')).toHaveCount(0)
+  let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Révoqués/ }) })
+  for (let n = 1; n <= 3; n++) await expect(revoked.getByRole('rowheader', { name: new RegExp(`^${prefix}${n}`) })).toBeVisible()
+  let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+
+  db = sql()
+  try {
+    await db`delete from runners where name like ${`${prefix}%`}`
   } finally {
     await db.end()
   }

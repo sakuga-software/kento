@@ -952,6 +952,20 @@ export function createUiControllers(deps: UiDependencies) {
         return redirect(`${pageRoutes.runners.href()}?notice=${revoked ? 'revoked' : 'missing'}`)
       },
 
+      // REV-37. « Révoquer ces runners… » of the block of the silent runners: the ids that the
+      // screen showed. The store keeps only those still silent. cop() and csrf() ran before.
+      async runnersRevokeSilent(context) {
+        let signed = signedOf(context)
+        let store = deps.runners
+        if (!store || signed.membership.role !== 'admin') return forbidden()
+        let ids = (context.get(FormData)?.getAll('id') ?? []).map(String).filter((id) => UUID.test(id)).slice(0, 1000)
+        let revoked = await store.revokeSilent(signed.membership.org.id, ids)
+        if (revoked.names.length > 0) {
+          log('info', 'runner.revoked_silent', { names: revoked.names, requeued: revoked.requeued, by: signed.user.login })
+        }
+        return redirect(`${pageRoutes.runners.href()}?notice=${revoked.names.length > 0 ? 'revoked_silent' : 'missing'}`)
+      },
+
       async settings(context) {
         let signed = signedOf(context)
         let page = frame(signed, context, getCsrfToken(context))

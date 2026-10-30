@@ -60,6 +60,10 @@ function fakeStore(screen: Partial<RunnersScreen> = {}) {
       writes.push(`revoke ${orgId} ${id}`)
       return id === RUNNER_ID ? { name: 'mac-mini', requeued: [] } : null
     },
+    async revokeSilent(orgId, ids) {
+      writes.push(`revoke-silent ${orgId} ${ids.join(',')}`)
+      return { names: ids.length > 0 ? ['old'] : [], requeued: [] }
+    },
   }
   return { store, writes, registrations }
 }
@@ -78,7 +82,7 @@ function setup(screen: Partial<RunnersScreen> = {}, orgs = [ORG]) {
     runnersAdmin: fake.store,
   })
 
-  function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
+  function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> | URLSearchParams } = {}) {
     let headers = new Headers(init.headers)
     if (init.cookie) headers.set('Cookie', init.cookie)
     return router.fetch(
@@ -222,17 +226,53 @@ describe('the Runners screen', () => {
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
   })
 
-  it('shows a runner silent for 3 days as « Hors ligne », above a runner that is online (REV-30)', async () => {
+  it('shows a runner offline for 2 h above a runner that is online, in a table, with the counts by state (REV-30, REV-37)', async () => {
     let { request, signIn } = setup({
       runners: [
         runner({ name: 'mac-host' }),
-        runner({ id: '33333333-3333-4333-8333-333333333334', name: 'hetzner-cx22', lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000) }),
+        runner({ id: '33333333-3333-4333-8333-333333333334', name: 'hetzner-cx22', lastSeenAt: new Date(NOW.getTime() - 2 * 3_600_000) }),
+        runner({ id: '33333333-3333-4333-8333-333333333335', name: 'ci-ephemeral-7', lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000) }),
+        runner({ id: '33333333-3333-4333-8333-333333333336', name: 'old-laptop', revokedAt: new Date(NOW.getTime() - 86_400_000) }),
       ],
     })
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/runners', { cookie })).text()
-    assert.match(html, /<span class="status status-offline">Hors ligne depuis 3 j<\/span>/)
-    assert.ok(html.indexOf('hetzner-cx22') < html.indexOf('mac-host'), 'the offline runner comes first')
+    assert.match(html, /<h2 id="runners-title" class="section-title">Runners<\/h2><p class="runner-counts">1 en ligne · 2 hors ligne<\/p>/)
+    assert.doesNotMatch(html, /Runners actifs/)
+    let main = html.slice(html.indexOf('id="runners-title"'), html.indexOf('class="runner-silent"'))
+    assert.match(main, /<table class="table runners-table">/)
+    assert.match(main, /<span class="status status-offline">Hors ligne depuis 2 h<\/span>/)
+    assert.ok(main.indexOf('hetzner-cx22') < main.indexOf('mac-host'), 'the offline runner comes first')
+    assert.doesNotMatch(main, /ci-ephemeral-7/)
+    // REV-37: a runner silent for a day is in a folded block, with one action for all of them.
+    let silent = html.slice(html.indexOf('class="runner-silent"'), html.indexOf('id="revoked-title"'))
+    assert.match(silent, /^class="runner-silent"><summary>1 runner muet depuis plus de 24 h<\/summary>/)
+    assert.match(silent, /Hors ligne depuis 3 j/)
+    assert.match(silent, /<form id="revoke-silent" method="post" action="\/runners\/revoke-silent" hidden><input type="hidden" name="_csrf" value="[0-9a-f]+" \/><input type="hidden" name="id" value="33333333-3333-4333-8333-333333333335" \/><\/form>/)
+    assert.match(silent, /<summary class="button button-danger">Révoquer ce runner…<\/summary>/)
+    assert.match(silent, /<button type="submit" form="revoke-silent" formaction="\/runners\/revoke-silent" class="button button-danger-solid">Révoquer ci-ephemeral-7<\/button>/)
+    assert.match(html, /Révoqués <span class="count">1<\/span>/)
+  })
+
+  it('counts the silent runners in the action, and leaves a runner of the service out of it (REV-37)', async () => {
+    let days = (n: number) => new Date(NOW.getTime() - n * 86_400_000)
+    let { request, signIn } = setup({
+      runners: [
+        runner({ id: '44444444-4444-4444-8444-444444444441', name: 'ci-1', lastSeenAt: days(2) }),
+        runner({ id: '44444444-4444-4444-8444-444444444442', name: 'ci-2', lastSeenAt: null, createdAt: days(5) }),
+        runner({ id: '44444444-4444-4444-8444-444444444443', name: 'em-runners-02', orgId: null, lastSeenAt: days(4) }),
+        runner({ id: '44444444-4444-4444-8444-444444444444', name: 'fresh', lastSeenAt: null, createdAt: NOW }),
+      ],
+    })
+    let admin = await (await request('/runners', { cookie: (await signIn(ALEX)).cookie })).text()
+    assert.match(admin, /<summary>3 runners muets depuis plus de 24 h<\/summary>/)
+    assert.match(admin, /Révoquer ces 2 runners…/)
+    assert.match(admin, />Révoquer 2 runners<\/button>/)
+    assert.doesNotMatch(admin, /name="id" value="44444444-4444-4444-8444-444444444443"/)
+    assert.doesNotMatch(admin, /name="id" value="44444444-4444-4444-8444-444444444444"/)
+    let member = await (await request('/runners', { cookie: (await signIn(CAMILLE)).cookie })).text()
+    assert.match(member, /3 runners muets depuis plus de 24 h/)
+    assert.doesNotMatch(member, /revoke-silent/)
   })
 
   it('shows a member the same list, and no form', async () => {
@@ -309,6 +349,24 @@ describe('the writes of the Runners screen', () => {
     let missing = await request('/runners/not-a-uuid/revoke', { cookie, form: { _csrf: csrf } })
     assert.equal(missing.headers.get('Location'), '/runners?notice=missing')
     assert.equal(writes.length, 4)
+  })
+
+  it('revokes the silent runners that the screen showed, for the org on screen (REV-37)', async () => {
+    let { request, signIn, writes } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    assert.equal((await request('/runners/revoke-silent', { cookie, form: { id: RUNNER_ID } })).status, 403, 'no CSRF token')
+    let posted = await request('/runners/revoke-silent', {
+      cookie,
+      form: new URLSearchParams([['_csrf', csrf], ['id', RUNNER_ID], ['id', 'not-a-uuid'], ['id', REGISTRATION_ID]]),
+    })
+    assert.equal(posted.headers.get('Location'), '/runners?notice=revoked_silent')
+    assert.deepEqual(writes, [`revoke-silent ${ORG.id} ${RUNNER_ID},${REGISTRATION_ID}`])
+    let html = await (await request('/runners?notice=revoked_silent', { cookie })).text()
+    assert.match(html, /Runners muets révoqués\./)
+
+    let member = await signIn(CAMILLE)
+    assert.equal((await request('/runners/revoke-silent', { cookie: member.cookie, form: { _csrf: member.csrf, id: RUNNER_ID } })).status, 403)
+    assert.equal(writes.length, 1)
   })
 
   it('refuses every write to a member', async () => {

@@ -248,6 +248,30 @@ describe('the runners of the Runners screen', () => {
       assert.equal(again.attempt, 1)
     })
 
+    it('of the silent runners revokes those still silent for 24 h, of the org only, and requeues their jobs (REV-37)', async () => {
+      let ci1 = await registered({ name: 'ci-1' })
+      let ci2 = await registered({ name: 'ci-2' })
+      let fresh = await registered({ name: 'fresh' })
+      let elsewhere = await registered({ name: 'elsewhere', orgId: otherOrg })
+      let jobId = await queueJob()
+      let job = await (await claim(ci1.token)).json()
+      assert.equal(job.id, jobId)
+      let silentIds = [ci1.runnerId, ci2.runnerId, elsewhere.runnerId]
+      await database.sql`update runners set last_seen_at = now() - interval '25 hours' where id = any(${silentIds}::uuid[])`
+      // ci-2 called again after the screen was read: it stays in service.
+      await database.sql`update runners set last_seen_at = now() where id = ${ci2.runnerId}`
+
+      let revoked = await admin.revokeSilent(org, [ci1.runnerId, ci2.runnerId, fresh.runnerId, elsewhere.runnerId])
+      assert.deepEqual(revoked, { names: ['ci-1'], requeued: [jobId] })
+      let states = await database.sql<{ name: string; revoked: boolean }[]>`
+        select name, revoked_at is not null as revoked from runners order by name`
+      assert.deepEqual(states.map((r) => `${r.name}:${r.revoked}`), ['ci-1:true', 'ci-2:false', 'elsewhere:false', 'fresh:false'])
+      let [requeued] = await database.sql<{ state: string; attempts: number }[]>`select state, attempts from jobs where id = ${jobId}`
+      assert.deepEqual({ ...requeued }, { state: 'queued', attempts: 0 })
+      assert.deepEqual(await admin.revokeSilent(org, []), { names: [], requeued: [] })
+      assert.deepEqual(await admin.revokeSilent(org, [ci1.runnerId]), { names: [], requeued: [] }, 'twice is nothing')
+    })
+
     it('during a claim gives the job back: the claim and the revocation never both win', async () => {
       // Twenty rounds of a claim and a revocation at the same time: the job ends queued for nobody,
       // or claimed by the runner and then given back by the revocation. Never running on a revoked runner.

@@ -8,6 +8,7 @@ import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } fro
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { capState, failureText, setupSteps } from './dashboard.tsx'
+import { runnerState } from './runners.tsx'
 
 const COOKIE = '__Host-kento_session'
 const NOW = new Date('2026-10-29T10:00:00Z')
@@ -40,6 +41,21 @@ function banner(overrides: Partial<FailureBanner> = {}): FailureBanner {
     estimates: { lite: 0.004, balanced: 0.12, heavy: null },
     ...overrides,
   }
+}
+
+/** The runners of the default screen. */
+function runnersOf(): DashboardScreen['runners'] {
+  return [{ id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }]
+}
+
+/** The counts that the store reads in SQL, from the runners of a screen. */
+function countRunners(runners: DashboardScreen['runners']): DashboardScreen['runnerCounts'] {
+  let counts = { online: 0, late: 0, offline: 0 }
+  for (let runner of runners) {
+    let state = runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, NOW)
+    if (state !== 'revoked') counts[state]++
+  }
+  return counts
 }
 
 function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
@@ -93,10 +109,11 @@ function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
       runningCount: 1,
       queuedCount: 0,
     },
-    runners: [{ id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }],
+    runners: runnersOf(),
     workflowRepos: ['sakuga-software/dojo'],
     setup: { published: true, suspended: false, enabledRepos: 2, providers: 1, pendingRegistrations: 0 },
     ...overrides,
+    runnerCounts: overrides.runnerCounts ?? countRunners(overrides.runners ?? runnersOf()),
   }
 }
 
@@ -315,19 +332,22 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /Relancer en/)
   })
 
-  it('lists an offline runner first, with its state, as the Runners screen does (REV-30)', async () => {
+  it('lists the runners that work first, the offline ones after, with the counts of all and a link to the rest (REV-37)', async () => {
     let { signIn } = setup(
       screen({
         runners: [
           { id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
           { id: 'run2', name: 'hetzner-cx22', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
         ],
+        runnerCounts: { online: 1, late: 0, offline: 23 },
       }),
     )
     let { html } = await signIn(ALEX)
     let section = html.slice(html.indexOf('id="dash-runners-title"'))
+    assert.match(section, /<p class="runner-counts">1 en ligne · 23 hors ligne<\/p>/)
     assert.match(section, /<span class="status status-offline">Hors ligne depuis 3 j<\/span>/)
-    assert.ok(section.indexOf('hetzner-cx22') < section.indexOf('mac-mini'), 'the offline runner comes first')
+    assert.ok(section.indexOf('mac-mini') < section.indexOf('hetzner-cx22'), 'the store order stays: the online runner first')
+    assert.match(section, /<a href="\/runners">et 22 de plus<span class="visually-hidden"> sur l’écran Runners<\/span><\/a>/)
   })
 
   it('has empty states', async () => {

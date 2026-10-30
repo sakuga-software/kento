@@ -4,6 +4,7 @@ import type postgres from 'postgres'
 import { jobConfig, readOverrides, resolveConfig } from '../repo-config/model.ts'
 import { readOrgCosts, type OrgCostsDetail } from '../org-settings/costs.ts'
 import { capReached, readMoney, type CapPeriod, type OrgCaps } from '../org-settings/model.ts'
+import { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
 /** The days of the chart « Reviews publiées », today included. */
 export const WEEK_DAYS = 7
@@ -15,6 +16,10 @@ export const FAILURE_SHOWN_DAYS = 7
 export const FAILURES_LIMIT = 5
 /** The jobs of each part of the queue. More are counted, not listed. */
 export const QUEUE_LIMIT = 20
+/** REV-37. The runners online or late on the card « Runners ». */
+export const RUNNERS_LIMIT = 10
+/** REV-37. The offline runners on the card, the last ones seen first. More are counted, not listed. */
+export const OFFLINE_RUNNERS_LIMIT = 5
 /** The reviews of a level of a repository that the estimate of a retry averages, newest first. */
 export const ESTIMATE_SAMPLE = 20
 
@@ -99,6 +104,13 @@ export interface DashboardRunner {
   running: number
 }
 
+/** The runners in service of the org and of the service, by state, all of them (REV-37). */
+export interface RunnerCounts {
+  online: number
+  late: number
+  offline: number
+}
+
 /**
  * REV-26. What the list « Mise en route » reads, until the first review of the org is published:
  * the App, the providers, the runners and the repositories. The runners themselves are in
@@ -127,7 +139,12 @@ export interface DashboardScreen {
   costs: OrgCostsDetail
   caps: OrgCaps
   queue: { running: QueueJob[]; queued: QueueJob[]; runningCount: number; queuedCount: number }
+  /**
+   * The runners of the card (REV-37): those late then online, up to `RUNNERS_LIMIT`, then the
+   * offline ones, up to `OFFLINE_RUNNERS_LIMIT`. `runnerCounts` counts them all.
+   */
   runners: DashboardRunner[]
+  runnerCounts: RunnerCounts
   /** The enabled repositories that still run the review workflow of GitHub Actions: no follow-up of findings. */
   workflowRepos: string[]
   setup: SetupState
@@ -416,15 +433,61 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
     return out
   }
 
-  async function runners(orgId: string): Promise<DashboardRunner[]> {
-    let rows = await sql<{ id: string; name: string; orgId: string | null; lastSeenAt: Date | string | null; running: string }[]>`
-      select runners.id, runners.name, runners.org_id as "orgId", runners.last_seen_at as "lastSeenAt",
+  async function runners(orgId: string): Promise<{ list: DashboardRunner[]; counts: RunnerCounts }> {
+    // The states of runnerState() (app/ui/runners.tsx), in SQL: the card reads a bounded list, and the
+    // counts of all the runners in service in the same query.
+    let rows = await sql<
+      {
+        id: string
+        name: string
+        orgId: string | null
+        lastSeenAt: Date | string | null
+        running: string
+        online: string
+        late: string
+        offline: string
+      }[]
+    >`
+      with seen as (
+        select runners.id, runners.name, runners.org_id, runners.last_seen_at,
+          case
+            -- Never seen: « offline », as runnerState() says for a null lastSeenAt.
+            when runners.last_seen_at is null then 'offline'
+            when runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval then 'online'
+            when runners.last_seen_at >= now() - ${`${OFFLINE_SECONDS} seconds`}::interval then 'late'
+            else 'offline'
+          end as state
+        from runners
+        where (runners.org_id = ${orgId} or runners.org_id is null) and runners.revoked_at is null
+      ),
+      ranked as (
+        select seen.*,
+          -- A late runner comes before the online ones: the limit never leaves it out.
+          row_number() over (
+            partition by state = 'offline'
+            order by case state when 'late' then 0 when 'online' then 1 else 2 end, last_seen_at desc nulls last, name, id
+          ) as n,
+          count(*) filter (where state = 'online') over () as online,
+          count(*) filter (where state = 'late') over () as late,
+          count(*) filter (where state = 'offline') over () as offline
+        from seen
+      )
+      select ranked.id, ranked.name, ranked.org_id as "orgId", ranked.last_seen_at as "lastSeenAt",
+        ranked.online, ranked.late, ranked.offline,
         (select count(*) from jobs join repos on repos.id = jobs.repo_id
-          where jobs.runner_id = runners.id and jobs.state = 'running' and repos.org_id = ${orgId}) as running
-      from runners
-      where (runners.org_id = ${orgId} or runners.org_id is null) and runners.revoked_at is null
-      order by runners.last_seen_at desc nulls last, runners.name`
-    return rows.map((row) => ({ ...row, lastSeenAt: toDate(row.lastSeenAt), running: Number(row.running) }))
+          where jobs.runner_id = ranked.id and jobs.state = 'running' and repos.org_id = ${orgId}) as running
+      from ranked
+      where ranked.n <= case when ranked.state = 'offline' then ${OFFLINE_RUNNERS_LIMIT}::int else ${RUNNERS_LIMIT}::int end
+      order by case ranked.state when 'late' then 0 when 'online' then 1 else 2 end, ranked.n`
+    let first = rows[0]
+    return {
+      list: rows.map(({ online: _online, late: _late, offline: _offline, ...row }) => ({
+        ...row,
+        lastSeenAt: toDate(row.lastSeenAt),
+        running: Number(row.running),
+      })),
+      counts: { online: Number(first?.online ?? 0), late: Number(first?.late ?? 0), offline: Number(first?.offline ?? 0) },
+    }
   }
 
   /** The cost limits of the org (REV-13). */
@@ -484,7 +547,8 @@ export function createDashboardStore(sql: postgres.Sql): DashboardStore {
         costs,
         caps,
         queue: queueView,
-        runners: runnerViews,
+        runners: runnerViews.list,
+        runnerCounts: runnerViews.counts,
         workflowRepos: workflow.map((row) => row.fullName),
         setup: setupView,
       }

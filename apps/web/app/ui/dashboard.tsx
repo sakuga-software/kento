@@ -1,13 +1,13 @@
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
-import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview } from '../dashboard/store.ts'
+import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview, RunnerCounts } from '../dashboard/store.ts'
 import { agoOrDate, agoShort, clock, duration, elapsed, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
 import { pageRoutes as routes } from '../routes.ts'
-import { byState, runnerState, runnerStateLabel } from './runners.tsx'
+import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
@@ -113,12 +113,13 @@ const SETUP_STATE: Record<SetupStep['state'], { text: string; status: string }> 
  * review of the org is published: the list is gone for good.
  */
 export function setupSteps(
-  screen: Pick<DashboardScreen, 'setup' | 'runners' | 'queue' | 'now'>,
+  screen: Pick<DashboardScreen, 'setup' | 'runnerCounts' | 'queue'>,
   options: { serviceKey: boolean; installationUrl: string | null },
 ): SetupStep[] | null {
-  let { setup, runners, queue, now } = screen
+  let { setup, runnerCounts, queue } = screen
   if (setup.published) return null
-  let online = runners.filter((runner) => runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, now) === 'online').length
+  let online = runnerCounts.online
+  let registered = runnerCounts.online + runnerCounts.late + runnerCounts.offline
   let jobs = queue.runningCount + queue.queuedCount
   let install = options.installationUrl ? { label: 'Ouvrir l’installation sur GitHub', href: options.installationUrl, external: true } : null
   return [
@@ -168,13 +169,13 @@ export function setupSteps(
           text: online === 1 ? '1 runner en ligne.' : `${online} runners en ligne.`,
           action: { label: 'Voir les runners', href: routes.runners.href() },
         }
-      : runners.length > 0 || setup.pendingRegistrations > 0
+      : registered > 0 || setup.pendingRegistrations > 0
         ? {
             key: 'runner',
             title: 'Enregistrer un runner',
             state: 'wait',
             text:
-              runners.length > 0
+              registered > 0
                 ? 'Un runner est enregistré, mais aucun n’est en ligne : les jobs l’attendent en file.'
                 : 'Un token d’enregistrement attend son runner.',
             action: { label: 'Voir les runners', href: routes.runners.href() },
@@ -275,7 +276,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <div class="dash-grid">
             <QueueSection queue={screen.queue} now={screen.now} githubUrl={githubUrl} />
-            <RunnersSection runners={screen.runners} now={screen.now} />
+            <RunnersSection runners={screen.runners} counts={screen.runnerCounts} now={screen.now} />
           </div>
 
           <div class="dash-grid">
@@ -742,44 +743,55 @@ function QueueSection(handle: Handle<{ queue: DashboardScreen['queue']; now: Dat
   }
 }
 
-function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; now: Date }>) {
+function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; counts: RunnerCounts; now: Date }>) {
   return () => {
-    let { runners, now } = handle.props
-    let online = runners.filter((runner) => runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, now) === 'online').length
+    let { runners, counts, now } = handle.props
+    let total = counts.online + counts.late + counts.offline
+    let more = total - runners.length
     return (
       <section class="dash-section card" aria-labelledby="dash-runners-title">
         <div class="dash-section-head">
           <h2 id="dash-runners-title" class="section-title">
-            Runners <span class="count">{online} en ligne</span>
+            Runners
           </h2>
           <a class="button button-small" href={routes.runners.href()}>
             Gérer<span class="visually-hidden"> les runners</span>
           </a>
         </div>
-        {runners.length === 0 ? (
+        {total === 0 ? (
           <p class="hint">Aucun runner : les jobs attendent en file. Créez-en un dans Runners.</p>
         ) : (
-          <ul class="dash-jobs">
-            {/* As on the Runners screen: an offline runner first, then a late one (REV-30). */}
-            {byState(runners, now).map((runner) => {
-              let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
-              let state = runnerState(seen, now)
-              return (
-                <li class="dash-job">
-                  <div class="dash-review-head">
-                    <span class="mono">{runner.name}</span>
-                    <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
-                    {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
-                  </div>
-                  <p class="hint">
-                    {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
-                    signal{' '}
-                    {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
-                  </p>
-                </li>
-              )
-            })}
-          </ul>
+          <>
+            <p class="runner-counts">{countsText(counts)}</p>
+            {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
+            <ul class="dash-jobs">
+              {runners.map((runner) => {
+                let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
+                let state = runnerState(seen, now)
+                return (
+                  <li class="dash-job">
+                    <div class="dash-review-head">
+                      <span class="mono">{runner.name}</span>
+                      <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
+                      {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
+                    </div>
+                    <p class="hint">
+                      {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
+                      signal{' '}
+                      {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
+                    </p>
+                  </li>
+                )
+              })}
+            </ul>
+            {more > 0 ? (
+              <p class="hint">
+                <a href={routes.runners.href()}>
+                  et {more} de plus<span class="visually-hidden"> sur l’écran Runners</span>
+                </a>
+              </p>
+            ) : null}
+          </>
         )}
       </section>
     )

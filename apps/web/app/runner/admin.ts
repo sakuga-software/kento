@@ -1,13 +1,22 @@
 import type postgres from 'postgres'
 
-import type { JobKind } from '@sakuga-review/protocol'
+import { CLAIM_WAIT_SECONDS, type JobKind } from '@sakuga-review/protocol'
 
+/** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
+export const ONLINE_SECONDS = 3 * CLAIM_WAIT_SECONDS
+/** After this with no call, a runner is « Hors ligne »; before it, its signal is « en retard ». */
+export const OFFLINE_SECONDS = 60 * 60
 /** A registration token lives this long. */
 export const REGISTRATION_TTL_MINUTES = 60
 /** A revoked runner stays on the screen this long, then leaves the list (its row stays). */
 export const REVOKED_SHOWN_DAYS = 30
 /** A registration token that expired without a runner stays on the screen this long. */
 export const EXPIRED_SHOWN_DAYS = 7
+/**
+ * REV-37. A runner with no call for this long is « muet »: the Runners screen folds it away, and an
+ * admin can revoke all of them at once. Ephemeral runners of a CI end there when nobody revokes them.
+ */
+export const SILENT_HOURS = 24
 
 /** A runner as the Runners screen shows it to a member of `orgId`. */
 export interface RunnerView {
@@ -72,6 +81,12 @@ export interface RunnersAdminStore {
    * it is already revoked.
    */
   revoke(orgId: string, runnerId: string): Promise<{ name: string; requeued: string[] } | null>
+  /**
+   * REV-37. Revokes those of `runnerIds` that are runners of the org, not revoked, and silent for
+   * `SILENT_HOURS` or more (never seen: created that long ago). A runner that called since the
+   * screen was read stays. Their running jobs go back to the queue, as with `revoke`.
+   */
+  revokeSilent(orgId: string, runnerIds: string[]): Promise<{ names: string[]; requeued: string[] }>
 }
 
 function toDate(value: Date | string): Date
@@ -220,6 +235,30 @@ export function createRunnersAdminStore(sql: postgres.Sql): RunnersAdminStore {
           where runner_id = ${runnerId} and state = 'running'
           returning id`
         return { name: runner.name, requeued: requeued.map((row) => row.id) }
+      })
+    },
+
+    async revokeSilent(orgId, runnerIds) {
+      if (runnerIds.length === 0) return { names: [], requeued: [] }
+      return sql.begin(async (tx) => {
+        // The same locks and the same requeue as `revoke`, for several runners in one transaction.
+        let runners = await tx<{ id: string; name: string }[]>`
+          update runners set revoked_at = now(), updated_at = now()
+          where id = any(${runnerIds}::uuid[]) and org_id = ${orgId} and revoked_at is null
+            and coalesce(last_seen_at, created_at) <= now() - ${`${SILENT_HOURS} hours`}::interval
+          returning id, name`
+        if (runners.length === 0) return { names: [], requeued: [] }
+        let requeued = await tx<{ id: string }[]>`
+          update jobs set
+            state = 'queued',
+            attempts = greatest(attempts - 1, 0),
+            lease_expires_at = null,
+            not_before = null,
+            started_at = null,
+            updated_at = now()
+          where runner_id = any(${runners.map((runner) => runner.id)}::uuid[]) and state = 'running'
+          returning id`
+        return { names: runners.map((runner) => runner.name).sort(), requeued: requeued.map((row) => row.id) }
       })
     },
   }
