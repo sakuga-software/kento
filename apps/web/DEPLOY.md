@@ -653,7 +653,41 @@ select level, state, left(head_sha, 8), left(failure_reason, 80), failure_notice
 where state = 'failed' order by finished_at desc limit 5;
 ```
 
-## 18. Each later deployment
+## 18. Retention of the jobs, reviews and resolutions (REV-38)
+
+No migration, no new variable. Each instance deletes, once an hour and once at its start, the jobs
+that ended (`done`, `failed`, `cancelled`) and were created more than 180 days ago, 2 000 per
+statement. Their review or resolution goes with them (`on delete cascade`). A finding or a finding
+event that names such a review keeps its row, with its review set to null (`on delete set null`).
+
+What stays, whatever its age:
+
+- the queued and running jobs;
+- for each repository, the jobs of its last 20 published reviews and its last failed job: the Repos
+  screen reads them for the streak, its reset and the last review;
+- the findings and their events, the rules, the repositories and their settings.
+
+What goes, after 180 days: the summary, the findings JSON, the score, the model and the cost of each
+review; the verdicts of each resolution; the config, the rules sent and the failure reason of each job.
+The screens read at most a month (costs, cap), a week (dashboard chart) or the last rows above, so
+none of them changes. Two things can read further back: the dashboard, for a failed job, shows the
+previous score of its pull request and averages the cost of the last 20 reviews of a level; past 180
+days they show nothing, as for a new repository.
+
+Volume measured on a local database with 200 000 jobs and 180 000 reviews (150 000 of them older than
+180 days): the first purge deletes 150 000 jobs in 13.7 s (75 statements of about 180 ms), the next
+one finds nothing in 10 ms. The tables go from 159 MB to 110 MB after `VACUUM` (the space is reused
+by the next rows, not given back to the disk), and to 63 MB after `VACUUM FULL`. Steady state: 180
+days of reviews, about 200 MB at 1 000 reviews a day.
+
+In the logs: `jobs.purged` with `deleted` and `durationMs` when a run deleted something,
+`jobs.purge_failed` (error) when the database refused it; the next run tries again.
+
+```sql
+select count(*) filter (where created_at < now() - interval '180 days') as older, count(*) from jobs;
+```
+
+## 19. Each later deployment
 
 - Automatic deployment on a push to `main` is a choice for Alex (Dokploy → `web` → **Auto Deploy**).
   Without it, deploy by hand after each merge that touches `apps/web`.

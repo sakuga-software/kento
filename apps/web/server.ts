@@ -6,6 +6,7 @@ import { createCommandHandler } from './app/commands/handler.ts'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
 import { createDatabaseCheck } from './app/db/health.ts'
+import { startJobsPurge } from './app/db/retention.ts'
 import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
 import { createInstallationTokenMinter } from './app/github/installation-token.ts'
@@ -239,6 +240,10 @@ if (config.githubWebhookSecret === null) {
 // attempt. Each replica sweeps; two sweeps never take the same job.
 let stopLeaseSweeper = startLeaseSweeper(runnerStore)
 
+// REV-38. The jobs that ended more than 180 days ago leave the database, with their reviews and
+// resolutions, once an hour. Each replica purges; two purges never take the same job.
+let stopJobsPurge = startJobsPurge(database.sql)
+
 let server = http.createServer(
   createRequestListener(router.fetch, {
     onError(error) {
@@ -268,6 +273,7 @@ function shutdown(signal: NodeJS.Signals) {
   log('info', 'shutdown.started', { signal })
   server.close(async () => {
     await stopLeaseSweeper()
+    await stopJobsPurge()
     // A publication in progress ends before the database closes.
     if (sweepTimer) clearInterval(sweepTimer)
     await publisher?.stop()
