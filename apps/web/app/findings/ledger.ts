@@ -72,8 +72,8 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
             if (!statusHolds) continue
           }
           // `now()` is the start of the transaction: two events of one finding (an adopted thread
-          // `opened` then `fixed`) would share it, and their order would rest on their random ids.
-          // `clock_timestamp()` keeps the order in which they are written.
+          // `opened` then `dismissed` or `fixed`) would share it, and their order would rest on
+          // their random ids. `clock_timestamp()` keeps the order in which they are written.
           for (let event of entry.events) {
             await tx`
               insert into finding_events (finding_id, review_id, type, actor, reason, created_at)

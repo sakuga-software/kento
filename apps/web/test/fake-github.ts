@@ -50,6 +50,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     permissions: new Map<string, string>(),
     /** The author of each comment of a person on the pull request, as `issues/comments/:id` gives it. Missing: 404. */
     commentAuthors: new Map<number, string>(),
+    /** REV-16. The reactions of people on the review comments: comment id → `{ content, login }`. */
+    reviewReactions: new Map<number, { content: string; login: string }[]>(),
     /** The reactions of the App on the comments of the pull request: `commentId:content`. */
     reactions: new Set<string>(),
     /** The next comments of the pull request answer 502, as during an outage of GitHub. */
@@ -60,6 +62,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     comments: [] as Comment[],
     resolved: new Set<number>(),
     repoLabels: new Set<string>(),
+    /** The description of each label that the App created. */
+    labelDescriptions: new Map<string, string>(),
     checkRuns: [] as { name: string; head_sha: string; conclusion: string; output: { title: string; summary: string }; token: string }[],
     commits: { ...options.commits } as Record<string, string>,
     /** `from...to` → the answer of the compare API. A missing entry answers 404, a status `error` 500. */
@@ -213,6 +217,17 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       state.pr.body = body.body
       return json(200, {})
     }
+    if ((m = /^\/pulls\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'GET') {
+      let id = Number(m[1])
+      if (!state.comments.some((c) => c.id === id) || state.deletedComments.has(id)) return json(404, { message: 'Not Found' })
+      let content = url.searchParams.get('content')
+      return json(
+        200,
+        (state.reviewReactions.get(id) ?? [])
+          .filter((r) => !content || r.content === content)
+          .map((r) => ({ content: r.content, user: { login: r.login, type: r.login.endsWith('[bot]') ? 'Bot' : 'User' } })),
+      )
+    }
     if ((m = /^\/pulls\/\d+\/comments\/(\d+)\/replies$/.exec(rest)) && method === 'POST') {
       let parent = state.comments.find((c) => c.id === Number(m![1]))
       if (!parent || state.deletedComments.has(parent.id)) return json(404, { message: 'Not Found' })
@@ -277,6 +292,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     }
     if (rest === '/labels' && method === 'POST') {
       state.repoLabels.add(body.name)
+      state.labelDescriptions.set(body.name, body.description ?? '')
       return json(201, { name: body.name })
     }
     if (rest === `/issues/${state.pr.number}/labels` && method === 'GET') {
@@ -321,6 +337,9 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     fetch,
     state,
     addThread,
+    /** A person puts a reaction on a review comment (`-1` is 👎). */
+    react: (commentId: number, login: string, content = '-1') =>
+      state.reviewReactions.set(commentId, [...(state.reviewReactions.get(commentId) ?? []), { content, login }]),
     /** The bot comments that start a thread. */
     botThreads: () => state.comments.filter((c) => c.inReplyTo === null && c.author === BOT),
     repliesTo: (id: number) => state.comments.filter((c) => c.inReplyTo === id),

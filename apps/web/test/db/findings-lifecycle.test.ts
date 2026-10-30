@@ -5,7 +5,7 @@
 // 1. A push that adds a defect → an `open` finding, one comment.
 // 2. A push that adds lines above it → the same fingerprint, no new comment.
 // 3. A push that fixes it → `fixed`, and its thread gets the answer.
-// 4. (👎: the next PR of the stack.)
+// 4. A 👎 on another comment → `dismissed` at the next push; the sweep of the publisher reads it too.
 // 5. The pull request closes → the open findings left become `stale`.
 import { generateKeyPairSync } from 'node:crypto'
 
@@ -63,6 +63,8 @@ function finding(d: Draft): ReviewFinding {
 
 const SUBTRACTS = (line: number, file: string[]) => finding({ path: 'src/sum.ts', line, title: 'La somme soustrait', file })
 const DIVIDES = finding({ path: 'src/div.ts', line: 2, title: 'Division par zéro', file: DIV, severity: 'minor' })
+const MEAN = ['export function mean(xs: number[]) {', '  return Math.trunc(sum(xs) / xs.length);', '}']
+const TRUNCATES = finding({ path: 'src/mean.ts', line: 2, title: 'La moyenne tronque', file: MEAN, severity: 'minor' })
 
 function review(head: string, findings: ReviewFinding[]): ReviewPayload {
   return {
@@ -133,7 +135,7 @@ describe('findings from push to push (REV-16)', () => {
     fake.state.commits[head] = `push ${head.slice(0, 1)}`
     // Every earlier head is an ancestor of this one; `changed` lists the files of the last push.
     for (let earlier of HEADS.slice(0, HEADS.indexOf(head))) {
-      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : ['src/sum.ts', 'src/div.ts'] })
+      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : ['src/sum.ts', 'src/div.ts', 'src/mean.ts'] })
     }
     await database.sql`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref)
@@ -196,6 +198,10 @@ describe('findings from push to push (REV-16)', () => {
     await database.sql`delete from jobs`
     await database.sql`delete from findings`
     fake = createFakeGitHub({ head: HEADS[0]!, pr: PR, commits: {} })
+    // The people who can write to the repository: only their 👎 dismisses a finding.
+    fake.state.permissions.set('camille', 'write')
+    fake.state.permissions.set('alex', 'admin')
+    fake.state.permissions.set('reader', 'read')
   })
 
   after(async () => {
@@ -203,16 +209,18 @@ describe('findings from push to push (REV-16)', () => {
     await test?.drop()
   })
 
-  it('follows a finding from its push to its fix, then the close of the pull request', async () => {
-    // 1. The defect comes in: two open findings, two comments.
-    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES], ['src/sum.ts', 'src/div.ts'])
+  it('follows the findings of a pull request from push to push, to the close', async () => {
+    // 1. The defects come in: three open findings, three comments.
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES, TRUNCATES], ['src/sum.ts', 'src/div.ts', 'src/mean.ts'])
     let rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status, r.line]), [
       ['Division par zéro', 'open', 2],
+      ['La moyenne tronque', 'open', 2],
       ['La somme soustrait', 'open', 2],
     ])
-    assert.equal(fake.botThreads().length, 2)
-    let sumComment = fake.botThreads().find((c) => c.path === 'src/sum.ts')!
+    assert.equal(fake.botThreads().length, 3)
+    let comment = (path: string) => fake.botThreads().find((c) => c.path === path)!
+    let sumComment = comment('src/sum.ts')
     assert.equal(rows.find((r) => r.title === 'La somme soustrait')!.githubCommentId, sumComment.id)
     assert.deepEqual((await events('La somme soustrait')).map((e) => [e.type, e.actor, e.reviewed]), [['opened', 'kento', true]])
 
@@ -220,42 +228,86 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(SUBTRACTS(5, SUM_V2).fingerprint, SUBTRACTS(2, SUM_V1).fingerprint)
     // The thread of GitHub follows its line, as GitHub does on a push.
     sumComment.line = 5
-    await push(HEADS[1]!, [SUBTRACTS(5, SUM_V2), DIVIDES], ['src/sum.ts'])
-    assert.equal(fake.botThreads().length, 2, 'no new comment')
+    await push(HEADS[1]!, [SUBTRACTS(5, SUM_V2), DIVIDES, TRUNCATES], ['src/sum.ts'])
+    assert.equal(fake.botThreads().length, 3, 'no new comment')
     assert.equal(fake.state.reviews.at(-1)!.comments, 0)
     rows = await findingRows()
-    assert.deepEqual(rows.map((r) => [r.title, r.status, r.line]), [
-      ['Division par zéro', 'open', 2],
-      ['La somme soustrait', 'open', 5],
-    ])
-    assert.equal(rows.length, 2, 'no new finding')
+    assert.equal(rows.length, 3, 'no new finding')
+    assert.deepEqual(rows.find((r) => r.title === 'La somme soustrait')!.line, 5)
     assert.match(fake.state.pr.body, new RegExp(`#discussion_r${sumComment.id}`), 'the description links the thread that carries it')
 
     // 3. The fix: the finding is not found again, and its file changed → fixed, and its thread
     // gets the answer (the App cannot resolve it here).
-    await push(HEADS[2]!, [DIVIDES], ['src/sum.ts'])
+    await push(HEADS[2]!, [DIVIDES, TRUNCATES], ['src/sum.ts'])
     rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [
       ['Division par zéro', 'open'],
+      ['La moyenne tronque', 'open'],
       ['La somme soustrait', 'fixed'],
     ])
     assert.equal(fake.repliesTo(sumComment.id).length, 1)
     assert.ok(fake.repliesTo(sumComment.id)[0]!.body.includes(GONE))
     assert.deepEqual((await events('La somme soustrait')).map((e) => e.type), ['opened', 'fixed'])
-    // The other finding is not fixed: its file did not change.
-    assert.equal(fake.repliesTo(fake.botThreads().find((c) => c.path === 'src/div.ts')!.id).length, 0)
+    // The other findings are not fixed: their files did not change.
+    assert.equal(fake.repliesTo(comment('src/div.ts').id).length, 0)
 
-    // 5. The pull request closes: the open finding left is stale; the fixed one stays fixed.
-    await closePullRequest()
+    // 4. A 👎 of a person on another comment → dismissed at the next push, and no comment again.
+    fake.react(comment('src/div.ts').id, 'camille')
+    fake.react(comment('src/mean.ts').id, 'kento-review[bot]')
+    await push(HEADS[3]!, [DIVIDES, TRUNCATES], [])
+    rows = await findingRows()
+    let divides = rows.find((r) => r.title === 'Division par zéro')!
+    assert.deepEqual([divides.status, divides.statusReason], ['dismissed', 'sans motif, réaction GitHub'])
+    assert.equal(rows.find((r) => r.title === 'La moyenne tronque')!.status, 'open', 'the 👎 of a bot does not count')
+    assert.equal(fake.botThreads().length, 3, 'no new comment')
+    assert.doesNotMatch(fake.state.reviews.at(-1)!.body, /Division par zéro/)
+    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reason, e.reviewed]), [
+      ['opened', 'kento', null, true],
+      ['dismissed', 'camille', 'sans motif, réaction GitHub', true],
+    ])
+
+    // 5. The pull request closes: the open finding left is stale; the others keep their status.
+    let apply = createWebhookStore(database.db)
+    let result = await apply(
+      {
+        type: 'cancel_pull_request',
+        installation: { githubInstallationId: 77, githubAccountId: 2001, login: 'sakuga-software' },
+        repository: { githubRepoId: 3001, fullName: 'sakuga-software/sakuga-review' },
+        prNumber: PR,
+      },
+      'delivery-close',
+    )
+    assert.equal(result.outcome, 'cancelled')
     rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [
-      ['Division par zéro', 'stale'],
+      ['Division par zéro', 'dismissed'],
+      ['La moyenne tronque', 'stale'],
       ['La somme soustrait', 'fixed'],
     ])
-    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reviewed]), [
+    assert.deepEqual((await events('La moyenne tronque')).map((e) => [e.type, e.actor, e.reviewed]), [
       ['opened', 'kento', true],
       ['stale', 'kento', false],
     ])
+  })
+
+  it('dismisses an open finding on a 👎 between two pushes, by the sweep of the publisher', async () => {
+    await push(HEADS[0]!, [DIVIDES], ['src/div.ts'])
+    let [row] = await findingRows()
+    fake.react(row!.githubCommentId!, 'alex')
+
+    // No review is waiting: the run of the publisher only sweeps the reactions.
+    let results = await newPublisher().publishPending()
+    assert.deepEqual(results, [])
+
+    let [after] = await findingRows()
+    assert.deepEqual([after!.status, after!.statusReason], ['dismissed', 'sans motif, réaction GitHub'])
+    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reviewed]), [
+      ['opened', 'kento', true],
+      ['dismissed', 'alex', false],
+    ])
+    // The sweep read with a token that can only read the pull requests of this repository.
+    let token = fake.state.tokens.at(-1)!
+    assert.deepEqual([token.repositoryIds, token.permissions], [[3001], { pull_requests: 'read' }])
   })
 
   it('never comments again on a finding that a person dismissed, and leaves it out of the review', async () => {
@@ -406,6 +458,48 @@ describe('findings from push to push (REV-16)', () => {
     await push(HEADS[2]!, [SUBTRACTS(5, SUM_V2)], [])
     assert.equal(fake.botThreads().length, 1)
   })
+
+  it('ignores the 👎 of a person who cannot write to the repository, at a review and at the sweep', async () => {
+    await push(HEADS[0]!, [DIVIDES], ['src/div.ts'])
+    let [row] = await findingRows()
+    // A stranger (not a collaborator: 404) and a person with read access only, as on a public repository.
+    fake.react(row!.githubCommentId!, 'stranger')
+    fake.react(row!.githubCommentId!, 'reader')
+
+    await push(HEADS[1]!, [DIVIDES], [])
+    assert.deepEqual(await newPublisher().publishPending(), [])
+
+    let [after] = await findingRows()
+    assert.equal(after!.status, 'open')
+    assert.equal(fake.botThreads().length, 1, 'still carried by its thread')
+    assert.deepEqual((await events('Division par zéro')).map((e) => e.type), ['opened'])
+
+    // A person who can write puts 👎 next: that one dismisses it.
+    fake.react(row!.githubCommentId!, 'camille')
+    await newPublisher().publishPending()
+    let [dismissed] = await findingRows()
+    assert.equal(dismissed!.status, 'dismissed')
+    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor]), [
+      ['opened', 'kento'],
+      ['dismissed', 'camille'],
+    ])
+  })
+
+  it('dismisses an open thread of an earlier release on a 👎, after its opened event', async () => {
+    let body = `<img alt="P2" src="x"> **Ancien constat**\n\nUn cas.\n\n<!-- sakuga-review:finding ${'e'.repeat(12)} -->`
+    let legacy = fake.addThread({ path: 'src/div.ts', line: 2, body, commit: HEADS[0]! })
+    fake.react(legacy, 'camille')
+
+    await push(HEADS[1]!, [], [])
+
+    let [row] = await findingRows()
+    assert.deepEqual([row!.title, row!.status, row!.statusReason, row!.githubCommentId], ['Ancien constat', 'dismissed', 'sans motif, réaction GitHub', legacy])
+    assert.deepEqual((await events('Ancien constat')).map((e) => [e.type, e.actor]), [
+      ['opened', 'kento'],
+      ['dismissed', 'camille'],
+    ])
+  })
+
 
   it('keeps the thread of a stale finding when the pull request is reopened, and fixes it like an open one', async () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES], ['src/sum.ts', 'src/div.ts'])

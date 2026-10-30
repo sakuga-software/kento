@@ -38,9 +38,11 @@ import {
   liveThread,
   matchFindings,
   type BotThread,
+  type FindingEventDraft,
   type Match,
   type StoredFinding,
 } from '../findings/lifecycle.ts'
+import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { GitHubError, type GitHub } from './github.ts'
@@ -161,6 +163,24 @@ export async function publishReview(
   let ledger = options.findings ?? null
   let known = ledger ? await ledger.load() : []
   let stored = [...known, ...adoptThreads(known, threads)]
+  // A 👎 of a person on the comment of an open finding dismisses it before the review: GitHub sends
+  // no webhook for a reaction. An error leaves the finding open.
+  let reacted = new Map<StoredFinding, string>()
+  let writers = new Map<string, boolean>()
+  if (ledger) {
+    for (let s of stored) {
+      if (s.status !== 'open' || s.githubCommentId === null) continue
+      try {
+        let login = await thumbsDownBy(github, `${owner}/${name}`, s.githubCommentId, writers)
+        if (!login) continue
+        reacted.set(s, login)
+        s.status = 'dismissed'
+        s.statusReason = REACTION_REASON
+      } catch (error) {
+        warn('publish.reaction_failed', { finding: s.id, error: String(error) })
+      }
+    }
+  }
   let { matches, unmatched } = matchFindings(review.findings, stored, threads)
   // A finding that a person dismissed or kept gets no comment, and the review leaves it out.
   let shown = matches.filter((m) => !m.suppressed)
@@ -271,7 +291,7 @@ export async function publishReview(
       free.splice(free.indexOf(hit), 1)
     }
   }
-  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head))
+  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted))
 
   // The caller marks the review as posted. A failure there must not skip the description, the
   // label and the check of a review that is already on GitHub.
@@ -380,8 +400,15 @@ export function ledgerEntries(
   unmatched: readonly StoredFinding[],
   newThreads: ReadonlyMap<Finding, number>,
   head: string,
+  /** The findings that a 👎 dismissed before this review, with the login of the person. */
+  reacted: ReadonlyMap<StoredFinding, string> = new Map(),
 ): LedgerEntry[] {
   let entries: LedgerEntry[] = []
+  let opened: FindingEventDraft = { type: 'opened', actor: KENTO_ACTOR }
+  let byReaction = (s: StoredFinding | null): FindingEventDraft[] => {
+    let login = s ? reacted.get(s) : undefined
+    return login ? [{ type: 'dismissed', actor: login, reason: REACTION_REASON }] : []
+  }
   for (let m of matches) {
     let f = m.finding
     let s = m.stored
@@ -407,12 +434,10 @@ export function ledgerEntries(
         githubCommentId: comment ?? s?.githubCommentId ?? null,
         githubThreadId: comment ? null : (m.carrier?.id ?? s?.githubThreadId ?? null),
       },
-      events:
-        s === null || s.id === null
-          ? [{ type: 'opened', actor: KENTO_ACTOR }]
-          : m.reopened
-            ? [{ type: 'reopened', actor: KENTO_ACTOR }]
-            : [],
+      events: [
+        ...(s === null || s.id === null ? [opened] : m.reopened ? [{ type: 'reopened', actor: KENTO_ACTOR } as const] : []),
+        ...byReaction(s),
+      ],
     })
   }
   let fixedSet = new Set(fixed)
@@ -421,13 +446,13 @@ export function ledgerEntries(
     entries.push({
       id,
       values: { ...values, status: 'fixed' },
-      events: id === null ? [{ type: 'opened', actor: KENTO_ACTOR }, { type: 'fixed', actor: KENTO_ACTOR }] : [{ type: 'fixed', actor: KENTO_ACTOR }],
+      events: [...(id === null ? [opened] : []), { type: 'fixed', actor: KENTO_ACTOR }],
     })
   }
   for (let s of unmatched) {
-    if (s.id !== null || fixedSet.has(s)) continue
-    let { id: _, ...values } = s
-    entries.push({ id: null, values, events: [{ type: 'opened', actor: KENTO_ACTOR }] })
+    if (fixedSet.has(s) || (s.id !== null && !reacted.has(s))) continue
+    let { id, ...values } = s
+    entries.push({ id, values, events: [...(id === null ? [opened] : []), ...byReaction(s)] })
   }
   return entries
 }
@@ -563,7 +588,7 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: 'Score de confiance de Sakuga Review (5 : prête à fusionner)',
+      description: `Score de confiance de ${BY} (5 : prête à fusionner)`,
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []

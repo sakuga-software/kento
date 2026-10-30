@@ -99,6 +99,8 @@ describe('publishReview', () => {
 
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
     assert.ok(fake.state.repoLabels.has('review: 2/5'))
+    // REV-41: the label names the service that posts the review, as the review does.
+    assert.equal(fake.state.labelDescriptions.get('review: 2/5'), 'Score de confiance de Kentō (5 : prête à fusionner)')
 
     assert.equal(fake.state.checkRuns.length, 1)
     let [check] = fake.state.checkRuns

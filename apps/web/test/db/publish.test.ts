@@ -179,6 +179,8 @@ describe('publication of a review', () => {
       [
         [77, [3001], { contents: 'read', pull_requests: 'write', issues: 'write' }],
         [77, [3001], { checks: 'write' }],
+        // REV-16: the sweep of the 👎 reads the comment of the new finding, in read only.
+        [77, [3001], { pull_requests: 'read' }],
       ],
     )
     let writes = fake.state.calls.filter((c) => c.method !== 'GET' && !c.path.startsWith('/app/'))

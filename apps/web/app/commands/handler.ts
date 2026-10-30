@@ -15,6 +15,7 @@ import type { Db } from '../db/client.ts'
 import { enqueueCommandJob, isRepoEnabled, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { USAGE } from '../github/comment-command.ts'
+import { WRITERS } from '../github/permissions.ts'
 import { errorMessage, log } from '../log.ts'
 import { capSentence } from '../org-settings/notice.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
@@ -25,9 +26,6 @@ import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
  * `pull_requests: write`: with `read`, GitHub answers 403.
  */
 export const COMMAND_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
-
-/** The permissions of GitHub that can give a command. `maintain` reads as `write` in `permission`. */
-const WRITERS = new Set(['admin', 'maintain', 'write'])
 
 export type Reaction = 'eyes' | 'rocket' | 'confused'
 

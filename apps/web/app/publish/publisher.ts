@@ -13,6 +13,7 @@ import type postgres from 'postgres'
 import { react, type Reaction } from '../commands/handler.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
 import { createFindingsLedger } from '../findings/ledger.ts'
+import { sweepReactions } from '../findings/reactions.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { publishResolution } from '../resolve/publish.ts'
@@ -28,6 +29,9 @@ export const PUBLISH_PERMISSIONS: TokenPermissions = { contents: 'read', pull_re
  * not have: the review must not depend on it.
  */
 export const CHECK_PERMISSIONS: TokenPermissions = { checks: 'write' }
+
+/** REV-16. The 👎 of the open findings are read this often, besides before each review. */
+const REACTION_SWEEP_MS = 5 * 60_000
 
 /** A review older than this is not published any more: its pull request has moved on. */
 const MAX_AGE = PUBLISH_MAX_AGE
@@ -50,6 +54,8 @@ export interface PublisherDependencies {
   fetch?: typeof globalThis.fetch
   /** How often the timer looks for a review to publish. */
   intervalMs?: number
+  /** REV-16. How often the publisher reads the 👎 of the open findings. 0: at each run. */
+  reactionSweepMs?: number
 }
 
 export type PublishResult =
@@ -137,6 +143,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   let running: Promise<unknown> | null = null
   let again = false
   let timer: NodeJS.Timeout | null = null
+  let lastReactionSweep = 0
 
   async function publishOne(row: Pending): Promise<PublishResult> {
     let review: ReviewPayload = typeof row.result === 'string' ? JSON.parse(row.result) : row.result
@@ -446,6 +453,15 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           await answerEndedCommands(connection)
         } catch (error) {
           log('error', 'command.answers_failed', { error: errorMessage(error) })
+        }
+        if (Date.now() - lastReactionSweep >= (deps.reactionSweepMs ?? REACTION_SWEEP_MS)) {
+          lastReactionSweep = Date.now()
+          try {
+            let swept = await sweepReactions(deps.sql, deps)
+            if (swept.dismissed) log('info', 'findings.reaction_sweep', swept)
+          } catch (error) {
+            log('error', 'findings.reaction_sweep_failed', { error: errorMessage(error) })
+          }
         }
         try {
           await noticeFailedJobs(connection)
