@@ -5,7 +5,8 @@ import type { Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
 import { ESTIMATE_SAMPLE } from '../dashboard/store.ts'
-import { readOrgCosts } from '../org-settings/costs.ts'
+import { executorOf } from '../db/client.ts'
+import { readOrgCosts } from '../db/costs.ts'
 import { capReached, readMoney, type CapPeriod } from '../org-settings/model.ts'
 import { jobConfig, readOverrides, resolveConfig } from '../repo-config/model.ts'
 
@@ -75,7 +76,7 @@ export async function rerunReview(
     if (active) return { kind: 'already', jobId: active.id } as const
     let limits = { dailyCapUsd: readMoney(repo.dailyCapUsd), monthlyCapUsd: readMoney(repo.monthlyCapUsd) }
     if (limits.dailyCapUsd !== null || limits.monthlyCapUsd !== null) {
-      let hit = capReached(limits, await readOrgCosts(tx as unknown as postgres.Sql, input.orgId), new Date())
+      let hit = capReached(limits, await readOrgCosts(executorOf(tx), input.orgId), new Date())
       if (hit) return { kind: 'capped', period: hit.period } as const
     }
     let resolved = resolveConfig(readOverrides(repo.orgConfig), readOverrides(repo.repoConfig), repo.defaultLevel)

@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 
@@ -8,6 +9,22 @@ export type Db = PostgresJsDatabase<typeof schema>
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 /** A database or a transaction: what a raw query of drizzle runs on. */
 export type Executor = Pick<Db, 'execute'>
+
+const dialect = new PgDialect()
+
+/**
+ * An `Executor` on a connection or a transaction of postgres.js, for a caller that holds one: a raw
+ * query of drizzle then runs in that transaction, under its locks.
+ */
+export function executorOf(sql: postgres.Sql | postgres.TransactionSql): Executor {
+  return {
+    execute: (query) => {
+      if (typeof query === 'string') return sql.unsafe(query) as never
+      let { sql: text, params } = dialect.sqlToQuery(query.getSQL())
+      return sql.unsafe(text, params as postgres.ParameterOrJSON<never>[]) as never
+    },
+  } as Executor
+}
 
 export interface Database {
   db: Db
