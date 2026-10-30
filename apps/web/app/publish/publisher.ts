@@ -7,6 +7,7 @@
 // (the pull request is closed, or a newer push moved its head). The log line says why.
 //
 // A job that failed for good gets one comment on its pull request: `jobs.failure_noticed_at`.
+// A pull request whose job waits in the queue for too long gets one comment too (REV-52, queued.ts).
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
@@ -19,9 +20,11 @@ import type { MintInstallationToken, TokenPermissions } from '../github/installa
 import { errorMessage, log } from '../log.ts'
 import { publishResolution } from '../resolve/publish.ts'
 import { pageRoutes } from '../routes.ts'
+import { ONLINE_SECONDS } from '../runner/admin.ts'
 import { failureComment } from './failure.ts'
-import { createGitHub, type GitHub } from './github.ts'
+import { createGitHub, GitHubError, type GitHub } from './github.ts'
 import { publishReview } from './publish.ts'
+import { QUEUE_NOTICE_MAX_AGE, QUEUE_STALL_MINUTES, queuedComment, queuedMarker } from './queued.ts'
 
 /** What the review needs: read the code and the history, write the review, the description and the label. */
 export const PUBLISH_PERMISSIONS: TokenPermissions = { contents: 'read', pull_requests: 'write', issues: 'write' }
@@ -101,6 +104,39 @@ type FailedJobRow = {
   fullName: string
   githubRepoId: string | number
   installationId: string | number
+}
+
+/** REV-52. A pull request whose oldest waiting job waits for too long, and the runners that could take it. */
+type StalledPull = {
+  repoId: string
+  prNumber: number
+  kind: 'review' | 'resolve'
+  level: string
+  headSha: string
+  waitingSince: Date | string
+  count: string | number
+  fullName: string
+  githubRepoId: string | number
+  installationId: string | number
+  /** The runners that could run the job and called within ONLINE_SECONDS. */
+  online: string | number
+  /** The last call of one of these runners, online or not. */
+  lastSeenAt: Date | string | null
+}
+
+/** REV-52. The comment of the queue of a pull request, as `queue_notices` keeps it. */
+type QueueNotice = {
+  repoId: string
+  prNumber: number
+  commentId: string | number | null
+  body: string | null
+  gone: boolean
+  fullName: string
+  githubRepoId: string | number
+  installationId: string | number
+  suspended: boolean
+  /** The row was last written more than a day ago. */
+  stale: boolean
 }
 
 /** The reaction to the comment of a command. On a pull request, GitHub needs `pull_requests: write`. */
@@ -404,6 +440,164 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
     }
   }
 
+  async function githubOf(row: { installationId: string | number; githubRepoId: string | number }): Promise<GitHub> {
+    let token = await deps.mintInstallationToken({
+      installationId: Number(row.installationId),
+      githubRepoId: Number(row.githubRepoId),
+      permissions: REACTION_PERMISSIONS,
+    })
+    return createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+  }
+
+  /** The comment of the App that carries `marker` on the pull request, or null. Reads 1000 comments at most. */
+  async function findComment(github: GitHub, fullName: string, prNumber: number, marker: string): Promise<number | null> {
+    for (let page = 1; page <= 10; page++) {
+      let comments: { id: number; body: string | null; user: { login: string } | null }[] =
+        (await github.rest('GET', `/repos/${fullName}/issues/${prNumber}/comments?per_page=100&page=${page}`)) ?? []
+      let found = comments.find((c) => c.user?.login === deps.botLogin && (c.body ?? '').includes(marker))
+      if (found) return found.id
+      if (comments.length < 100) return null
+    }
+    log('warn', 'job.queue_notice_search_capped', { repo: fullName, pr: prNumber, read: 1000 })
+    return null
+  }
+
+  /**
+   * REV-52. Brings the comments of the queue in line with the queue: one comment per pull request
+   * whose oldest waiting job waits for more than QUEUE_STALL_MINUTES, and none on the others.
+   *
+   * The state is the row of `queue_notices` (one per pull request, its primary key), never the jobs:
+   * a claim, an expired lease, a requeue or a cancel changes the jobs, and the next run reads them
+   * again. Each step is safe to repeat. A comment posted with no answer is found again by its
+   * marker before any new post, and a delete that GitHub answers 404 is done. A failure of GitHub
+   * leaves the row as it was, and the next run (30 s) tries again.
+   */
+  async function syncQueueNotices(connection: postgres.Sql) {
+    // First the comments of the pull requests where no job waits for too long any more.
+    let ended = await connection<QueueNotice[]>`
+      select qn.repo_id as "repoId", qn.pr_number as "prNumber", qn.github_comment_id as "commentId", qn.body,
+        qn.gone_at is not null as gone, repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
+        orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+        qn.updated_at < now() - interval '1 day' as stale
+      from queue_notices qn
+      join repos on repos.id = qn.repo_id
+      join orgs on orgs.id = repos.org_id
+      where not exists (
+        select 1 from jobs
+        where jobs.repo_id = qn.repo_id and jobs.pr_number = qn.pr_number and jobs.state = 'queued' and jobs.base_ref is not null
+          and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval
+          and coalesce(jobs.not_before, jobs.created_at) > now() - ${QUEUE_NOTICE_MAX_AGE}::interval
+      ) or orgs.suspended_at is not null
+      order by qn.updated_at
+      limit 20`
+    for (let row of ended) {
+      let fields = { repo: row.fullName, pr: row.prNumber }
+      try {
+        if (!row.gone && !row.suspended) {
+          let github = await githubOf(row)
+          let marker = queuedMarker(row.repoId, row.prNumber)
+          let id = row.commentId === null ? await findComment(github, row.fullName, row.prNumber, marker) : Number(row.commentId)
+          if (id !== null) {
+            try {
+              await github.rest('DELETE', `/repos/${row.fullName}/issues/comments/${id}`)
+            } catch (error) {
+              // Already deleted, by a person or by an earlier try with no answer: done.
+              if (!(error instanceof GitHubError && error.status === 404)) throw error
+            }
+          }
+          log('info', 'job.queue_notice_removed', { ...fields, commentId: id })
+        }
+      } catch (error) {
+        log('warn', 'job.queue_notice_remove_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
+        // A comment that GitHub refuses to delete for a day is left there.
+        if (!row.stale) continue
+      }
+      await connection`delete from queue_notices where repo_id = ${row.repoId} and pr_number = ${row.prNumber}`
+    }
+
+    // Then one comment on each pull request whose oldest waiting job waits for too long.
+    let stalled = await connection<StalledPull[]>`
+      with waiting as (
+        select jobs.repo_id, jobs.pr_number, jobs.kind, jobs.level, jobs.head_sha,
+          coalesce(jobs.not_before, jobs.created_at) as since,
+          row_number() over (partition by jobs.repo_id, jobs.pr_number order by coalesce(jobs.not_before, jobs.created_at), jobs.id) as n,
+          count(*) over (partition by jobs.repo_id, jobs.pr_number) as count
+        from jobs
+        join repos on repos.id = jobs.repo_id
+        join orgs on orgs.id = repos.org_id
+        where jobs.state = 'queued' and jobs.base_ref is not null
+          and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval
+          and coalesce(jobs.not_before, jobs.created_at) > now() - ${QUEUE_NOTICE_MAX_AGE}::interval
+          and orgs.suspended_at is null
+      )
+      select w.repo_id as "repoId", w.pr_number as "prNumber", w.kind, w.level, w.head_sha as "headSha",
+        w.since as "waitingSince", w.count,
+        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId",
+        runner_state.online, runner_state.last_seen as "lastSeenAt"
+      from waiting w
+      join repos on repos.id = w.repo_id
+      join orgs on orgs.id = repos.org_id
+      -- The runners that could take the job: of its org or of the service, in the pool of the repository.
+      cross join lateral (
+        select count(*) filter (where runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval) as online,
+          max(runners.last_seen_at) as last_seen
+        from runners
+        where (runners.org_id = repos.org_id or runners.org_id is null) and runners.revoked_at is null
+          and (repos.default_runner_pool is null or repos.default_runner_pool = any(runners.labels))
+      ) runner_state
+      where w.n = 1
+      order by w.since
+      limit 20`
+    for (let pull of stalled) {
+      let fields = { repo: pull.fullName, pr: pull.prNumber, head: pull.headSha, level: pull.level }
+      try {
+        await connection`
+          insert into queue_notices (repo_id, pr_number) values (${pull.repoId}, ${pull.prNumber})
+          on conflict (repo_id, pr_number) do nothing`
+        let [row] = await connection<{ commentId: string | number | null; body: string | null; gone: boolean }[]>`
+          select github_comment_id as "commentId", body, gone_at is not null as gone
+          from queue_notices where repo_id = ${pull.repoId} and pr_number = ${pull.prNumber}`
+        if (!row || row.gone) continue
+        let online = Number(pull.online)
+        let lastSeenAt = pull.lastSeenAt === null ? null : new Date(pull.lastSeenAt)
+        let cause = online === 0 ? ({ kind: 'no_runner', lastSeenAt } as const) : ({ kind: 'not_taken', online } as const)
+        let runnersUrl = deps.publicUrl ? new URL(pageRoutes.runners.href(), deps.publicUrl).toString() : null
+        let body = queuedComment({ ...pull, waitingSince: new Date(pull.waitingSince), count: Number(pull.count), cause, runnersUrl })
+        if (row.commentId !== null && row.body === body) continue
+        let github = await githubOf(pull)
+        let id = row.commentId === null ? await findComment(github, pull.fullName, pull.prNumber, queuedMarker(pull.repoId, pull.prNumber)) : Number(row.commentId)
+        if (id === null) {
+          let pr: { state: string; head: { sha: string } } = await github.rest('GET', `/repos/${pull.fullName}/pulls/${pull.prNumber}`)
+          if (pr.state !== 'open' || pr.head.sha !== pull.headSha) {
+            // Nothing to show there: the row stays, marked, until no job of the pull request waits.
+            log('info', 'job.queue_notice_skipped', { ...fields, reason: pr.state !== 'open' ? 'closed' : 'superseded' })
+            await connection`update queue_notices set gone_at = now(), updated_at = now() where repo_id = ${pull.repoId} and pr_number = ${pull.prNumber}`
+            continue
+          }
+          let posted: { id: number } = await github.rest('POST', `/repos/${pull.fullName}/issues/${pull.prNumber}/comments`, { body })
+          id = posted.id
+        } else {
+          try {
+            await github.rest('PATCH', `/repos/${pull.fullName}/issues/comments/${id}`, { body })
+          } catch (error) {
+            if (!(error instanceof GitHubError && error.status === 404)) throw error
+            // A person deleted it: not posted again while a job of the pull request waits.
+            log('info', 'job.queue_notice_gone', fields)
+            await connection`update queue_notices set gone_at = now(), updated_at = now() where repo_id = ${pull.repoId} and pr_number = ${pull.prNumber}`
+            continue
+          }
+        }
+        await connection`
+          update queue_notices set github_comment_id = ${id}, body = ${body}, updated_at = now()
+          where repo_id = ${pull.repoId} and pr_number = ${pull.prNumber}`
+        log('warn', 'job.queue_noticed', { ...fields, commentId: id, count: Number(pull.count), cause: cause.kind, online, lastSeenAt: lastSeenAt?.toISOString() ?? null })
+      } catch (error) {
+        // The row keeps what GitHub had before: the next run tries again.
+        log('warn', 'job.queue_notice_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
+      }
+    }
+  }
+
   async function publishPending(): Promise<PublishResult[]> {
     let connection = await deps.sql.reserve()
     try {
@@ -468,6 +662,11 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           await noticeFailedJobs(connection)
         } catch (error) {
           log('error', 'job.failure_notices_failed', { error: errorMessage(error) })
+        }
+        try {
+          await syncQueueNotices(connection)
+        } catch (error) {
+          log('error', 'job.queue_notices_failed', { error: errorMessage(error) })
         }
         return results
       } finally {

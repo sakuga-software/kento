@@ -1,7 +1,8 @@
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
-import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, RecentReview, RunnerCounts } from '../dashboard/store.ts'
+import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
+import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
 import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../db/costs.ts'
@@ -249,6 +250,8 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
             </div>
           ) : null}
 
+          {screen.stall ? <StallBanner stall={screen.stall} online={screen.runnerCounts.online} now={screen.now} /> : null}
+
           {steps ? <SetupSection steps={steps} admin={admin} /> : null}
 
           {screen.banner ? <FailureBannerView banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} /> : null}
@@ -346,6 +349,51 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
             </li>
           ))}
         </ol>
+      </section>
+    )
+  }
+}
+
+/**
+ * REV-52. Jobs wait for more than QUEUE_STALL_MINUTES: the probable cause, and what to do. The pull
+ * requests of these jobs get a comment of the publisher too (app/publish/queued.ts).
+ */
+export function stallText(stall: QueueStall, online: number, now: Date): { title: string; cause: string; action: string } {
+  let jobs = stall.count === 1 ? '1 job attend' : `${stall.count} jobs attendent`
+  let title = `${jobs} en file depuis plus de ${QUEUE_STALL_MINUTES} min (le plus ancien depuis ${elapsed(stall.since, now)})`
+  if (online === 0) {
+    let cause = stall.lastRunnerSeenAt
+      ? `Aucun runner en ligne depuis ${elapsed(stall.lastRunnerSeenAt, now)} (dernier signal à ${clock(stall.lastRunnerSeenAt)}).`
+      : 'Aucun runner n’a jamais appelé Kentō.'
+    return { title, cause, action: 'Démarrez un runner, voir l’écran Runners. Les jobs partiront seuls dès son premier appel.' }
+  }
+  let cause =
+    online === 1
+      ? '1 runner est en ligne, mais il ne prend pas ces jobs : il est occupé, ou il ne peut pas appeler le provider de leur repo.'
+      : `${online} runners sont en ligne, mais aucun ne prend ces jobs : ils sont occupés, ou ne peuvent pas appeler le provider de leur repo.`
+  return { title, cause, action: 'Vérifiez leurs labels et leurs providers sur l’écran Runners, ou démarrez un runner de plus.' }
+}
+
+function StallBanner(handle: Handle<{ stall: QueueStall; online: number; now: Date }>) {
+  return () => {
+    let { stall, online, now } = handle.props
+    let text = stallText(stall, online, now)
+    return (
+      <section class="banner banner-alert dash-stall" role="alert" aria-labelledby="stall-title">
+        <div class="banner-confirm-body">
+          <h2 id="stall-title" class="banner-confirm-title">
+            {text.title}
+          </h2>
+          <p>{text.cause}</p>
+          <p>
+            {text.action} Les PR concernées portent un commentaire de Kentō.
+          </p>
+          <div class="banner-confirm-actions">
+            <a class="button button-primary" href={routes.runners.href()}>
+              Voir les runners
+            </a>
+          </div>
+        </div>
       </section>
     )
   }

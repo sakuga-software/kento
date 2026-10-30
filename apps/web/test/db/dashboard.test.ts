@@ -388,6 +388,23 @@ describe('the dashboard of an org', () => {
     assert.ok(queue.running[0]!.leaseExpiresAt)
   })
 
+  it('counts the queued jobs of the org that wait for more than 10 min, from their backoff when they have one (REV-52)', async () => {
+    let none = await store.screen(org)
+    assert.equal(none.stall, null)
+    await job({ state: 'queued', pr: 30, createdAgo: '12 minutes' })
+    await job({ state: 'queued', pr: 31, createdAgo: '25 minutes' })
+    await job({ state: 'queued', pr: 32, createdAgo: '3 minutes' })
+    // Queued again after an expired lease: it waits since the end of its backoff, 2 min ago.
+    await job({ state: 'queued', pr: 33, createdAgo: '40 minutes', attempts: 1 })
+    await database.sql`update jobs set not_before = now() - interval '2 minutes' where pr_number = 33`
+    await job({ repoId: otherRepo, state: 'queued', pr: 34, createdAgo: '50 minutes' })
+    let { stall, now } = await store.screen(org)
+    assert.equal(stall!.count, 2)
+    let waited = (now.getTime() - stall!.since.getTime()) / 60_000
+    assert.ok(waited > 24 && waited < 26, `the oldest waits since 25 min, not ${waited}`)
+    assert.ok(stall!.lastRunnerSeenAt, 'the last call of a runner of the org')
+  })
+
   it('bounds the card « Runners » in SQL and counts all the runners in service of the org and of the service (REV-37)', async () => {
     let sql = database.sql
     try {

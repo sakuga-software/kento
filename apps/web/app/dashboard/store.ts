@@ -7,6 +7,7 @@ import { toDate } from '../db/rows.ts'
 import { insertReviewJob } from '../db/webhook-store.ts'
 import { jobConfig, readOverrides, resolveConfig } from '../repo-config/model.ts'
 import { readMoney, type CapPeriod, type OrgCaps } from '../org-settings/model.ts'
+import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
 import { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
 /** The days of the chart « Reviews publiées », today included. */
@@ -97,6 +98,18 @@ export interface QueueJob {
   runnerSeenAt: Date | null
 }
 
+/**
+ * REV-52. The queued jobs of the org that wait for more than QUEUE_STALL_MINUTES. Their pull requests
+ * get a comment of the publisher too.
+ */
+export interface QueueStall {
+  count: number
+  /** Since when the oldest of them waits: its creation, or the end of its backoff. */
+  since: Date
+  /** The last call of a runner of the org or of the service, revoked ones aside. Null: never. */
+  lastRunnerSeenAt: Date | null
+}
+
 export interface DashboardRunner {
   id: string
   name: string
@@ -148,6 +161,8 @@ export interface DashboardScreen {
    */
   runners: DashboardRunner[]
   runnerCounts: RunnerCounts
+  /** REV-52. Null: no job waits for too long. */
+  stall: QueueStall | null
   /** The enabled repositories that still run the review workflow of GitHub Actions: no follow-up of findings. */
   workflowRepos: string[]
   setup: SetupState
@@ -486,6 +501,20 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
     }
   }
 
+  async function stall(orgId: string): Promise<QueueStall | null> {
+    let [row] = await sql<{ count: string; since: Date | string | null; lastRunnerSeenAt: Date | string | null }[]>`
+      select count(*) as count, min(coalesce(jobs.not_before, jobs.created_at)) as since,
+        (select max(last_seen_at) from runners
+          where (runners.org_id = ${orgId} or runners.org_id is null) and runners.revoked_at is null) as "lastRunnerSeenAt"
+      from jobs
+      join repos on repos.id = jobs.repo_id
+      -- As the publisher: a job with no base is never claimed, and is no sign of a missing runner.
+      where repos.org_id = ${orgId} and jobs.state = 'queued' and jobs.base_ref is not null
+        and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval`
+    if (!row || Number(row.count) === 0 || row.since === null) return null
+    return { count: Number(row.count), since: toDate(row.since), lastRunnerSeenAt: toDate(row.lastRunnerSeenAt) }
+  }
+
   /** The cost limits of the org (REV-13). */
   async function readCaps(orgId: string): Promise<OrgCaps> {
     let [row] = await sql<{ daily: string | null; monthly: string | null; alert: number | null }[]>`
@@ -520,7 +549,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
     async screen(orgId) {
       let [clock] = await sql<{ now: Date | string }[]>`select now() as now`
       let failed = await failures(orgId)
-      let [bannerView, weekView, recentView, costs, caps, queueView, runnerViews, workflow, setupView] = await Promise.all([
+      let [bannerView, weekView, recentView, costs, caps, queueView, runnerViews, workflow, setupView, stallView] = await Promise.all([
         banner(failed),
         week(orgId),
         recent(orgId),
@@ -533,6 +562,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
           where org_id = ${orgId} and enabled and workflow in ('reusable', 'copy')
           order by full_name`,
         setup(orgId),
+        stall(orgId),
       ])
       return {
         now: toDate(clock!.now),
@@ -545,6 +575,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
         queue: queueView,
         runners: runnerViews.list,
         runnerCounts: runnerViews.counts,
+        stall: stallView,
         workflowRepos: workflow.map((row) => row.fullName),
         setup: setupView,
       }

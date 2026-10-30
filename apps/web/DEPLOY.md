@@ -155,8 +155,8 @@ transaction, under an advisory lock (two instances that start together migrate o
 A migration already applied is skipped, and a redeploy applies nothing twice.
 
 - `/healthz` gives `database.migrations`, the number of applied migrations. It equals the number of
-  `.sql` files in `apps/web/drizzle/` of the deployed commit (16 on 2026-10-30, `0000_init` to
-  `0015_findings_rule_fk`).
+  `.sql` files in `apps/web/drizzle/` of the deployed commit (17 with REV-52, `0000_init` to
+  `0016_queue_notices`).
 - A migration runs while the previous container still serves, so each one only adds: a column with
   a default or nullable, a table, an index. A rollback does not undo a migration, and the previous
   release still runs on the newer schema.
@@ -275,6 +275,29 @@ The daily limit of the OpenRouter key stays a second guard.
 - **Remove a person**: remove them from the org on GitHub. Their access ends within 10 minutes;
   `delete from users where login = '…'` ends it at once.
 
+### A job that waits in the queue
+
+A job `queued` for more than **10 minutes** (`QUEUE_STALL_MINUTES`, `app/publish/queued.ts`) means
+that no runner takes it. A runner asks for a job every 30 s, and a job queued again after an expired
+lease waits 1 min at most. The wait counts from the creation of the job, or from the end of that
+wait (`not_before`). A job with no `base_ref` is never claimed and is left out. Then:
+
+- the dashboard shows a red banner at the top: how many jobs wait and since when. It names the cause
+  (no runner of the org or of the service online since …, or online runners that do not take the
+  jobs) and the action (start a runner, see the Runners screen);
+- the pull request gets one comment « Kentō · review en attente », with the same cause and a hidden
+  `<!-- kento:queued <repo id>#<number> -->`. The publisher writes it on its 30 s timer, and
+  deletes it once no job of the pull request waits for too long. A failure still gets its own
+  comment.
+
+Each pull request has one row in `queue_notices`. Each run of the publisher reads the queue and
+aligns GitHub with it, and each step can run again safely. A comment that a person deletes is not
+posted again while the job waits. Only a job that began to wait within the last day gets a comment.
+
+To check it, stop the runner (`docker stop kento-runner`) and push on a pull request of an enabled
+repository. After 10 min the dashboard shows the banner, and within 30 s more the pull request gets
+the comment. Start the runner again: the comment goes when the runner takes the job.
+
 ### Turn off the webhook
 
 Uncheck **Webhook > Active** in the App, or remove `GITHUB_WEBHOOK_SECRET` and deploy (503). No job
@@ -310,6 +333,7 @@ Useful queries:
 {project="Kentō", app="web"} | json | level="error"
 {project="Kentō", app="web"} | json | event="http.request" | status >= 500
 {project="Kentō", app="web"} | json | event=~"review.publication_failed|job.failure_notice_failed|jobs.purge_failed"
+{project="Kentō", app="web"} | json | event="job.queue_noticed"
 ```
 
 The events that need a person:
@@ -322,5 +346,8 @@ The events that need a person:
 | `auth.sign_in_refused` | The App lacks **Members: Read-only**, or the person is not in the org. |
 | `review.publication_failed` | GitHub refused the publication; tried again three times per process, for 30 minutes. |
 | `job.failure_notice_failed` | The comment of a failed job could not be posted. |
+| `job.queue_noticed` (warn) | A job of a pull request waits for more than 10 min: `cause` `no_runner` or `not_taken`. The alert of the team can be a rule on it. |
+| `job.queue_notice_failed`, `job.queue_notice_remove_failed` | GitHub refused the comment of the queue; the next run tries again. |
+| `job.queue_notice_search_capped` | The marker of the comment was looked for in the first 1000 comments only. |
 | `job.lease_expired` with `"state":"failed"` | A job lost its runner twice. |
 | `jobs.purge_failed` | The database refused the purge of the old jobs. |

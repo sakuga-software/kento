@@ -7,6 +7,18 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-52: A job that waits in the queue shows
+
+Migration `0016_queue_notices`, additive only: the table `queue_notices`, with one row per pull
+request. `/healthz` gives `"migrations":17`. No new variable, no new permission.
+
+A job queued for more than 10 min shows as a red banner on the dashboard. The pull request gets one
+comment « Kentō · review en attente », deleted once the job leaves the queue
+([DEPLOY.md](DEPLOY.md#a-job-that-waits-in-the-queue)). The deploy posts nothing for jobs that began
+to wait more than a day ago. Check: stop the runner, push on a pull request, wait 10 min; the banner
+and the comment show, and the comment goes when the runner is back. The test is
+`apps/web/test/db/queued-notice.test.ts`.
+
 ## REV-55: A finding refers to its rule
 
 Migration `0015_findings_rule_fk`. It sets `findings.rule_id` to null when the rule no longer exists,

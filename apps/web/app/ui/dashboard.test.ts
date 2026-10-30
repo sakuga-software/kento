@@ -10,7 +10,7 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { EMPTY_REPORT, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { capState, failureText, setupSteps } from './dashboard.tsx'
+import { capState, failureText, setupSteps, stallText } from './dashboard.tsx'
 import { runnerState } from './runners.tsx'
 
 const COOKIE = '__Host-kento_session'
@@ -113,6 +113,7 @@ function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
       queuedCount: 0,
     },
     runners: runnersOf(),
+    stall: null,
     workflowRepos: ['sakuga-software/dojo'],
     setup: { published: true, suspended: false, enabledRepos: 2, providers: 1, pendingRegistrations: 0 },
     ...overrides,
@@ -382,6 +383,31 @@ describe('the dashboard', () => {
     assert.match(section, /<span class="status status-offline">Hors ligne depuis 3 j<\/span>/)
     assert.ok(section.indexOf('mac-mini') < section.indexOf('hetzner-cx22'), 'the store order stays: the online runner first')
     assert.match(section, /<a href="\/runners">et 22 de plus<span class="visually-hidden"> sur l’écran Runners<\/span><\/a>/)
+  })
+
+  it('says that jobs wait with no runner online, since when, and what to do (REV-52)', async () => {
+    let since = new Date(NOW.getTime() - 14 * 60_000)
+    let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)
+    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen } }))
+    let { html } = await signIn(ALEX)
+    let section = html.slice(html.indexOf('id="stall-title"'), html.indexOf('</section>', html.indexOf('id="stall-title"')))
+    assert.match(section, /2 jobs attendent en file depuis plus de 10 min \(le plus ancien depuis 14 min\)/)
+    assert.match(section, /Aucun runner en ligne depuis 2 h/)
+    assert.match(section, /Démarrez un runner, voir l’écran Runners/)
+    assert.match(section, /<a href="\/runners" class="button button-primary">Voir les runners<\/a>/)
+    assert.ok(html.indexOf('id="stall-title"') < html.indexOf('id="failure-title"'), 'the queue comes before the failure')
+    assert.ok(html.indexOf('id="stall-title"') < html.indexOf('id="dash-runners-title"'))
+
+    assert.deepEqual(stallText({ count: 1, since, lastRunnerSeenAt: null }, 0, NOW).cause, 'Aucun runner n’a jamais appelé Kentō.')
+    let busy = stallText({ count: 1, since, lastRunnerSeenAt: NOW }, 2, NOW)
+    assert.match(busy.title, /^1 job attend en file/)
+    assert.match(busy.cause, /^2 runners sont en ligne, mais aucun ne prend ces jobs/)
+  })
+
+  it('has no banner of the queue while no job waits for too long', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn(ALEX)
+    assert.doesNotMatch(html, /stall-title/)
   })
 
   it('has empty states', async () => {

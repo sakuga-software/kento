@@ -625,3 +625,30 @@ export const rules = pgTable(
     check('rules_disabled_when_inactive', sql`${table.active} = (${table.disabledAt} is null)`),
   ],
 )
+
+/**
+ * REV-52. The comment « Kentō · review en attente » of a pull request: one per pull request, found
+ * on GitHub by `<!-- kento:queued <repo id>#<number> -->`. The publisher writes it while a job of
+ * the pull request waits in the queue for too long, and deletes it, then this row, once no job
+ * waits for too long.
+ *
+ * - `github_comment_id`: null until GitHub answered the comment. A row without it looks for the
+ *   marker first: a comment posted with no answer (a restart, a lost answer) is reused.
+ * - `body`: the body that GitHub has. The publisher edits the comment only when it changes.
+ * - `gone_at`: a person deleted the comment. It is not posted again while this row lives.
+ */
+export const queueNotices = pgTable(
+  'queue_notices',
+  {
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    githubCommentId: bigint('github_comment_id', { mode: 'number' }),
+    body: text('body'),
+    goneAt: timestamp('gone_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],
+)

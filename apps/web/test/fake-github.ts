@@ -56,6 +56,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     reactions: new Set<string>(),
     /** The next comments of the pull request answer 502, as during an outage of GitHub. */
     failIssueComments: 0,
+    /** REV-52. The next edits of a comment of the pull request answer 502. */
+    failIssueCommentEdits: 0,
+    /** REV-52. The next deletions of a comment of the pull request answer 502. */
+    failIssueCommentDeletes: 0,
     /** The comments of the pull request (not of a review). */
     issueComments: [] as { id: number; body: string; author: string }[],
     reviews: [] as Review[],
@@ -202,6 +206,34 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       if (!key || !state.reactions.has(key)) return json(404, { message: 'Not Found' })
       state.reactions.delete(key)
       return json(204, null)
+    }
+    if (rest === `/issues/${state.pr.number}/comments` && method === 'GET') {
+      let perPage = Number(url.searchParams.get('per_page') ?? 30)
+      let page = Number(url.searchParams.get('page') ?? 1)
+      let list = state.issueComments.slice((page - 1) * perPage, page * perPage)
+      return json(200, list.map((c) => ({ id: c.id, body: c.body, user: { login: c.author } })))
+    }
+    if ((m = /^\/issues\/comments\/(\d+)$/.exec(rest)) && method === 'DELETE') {
+      if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
+      if (state.failIssueCommentDeletes > 0) {
+        state.failIssueCommentDeletes--
+        return json(502, { message: 'Bad Gateway' })
+      }
+      let index = state.issueComments.findIndex((c) => c.id === Number(m![1]))
+      if (index < 0) return json(404, { message: 'Not Found' })
+      state.issueComments.splice(index, 1)
+      return json(204, null)
+    }
+    if ((m = /^\/issues\/comments\/(\d+)$/.exec(rest)) && method === 'PATCH') {
+      if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
+      if (state.failIssueCommentEdits > 0) {
+        state.failIssueCommentEdits--
+        return json(502, { message: 'Bad Gateway' })
+      }
+      let comment = state.issueComments.find((c) => c.id === Number(m![1]))
+      if (!comment) return json(404, { message: 'Not Found' })
+      comment.body = body.body
+      return json(200, { id: comment.id })
     }
     if (rest === `/issues/${state.pr.number}/comments` && method === 'POST') {
       if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })
