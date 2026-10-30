@@ -6,6 +6,7 @@
 // the page come from one more query on the same filters.
 import type postgres from 'postgres'
 
+import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, PAGE_MAX, UUID, type FindingStatus } from './store.ts'
 
 /** The tabs of the screen: one status, the closed ones (every status but `open`), or all. */
@@ -27,6 +28,8 @@ export interface FindingQuery {
   repoId?: string | null
   severity?: Severity | null
   ruleId?: string | null
+  /** The reason of a dismissed or wontfix finding, as written: a group of « Motifs des dismissed ». */
+  reason?: string | null
   /** A part of the title or of the path, any case. */
   search?: string
   /** The rows after this cursor, in the order of the screen (the next page). */
@@ -121,6 +124,7 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
   let search = query.search?.trim().slice(0, SEARCH_MAX) ?? ''
   let repoId = query.repoId && UUID.test(query.repoId) ? query.repoId : null
   let ruleId = query.ruleId && UUID.test(query.ruleId) ? query.ruleId : null
+  let reason = query.reason ? reasonText(query.reason) || null : null
   let severity = query.severity && SEVERITIES.includes(query.severity) ? query.severity : null
   // A cursor that does not decode starts the list again at its first page.
   let cursorOf = (value: string | null | undefined) => {
@@ -139,6 +143,7 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${repoId ? sql`and findings.repo_id = ${repoId}` : sql``}
     ${severity ? sql`and findings.severity = ${severity}` : sql``}
     ${ruleId ? sql`and findings.rule_id = ${ruleId}` : sql``}
+    ${reason ? sql`and lower(${reasonOf(sql, 'findings.status_reason')}) = lower(${reason})` : sql``}
     ${search ? sql`and (findings.title ilike ${likePattern(search)} or findings.path ilike ${likePattern(search)})` : sql``}`
   let inView = sql`findings.status = any(${sql.array([...statusesOf(view)])}::finding_status[])`
   let key = sql`(findings.created_at, findings.id)`
@@ -219,11 +224,17 @@ export async function findingFacets(sql: postgres.Sql, orgId: string): Promise<F
 export interface FindingsScreenStore {
   list(orgId: string, query?: FindingQuery): Promise<FindingScreenPage>
   facets(orgId: string): Promise<FindingFacets>
+  /** REV-18. The precision of the org over 30 days, by repository and by rule, and the reasons of the dismissed findings. */
+  precision(orgId: string): Promise<PrecisionReport>
+  /** The precision of some repositories of the org, by id. */
+  repoPrecisions(orgId: string, repoIds: string[]): Promise<Map<string, Precision>>
 }
 
 export function createFindingsScreenStore(sql: postgres.Sql): FindingsScreenStore {
   return {
     list: (orgId, query) => listFindingScreen(sql, orgId, query),
     facets: (orgId) => findingFacets(sql, orgId),
+    precision: (orgId) => precisionReport(sql, orgId),
+    repoPrecisions: (orgId, repoIds) => repoPrecisions(sql, orgId, repoIds),
   }
 }

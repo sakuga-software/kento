@@ -12,7 +12,9 @@ import {
   type Severity,
 } from '../findings/screen.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { reasonText, type PrecisionReport } from '../findings/precision.ts'
 import { agoOrDate, plural } from './format.ts'
+import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** The filters, the search and the page of the list, as the query of the screen gives them. */
@@ -21,6 +23,7 @@ export interface FindingList extends FindingQuery {
   repoId: string | null
   severity: Severity | null
   ruleId: string | null
+  reason: string | null
   search: string
   after: string | null
   before: string | null
@@ -31,6 +34,8 @@ export interface FindingsPageProps {
   page: FindingScreenPage
   facets: FindingFacets
   list: FindingList
+  /** REV-18. The precision of the org over 30 days. */
+  precision: PrecisionReport
   /** `https://github.com`, or the GitHub Enterprise Server: the links to the pull requests. */
   githubUrl: string
   /** For the dates of the screen. */
@@ -83,6 +88,7 @@ export function readFindingList(query: URLSearchParams): FindingList {
     repoId: repo && UUID.test(repo) ? repo : null,
     severity: SEVERITIES.includes(severity as Severity) ? (severity as Severity) : null,
     ruleId: rule && UUID.test(rule) ? rule : null,
+    reason: reasonText(query.get('reason') ?? '') || null,
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
     after: query.get('after') || null,
     before: query.get('after') ? null : query.get('before') || null,
@@ -96,6 +102,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.repoId) query.set('repo', list.repoId)
   if (list.severity) query.set('priority', list.severity)
   if (list.ruleId) query.set('rule', list.ruleId)
+  if (list.reason) query.set('reason', list.reason)
   if (list.search) query.set('q', list.search)
   if (list.after) query.set('after', list.after)
   else if (list.before) query.set('before', list.before)
@@ -110,17 +117,11 @@ export function findingsHref(list: Partial<FindingList>): string {
 
 /** The filters of a list without its page: a new filter or tab starts at the first page. */
 function filtersOf(list: FindingList): Partial<FindingList> {
-  return { view: list.view, repoId: list.repoId, severity: list.severity, ruleId: list.ruleId, search: list.search }
+  return { view: list.view, repoId: list.repoId, severity: list.severity, ruleId: list.ruleId, reason: list.reason, search: list.search }
 }
 
 function hasFilters(list: FindingList): boolean {
-  return Boolean(list.repoId || list.severity || list.ruleId || list.search)
-}
-
-/** The name of a repository without its owner, when the owner is the org on screen. */
-function shortName(fullName: string, org: string): string {
-  let [owner, name] = fullName.split('/') as [string, string]
-  return owner.toLowerCase() === org.toLowerCase() ? name : fullName
+  return Boolean(list.repoId || list.severity || list.ruleId || list.reason || list.search)
 }
 
 /**
@@ -129,7 +130,7 @@ function shortName(fullName: string, org: string): string {
  */
 export function FindingsPage(handle: Handle<FindingsPageProps>) {
   return () => {
-    let { frame, page, facets, list, githubUrl, now } = handle.props
+    let { frame, page, facets, list, precision, githubUrl, now } = handle.props
     let org = frame.viewer!.org.login
     let none = page.counts.all === 0 && !hasFilters(list)
     return (
@@ -144,7 +145,14 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
           </section>
         ) : (
           <>
+            <PrecisionSection report={precision} org={org} />
+            <h2 class="section-title findings-list-title">Liste</h2>
             <FilterForm list={list} facets={facets} org={org} />
+            {list.reason ? (
+              <p class="findings-reason">
+                Motif « {list.reason} » · <a href={findingsHref({ ...filtersOf(list), reason: null })}>Retirer ce filtre</a>
+              </p>
+            ) : null}
             <nav class="list-filters findings-views" aria-label="Statut des findings">
               <ul>
                 {FINDING_VIEWS.map((view) => (
@@ -199,6 +207,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
     return (
       <form class="findings-filters" method="get" action={routes.findings.href()} role="search" aria-label="Filtrer les findings">
         {list.view !== 'open' ? <input type="hidden" name="status" value={list.view} /> : null}
+        {list.reason ? <input type="hidden" name="reason" value={list.reason} /> : null}
         <div class="findings-filter findings-filter-search">
           <label class="field-label" for="findings-q">
             Recherche

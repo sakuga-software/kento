@@ -10,6 +10,9 @@ import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { jobReason, reasonSentence, TechDetails, type Reason } from './reasons.tsx'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
+import { PRECISION_DAYS, PRECISION_MIN, type PrecisionReport } from '../findings/precision.ts'
+import { findingsHref } from './findings.tsx'
+import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
@@ -76,6 +79,8 @@ export interface DashboardPageProps {
   serviceKey?: boolean
   /** The page of the installation of the App on GitHub, where an owner picks the repositories. */
   installationUrl?: string | null
+  /** REV-18. The precision of the org over 30 days; null without the Findings screen. */
+  precision?: PrecisionReport | null
 }
 
 /** One step of the list « Mise en route » (REV-26). */
@@ -222,7 +227,7 @@ function total(day: DayStats): number {
 
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
-    let { frame, screen, githubUrl, notice, serviceKey, installationUrl } = handle.props
+    let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let today = screen.week.at(-1)
@@ -269,14 +274,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <div class="dash-grid">
             <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} />
-            <section class="dash-section" aria-labelledby="precision-title">
-              <h2 id="precision-title" class="section-title">
-                Précision par repo
-              </h2>
-              <div class="empty">
-                <p>Bientôt. La part des findings confirmés, par repo, s’affichera ici à partir de 10 findings clos.</p>
-              </div>
-            </section>
+            <DashPrecision precision={precision ?? null} org={frame.viewer?.org.login ?? ''} />
           </div>
 
           {screen.workflowRepos.length > 0 ? (
@@ -826,6 +824,57 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
               )
             })}
           </ul>
+        )}
+      </section>
+    )
+  }
+}
+
+/** REV-18. The precision of the org over 30 days and of its repositories with the most closed findings. */
+function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: string }>) {
+  return () => {
+    let { precision, org } = handle.props
+    return (
+      <section class="dash-section" aria-labelledby="precision-title">
+        <h2 id="precision-title" class="section-title">
+          Précision par repo
+        </h2>
+        {!precision || precision.org.closed === 0 ? (
+          <div class="empty">
+            <p>
+              Aucun finding clos sur {PRECISION_DAYS} jours. La part des findings qu’un push corrige s’affichera ici à partir de {PRECISION_MIN}{' '}
+              findings clos.
+            </p>
+          </div>
+        ) : (
+          <div class="card precision-card">
+            <p class="precision-headline">
+              <PrecisionValue precision={precision.org} large />
+              <span class="hint">
+                sur {PRECISION_DAYS} jours, toute l’org · {precisionCounts(precision.org)}
+              </span>
+            </p>
+            <ul class="precision-list">
+              {precision.repos.slice(0, 5).map((repo) => {
+                return (
+                  <li class="precision-row">
+                    <a class="precision-name" href={findingsHref({ view: 'closed', repoId: repo.id })} title={repo.fullName}>
+                      {shortName(repo.fullName, org)}
+                    </a>
+                    <span class="precision-figures">
+                      <PrecisionValue precision={repo} />
+                      <span class="hint precision-n" aria-hidden="true">
+                        {repo.closed} clos
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+            <p class="hint">
+              <a href={routes.findings.href()}>Voir les findings et la précision par règle</a>
+            </p>
+          </div>
         )}
       </section>
     )

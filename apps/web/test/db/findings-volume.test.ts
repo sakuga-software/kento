@@ -8,6 +8,7 @@ import { after, before, describe, it } from 'remix/test'
 import { cookieOf, fakeAuth, ALEX, ORG } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
+import { precisionReport } from '../../app/findings/precision.ts'
 import { createFindingsScreenStore } from '../../app/findings/screen.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createAppRouter } from '../../app/router.ts'
@@ -26,6 +27,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
   let router: ReturnType<typeof createAppRouter>
   let cookie: string
   let repoId: string
+  let orgId: string
 
   before(async () => {
     test = await createTestDatabase()
@@ -59,7 +61,12 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
           md5('s' || g), md5('s' || (g - g % 4)), now() - g * interval '26 seconds', now() - g * interval '20 seconds'
         from generate_series(1, ${FINDINGS}) g, c join r on true where r.n = 1 + g % c.k`
     }
+    // The event that closed each closed finding, at its last update: what the precision reads.
+    await sql`
+      insert into finding_events (finding_id, type, actor, reason, created_at)
+      select id, status::text::finding_event_type, 'kento', status_reason, updated_at from findings where status <> 'open'`
     await sql`analyze`
+    orgId = org!.id
     let [repo] = await sql<{ id: string }[]>`select id from repos where full_name = 'sakuga-software/service-042'`
     repoId = repo!.id
 
@@ -128,5 +135,24 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
       assert.ok(runs[0]!.bytes < MAX_BYTES, `${path}: ${runs[0]!.bytes} bytes`)
     }
     if (process.env.KENTO_VOLUME_REPORT) console.log(report.join('\n'))
+  })
+
+  it(`reads the precision of the org, of its 300 repositories, of its rules and its reasons in under ${MAX_MS} ms`, async () => {
+    let runs: number[] = []
+    let report = await precisionReport(sql, orgId)
+    for (let n = 0; n < 5; n++) {
+      let started = performance.now()
+      report = await precisionReport(sql, orgId)
+      runs.push(performance.now() - started)
+    }
+    let best = Math.min(...runs)
+    if (process.env.KENTO_VOLUME_REPORT) console.log(`precision: ${best.toFixed(1)} ms, ${report.org.closed} closed findings`)
+    // One finding every 26 s, closed within 23 days: 3 in 8 are fixed or dismissed.
+    assert.equal(report.org.closed, 37_500)
+    assert.ok(report.repoCount > 200, `${report.repoCount}`)
+    assert.equal(report.repos.length, 8)
+    assert.ok(report.ruleCount > 10, `${report.ruleCount}`)
+    assert.deepEqual(report.reasons.map((r) => r.reason).sort(), ['Déjà connu', 'Faux positif', 'Hors sujet'])
+    assert.ok(best < MAX_MS, `${best.toFixed(1)} ms`)
   })
 })

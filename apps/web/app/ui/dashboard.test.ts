@@ -6,6 +6,9 @@ import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
 import type { PullRequestNow, ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } from '../dashboard/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
+import { precisionOf } from '../findings/precision.ts'
+import type { FindingsScreenStore } from '../findings/screen.ts'
+import { EMPTY_REPORT, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { capState, failureText, setupSteps } from './dashboard.tsx'
 import { runnerState } from './runners.tsx'
@@ -124,6 +127,7 @@ function setup(
   outcome: RetryOutcome = { kind: 'queued', jobId: 'new' },
   github: PullRequestNow | Error | null = { open: true, headSha: HEAD },
   serviceKey = false,
+  findings: FindingsScreenStore | null = null,
 ) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
@@ -160,6 +164,7 @@ function setup(
     webhook: disabledWebhook,
     auth: auth.deps,
     dashboard: { store, githubUrl: 'https://github.com', readPullRequest, serviceKey },
+    findings: findings ? { store: findings, githubUrl: 'https://github.com' } : null,
   })
 
   function request(path: string, init: { cookie?: string | null; form?: Record<string, string> } = {}) {
@@ -315,11 +320,34 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /\bbail\b/)
     assert.match(html, /href="\/runners"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/config"/)
-    assert.match(html, /Bientôt\. La part des findings confirmés/)
+    assert.match(html, /Aucun finding clos sur 30 jours\. La part des findings qu’un push corrige s’affichera ici à partir de 10/)
     assert.doesNotMatch(html.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b/, 'no milestone of the team on screen, the paths of the icons aside (REV-43)')
     assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
     assert.match(html, /encore sur\s*<code>review.yml<\/code>/)
     assert.match(html, /src="\/assets\/dashboard.js\?v=1.2.3"/)
+  })
+
+  it('shows the precision of the org and of its repositories, or « n = 9 sur 10 » under 10 closed findings (REV-18)', async () => {
+    let { store } = fakeFindingsScreenStore({
+      report: {
+        ...EMPTY_REPORT,
+        org: precisionOf(41, 9),
+        repos: [
+          { id: '33333333-3333-4333-8333-333333333333', fullName: 'sakuga-software/orchard', ...precisionOf(37, 4) },
+          { id: '44444444-4444-4444-8444-444444444444', fullName: 'sakuga-software/fruitback', ...precisionOf(4, 5) },
+          // A name with no owner stays whole.
+          { id: '55555555-5555-4555-8555-555555555555', fullName: 'loner', ...precisionOf(1, 0) },
+        ],
+        repoCount: 3,
+      },
+    })
+    let { signIn } = setup(screen(), undefined, undefined, false, store)
+    let { html } = await signIn()
+    assert.match(html, /<span title="41 fixed · 9 dismissed" class="precision-value precision-large">82 %/)
+    assert.match(html, /href="\/findings\?status=closed&amp;repo=33333333-3333-4333-8333-333333333333"[^>]*>orchard<\/a><span class="precision-figures"><span title="37 fixed · 4 dismissed" class="precision-value">90 %/)
+    assert.match(html, />fruitback<\/a><span class="precision-figures"><span [^>]*class="precision-value precision-pending">n = 9 sur 10/)
+    assert.match(html, /title="loner" class="precision-name">loner<\/a>/)
+    assert.doesNotMatch(html, /Aucun finding clos sur 30 jours/)
   })
 
   it('shows the same dashboard to a member, without the retry buttons', async () => {

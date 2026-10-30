@@ -2,7 +2,10 @@ import type { Handle } from 'remix/component'
 
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import type { Precision } from '../findings/precision.ts'
 import { Confirm } from './confirm.tsx'
+import { findingsHref } from './findings.tsx'
+import { PrecisionValue } from './precision.tsx'
 import { agoOrDate, plural } from './format.ts'
 import { AlertIcon, CheckIcon, ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -26,6 +29,8 @@ export interface ReposPageProps {
   githubUrl: string
   /** A check of GitHub runs in the background: the rows can change at the next load. */
   checking: boolean
+  /** REV-18. The precision of the rows of the page over 30 days; null without the Findings screen. */
+  precisions?: Map<string, Precision> | null
   notice: ReposNotice | null
   /** For the dates of the screen. */
   now: Date
@@ -90,7 +95,7 @@ function shortName(fullName: string, org: string): string {
  */
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
-    let { frame, page, list, installationUrl, githubUrl, checking, notice, now } = handle.props
+    let { frame, page, list, installationUrl, githubUrl, checking, precisions, notice, now } = handle.props
     let repos = page.rows
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
@@ -175,7 +180,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                       <th scope="col">Bascule</th>
                       <th scope="col">Dernière review</th>
                       <th scope="col">
-                        Précision<span class="visually-hidden"> (pas encore mesurée)</span>
+                        Précision<span class="visually-hidden"> sur 30 jours</span>
                       </th>
                       {admin ? (
                         <th scope="col">
@@ -192,6 +197,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                         admin={admin}
                         githubUrl={githubUrl}
                         now={now}
+                        precision={precisions?.get(repo.id) ?? null}
                         back={repoListQuery(list).toString()}
                       />
                     ))}
@@ -284,13 +290,15 @@ interface RepoRowProps {
   admin: boolean
   githubUrl: string
   now: Date
+  /** REV-18. Over 30 days; null when the repository has no closed finding. */
+  precision: Precision | null
   /** The query of the list on screen: the forms come back to it. */
   back: string
 }
 
 function RepoRow(handle: Handle<RepoRowProps>) {
   return () => {
-    let { repo, org, admin, githubUrl, now, back } = handle.props
+    let { repo, org, admin, githubUrl, now, precision, back } = handle.props
     let suffix = back ? `?${back}` : ''
     let name = shortName(repo.fullName, org)
     let repoUrl = `${githubUrl}/${repo.fullName}`
@@ -329,8 +337,16 @@ function RepoRow(handle: Handle<RepoRowProps>) {
             '–'
           )}
         </td>
-        {/* Its header says that it is not measured yet. */}
-        <td>–</td>
+        <td>
+          {precision ? (
+            <a href={findingsHref({ view: 'closed', repoId: repo.id })}>
+              <PrecisionValue precision={precision} />
+              <span class="visually-hidden"> : les findings clos de {name}</span>
+            </a>
+          ) : (
+            '–'
+          )}
+        </td>
         {admin ? (
           <td class="row-action">
             {repo.enabled ? (

@@ -1254,6 +1254,110 @@ kbd,
   }
 }
 
+/* REV-18. The precision of the reviews: on Findings, on the dashboard, and in a cell of Repos. */
+.precision {
+  margin-bottom: var(--space-8);
+}
+.precision-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+.precision-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-5);
+}
+.precision-card-title {
+  margin-top: var(--space-2);
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.precision-card-title:first-child {
+  margin-top: 0;
+}
+.precision-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* In a column of a table, « n = 3 sur 10 » may take two lines rather than widen the table. */
+.table .precision-value {
+  white-space: normal;
+}
+.precision-large {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+}
+.precision-pending {
+  color: var(--ink-muted);
+}
+.precision-large.precision-pending {
+  font-size: var(--text-xl);
+  line-height: var(--leading-xl);
+}
+.precision-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+.precision-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.precision-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-3);
+  min-height: 32px;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+.precision-row:last-child {
+  border-bottom: 0;
+}
+.precision-name {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+/* The share and its count stay together; under a long name they go to the next line. */
+.precision-figures {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+.precision-n {
+  min-width: 6ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.findings-list-title {
+  margin-top: 0;
+}
+.findings-reason {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+
 /* ---------------------------------------------------------------- Mobile (390 px and up to 760 px) */
 
 @media (max-width: 760px) {

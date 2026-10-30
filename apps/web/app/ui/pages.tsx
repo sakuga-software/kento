@@ -845,7 +845,10 @@ export function createUiControllers(deps: UiDependencies) {
         let page = frame(signed, context, getCsrfToken(context))
         let dashboard = deps.dashboard
         if (!dashboard) return context.render(<PlaceholderPage frame={page} section="dashboard" />)
-        let screen = await dashboard.store.screen(signed.membership.org.id)
+        let [screen, precision] = await Promise.all([
+          dashboard.store.screen(signed.membership.org.id),
+          deps.findings?.store.precision(signed.membership.org.id) ?? null,
+        ])
         let notice = context.url.searchParams.get('notice')
         return context.render(
           <DashboardPage
@@ -855,6 +858,7 @@ export function createUiControllers(deps: UiDependencies) {
             notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
             serviceKey={dashboard.serviceKey ?? false}
             installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org)}
+            precision={precision}
           />,
         )
       },
@@ -909,6 +913,7 @@ export function createUiControllers(deps: UiDependencies) {
         let query = context.url.searchParams
         let list = readRepoList(query)
         let result = await repos.store.list(org.id, list)
+        let precisions = deps.findings ? await deps.findings.store.repoPrecisions(org.id, result.rows.map((row) => row.id)) : null
         let checking = repos.check?.refreshIfStale(org, result) ?? false
         let named = query.get('repo')
         let fullName =
@@ -930,6 +935,7 @@ export function createUiControllers(deps: UiDependencies) {
             installationUrl={installationUrl(repos.githubUrl, org)}
             githubUrl={repos.githubUrl}
             checking={checking}
+            precisions={precisions}
             notice={notice}
             now={new Date(now())}
           />,
@@ -986,9 +992,21 @@ export function createUiControllers(deps: UiDependencies) {
         if (!findings) return context.render(<PlaceholderPage frame={page} section="findings" />)
         let orgId = signed.membership.org.id
         let list = readFindingList(context.url.searchParams)
-        let [result, facets] = await Promise.all([findings.store.list(orgId, list), findings.store.facets(orgId)])
+        let [result, facets, precision] = await Promise.all([
+          findings.store.list(orgId, list),
+          findings.store.facets(orgId),
+          findings.store.precision(orgId),
+        ])
         return context.render(
-          <FindingsPage frame={page} page={result} facets={facets} list={list} githubUrl={findings.githubUrl} now={new Date(now())} />,
+          <FindingsPage
+            frame={page}
+            page={result}
+            facets={facets}
+            list={list}
+            precision={precision}
+            githubUrl={findings.githubUrl}
+            now={new Date(now())}
+          />,
         )
       },
       async runners(context) {

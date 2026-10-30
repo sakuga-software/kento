@@ -33,6 +33,10 @@ async function seed() {
       select repos.id, 7, md5('d' || g), md5('dk' || g), 'app/widget.ts', g, 'Écarté ' || g, 'minor', 'test', 55, 'dismissed',
         'Hors sujet', ${HEAD}, ${HEAD}, now() - g * interval '1 day'
       from repos, generate_series(1, 3) g where repos.full_name = 'sakuga-software/fruitback'`
+    // REV-18: the dismissal of each of them, in the window of the precision.
+    await sql`
+      insert into finding_events (finding_id, type, actor, reason, created_at)
+      select id, 'dismissed', 'alex', status_reason, created_at + interval '1 hour' from findings where status = 'dismissed'`
   } finally {
     await sql.end()
   }
@@ -82,6 +86,15 @@ test.describe('the Findings screen', () => {
       await expect(page.getByRole('rowheader')).toHaveCount(3)
       await expect(page.getByText('Hors sujet').first()).toBeVisible()
       await expectNoAxeViolations(page)
+
+      // REV-18: 3 dismissed and no fixed finding in 30 days: under 10, no share yet; the reason leads to its findings.
+      await page.goto('/findings')
+      let precision = page.getByRole('region', { name: 'Précision · 30 derniers jours' })
+      await expect(precision.getByText('n = 3 sur 10').first()).toBeVisible()
+      await precision.getByRole('link', { name: 'Hors sujet' }).click()
+      await expect(page).toHaveURL(/status=dismissed&reason=Hors\+sujet/)
+      await expect(page.getByText('Motif « Hors sujet »')).toBeVisible()
+      await expect(page.getByRole('rowheader')).toHaveCount(3)
       expect(errors).toEqual([])
     })
   }

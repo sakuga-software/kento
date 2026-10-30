@@ -5,6 +5,9 @@ import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { RepoListQuery, RepoPage, RepoView, ReposStore } from '../repos/store.ts'
+import { precisionOf } from '../findings/precision.ts'
+import type { FindingsScreenStore } from '../findings/screen.ts'
+import { fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 
 const COOKIE = '__Host-kento_session'
@@ -31,7 +34,7 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
 }
 
 /** The screens with the fake sign-in, and a store of repositories in memory, per org. */
-function setup() {
+function setup(findings: FindingsScreenStore | null = null) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -104,6 +107,7 @@ function setup() {
     webhook: disabledWebhook,
     auth: auth.deps,
     repos: { store, check, githubUrl: 'https://github.com' },
+    findings: findings ? { store: findings, githubUrl: 'https://github.com' } : null,
   })
 
   function request(path: string, init: { cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
@@ -133,6 +137,13 @@ function setup() {
 }
 
 describe('the Repos screen', () => {
+  it('shows the precision of each repository of the page over 30 days, linked to its closed findings (REV-18)', async () => {
+    let { store } = fakeFindingsScreenStore({ precisions: { [FRUITBACK]: precisionOf(12, 3), [ORCHARD]: precisionOf(2, 1) } })
+    let { html } = await setup(store).signIn()
+    assert.match(html, new RegExp(`href="/findings\\?status=closed&amp;repo=${FRUITBACK}"><span title="12 fixed · 3 dismissed" class="precision-value">80 %`))
+    assert.match(html, new RegExp(`href="/findings\\?status=closed&amp;repo=${ORCHARD}"><span [^>]*class="precision-value precision-pending">n = 3 sur 10`))
+  })
+
   it('shows each repository with its mode, level, model, switch counter and last review', async () => {
     let { signIn } = setup()
     let { html } = await signIn()
@@ -145,7 +156,7 @@ describe('the Repos screen', () => {
     assert.match(html, /claude-haiku-5\.5/)
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/677"/)
     assert.match(html, /#677 · 4\/5/)
-    assert.match(html, /pas encore mesurée/)
+    assert.match(html, /Précision<span class="visually-hidden"> sur 30 jours<\/span>/)
     // REV-25: the name can be cut short on screen; its title keeps it whole.
     assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
     assert.match(html, /Critère de bascule/)

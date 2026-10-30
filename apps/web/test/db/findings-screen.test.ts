@@ -105,6 +105,22 @@ describe('the Findings screen list', () => {
       ['Finding 9', 'Hors sujet'],
       ['Finding 4', 'Hors sujet'],
     ])
+    let byReason = await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: 'Hors sujet' })
+    assert.equal(byReason.rows.length, 2)
+    assert.equal((await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: 'Faux positif' })).rows.length, 0)
+    // A reason of an earlier release, longer than REASON_MAX: the link carries its first 500 characters, and finds it.
+    let long = `Trop long ${'x'.repeat(600)}`
+    await database.sql`update findings set status_reason = ${`  ${long}`} where title = 'Finding 9'`
+    let byLong = await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: long.slice(0, 500) })
+    // Any case, and a cut that ends on a space: the same rule on both sides.
+    assert.equal((await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: 'HORS SUJET' })).rows.length, 1)
+    assert.deepEqual(byLong.rows.map((r) => r.title), ['Finding 9'])
+    // The 500th character is a space: both sides drop it.
+    let spaced = `${'a'.repeat(499)} ${'b'.repeat(10)}`
+    await database.sql`update findings set status_reason = ${spaced} where title = 'Finding 9'`
+    assert.deepEqual((await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: spaced })).rows.map((r) => r.title), ['Finding 9'])
+    assert.deepEqual((await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: 'a'.repeat(499) })).rows.map((r) => r.title), ['Finding 9'])
+    await database.sql`update findings set status_reason = 'Hors sujet' where title = 'Finding 9'`
     let closed = await listFindingScreen(database.sql, orgId, { view: 'closed', repoId })
     assert.deepEqual(closed.rows.map((r) => r.status), ['dismissed', 'dismissed'])
 
