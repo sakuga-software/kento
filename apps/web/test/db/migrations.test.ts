@@ -67,7 +67,7 @@ describe('migrations', () => {
   it('applied a second time, changes nothing and keeps every row', async () => {
     await seed(database)
     let before = await counts(database)
-    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 15 })
+    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 16 })
 
     await runMigrations(test.url)
 
@@ -98,7 +98,7 @@ describe('migrations', () => {
       await runMigrations(test.url, next)
       await runMigrations(test.url, next)
 
-      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 16 })
+      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 17 })
       let [repo] = await database.sql<{ full_name: string; note: string }[]>`select full_name, note from repos`
       assert.deepEqual({ ...repo }, { full_name: 'sakuga-software/sakuga-review', note: 'kept' })
     } finally {
@@ -112,7 +112,7 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 15)
+      assert.equal(row!.applied, 16)
     } finally {
       await a.close()
       await other.drop()
@@ -172,7 +172,7 @@ describe('migrations', () => {
       let check = createDatabase(other.url, { max: 1 })
       try {
         let [row] = await check.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-        assert.equal(row!.applied, 15)
+        assert.equal(row!.applied, 16)
       } finally {
         await check.close()
       }
@@ -213,7 +213,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 15)
+    assert.equal(body.database.migrations, 16)
   })
 
   it('returns 503 when the database was never migrated', async () => {

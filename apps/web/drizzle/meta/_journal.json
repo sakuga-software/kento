@@ -106,6 +106,13 @@
       "when": 1793355616778,
       "tag": "0014_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793359204871,
+      "tag": "0015_findings_rule_fk",
+      "breakpoints": true
     }
   ]
 }

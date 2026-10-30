@@ -47,7 +47,7 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
               insert into findings (repo_id, pr_number, fingerprint, key, rule_id, path, line, title, severity, category,
                 confidence, status, status_reason, first_review_id, last_review_id, first_seen_sha, last_seen_sha,
                 github_comment_id, github_thread_id)
-              values (${input.repoId}, ${input.prNumber}, ${v.fingerprint}, ${v.key}, ${v.ruleId}, ${v.path}, ${v.line},
+              values (${input.repoId}, ${input.prNumber}, ${v.fingerprint}, ${v.key}, ${ruleRef(tx, v.ruleId)}, ${v.path}, ${v.line},
                 ${v.title}, ${v.severity}, ${v.category}, ${Math.round(v.confidence)}, ${v.status}, ${v.statusReason},
                 ${seen ? input.reviewId : null}, ${seen ? input.reviewId : null}, ${v.lastSeenSha}, ${v.lastSeenSha},
                 ${v.githubCommentId}, ${v.githubThreadId})
@@ -60,7 +60,7 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
             let [current] = await tx<{ status: string }[]>`select status from findings where id = ${id} for update`
             let statusHolds = current?.status === v.loadedStatus
             await tx`
-              update findings set fingerprint = ${v.fingerprint}, key = ${v.key}, rule_id = ${v.ruleId}, path = ${v.path},
+              update findings set fingerprint = ${v.fingerprint}, key = ${v.key}, rule_id = ${ruleRef(tx, v.ruleId)}, path = ${v.path},
                 line = ${v.line}, title = ${v.title}, severity = ${v.severity}, category = ${v.category},
                 confidence = ${Math.round(v.confidence)},
                 status = ${statusHolds ? tx`${v.status}::finding_status` : tx`status`},
@@ -83,4 +83,13 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
       })
     },
   }
+}
+
+/**
+ * REV-55. The rule of a finding, or null when it is gone: a review cites a rule as its job got it, and
+ * an admin can remove the rule while the job runs. The finding keeps its row and loses the rule, as
+ * the removal of a rule does to the findings already stored (`ON DELETE SET NULL`).
+ */
+function ruleRef(tx: postgres.TransactionSql, ruleId: string | null) {
+  return ruleId === null ? tx`null::uuid` : tx`(select id from rules where id = ${ruleId}::uuid)`
 }

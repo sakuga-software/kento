@@ -508,8 +508,11 @@ export const findings = pgTable(
      * path and the title). A review finds the finding again by it when the fingerprint changed.
      */
     key: text('key').notNull(),
-    /** REV-19. The rule that the finding applies, when it has one: the fingerprint then reads it instead of the title. */
-    ruleId: uuid('rule_id'),
+    /**
+     * REV-19. The rule that the finding applies, when it has one: the fingerprint then reads it instead
+     * of the title. The removal of the rule keeps the finding and sets this to null (REV-55).
+     */
+    ruleId: uuid('rule_id').references((): AnyPgColumn => rules.id, { onDelete: 'set null' }),
     path: text('path').notNull(),
     line: integer('line').notNull(),
     title: text('title').notNull(),
@@ -546,6 +549,8 @@ export const findings = pgTable(
     // The removal of a review sets these to null; REV-18 reads the findings of a review.
     index('findings_first_review_idx').on(table.firstReviewId),
     index('findings_last_review_idx').on(table.lastReviewId),
+    // The removal of a rule sets the rule of its findings to null.
+    index('findings_rule_idx').on(table.ruleId).where(sql`${table.ruleId} is not null`),
     check('findings_pr_number_positive', sql`${table.prNumber} > 0`),
     check('findings_severity', sql`${table.severity} in ('critical', 'major', 'minor')`),
     check('findings_confidence_range', sql`${table.confidence} between 0 and 100`),
