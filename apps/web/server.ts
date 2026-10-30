@@ -33,6 +33,8 @@ import { appInstallUrl } from './app/ui/pages.tsx'
 import { createRunnersAdminStore } from './app/runner/admin.ts'
 import { createDashboardStore } from './app/dashboard/store.ts'
 import { createReadPullRequest } from './app/dashboard/github.ts'
+import { createReadPullHeader } from './app/pulls/github.ts'
+import { createPullsStore } from './app/pulls/store.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -172,6 +174,12 @@ let router = createAppRouter({
     readPullRequest:
       mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
     serviceKey: config.providerApiKey !== null,
+  },
+  // The screen of a pull request (REV-17): its sheet of reviews and findings.
+  pulls: {
+    store: createPullsStore(database.sql),
+    githubUrl: config.githubUrl,
+    readHeader: mintInstallationToken && config.githubApp ? createReadPullHeader({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
   },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,

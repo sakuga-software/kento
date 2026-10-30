@@ -6,7 +6,7 @@ import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plura
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../org-settings/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
-import { pageRoutes as routes } from '../routes.ts'
+import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -273,7 +273,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
             <WeekSection week={screen.week} />
           </div>
 
-          <RecentSection recent={screen.recent} githubUrl={githubUrl} now={screen.now} />
+          <RecentSection recent={screen.recent} now={screen.now} />
 
           <div class="dash-grid">
             <QueueSection queue={screen.queue} now={screen.now} githubUrl={githubUrl} />
@@ -590,9 +590,9 @@ function WeekSection(handle: Handle<{ week: DayStats[] }>) {
   }
 }
 
-function RecentSection(handle: Handle<{ recent: RecentReview[]; githubUrl: string; now: Date }>) {
+function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date }>) {
   return () => {
-    let { recent, githubUrl, now } = handle.props
+    let { recent, now } = handle.props
     return (
       <section class="dash-section" aria-labelledby="recent-title">
         <h2 id="recent-title" class="section-title">
@@ -609,7 +609,7 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; githubUrl: strin
               return (
                 <li class="dash-review">
                   <div class="dash-review-head">
-                    <a class="mono dash-review-pr" href={prUrl(githubUrl, review.repo, review.prNumber)}>
+                    <a class="mono dash-review-pr" href={pullRoutes.pull.href({ id: review.repoId, number: String(review.prNumber) })}>
                       {review.repo}#{review.prNumber}
                     </a>
                     <span class="tag">{review.level}</span>

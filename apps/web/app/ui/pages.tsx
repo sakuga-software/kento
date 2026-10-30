@@ -1386,7 +1386,41 @@ export function createUiControllers(deps: UiDependencies) {
     },
   })
 
-  return { pages, signIn, notFound }
+  /**
+   * REV-17. What a screen in a file of its own needs from the frame (REV-48 splits this file): the
+   * middleware of the session, the signed-in person, the frame of the page, and the 404 or 400 page.
+   */
+  let screens: ScreenKit = {
+    middleware: [securityHeaders(), ...sessionLayer, requireViewer],
+    signed: (context) => {
+      let signed = signedOf(context)
+      return { login: signed.user.login, orgId: signed.membership.org.id, orgLogin: signed.membership.org.login, role: signed.membership.role }
+    },
+    frame: (context) => frame(signedOf(context), context, getCsrfToken(context)),
+    errorPage,
+    redirect,
+    forbidden,
+  }
+
+  return { pages, signIn, notFound, screens }
+}
+
+/** The person on a screen, as a screen in a file of its own reads them. */
+export interface ScreenViewer {
+  login: string
+  orgId: string
+  orgLogin: string
+  role: 'admin' | 'member'
+}
+
+/** REV-17. The frame of the screens, for a controller in a file of its own. */
+export interface ScreenKit {
+  middleware: Middleware<any>[]
+  signed(context: any): ScreenViewer
+  frame(context: any): PageFrame
+  errorPage(context: any, status: 400 | 404, kind: ErrorKind, section?: Section, exit?: ErrorExit): Response
+  redirect(location: string): Response
+  forbidden(): Response
 }
 
 /** A path of this site, or `/`: never another origin (`//host`, `/\host`, a scheme). */

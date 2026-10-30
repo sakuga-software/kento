@@ -53,6 +53,14 @@ export const pageRoutes = route({
 })
 
 /**
+ * REV-17. The screen of a pull request, and its forms. A signed-in member of an org only: the routes
+ * go through the session of the screens.
+ */
+export const pullRoutes = route({
+  pull: get('/repos/:id/pulls/:number'),
+})
+
+/**
  * REV-40. A page that no route matches, for a browser. The router dispatches to it only from its
  * default handler: the routes of machines keep their own answers.
  */

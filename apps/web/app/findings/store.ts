@@ -72,19 +72,19 @@ export class InvalidCursorError extends Error {
   }
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // The cursor holds `created_at` as Postgres writes it (to the microsecond) and the id of the last
 // row: a Date of JavaScript keeps milliseconds only, and two rows of one millisecond would be lost.
-type Cursor = { at: string; id: string }
+export type Cursor = { at: string; id: string }
 const CURSOR_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/
-const cursorAt = (column: string) => `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+export const cursorAt = (column: string) => `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
 
-function encodeCursor(cursor: Cursor): string {
+export function encodeCursor(cursor: Cursor): string {
   return Buffer.from(`${cursor.at}|${cursor.id}`).toString('base64url')
 }
 
-function decodeCursor(value: string | null | undefined): Cursor | null {
+export function decodeCursor(value: string | null | undefined): Cursor | null {
   if (!value) return null
   let [at, id] = Buffer.from(value, 'base64url').toString().split('|')
   if (!at || !id || !UUID.test(id) || !CURSOR_AT.test(at)) throw new InvalidCursorError()

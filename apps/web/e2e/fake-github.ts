@@ -43,6 +43,12 @@ const WORKFLOWS: Record<string, Record<string, string>> = {
 /** The open pull requests that a retry of the dashboard reads (e2e/dashboard.spec.ts): `owner/name#number` → head. */
 export const FAKE_PULLS: Record<string, string> = {
   'sakuga-software/dash-e2e#41': 'c'.repeat(40),
+  'sakuga-software/orchard#142': 'd'.repeat(40),
+}
+
+/** REV-17. The title, the author and the branches of a pull request, for the header of its screen. */
+const FAKE_PULL_DETAILS: Record<string, { title: string; user: { login: string }; head: { ref: string } }> = {
+  'sakuga-software/orchard#142': { title: 'Sessions : expiration et rotation des clés', user: { login: 'camille' }, head: { ref: 'feat/session-expiry' } },
 }
 
 let codes = new Map<string, { login: string; challenge: string; redirectUri: string }>()
@@ -131,7 +137,14 @@ let server = http.createServer(async (request, response) => {
     if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
     let head = FAKE_PULLS[`${pull[1]}#${pull[2]}`]
     if (!head) return json(response, 404, { message: 'Not Found' })
-    return json(response, 200, { number: Number(pull[2]), state: 'open', head: { sha: head }, base: { ref: 'main' } })
+    let details = FAKE_PULL_DETAILS[`${pull[1]}#${pull[2]}`]
+    return json(response, 200, {
+      number: Number(pull[2]),
+      state: 'open',
+      ...details,
+      head: { sha: head, ...details?.head },
+      base: { ref: 'main' },
+    })
   }
   // REV-13: the App and its installation, read with the JWT of the App by the settings screen.
   if (request.method === 'GET' && url.pathname === '/app') {
