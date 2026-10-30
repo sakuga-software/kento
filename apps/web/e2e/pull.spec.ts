@@ -157,3 +157,44 @@ test('a member dismisses a finding as « Faux positif »: status, reply in the G
   await expect(page.getByRole('status').filter({ hasText: 'Finding rouvert.' })).toBeVisible()
   expect(errors).toEqual([])
 })
+
+test('an admin re-runs the review in heavy: a column R5 waits, then shows the published review', async ({ page }) => {
+  let errors = watchConsole(page)
+  // beforeEach signed camille in: the admin signs in from a fresh session.
+  await page.context().clearCookies()
+  await signIn(page, 'alex')
+  await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
+  let rerun = page.getByRole('region', { name: 'Relancer R5' })
+  await expect(rerun.getByRole('button', { name: /Relancer en heavy · ≈ 0,41/ })).toBeVisible()
+  await rerun.getByRole('button', { name: /Relancer en heavy/ }).click()
+
+  await expect(page.getByText('Review relancée : elle est en file. Un nouveau push l’annule.')).toBeVisible()
+  await expect(page.getByText(/R5 en file…/)).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Relancer R5' })).toHaveCount(0)
+  let sheet = page.getByRole('table')
+  await expect(sheet.getByRole('columnheader', { name: /R5/ })).toContainText('En file…')
+  await expectNoAxeViolations(page)
+
+  // The runner takes the job and publishes its review.
+  let sql = database()
+  let jobId = ''
+  try {
+    let [job] = await sql<{ id: string; level: string; head_sha: string }[]>`
+      select id, level, head_sha from jobs where repo_id = ${repoId} and pr_number = ${PULL_NUMBER} and state = 'queued'`
+    expect(job?.level).toBe('heavy')
+    expect(job?.head_sha).toBe('d'.repeat(40))
+    jobId = job!.id
+    await sql`update jobs set state = 'done', started_at = now(), finished_at = now() where id = ${jobId}`
+    await sql`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at)
+      values (${jobId}, ${repoId}, ${PULL_NUMBER}, ${'d'.repeat(40)}, 5, 'claude-opus-4-1', 0.39,
+        ${JSON.stringify({ findings: [] })}::text::jsonb, now())`
+    await page.reload()
+    await expect(sheet.getByRole('columnheader', { name: /R5/ })).toContainText('5/5')
+    await expect(page.getByText(/R5 en file…/)).toHaveCount(0)
+  } finally {
+    if (jobId) await sql`delete from jobs where id = ${jobId}`
+    await sql.end()
+  }
+  expect(errors).toEqual([])
+})

@@ -5,6 +5,7 @@ import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
 import { InvalidCursorError } from '../findings/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
+import type { PullRequestNow } from '../dashboard/github.ts'
 import type { PullHeader } from '../pulls/github.ts'
 import type { PullSheet, PullsStore, PullSummary } from '../pulls/store.ts'
 import { createAppRouter } from '../router.ts'
@@ -93,12 +94,13 @@ function detail(status: FindingDetail['status'] = 'dismissed'): FindingDetail {
   }
 }
 
-function setup(options: { header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status'] } = {}) {
+function setup(options: { header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let asked: string[] = []
   let decisions: string[] = []
+  let reruns: string[] = []
   let replies: string[] = []
   let store: PullsStore = {
     async summary(orgId, repoId, prNumber) {
@@ -118,6 +120,13 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
       if (input.findingId !== FINDING_ID) return { outcome: 'not_found' }
       if (options.unchanged) return { outcome: 'unchanged', finding: {} as never }
       return { outcome: 'changed', finding: {} as never }
+    },
+    async estimates() {
+      return { lite: 0.004, balanced: 0.12, heavy: null }
+    },
+    async rerun(input) {
+      reruns.push(`${input.orgId} ${input.repoId} ${input.prNumber} ${input.level} ${input.githubHead}`)
+      return { kind: 'queued', jobId: 'job-9' }
     },
     async history(_orgId, _id, cursor) {
       if (cursor === 'bad') throw new InvalidCursorError()
@@ -161,6 +170,10 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
               if (options.reply instanceof Error) throw options.reply
               replies.push(`${target.fullName}#${target.prNumber} ${target.commentId} ${body}`)
             },
+      readPullRequest: async () => {
+        if (options.github instanceof Error) throw options.github
+        return options.github ?? { open: true, headSha: 'd'.repeat(40) }
+      },
       now: () => NOW.getTime(),
     },
   })
@@ -181,7 +194,7 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
         body: new URLSearchParams(form),
       }),
     )
-  return { request, signIn, asked, post, decisions, replies }
+  return { request, signIn, asked, post, decisions, replies, reruns }
 }
 
 const PATH = `/repos/${REPO_ID}/pulls/142`
@@ -378,6 +391,47 @@ describe('the decisions on a finding', () => {
   it('answers 404 for a finding of another org', async () => {
     let { post, cookie, csrf } = await member()
     assert.equal((await post('/findings/44444444-4444-4444-8444-444444444444/wontfix', cookie, { _csrf: csrf })).status, 404)
+  })
+})
+
+describe('« Relancer en <niveau> »', () => {
+  async function as(profile: typeof ALEX, options: Parameters<typeof setup>[0] = {}) {
+    let t = setup(options)
+    let cookie = await t.signIn(profile)
+    let html = await (await t.request(PATH, cookie)).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)![1]!
+    return { ...t, cookie, csrf, html }
+  }
+
+  it('offers an admin the three levels with their estimate, and a member none', async () => {
+    let admin = await as(ALEX)
+    assert.match(admin.html, /Relancer R5/)
+    assert.match(admin.html, /Relancer en lite<span class="dash-estimate"> · ≈ 0,004\s\$/)
+    assert.match(admin.html, /Relancer en heavy<span class="dash-estimate"> · coût inconnu/)
+    let member = await as(CAMILLE)
+    assert.doesNotMatch(member.html, /Relancer en/)
+  })
+
+  it('queues a review of the head that GitHub gives, for an admin', async () => {
+    let { post, cookie, csrf, reruns, request } = await as(ALEX)
+    let response = await post(`${PATH}/rerun`, cookie, { _csrf: csrf, level: 'heavy' })
+    assert.equal(response.status, 303)
+    assert.equal(response.headers.get('Location'), `${PATH}?relance=queued`)
+    assert.deepEqual(reruns, [`${ORG.id} ${REPO_ID} 142 heavy ${'d'.repeat(40)}`])
+    let html = await (await request(response.headers.get('Location')!, cookie)).text()
+    assert.match(html, /Review relancée : elle est en file\. Un nouveau push l’annule\./)
+  })
+
+  it('refuses a member, an unknown level, a closed pull request, and GitHub down', async () => {
+    let member = await as(CAMILLE)
+    assert.equal((await member.post(`${PATH}/rerun`, member.cookie, { _csrf: member.csrf, level: 'lite' })).status, 403)
+    let admin = await as(ALEX)
+    assert.equal((await admin.post(`${PATH}/rerun`, admin.cookie, { _csrf: admin.csrf, level: 'ultra' })).status, 400)
+    let closed = await as(ALEX, { github: { open: false, headSha: 'd'.repeat(40) } })
+    assert.equal((await closed.post(`${PATH}/rerun`, closed.cookie, { _csrf: closed.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?relance=closed`)
+    let down = await as(ALEX, { github: new Error('502') })
+    assert.equal((await down.post(`${PATH}/rerun`, down.cookie, { _csrf: down.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?relance=github_failed`)
+    assert.deepEqual([...member.reruns, ...admin.reruns, ...closed.reruns, ...down.reruns], [])
   })
 })
 

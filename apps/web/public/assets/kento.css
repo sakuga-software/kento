@@ -3371,3 +3371,28 @@ a.sheet-title {
     justify-content: center;
   }
 }
+
+/* « Relancer en <niveau> » (REV-17, 4/4). */
+.pull-rerun {
+  margin-bottom: var(--space-6);
+}
+.pull-rerun > .hint {
+  max-width: 80ch;
+  margin-bottom: var(--space-3);
+}
+.pull-rerun-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+@media (max-width: 760px) {
+  .pull-rerun-actions,
+  .pull-rerun-actions form,
+  .pull-rerun-actions .button {
+    width: 100%;
+  }
+  .pull-rerun-actions .button {
+    min-height: var(--control-h-touch);
+    justify-content: center;
+  }
+}

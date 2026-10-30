@@ -198,6 +198,7 @@ let router = createAppRouter({
     readHeader: mintInstallationToken && config.githubApp ? createReadPullHeader({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
     readCode: mintInstallationToken && config.githubApp ? createReadCode({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
     postReply: mintInstallationToken && config.githubApp ? createThreadReplier({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
+    readPullRequest: mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
   },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,

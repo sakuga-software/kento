@@ -6,7 +6,9 @@ import { InvalidCursorError } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { pullRoutes } from '../routes.ts'
 import type { ScreenKit } from '../ui/pages.tsx'
-import { pullHref, PullPage, readPullQuery } from '../ui/pull.tsx'
+import { pullHref, PullPage, readPullQuery, RERUN_NOTICES, type RerunNotice } from '../ui/pull.tsx'
+import type { ReadPullRequest } from '../dashboard/github.ts'
+import { LEVELS, type Level } from '@sakuga-review/protocol'
 import { FindingPage, findingHref } from '../ui/finding.tsx'
 import { FINDING_NOTICES, FindingActions, FindingNoticeView, GITHUB_NOTICES, type FindingNotice, type GithubNotice } from '../ui/finding-actions.tsx'
 import { readStatusForm, replyText, type ThreadReplier } from '../findings/dismiss.ts'
@@ -26,6 +28,8 @@ export interface PullsDependencies {
   readCode?: ReadCode | null
   /** Posts the reply of the bot in the thread of a finding (REV-18). Null without the GitHub App. */
   postReply?: ThreadReplier | null
+  /** Reads the state and the head of the pull request before « Relancer ». Null without the GitHub App. */
+  readPullRequest?: ReadPullRequest | null
   now?: () => number
 }
 
@@ -115,9 +119,13 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
             log('warn', 'pull.header_failed', { repo: summary.target.fullName, pr: prNumber, error: errorMessage(error) })
           }
         }
+        let estimates = signed.role === 'admin' ? await deps.store.estimates(summary.target.repoId) : null
+        let relance = context.url.searchParams.get('relance')
         return context.render(
           <PullPage
             frame={kit.frame(context)}
+            estimates={estimates}
+            rerunNotice={relance !== null && relance in RERUN_NOTICES ? (relance as RerunNotice) : null}
             summary={summary}
             header={header}
             sheet={sheet}
@@ -170,6 +178,41 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
             now={new Date(now())}
           />,
         )
+      },
+
+      // cop() and csrf() of the session layer ran before.
+      async pullRerun(context) {
+        let signed = kit.signed(context)
+        if (signed.role !== 'admin') {
+          log('warn', 'pull.rerun_refused', { login: signed.login, org: signed.orgLogin, reason: 'not an admin' })
+          return kit.forbidden()
+        }
+        let prNumber = Number(context.params.number)
+        let summary = deps && /^\d{1,9}$/.test(context.params.number) ? await deps.store.summary(signed.orgId, context.params.id, prNumber) : null
+        if (!deps || !summary) return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
+        let level = context.get(FormData)?.get('level')
+        if (typeof level !== 'string' || !(LEVELS as readonly string[]).includes(level)) return kit.errorPage(context, 400, 'form', 'repos')
+        let notice: RerunNotice
+        let jobId: string | null = null
+        let now: Awaited<ReturnType<ReadPullRequest>> | null = null
+        let githubFailed = false
+        if (deps.readPullRequest) {
+          try {
+            now = await deps.readPullRequest(summary.target)
+          } catch (error) {
+            githubFailed = true
+            log('warn', 'pull.rerun_github_failed', { repo: summary.target.fullName, pr: prNumber, error: errorMessage(error) })
+          }
+        }
+        if (githubFailed) notice = 'github_failed'
+        else if (now && !now.open) notice = 'closed'
+        else {
+          let outcome = await deps.store.rerun({ orgId: signed.orgId, repoId: summary.target.repoId, prNumber, level: level as Level, githubHead: now?.headSha ?? null })
+          if ('jobId' in outcome) jobId = outcome.jobId
+          notice = outcome.kind === 'not_found' ? 'missing' : outcome.kind
+        }
+        log('info', 'pull.rerun', { login: signed.login, org: signed.orgLogin, repo: summary.target.fullName, pr: prNumber, reviewLevel: level, outcome: notice, jobId })
+        return kit.redirect(`${pullHref(summary.target.repoId, prNumber)}?relance=${notice}`)
       },
 
       async findingDismiss(context) {

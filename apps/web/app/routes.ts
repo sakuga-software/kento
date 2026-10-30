@@ -60,6 +60,8 @@ export const pageRoutes = route({
  */
 export const pullRoutes = route({
   pull: get('/repos/:id/pulls/:number'),
+  /** « Relancer en <niveau> »: a new review of the last head. An admin only: it costs. */
+  pullRerun: post('/repos/:id/pulls/:number/rerun'),
   /** One finding: where it comes from, its code, its history, its thread on GitHub. */
   finding: get('/findings/:id'),
   /**

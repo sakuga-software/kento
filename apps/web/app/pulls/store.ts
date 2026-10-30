@@ -11,6 +11,7 @@ import type postgres from 'postgres'
 
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, UUID, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
+import { readEstimates, rerunReview, type RerunOutcome } from './rerun.ts'
 import { sheetCells, type Cell, type ResultFinding, type SheetEvent } from './sheet.ts'
 
 /** The reviews of a page of the sheet. Six columns fit at 1440 px with the title of each row. */
@@ -108,6 +109,10 @@ export interface PullsStore {
   history(orgId: string, findingId: string, cursor: string | null): Promise<Page<HistoryEvent>>
   /** A person of the org sets the status of a finding: one event, with their login. */
   setStatus(input: { orgId: string; findingId: string; status: PersonStatus; reason: string | null; actor: string }): Promise<StatusChange>
+  /** The mean cost of the last reviews of each level on the repository. */
+  estimates(repoId: string): Promise<Record<Level, number | null>>
+  /** « Relancer en <niveau> »: a review job of the last head of the pull request. */
+  rerun(input: { orgId: string; repoId: string; prNumber: number; level: Level; githubHead: string | null }): Promise<RerunOutcome>
 }
 
 const num = (value: string | number | null): number | null => (value === null ? null : Number(value))
@@ -125,6 +130,8 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
     finding: (orgId, id) => readFindingDetail(sql, orgId, id),
     history: (orgId, findingId, cursor) => readFindingHistory(sql, { orgId, findingId, cursor }),
     setStatus: (input) => setFindingStatus(sql, input),
+    estimates: (repoId) => readEstimates(sql, repoId),
+    rerun: (input) => rerunReview(sql, input),
 
     async summary(orgId, repoId, prNumber) {
       if (!UUID.test(repoId) || !Number.isSafeInteger(prNumber) || prNumber <= 0) return null

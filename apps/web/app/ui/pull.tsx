@@ -1,3 +1,4 @@
+import { LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
 import { FINDING_STATUSES, type FindingStatus } from '../findings/store.ts'
@@ -8,6 +9,18 @@ import { pageRoutes, pullRoutes } from '../routes.ts'
 import { agoOrDate, clock, plural, usdPrecise } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
+
+/** What the screen says after « Relancer », from `?relance=`. */
+export const RERUN_NOTICES = {
+  queued: 'Review relancée : elle est en file. Un nouveau push l’annule.',
+  already: 'Une review de ce niveau est déjà en file ou en cours sur ce commit.',
+  stale: 'GitHub a un commit plus récent que la dernière review : son push sera relu, rien n’est relancé.',
+  closed: 'La PR est fermée sur GitHub, donc rien n’est relancé.',
+  capped: 'Le plafond de coût de l’organisation est atteint, donc rien n’est relancé. Un admin le change dans Réglages.',
+  github_failed: 'GitHub n’a pas répondu et rien n’est relancé. Réessayez dans un instant.',
+  missing: 'Rien n’est relancé : le repo n’est plus activé, ou l’installation est suspendue.',
+} as const
+export type RerunNotice = keyof typeof RERUN_NOTICES
 
 /** The badge of a severity, as the comments of the bot write it on GitHub. */
 export const SEVERITY_BADGES: Record<PullFinding['severity'], string> = { critical: 'P0', major: 'P1', minor: 'P2' }
@@ -63,11 +76,14 @@ export interface PullPageProps {
   query: PullQuery
   githubUrl: string
   now: Date
+  /** The estimate of a review of each level, for an admin; null for a member (no « Relancer »). */
+  estimates?: Record<Level, number | null> | null
+  rerunNotice?: RerunNotice | null
 }
 
 export function PullPage(handle: Handle<PullPageProps>) {
   return () => {
-    let { frame, summary, header, sheet, query, githubUrl, now } = handle.props
+    let { frame, summary, header, sheet, query, githubUrl, now, estimates, rerunNotice } = handle.props
     let { target } = summary
     let repoName = target.fullName.split('/')[1] ?? target.fullName
     let progress = scoreProgress(summary)
@@ -144,7 +160,17 @@ export function PullPage(handle: Handle<PullPageProps>) {
           </div>
         </section>
 
+        {rerunNotice ? (
+          <div class={`banner ${rerunNotice === 'queued' ? 'banner-ok' : 'banner-info'}`} role="status">
+            <p>{RERUN_NOTICES[rerunNotice]}</p>
+          </div>
+        ) : null}
+
         {summary.active ? <ActiveBanner job={summary.active} now={now} /> : null}
+
+        {estimates && !summary.active && header?.state !== 'closed' && header?.state !== 'merged' ? (
+          <RerunSection summary={summary} estimates={estimates} csrf={frame.csrfToken ?? ''} />
+        ) : null}
 
         <section class="pull-sheet" aria-labelledby="sheet-title">
           <div class="dash-section-head">
@@ -178,6 +204,40 @@ function ActiveBanner(handle: Handle<{ job: PullActiveJob; now: Date }>) {
           push l’annule.
         </p>
       </div>
+    )
+  }
+}
+
+const LEVEL_DEFAULT_HINT = 'L’estimation est la moyenne des dernières reviews de ce niveau sur ce repo.'
+
+function RerunSection(handle: Handle<{ summary: PullSummary; estimates: Record<Level, number | null>; csrf: string }>) {
+  return () => {
+    let { summary, estimates, csrf } = handle.props
+    let { repoId, prNumber } = summary.target
+    return (
+      <section class="pull-rerun" aria-labelledby="rerun-title">
+        <h2 id="rerun-title" class="section-title">
+          Relancer R{summary.reviews + 1}
+        </h2>
+        <p class="hint">
+          Une nouvelle review de <span class="mono">{short(summary.headSha)}</span>, le dernier commit relu. Un nouveau push l’annule. {LEVEL_DEFAULT_HINT}
+        </p>
+        <div class="pull-rerun-actions">
+          {LEVELS.map((level) => {
+            let estimate = estimates[level]
+            return (
+              <form method="post" action={pullRoutes.pullRerun.href({ id: repoId, number: String(prNumber) })}>
+                <input type="hidden" name="_csrf" value={csrf} />
+                <input type="hidden" name="level" value={level} />
+                <button class="button" type="submit">
+                  Relancer en {level}
+                  <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
+                </button>
+              </form>
+            )
+          })}
+        </div>
+      </section>
     )
   }
 }
