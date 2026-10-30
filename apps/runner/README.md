@@ -1,0 +1,374 @@
+# Kentō runner: run it on your own machine
+
+The runner is the program that does the reviews of Kentō. It asks `https://review.sakuga.dev` for
+a job, clones the pull request, calls the model, and sends the review back. The service then posts
+it on GitHub. This page is for an admin of an organization who wants the reviews of that
+organization to run on a machine of their own.
+
+The runner only makes outbound calls. It needs no open port, no public address and no domain.
+
+The operator runbook of the runners of Sakuga (`runners-host`, the publication of the image, the
+runners of the service) is [DEPLOY.md](DEPLOY.md).
+
+## Requirements
+
+- **Docker** on a machine that stays awake. A machine that sleeps during a job loses it (see
+  [A job fails because its lease expired](#a-job-fails-because-its-lease-expired)).
+- **Outbound HTTPS** (port 443) to:
+  - `review.sakuga.dev`, the service;
+  - `github.com`, where the runner clones the pull request;
+  - the model provider: `openrouter.ai` by default, `api.anthropic.com`, or your own server. With
+    a local Ollama, no provider outside the machine.
+- **An admin account of the organization in Kentō.** Kentō reads the role from GitHub. An admin of
+  the GitHub organization is an admin in Kentō. A member sees the Runners screen but cannot create
+  a runner.
+- **The image** `ghcr.io/sakuga-software/kento-runner`. The package is private. Ask Sakuga for read
+  access, then log in once with a GitHub token that has the `read:packages` scope:
+
+  ```sh
+  echo <token> | docker login ghcr.io -u <your GitHub login> --password-stdin
+  ```
+
+  With access to this repository, you can build the image instead, from the root of a checkout at
+  the release of the service:
+
+  ```sh
+  docker build -f apps/runner/Dockerfile --build-arg APP_COMMIT=$(git rev-parse HEAD) \
+    -t ghcr.io/sakuga-software/kento-runner:<version> .
+  ```
+
+  `<version>` is the version that the Runners screen shows in its command (`0.1.0` today).
+- **A model key**, unless an admin of Sakuga gives your runner the key of the service (see
+  [Key modes](#key-modes)). An OpenRouter key works with no other setting.
+- **Room for the clones.** Each job clones into a `tmpfs` of 2 GB, and removes the clone at the
+  end. The runner runs one job at a time.
+
+## 1. Create the runner in the Runners screen
+
+1. Open `https://review.sakuga.dev/runners`, then click **Nouveau runner**.
+2. **Nom**: the name of the machine, for example `mac-mini`. Letters, digits, dots, dashes or
+   underscores, 100 at most.
+3. **Labels**: optional, separated by commas, for example `macos`. A repository with a pool sends
+   its jobs only to the runners that have the label of the pool. No screen sets a pool today: the
+   operator of Kentō sets it in the database. Without a pool, which is the default, the labels
+   change nothing.
+4. **Clé du modèle**: where the model key is. See [Key modes](#key-modes). Keep « Clé du runner »
+   unless the runner is a machine of Sakuga.
+5. Click **Créer le token**.
+
+The screen shows a registration token (`kento_reg_…`) and a `docker run` command that contains it.
+Copy the command now. The screen never shows the token again. The token works once, and for one
+hour. The name, the labels and the key mode are fixed in the token. The variables of the machine
+cannot change them.
+
+Until a runner uses it, the token stays in **Tokens en attente** with « En attente du runner ».
+
+## 2. Start the runner
+
+Run the command of the screen on the machine. It looks like this:
+
+```sh
+docker run -d --name kento-runner --restart unless-stopped \
+  -e KENTO_URL=https://review.sakuga.dev \
+  -e KENTO_REGISTRATION_TOKEN=kento_reg_… \
+  -e KENTO_RUNNER_NAME=mac-mini \
+  -e KENTO_RUNNER_LABELS=macos \
+  -e PROVIDER_KIND=openrouter \
+  -e PROVIDER_BASE_URL=https://openrouter.ai/api/v1 \
+  -e PROVIDER_API_KEY=<votre clé OpenRouter> \
+  -v kento-runner-state:/var/lib/kento-runner \
+  --tmpfs /tmp:rw,size=2g --read-only --cap-drop ALL --security-opt no-new-privileges \
+  ghcr.io/sakuga-software/kento-runner:0.1.0
+```
+
+Replace `<votre clé OpenRouter>` with your key before you run it. The shell reads the `<` as a
+redirection, so the command fails if you leave it.
+
+What the parts do:
+
+| Part | Why |
+| --- | --- |
+| `--restart unless-stopped` | Docker starts the runner again after a crash or a reboot of the machine. |
+| `-v kento-runner-state:/var/lib/kento-runner` | The volume keeps `runner.json`, the token of the runner. Without it, the runner cannot start again after the registration token is used. |
+| `--tmpfs /tmp:rw,size=2g` | The clones go there, in memory, and leave with the job. |
+| `--read-only --cap-drop ALL --security-opt no-new-privileges` | The runner writes only to the volume and to `/tmp`, and has no Linux capability. It never builds or runs the code of a pull request. |
+
+On its first start the runner registers, writes `runner.json` in the volume, and starts asking for
+jobs. Check its log:
+
+```sh
+docker logs kento-runner
+```
+
+```json
+{"time":"…","level":"info","event":"runner.registered","runnerId":"…","name":"mac-mini","labels":["macos"]}
+{"time":"…","level":"info","event":"startup.ready","runnerId":"…","version":"0.1.0","url":"https://review.sakuga.dev","ownKey":true}
+```
+
+Reload the Runners screen. The runner is in **Runners actifs** with « En ligne ». The token leaves
+**Tokens en attente**.
+
+The command keeps `KENTO_REGISTRATION_TOKEN` in the container. Once `runner.json` exists, the
+runner does not read it again, so you can run the same command later (an update, another key) with
+the used token in it.
+
+`--name kento-runner` and the volume `kento-runner-state` are fixed names. For a second runner on
+the same machine, change both.
+
+## Key modes
+
+The model key is on the runner, or the service sends its own key with each job. The admin chooses
+when creating the token, and can change it later on the runner's card.
+
+| Mode on the screen | Card | What happens |
+| --- | --- | --- |
+| **Clé du runner** (recommended for a machine outside Sakuga) | « Clé du runner » | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
+| **Clé de l’app** | « Clé de l’app (de confiance) » | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
+
+« Marquer de confiance » and « Retirer la confiance » on the card switch between the two. The
+service reads the trust again at each claim.
+
+Which jobs a runner takes depends on the provider of the job, which the organization sets in
+**Réglages → Providers et clés** and in the Config of each repository:
+
+| Provider of the job | The runner takes it when |
+| --- | --- |
+| None (the organization has no provider) | `PROVIDER_KIND=openrouter` with `PROVIDER_API_KEY`, or the runner is trusted and the service has its OpenRouter key. |
+| A provider whose key the service holds | The runner has its own key of that kind (`PROVIDER_KIND` and `PROVIDER_API_KEY`), or it is trusted. |
+| A provider with « La clé reste sur le runner » | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
+| Ollama | The runner has `PROVIDER_KIND=ollama`. |
+
+A job that no runner can take stays in the queue. It does not fail.
+
+### Another provider than OpenRouter
+
+Change `PROVIDER_KIND`, `PROVIDER_BASE_URL` and `PROVIDER_API_KEY` in the command:
+
+| `PROVIDER_KIND` | `PROVIDER_BASE_URL` | `PROVIDER_API_KEY` |
+| --- | --- | --- |
+| `openrouter` | empty or `https://openrouter.ai/api/v1` | an OpenRouter key |
+| `anthropic` | empty (`https://api.anthropic.com`) | an Anthropic key |
+| `openai_compatible` | required, `https://…` | the key of that server |
+| `ollama` | see [Ollama](#ollama-on-the-machine-of-the-runner) | none |
+
+`PROVIDER_BASE_URL` must be HTTPS, except for Ollama. The organization needs a provider of the same
+kind in **Réglages → Providers et clés**, set « Par défaut » or chosen for a level in the Config of
+a repository. Tick « La clé reste sur le runner » there so that the service never stores the key.
+
+## Ollama on the machine of the runner
+
+The model runs on your machine or on your network. The service has no key, and the review shows a
+cost of 0.
+
+1. In Kentō, **Réglages → Ajouter un provider**:
+   - **Type**: Ollama;
+   - **Nom**: for example « Ollama du Mac mini »;
+   - **URL du serveur**: leave it empty, the runner gives it;
+   - **Modèles par niveau**: Ollama has no default model, so name one for each of `lite`,
+     `balanced` and `heavy`, for example `qwen3`. Pull them first on the Ollama server
+     (`ollama pull qwen3`).
+
+   Click **Ajouter le provider**. The first provider of the organization becomes « Par défaut »;
+   otherwise click **Mettre par défaut**, or choose it for a level in the Config of a repository.
+2. Start the runner with these two lines in place of the three `PROVIDER_` lines of the command:
+
+   ```sh
+     -e PROVIDER_KIND=ollama \
+     -e PROVIDER_BASE_URL=http://host.docker.internal:11434 \
+   ```
+
+   Inside the container, `localhost` is the container itself, not your machine. The default of the
+   runner, `http://localhost:11434`, therefore fails with Ollama on the host.
+   `host.docker.internal` reaches the host on Docker Desktop and OrbStack. On Linux, also add
+   `--add-host=host.docker.internal:host-gateway` to the command, and make Ollama listen on more
+   than the loopback (`OLLAMA_HOST=0.0.0.0`). For Ollama on another machine of the network, give
+   its address, for example `http://gpu.lan:11434`.
+
+The log shows `"ownKey":false` at startup: the runner has no key, and calls Ollama. A finished job
+shows the model and `"costUsd":0`:
+
+```json
+{"level":"info","event":"job.finished",…,"outcome":"done","durationMs":332,"score":2,"model":"qwen3","costUsd":0}
+```
+
+## Update the runner
+
+When the service moves to a newer release, the card shows the new version next to the runner's
+version, for example « 0.2.0 disponible ». The command of the Runners screen always names the image
+of the release of the service.
+
+1. Pull the new image:
+
+   ```sh
+   docker pull ghcr.io/sakuga-software/kento-runner:<new version>
+   ```
+
+2. Remove the container, and keep the volume:
+
+   ```sh
+   docker rm -f kento-runner
+   ```
+
+   A job in progress stops, and the service queues it again once its lease ends, within 2
+   minutes. To avoid that, wait until « Job en cours » on the card says « aucun ».
+3. Run your `docker run` command again with the new tag. The runner reads `runner.json` from the
+   volume and does not register again. The card keeps its name and shows the new version.
+
+The same steps change a variable of the runner, for example a new `PROVIDER_API_KEY`.
+
+## Revoke a runner
+
+1. On the card of the runner, click **Révoquer…**, then **Révoquer <nom>**.
+
+   The token of the runner stops working at its next call. Its job in progress goes back to the
+   queue at once, for another runner, without counting as an attempt. The runner moves to
+   **Révoqués**.
+2. On the machine, the runner logs `runner.token_refused` and stops. Docker starts it again
+   (`--restart unless-stopped`), and it stops again. Remove the container and its volume:
+
+   ```sh
+   docker rm -f kento-runner
+   docker volume rm kento-runner-state
+   ```
+
+A revoked runner never comes back. To use the machine again, create a new token
+([step 1](#1-create-the-runner-in-the-runners-screen)) and run its command. With the old volume
+removed, the runner registers as a new runner.
+
+A runner of the service (« Runner du service » on its card) has no button. The operator revokes it
+in the database ([DEPLOY.md](DEPLOY.md#5-revoke-a-runner)).
+
+## Troubleshooting
+
+Every line of `docker logs kento-runner` is one JSON object with `time`, `level` and `event`. The
+runner removes its tokens and keys from every line.
+
+### The registration token expired
+
+The card in **Tokens en attente** says « Token expiré » when no runner registered within the hour. A
+token that a runner already used fails the same way.
+
+On the machine, the runner stops with:
+
+```json
+{"level":"error","event":"runner.token_refused","error":"the service refused the runner token: it is wrong or revoked. Remove runner.json to register again."}
+```
+
+At this point the volume holds no `runner.json`: the message names the runner token, but the
+service refused the registration token. Docker restarts the runner, and the same line comes back.
+
+1. On the card, click **Nouveau token**. The screen shows a new token and its command, with the same
+   name, labels and key mode.
+2. On the machine:
+
+   ```sh
+   docker rm -f kento-runner
+   ```
+
+3. Run the new command.
+
+Check that the machine reaches the service in HTTPS:
+
+```sh
+curl -sS https://review.sakuga.dev/healthz
+```
+
+### `runner.token_refused` after `startup.ready`
+
+The runner registered, then the service refused its token (401). The runner was revoked, or its
+`runner.json` belongs to another service. The log shows, on each restart:
+
+```json
+{"level":"info","event":"startup.ready",…}
+{"level":"error","event":"runner.token_refused","error":"the service refused the runner token: it is wrong or revoked. Remove runner.json to register again."}
+```
+
+Remove the container and the volume, then register again with a new token, as in
+[Revoke a runner](#revoke-a-runner).
+
+### The runner stops at startup
+
+| Log | Cause |
+| --- | --- |
+| `startup.config_invalid` with `KENTO_URL must be an https:// URL` | `KENTO_URL` is missing, or is not `https://`. |
+| `startup.config_invalid` with `PROVIDER_KIND must be one of openrouter, anthropic, openai_compatible, ollama` | A typo in `PROVIDER_KIND`. |
+| `startup.config_invalid` with `PROVIDER_BASE_URL must be an https:// URL` | An `http://` URL for a provider other than Ollama. |
+| `startup.config_invalid` with `KENTO_RUNNER_LABELS must be at most 20 labels…` | A label with a space or another character. |
+| `runner.stopped` with `no runner token in /var/lib/kento-runner/runner.json, and KENTO_REGISTRATION_TOKEN is not set` | The volume is new or missing, and the command has no registration token. Create a token and use its command. |
+
+### The runner cannot reach the service
+
+```json
+{"level":"warn","event":"runner.claim_failed","error":"fetch failed","retryInMs":1000}
+```
+
+The runner tries again, waiting twice as long each time, up to one minute. It does not stop. Check
+the DNS, the proxy and the firewall of the machine for outbound HTTPS to `review.sakuga.dev`. The
+card goes from « En ligne » to « Signal en retard » after 90 s without a call, and to « Hors
+ligne » after one hour.
+
+### The runner is « En ligne » but takes no job
+
+A job waits in the queue until a runner can take it. Check, in this order:
+
+- **Repos**: the repository is enabled. A push of a disabled repository creates no job.
+- If the operator set a pool on the repository, the pool is one of the labels of the runner.
+- The provider of the job matches the runner (see the table in [Key modes](#key-modes)). For
+  example, an organization whose default provider is Anthropic with a key on the service does not
+  give its jobs to an untrusted runner with an OpenRouter key.
+
+### A job fails because its lease expired
+
+The Tableau de bord shows the failure « le bail a expiré deux fois sur <runner> ».
+
+The runner holds a job with a lease of 2 minutes, and renews it with a heartbeat every 30 seconds.
+When the heartbeats stop (the machine sleeps, the network goes down, someone stops the container),
+the service queues the job again after the lease ends, and waits 30 seconds. After the second
+expired lease, the job fails.
+
+If the runner comes back during the job, its next heartbeat gets 409 and it drops the job:
+
+```json
+{"level":"warn","event":"job.lease_lost",…,"error":"heartbeat: the service answered 409 {\"error\":\"lease_lost\"}"}
+{"level":"info","event":"job.finished",…,"outcome":"lost"}
+```
+
+Keep the machine awake, and keep the runner running during jobs. To review the pull request again,
+an admin clicks « Relancer en <niveau> » on the Tableau de bord, or anyone with write access
+comments `@kento-review` on the pull request.
+
+### A job fails with a model error
+
+The job fails with the answer of the provider, in the log of the runner and on the Tableau de bord:
+
+```json
+{"level":"warn","event":"job.finished",…,"outcome":"failed","reason":"no model gave a usable answer: ProviderError: OpenRouter answered 401: {\"error\":{\"message\":\"User not found.\",\"code\":401}}"}
+```
+
+A 401 or 403 means that the provider refused `PROVIDER_API_KEY`. Replace it as in
+[Update the runner](#update-the-runner). When the provider has « La clé reste sur le runner »,
+**Réglages** shows « Refusée sur le runner » until a job with the new key succeeds.
+
+With Ollama, `Ollama answered 404: {"error":"model 'qwen3' not found"}` names a model that the
+server has not pulled, and `fetch failed` an address that the container cannot reach (see
+[Ollama](#ollama-on-the-machine-of-the-runner)).
+
+## Variables
+
+The command of the Runners screen sets the first seven. A token of the screen fixes the name, the
+labels and the trust, whatever `KENTO_RUNNER_NAME` and `KENTO_RUNNER_LABELS` say.
+
+| Variable | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `KENTO_URL` | yes | | The service, `https://review.sakuga.dev`. HTTPS only (`http://127.0.0.1` or `http://localhost` for a local test). |
+| `KENTO_REGISTRATION_TOKEN` | first start | | The token of the Runners screen. Read only while the volume has no `runner.json`. |
+| `KENTO_RUNNER_NAME` | no | host name | Letters, digits, dots, dashes or underscores. |
+| `KENTO_RUNNER_LABELS` | no | | Up to 20 labels, separated by commas. |
+| `PROVIDER_KIND` | no | `openrouter` | `openrouter`, `anthropic`, `openai_compatible` or `ollama`. |
+| `PROVIDER_BASE_URL` | no | the URL of the kind | HTTPS, except for Ollama. Required with `openai_compatible`. |
+| `PROVIDER_API_KEY` | no | | The key of the runner. Ollama needs none. |
+| `KENTO_STATE_DIR` | no | `/var/lib/kento-runner` | Holds `runner.json`. |
+| `KENTO_WORK_DIR` | no | `/tmp/kento-runner` | Where the jobs clone. |
+
+[DEPLOY.md](DEPLOY.md#what-the-runner-does-with-the-code) describes what the runner does with the code, the leases and
+the attempts.

@@ -6,6 +6,9 @@ database of the web service and to `runners-host` runs these steps.
 
 The runner speaks to `https://review.sakuga.dev` in HTTPS, outbound only. It needs no open port.
 
+An admin of an organization who runs a runner on their own machine follows [README.md](README.md)
+instead.
+
 ## 0. Before: the web service (once)
 
 Deploy the release with REV-4 first. Its migration `0001_runners` adds the table `runners` and the
