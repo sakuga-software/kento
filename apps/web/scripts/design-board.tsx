@@ -188,7 +188,22 @@ function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> 
   return (
     <ReposPage
       frame={frame(theme, viewer, '/repos')}
-      repos={REPOS}
+      page={{
+        rows: REPOS,
+        counts: {
+          all: REPOS.length,
+          enabled: REPOS.filter((r) => r.enabled).length,
+          disabled: REPOS.filter((r) => !r.enabled).length,
+          switching: REPOS.filter((r) => r.workflow === 'reusable' || r.workflow === 'copy').length,
+        },
+        matching: REPOS.length,
+        offset: 0,
+        next: null,
+        previous: null,
+        checkedAt: minutesAgo(4),
+        unchecked: true,
+      }}
+      list={{ filter: 'all', search: '', after: null, before: null }}
       installationUrl="https://github.com/organizations/sakuga-software/settings/installations/1"
       githubUrl="https://github.com"
       checking={false}

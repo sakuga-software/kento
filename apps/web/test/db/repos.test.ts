@@ -62,7 +62,7 @@ describe('the Repos screen against Postgres', () => {
   }
 
   async function orchard() {
-    return (await store.list(orgId)).find((repo) => repo.fullName === ORCHARD.full_name)!
+    return (await store.list(orgId)).rows.find((repo) => repo.fullName === ORCHARD.full_name)!
   }
 
   /** A review of a job that Kentō published on GitHub. */
@@ -155,6 +155,101 @@ describe('the Repos screen against Postgres', () => {
     assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [2, null])
   })
 
+  it('a failed job after a double publication sets the counter back to the failure; a double after it, to the double (REV-36)', async () => {
+    let repo = await orchard()
+    await store.setEnabled(orgId, repo.id, true)
+    let first = await push(1)
+    await publish(first.jobId!, 50)
+    let twin = async (minutesAgo: number) => {
+      let [job] = await sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref, github_delivery_id)
+        select repo_id, level, pr_number, head_sha, base_ref, ${`twin-${minutesAgo}`} from jobs where id = ${first.jobId!} returning id`
+      await publish(job!.id, minutesAgo)
+    }
+    await twin(40)
+    let failed = await push(10, 10)
+    await sql`update jobs set state = 'failed', finished_at = now() - interval '30 minutes' where id = ${failed.jobId!}`
+    await publish((await push(11, 11)).jobId!, 20)
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [1, 'failure', 10])
+
+    await twin(10)
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'double', 7])
+  })
+
+  it('counts the streak up to its target: a reset before the last 20 reviews is no longer named (REV-36)', async () => {
+    let repo = await orchard()
+    await store.setEnabled(orgId, repo.id, true)
+    let failed = await push(100, 100)
+    await sql`update jobs set state = 'failed', finished_at = now() - interval '200 minutes' where id = ${failed.jobId!}`
+    for (let n = 1; n <= 19; n++) await publish((await push(n, n)).jobId!, 120 - n)
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [19, 'failure', 100])
+    await publish((await push(20, 20)).jobId!, 50)
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [20, null, null])
+    await publish((await push(21, 21)).jobId!, 40)
+    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).lastReview?.prNumber], [20, null, 21])
+  })
+
+  it('pages the list by 50, the enabled repositories first, and counts the whole org (REV-36)', async () => {
+    await sql`
+      insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+      select ${orgId}, 6000 + g, 'sakuga-software/svc-' || lpad(g::text, 3, '0'), g % 4 = 0,
+        (case when g % 5 = 0 then 'copy' else 'none' end)::workflow_mode
+      from generate_series(1, 119) g`
+    // 120 repositories: orchard and 119 more, of which 29 enabled.
+    let first = await store.list(orgId)
+    assert.equal(first.rows.length, 50)
+    assert.deepEqual(first.counts, { all: 120, enabled: 29, disabled: 91, switching: 23 })
+    assert.equal(first.matching, 120)
+    assert.equal(first.offset, 0)
+    assert.equal(first.previous, null)
+    assert.deepEqual(first.rows.slice(0, 3).map((r) => r.fullName), ['sakuga-software/svc-004', 'sakuga-software/svc-008', 'sakuga-software/svc-012'])
+    assert.ok(first.rows.slice(0, 29).every((r) => r.enabled), 'the enabled ones first')
+    assert.ok(first.rows.slice(29).every((r) => !r.enabled))
+
+    let seen = first.rows.map((r) => r.id)
+    let page = first
+    while (page.next) {
+      page = await store.list(orgId, { after: page.next })
+      assert.equal(page.offset, seen.length)
+      seen.push(...page.rows.map((r) => r.id))
+    }
+    assert.equal(seen.length, 120)
+    assert.equal(new Set(seen).size, 120, 'no row twice, none left out')
+    assert.equal(page.rows.length, 20)
+
+    // Back from the last page: the same rows as on the way forward.
+    let back = await store.list(orgId, { before: page.previous })
+    assert.deepEqual(back.rows.map((r) => r.id), seen.slice(50, 100))
+    assert.equal(back.offset, 50)
+    assert.equal(back.next, seen[99])
+    let start = await store.list(orgId, { before: back.previous })
+    assert.deepEqual(start.rows.map((r) => r.id), seen.slice(0, 50))
+    assert.equal(start.previous, null)
+  })
+
+  it('filters by state and searches the name, any case, with % and _ as plain characters (REV-36)', async () => {
+    await sql`
+      insert into repos (org_id, github_repo_id, full_name, enabled, workflow) values
+        (${orgId}, 7001, 'sakuga-software/Boo', true, 'reusable'),
+        (${orgId}, 7002, 'sakuga-software/boo_cli', false, 'copy'),
+        (${orgId}, 7003, 'sakuga-software/boox', false, 'none'),
+        (${orgId}, 7004, 'sakuga-software/100%-done', false, 'none')`
+    let names = async (query: Parameters<ReposStore['list']>[1]) => (await store.list(orgId, query)).rows.map((r) => r.fullName)
+    assert.deepEqual(await names({ filter: 'enabled' }), ['sakuga-software/Boo'])
+    assert.deepEqual(await names({ filter: 'disabled' }), ['sakuga-software/100%-done', 'sakuga-software/boo_cli', 'sakuga-software/boox', 'sakuga-software/orchard'])
+    assert.deepEqual(await names({ filter: 'switching' }), ['sakuga-software/Boo', 'sakuga-software/boo_cli'])
+    assert.deepEqual(await names({ search: 'BOO' }), ['sakuga-software/Boo', 'sakuga-software/boo_cli', 'sakuga-software/boox'])
+    assert.deepEqual(await names({ search: 'boo_' }), ['sakuga-software/boo_cli'])
+    assert.deepEqual(await names({ search: '0%' }), ['sakuga-software/100%-done'])
+    assert.deepEqual(await names({ search: 'boo', filter: 'disabled' }), ['sakuga-software/boo_cli', 'sakuga-software/boox'])
+    let page = await store.list(orgId, { search: 'boo', filter: 'disabled' })
+    assert.equal(page.matching, 2)
+    assert.deepEqual(page.counts, { all: 5, enabled: 1, disabled: 4, switching: 2 })
+    // A cursor of another org, or not an id, starts nowhere.
+    assert.deepEqual((await store.list(orgId, { after: '00000000-0000-4000-8000-000000000000' })).rows, [])
+    assert.equal((await store.list(orgId, { after: 'nope' })).rows.length, 5)
+  })
+
   it('changes a repository of its own org only', async () => {
     let [other] = await sql<{ id: string }[]>`
       insert into orgs (github_installation_id, github_account_id, login) values (1002, 2002, 'orchard') returning id`
@@ -162,7 +257,7 @@ describe('the Repos screen against Postgres', () => {
     assert.equal(await store.setEnabled(other!.id, repo.id, true), null)
     assert.equal(await store.setEnabled(orgId, 'not-a-uuid', true), null)
     assert.equal((await orchard()).enabled, false)
-    assert.deepEqual(await store.list(other!.id), [])
+    assert.deepEqual((await store.list(other!.id)).rows, [])
   })
 
   it('a check writes the mode and the visibility, adds a new repository disabled, and keeps enabled and the level', async () => {
@@ -176,12 +271,13 @@ describe('the Repos screen against Postgres', () => {
       },
       { githubRepoId: 5002, fullName: 'sakuga-software/boo', private: false, defaultBranch: 'trunk', workflow: { mode: 'copy', path: '.github/workflows/r.yml', ref: null } },
     ])
-    let rows = await store.list(orgId)
+    let { rows } = await store.list(orgId)
     assert.deepEqual(
       rows.map((r) => [r.fullName, r.enabled, r.defaultLevel, r.private, r.workflow, r.workflowRef, r.defaultBranch, r.workflowCheckedAt instanceof Date]),
       [
-        ['sakuga-software/boo', false, 'lite', false, 'copy', null, 'trunk', true],
+        // The enabled repositories first (REV-36).
         ['sakuga-software/orchard', true, 'balanced', true, 'reusable', 'stable', 'main', true],
+        ['sakuga-software/boo', false, 'lite', false, 'copy', null, 'trunk', true],
       ],
     )
   })

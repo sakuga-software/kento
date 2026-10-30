@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { SWITCH_TARGET, type RepoView } from '../repos/store.ts'
+import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { AlertIcon, CheckIcon, ExternalIcon } from './icons.tsx'
@@ -15,7 +15,10 @@ export type ReposNotice =
 
 export interface ReposPageProps {
   frame: PageFrame
-  repos: RepoView[]
+  /** One page of the list, and the counts of the org (REV-36). */
+  page: RepoPage
+  /** The filter, the search and the page on screen. */
+  list: RepoList
   /** The page of the installation of the App on GitHub. */
   installationUrl: string
   /** `https://github.com`, or the GitHub Enterprise Server. */
@@ -25,6 +28,50 @@ export interface ReposPageProps {
   notice: ReposNotice | null
   /** For the dates of the screen. */
   now: Date
+}
+
+/** The filter, the search and the page of the list, as the query of the screen gives them. */
+export interface RepoList extends RepoListQuery {
+  filter: RepoFilter
+  search: string
+  after: string | null
+  before: string | null
+}
+
+const SEARCH_MAX = 100
+
+const FILTER_LABELS: Record<RepoFilter, string> = {
+  all: 'Tous',
+  enabled: 'Activés',
+  disabled: 'Non activés',
+  switching: 'À basculer',
+}
+
+/** The list that a query of the screen asks for. A value that the screen does not know is ignored. */
+export function readRepoList(query: URLSearchParams): RepoList {
+  let filter = query.get('filter')
+  return {
+    filter: REPO_FILTERS.includes(filter as RepoFilter) ? (filter as RepoFilter) : 'all',
+    search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
+    after: query.get('after') || null,
+    before: query.get('after') ? null : query.get('before') || null,
+  }
+}
+
+/** The query of a list: what `readRepoList` reads back. Empty for the first page of all the repos. */
+export function repoListQuery(list: Partial<RepoList>): URLSearchParams {
+  let query = new URLSearchParams()
+  if (list.filter && list.filter !== 'all') query.set('filter', list.filter)
+  if (list.search) query.set('q', list.search)
+  if (list.after) query.set('after', list.after)
+  else if (list.before) query.set('before', list.before)
+  return query
+}
+
+/** `/repos`, with the query of a list when it has one. */
+function reposHref(list: Partial<RepoList>): string {
+  let query = repoListQuery(list).toString()
+  return query ? `${routes.repos.href()}?${query}` : routes.repos.href()
 }
 
 const LEVELS: Record<RepoView['defaultLevel'], string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' }
@@ -54,15 +101,13 @@ function shortName(fullName: string, org: string): string {
  */
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
-    let { frame, repos, installationUrl, githubUrl, checking, notice, now } = handle.props
+    let { frame, page, list, installationUrl, githubUrl, checking, notice, now } = handle.props
+    let repos = page.rows
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
     let org = viewer.org.login
-    let enabled = repos.filter((repo) => repo.enabled).length
-    let checkedAt = repos.reduce<Date | null>(
-      (oldest, repo) => (repo.workflowCheckedAt && (!oldest || repo.workflowCheckedAt < oldest) ? repo.workflowCheckedAt : oldest),
-      null,
-    )
+    let { all, enabled } = page.counts
+    let checkedAt = page.checkedAt
     let csrf = frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null
 
     return (
@@ -91,7 +136,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
 
 
         <p class="repos-summary" aria-live="polite">
-          {repos.length} {repos.length > 1 ? 'repos' : 'repo'} · {enabled} {enabled > 1 ? 'activés' : 'activé'} ·{' '}
+          {all} {all > 1 ? 'repos' : 'repo'} · {enabled} {enabled > 1 ? 'activés' : 'activé'} ·{' '}
           {checking ? (
             // REV-26: public/assets/repos.js reads the screen again until the check is over.
             <span data-recheck="">
@@ -102,7 +147,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
               : 'pas encore vérifiés sur GitHub'}
         </p>
 
-        {repos.length === 0 ? (
+        {all === 0 ? (
           <section class="empty" aria-labelledby="empty-title">
             <h2 id="empty-title">Aucun repo pour l’instant</h2>
             <p>
@@ -111,32 +156,62 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
             </p>
           </section>
         ) : (
-          <div class="table-wrap">
-            <table class="table repos-table">
-              <caption class="visually-hidden">Repos de l’installation {org}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Repo</th>
-                  <th scope="col">Mode</th>
-                  <th scope="col">Niveau</th>
-                  <th scope="col">Provider · modèle</th>
-                  <th scope="col">Bascule</th>
-                  <th scope="col">Dernière review</th>
-                  <th scope="col">Précision</th>
-                  {admin ? (
-                    <th scope="col">
-                      <span class="visually-hidden">Action</span>
-                    </th>
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {repos.map((repo) => (
-                  <RepoRow repo={repo} org={org} admin={admin} githubUrl={githubUrl} csrfToken={frame.csrfToken} now={now} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <ListControls page={page} list={list} />
+            {repos.length === 0 ? (
+              <section class="empty" aria-labelledby="empty-title">
+                <h2 id="empty-title">Aucun repo ne correspond</h2>
+                <p>
+                  {list.search ? `Aucun nom ne contient « ${list.search} »` : 'Aucun repo'}
+                  {list.filter !== 'all' ? ` dans « ${FILTER_LABELS[list.filter]} »` : ''}.{' '}
+                  <a href={routes.repos.href()}>Afficher tous les repos</a>
+                </p>
+              </section>
+            ) : (
+              <div class="table-wrap">
+                {/* REV-36. The buttons of the rows post this form: the token is written once, not once a row. */}
+                {admin ? (
+                  <form id="repo-actions" method="post" hidden>
+                    {csrf}
+                  </form>
+                ) : null}
+                <table class="table repos-table">
+                  <caption class="visually-hidden">Repos de l’installation {org}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Repo</th>
+                      <th scope="col">Mode</th>
+                      <th scope="col">Niveau</th>
+                      <th scope="col">Provider · modèle</th>
+                      <th scope="col">Bascule</th>
+                      <th scope="col">Dernière review</th>
+                      <th scope="col">
+                        Précision<span class="visually-hidden"> (pas encore mesurée)</span>
+                      </th>
+                      {admin ? (
+                        <th scope="col">
+                          <span class="visually-hidden">Action</span>
+                        </th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repos.map((repo) => (
+                      <RepoRow
+                        repo={repo}
+                        org={org}
+                        admin={admin}
+                        githubUrl={githubUrl}
+                        now={now}
+                        back={repoListQuery(list).toString()}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <Pager page={page} list={list} />
+          </>
         )}
 
         <div class="repos-notes">
@@ -219,27 +294,29 @@ interface RepoRowProps {
   org: string
   admin: boolean
   githubUrl: string
-  csrfToken: string | null
   now: Date
+  /** The query of the list on screen: the forms come back to it. */
+  back: string
 }
 
 function RepoRow(handle: Handle<RepoRowProps>) {
   return () => {
-    let { repo, org, admin, githubUrl, csrfToken, now } = handle.props
+    let { repo, org, admin, githubUrl, now, back } = handle.props
+    let suffix = back ? `?${back}` : ''
     let name = shortName(repo.fullName, org)
     let repoUrl = `${githubUrl}/${repo.fullName}`
     return (
       <tr id={`repo-${repo.id}`}>
-        <th scope="row" data-label="Repo">
+        <th scope="row">
           <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
             {name}
           </a>
           <span class="tag tag-quiet">{repo.private === null ? 'visibilité inconnue' : repo.private ? 'privé' : 'public'}</span>
         </th>
-        <td data-label="Mode">
+        <td>
           <Mode repo={repo} />
         </td>
-        <td data-label="Niveau">
+        <td>
           <span class="stack">
             <span class="mono">{LEVELS[repo.defaultLevel]}</span>
             <a href={routes.repoConfig.href({ id: repo.id })}>
@@ -247,11 +324,11 @@ function RepoRow(handle: Handle<RepoRowProps>) {
             </a>
           </span>
         </td>
-        <td data-label="Provider · modèle">{repo.lastReview ? <ProviderModel model={repo.lastReview.model} /> : '–'}</td>
-        <td data-label="Bascule">
+        <td>{repo.lastReview ? <ProviderModel model={repo.lastReview.model} /> : '–'}</td>
+        <td>
           <Switch repo={repo} admin={admin} githubUrl={githubUrl} />
         </td>
-        <td data-label="Dernière review">
+        <td>
           {repo.lastReview ? (
             <span class="stack">
               <a href={`${repoUrl}/pull/${repo.lastReview.prNumber}`} rel="noreferrer">
@@ -263,12 +340,10 @@ function RepoRow(handle: Handle<RepoRowProps>) {
             '–'
           )}
         </td>
-        <td data-label="Précision">
-          <span aria-hidden="true">–</span>
-          <span class="visually-hidden">pas encore mesurée</span>
-        </td>
+        {/* Its header says that it is not measured yet. */}
+        <td>–</td>
         {admin ? (
-          <td data-label="Action" class="row-action">
+          <td class="row-action">
             {repo.enabled ? (
               <Confirm
                 trigger={
@@ -277,8 +352,9 @@ function RepoRow(handle: Handle<RepoRowProps>) {
                     Désactiver<span class="visually-hidden"> {name}</span>…
                   </span>
                 }
-                action={routes.repoDisable.href({ id: repo.id })}
-                csrf={csrfToken}
+                action={routes.repoDisable.href({ id: repo.id }) + suffix}
+                csrf={null}
+                form="repo-actions"
                 submit={`Désactiver ${name}`}
               >
                 <p>
@@ -287,16 +363,87 @@ function RepoRow(handle: Handle<RepoRowProps>) {
                 </p>
               </Confirm>
             ) : (
-              <form method="post" action={routes.repoEnable.href({ id: repo.id })}>
-                {csrfToken ? <input type="hidden" name="_csrf" value={csrfToken} /> : null}
-                <button class="button button-primary" type="submit">
-                  Activer<span class="visually-hidden"> {name}</span>
-                </button>
-              </form>
+              // REV-36: a secondary button. The primary style stays for the main action of a screen.
+              <button class="button button-small" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
+                Activer<span class="visually-hidden"> {name}</span>
+              </button>
             )}
           </td>
         ) : null}
       </tr>
+    )
+  }
+}
+
+/** The search on the name, and the filters with their counts. A form and links: no JavaScript. */
+function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
+  return () => {
+    let { page, list } = handle.props
+    return (
+      <div class="list-controls">
+        <form class="list-search" method="get" action={routes.repos.href()} role="search">
+          <label class="visually-hidden" for="repos-search">
+            Rechercher un repo par son nom
+          </label>
+          <input
+            class="input"
+            id="repos-search"
+            type="search"
+            name="q"
+            value={list.search}
+            maxlength={SEARCH_MAX}
+            placeholder="Rechercher un repo"
+            autocomplete="off"
+          />
+          {list.filter !== 'all' ? <input type="hidden" name="filter" value={list.filter} /> : null}
+          <button class="button" type="submit">
+            Rechercher
+          </button>
+        </form>
+        <nav class="list-filters" aria-label="Filtrer les repos">
+          <ul>
+            {REPO_FILTERS.map((filter) => (
+              <li>
+                <a href={reposHref({ filter, search: list.search })} aria-current={filter === list.filter ? 'page' : undefined}>
+                  {FILTER_LABELS[filter]}
+                  <span class="list-filter-count">{page.counts[filter]}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    )
+  }
+}
+
+/** « 51–100 sur 122 », and the links to the pages around. Shown when the list has more than a page. */
+function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
+  return () => {
+    let { page, list } = handle.props
+    if (page.rows.length === 0 || (page.next === null && page.previous === null)) return null
+    let from = page.offset + 1
+    let to = page.offset + page.rows.length
+    return (
+      <nav class="pager" aria-label="Pages de la liste">
+        {page.previous ? (
+          <a class="button button-small" href={reposHref({ filter: list.filter, search: list.search, before: page.previous })} rel="prev">
+            Précédents
+          </a>
+        ) : (
+          <span aria-hidden="true"></span>
+        )}
+        <p class="pager-range">
+          {from}–{to} sur {page.matching}
+        </p>
+        {page.next ? (
+          <a class="button button-small" href={reposHref({ filter: list.filter, search: list.search, after: page.next })} rel="next">
+            Suivants
+          </a>
+        ) : (
+          <span aria-hidden="true"></span>
+        )}
+      </nav>
     )
   }
 }

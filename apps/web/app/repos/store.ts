@@ -24,10 +24,10 @@ export interface RepoView {
   workflowCheckedAt: Date | null
   /**
    * The reviews that Kentō published on GitHub since the last failed job or double publication of
-   * the repository (all of them when there was none). The screen shows it up to `SWITCH_TARGET`.
+   * the repository (all of them when there was none), counted up to `SWITCH_TARGET` (REV-36).
    */
   streak: number
-  /** What set the streak back to zero last, or null when nothing did. */
+  /** What set the streak back to zero last; null when nothing did, or at `SWITCH_TARGET`. */
   resetBy: 'failure' | 'double' | null
   /** The pull request of the failed job or of the double publication that did it. */
   resetPr: number | null
@@ -44,9 +44,54 @@ export interface CheckedRepo {
   workflow: DetectedWorkflow
 }
 
+/** The filters of the Repos screen (REV-36). « À basculer »: review.yml is still in the repository. */
+export type RepoFilter = 'all' | 'enabled' | 'disabled' | 'switching'
+
+export const REPO_FILTERS: readonly RepoFilter[] = ['all', 'enabled', 'disabled', 'switching']
+
+/** The rows of one page of the Repos screen. */
+export const REPOS_PAGE_SIZE = 50
+
+/** What the Repos screen asks for: a filter, a part of the name, and a page. */
+export interface RepoListQuery {
+  filter?: RepoFilter
+  /** A part of `owner/name`, any case. */
+  search?: string
+  /** The rows after this repository, in the order of the screen (the next page). */
+  after?: string | null
+  /** The rows before this repository (the previous page). Ignored with `after`. */
+  before?: string | null
+  /** `REPOS_PAGE_SIZE` by default. */
+  limit?: number
+}
+
+/** One page of the Repos screen, and the counts of the whole org. */
+export interface RepoPage {
+  rows: RepoView[]
+  /** The repositories of the org, by filter, with no search. */
+  counts: Record<RepoFilter, number>
+  /** The repositories that match the filter and the search. */
+  matching: number
+  /** The rows of the filter and the search before this page: the first row is number `offset + 1`. */
+  offset: number
+  /** `after` of the next page, or null on the last one. */
+  next: string | null
+  /** `before` of the previous page, or null on the first one. */
+  previous: string | null
+  /** The oldest check of a repository of the org on GitHub; null before the first one. */
+  checkedAt: Date | null
+  /** A repository of the org was never checked. */
+  unchecked: boolean
+}
+
 export interface ReposStore {
-  /** The repositories of an org, by name. */
-  list(orgId: string): Promise<RepoView[]>
+  /**
+   * One page of the repositories of an org: the enabled ones first, then by name. The streak and
+   * the last review are read for the rows of the page only.
+   */
+  list(orgId: string, query?: RepoListQuery): Promise<RepoPage>
+  /** The `owner/name` of a repository of the org, or null. */
+  fullName(orgId: string, repoId: string): Promise<string | null>
   /**
    * Enables or disables a repository of the org. Disabling cancels its queued jobs: a running job
    * ends and its review is published, and the published reviews stay. Null: no such repository in
@@ -76,79 +121,188 @@ function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value)
 }
 
+/** `%`, `_` and `\\` stand for themselves in a search. */
+function likePattern(search: string): string {
+  return `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+}
+
+interface CountRow {
+  all: string | number
+  enabled: string | number
+  disabled: string | number
+  switching: string | number
+  matching: string | number
+  offset: string | number
+  checkedAt: Date | string | null
+  unchecked: boolean
+}
+
 export function createReposStore(sql: postgres.Sql): ReposStore {
   return {
-    async list(orgId) {
+    async list(orgId, query = {}) {
+      let filter = query.filter ?? 'all'
+      let search = query.search?.trim().toLowerCase() ?? ''
+      let limit = query.limit ?? REPOS_PAGE_SIZE
+      let after = query.after && UUID.test(query.after) ? query.after : null
+      let before = !after && query.before && UUID.test(query.before) ? query.before : null
+      let cursor = after ?? before
+
+      // The order of the screen: the enabled repositories first, then by name. The id breaks a tie,
+      // so that the key of a row is unique and a page starts where the last one ended (keyset).
+      let key = sql`(not repos.enabled, lower(repos.full_name), repos.id)`
+      let matches = sql`
+        ${filter === 'enabled' ? sql`and repos.enabled` : filter === 'disabled' ? sql`and not repos.enabled` : sql``}
+        ${filter === 'switching' ? sql`and repos.workflow in ('reusable', 'copy')` : sql``}
+        ${search ? sql`and lower(repos.full_name) like ${likePattern(search)}` : sql``}`
+      let from = cursor
+        ? sql`and ${key} ${after ? sql`>` : sql`<`} (
+            select not enabled, lower(full_name), id from repos where id = ${cursor} and org_id = ${orgId})`
+        : sql``
+
+      // The page comes first: the streak, the reset and the last review are read for its rows only.
+      // Each lateral reads the reviews and jobs of one repository, by its indexes: the time of the
+      // screen does not grow with the history of the other repositories, nor of the other orgs.
+      //
       // The streak starts after the last failed job, or after the last double publication: a second
       // review that Kentō published on the same head at the same level for a push (a command can ask
       // for a second one on purpose, with `force`).
-      let rows = await sql<Row[]>`
-        with failed as (
-          -- The last one, and of two at the same instant the same one at every load (id desc).
-          select distinct on (repo_id) repo_id, coalesce(finished_at, updated_at) as at, pr_number
-          from jobs where state = 'failed' and repo_id in (select id from repos where org_id = ${orgId})
-          order by repo_id, coalesce(finished_at, updated_at) desc, id desc
-        ),
-        doubled as (
-          select distinct on (later.repo_id) later.repo_id, later.published_at as at, later.pr_number
-          from reviews later
-          join jobs later_job on later_job.id = later.job_id
-          where later.github_review_id is not null
-            and later_job.github_comment_id is null
-            and later.repo_id in (select id from repos where org_id = ${orgId})
-            and exists (
-              select 1 from reviews earlier
-              join jobs earlier_job on earlier_job.id = earlier.job_id
-              where earlier.repo_id = later.repo_id and earlier.pr_number = later.pr_number
-                and earlier.head_sha = later.head_sha and earlier_job.level = later_job.level
-                and earlier.github_review_id is not null and earlier.id <> later.id
-                and (earlier.published_at, earlier.id) < (later.published_at, later.id)
+      //
+      // The laterals make the estimated cost of the plan high (one per row), and Postgres would spend
+      // more time on its JIT than on the query.
+      let { rows, more, counts } = await sql.begin(async (tx) => {
+        await tx`set local jit = off`
+        let fetched = await tx<Row[]>`
+          with page as (
+            select * from repos
+            where repos.org_id = ${orgId} ${matches} ${from}
+            order by ${before ? sql`not repos.enabled desc, lower(repos.full_name) desc, repos.id desc` : sql`not repos.enabled, lower(repos.full_name), repos.id`}
+            limit ${limit + 1}
+          )
+          select
+            page.id, page.github_repo_id as "githubRepoId", page.full_name as "fullName", page.enabled,
+            page.default_level as "defaultLevel", page.private, page.default_branch as "defaultBranch",
+            page.workflow, page.workflow_path as "workflowPath", page.workflow_ref as "workflowRef",
+            page.workflow_checked_at as "workflowCheckedAt",
+            -- A reset before the last SWITCH_TARGET reviews no longer counts: the switch is done.
+            case
+              when recent.streak >= ${SWITCH_TARGET} or (failed.at is null and recent.doubled_at is null) then null
+              when recent.doubled_at is null or failed.at >= recent.doubled_at then 'failure'
+              else 'double'
+            end as "resetBy",
+            case
+              when recent.streak >= ${SWITCH_TARGET} or (failed.at is null and recent.doubled_at is null) then null
+              when recent.doubled_at is null or failed.at >= recent.doubled_at then failed.pr_number
+              else recent.doubled_pr
+            end as "resetPr",
+            coalesce(recent.streak, 0) as streak,
+            recent.last_pr as "lastPr", recent.last_score as "lastScore", recent.last_model as "lastModel",
+            recent.last_published_at as "lastPublishedAt"
+          from page
+          left join lateral (
+            -- The last one, and of two at the same instant the same one at every load (id desc).
+            select coalesce(finished_at, updated_at) as at, pr_number from jobs
+            where jobs.repo_id = page.id and jobs.state = 'failed'
+            order by coalesce(finished_at, updated_at) desc, id desc
+            limit 1
+          ) failed on true
+          left join lateral (
+            -- The last SWITCH_TARGET reviews that Kentō published: the streak counts up to its target,
+            -- so an older review changes nothing on screen.
+            with recent as (
+              select recent.*, jobs.level, jobs.github_comment_id
+              from (
+                select id, job_id, pr_number, head_sha, score, model, published_at from reviews
+                where reviews.repo_id = page.id and reviews.github_review_id is not null
+                order by published_at desc, id desc
+                limit ${SWITCH_TARGET}
+              ) recent
+              join jobs on jobs.id = recent.job_id
+            ),
+            doubled as (
+              -- Only a double publication after the last failed job can set the streak back.
+              select later.published_at as at, later.pr_number from recent later
+              where later.github_comment_id is null
+                and later.published_at > coalesce(failed.at, '-infinity'::timestamptz)
+                and exists (
+                  select 1 from reviews earlier
+                  join jobs earlier_job on earlier_job.id = earlier.job_id
+                  where earlier.repo_id = page.id and earlier.pr_number = later.pr_number
+                    and earlier.head_sha = later.head_sha and earlier_job.level = later.level
+                    and earlier.github_review_id is not null and earlier.id <> later.id
+                    and (earlier.published_at, earlier.id) < (later.published_at, later.id)
+                )
+              order by later.published_at desc, later.id desc
+              limit 1
+            ),
+            last as (
+              select pr_number, score, model, published_at from recent order by published_at desc, id desc limit 1
             )
-          order by later.repo_id, later.published_at desc, later.id desc
-        )
-        select
-          repos.id, repos.github_repo_id as "githubRepoId", repos.full_name as "fullName", repos.enabled,
-          repos.default_level as "defaultLevel", repos.private, repos.default_branch as "defaultBranch",
-          repos.workflow, repos.workflow_path as "workflowPath", repos.workflow_ref as "workflowRef",
-          repos.workflow_checked_at as "workflowCheckedAt",
-          case
-            when failed.at is null and doubled.at is null then null
-            when doubled.at is null or failed.at >= doubled.at then 'failure'
-            else 'double'
-          end as "resetBy",
-          case
-            when failed.at is null and doubled.at is null then null
-            when doubled.at is null or failed.at >= doubled.at then failed.pr_number
-            else doubled.pr_number
-          end as "resetPr",
-          (
-            select count(*) from reviews
-            where reviews.repo_id = repos.id and reviews.github_review_id is not null
-              and reviews.published_at > coalesce(greatest(failed.at, doubled.at), '-infinity'::timestamptz)
-          ) as streak,
-          last.pr_number as "lastPr", last.score as "lastScore", last.model as "lastModel",
-          last.published_at as "lastPublishedAt"
-        from repos
-        left join failed on failed.repo_id = repos.id
-        left join doubled on doubled.repo_id = repos.id
-        left join lateral (
-          select pr_number, score, model, published_at from reviews
-          where reviews.repo_id = repos.id and reviews.github_review_id is not null
-          order by published_at desc limit 1
-        ) last on true
-        where repos.org_id = ${orgId}
-        order by lower(repos.full_name)
-      `
-      return rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, ...row }) => ({
-        ...row,
-        githubRepoId: Number(row.githubRepoId),
-        streak: Number(row.streak),
-        workflowCheckedAt: row.workflowCheckedAt === null ? null : toDate(row.workflowCheckedAt),
-        lastReview:
-          lastPr !== null && lastScore !== null && lastModel !== null && lastPublishedAt !== null
-            ? { prNumber: lastPr, score: lastScore, model: lastModel, publishedAt: toDate(lastPublishedAt) }
-            : null,
-      }))
+            select
+              (
+                select count(*) from recent
+                where recent.published_at > coalesce(greatest(failed.at, (select at from doubled)), '-infinity'::timestamptz)
+              ) as streak,
+              (select at from doubled) as doubled_at,
+              (select pr_number from doubled) as doubled_pr,
+              last.pr_number as last_pr, last.score as last_score, last.model as last_model, last.published_at as last_published_at
+            from (select 1) one
+            left join last on true
+          ) recent on true
+        `
+        let more = fetched.length > limit
+        let rows = fetched.slice(0, limit)
+        if (before) rows.reverse()
+
+        let first = rows[0]?.id ?? null
+        let [counts] = await tx<CountRow[]>`
+          select
+            count(*) as "all",
+            count(*) filter (where repos.enabled) as enabled,
+            count(*) filter (where not repos.enabled) as disabled,
+            count(*) filter (where repos.workflow in ('reusable', 'copy')) as switching,
+            count(*) filter (where true ${matches}) as matching,
+            count(*) filter (where true ${matches} and ${key} < (
+              select not enabled, lower(full_name), id from repos where id = ${first} and org_id = ${orgId})) as "offset",
+            min(repos.workflow_checked_at) as "checkedAt",
+            coalesce(bool_or(repos.workflow_checked_at is null), false) as unchecked
+          from repos where repos.org_id = ${orgId}
+        `
+        return { rows, more, counts: counts! }
+      })
+      let first = rows[0]?.id ?? null
+      let last = rows.at(-1)?.id ?? null
+      return {
+        rows: rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, ...row }) => ({
+          ...row,
+          githubRepoId: Number(row.githubRepoId),
+          streak: Number(row.streak),
+          workflowCheckedAt: row.workflowCheckedAt === null ? null : toDate(row.workflowCheckedAt),
+          lastReview:
+            lastPr !== null && lastScore !== null && lastModel !== null && lastPublishedAt !== null
+              ? { prNumber: lastPr, score: lastScore, model: lastModel, publishedAt: toDate(lastPublishedAt) }
+              : null,
+        })),
+        counts: {
+          all: Number(counts.all),
+          enabled: Number(counts.enabled),
+          disabled: Number(counts.disabled),
+          switching: Number(counts.switching),
+        },
+        matching: Number(counts.matching),
+        offset: Number(counts.offset),
+        // Going back, the extra row says that there is a page before; going forward, one after.
+        next: (before ? cursor !== null : more) ? last : null,
+        previous: (before ? more : after !== null) && first !== null ? first : null,
+        checkedAt: counts.checkedAt === null ? null : toDate(counts.checkedAt),
+        unchecked: counts.unchecked,
+      }
+    },
+
+    async fullName(orgId, repoId) {
+      if (!UUID.test(repoId)) return null
+      let [repo] = await sql<{ fullName: string }[]>`
+        select full_name as "fullName" from repos where id = ${repoId} and org_id = ${orgId}`
+      return repo?.fullName ?? null
     },
 
     async setEnabled(orgId, repoId, enabled) {

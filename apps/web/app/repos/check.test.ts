@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { createRepoCheck } from './check.ts'
-import type { CheckedRepo, RepoView, ReposStore } from './store.ts'
+import type { CheckedRepo, RepoPage, ReposStore } from './store.ts'
 
 const ORG = { id: 'org-1', githubInstallationId: 11, login: 'sakuga-software' }
 const CALLER = 'jobs:\n  review:\n    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@stable\n'
@@ -41,7 +41,10 @@ function fakeGitHub(now?: () => number) {
 
   let saved: CheckedRepo[][] = []
   let store: ReposStore = {
-    list: async () => [],
+    list: async () => {
+      throw new Error('the check does not list')
+    },
+    fullName: async () => null,
     setEnabled: async () => null,
     async saveCheck(_orgId, repos) {
       saved.push(repos)
@@ -58,6 +61,11 @@ function fakeGitHub(now?: () => number) {
     },
   })
   return { check, calls, mints, saved }
+}
+
+/** What the Repos screen knows of the checks of its org: one repository. */
+function summary(fields: Partial<Pick<RepoPage, 'checkedAt' | 'unchecked'>>): Pick<RepoPage, 'counts' | 'checkedAt' | 'unchecked'> {
+  return { counts: { all: 1, enabled: 1, disabled: 0, switching: 0 }, checkedAt: null, unchecked: false, ...fields }
 }
 
 describe('the check of the repositories on GitHub', () => {
@@ -77,15 +85,11 @@ describe('the check of the repositories on GitHub', () => {
 
   it('starts in the background only when the rows are old or never checked, once at a time', async () => {
     let { check, saved } = fakeGitHub()
-    let fresh: RepoView = {
-      id: 'r', githubRepoId: 1, fullName: 'sakuga-software/orchard', enabled: true, defaultLevel: 'lite', private: true,
-      defaultBranch: 'main', workflow: 'none', workflowPath: null, workflowRef: null, workflowCheckedAt: new Date(),
-      streak: 0, resetBy: null, resetPr: null, lastReview: null,
-    }
-    assert.equal(check.refreshIfStale(ORG, [fresh]), false)
-    let old = { ...fresh, workflowCheckedAt: new Date(Date.now() - 11 * 60_000) }
-    assert.equal(check.refreshIfStale(ORG, [old]), true)
-    assert.equal(check.refreshIfStale(ORG, [old]), true, 'the same check runs')
+    let fresh = summary({ checkedAt: new Date() })
+    assert.equal(check.refreshIfStale(ORG, fresh), false)
+    let old = summary({ checkedAt: new Date(Date.now() - 11 * 60_000) })
+    assert.equal(check.refreshIfStale(ORG, old), true)
+    assert.equal(check.refreshIfStale(ORG, old), true, 'the same check runs')
     await check.run(ORG)
     assert.equal(saved.length, 1)
   })
@@ -93,21 +97,17 @@ describe('the check of the repositories on GitHub', () => {
   it('a row that the check could not write starts no new check before CHECK_MAX_AGE_MS', async () => {
     let clock = { now: Date.parse('2026-10-29T10:00:00Z') }
     let { check, calls } = fakeGitHub(() => clock.now)
-    let neverChecked: RepoView = {
-      id: 'r', githubRepoId: 3, fullName: 'sakuga-software/broken', enabled: true, defaultLevel: 'lite', private: null,
-      defaultBranch: null, workflow: null, workflowPath: null, workflowRef: null, workflowCheckedAt: null,
-      streak: 0, resetBy: null, resetPr: null, lastReview: null,
-    }
+    let neverChecked = summary({ checkedAt: null, unchecked: true })
     // A restart: no check in this process yet, and a row never checked.
-    assert.equal(check.refreshIfStale(ORG, [neverChecked]), true)
+    assert.equal(check.refreshIfStale(ORG, neverChecked), true)
     await check.run(ORG)
     let lists = () => calls.filter((path) => path === '/installation/repositories').length
     assert.equal(lists(), 1)
     // GitHub failed for `broken`: its row stays null, and the next loads start nothing.
     clock.now += 9 * 60_000
-    assert.equal(check.refreshIfStale(ORG, [neverChecked]), false)
+    assert.equal(check.refreshIfStale(ORG, neverChecked), false)
     assert.equal(lists(), 1)
     clock.now += 2 * 60_000
-    assert.equal(check.refreshIfStale(ORG, [neverChecked]), true)
+    assert.equal(check.refreshIfStale(ORG, neverChecked), true)
   })
 })

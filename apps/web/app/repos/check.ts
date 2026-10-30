@@ -6,7 +6,7 @@
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
-import type { CheckedRepo, RepoView, ReposStore } from './store.ts'
+import type { CheckedRepo, RepoPage, ReposStore } from './store.ts'
 import { detectWorkflow, isWorkflowFile, type WorkflowFile } from './workflow.ts'
 
 /** A check older than this starts a new one when a screen shows the repositories. */
@@ -43,7 +43,7 @@ export interface RepoCheck {
    * Starts a check in the background when the rows are older than `CHECK_MAX_AGE_MS`, or never
    * checked. Returns true while a check of the org runs.
    */
-  refreshIfStale(org: CheckedOrg, rows: readonly RepoView[]): boolean
+  refreshIfStale(org: CheckedOrg, repos: Pick<RepoPage, 'counts' | 'checkedAt' | 'unchecked'>): boolean
 }
 
 interface InstallationRepo {
@@ -129,7 +129,7 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
 
   return {
     run,
-    refreshIfStale(org, rows) {
+    refreshIfStale(org, repos) {
       if (running.has(org.id)) return true
       let lastFailure = failedAt.get(org.id)
       if (lastFailure !== undefined && now() - lastFailure < RETRY_AFTER_MS) return false
@@ -137,8 +137,9 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
       if (lastCheck !== undefined && now() - lastCheck < CHECK_MAX_AGE_MS) return false
       // No check in this process yet (a restart): the rows say how old the last one is.
       let stale =
-        rows.length === 0 ||
-        rows.some((row) => row.workflowCheckedAt === null || now() - row.workflowCheckedAt.getTime() > CHECK_MAX_AGE_MS)
+        repos.counts.all === 0 ||
+        repos.unchecked ||
+        (repos.checkedAt !== null && now() - repos.checkedAt.getTime() > CHECK_MAX_AGE_MS)
       if (!stale) return false
       // The error is in the log already.
       run(org).catch(() => {})

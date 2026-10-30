@@ -44,7 +44,7 @@ import type { ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardStore, RetryOutcome } from '../dashboard/store.ts'
 import { DASHBOARD_NOTICES, DashboardPage, type DashboardNotice } from './dashboard.tsx'
 import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from './config.tsx'
-import { ReposPage, type ReposNotice } from './repos.tsx'
+import { readRepoList, repoListQuery, ReposPage, type ReposNotice } from './repos.tsx'
 import { readRegistrationForm, RUNNER_NOTICES, RunnersPage, type RunnerNotice, type RunnersPageProps } from './runners.tsx'
 import { securityHeaders } from './security-headers.ts'
 import { anchorOf, ORG_FIELDS, ORG_RESET_FIELDS, type OrgField, type OrgForm, type OrgNotice, type OrgSectionProps } from './org-settings.tsx'
@@ -523,7 +523,7 @@ export function createUiControllers(deps: UiDependencies) {
     )
   }
 
-  async function setRepoEnabled(context: { get(key: typeof Signed): SignedIn | undefined; params: { id: string } }, enabled: boolean) {
+  async function setRepoEnabled(context: { get(key: typeof Signed): SignedIn | undefined; params: { id: string }; url: URL }, enabled: boolean) {
     let signed = signedOf(context)
     if (signed.membership.role !== 'admin') {
       log('warn', 'repos.change_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
@@ -538,7 +538,11 @@ export function createUiControllers(deps: UiDependencies) {
       repo: result.fullName,
       cancelled: result.cancelled,
     })
-    let query = new URLSearchParams({ done: enabled ? 'enabled' : 'disabled', repo: context.params.id })
+    // REV-36. Back to the page of the list that the form was on: its query carries the filter, the
+    // search and the page.
+    let query = repoListQuery(readRepoList(context.url.searchParams))
+    query.set('done', enabled ? 'enabled' : 'disabled')
+    query.set('repo', context.params.id)
     if (!enabled) query.set('cancelled', String(result.cancelled))
     return redirect(`${pageRoutes.repos.href()}?${query}#repo-${context.params.id}`)
   }
@@ -738,23 +742,27 @@ export function createUiControllers(deps: UiDependencies) {
         let repos = deps.repos
         if (!repos) return context.render(<PlaceholderPage frame={page} section="repos" />)
         let org = signed.membership.org
-        let rows = await repos.store.list(org.id)
-        let checking = repos.check?.refreshIfStale(org, rows) ?? false
         let query = context.url.searchParams
-        let named = rows.find((row) => row.id === query.get('repo'))
+        let list = readRepoList(query)
+        let result = await repos.store.list(org.id, list)
+        let checking = repos.check?.refreshIfStale(org, result) ?? false
+        let named = query.get('repo')
+        let fullName =
+          named === null ? null : (result.rows.find((row) => row.id === named)?.fullName ?? (await repos.store.fullName(org.id, named)))
         let done = query.get('done')
         let notice: ReposNotice | null =
           done === 'checked' || done === 'check_failed'
             ? { kind: done }
-            : done === 'enabled' && named
-              ? { kind: 'enabled', fullName: named.fullName }
-              : done === 'disabled' && named
-                ? { kind: 'disabled', fullName: named.fullName, cancelled: Number(query.get('cancelled')) || 0 }
+            : done === 'enabled' && fullName
+              ? { kind: 'enabled', fullName }
+              : done === 'disabled' && fullName
+                ? { kind: 'disabled', fullName, cancelled: Number(query.get('cancelled')) || 0 }
                 : null
         return context.render(
           <ReposPage
             frame={page}
-            repos={rows}
+            page={result}
+            list={list}
             installationUrl={installationUrl(repos.githubUrl, org)}
             githubUrl={repos.githubUrl}
             checking={checking}

@@ -4,7 +4,7 @@ import { describe, it } from 'remix/test'
 import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { RepoCheck } from '../repos/check.ts'
-import type { RepoView, ReposStore } from '../repos/store.ts'
+import type { RepoListQuery, RepoPage, RepoView, ReposStore } from '../repos/store.ts'
 import { createAppRouter } from '../router.ts'
 
 const COOKIE = '__Host-kento_session'
@@ -50,9 +50,34 @@ function setup() {
     [OTHER_ORG.id]: [row({ id: ELSEWHERE, fullName: 'orchard/app', enabled: true })],
   }
   let changes: string[] = []
+  let lists: RepoListQuery[] = []
+  let pages: Partial<RepoPage> = {}
   let store: ReposStore = {
-    async list(orgId) {
-      return rows[orgId] ?? []
+    async list(orgId, query = {}) {
+      lists.push(query)
+      let all = rows[orgId] ?? []
+      let shown = all
+        .filter((r) => query.filter !== 'enabled' || r.enabled)
+        .filter((r) => !query.search || r.fullName.includes(query.search))
+      return {
+        rows: shown,
+        counts: {
+          all: all.length,
+          enabled: all.filter((r) => r.enabled).length,
+          disabled: all.filter((r) => !r.enabled).length,
+          switching: all.filter((r) => r.workflow === 'reusable' || r.workflow === 'copy').length,
+        },
+        matching: shown.length,
+        offset: 0,
+        next: null,
+        previous: null,
+        checkedAt: all[0]?.workflowCheckedAt ?? null,
+        unchecked: false,
+        ...pages,
+      }
+    },
+    async fullName(orgId, repoId) {
+      return rows[orgId]?.find((r) => r.id === repoId)?.fullName ?? null
     },
     async setEnabled(orgId, repoId, enabled) {
       let repo = rows[orgId]?.find((r) => r.id === repoId)
@@ -104,7 +129,7 @@ function setup() {
     return { cookie, csrf, html }
   }
 
-  return { request, signIn, rows, changes, checks, checking }
+  return { request, signIn, rows, changes, checks, checking, lists, pages }
 }
 
 describe('the Repos screen', () => {
@@ -160,7 +185,9 @@ describe('the Repos screen', () => {
     // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and « Annuler ».
     let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
     assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Désactiver<span class="visually-hidden"> fruitback<\/span>…<\/span><\/summary>/)
-    assert.match(row, new RegExp(`action="/repos/${FRUITBACK}/disable"><input type="hidden" name="_csrf" value="${csrf}" /><button type="submit" class="button button-danger-solid">Désactiver fruitback</button>`))
+    // REV-36: the button posts the one form of the list, which carries the token.
+    assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Désactiver fruitback</button>`))
+    assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
     assert.match(row, /<button type="button" data-confirm-cancel hidden class="button">Annuler<\/button>/)
     assert.match(row, /Les reviews déjà publiées restent sur GitHub/)
     // No destructive button has the style of the main action.
@@ -225,6 +252,57 @@ describe('the Repos screen', () => {
     let { html } = await signIn()
     assert.match(html, /<span class="hint">remis à zéro après un échec sur <a href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/12" rel="noreferrer">#12<\/a><\/span>/)
     assert.doesNotMatch(html, /hint-alert/)
+  })
+
+  it('searches the name and filters the list, with the counts of the org, and keeps both in the links (REV-36)', async () => {
+    let { request, signIn, lists } = setup()
+    let { cookie, html } = await signIn()
+    assert.match(html, /<form method="get" action="\/repos" role="search" class="list-search">/)
+    assert.match(html, /<a href="\/repos" aria-current="page">Tous<span class="list-filter-count">2<\/span><\/a>/)
+    assert.match(html, /<a href="\/repos\?filter=enabled">Activés<span class="list-filter-count">1<\/span><\/a>/)
+    assert.match(html, /Non activés<span class="list-filter-count">1<\/span>/)
+    assert.match(html, /À basculer<span class="list-filter-count">2<\/span>/)
+
+    lists.length = 0
+    html = await (await request('/repos?filter=enabled&q=%20fruit%20', { cookie })).text()
+    assert.deepEqual(lists, [{ filter: 'enabled', search: 'fruit', after: null, before: null }])
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=fruit" aria-current="page">Activés/)
+    assert.match(html, /name="q" value="fruit"/)
+    assert.match(html, /<input type="hidden" name="filter" value="enabled" \/>/)
+    assert.doesNotMatch(html, /id="repo-00000000-0000-4000-8000-000000000001"/)
+
+    lists.length = 0
+    html = await (await request('/repos?filter=nope&q=zzz', { cookie })).text()
+    assert.deepEqual(lists, [{ filter: 'all', search: 'zzz', after: null, before: null }])
+    assert.match(html, /Aucun repo ne correspond/)
+    assert.match(html, /Aucun nom ne contient « zzz »/)
+  })
+
+  it('gives « Activer » the secondary style, and brings the admin back to the page of the list after it (REV-36)', async () => {
+    let { request, signIn } = setup()
+    let { cookie, csrf } = await signIn()
+    let html = await (await request('/repos?filter=disabled&q=key', { cookie })).text()
+    let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=key`
+    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button-small">Activer`))
+    assert.doesNotMatch(html, /button-primary/)
+    let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=key&after=x&evil=1`, { cookie, form: { _csrf: csrf } })
+    assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=key&after=x&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
+    // The repository left the filter: the notice still names it.
+    let after = await (await request(response.headers.get('Location')!, { cookie })).text()
+    assert.match(after, /orchard est activé\./)
+  })
+
+  it('shows the range and the links to the pages around, with the filter and the search (REV-36)', async () => {
+    let { signIn, request, pages } = setup()
+    let { cookie, html } = await signIn()
+    assert.doesNotMatch(html, /class="pager"/, 'one page: no pager')
+
+    Object.assign(pages, { offset: 50, matching: 120, previous: ORCHARD, next: FRUITBACK })
+    html = await (await request('/repos?filter=enabled&q=s', { cookie })).text()
+    assert.match(html, /<nav aria-label="Pages de la liste" class="pager">/)
+    assert.match(html, /51–51 sur 120/)
+    assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;before=${ORCHARD}" rel="prev"`))
+    assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;after=${FRUITBACK}" rel="next"`))
   })
 
   it('« Actualiser » reads GitHub at once for an admin', async () => {

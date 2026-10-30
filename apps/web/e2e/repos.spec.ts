@@ -86,13 +86,14 @@ test.describe('the Repos screen', () => {
       await expect(act).toBeHidden()
       await expect(trigger).toBeFocused()
 
-      // The destructive buttons have their own colour, not the one of « Activer ».
+      // The destructive buttons have their own colour; no button of a row has the primary style (REV-36).
       let colors = await page.evaluate(() => {
         let primary = document.querySelector('.button-primary')
         let danger = document.querySelector('.button-danger')
         return [primary && getComputedStyle(primary).backgroundColor, danger && getComputedStyle(danger).color]
       })
       expect(colors[0]).not.toEqual(colors[1])
+      await expect(page.locator('.row-action .button-primary')).toHaveCount(0)
 
       await trigger.click()
       await act.click()
@@ -198,6 +199,54 @@ test.describe('the Repos screen', () => {
       expect(layout.broken, `tags and model ids at ${viewport} px`).toEqual([])
     }
     await expectNoAxeViolations(page)
+  })
+
+  test('a long list: 50 rows a page, the enabled ones first, a search and the filters (REV-36)', async ({ page }) => {
+    await signIn(page, 'alex')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 880000 + g, 'sakuga-software/bulk-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 60) g where full_name = 'sakuga-software/orchard'`
+      await sql`update repos set enabled = true where full_name = 'sakuga-software/orchard'`
+
+      await page.goto('/repos')
+      let rows = page.locator('tbody tr')
+      await expect(rows).toHaveCount(50)
+      await expect(rows.first().getByRole('rowheader')).toHaveText(/^orchard/)
+      let total = Number(await page.getByRole('link', { name: /^Tous/ }).locator('.list-filter-count').textContent())
+      await expect(page.locator('.pager-range')).toHaveText(`1–50 sur ${total}`)
+      await page.getByRole('link', { name: 'Suivants' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`51–${total} sur ${total}`)
+      await page.getByRole('link', { name: 'Précédents' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`1–50 sur ${total}`)
+
+      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('BULK-0')
+      await page.getByRole('button', { name: 'Rechercher' }).click()
+      await expect(rows).toHaveCount(9)
+      await expect(page.locator('.pager')).toHaveCount(0)
+
+      await page.getByRole('link', { name: /^Activés/ }).click()
+      await expect(page.getByText('Aucun repo ne correspond')).toBeVisible()
+      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('')
+      await page.getByRole('button', { name: 'Rechercher' }).click()
+      await expect(page).toHaveURL(/[?&]filter=enabled(&|$)/)
+      await expect(rows).toHaveCount(1)
+
+      // Enabled from page 2 of a search in « Non activés », a repository comes back to that page.
+      await page.goto('/repos?filter=disabled&q=bulk')
+      await page.getByRole('link', { name: 'Suivants' }).click()
+      let url = page.url()
+      await page.getByRole('row').filter({ hasText: 'bulk-60' }).getByRole('button', { name: 'Activer bulk-60' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'bulk-60 est activé.' })).toBeVisible()
+      expect(page.url().split('#')[0]).toContain(new URL(url).search)
+      await expectNoAxeViolations(page)
+    } finally {
+      await sql`delete from repos where github_repo_id between 880001 and 880060`
+      await sql.end()
+    }
   })
 
   test('a member reads the list under « Lecture seule », with no action', async ({ page }) => {

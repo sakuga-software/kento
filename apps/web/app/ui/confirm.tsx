@@ -10,6 +10,11 @@ export interface ConfirmProps {
   csrf: string | null
   /** The text of the button that acts: « Révoquer runner-1 ». It names what goes. */
   submit: RemixNode
+  /**
+   * The id of a form of the page that carries the CSRF token (REV-36): the button posts it to
+   * `action`, and the confirmation has no form of its own. A long list writes the token once.
+   */
+  form?: string
 }
 
 /**
@@ -22,19 +27,25 @@ export interface ConfirmProps {
  */
 export function Confirm(handle: Handle<ConfirmProps>) {
   return () => {
-    let { trigger, children, action, csrf, submit } = handle.props
+    let { trigger, children, action, csrf, submit, form } = handle.props
     return (
       <details class="confirm" data-confirm>
         <summary class="button button-danger">{trigger}</summary>
         <div class="confirm-body">
           {children}
           <div class="confirm-actions">
-            <form method="post" action={action}>
-              {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
-              <button class="button button-danger-solid" type="submit">
+            {form ? (
+              <button class="button button-danger-solid" type="submit" form={form} formaction={action}>
                 {submit}
               </button>
-            </form>
+            ) : (
+              <form method="post" action={action}>
+                {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
+                <button class="button button-danger-solid" type="submit">
+                  {submit}
+                </button>
+              </form>
+            )}
             <button class="button" type="button" data-confirm-cancel hidden>
               Annuler
             </button>
