@@ -50,7 +50,7 @@ export interface FindingsPageProps {
 
 /** The answer of a change of status: how many changed, and how many replies GitHub got. */
 export type FindingsNotice =
-  | { kind: 'done'; status: BulkStatus; changed: number; unchanged: number; fixed: number; failed: number; replied: number; unreplied: number }
+  | { kind: 'done'; status: BulkStatus; changed: number; unchanged: number; fixed: number; missing: number; failed: number; replied: number; unreplied: number }
   | { kind: 'error'; error: 'none' | 'too_many' | 'status' | 'reason' | 'reason_long' }
 
 const NOTICE_ERRORS: Record<Extract<FindingsNotice, { kind: 'error' }>['error'], string> = {
@@ -72,6 +72,7 @@ export function readFindingsNotice(query: URLSearchParams): FindingsNotice | nul
       changed: count('n'),
       unchanged: count('same'),
       fixed: count('fixed'),
+      missing: count('missing'),
       failed: count('failed'),
       replied: count('replied'),
       unreplied: count('unreplied'),
@@ -547,8 +548,8 @@ function Notice(handle: Handle<{ notice: FindingsNotice }>) {
         </div>
       )
     }
-    let { status, changed, unchanged, fixed, failed, replied, unreplied } = notice
-    let alert = unreplied > 0 || failed > 0
+    let { status, changed, unchanged, fixed, missing, failed, replied, unreplied } = notice
+    let alert = unreplied > 0 || failed > 0 || missing > 0
     return (
       <div class={alert ? 'banner banner-alert' : 'banner banner-ok'} role="status">
         {alert ? <AlertIcon /> : <CheckIcon />}
@@ -562,6 +563,9 @@ function Notice(handle: Handle<{ notice: FindingsNotice }>) {
             : ''}
           {unchanged > 0 ? `${unchanged} ${plural(unchanged, 'avait', 'avaient')} déjà ce statut et ce motif. ` : ''}
           {fixed > 0 ? `${fixed} ${plural(fixed, 'finding fixed est resté', 'findings fixed sont restés')} tel quel : un push l’a corrigé. ` : ''}
+          {missing > 0
+            ? `${missing} ${plural(missing, 'finding n’existe plus', 'findings n’existent plus')} dans cette organisation, par exemple parce que son repo a été retiré depuis l’affichage de la page. La liste ci-dessous est à jour. `
+            : ''}
           {failed > 0 ? `${failed} ${plural(failed, 'finding n’a pas pu', 'findings n’ont pas pu')} être enregistré : réessayez.` : ''}
         </p>
       </div>

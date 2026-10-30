@@ -1042,6 +1042,7 @@ export function createUiControllers(deps: UiDependencies) {
         back.set('n', String(outcome.changed))
         if (outcome.unchanged) back.set('same', String(outcome.unchanged))
         if (outcome.fixed) back.set('fixed', String(outcome.fixed))
+        if (outcome.missing) back.set('missing', String(outcome.missing))
         if (outcome.failed) back.set('failed', String(outcome.failed))
         if (outcome.replied) back.set('replied', String(outcome.replied))
         if (outcome.unreplied) back.set('unreplied', String(outcome.unreplied))

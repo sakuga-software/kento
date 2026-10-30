@@ -114,6 +114,21 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /1 finding n’a pas pu être enregistré : réessayez/)
   })
 
+  it('says how many findings of the batch no longer exist (REV-58)', async () => {
+    let { request, signIn } = setup({ changed: 2, unchanged: 0, fixed: 0, missing: 1, failed: 0, replied: 2, unreplied: 0 })
+    let { cookie, csrf } = await signIn()
+    let done = await request('/findings/status', {
+      cookie,
+      form: [['_csrf', csrf], ['ids', A], ['ids', B], ['ids', C], ['status', 'dismissed'], ['reason', 'Faux positif']],
+    })
+    assert.equal(done.headers.get('Location'), '/findings?done=dismissed&n=2&missing=1&replied=2')
+    let html = await (await request(done.headers.get('Location')!, { cookie })).text()
+    assert.match(html, /role="status" class="banner banner-alert"/)
+    assert.match(html, /2 findings marqués dismissed\.<\/strong>/)
+    assert.match(await (await request('/findings?done=wontfix&n=0&missing=2', { cookie })).text(), /2 findings n’existent plus dans cette organisation/)
+    assert.match(html, /1 finding n’existe plus dans cette organisation, par exemple parce que son repo a été retiré depuis l’affichage de la page\. La liste ci-dessous est à jour\./)
+  })
+
   it('refuses the form to a member, and to a post without the CSRF token', async () => {
     let { request, signIn, calls } = setup()
     let member = await signIn(CAMILLE)
