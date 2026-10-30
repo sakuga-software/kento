@@ -27,15 +27,19 @@ import {
   reviewBody,
   withBlock,
   type Link,
+  type Poster,
 } from '@sakuga-review/engine/render'
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 
+import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { GitHubError, type GitHub } from './github.ts'
 
 /** The name of the check run, as the job of review.yml names it. */
 export const CHECK_NAME = 'Sakuga Review'
 /** The service that posts the review, in its footer. */
 export const BY = 'Kentō'
+/** Kentō, and the mention that asks it for another review. */
+const POSTER: Poster = { by: BY, handle: `@${COMMAND_NAMES[0]}` }
 
 // Each inline comment is a thread that a person must resolve, so only the sure findings get one.
 const INLINE_CONFIDENCE = 70
@@ -208,7 +212,7 @@ export async function publishReview(
 
   let reviewsPath = `${repo}/pulls/${pr}/reviews`
   let marker = options.marker ? `\n\n<!-- kento:review ${options.marker} -->` : ''
-  let body = reviewBody(answer, anchorOf, level, usage, BY) + goneNote(gone, review.base) + marker
+  let body = reviewBody(answer, anchorOf, level, usage, POSTER) + goneNote(gone, review.base) + marker
   let event = verdict(answer, anchorOf, level)
   // A review that an earlier try posted, and could not mark (a restart, a lost connection): it is
   // not posted again. The steps after it run once more.
@@ -277,7 +281,7 @@ export async function publishReview(
     for (let p of previous) {
       if (p.user?.login === target.botLogin && p.state === 'CHANGES_REQUESTED' && p.id !== found.id) {
         await github.rest('PUT', `${reviewsPath}/${p.id}/dismissals`, {
-          message: 'Remplacée par la revue du dernier commit.',
+          message: 'Remplacée par la review du dernier commit.',
           event: 'DISMISS',
         })
       }
@@ -316,7 +320,7 @@ export async function publishReview(
       subject,
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level,
-      by: BY,
+      poster: POSTER,
     })
     await github.rest('PATCH', prPath, { body: withBlock(current, block) })
   })
@@ -349,7 +353,7 @@ function goneNote(gone: number, base: string): string {
   let threads = gone > 1 ? `${gone} fils ouverts` : 'un fil ouvert'
   return (
     `\n\n> [!NOTE]\n> Un force-push a retiré de l'historique le commit relu par ${threads}. ` +
-    `Le diff depuis ce commit est impossible : cette revue relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
+    `Le diff depuis ce commit est impossible : cette review relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
     `et ${gone > 1 ? 'ces fils restent ouverts' : 'ce fil reste ouvert'}.`
   )
 }
@@ -470,7 +474,7 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: 'Score de confiance de Sakuga Review (5 : prête à merger)',
+      description: `Score de confiance de ${BY} (5 : prête à merger)`,
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []

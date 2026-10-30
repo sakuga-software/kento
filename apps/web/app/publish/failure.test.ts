@@ -76,7 +76,7 @@ describe('failureComment', () => {
         'La review `lite` de ce commit a échoué : Kentō ne la relancera pas seul.',
         `Raison : \`${sanitizeReason(NOT_FOUND)}\``,
         'Pour relancer : `@kento-review lite`. Si l’erreur vient d’un modèle ou d’un provider, vérifiez la ' +
-          '[config du dépôt](https://review.sakuga.dev/repos/11111111-1111-4111-8111-111111111111/config).',
+          '[config du repo](https://review.sakuga.dev/repos/11111111-1111-4111-8111-111111111111/config).',
         failureMarker('00000000-0000-4000-8000-000000000001'),
       ].join('\n\n'),
     )
@@ -86,7 +86,7 @@ describe('failureComment', () => {
     let body = failureComment(job({ level: 'heavy', commenter: 'alex', configUrl: null }))
     assert.ok(body.includes('@alex La review `heavy` de ce commit a échoué'))
     assert.ok(body.includes('Pour relancer : `@kento-review heavy`.\n\n'))
-    assert.ok(!body.includes('config du dépôt'))
+    assert.ok(!body.includes('config du repo'))
   })
 
   it('words a resolve job as a resolution of the threads', () => {

@@ -1,6 +1,6 @@
 // The review as a reader sees it: the inline comments, the body of the review and the block of the description.
 import { anchor, deeperReview, diagram, findingKey, isBlocking, score, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
-import type { Level } from './levels.ts';
+import { levelCost, type Level } from './levels.ts';
 
 // The markers that the next review reads back in the comments and the description.
 export const MARKER_SUMMARY = '<!-- sakuga-review:summary -->';
@@ -46,14 +46,24 @@ export function costLine(level: Level, usage: Usage, by?: string): string {
   return `${by ? `${by} · ` : ''}Niveau \`${LEVEL_LABEL[level]}\` · \`${usage.model ?? '?'}\`${cost}`;
 }
 
-function deeperReviewNote(reason: string): string {
+/**
+ * The service that posts a review: `by` names it, and `handle` is the mention that starts a command
+ * (`Kentō`, `@kento-review`). Without it, the review is the one of the Action.
+ */
+export type Poster = { by: string; handle: string };
+
+// The name and the command of the Action (review/sakuga-review.ts), which gives no poster.
+const ACTION = { name: 'Sakuga Review', command: '@sakuga-review review' };
+
+function deeperReviewNote(reason: string, poster?: Poster): string {
+  const command = poster?.handle ?? ACTION.command;
   return (
-    `🔍 **Une revue plus poussée est conseillée :** ${reason}\n` +
-    'Commentez `@sakuga-review review balanced` (environ 5 centimes) ou `@sakuga-review review heavy` (10 centimes à 1 dollar).'
+    `**Une review plus poussée est conseillée :** ${reason}\n` +
+    `Commentez \`${command} balanced\` (${levelCost('balanced')}) ou \`${command} heavy\` (${levelCost('heavy')}).`
   );
 }
 
-export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, by?: string): string {
+export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, poster?: Poster): string {
   const blocking = answer.findings.filter((f) => isBlocking(f, lines)).length;
   const head = blocking
     ? `⛔ ${blocking} point${blocking > 1 ? 's' : ''} bloquant${blocking > 1 ? 's' : ''}`
@@ -63,8 +73,8 @@ export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: 
   const deeper = deeperReview(answer, level);
   return (
     `${MARKER_SUMMARY}\n**Score de confiance : ${score(answer, lines)}/5** · ${head} · ${answer.risk}\n\n` +
-    (deeper ? `${deeperReviewNote(deeper)}\n\n` : '') +
-    `<sub>${costLine(level, usage, by)} · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>`
+    (deeper ? `${deeperReviewNote(deeper, poster)}\n\n` : '') +
+    `<sub>${costLine(level, usage, poster?.by)} · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>`
   );
 }
 
@@ -77,11 +87,11 @@ export function descriptionBlock(
   resolved: number,
   usage: Usage,
   lines: Anchors,
-  context: { count: number; head: string; subject: string; commitUrl: string; level: Level; by?: string },
+  context: { count: number; head: string; subject: string; commitUrl: string; level: Level; poster?: Poster },
 ): string {
-  const out = [BLOCK_START, '', '---', '', `<h2>Sakuga Review · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
+  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
   const deeper = deeperReview(answer, context.level);
-  if (deeper) out.push(deeperReviewNote(deeper), '');
+  if (deeper) out.push(deeperReviewNote(deeper, context.poster), '');
   if (links.length) {
     out.push('<h3>Constats</h3>', '');
     links.forEach(({ finding: f, url }, i) => {
@@ -100,7 +110,7 @@ export function descriptionBlock(
   }
   out.push('<details><summary>Résumé</summary>', '', answer.summary, '');
   if (resolved) {
-    out.push(`${resolved} constat${resolved > 1 ? 's' : ''} d'une revue précédente n'apparai${resolved > 1 ? 'ssent' : 't'} plus : le fil peut être résolu.`, '');
+    out.push(`${resolved} constat${resolved > 1 ? 's' : ''} d'une review précédente n'apparai${resolved > 1 ? 'ssent' : 't'} plus : le fil peut être résolu.`, '');
   }
   out.push('</details>', '');
   const flow = diagram(answer);
@@ -109,7 +119,7 @@ export function descriptionBlock(
   if (notReviewed.length) out.push('<details><summary>Non relu</summary>', '', ...notReviewed.map((n) => `- ${n}`), '', '</details>', '');
   const subject = context.subject.length > 50 ? `${context.subject.slice(0, 47)}...` : context.subject;
   out.push(
-    `<sub>Revues (${context.count}) · Dernier commit relu : [${subject.replace(/[[\]]/g, '')}](${context.commitUrl}) · ${costLine(context.level, usage, context.by)}</sub>`,
+    `<sub>Reviews (${context.count}) · Dernier commit relu : [${subject.replace(/[[\]]/g, '')}](${context.commitUrl}) · ${costLine(context.level, usage, context.poster?.by)}</sub>`,
     '',
     `<!-- sakuga-review:count ${context.count} -->`,
     BLOCK_END,

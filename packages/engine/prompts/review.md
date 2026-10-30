@@ -103,7 +103,7 @@ as it stands, after your review.
 # Deeper review
 
 A stronger model can review the pull request again, with more code around the
-diff, for 5 to 50 times the cost of this review. Set `deeper_review.recommended`
+diff, for 10 to 50 times the cost of this review. Set `deeper_review.recommended`
 to `true` only when that review is worth its cost, and give in
 `deeper_review.reason` one French sentence that names what to check: the
 function, the route or the risk. Otherwise set `recommended` to `false` and

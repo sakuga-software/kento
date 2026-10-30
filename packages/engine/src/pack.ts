@@ -290,7 +290,7 @@ export function buildPack(repo: string, base: string, head: string, contextKind:
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
-    skipped.push(`${path} : retiré pour tenir dans la taille maximale de la revue`);
+    skipped.push(`${path} : retiré pour tenir dans la taille maximale de la review`);
     hunks.delete(path);
   }
 

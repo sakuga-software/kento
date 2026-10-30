@@ -92,9 +92,9 @@ describe('publishReview', () => {
 
     let body = fake.state.pr.body
     assert.ok(body.startsWith('Description de la PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
-    assert.match(body, /<h2>Sakuga Review · Score de confiance : 2\/5<\/h2>/)
+    assert.match(body, /<h2>Kentō · Score de confiance : 2\/5<\/h2>/)
     assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}">▶</a>`))
-    assert.match(body, /Revues \(1\) · Dernier commit relu : \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Niveau `lite`/)
+    assert.match(body, /Reviews \(1\) · Dernier commit relu : \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Niveau `lite`/)
     assert.match(body, /<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->$/)
 
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
@@ -160,7 +160,7 @@ describe('publishReview', () => {
     assert.equal(replies.length, 1)
     assert.match(replies[0]!.body, /^Ce constat n'apparaît plus au commit `333333333`, et le fichier a changé depuis\. Le fil peut être résolu\./)
     assert.match(replies[0]!.body, /<!-- sakuga-review:gone -->/)
-    assert.match(fake.state.pr.body, /1 constat d'une revue précédente n'apparait plus : le fil peut être résolu\./)
+    assert.match(fake.state.pr.body, /1 constat d'une review précédente n'apparait plus : le fil peut être résolu\./)
     assert.equal(fake.state.reviews.at(-1)!.state, 'APPROVED')
     assert.deepEqual(fake.state.pr.labels, ['review: 5/5'], 'the old score label goes')
 
@@ -236,7 +236,7 @@ describe('publishReview', () => {
     let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
     assert.equal(outcome.resolved, 1)
     assert.ok(fake.state.resolved.has(thread!.id))
-    assert.match(fake.state.pr.body, /1 constat d'une revue précédente n'apparait plus/)
+    assert.match(fake.state.pr.body, /1 constat d'une review précédente n'apparait plus/)
   })
 
   it('resolves the thread when GitHub lets the App do it', async () => {
@@ -430,7 +430,8 @@ describe('publishReview', () => {
 
   it('renders the review and the block as the Action does, from the anchors of the runner', () => {
     // The Action renders from the changed lines of its checkout; the service from the anchors that the
-    // runner computed from the same lines. Both must give the same text, but for the name of Kentō.
+    // runner computed from the same lines. Both must give the same text, but for the name and the
+    // command of Kentō.
     let lines: ChangedLines = new Map([['src/sum.ts', new Set([2, 3, 4])]])
     let review = payload({
       findings: [
@@ -444,14 +445,17 @@ describe('publishReview', () => {
     let answer = answerOf(review)
     let usage = usageOf(review)
     let action = reviewBody(answer, lines, 'lite', usage)
-    let kento = reviewBody(answer, anchorOf, 'lite', usage, 'Kentō')
-    assert.equal(kento.replace('Kentō · ', ''), action)
+    let poster = { by: 'Kentō', handle: '@kento-review' }
+    let asAction = (text: string) => text.replace('Kentō · Score', 'Sakuga Review · Score').replace('Kentō · Niveau', 'Niveau').replaceAll('@kento-review ', '@sakuga-review review ')
+    let kento = reviewBody(answer, anchorOf, 'lite', usage, poster)
+    assert.match(kento, /Commentez `@kento-review balanced` \(de 10 à 20 centimes\) ou `@kento-review heavy` \(de 30 à 50 centimes\)\./)
+    assert.equal(asAction(kento), action)
     assert.equal(verdict(answer, anchorOf, 'lite'), verdict(answer, lines, 'lite'))
     assert.equal(verdict(answer, anchorOf, 'lite'), review.verdict)
     let context = { count: 3, head: HEAD1, subject: 'fix: sum', commitUrl: `https://github.com/o/n/commit/${HEAD1}`, level: 'lite' as const }
     let links = answer.findings.map((f) => ({ finding: f, url: null }))
     assert.equal(
-      descriptionBlock(answer, links, [], 0, usage, anchorOf, { ...context, by: 'Kentō' }).replace('Kentō · ', ''),
+      asAction(descriptionBlock(answer, links, [], 0, usage, anchorOf, { ...context, poster })),
       descriptionBlock(answer, links, [], 0, usage, lines, context),
     )
   })

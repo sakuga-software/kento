@@ -9,7 +9,7 @@
  */
 export { git } from './git.ts';
 export { diffStart, fileChangedSince, fileDiff, inHistory } from './history.ts';
-export { defaultModels, isLevel, LEVELS, levelConfig, providerLevelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';
+export { defaultModels, isLevel, LEVEL_COST_CENTS, LEVELS, levelConfig, levelCost, providerLevelConfig, type ContextKind, type Level, type LevelConfig, type LevelEnv } from './levels.ts';
 export { costFromTable, costKnown, priceOf, type CostSource, type Price } from './prices.ts';
 export {
   ANTHROPIC_BASE_URL,
@@ -56,6 +56,7 @@ export {
   reviewBody,
   withBlock,
   type Link,
+  type Poster,
 } from './render.ts';
 export {
   cleanBody,

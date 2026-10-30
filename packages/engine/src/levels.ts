@@ -22,7 +22,7 @@ export type LevelConfig = {
 /**
  * The levels of a review. A push gets `lite`; a person asks for another level with a command.
  *
- * - lite: Claude Haiku 5.5 at medium reasoning answers in 20 to 45 seconds for about 1 cent. On
+ * - lite: Claude Haiku 5.5 at medium reasoning answers in 20 to 45 seconds. On
  *   the bench of 2026-10-08 it found as much as GLM-5.3 or more, two to three times faster, with
  *   no failed review. GLM-5.3 takes over when it fails; the price cap keeps GLM-5.3 off the
  *   providers at $1.4 / $4.4, one of which reasons less. The reasoning counts in the output
@@ -30,9 +30,10 @@ export type LevelConfig = {
  *   The bench measured no gain from the callers at this level (2026-10-04), so lite sends only the
  *   definitions that the change uses: they are small, and they answer what the model otherwise
  *   lists as not reviewed.
- * - balanced: Claude Sonnet 5.5 with the context, about 5 cents. On the bench it found a defect
- *   in a caller that GLM-5.3 missed with the same context.
- * - heavy: Claude Opus 5.5 with the context and more reasoning, about 10 to 50 cents.
+ * - balanced: Claude Sonnet 5.5 with the context. On the bench it found a defect in a caller that
+ *   GLM-5.3 missed with the same context.
+ * - heavy: Claude Opus 5.5 with the context and more reasoning.
+ * LEVEL_COST_CENTS gives the cost of each level.
  */
 export const LEVELS: Record<Level, LevelConfig> = {
   lite: {
@@ -60,6 +61,26 @@ export const LEVELS: Record<Level, LevelConfig> = {
     context: 'full',
   },
 };
+
+/**
+ * The cost of one review at each level, in US cents: the low end and the high end. The screens, the
+ * help of the commands and the body of a review show it. These are the models of LEVELS on OpenRouter:
+ * - lite: $0.20 to $0.21 for the 20 pull requests of eval/martian (2026-10-08), so 1 cent a review.
+ * - balanced: $0.08 a review in eval/results.md, and 9 to 20 cents on the reviews of our repos.
+ * - heavy: 29 to 43 cents on the reviews of our repos. The price of Opus is 5/3 of the price of Sonnet.
+ */
+export const LEVEL_COST_CENTS: Record<Level, readonly [low: number, high: number]> = {
+  lite: [1, 1],
+  balanced: [10, 20],
+  heavy: [30, 50],
+};
+
+/** The cost of one review at a level, in French: « environ 1 centime », « de 10 à 20 centimes ». */
+export function levelCost(level: Level): string {
+  const [low, high] = LEVEL_COST_CENTS[level];
+  const cents = (n: number) => `${n} centime${n > 1 ? 's' : ''}`;
+  return low === high ? `environ ${cents(low)}` : `de ${low} à ${cents(high)}`;
+}
 
 /** The variables of the environment that change a level. */
 export type LevelEnv = Partial<Record<'REVIEW_MODELS' | 'REVIEW_EFFORT' | 'REVIEW_MAX_TOKENS' | 'REVIEW_TIMEOUT_MS' | 'REVIEW_MAX_PRICE', string>>;

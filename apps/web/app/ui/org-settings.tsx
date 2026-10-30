@@ -1,5 +1,6 @@
 import type { Handle } from 'remix/component'
 
+import { levelCost } from '@sakuga-review/engine/levels'
 import type { Level } from '@sakuga-review/protocol'
 
 import type { AppStatus } from '../org-settings/app-status.ts'
@@ -56,9 +57,9 @@ export interface OrgSectionProps {
 }
 
 const LEVEL_HINTS: Record<Level, string> = {
-  lite: 'Rapide, le moins cher : environ 1 centime une review.',
-  balanced: 'Avec le code autour du changement : environ 5 centimes.',
-  heavy: 'Plus de raisonnement : de 10 à 50 centimes.',
+  lite: `Rapide, le moins cher : ${levelCost('lite')} une review.`,
+  balanced: `Avec le code autour du changement : ${levelCost('balanced')}.`,
+  heavy: `Plus de raisonnement : ${levelCost('heavy')}.`,
 }
 
 const PERMISSION_LABELS: Record<string, string> = {

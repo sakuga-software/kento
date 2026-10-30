@@ -1,6 +1,7 @@
 // The text of a command in a comment of a pull request: `@kento-review [review] [lite|balanced|heavy] [force]`
 // or `@kento-review resolve [lite|balanced|heavy]`. `@sakuga-review` is the old name of the bot, and
 // stays an alias. Pure functions: no database, no network.
+import { levelCost } from '@sakuga-review/engine/levels'
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 
 export type CommentCommand =
@@ -58,8 +59,10 @@ export const USAGE = [
   "- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).",
   '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
   '',
-  '`lite` : Claude Haiku 5.5, environ 1 centime. `balanced` : Claude Sonnet 5.5 avec le code autour de la diff, environ 5 centimes. ' +
-    '`heavy` : Claude Opus 5.5 avec le même contexte et plus de réflexion, de 10 centimes à 1 dollar.',
+  `\`lite\` : le diff et les définitions qu'il utilise, ${levelCost('lite')}. ` +
+    `\`balanced\` : en plus, le code qui appelle le changement, ${levelCost('balanced')}. ` +
+    `\`heavy\` : le contexte de \`balanced\` avec plus de réflexion, ${levelCost('heavy')}. ` +
+    'Le modèle de chaque niveau se règle dans la config du repo.',
   '',
-  "Seule une personne qui peut écrire dans le dépôt peut lancer une commande.",
+  'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
 ].join('\n')

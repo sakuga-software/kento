@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { parseCommentCommand } from './comment-command.ts'
+import { parseCommentCommand, USAGE } from './comment-command.ts'
 
 describe('parseCommentCommand', () => {
   it('reads the verb and the level, under both names and in any case', () => {
@@ -54,5 +54,27 @@ describe('parseCommentCommand', () => {
     assert.equal(parseCommentCommand('@sakuga-review-ci review'), null)
     assert.equal(parseCommentCommand('@sakuga-reviewer review'), null)
     assert.equal(parseCommentCommand(''), null)
+  })
+})
+
+describe('USAGE', () => {
+  it('lists the commands, and the cost of each level without the name of a model', () => {
+    assert.equal(
+      USAGE,
+      [
+        'Commandes de Kentō, dans un commentaire de la PR (`@sakuga-review` marche aussi) :',
+        '',
+        '- `@kento-review [lite|balanced|heavy]` : une review de la PR au niveau donné (`lite` par défaut).',
+        '- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).',
+        '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
+        '',
+        "`lite` : le diff et les définitions qu'il utilise, environ 1 centime. " +
+          '`balanced` : en plus, le code qui appelle le changement, de 10 à 20 centimes. ' +
+          '`heavy` : le contexte de `balanced` avec plus de réflexion, de 30 à 50 centimes. ' +
+          'Le modèle de chaque niveau se règle dans la config du repo.',
+        '',
+        'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
+      ].join('\n'),
+    )
   })
 })

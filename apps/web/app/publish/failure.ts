@@ -46,7 +46,7 @@ export function failureComment(job: FailedJob): string {
   let command = review ? `@kento-review ${job.level}` : `@kento-review resolve ${job.level}`
   let mention = job.commenter ? `@${job.commenter} ` : ''
   let retry = `Pour relancer : \`${command}\`.`
-  if (job.configUrl) retry += ` Si l’erreur vient d’un modèle ou d’un provider, vérifiez la [config du dépôt](${job.configUrl}).`
+  if (job.configUrl) retry += ` Si l’erreur vient d’un modèle ou d’un provider, vérifiez la [config du repo](${job.configUrl}).`
   return [
     `**Kentō · ${what} en échec** au commit \`${job.headSha.slice(0, 9)}\``,
     `${mention}La ${what} \`${job.level}\` de ce commit a échoué : Kentō ne la relancera pas seul.`,
