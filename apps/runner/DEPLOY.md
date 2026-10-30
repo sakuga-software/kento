@@ -13,7 +13,7 @@ instead.
 
 Deploy the release with REV-4 first. Its migration `0001_runners` adds the table `runners` and the
 columns `jobs.base_ref` and `jobs.runner_id`. Then, in Dokploy → `web` → **Environment**, add and
-**Deploy** (details in [apps/web/DEPLOY.md](../web/DEPLOY.md#6-runner-api-rev-4)):
+**Deploy** (details in [apps/web/DEPLOY.md](../web/DEPLOY.md#4-environment-variables)):
 
 ```sh
 KENTO_RUNNER_REGISTRATION_TOKEN=<openssl rand -hex 32>

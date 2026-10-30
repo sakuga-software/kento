@@ -1,4 +1,4 @@
-# apps/web — Kentō web service
+# apps/web: the Kentō web service
 
 The service behind `review.sakuga.dev`: `GET /healthz`, the GitHub App webhook `POST /webhooks/github`
 (REV-3), the runner API `POST /api/runner/*` (REV-4), the publication on GitHub of the review that a
@@ -10,7 +10,7 @@ runner sends (REV-5, `app/publish/`), and the screens of milestone M3 (REV-8 and
 - Postgres with [drizzle](https://orm.drizzle.team): schema in `app/db/schema.ts`, SQL migrations in
   `drizzle/`, applied at startup.
 
-Deployment: [DEPLOY.md](DEPLOY.md).
+Deployment: [DEPLOY.md](DEPLOY.md). What each release changed: [CHANGELOG.md](CHANGELOG.md).
 
 ## Screens
 
@@ -32,7 +32,7 @@ Server-rendered HTML in French, with `remix/component`, and one small script
 
 ### Sign-in, sessions and roles (`app/auth/`)
 
-- `GET /login` → `GET /login/github` → GitHub → `GET /auth/github/callback`: the user authorization of
+- `GET /login`, then `GET /login/github`, then GitHub, then `GET /auth/github/callback`: the user authorization of
   the GitHub App, authorization code with PKCE and `state`. The user token reads `GET /user` once and
   is dropped.
 - The role comes from GitHub, never from Kentō: `GET /orgs/{org}/memberships/{login}` with an
@@ -54,34 +54,9 @@ Server-rendered HTML in French, with `remix/component`, and one small script
 ## Configuration
 
 Environment variables, read once at startup. An invalid value stops the process before it listens,
-and the log names the variable, never its value.
-
-| Variable            | Required | Default   | Meaning                                                            |
-| ------------------- | -------- | --------- | ------------------------------------------------------------------ |
-| `DATABASE_URL`      | yes      |           | `postgres://user:password@host:5432/db`. A secret: never commit it. |
-| `DATABASE_POOL_MAX` | no       | `10`      | Maximum connections in the pool (1 to 100). The migrations at startup use one more, closed before the server listens. |
-| `HOST`              | no       | `0.0.0.0` | Address the HTTP server listens on.                                |
-| `PORT`              | no       | `3000`    | Port the HTTP server listens on.                                   |
-| `MIGRATE_ON_START`  | no       | `true`    | Apply the pending migrations before listening.                     |
-| `APP_COMMIT`        | no       |           | Commit of the image, shown by `/healthz`. The Dockerfile sets it from the build argument of the same name. |
-| `GITHUB_WEBHOOK_SECRET` | no   |           | Secret of the GitHub App webhook, 32 characters or more (`openssl rand -hex 32`). A secret: never commit it. Without it, `/webhooks/github` answers 503. |
-| `KENTO_RUNNER_REGISTRATION_TOKEN` | no | | Secret that a runner sends to `POST /api/runner/register`, 32 characters or more. Without it, the registration answers 401. |
-| `GITHUB_APP_ID` | no | | ID of the GitHub App. With `GITHUB_APP_PRIVATE_KEY`, the service makes the installation token of each job. Without them, a claim gives no job. |
-| `GITHUB_APP_PRIVATE_KEY` | no | | PEM private key of the App; on one line, `\n` for each new line. A secret: it never leaves the service. |
-| `GITHUB_API_URL` | no | `https://api.github.com` | GitHub API, for GitHub Enterprise Server (`https://<host>/api/v3`) or a local test. |
-| `GITHUB_URL` | no | the server of `GITHUB_API_URL` | The GitHub server where the runners clone, HTTPS only. It must be on the server of `GITHUB_API_URL` (github.com for `api.github.com`), else the service refuses to start: the installation token of one server never goes to another. |
-| `KENTO_PROVIDER_API_KEY` | no | | OpenRouter key of the service, for the jobs of an org that has no provider (REV-11). Sent with a job only to a trusted runner that has no OpenRouter key of its own. A secret. |
-| `KENTO_SECRETS_KEY` | no | | Master key of the keys of the providers (REV-11): 32 random bytes in base64 (`openssl rand -base64 32`). The keys are stored AES-256-GCM under it. Without it, the screen stores no key. A secret. See SECURITY.md. |
-| `KENTO_SECRETS_PREVIOUS_KEYS` | no | | Comma-separated earlier master keys, during a rotation only: they still decrypt; `node app/providers/rotate-keys.ts --apply` encrypts every key again under `KENTO_SECRETS_KEY`. A secret. |
-| `KENTO_BOT_LOGIN` | no | `kento-review[bot]` | Login of the GitHub App. The publisher finds the threads and the reviews of the bot with it. |
-| `KENTO_APP_SLUG` | no | `KENTO_BOT_LOGIN` without `[bot]` | Slug of the GitHub App, as in `github.com/apps/<slug>`. The page « Accès refusé » links to `<GITHUB_URL>/apps/<slug>/installations/new`. |
-| `KENTO_PUBLIC_URL` | for the sign-in | | The https origin of the service as the browser sees it, `https://review.sakuga.dev`. It makes the callback URL, the expected `Origin` of a form, and the `Secure` session cookie. `http://` only on `localhost` or `127.0.0.1`. |
-| `GITHUB_APP_CLIENT_ID` | for the sign-in | | Client ID of the GitHub App, for its user authorization. |
-| `GITHUB_APP_CLIENT_SECRET` | for the sign-in | | Client secret of the GitHub App. A secret. |
-| `KENTO_SESSION_SECRET` | for the sign-in | | Signs the session cookie, 32 characters or more. Comma-separated for a rotation: the first signs, all verify. A secret. |
-
-The sign-in needs its four variables together, plus `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`.
-None of them: the screens say « Connexion indisponible ».
+and the log names the variable, never its value. The table of every variable, with an example and
+its effect, is in [DEPLOY.md](DEPLOY.md#4-environment-variables). To run the service on your machine,
+`DATABASE_URL` is enough (see « Develop » below).
 
 ## `GET /healthz`
 
@@ -116,7 +91,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |
 | `installation_repositories` | `added` / `removed` | Upserts / deletes the repositories (a deleted repository takes its jobs and reviews with it). |
-| `issue_comment` | | 202 `ignored`: the `@kento-review` commands have their own ticket. |
+| `issue_comment` | `created` | A `@kento-review` command (REV-7): a review or a resolve job, with a reaction and, when refused, a reply. The checks and the answers are in [CHANGELOG.md](CHANGELOG.md#rev-7-commands-in-the-comments). |
 
 A `pull_request` event also upserts its org and repository, so the App needs no new `installation`
 event after the webhook is added.

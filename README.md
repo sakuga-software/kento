@@ -219,7 +219,7 @@ tag.
 1. **Merge** the change on `main` through a pull request. The CI builds the runner image and starts
    it, but pushes nothing.
 2. **Deploy the service first.** Dokploy → project `Kentō` → `web` → **Deploy**
-   ([apps/web/DEPLOY.md](apps/web/DEPLOY.md), section 17). The migrations run at startup, and only
+   ([apps/web/DEPLOY.md](apps/web/DEPLOY.md#8-each-later-deployment)). The migrations run at startup, and only
    add: the previous release still runs on the new schema. Check `https://review.sakuga.dev/healthz`
    for the version and the number of migrations.
 3. **Publish the runner image** of the same commit, with the tags of the commit, the version and
