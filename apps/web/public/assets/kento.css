@@ -620,6 +620,10 @@ kbd,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: inherit;
+}
+a.who-login:hover {
+  text-decoration: underline;
 }
 .who-role {
   font-size: var(--text-xs);
@@ -3396,4 +3400,28 @@ a.sheet-title {
     min-height: var(--control-h-touch);
     justify-content: center;
   }
+}
+
+/* REV-22. The screen of a user. */
+.user-section {
+  margin-bottom: var(--space-6);
+}
+.user-pref-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.user-pref-form .field {
+  margin: 0;
+}
+.table-wrap + .user-pref-form {
+  margin-top: var(--space-4);
+}
+.user-received {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+.user-received dd {
+  margin: 0;
 }

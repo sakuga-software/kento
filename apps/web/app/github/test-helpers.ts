@@ -45,7 +45,8 @@ export function pullRequestPayload(
     head?: string
     draft?: boolean
     sender?: { login: string; type: string }
-    author?: { login: string; type: string }
+    /** The author of the pull request; `id` is its GitHub id (REV-22). */
+    author?: { login: string; type: string; id?: number }
     headRepoId?: number | null
     repo?: typeof REPO
     /** The branch that the pull request targets. */
@@ -62,7 +63,7 @@ export function pullRequestPayload(
     pull_request: {
       number: options.number ?? 24,
       draft: options.draft ?? false,
-      user: options.author ?? { login: 'alex', type: 'User' },
+      user: options.author ?? { login: 'alex', type: 'User', id: 101 },
       head: { sha: options.head ?? headSha(1), ref: 'feature', repo: headRepoId === null ? null : { id: headRepoId } },
       base: { sha: headSha(999), ref: options.baseRef ?? 'main', repo: { id: repo.id } },
     },
@@ -112,6 +113,8 @@ export function issueCommentPayload(
     issue: {
       number: options.number ?? 28,
       state: options.state ?? 'open',
+      // REV-22. The author of the pull request, not the person who comments.
+      user: { login: 'camille', id: 102, type: 'User' },
       ...(options.onPullRequest === false ? {} : { pull_request: { url: 'https://api.github.com/repos/x/y/pulls/28' } }),
     },
     comment: { id: options.commentId ?? 9001, body: options.body ?? '@kento-review review heavy', user },

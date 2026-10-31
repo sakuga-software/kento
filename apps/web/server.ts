@@ -38,6 +38,7 @@ import { createReadPullRequest } from './app/dashboard/github.ts'
 import { createReadCode } from './app/pulls/finding.ts'
 import { createReadPullHeader } from './app/pulls/github.ts'
 import { createPullsStore } from './app/pulls/store.ts'
+import { createUsersStore } from './app/users/store.ts'
 import { startLeaseSweeper } from './app/runner/lease-sweeper.ts'
 import { createRunnerStore } from './app/runner/store.ts'
 
@@ -200,6 +201,7 @@ let router = createAppRouter({
     postReply: mintInstallationToken && config.githubApp ? createThreadReplier({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
     readPullRequest: mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
   },
+  users: { store: createUsersStore(database.sql) },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,

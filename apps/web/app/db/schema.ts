@@ -652,3 +652,56 @@ export const queueNotices = pgTable(
   },
   (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],
 )
+
+/**
+ * REV-22. The author of each pull request that Kentō saw: the event of a push or the comment of a
+ * command writes it. The screen of a user reads « Mes PR reviewées » and « Findings reçus » from it,
+ * and the Findings screen filters on it.
+ */
+export const pullAuthors = pgTable(
+  'pull_authors',
+  {
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    /** The id of the GitHub account: it never changes, unlike the login. */
+    githubId: bigint('github_id', { mode: 'number' }).notNull(),
+    /** The login when Kentō last saw the pull request. */
+    login: text('login').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.repoId, table.prNumber] }),
+    // The pull requests of one person, for the screen of a user and the filter of the Findings screen.
+    index('pull_authors_github_id_idx').on(table.githubId),
+  ],
+)
+
+/**
+ * REV-22. What a person sets for the reviews of their own pull requests, for every repository (no
+ * `repo_id`) or for one repository, which wins. `auto_review` false: a push of their pull request
+ * queues no job, a command still does. `level` null: the level of the repository.
+ *
+ * The order: a rule of assignment of the repository (milestone M5) before these, these before the
+ * level of the repository.
+ */
+export const userPrefs = pgTable(
+  'user_prefs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    repoId: uuid('repo_id').references(() => repos.id, { onDelete: 'cascade' }),
+    autoReview: boolean('auto_review').notNull().default(true),
+    level: reviewLevel('level'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // One row for every repository, and one per repository.
+    uniqueIndex('user_prefs_global_idx').on(table.userId).where(sql`${table.repoId} is null`),
+    uniqueIndex('user_prefs_repo_idx').on(table.userId, table.repoId).where(sql`${table.repoId} is not null`),
+  ],
+)

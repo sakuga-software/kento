@@ -1,6 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
-import { pageRoutes as routes } from '../routes.ts'
+import { pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Document } from './document.tsx'
 import {
   DashboardIcon,
@@ -252,7 +252,10 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
           <span class="avatar" aria-hidden="true"></span>
         )}
         <div class="who-text">
-          <span class="who-login">{viewer.login}</span>
+          {/* REV-22: the screen of the person, with their preferences. */}
+          <a class="who-login" href={userRoutes.user.href({ login: viewer.login })}>
+            {viewer.login}
+          </a>
           <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Membre'}</span>
         </div>
         <form method="post" action={routes.signOut.href()}>

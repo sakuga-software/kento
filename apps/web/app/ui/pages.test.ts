@@ -100,7 +100,7 @@ describe('the GitHub sign-in', () => {
     let { cookie } = await signIn(ALEX)
 
     let html = await (await request('/', { cookie })).text()
-    assert.match(html, /<span class="who-login">alex<\/span>/)
+    assert.match(html, /<a href="\/users\/alex" class="who-login">alex<\/a>/)
     assert.match(html, /<span class="who-role">Admin<\/span>/)
     assert.match(html, /<span class="org-name">sakuga-software<\/span>/)
     assert.doesNotMatch(html, /Lecture seule/)
@@ -247,7 +247,7 @@ describe('the GitHub sign-in', () => {
     let cookie = cookieOf(callback, COOKIE)!
 
     let html = await (await request('/', { cookie })).text()
-    assert.match(html, /<span class="who-login">camille<\/span>/)
+    assert.match(html, /<a href="\/users\/camille" class="who-login">camille<\/a>/)
     assert.notEqual(await csrfOf(cookie), oldToken)
     // The cookie of the first session no longer opens anything.
     assert.equal((await request('/', { cookie: first.cookie })).status, 303)

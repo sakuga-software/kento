@@ -20,6 +20,10 @@ export const FINDINGS_PAGE_SIZE = 50
 
 /** The longest search. */
 export const SEARCH_MAX = 100
+/** REV-22. A GitHub login, or the login of an App (`name[bot]`). */
+export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/
+/** REV-22. The longest period of the filter « N derniers jours ». */
+export const DAYS_MAX = 365
 
 /** What the screen asks for. Every filter is optional; `view` is `open` by default. */
 export interface FindingQuery {
@@ -31,6 +35,10 @@ export interface FindingQuery {
   reason?: string | null
   /** A part of the title or of the path, any case. */
   search?: string
+  /** REV-22. The findings of the pull requests of this GitHub login (`pull_authors`), any case. */
+  author?: string | null
+  /** REV-22. The findings of the last N days only (1 to 365). */
+  days?: number | null
   /** The rows after this cursor, in the order of the screen (the next page). */
   after?: string | null
   /** The rows before this cursor (the previous page). Ignored with `after`. */
@@ -123,6 +131,8 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
   let ruleId = query.ruleId && UUID.test(query.ruleId) ? query.ruleId : null
   let reason = query.reason ? reasonText(query.reason) || null : null
   let severity = query.severity && SEVERITIES.includes(query.severity) ? query.severity : null
+  let author = query.author && LOGIN.test(query.author) ? query.author : null
+  let days = query.days && Number.isInteger(query.days) && query.days >= 1 && query.days <= DAYS_MAX ? query.days : null
   // A cursor that does not decode starts the list again at its first page.
   let cursorOf = (value: string | null | undefined) => {
     try {
@@ -141,7 +151,9 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${severity ? sql`and findings.severity = ${severity}` : sql``}
     ${ruleId ? sql`and findings.rule_id = ${ruleId}` : sql``}
     ${reason ? sql`and lower(${reasonOf(sql, 'findings.status_reason')}) = lower(${reason})` : sql``}
-    ${search ? sql`and (findings.title ilike ${likePattern(search)} or findings.path ilike ${likePattern(search)})` : sql``}`
+    ${search ? sql`and (findings.title ilike ${likePattern(search)} or findings.path ilike ${likePattern(search)})` : sql``}
+    ${author ? sql`and exists (select 1 from pull_authors where pull_authors.repo_id = findings.repo_id and pull_authors.pr_number = findings.pr_number and lower(pull_authors.login) = lower(${author}))` : sql``}
+    ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}`
   let inView = sql`findings.status = any(${sql.array([...statusesOf(view)])}::finding_status[])`
   let key = sql`(findings.created_at, findings.id)`
 

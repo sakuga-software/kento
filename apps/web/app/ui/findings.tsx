@@ -3,7 +3,9 @@ import type { Handle } from 'remix/component'
 import { isOneOf, SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
 
 import {
+  DAYS_MAX,
   FINDING_VIEWS,
+  LOGIN,
   SEARCH_MAX,
   type FindingFacets,
   type FindingQuery,
@@ -29,6 +31,9 @@ export interface FindingList extends FindingQuery {
   ruleId: string | null
   reason: string | null
   search: string
+  /** REV-22. The pull requests of one person: the link « Voir mes N findings open » of their screen. */
+  author: string | null
+  days: number | null
   after: string | null
   before: string | null
 }
@@ -125,6 +130,8 @@ export function readFindingList(query: URLSearchParams): FindingList {
   let severity = query.get('priority')
   let repo = query.get('repo')
   let rule = query.get('rule')
+  let author = query.get('author')
+  let days = query.get('days')
   return {
     view: isOneOf(FINDING_VIEWS, view) ? view : 'open',
     repoId: repo && UUID.test(repo) ? repo : null,
@@ -132,6 +139,8 @@ export function readFindingList(query: URLSearchParams): FindingList {
     ruleId: rule && UUID.test(rule) ? rule : null,
     reason: reasonText(query.get('reason') ?? '') || null,
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
+    author: author && LOGIN.test(author) ? author : null,
+    days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
     after: query.get('after') || null,
     before: query.get('after') ? null : query.get('before') || null,
   }
@@ -146,6 +155,8 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.ruleId) query.set('rule', list.ruleId)
   if (list.reason) query.set('reason', list.reason)
   if (list.search) query.set('q', list.search)
+  if (list.author) query.set('author', list.author)
+  if (list.days) query.set('days', String(list.days))
   if (list.after) query.set('after', list.after)
   else if (list.before) query.set('before', list.before)
   return query
@@ -159,11 +170,20 @@ export function findingsHref(list: Partial<FindingList>): string {
 
 /** The filters of a list without its page: a new filter or tab starts at the first page. */
 function filtersOf(list: FindingList): Partial<FindingList> {
-  return { view: list.view, repoId: list.repoId, severity: list.severity, ruleId: list.ruleId, reason: list.reason, search: list.search }
+  return {
+    view: list.view,
+    repoId: list.repoId,
+    severity: list.severity,
+    ruleId: list.ruleId,
+    reason: list.reason,
+    search: list.search,
+    author: list.author,
+    days: list.days,
+  }
 }
 
 function hasFilters(list: FindingList): boolean {
-  return Boolean(list.repoId || list.severity || list.ruleId || list.reason || list.search)
+  return Boolean(list.repoId || list.severity || list.ruleId || list.reason || list.search || list.author || list.days)
 }
 
 /**
@@ -196,6 +216,13 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
             {list.reason ? (
               <p class="findings-reason">
                 Motif « {list.reason} » · <a href={findingsHref({ ...filtersOf(list), reason: null })}>Retirer ce filtre</a>
+              </p>
+            ) : null}
+            {list.author || list.days ? (
+              <p class="findings-reason">
+                {list.author ? `PR de @${list.author}` : 'Toutes les PR'}
+                {list.days ? ` · ${list.days} derniers jours` : ''} ·{' '}
+                <a href={findingsHref({ ...filtersOf(list), author: null, days: null })}>Retirer ce filtre</a>
               </p>
             ) : null}
             <nav class="list-filters findings-views" aria-label="Statut des findings">
@@ -266,6 +293,8 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
       <form class="findings-filters" method="get" action={routes.findings.href()} role="search" aria-label="Filtrer les findings">
         {list.view !== 'open' ? <input type="hidden" name="status" value={list.view} /> : null}
         {list.reason ? <input type="hidden" name="reason" value={list.reason} /> : null}
+        {list.author ? <input type="hidden" name="author" value={list.author} /> : null}
+        {list.days ? <input type="hidden" name="days" value={String(list.days)} /> : null}
         <div class="findings-filter findings-filter-search">
           <label class="field-label" for="findings-q">
             Recherche

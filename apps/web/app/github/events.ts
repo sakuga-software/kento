@@ -16,6 +16,12 @@ export interface Repository {
   fullName: string
 }
 
+/** REV-22. The author of a pull request (`pull_request.user`, or `issue.user` of a comment). */
+export interface PullAuthor {
+  githubId: number
+  login: string
+}
+
 export type WebhookCommand =
   | { type: 'ping' }
   | { type: 'ignore'; reason: string }
@@ -30,6 +36,8 @@ export type WebhookCommand =
       headSha: string
       /** The branch that the pull request targets, for the runner. */
       baseRef: string
+      /** REV-22. Null when the payload lacks it: no preference of a person applies then. */
+      author: PullAuthor | null
     }
   | {
       /**
@@ -44,6 +52,8 @@ export type WebhookCommand =
       commentId: number
       commenter: { login: string; isBot: boolean }
       command: CommentCommand
+      /** REV-22. The author of the pull request, for the screen of a user. */
+      author: PullAuthor | null
     }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
   /**
@@ -132,7 +142,7 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   if (headSha === null || !SHA.test(headSha) || baseRef === null) {
     return { type: 'invalid', reason: 'pull_request payload lacks head.sha or base.ref' }
   }
-  return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef }
+  return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef, author: authorOf(obj(pr.user)) }
 }
 
 /**
@@ -180,6 +190,7 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
     commentId,
     commenter: { login, isBot: user?.type === 'Bot' },
     command,
+    author: authorOf(obj(issue?.user)),
   }
 }
 
@@ -260,6 +271,12 @@ type Obj = Record<string, unknown>
 
 function isObject(value: unknown): value is Obj {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function authorOf(user: Obj | null): PullAuthor | null {
+  let githubId = int(user?.id)
+  let login = str(user?.login)
+  return githubId === null || login === null ? null : { githubId, login }
 }
 
 function obj(value: unknown): Obj | null {

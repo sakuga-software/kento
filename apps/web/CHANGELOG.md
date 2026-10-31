@@ -19,6 +19,23 @@ to wait more than a day ago. Check: stop the runner, push on a pull request, wai
 and the comment show, and the comment goes when the runner is back. The test is
 `apps/web/test/db/queued-notice.test.ts`.
 
+## REV-22: The screen of a user
+
+Migration `0017_user_prefs`, additive only: the tables `pull_authors` (the author of each pull
+request that Kentō sees, from now on) and `user_prefs`. `/healthz` gives `"migrations":18`. No new
+variable, no new permission: the author comes in the payload of `pull_request` and `issue_comment`.
+
+`/users/:login` shows a member their preferences, the findings that their pull requests received
+over 30 days, and the pull requests that Kentō reviewed. The login in the sidebar leads to it. The
+preferences change the reviews of a push: automatic review off gives no job on their pull requests
+(a command still queues one); a default level replaces the level of the repository. The row of a
+repository wins over the row of every repository. A pull request opened before this release has no
+author until its next push or command, so it does not show on the screen yet.
+
+Check: on your screen, turn the automatic review off for a test repository and push on your pull
+request there: no job, and the delivery says `automatic review is off for the author of the pull
+request`. `@kento-review lite` still queues one. The Findings screen takes `?author=<login>&days=30`.
+
 ## REV-55: A finding refers to its rule
 
 Migration `0015_findings_rule_fk`. It sets `findings.rule_id` to null when the rule no longer exists,

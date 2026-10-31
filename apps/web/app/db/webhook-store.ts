@@ -1,14 +1,14 @@
 import type { JobKind, Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
-import type { Installation, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
+import type { Installation, PullAuthor, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
 import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db, Tx } from './client.ts'
 import { orgCapHit, readRepoMonthCost } from './costs.ts'
-import { jobs, orgs, repos, resolutions } from './schema.ts'
+import { jobs, orgs, pullAuthors, repos, resolutions, userPrefs, users } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -259,6 +259,8 @@ export interface CommandJobInput {
   force: boolean
   commentId: number
   deliveryId: string
+  /** REV-22. The author of the pull request (`issue.user`): kept for the screen of a user. */
+  author?: PullAuthor | null
 }
 
 export type CommandJobResult =
@@ -291,6 +293,7 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
     let [repo] = await upsertRepoRows(tx, org.id, [input.repository])
     if (!repo) throw new Error('upsert of the repository returned no row')
     if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
+    if (input.author) await recordPullAuthor(tx, repo.id, input.prNumber, input.author)
 
     let [earlier] = await tx
       .select({ id: jobs.id })
@@ -400,6 +403,15 @@ async function enqueueReview(
   let [delivered] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.githubDeliveryId, deliveryId))
   if (delivered) return { outcome: 'duplicate', reason: 'delivery already created a job' }
 
+  // REV-22. The preferences of the author of the pull request: no automatic review, or a level of
+  // their own. A rule of assignment of the repository (milestone M5) will come before them.
+  let prefs: AuthorPrefs | null = null
+  if (command.author) {
+    await recordPullAuthor(tx, repo.id, command.prNumber, command.author)
+    prefs = await authorPrefs(tx, repo.id, command.author.githubId)
+    if (prefs && !prefs.autoReview) return { outcome: 'skipped', reason: 'automatic review is off for the author of the pull request' }
+  }
+
   // REV-12. The trigger of the config: a push of a repository set to « Ready for review » or to
   // the commands only creates nothing. The older jobs of the pull request stay.
   let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config), repo.defaultLevel)
@@ -445,10 +457,11 @@ async function enqueueReview(
     .limit(1)
   if (sameHead) return { outcome: 'duplicate', reason: 'head already had a review job' }
 
+  let level = prefs?.level ?? resolved.level.value
   let [job] = await insertReviewJob(tx, {
     repoId: repo.id,
-    level: resolved.level.value,
-    config: jobConfig(resolved, resolved.level.value, repo.configVersion),
+    level,
+    config: jobConfig(resolved, level, repo.configVersion),
     prNumber: command.prNumber,
     headSha: command.headSha,
     // The runner diffs the head from its merge base with this branch.
@@ -463,6 +476,38 @@ async function enqueueReview(
     CANCEL_REASON.superseded,
   )
   return { outcome: 'queued', jobId: job.id, cancelled }
+}
+
+/** REV-22. What the author of a pull request set: for this repository, else for every repository. */
+export interface AuthorPrefs {
+  autoReview: boolean
+  /** Null: the level of the repository. */
+  level: Level | null
+  /** The row of the repository wins whole over the row of every repository: its two fields together. */
+  scope: 'repo' | 'global'
+}
+
+/** REV-22. The preferences of the person with this GitHub id for a repository, or null: none set. */
+export async function authorPrefs(tx: Tx | Db, repoId: string, githubId: number): Promise<AuthorPrefs | null> {
+  let [row] = await tx
+    .select({ autoReview: userPrefs.autoReview, level: userPrefs.level, repoId: userPrefs.repoId })
+    .from(userPrefs)
+    .innerJoin(users, eq(users.id, userPrefs.userId))
+    .where(and(eq(users.githubId, githubId), or(eq(userPrefs.repoId, repoId), sql`${userPrefs.repoId} is null`)))
+    .orderBy(sql`${userPrefs.repoId} nulls last`)
+    .limit(1)
+  return row ? { autoReview: row.autoReview, level: row.level, scope: row.repoId === null ? 'global' : 'repo' } : null
+}
+
+/** REV-22. Keeps the author of a pull request; a later event of the same pull request updates the login. */
+async function recordPullAuthor(tx: Tx, repoId: string, prNumber: number, author: PullAuthor) {
+  await tx
+    .insert(pullAuthors)
+    .values({ repoId, prNumber, githubId: author.githubId, login: author.login })
+    .onConflictDoUpdate({
+      target: [pullAuthors.repoId, pullAuthors.prNumber],
+      set: { githubId: author.githubId, login: author.login, updatedAt: sql`now()` },
+    })
 }
 
 /** Inserts one queued review job. A delivery id that is already in `jobs` inserts nothing. */

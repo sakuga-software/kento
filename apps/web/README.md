@@ -29,6 +29,13 @@ Server-rendered HTML in French, with `remix/component`, and one small script
   org and of the service with their state, version, last call and jobs; registration tokens
   (`kento_reg_…`, shown once, one use, one hour, kept as a hash); trust and revocation for an admin.
   `public/assets/runners.js` adds « Copier la commande ».
+- `app/ui/user.tsx`, `app/users/`: the screen of a user, `/users/:login` (REV-22). Every member of
+  the org reads it; only the user changes it. Their preferences for the reviews of their own pull
+  requests (`user_prefs`: automatic review on or off, a default level, for every repository and per
+  repository), the theme, the findings that their pull requests received over 30 days (the counts of
+  the Findings screen with `?author=<login>&days=30`), and the pull requests that Kentō reviewed.
+  The author of each pull request is in `pull_authors`, written by each push and each command. The
+  login in the sidebar leads to it.
 
 ### Sign-in, sessions and roles (`app/auth/`)
 

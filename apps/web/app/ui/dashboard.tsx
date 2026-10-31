@@ -51,7 +51,7 @@ export function capState(usd: number, cap: number | null, alertPct: number): Cap
 
 const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' }
 
-const VERDICT_LABEL: Record<string, { text: string; status: string }> = {
+export const VERDICT_LABEL: Record<string, { text: string; status: string }> = {
   APPROVE: { text: 'Approuvée', status: 'status-online' },
   COMMENT: { text: 'Commentaire', status: 'status-wait' },
   REQUEST_CHANGES: { text: 'Changements demandés', status: 'status-alert' },

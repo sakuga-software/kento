@@ -134,6 +134,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         force: command.force,
         commentId: message.commentId,
         deliveryId,
+        author: message.author,
       },
     )
     switch (result.outcome) {

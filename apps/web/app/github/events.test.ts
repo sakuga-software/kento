@@ -28,6 +28,7 @@ describe('commandFor pull_request', () => {
         prNumber: 24,
         headSha: headSha(7),
         baseRef: 'main',
+        author: { githubId: 101, login: 'alex' },
       })
     })
   }
@@ -157,6 +158,7 @@ describe('commandFor issue_comment', () => {
       commentId: 9001,
       commenter: { login: 'alex', isBot: false },
       command: { verb: 'review', level: 'balanced', force: false },
+      author: { githubId: 102, login: 'camille' },
     })
   })
 

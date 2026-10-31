@@ -10,10 +10,11 @@ import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes } from './routes.ts'
+import { authRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
+import { createUserControllers, type UsersDependencies } from './users/controller.tsx'
 import {
   createUiControllers,
   type AuthDependencies,
@@ -56,6 +57,8 @@ export interface AppDependencies {
   rules?: RulesStore | null
   /** The screen of a pull request (REV-17). Without it, the screen answers 404. */
   pulls?: PullsDependencies | null
+  /** The screen of a user (REV-22). Without it, the screen answers 404. */
+  users?: UsersDependencies | null
 }
 
 /**
@@ -109,6 +112,7 @@ export function createAppRouter(deps: AppDependencies) {
   })
   router.map(pageRoutes, ui.pages)
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))
+  router.map(userRoutes, createUserControllers(ui.screens, deps.users ?? null))
   router.map(authRoutes, ui.signIn)
   fallback.map(fallbackRoutes, ui.notFound)
   if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))

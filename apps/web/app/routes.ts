@@ -74,6 +74,17 @@ export const pullRoutes = route({
 })
 
 /**
+ * REV-22. The screen of a user. Every member of the org reads it; only the user changes their own
+ * preferences.
+ */
+export const userRoutes = route({
+  user: get('/users/:login'),
+  /** The preferences for every repository (field `repo` empty) or for one repository of the org. */
+  userPrefs: post('/users/:login/prefs'),
+  userPrefRemove: post('/users/:login/prefs/:repoId/remove'),
+})
+
+/**
  * REV-40. A page that no route matches, for a browser. The router dispatches to it only from its
  * default handler: the routes of machines keep their own answers.
  */
