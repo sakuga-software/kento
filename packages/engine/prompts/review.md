@@ -50,6 +50,9 @@ change a score or to approve.
    - contracts: a changed response, route, schema or column that other code
      still reads or sends in the old shape. Confirm it with the `Context`
      section.
+   - localisation: a date, a number or an amount formatted with a fixed locale
+     or a fixed separator, a translation key with a count but no plural form, a
+     text that users read but that no translation file holds;
    - tests: new non-trivial logic with no test, only if the repository has tests.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong

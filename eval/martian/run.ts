@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
+import { mergeSamples } from './merge.ts';
 
 /**
  * `--provider anthropic` calls the Messages API of Anthropic with `ANTHROPIC_API_KEY`, as the runner
@@ -68,8 +69,11 @@ type Review = {
   droppedCandidates?: string[];
   verification?: string;
   verificationCost?: number;
+  /** REV-67, with --samples: the findings that the merge dropped as duplicates of another sample. */
+  merged?: number;
 };
-type Mode = { level: Level; passes: boolean };
+type Mode = { level: Level; passes: boolean; samples: number };
+
 
 async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -125,6 +129,12 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
     }
     // A review in one pass, with the variables REVIEW_* of the environment, as the Action reads them.
     const config = levelConfig(mode.level, { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: timeout });
+    if (mode.samples > 1) {
+      const outs = await Promise.all(Array.from({ length: mode.samples }, () => reviewPullRequest({ ...input, config })));
+      const { findings, merged } = mergeSamples(outs.map((out) => out.findings));
+      const cost = outs.reduce((total, out) => total + (out.usage.cost ?? 0), 0);
+      return { findings: findings.map(candidate), cost, seconds: Math.round((Date.now() - start) / 1000), model: outs[0].usage.model, error: failures[0], merged };
+    }
     const out = await reviewPullRequest({ ...input, config });
     return { findings: out.findings.map(candidate), cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: failures[0] };
   } catch (error) {
@@ -197,13 +207,15 @@ async function judge(golden: string, candidate: string): Promise<{ match: boolea
  * once.
  */
 async function score(pr: Pr, findings: string[]) {
-  const pairs = pr.golden.flatMap((g) => findings.map((f) => ({ g, f })));
+  const pairs = pr.golden.flatMap((g) => findings.map((f, index) => ({ g, f, index })));
   const verdicts = await pool(pairs, JUDGE_CALLS_AT_ONCE, ({ g, f }) => judge(g.comment, f));
   const found = new Set(pairs.filter((_, i) => verdicts[i]?.match).map(({ g }) => g.comment));
   return {
     found: pr.golden.filter((g) => found.has(g.comment)).map((g) => ({ severity: g.severity, category: g.category })),
     golden: pr.golden.length,
     comments: [...found],
+    // For each finding, the indexes in pr.golden of the golden comments that it matches: [] is a finding with no match.
+    matches: findings.map((_, index) => pairs.flatMap(({ g, index: other }, i) => (other === index && verdicts[i]?.match ? [pr.golden.indexOf(g)] : []))),
   };
 }
 
@@ -234,6 +246,7 @@ async function main() {
       models: { type: 'string' },
       level: { type: 'string', default: 'lite' },
       passes: { type: 'boolean', default: false },
+      samples: { type: 'string', default: '1' },
       provider: { type: 'string', default: 'openrouter' },
     },
   });
@@ -241,14 +254,17 @@ async function main() {
   ANTHROPIC = values.provider === 'anthropic';
   if (ANTHROPIC) JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'claude-sonnet-5-5';
   if (!isLevel(values.level)) throw new Error(`--level must be lite, balanced or heavy, not "${values.level}"`);
-  const mode: Mode = { level: values.level, passes: values.passes === true };
+  const samples = Number(values.samples);
+  if (!Number.isInteger(samples) || samples < 1) throw new Error(`--samples must be a whole number of 1 or more, not "${values.samples}"`);
+  if (samples > 1 && values.passes) throw new Error('--samples and --passes cannot go together');
+  const mode: Mode = { level: values.level, passes: values.passes === true, samples };
   const prs: Pr[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
   const out = values.out!;
   mkdirSync(out, { recursive: true });
   const dirs = prs.map((pr) => pr.repo_dir ?? join(values.repos!, `${pr.owner}__${pr.name}`));
   for (const model of values.models!.split(',')) {
     // The level and the passes are in the name of the file of a run that is not lite in one pass.
-    const tag = mode.level === 'lite' && !mode.passes ? '' : `-${mode.level}${mode.passes ? '-passes' : ''}`;
+    const tag = (mode.level === 'lite' && !mode.passes ? '' : `-${mode.level}${mode.passes ? '-passes' : ''}`) + (mode.samples > 1 ? `-x${mode.samples}` : '');
     const file = join(out, `${values.label}${tag}-${model.replace('/', '_')}.json`);
     if (existsSync(file)) continue;
     judgeCost = 0;
@@ -283,6 +299,7 @@ async function main() {
       dropped_true: rows.reduce((total, row) => total + (row.dropped_true ?? 0), 0),
       verification_cost: rows.reduce((total, row) => total + (row.verificationCost ?? 0), 0),
       failed_passes: rows.reduce((total, row) => total + (row.passes?.filter((p) => p.error).length ?? 0), 0),
+      merged: rows.reduce((total, row) => total + (row.merged ?? 0), 0),
       martian,
       internal,
       rows,
@@ -295,7 +312,8 @@ async function main() {
         `judge $${judgeCost.toFixed(3)} · median ${result.median_seconds}s · martian ${martian.found}/${martian.golden} · internal ${internal.found}/${internal.golden}` +
         (mode.passes
           ? ` · ${result.dropped} dropped by the check (${result.dropped_true} true) · check $${result.verification_cost.toFixed(3)} · ${result.failed_passes} failed passes`
-          : ''),
+          : '') +
+        (mode.samples > 1 ? ` · ${result.merged} duplicates merged` : ''),
     );
   }
 }

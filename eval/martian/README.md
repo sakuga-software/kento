@@ -61,6 +61,39 @@ OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.
 the check and the judge (Sonnet 5.5), with the prompt cache of production. The cost comes from
 the price table of the engine. With this provider, the run does not use the key of CI.
 
+## Results, 2026-11-02: the prompt and two samples (REV-67)
+
+An error analysis of the 8 runs of REV-20 gave the misses that no run finds: 23 golden comments of
+60. About 8 of them are `Low` comments that the prompt excludes on purpose (style, documentation,
+performance). At least 4 sit in code that the pack does not hold (26 files of sentry-greptile#5 go
+out for the size). 3 are about localisation, and the prompt had no item on it. Then:
+
+- `review.md` gets an item on localisation (a fixed locale or separator, a key with a count and no
+  plural form, a text that no translation file holds).
+- `run.ts` keeps, for each finding of a row, the golden comments that it matches (`matches`).
+- `--samples 2` runs two reviews of a pull request and merges their findings
+  ([`merge.ts`](merge.ts)): two findings on one file at 3 lines or less are one, and the higher
+  severity stays.
+
+| Method | F1 Martian | Recall | Precision | Internal found | Review cost (20 PRs) | Median |
+|---|---|---|---|---|---|---|
+| `lite`: Haiku 5.5, before | 0.43 / 0.38 | 33 / 28 % | 42 / 40 % | 1 / 1 of 10 | $0.20 / $0.20 | 134 / 106 s |
+| `lite`: Haiku 5.5, localisation item | 0.42 / 0.35 | 35 / 27 % | 43 / 38 % | 2 / 1 of 10 | $0.21 / $0.20 | 131 / 113 s |
+| `lite`: Haiku 5.5, localisation item, 2 samples merged | 0.33 / 0.36 | 33 / 38 % | 26 / 28 % | 1 / 2 of 10 | $0.40 / $0.40 | 234 / 197 s |
+| `balanced`: Sonnet 5.5, before | 0.40 / 0.45 | 37 / 42 % | 37 / 42 % | 2 / 2 of 10 | $2.09 / $2.09 | 48 / 46 s |
+| `balanced`: Sonnet 5.5, localisation item | 0.43 / 0.50 | 38 / 43 % | 43 / 43 % | 3 / 1 of 10 | $2.07 / $2.09 | 44 / 47 s |
+
+- **The localisation item finds what it aims at.** The 3 golden comments that it aims at give
+  6 chances a model (3 × 2 runs). Haiku finds 3 of them, Sonnet 3; before, no run of 8 found one. The
+  plural form of `en/admin.json` stays missed. F1 does not move more than the noise, and the
+  findings do not grow: 49 / 42 for Haiku, 53 / 60 for Sonnet.
+- **Two samples merged do not pay.** Recall goes from 31 to 35 % on average, but precision falls
+  from 41 to 27 %: the second sample adds about 35 findings for 3 more golden comments found. The
+  merge by place also leaves duplicates: 7 to 8 golden comments a run match two kept
+  findings. With no duplicate at all, precision stays under 30 %.
+
+Cost: $9.00 for the 6 runs, with the judge.
+
 ## Results, 2026-11-02: one model or passes, at each level (REV-20)
 
 The same 20 pull requests, Anthropic direct. Each column gives one value a run. The cost is for the
