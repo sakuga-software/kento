@@ -155,11 +155,14 @@ transaction, under an advisory lock (two instances that start together migrate o
 A migration already applied is skipped, and a redeploy applies nothing twice.
 
 - `/healthz` gives `database.migrations`, the number of applied migrations. It equals the number of
-  `.sql` files in `apps/web/drizzle/` of the deployed commit (22 with REV-59, `0000_init` to
-  `0021_failure_dismissal`).
+  `.sql` files in `apps/web/drizzle/` of the deployed commit (23 with REV-65, `0000_init` to
+  `0022_drop_jobs_runner_id_idx`).
 - A migration runs while the previous container still serves, so each one only adds: a column with
   a default or nullable, a table, an index. A rollback does not undo a migration, and the previous
   release still runs on the newer schema.
+- The one removal allowed is an index that another index covers (REV-65): no query reads an index
+  by its name, so the previous release gets the same rows. `DROP INDEX` waits for each transaction
+  that uses the table, and each query on the table waits behind it: deploy when no long query runs.
 - `startup.migrations_failed` gives the error of the database. The process stops before it listens,
   and the previous container keeps serving.
 - How to write one: [README.md](README.md#migrations).
@@ -178,7 +181,7 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
 
    ```sh
    curl -sS https://review.sakuga.dev/healthz
-   # 200 {"status":"ok","version":"…","commit":…,"database":{"status":"ok","latencyMs":…,"migrations":20}}
+   # 200 {"status":"ok","version":"…","commit":…,"database":{"status":"ok","latencyMs":…,"migrations":23}}
    ```
 
 3. **Webhook**: the App > **Advanced > Recent Deliveries**. The `ping` has the answer 200

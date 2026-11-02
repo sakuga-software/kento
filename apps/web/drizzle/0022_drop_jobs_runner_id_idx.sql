@@ -1,0 +1,1 @@
+DROP INDEX "jobs_runner_id_idx";

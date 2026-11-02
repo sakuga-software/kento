@@ -7,6 +7,26 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-65: One index by runner less on the jobs
+
+Migration `0022_drop_jobs_runner_id_idx`, one `DROP INDEX "jobs_runner_id_idx"`: the index on
+`jobs (runner_id)`. `jobs_runner_finished_idx` of `0020_jobs_runner_finished` (REV-54) starts with
+`runner_id` and serves its reads: the jobs of the last 24 hours on the Runners screen, and the
+`on delete set null` of `jobs.runner_id` when a runner row is deleted. Each write to `jobs` updates
+one index less. `/healthz` gives `"migrations":23`. No new variable, no new permission.
+
+Deploy it after REV-54: the migrations apply in their order, so a database that is still before
+`0020` gets `0020` then `0022` at the same start. `DROP INDEX` takes an ACCESS EXCLUSIVE lock on
+`jobs` in the transaction of the migrations: 3 ms on 200 000 jobs, but it waits for each
+transaction that uses `jobs`, and each query on `jobs` waits behind it. Deploy when no long query
+runs on `jobs` (the hourly purge says `jobs.purged`). A rollback keeps the drop: the previous
+release reads the same rows by `jobs_runner_finished_idx`. To get the index back, by hand:
+`create index concurrently "jobs_runner_id_idx" on jobs (runner_id);`.
+
+Check: `/healthz` gives `"migrations":23`, and
+`select indexname from pg_indexes where tablename = 'jobs' and indexname like 'jobs_runner%'` gives
+`jobs_runner_finished_idx` only.
+
 ## REV-66: Providers et clés refuses a model id of the wrong form
 
 No migration, no new variable, no new permission.
