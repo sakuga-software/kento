@@ -155,8 +155,8 @@ transaction, under an advisory lock (two instances that start together migrate o
 A migration already applied is skipped, and a redeploy applies nothing twice.
 
 - `/healthz` gives `database.migrations`, the number of applied migrations. It equals the number of
-  `.sql` files in `apps/web/drizzle/` of the deployed commit (20 with REV-21, `0000_init` to
-  `0019_assignment_rules`).
+  `.sql` files in `apps/web/drizzle/` of the deployed commit (21 with REV-54, `0000_init` to
+  `0020_jobs_runner_finished`).
 - A migration runs while the previous container still serves, so each one only adds: a column with
   a default or nullable, a table, an index. A rollback does not undo a migration, and the previous
   release still runs on the newer schema.

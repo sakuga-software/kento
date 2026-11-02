@@ -73,10 +73,23 @@ describe('migrations', () => {
     )
   })
 
+  it('indexes the jobs by runner and end, and keeps the index by runner alone (REV-54)', async () => {
+    let rows = await database.sql<{ indexname: string; indexdef: string }[]>`
+      select indexname, indexdef from pg_indexes
+      where schemaname = 'public' and tablename = 'jobs' and indexname like 'jobs_runner%' order by indexname`
+    assert.deepEqual([...rows], [
+      {
+        indexname: 'jobs_runner_finished_idx',
+        indexdef: 'CREATE INDEX jobs_runner_finished_idx ON public.jobs USING btree (runner_id, finished_at)',
+      },
+      { indexname: 'jobs_runner_id_idx', indexdef: 'CREATE INDEX jobs_runner_id_idx ON public.jobs USING btree (runner_id)' },
+    ])
+  })
+
   it('applied a second time, changes nothing and keeps every row', async () => {
     await seed(database)
     let before = await counts(database)
-    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 20 })
+    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 21 })
 
     await runMigrations(test.url)
 
@@ -107,7 +120,7 @@ describe('migrations', () => {
       await runMigrations(test.url, next)
       await runMigrations(test.url, next)
 
-      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 21 })
+      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 22 })
       let [repo] = await database.sql<{ full_name: string; note: string }[]>`select full_name, note from repos`
       assert.deepEqual({ ...repo }, { full_name: 'sakuga-software/sakuga-review', note: 'kept' })
     } finally {
@@ -121,7 +134,7 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 20)
+      assert.equal(row!.applied, 21)
     } finally {
       await a.close()
       await other.drop()
@@ -181,7 +194,7 @@ describe('migrations', () => {
       let check = createDatabase(other.url, { max: 1 })
       try {
         let [row] = await check.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-        assert.equal(row!.applied, 20)
+        assert.equal(row!.applied, 21)
       } finally {
         await check.close()
       }
@@ -222,7 +235,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 20)
+    assert.equal(body.database.migrations, 21)
   })
 
   it('returns 503 when the database was never migrated', async () => {

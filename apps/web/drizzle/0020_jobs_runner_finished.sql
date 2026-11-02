@@ -1,0 +1,1 @@
+CREATE INDEX "jobs_runner_finished_idx" ON "jobs" USING btree ("runner_id","finished_at");

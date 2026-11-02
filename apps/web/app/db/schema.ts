@@ -324,6 +324,8 @@ export const jobs = pgTable(
     index('jobs_state_created_at_idx').on(table.state, table.createdAt),
     index('jobs_repo_pr_idx').on(table.repoId, table.prNumber),
     index('jobs_runner_id_idx').on(table.runnerId),
+    // The Runners screen (REV-54) counts the jobs of each runner finished in the last 24 hours.
+    index('jobs_runner_finished_idx').on(table.runnerId, table.finishedAt),
     // The removal of a provider sets the provider of its jobs to null.
     index('jobs_provider_id_idx').on(table.providerId),
     // The sweep of the expired leases reads the running jobs only.

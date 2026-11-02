@@ -7,6 +7,17 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-54: An index for the Runners screen
+
+Migration `0020_jobs_runner_finished`, additive only: the index `jobs_runner_finished_idx` on
+`jobs (runner_id, finished_at)`. `jobs_runner_id_idx` stays: its removal is for a later migration.
+`/healthz` gives `"migrations":21`. No new variable, no new permission.
+
+The Runners screen counts the jobs of each runner of the last 24 hours by this index, and no longer
+reads every job of the runner. The migration builds the index in its transaction: writes to `jobs`
+wait for it. Check: `explain` of the `jobs24h` subquery of `apps/web/app/runner/admin.ts` shows an
+Index Scan on `jobs_runner_finished_idx`.
+
 ## REV-21: Assignment rules
 
 Migration `0019_assignment_rules`, additive only: the table `assignment_rules`, and two nullable
