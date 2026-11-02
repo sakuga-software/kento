@@ -124,6 +124,12 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
             )
             insert into finding_events (finding_id, type, actor)
             select id, 'stale', ${KENTO_ACTOR} from staled`)
+          // REV-59. The dashboard shows no failure of a job created before the last close. The time is
+          // read now, under the lock of the repository: after the start of every job that the close saw,
+          // and not at the start of this transaction, which may have waited for that lock.
+          await tx.execute(sql`
+            insert into pull_closures (repo_id, pr_number, closed_at) values (${repo.id}, ${command.prNumber}, clock_timestamp())
+            on conflict (repo_id, pr_number) do update set closed_at = excluded.closed_at`)
           return { outcome: 'cancelled', cancelled }
         }
         case 'retarget_pull_request': {
@@ -436,6 +442,11 @@ async function enqueueReview(
   if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
   let [repo] = await upsertRepoRows(tx, org.id, [command.repository])
   if (!repo) throw new Error('upsert of the repository returned no row')
+  // REV-59. A reopen ends the close, even when it queues no job: the failures of the pull request
+  // show again on the dashboard.
+  if (command.action === 'reopened') {
+    await tx.execute(sql`delete from pull_closures where repo_id = ${repo.id} and pr_number = ${command.prNumber}`)
+  }
   if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
 
   let [delivered] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.githubDeliveryId, deliveryId))

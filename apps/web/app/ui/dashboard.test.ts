@@ -134,6 +134,7 @@ function setup(
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let retries: string[] = []
+  let dismissals: string[] = []
   let reads: string[] = []
   let store: DashboardStore = {
     async screen(orgId) {
@@ -147,6 +148,10 @@ function setup(
       retries.push(`${orgId} ${jobId} ${level} ${githubHead}`)
       if (githubHead !== null && githubHead !== HEAD) return { kind: 'stale' }
       return outcome
+    },
+    async dismissFailure(orgId, jobId, login) {
+      dismissals.push(`${orgId} ${jobId} ${login}`)
+      return jobId === JOB_ID
     },
   }
   let asked: string[] = []
@@ -191,7 +196,7 @@ function setup(
     return { cookie, csrf, html }
   }
 
-  return { request, signIn, retries, reads, asked }
+  return { request, signIn, retries, dismissals, reads, asked }
 }
 
 describe('the words of the dashboard', () => {
@@ -358,6 +363,7 @@ describe('the dashboard', () => {
     assert.match(html, /le runner a cessé de répondre pendant le job deux fois/)
     assert.doesNotMatch(html, /\/retry"/)
     assert.doesNotMatch(html, /Relancer en/)
+    assert.doesNotMatch(html, /\/dismiss"/)
   })
 
   it('says that a retry is under way, with no button, until its review is published', async () => {
@@ -426,7 +432,7 @@ describe('the dashboard', () => {
     let { html } = await signIn(ALEX)
     assert.doesNotMatch(html, /<\/span> a échoué/)
     assert.match(html, /Aucune review pour l’instant/)
-    assert.match(html, /Aucun job en échec sur 7 jours/)
+    assert.match(html, /Aucun échec à traiter sur 7 jours/)
     assert.match(html, /Aucun plafond pour l’organisation/)
     assert.match(html, /Aucun runner/)
     assert.doesNotMatch(html, /review.yml/)
@@ -512,6 +518,38 @@ describe('the dashboard', () => {
       .find((l) => l.event === 'dashboard.retry')
     assert.equal(line?.level, 'info')
     assert.equal(line?.reviewLevel, 'heavy')
+  })
+
+  it('gives an admin « Masquer » on the banner and on each failure of the list (REV-59)', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn(ALEX)
+    assert.match(html, new RegExp(`action="/jobs/${JOB_ID}/dismiss"`))
+    assert.match(html, /aria-label="Masquer l’échec de sakuga-software\/orchard#128"/)
+  })
+
+  it('lets an admin hide a failure, with a CSRF token, and says that the week still counts it (REV-59)', async () => {
+    let { signIn, request, dismissals } = setup()
+    let { cookie, csrf } = await signIn(ALEX)
+    let response = await request(`/jobs/${JOB_ID}/dismiss`, { cookie, form: { _csrf: csrf } })
+    assert.equal(response.status, 303)
+    assert.equal(response.headers.get('Location'), '/?notice=dismissed')
+    assert.deepEqual(dismissals, [`${ORG.id} ${JOB_ID} ${ALEX.login}`])
+    let html = await (await request('/?notice=dismissed', { cookie })).text()
+    assert.match(html, /Échec masqué\. Il reste compté dans « Échecs sur 7 jours »/)
+  })
+
+  it('refuses « Masquer » from a member or without a CSRF token, and says when nothing was hidden (REV-59)', async () => {
+    let { signIn, request, dismissals } = setup()
+    let member = await signIn(CAMILLE)
+    assert.equal((await request(`/jobs/${JOB_ID}/dismiss`, { cookie: member.cookie, form: { _csrf: member.csrf } })).status, 403)
+    let admin = await signIn(ALEX)
+    assert.notEqual((await request(`/jobs/${JOB_ID}/dismiss`, { cookie: admin.cookie, form: {} })).status, 303)
+    assert.deepEqual(dismissals, [])
+    let bad = await request('/jobs/not-a-uuid/dismiss', { cookie: admin.cookie, form: { _csrf: admin.csrf } })
+    assert.equal(bad.headers.get('Location'), '/?notice=dismiss_missing')
+    assert.deepEqual(dismissals, [])
+    let other = await request(`/jobs/${'0'.repeat(8)}-0000-4000-8000-${'0'.repeat(12)}/dismiss`, { cookie: admin.cookie, form: { _csrf: admin.csrf } })
+    assert.equal(other.headers.get('Location'), '/?notice=dismiss_missing')
   })
 
   it('maps each outcome of a retry to its notice', async () => {

@@ -190,7 +190,7 @@ export interface RetryTarget {
   headSha: string
 }
 
-/** What the dashboard reads, and its one write: « Relancer ». Every query is for one org. */
+/** What the dashboard reads, and its writes: « Relancer » and « Masquer ». Every query is for one org. */
 export interface DashboardStore {
   screen(orgId: string): Promise<DashboardScreen>
   /** The pull request of a failed review job of the org. Null: no such job. */
@@ -200,6 +200,8 @@ export interface DashboardStore {
    * GitHub App. A head that is not the one of the failed job makes the retry `stale`.
    */
   retry(orgId: string, jobId: string, level: Level, githubHead: string | null): Promise<RetryOutcome>
+  /** REV-59. Hides a failed job of the org on the dashboard. False: no such failed job, or already hidden. */
+  dismissFailure(orgId: string, jobId: string, login: string): Promise<boolean>
 }
 
 function num(value: string | number | null): number | null {
@@ -230,6 +232,13 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       left join runners on runners.id = jobs.runner_id
       where repos.org_id = ${orgId} and jobs.state = 'failed'
         and jobs.finished_at > now() - ${`${FAILURE_SHOWN_DAYS} days`}::interval
+        -- REV-59. Not a failure that an admin hid, nor one of a pull request closed since.
+        and jobs.failure_dismissed_at is null
+        and not exists (
+          select 1 from pull_closures
+          where pull_closures.repo_id = jobs.repo_id and pull_closures.pr_number = jobs.pr_number
+            and pull_closures.closed_at > jobs.created_at
+        )
       order by jobs.finished_at desc
       limit ${FAILURES_LIMIT}`
     return rows.map((row) => ({ ...row, attempts: Number(row.attempts), prNumber: Number(row.prNumber), finishedAt: toDate(row.finishedAt) }))
@@ -579,6 +588,16 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
         workflowRepos: workflow.map((row) => row.fullName),
         setup: setupView,
       }
+    },
+
+    async dismissFailure(orgId, jobId, login) {
+      let rows = await sql`
+        update jobs set failure_dismissed_at = now(), failure_dismissed_by = ${login}
+        from repos
+        where jobs.id = ${jobId} and repos.id = jobs.repo_id and repos.org_id = ${orgId}
+          and jobs.state = 'failed' and jobs.failure_dismissed_at is null
+        returning jobs.id`
+      return rows.length === 1
     },
 
     async retryTarget(orgId, jobId) {

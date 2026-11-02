@@ -151,6 +151,57 @@ describe('the dashboard of an org', () => {
     assert.deepEqual(screen.runners.map((r) => r.name), ['runners-host'])
   })
 
+  it('« Masquer » hides a failure from the banner and the list, and the week still counts it (REV-59)', async () => {
+    let older = await job({ state: 'failed', reason: 'older', pr: 20, createdAgo: '40 minutes', finishedAgo: '30 minutes' })
+    let newer = await job({ state: 'failed', reason: 'newer', pr: 21, createdAgo: '20 minutes', finishedAgo: '10 minutes' })
+    let done = await job({ pr: 22 })
+    let theirs = await job({ repoId: otherRepo, state: 'failed', reason: 'theirs', finishedAgo: '1 minute', createdAgo: '1 minute' })
+    let failedOfWeek = (s: Awaited<ReturnType<DashboardStore['screen']>>) => s.week.reduce((n, day) => n + day.failed, 0)
+    let before = await store.screen(org)
+    assert.equal(before.banner?.id, newer)
+    assert.deepEqual(before.failures.map((f) => f.id), [newer, older])
+
+    assert.equal(await store.dismissFailure(org, newer, 'alex'), true)
+    let after = await store.screen(org)
+    assert.equal(after.banner?.id, older)
+    assert.deepEqual(after.failures.map((f) => f.id), [older])
+    assert.equal(failedOfWeek(after), failedOfWeek(before))
+    let [row] = await database.sql<{ by: string; at: Date | null; finishedAt: Date }[]>`
+      select failure_dismissed_by as by, failure_dismissed_at as at, finished_at as "finishedAt" from jobs where id = ${newer}`
+    assert.equal(row!.by, 'alex')
+    assert.ok(row!.at)
+
+    // Hidden once; a job of another org, or one that did not fail, is not hidden.
+    assert.equal(await store.dismissFailure(org, newer, 'alex'), false)
+    assert.equal(await store.dismissFailure(org, theirs, 'alex'), false)
+    assert.equal(await store.dismissFailure(org, done, 'alex'), false)
+    let [kept] = await database.sql<{ n: number }[]>`select count(*)::int as n from jobs where failure_dismissed_at is not null`
+    assert.equal(kept!.n, 1)
+
+    // A failure that a close already hides can still be hidden: the notice « Échec masqué » is true.
+    await database.sql`insert into pull_closures (repo_id, pr_number) values (${repo}, 20)`
+    assert.equal(await store.dismissFailure(org, older, 'alex'), true)
+    await database.sql`delete from pull_closures`
+  })
+
+  it('shows no failure of a pull request closed since, and shows one again after a reopen (REV-59)', async () => {
+    await database.sql`delete from pull_closures`
+    let failed = await job({ state: 'failed', reason: 'before the merge', pr: 30, createdAgo: '40 minutes', finishedAgo: '30 minutes' })
+    let other = await job({ state: 'failed', reason: 'another pull request', pr: 31, createdAgo: '50 minutes', finishedAgo: '45 minutes' })
+    await database.sql`insert into pull_closures (repo_id, pr_number, closed_at) values (${repo}, 30, now() - interval '5 minutes')`
+    let screen = await store.screen(org)
+    assert.equal(screen.banner?.id, other)
+    assert.deepEqual(screen.failures.map((f) => f.id), [other])
+
+    // A reopen queues a job after the close: its failure shows.
+    let reopened = await job({ state: 'failed', reason: 'after the reopen', pr: 30, createdAgo: '3 minutes', finishedAgo: '1 minute' })
+    screen = await store.screen(org)
+    assert.equal(screen.banner?.id, reopened)
+    assert.deepEqual(screen.failures.map((f) => f.id), [reopened, other])
+    assert.ok(!screen.failures.some((f) => f.id === failed))
+    await database.sql`delete from pull_closures`
+  })
+
   it('« Relancer » queues a review of the same head; the banner says it, then goes when its review is published', async () => {
     let failed = await job({ state: 'failed', reason: 'lease expired 3 times', attempts: 3, finishedAgo: '5 minutes', createdAgo: '30 minutes' })
     let outcome = await store.retry(org, failed, 'balanced', null)

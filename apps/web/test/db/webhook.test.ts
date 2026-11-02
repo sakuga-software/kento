@@ -253,9 +253,14 @@ describe('POST /webhooks/github against Postgres', () => {
     let { body } = await post(pullRequestPayload({ action: 'closed', head: headSha(1) }))
     assert.deepEqual(body, { outcome: 'cancelled', cancelled: 1 })
     assert.deepEqual((await jobRows()).map((row) => row.state), ['cancelled'])
+    // REV-59. The close is kept: the dashboard shows no failure of a job created before it.
+    let closures = await sql<{ prNumber: number }[]>`select pr_number as "prNumber" from pull_closures`
+    assert.deepEqual(closures.map((row) => row.prNumber), [24])
 
     let reopened = await post(pullRequestPayload({ action: 'reopened', head: headSha(1) }))
     assert.equal(reopened.body.outcome, 'queued')
+    // REV-59. The reopen ends the close.
+    assert.equal((await sql`select 1 from pull_closures`).length, 0)
     assert.deepEqual((await jobRows()).map((row) => [row.head_sha, row.state]), [
       [headSha(1), 'cancelled'],
       [headSha(1), 'queued'],
@@ -263,6 +268,20 @@ describe('POST /webhooks/github against Postgres', () => {
     // The queued job blocks a replay of the reopen with a new delivery id.
     let replay = await post(pullRequestPayload({ action: 'reopened', head: headSha(1) }))
     assert.equal(replay.body.outcome, 'duplicate')
+  })
+
+  it('a reopen that queues no job still ends the close of the pull request (REV-59)', async () => {
+    await post(pullRequestPayload({ head: headSha(1) }))
+    await post(pullRequestPayload({ action: 'closed', head: headSha(1) }))
+    assert.equal((await sql`select 1 from pull_closures`).length, 1)
+    await sql`update repos set enabled = false where github_repo_id = 3001`
+    try {
+      let reopened = await post(pullRequestPayload({ action: 'reopened', head: headSha(1) }))
+      assert.deepEqual(reopened.body, { outcome: 'skipped', reason: 'repository is not enabled' })
+      assert.equal((await sql`select 1 from pull_closures`).length, 0)
+    } finally {
+      await sql`update repos set enabled = true where github_repo_id = 3001`
+    }
   })
 
   it('a close waits for an enqueue of the same repository that has not committed yet', async () => {

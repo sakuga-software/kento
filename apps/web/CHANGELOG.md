@@ -7,6 +7,22 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-59: Hide a failure on the dashboard, none for a closed pull request
+
+Migration `0021_failure_dismissal`, additive only: the table `pull_closures` (the last close of each
+pull request) and two nullable columns of `jobs`, `failure_dismissed_at` and `failure_dismissed_by`.
+`/healthz` gives `"migrations":22`. No new variable, no new permission: the close comes in the
+`pull_request` event that the App already receives.
+
+An admin hides a failure with « Masquer », on the banner or in « Échecs récents »: it leaves both for
+every member, and « Échecs sur 7 jours » still counts it. A failure of a pull request closed since,
+merged or not, shows nowhere; a reopen shows it again (a reopen as a draft does not: GitHub's
+event of a draft creates nothing). The closes before
+this release are not known: their failures show until they are older than 7 days, or are hidden.
+
+Check: close a pull request whose last review failed; its banner goes. On another failure, click
+« Masquer »; the notice « Échec masqué » shows and the failure leaves the list.
+
 ## REV-62: A model id of the wrong form already in the database
 
 No migration, no new variable, no new permission.

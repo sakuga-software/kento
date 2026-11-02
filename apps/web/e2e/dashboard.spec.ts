@@ -58,13 +58,13 @@ async function cleanUp() {
   }
 }
 
-/** A push on pull request 42 of the repository, signed as GitHub signs it. */
-async function push(page: Page, head: string) {
+/** A push on pull request 42 of the repository (or another event of a pull request), signed as GitHub signs it. */
+async function push(page: Page, head: string, action = 'synchronize', number = 42) {
   let body = JSON.stringify({
-    action: 'synchronize',
-    number: 42,
+    action,
+    number,
     pull_request: {
-      number: 42,
+      number,
       draft: false,
       user: { login: 'alex', type: 'User' },
       head: { sha: head, ref: 'feature', repo: { id: REPO.id } },
@@ -166,6 +166,42 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
+  test('an admin hides a failure with « Masquer », and the merge of a pull request hides its failure (REV-59)', async ({ page }) => {
+    let errors = watchConsole(page)
+    let { failedJobId } = await seed()
+    await page.goto('/')
+    let failures = page.getByRole('region', { name: 'Échecs récents' })
+    let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
+    await expect(banner).toBeVisible()
+    await expect(failures.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' })).toBeVisible()
+
+    await banner.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' }).click()
+    await expect(page.getByText('Échec masqué. Il reste compté dans « Échecs sur 7 jours ».')).toBeVisible()
+    await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
+    await expect(failures.getByText('Aucun échec à traiter sur 7 jours.')).toBeVisible()
+    await expectNoAxeViolations(page)
+
+    // Another failure, on pull request 43; GitHub then says that the pull request is merged.
+    let sql = database()
+    try {
+      let [hidden] = await sql<{ by: string }[]>`select failure_dismissed_by as by from jobs where id = ${failedJobId}`
+      expect(hidden!.by).toBe('alex')
+      await sql`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, attempts, failure_reason, created_at, finished_at)
+        select repo_id, 'lite', 'failed', 43, ${'e'.repeat(40)}, 'main', 1, 'clone failed', now() - interval '5 minutes', now() - interval '1 minute'
+        from jobs where id = ${failedJobId}`
+    } finally {
+      await sql.end()
+    }
+    await page.goto('/')
+    await expect(page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#43 a échoué/ })).toBeVisible()
+    expect((await push(page, 'e'.repeat(40), 'closed', 43)).outcome).toBe('cancelled')
+    await page.goto('/')
+    await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
+    await expect(failures.getByText('Aucun échec à traiter sur 7 jours.')).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
   test('a push shows in the queue within 15 s, with no reload', async ({ page }) => {
     let errors = watchConsole(page)
     await seed()
@@ -183,7 +219,7 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
-  test('a member reads the dashboard and cannot retry', async ({ page, context }) => {
+  test('a member reads the dashboard and cannot retry or hide a failure', async ({ page, context }) => {
     await seed()
     await context.clearCookies()
     await signIn(page, 'camille')
@@ -191,6 +227,7 @@ test.describe('the dashboard', () => {
     await expect(page.getByText('Lecture seule.')).toBeVisible()
     await expect(page.getByRole('region', { name: /a échoué/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Masquer/ })).toHaveCount(0)
     await expect(page.getByRole('link', { name: /Gérer/ })).toHaveAttribute('href', '/runners')
     await expectNoAxeViolations(page)
   })

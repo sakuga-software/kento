@@ -26,6 +26,8 @@ export const DASHBOARD_NOTICES = {
   closed: 'La PR est fermée sur GitHub, donc rien n’est relancé.',
   capped: 'Le plafond de coût de l’organisation est atteint, donc rien n’est relancé. Un admin le change dans Réglages.',
   github_failed: 'GitHub n’a pas répondu et rien n’est relancé. Réessayez dans un instant.',
+  dismissed: 'Échec masqué. Il reste compté dans « Échecs sur 7 jours ».',
+  dismiss_missing: 'Rien n’est masqué. Cet échec est déjà masqué, ou il a changé depuis votre dernier affichage.',
   missing: 'Rien n’est relancé. Ce job a changé depuis votre dernier affichage, ou son repo n’est plus activé. Relancez-le depuis la liste ci-dessous, ou activez son repo sur l’écran Repos.',
 } as const
 export type DashboardNotice = keyof typeof DASHBOARD_NOTICES
@@ -276,7 +278,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
           </div>
 
           <div class="dash-grid">
-            <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} />
+            <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} admin={admin} csrf={csrf} />
             <DashPrecision precision={precision ?? null} org={frame.viewer?.org.login ?? ''} />
           </div>
 
@@ -455,6 +457,7 @@ function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolea
                   )
                 })
               : null}
+            {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Masquer l’échec de ${banner.repo}#${banner.prNumber}`} /> : null}
           </div>
           {admin && !banner.retry ? (
             <p class="hint">L’estimation est la moyenne des dernières reviews de ce niveau sur ce repo.</p>
@@ -837,16 +840,34 @@ function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; counts: Run
   }
 }
 
-function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; githubUrl: string }>) {
+/**
+ * REV-59. « Masquer »: the failure leaves the banner and the list, for every member. The counts of
+ * the week keep it. A failure of a pull request closed since shows nowhere.
+ */
+function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; small?: boolean }>) {
   return () => {
-    let { failures, now, githubUrl } = handle.props
+    let { id, csrf, label, small } = handle.props
+    return (
+      <form method="post" action={routes.jobDismiss.href({ id })}>
+        <input type="hidden" name="_csrf" value={csrf} />
+        <button class={`button ${small ? 'button-small' : ''}`} type="submit" aria-label={label}>
+          Masquer
+        </button>
+      </form>
+    )
+  }
+}
+
+function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; githubUrl: string; admin: boolean; csrf: string }>) {
+  return () => {
+    let { failures, now, githubUrl, admin, csrf } = handle.props
     return (
       <section class="dash-section card" aria-labelledby="failures-title">
         <h2 id="failures-title" class="section-title">
           Échecs récents
         </h2>
         {failures.length === 0 ? (
-          <p class="hint">Aucun job en échec sur 7 jours.</p>
+          <p class="hint">Aucun échec à traiter sur 7 jours.</p>
         ) : (
           <ul class="dash-jobs">
             {failures.map((job) => {
@@ -868,6 +889,7 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
                   {job.attempts} {plural(job.attempts, 'tentative')} · {reasonSentence(reason)}
                 </p>
                 <TechDetails raw={reason.raw} />
+                {admin ? <DismissForm id={job.id} csrf={csrf} label={`Masquer l’échec de ${job.repo}#${job.prNumber}`} small /> : null}
               </li>
               )
             })}

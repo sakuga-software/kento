@@ -1,4 +1,4 @@
-// REV-14. The dashboard: a member reads it; an admin can also retry the last failure.
+// REV-14. The dashboard: a member reads it; an admin can also retry the last failure, or hide a failure (REV-59).
 import { createAction } from 'remix/router'
 
 import { UUID } from '@sakuga-review/protocol'
@@ -75,6 +75,21 @@ export function dashboardActions(kit: UiKit) {
         ...('jobId' in outcome ? { jobId: outcome.jobId } : {}),
       })
       let notice: DashboardNotice = outcome.kind === 'queued' ? 'retried' : outcome.kind === 'not_found' ? 'missing' : outcome.kind
+      return redirect(`${pageRoutes.home.href()}?notice=${notice}`)
+    }),
+
+    // cop() and csrf() of the session layer ran before.
+    jobDismiss: createAction(pageRoutes.jobDismiss, async (context) => {
+      let signed = signedOf(context)
+      let dashboard = deps.dashboard
+      if (!dashboard || signed.membership.role !== 'admin') {
+        log('warn', 'dashboard.dismiss_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+        return forbidden()
+      }
+      let id = context.params.id
+      let dismissed = UUID.test(id) ? await dashboard.store.dismissFailure(signed.membership.org.id, id, signed.user.login) : false
+      log('info', 'dashboard.dismiss', { login: signed.user.login, org: signed.membership.org.login, failedJobId: id, dismissed })
+      let notice: DashboardNotice = dismissed ? 'dismissed' : 'dismiss_missing'
       return redirect(`${pageRoutes.home.href()}?notice=${notice}`)
     }),
   }

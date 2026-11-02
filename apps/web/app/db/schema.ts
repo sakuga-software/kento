@@ -314,6 +314,13 @@ export const jobs = pgTable(
     levelSource: text('level_source'),
     /** REV-21. The assignment rule that chose the level, with `level_source` `rule`; null once it is removed. */
     assignmentRuleId: uuid('assignment_rule_id').references((): AnyPgColumn => assignmentRules.id, { onDelete: 'set null' }),
+    /**
+     * REV-59. An admin hid this failure on the dashboard: it leaves the banner and the list « Échecs
+     * récents ». The counts of the week keep it. Null: shown.
+     */
+    failureDismissedAt: timestamp('failure_dismissed_at', { withTimezone: true }),
+    /** REV-59. The login of the admin who hid the failure. */
+    failureDismissedBy: text('failure_dismissed_by'),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -764,4 +771,21 @@ export const assignmentRules = pgTable(
     // 1 to 20, the places of the screen. 0: the place of a rule that moves, inside one transaction only.
     check('assignment_rules_position', sql`${table.position} between 0 and 20`),
   ],
+)
+
+/**
+ * REV-59. The last close of each pull request that Kentō saw, merged or not. The dashboard shows no
+ * failure of a job created before it: the pull request is done. A reopen queues a new job, created
+ * after the close, and its failure shows again.
+ */
+export const pullClosures = pgTable(
+  'pull_closures',
+  {
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],
 )
