@@ -8,6 +8,7 @@ import {
   UUID,
   type ApiError,
   type Checked,
+  type ClaimRequest,
   type HeartbeatResponse,
   type Job,
   type JobProvider,
@@ -17,14 +18,14 @@ import {
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
 
-import { GITHUB_API_URL, type MintInstallationToken } from '../github/installation-token.ts'
+import { GITHUB_API_URL, type InstallationToken, type MintInstallationToken, type TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { jobModels } from '../repo-config/model.ts'
 import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
-import type { RunnerRow, RunnerStore } from './store.ts'
+import type { ClaimedJob, RunnerRow, RunnerStore } from './store.ts'
 import { bearerToken, hashToken, newRunnerToken, REGISTRATION_TOKEN_PREFIX, sameSecret } from './tokens.ts'
 
 export interface RunnerApiDependencies {
@@ -55,6 +56,36 @@ export interface RunnerApiDependencies {
   claimPollMs?: number
 }
 
+/** A token for the one repository of a job. */
+function mintFor(job: ClaimedJob, mint: MintInstallationToken, permissions?: TokenPermissions): Promise<InstallationToken> {
+  return mint({ installationId: job.githubInstallationId, githubRepoId: job.githubRepoId, ...(permissions ? { permissions } : {}) })
+}
+
+/** What a claim knows of its runner, for each job that it looks at. */
+interface Claim {
+  runner: RunnerRow
+  body: ClaimRequest
+  mint: MintInstallationToken
+  ownProvider: ClaimRequest['ownProvider']
+  ownKey: boolean
+  readsProviders: boolean
+  secrets: SecretBox | null
+}
+
+/** What a job carries besides its key: its rules, the installation token, and for a resolve job its threads. */
+interface Prepared {
+  rules: JobRule[] | null
+  installationToken: InstallationToken
+  resolve: ResolveInput | null
+  wantsRules: boolean
+}
+
+/** The provider of a job and its key, in the shape of the release of the runner. */
+interface Keys {
+  provider: Job['provider']
+  providers: JobProvider[] | undefined
+  keyFromService: boolean
+}
 
 export function createRunnerController(deps: RunnerApiDependencies) {
   let claimWaitMs = deps.claimWaitMs ?? CLAIM_WAIT_SECONDS * 1000
@@ -70,6 +101,150 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       return error(401, 'unauthorized', { 'WWW-Authenticate': 'Bearer' })
     }
     return runner
+  }
+
+  /**
+   * What a job needs before it goes to the runner: its rules, the installation token, and for a
+   * resolve job its threads. Null when one of them fails: the job is released and counts as an
+   * attempt, queued again after the backoff or failed after the last attempt.
+   */
+  async function prepareJob(job: ClaimedJob, claim: Claim): Promise<Prepared | null> {
+    let { runner, body, mint } = claim
+    let wantsRules = body.features?.includes('rules') ?? false
+    let rules: JobRule[] | null = null
+    let stage = 'rules'
+    let installationToken
+    let resolve: ResolveInput | null = null
+    try {
+      // REV-19. The rules of a review job, read at once after the claim (see jobRules), and
+      // kept on the job when they go to the runner: the result can cite only these.
+      rules = job.kind === 'review' ? await deps.store.jobRules(job.id) : []
+      if (wantsRules && job.kind === 'review') await deps.store.recordSentRules(job.id, runner.id, job.attempt, rules)
+      stage = 'installation token'
+      installationToken = await mintFor(job, mint)
+      if (job.kind === 'resolve') {
+        // The service reads the threads with its own token; the runner gets them, not the token.
+        let threadsToken = await mintFor(job, mint, THREADS_PERMISSIONS)
+        let github = createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: threadsToken.token, fetch: deps.fetch })
+        resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
+      }
+    } catch (cause) {
+      if (installationToken) stage = 'review threads'
+      let reason = `${stage}: ${errorMessage(cause)}`.slice(0, 1000)
+      let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
+      // The event names the step that failed; `job.installation_token_failed` keeps its name
+      // for the token and the threads, as the dashboards of Grafana read it.
+      log('error', stage === 'rules' ? 'job.rules_failed' : 'job.installation_token_failed', {
+        jobId: job.id,
+        runnerId: runner.id,
+        attempt: job.attempt,
+        stage,
+        state: released,
+        error: reason,
+      })
+      return null
+    }
+    return { rules, installationToken, resolve, wantsRules }
+  }
+
+  /**
+   * The provider of a job and its key. Null when the key cannot go to this runner: the job is
+   * released.
+   */
+  async function prepareJobKey(job: ClaimedJob, claim: Claim): Promise<Keys | null> {
+    let { runner, ownProvider, ownKey, readsProviders, secrets } = claim
+    if (!job.provider) {
+      // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
+      // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
+      let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
+      return {
+        provider: !readsProviders && serviceKey ? { kind: 'openrouter', apiKey: serviceKey } : null,
+        providers: readsProviders ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }] : undefined,
+        keyFromService: serviceKey !== null,
+      }
+    }
+    // The provider of the org. Its key goes only to a trusted runner that does not hold this
+    // kind itself; the claim already chose such a runner, and this checks it again.
+    let p = job.provider
+    let needsKey = p.kind !== ownProvider && !p.runnerHeld
+    let apiKey: string | null = null
+    if (needsKey) {
+      let reason: string | null = null
+      if (job.runnerOrgId !== null && job.runnerOrgId !== p.orgId) reason = `the provider « ${p.label} » is not of the org of the runner`
+      else if (!job.runnerTrusted || !secrets || !p.keyCiphertext) reason = `the provider « ${p.label} » needs a trusted runner`
+      else {
+        try {
+          apiKey = secrets.decrypt(p.keyCiphertext, providerAad(p))
+        } catch (cause) {
+          reason = `the key of the provider « ${p.label} » cannot be decrypted: ${errorMessage(cause)}`
+        }
+      }
+      if (reason) {
+        let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
+        log('error', 'job.provider_key_unavailable', { jobId: job.id, runnerId: runner.id, providerId: p.id, state: released, error: reason })
+        return null
+      }
+    }
+    return {
+      provider: null,
+      providers: [{ id: p.id, kind: p.kind, apiKey, baseUrl: p.baseUrl, models: p.models[job.level] ?? [] }],
+      keyFromService: apiKey !== null,
+    }
+  }
+
+  /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
+  function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
+    let { runner, body } = claim
+    let { rules, installationToken, resolve, wantsRules } = prepared
+    let { provider, providers, keyFromService } = keys
+    log('info', 'job.claimed', {
+      jobId: job.id,
+      attempt: job.attempt,
+      runnerId: runner.id,
+      repo: job.fullName,
+      pr: job.prNumber,
+      head: job.headSha,
+      keyFromService,
+      provider: job.provider ? { id: job.provider.id, kind: job.provider.kind } : 'service',
+      kind: job.kind,
+      ...(resolve ? { threads: resolve.threads.length } : {}),
+    })
+    // REV-12. The models of the config, to a runner that reads them, and only when the job
+    // also carries their provider: `service`, or an entry of `providers`. Else the runner
+    // would fail the job; it runs the models of the engine instead, and the log says why.
+    let models = jobModels(job.config)
+    let wantsModels = body.features?.includes('models') ?? false
+    let reachable = models !== null && (providers ? providers.some((p) => p.id === models.provider) : models.provider === 'service')
+    if (models && (!wantsModels || !reachable)) {
+      log('warn', 'job.models_not_sent', {
+        jobId: job.id,
+        runnerId: runner.id,
+        provider: models.provider,
+        reason: wantsModels ? 'the job does not carry the provider of the config' : 'runner does not read the models of the config',
+      })
+    }
+    // A runner of an earlier release refuses a job with a key that it does not know: it gets
+    // no rules, and the log says so.
+    let jobRules = rules ?? []
+    if (jobRules.length && !wantsRules) {
+      log('warn', 'job.rules_not_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.length, reason: 'runner does not read the rules' })
+    } else if (jobRules.length) {
+      log('info', 'job.rules_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.map((r) => r.id) })
+    }
+    let message = {
+      id: job.id,
+      attempt: job.attempt,
+      level: job.level,
+      repo: { fullName: job.fullName, cloneUrl: `${githubUrl}/${job.fullName}.git` },
+      pullRequest: { number: job.prNumber, headSha: job.headSha, baseRef: job.baseRef },
+      installationToken,
+      leaseExpiresAt: job.leaseExpiresAt.toISOString(),
+      provider,
+      ...(providers ? { providers } : {}),
+      ...(models && wantsModels && reachable ? { models } : {}),
+      ...(wantsRules && job.kind === 'review' ? { rules: jobRules } : {}),
+    }
+    return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
   }
 
   return createController(runnerRoutes, {
@@ -141,7 +316,8 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         }
 
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
-        // stops the loop.
+        // stops the loop. A job that cannot go to this runner is released, and the loop looks again.
+        let claim: Claim = { runner, body, mint, ownProvider, ownKey, readsProviders, secrets }
         let deadline = Date.now() + claimWaitMs
         while (!request.signal.aborted) {
           let job = await deps.store.claimJob(runner.id, {
@@ -151,139 +327,17 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             serviceKey: deps.providerApiKey !== null,
             secrets: secrets !== null,
           })
-          if (job) {
-            let wantsRules = body.features?.includes('rules') ?? false
-            let rules: JobRule[] | null = null
-            let stage = 'rules'
-            let installationToken
-            let resolve: ResolveInput | null = null
-            try {
-              // REV-19. The rules of a review job, read at once after the claim (see jobRules), and
-              // kept on the job when they go to the runner: the result can cite only these.
-              rules = job.kind === 'review' ? await deps.store.jobRules(job.id) : []
-              if (wantsRules && job.kind === 'review') await deps.store.recordSentRules(job.id, runner.id, job.attempt, rules)
-              stage = 'installation token'
-              installationToken = await mint({
-                installationId: job.githubInstallationId,
-                githubRepoId: job.githubRepoId,
-              })
-              if (job.kind === 'resolve') {
-                // The service reads the threads with its own token; the runner gets them, not the token.
-                let threadsToken = await mint({
-                  installationId: job.githubInstallationId,
-                  githubRepoId: job.githubRepoId,
-                  permissions: THREADS_PERMISSIONS,
-                })
-                let github = createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: threadsToken.token, fetch: deps.fetch })
-                resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
-              }
-            } catch (cause) {
-              // The job cannot run without its rules, a token or its threads. It counts as an attempt:
-              // queued again after the backoff, or failed after the last attempt.
-              if (installationToken) stage = 'review threads'
-              let reason = `${stage}: ${errorMessage(cause)}`.slice(0, 1000)
-              let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
-              // The event names the step that failed; `job.installation_token_failed` keeps its name
-              // for the token and the threads, as the dashboards of Grafana read it.
-              log('error', stage === 'rules' ? 'job.rules_failed' : 'job.installation_token_failed', {
-                jobId: job.id,
-                runnerId: runner.id,
-                attempt: job.attempt,
-                stage,
-                state: released,
-                error: reason,
-              })
-              continue
-            }
-            let provider: Job['provider'] = null
-            let providers: JobProvider[] | undefined
-            let keyFromService: boolean
-            if (job.provider) {
-              // The provider of the org. Its key goes only to a trusted runner that does not hold this
-              // kind itself; the claim already chose such a runner, and this checks it again.
-              let p = job.provider
-              let needsKey = p.kind !== ownProvider && !p.runnerHeld
-              let apiKey: string | null = null
-              if (needsKey) {
-                let reason: string | null = null
-                // The claim already chose such a runner; this checks it again before the key is decrypted.
-                if (job.runnerOrgId !== null && job.runnerOrgId !== p.orgId) reason = `the provider « ${p.label} » is not of the org of the runner`
-                else if (!job.runnerTrusted || !secrets || !p.keyCiphertext) reason = `the provider « ${p.label} » needs a trusted runner`
-                else {
-                  try {
-                    apiKey = secrets.decrypt(p.keyCiphertext, providerAad(p))
-                  } catch (cause) {
-                    reason = `the key of the provider « ${p.label} » cannot be decrypted: ${errorMessage(cause)}`
-                  }
-                }
-                if (reason) {
-                  let released = await deps.store.releaseJob(job.id, runner.id, job.attempt, reason)
-                  log('error', 'job.provider_key_unavailable', { jobId: job.id, runnerId: runner.id, providerId: p.id, state: released, error: reason })
-                  continue
-                }
-              }
-              providers = [{ id: p.id, kind: p.kind, apiKey, baseUrl: p.baseUrl, models: p.models[job.level] ?? [] }]
-              keyFromService = apiKey !== null
-            } else {
-              // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
-              // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
-              let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
-              provider = !readsProviders && serviceKey ? { kind: 'openrouter', apiKey: serviceKey } : null
-              providers = readsProviders ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }] : undefined
-              keyFromService = serviceKey !== null
-            }
-            log('info', 'job.claimed', {
-              jobId: job.id,
-              attempt: job.attempt,
-              runnerId: runner.id,
-              repo: job.fullName,
-              pr: job.prNumber,
-              head: job.headSha,
-              keyFromService,
-              provider: job.provider ? { id: job.provider.id, kind: job.provider.kind } : 'service',
-              kind: job.kind,
-              ...(resolve ? { threads: resolve.threads.length } : {}),
-            })
-            // REV-12. The models of the config, to a runner that reads them, and only when the job
-            // also carries their provider: `service`, or an entry of `providers`. Else the runner
-            // would fail the job; it runs the models of the engine instead, and the log says why.
-            let models = jobModels(job.config)
-            let wantsModels = body.features?.includes('models') ?? false
-            let reachable = models !== null && (providers ? providers.some((p) => p.id === models.provider) : models.provider === 'service')
-            if (models && (!wantsModels || !reachable)) {
-              log('warn', 'job.models_not_sent', {
-                jobId: job.id,
-                runnerId: runner.id,
-                provider: models.provider,
-                reason: wantsModels ? 'the job does not carry the provider of the config' : 'runner does not read the models of the config',
-              })
-            }
-            // A runner of an earlier release refuses a job with a key that it does not know: it gets
-            // no rules, and the log says so.
-            let jobRules = rules ?? []
-            if (jobRules.length && !wantsRules) {
-              log('warn', 'job.rules_not_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.length, reason: 'runner does not read the rules' })
-            } else if (jobRules.length) {
-              log('info', 'job.rules_sent', { jobId: job.id, runnerId: runner.id, rules: jobRules.map((r) => r.id) })
-            }
-            let message = {
-              id: job.id,
-              attempt: job.attempt,
-              level: job.level,
-              repo: { fullName: job.fullName, cloneUrl: `${githubUrl}/${job.fullName}.git` },
-              pullRequest: { number: job.prNumber, headSha: job.headSha, baseRef: job.baseRef },
-              installationToken,
-              leaseExpiresAt: job.leaseExpiresAt.toISOString(),
-              provider,
-              ...(providers ? { providers } : {}),
-              ...(models && wantsModels && reachable ? { models } : {}),
-              ...(wantsRules && job.kind === 'review' ? { rules: jobRules } : {}),
-            }
-            return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
+          if (!job) {
+            let left = deadline - Date.now()
+            if (left <= 0) break
+            await sleep(Math.min(claimPollMs, left), request.signal)
+            continue
           }
-          let left = deadline - Date.now()
-          if (left <= 0) break
-          await sleep(Math.min(claimPollMs, left), request.signal)
+          let prepared = await prepareJob(job, claim)
+          if (!prepared) continue
+          let keys = await prepareJobKey(job, claim)
+          if (!keys) continue
+          return jobResponse(job, claim, prepared, keys)
         }
         return new Response(null, { status: 204 })
       },
