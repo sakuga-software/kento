@@ -72,14 +72,42 @@ export function mergeBase(repoDir: string, base: string, head: string): string {
  */
 export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResult> {
   const config = input.config ?? levelConfig(input.level);
+  const prepared = prepareReview(input, config);
+  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref)));
+  return finishReview(input, prepared, answer, usage);
+}
+
+/** What a review reads before its model call: the merge base, the pack and the changed lines. */
+export type PreparedReview = {
+  base: string;
+  pack: string;
+  skipped: string[];
+  rules: PackedRule[];
+  lines: ChangedLines;
+};
+
+export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
   const base = mergeBase(input.repoDir, input.base, input.head);
   const { pack, skipped, rules } = buildPack(input.repoDir, base, input.head, config.context, input.rules);
-  const lines = changedLines(input.repoDir, base, input.head);
-  const { answer, usage } = await askModel(input, config, pack, answerSchema(rules.map((r) => r.ref)));
+  return { base, pack, skipped, rules, lines: changedLines(input.repoDir, base, input.head) };
+}
+
+/** The review from the answer of the model: the rules, the anchors, the fingerprints, the score and the verdict. */
+export function finishReview<F extends Finding>(
+  input: ReviewInput,
+  prepared: PreparedReview,
+  answer: Answer & { findings: F[] },
+  usage: Usage,
+): ReviewResult & { findings: (ReviewedFinding & F)[] } {
+  const { base, pack, skipped, rules, lines } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
-  answer.findings = answer.findings.map((f) => applyRule(f, rules));
+  // The fields that a caller added (the pass of a finding, REV-20) stay.
+  answer.findings = answer.findings.map((f) => {
+    const { rule_id: _cited, ...rest } = f;
+    return { ...rest, ...applyRule(f, rules) } as F;
+  });
   const fileAt = headFiles(input.repoDir, input.head, input.log ?? ((message) => process.stderr.write(`${message}\n`)));
   const findings = answer.findings.map((f) => ({
     ...f,
@@ -87,7 +115,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
     blocking: isBlocking(f, lines),
     suggestion_range: anchor(f, lines) === f.line ? suggestionRange(f, lines) : null,
     fingerprint: fingerprint(f, fileAt(f.path)),
-  }));
+  })) as (ReviewedFinding & F)[];
   return {
     level: input.level,
     base,

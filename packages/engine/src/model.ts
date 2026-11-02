@@ -28,15 +28,20 @@ export type Reply = { answer: Answer; usage: Usage };
 
 const stderr = (message: string) => process.stderr.write(`${message}\n`);
 
-/** The answer of the first model of the level that gives one. `promptFile` is a file of `prompts/`. */
+/**
+ * The answer of the first model of the level that gives one. `promptFile` is a file of `prompts/`;
+ * `promptAddition`, when given, goes at the end of it (the focus of a pass, REV-20).
+ */
 export async function askJson<T>(
   client: ModelClient,
   config: LevelConfig,
   promptFile: string,
   message: string,
   schema: Schema,
+  promptAddition?: string,
 ): Promise<{ answer: T; usage: Usage }> {
-  const prompt = readFileSync(join(PROMPTS, promptFile), 'utf8');
+  const file = readFileSync(join(PROMPTS, promptFile), 'utf8');
+  const prompt = promptAddition ? `${file.trimEnd()}\n\n${promptAddition}\n` : file;
   const kind = client.kind ?? 'openrouter';
   const baseUrl = client.baseUrl ?? defaultBaseUrl(kind);
   if (!baseUrl) throw new ProviderError(`the provider ${kind} needs a base URL`);
@@ -67,9 +72,12 @@ export async function askJson<T>(
   throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
 }
 
-/** The review call. `schema`: the answer schema, `ANSWER_SCHEMA` or the one with the rules of the pack. */
-export async function askModel(client: ModelClient, config: LevelConfig, pack: string, schema: object = ANSWER_SCHEMA): Promise<Reply> {
-  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema });
+/**
+ * The review call. `schema`: the answer schema, `ANSWER_SCHEMA` or the one with the rules of the pack.
+ * `focus`: the angle of a pass (REV-20), added to the prompt; none for a review in one pass.
+ */
+export async function askModel(client: ModelClient, config: LevelConfig, pack: string, schema: object = ANSWER_SCHEMA, focus?: string): Promise<Reply> {
+  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema }, focus);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;
 }

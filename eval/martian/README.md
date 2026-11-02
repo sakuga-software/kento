@@ -38,6 +38,27 @@ does not answer for a pair, the summary line counts it in `judge errors`: run th
 bench is the key of CI: a run that uses the daily limit stops the reviews of the whole organization
 until the limit resets (00:00 UTC). Count the cost before you start.
 
+## A level, and a review in passes (REV-20)
+
+`--level` runs another level than `lite` (`balanced`, `heavy`), with its models and its context.
+`--passes` reviews in passes: each model of `--models` runs the three passes of base (security, data
+and migrations, contracts and logic) at the `lite` level, on the same pack and at once; then the
+model of the level reads each finding with its code and keeps or drops it. The check reads no
+`REVIEW_*` variable but `REVIEW_TIMEOUT_MS`, so that it stays the same from one run to the next
+([`packages/engine/src/passes.ts`](../../packages/engine/src/passes.ts), prompt
+[`verify.md`](../../packages/engine/prompts/verify.md)). The file of a run names its level and
+`passes`, and the summary line counts the findings that the check dropped and the passes that failed.
+
+```bash
+# balanced as today, then balanced in passes: Haiku 5.5 for the passes, Sonnet 5.5 for the check
+OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.json --repos ../repos \
+  --out ../results --label m5 --level balanced --models anthropic/claude-sonnet-5.5
+OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.json --repos ../repos \
+  --out ../results --label m5 --level balanced --passes --models anthropic/claude-haiku-5.5
+```
+
+Not measured yet: the results of these two runs go here, with F1 and the cost of a review.
+
 ## Results, 2026-10-08: Claude Haiku 5.5 for `lite`
 
 The same 20 pull requests, with the review of v5 (the definitions in the pack). Each column gives

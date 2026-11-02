@@ -5,11 +5,14 @@
  *
  *     OPENROUTER_API_KEY=... node eval/martian/run.ts --subset subset.json --repos <dir> --out <dir> \
  *       --label run1 --models z-ai/glm-5.3,xiaomi/mimo-v2.6-pro
+ *
+ * `--level` gives the level (lite by default). `--passes` reviews in passes (REV-20): each model of
+ * `--models` runs the passes, and the model of the level checks their findings.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { levelConfig, reviewPullRequest } from '../../packages/engine/src/index.ts';
+import { isLevel, levelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
 
 const JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
 const REVIEWS_AT_ONCE = 6;
@@ -45,7 +48,18 @@ type Pr = {
   head: string;
   golden: Golden[];
 };
-type Review = { findings: string[]; cost: number; seconds: number; model?: string; error?: string };
+type Review = {
+  findings: string[];
+  cost: number;
+  seconds: number;
+  model?: string;
+  error?: string;
+  /** REV-20, in passes: the findings of each pass, the passes that failed, and the findings that the check dropped. */
+  passes?: { id: string; findings: number; error?: string }[];
+  dropped?: string[];
+  verification?: string;
+};
+type Mode = { level: Level; passes: boolean };
 
 async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -61,25 +75,37 @@ async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R
   return out;
 }
 
-async function review(pr: Pr, model: string, repoDir: string): Promise<Review> {
+async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promise<Review> {
   const start = Date.now();
   // The failed attempts of the engine: a fallback to the next model shows here.
   const failures: string[] = [];
+  const timeout = process.env.REVIEW_TIMEOUT_MS ?? '480000';
+  // The candidate that the judge reads: what a reader of the review reads.
+  const candidate = (f: { path: string; line: number; title: string; scenario: string; fix: string }) => `${f.path}:${f.line} — ${f.title}. ${f.scenario} Fix: ${f.fix}`;
+  const input = { repoDir, base: pr.base, head: pr.head, level: mode.level, apiKey: process.env.OPENROUTER_API_KEY, log: (message: string) => failures.push(message) };
   try {
-    // A lite review, with the variables REVIEW_* of the environment, as the Action reads them.
-    const config = levelConfig('lite', { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: process.env.REVIEW_TIMEOUT_MS ?? '480000' });
-    const out = await reviewPullRequest({
-      repoDir,
-      base: pr.base,
-      head: pr.head,
-      level: 'lite',
-      config,
-      apiKey: process.env.OPENROUTER_API_KEY,
-      log: (message) => failures.push(message),
-    });
-    // The candidate that the judge reads: what a reader of the review reads.
-    const findings = out.findings.map((f) => `${f.path}:${f.line} — ${f.title}. ${f.scenario} Fix: ${f.fix}`);
-    return { findings, cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: failures[0] };
+    if (mode.passes) {
+      // REV-20. The passes at the lite level with the model under test, the check with the model of the level.
+      // The check reads no REVIEW_* but the time limit: REVIEW_MODELS names the model under test, and
+      // the check must stay the same from one run to the next, as the judge does.
+      const passConfig = levelConfig('lite', { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: timeout });
+      const verifyConfig = levelConfig(mode.level, { REVIEW_TIMEOUT_MS: timeout });
+      const out = await reviewInPasses(input, { passConfig, verifyConfig });
+      return {
+        findings: out.findings.map(candidate),
+        cost: out.usage.cost ?? 0,
+        seconds: Math.round((Date.now() - start) / 1000),
+        model: out.passes.find((p) => p.model)?.model ?? undefined,
+        error: failures[0],
+        passes: out.passes.map(({ id, findings, error }) => ({ id, findings, ...(error ? { error } : {}) })),
+        dropped: out.dropped.map((f) => `${candidate(f)} [${f.pass}: ${f.reason}]`),
+        verification: out.verification,
+      };
+    }
+    // A review in one pass, with the variables REVIEW_* of the environment, as the Action reads them.
+    const config = levelConfig(mode.level, { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: timeout });
+    const out = await reviewPullRequest({ ...input, config });
+    return { findings: out.findings.map(candidate), cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: failures[0] };
   } catch (error) {
     const message = [...failures, String(error)].join('\n').slice(-600);
     return { findings: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: message };
@@ -151,18 +177,30 @@ function median(values: number[]): number {
 
 async function main() {
   const { values } = parseArgs({
-    options: { subset: { type: 'string' }, repos: { type: 'string' }, out: { type: 'string' }, label: { type: 'string' }, models: { type: 'string' } },
+    options: {
+      subset: { type: 'string' },
+      repos: { type: 'string' },
+      out: { type: 'string' },
+      label: { type: 'string' },
+      models: { type: 'string' },
+      level: { type: 'string', default: 'lite' },
+      passes: { type: 'boolean', default: false },
+    },
   });
+  if (!isLevel(values.level)) throw new Error(`--level must be lite, balanced or heavy, not "${values.level}"`);
+  const mode: Mode = { level: values.level, passes: values.passes === true };
   const prs: Pr[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
   const out = values.out!;
   mkdirSync(out, { recursive: true });
   const dirs = prs.map((pr) => pr.repo_dir ?? join(values.repos!, `${pr.owner}__${pr.name}`));
   for (const model of values.models!.split(',')) {
-    const file = join(out, `${values.label}-${model.replace('/', '_')}.json`);
+    // The level and the passes are in the name of the file of a run that is not lite in one pass.
+    const tag = mode.level === 'lite' && !mode.passes ? '' : `-${mode.level}${mode.passes ? '-passes' : ''}`;
+    const file = join(out, `${values.label}${tag}-${model.replace('/', '_')}.json`);
     if (existsSync(file)) continue;
     judgeCost = 0;
     judgeErrors = 0;
-    const reviews = await pool(prs, REVIEWS_AT_ONCE, (pr) => review(pr, model, dirs[prs.indexOf(pr)]));
+    const reviews = await pool(prs, REVIEWS_AT_ONCE, (pr) => review(pr, model, dirs[prs.indexOf(pr)], mode));
     const scores = await pool(prs, 4, (pr) => score(pr, reviews[prs.indexOf(pr)].findings));
     const rows = prs.map((pr, i) => ({ url: pr.url, source: pr.source, ...reviews[i], ...scores[i] }));
     const all = metrics(rows);
@@ -171,6 +209,8 @@ async function main() {
     const result = {
       model,
       label: values.label,
+      level: mode.level,
+      passes: mode.passes,
       ...all,
       failures: rows.filter((row) => row.error && !row.findings.length).length,
       fallbacks: rows.filter((row) => row.model && !row.model.startsWith(model)).length,
@@ -178,6 +218,9 @@ async function main() {
       review_cost: rows.reduce((total, row) => total + row.cost, 0),
       judge_cost: judgeCost,
       median_seconds: median(rows.map((row) => row.seconds)),
+      // REV-20, in passes: the findings that the check dropped, and the passes that failed.
+      dropped: rows.reduce((total, row) => total + (row.dropped?.length ?? 0), 0),
+      failed_passes: rows.reduce((total, row) => total + (row.passes?.filter((p) => p.error).length ?? 0), 0),
       martian,
       internal,
       rows,
@@ -185,9 +228,10 @@ async function main() {
     writeFileSync(file, JSON.stringify(result, null, 2));
     const percent = (value: number) => `${(value * 100).toFixed(0)} %`;
     console.log(
-      `${model}: F1 martian ${martian.f1.toFixed(2)} · recall ${percent(all.recall)} · precision ${percent(all.precision)} · ` +
+      `${model}${tag}: F1 martian ${martian.f1.toFixed(2)} · recall ${percent(all.recall)} · precision ${percent(all.precision)} · ` +
         `${all.findings} findings · ${result.failures} failures · ${judgeErrors} judge errors · review $${result.review_cost.toFixed(3)} · ` +
-        `judge $${judgeCost.toFixed(3)} · median ${result.median_seconds}s · martian ${martian.found}/${martian.golden} · internal ${internal.found}/${internal.golden}`,
+        `judge $${judgeCost.toFixed(3)} · median ${result.median_seconds}s · martian ${martian.found}/${martian.golden} · internal ${internal.found}/${internal.golden}` +
+        (mode.passes ? ` · ${result.dropped} dropped by the check · ${result.failed_passes} failed passes` : ''),
     );
   }
 }
