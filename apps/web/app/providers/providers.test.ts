@@ -109,6 +109,26 @@ describe('the form « Ajouter un provider »', () => {
     assert.ok(readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: 'has a space inside' })).errors.apiKey)
   })
 
+  it('refuses a model id of the wrong form for the kind, with what the kind expects (REV-66)', () => {
+    let wrong = readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: KEY, models_heavy: 'claude-opus-5-5, anthropic/claude-opus-5.5' }))
+    assert.equal(wrong.input, null)
+    assert.equal(
+      wrong.errors.models,
+      'heavy : « anthropic/claude-opus-5.5 ». Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+    )
+    let openrouter = readProviderForm(form({ kind: 'openrouter', label: 'O', apiKey: KEY, models_lite: 'claude-haiku-5-5' }))
+    assert.match(openrouter.errors.models!, /^lite : « claude-haiku-5-5 »\. OpenRouter attend le fournisseur devant le modèle/)
+
+    let right = readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: KEY, models_heavy: 'claude-opus-5-5' }))
+    assert.deepEqual(right.errors, {})
+    assert.deepEqual(right.input?.models, { heavy: ['claude-opus-5-5'] })
+    // The kinds whose ids have no fixed form take both.
+    let compatible = readProviderForm(
+      form({ kind: 'openai_compatible', label: 'vLLM', baseUrl: 'https://llm.example.com/v1', apiKey: KEY, models_lite: 'meta-llama/Llama-4', models_balanced: 'qwen3', models_heavy: 'q' }),
+    )
+    assert.deepEqual(compatible.errors, {})
+  })
+
   it('never sends the key back in the values of the form', () => {
     let read = readProviderForm(form({ kind: 'anthropic', label: '', apiKey: KEY }))
     assert.ok(!JSON.stringify(read.values).includes(KEY))

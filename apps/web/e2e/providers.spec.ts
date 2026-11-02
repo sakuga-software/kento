@@ -161,3 +161,44 @@ test('a provider form with an error opens on its first field in error, in view a
   // The two 422 answers are the only errors of the console.
   expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
 })
+
+test('the form refuses a model id of the wrong form for its kind, and keeps what was typed (REV-66)', async ({ page }, testInfo) => {
+  let errors = watchConsole(page)
+  let project = testInfo.project.name
+  let key = `sk-ant-e2e-form-${project}-0123456789-WXYZ`
+  let label = `Anthropic form ${project}`
+  let db = sql()
+  try {
+    await signIn(page, 'alex')
+    let [org] = await db<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+    await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
+    await db`delete from providers where org_id = ${org!.id}`
+
+    await page.goto('/settings#nouveau-provider')
+    let form = page.locator('#nouveau-provider')
+    await form.getByLabel('Type').selectOption('anthropic')
+    await form.getByLabel('Nom').fill(label)
+    await form.getByLabel('Clé', { exact: true }).fill(key)
+    await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')
+    await form.getByRole('button', { name: 'Ajouter le provider' }).click()
+
+    // Refused, with what Anthropic expects; nothing is kept, and the typed id stays to be corrected.
+    let refused = page.locator('#nouveau-provider')
+    await expect(refused.getByText('heavy : « anthropic/claude-opus-5.5 ». Anthropic attend son propre identifiant')).toBeVisible()
+    await expect(refused.getByLabel('heavy')).toHaveValue('anthropic/claude-opus-5.5')
+    await expect(refused.getByLabel('heavy')).toHaveAttribute('aria-invalid', 'true')
+    expect(await db`select id from providers where org_id = ${org!.id}`).toHaveLength(0)
+    await expectNoAxeViolations(page)
+
+    // Corrected: the provider is added with that model.
+    await refused.getByLabel('heavy').fill('claude-opus-5-5')
+    await refused.getByLabel('Clé', { exact: true }).fill(key)
+    await refused.getByRole('button', { name: 'Ajouter le provider' }).click()
+    await expect(page.getByText('Provider ajouté.')).toBeVisible()
+    let [row] = await db<{ models: unknown }[]>`select models from providers where org_id = ${org!.id}`
+    expect(row!.models).toEqual({ heavy: ['claude-opus-5-5'] })
+    expect(errors.filter((line) => !line.includes('422'))).toEqual([])
+  } finally {
+    await db.end()
+  }
+})

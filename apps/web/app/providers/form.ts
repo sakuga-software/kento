@@ -2,6 +2,7 @@ import { defaultModels } from '@sakuga-review/engine/levels'
 import { isProviderKind, LEVELS, MODEL_ID, type Level, type ProviderKind } from '@sakuga-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
+import { idFormHelp } from '../repo-config/model.ts'
 
 export const KIND_LABELS: Record<ProviderKind, string> = {
   openrouter: 'OpenRouter',
@@ -91,6 +92,9 @@ export function readProviderForm(form: FormData | undefined): {
       errors.models = 'Au plus 5 modèles par niveau, séparés par des virgules, en lettres, chiffres et . _ : / @ -.'
       continue
     }
+    // REV-66. The rule of the forms of the levels (#66): an id that this kind answers 404 to.
+    let wrong = list.find((model) => idFormHelp(kind, model) !== null)
+    if (wrong !== undefined && !errors.models) errors.models = `${level} : « ${wrong} ». ${idFormHelp(kind, wrong)}`
     if (list.length > 0) models[level] = list
   }
   if (!errors.models && LEVELS.some((level) => !models[level] && defaultModels(kind, level).length === 0)) {

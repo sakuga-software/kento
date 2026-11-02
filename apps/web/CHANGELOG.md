@@ -7,6 +7,15 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-66: Providers et clés refuses a model id of the wrong form
+
+No migration, no new variable, no new permission.
+
+The form « Ajouter un provider » applies the rule of the forms of the levels (#66): a model id that
+the kind answers 404 to (`anthropic/claude-opus-5.5` on Anthropic, `claude-sonnet-5-5` on
+OpenRouter) is refused with what the kind expects, and nothing is kept. Check: add an Anthropic
+provider with `anthropic/claude-opus-5.5` for heavy; the form refuses it.
+
 ## REV-59: Hide a failure on the dashboard, none for a closed pull request
 
 Migration `0021_failure_dismissal`, additive only: the table `pull_closures` (the last close of each
