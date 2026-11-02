@@ -15,8 +15,14 @@ import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase } from './helpers.ts'
 
 const COOKIE = '__Host-kento_session'
-/** The budget of the server, and of the HTML of one page of 50 rows. */
+/**
+ * The budget of the server (REV-64): 250 ms, or 10 full reads of the two big tables timed in the same
+ * run, whichever is more. A loaded runner slows the reads and the screen alike, so the budget grows
+ * with it. A screen takes 2 to 4 full reads; a missing index takes thousands.
+ */
 const MAX_MS = 250
+const MAX_FULL_READS = 10
+/** The budget of the HTML of one page of 50 rows. */
 const MAX_BYTES = 110_000
 const FINDINGS = 100_000
 
@@ -94,6 +100,31 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     await test?.drop()
   })
 
+  /**
+   * The best of 5 timings of `run`. It stops at the first one under the budget, or at a second one far
+   * over it: a first run on a cold cache gets another try.
+   */
+  async function timed<T>(run: () => Promise<T>, budget: number) {
+    let best = Infinity
+    let result!: T
+    for (let n = 0; n < 5; n++) {
+      let started = performance.now()
+      result = await run()
+      best = Math.min(best, performance.now() - started)
+      if (best < budget || (n > 0 && best > 4 * budget)) break
+    }
+    return { best, result }
+  }
+
+  /** The budget now: 10 full reads of `findings` and `finding_events`, timed now, and 250 ms at least. */
+  async function budget() {
+    let { best } = await timed(
+      () => sql`select (select count(*) from findings where title ilike '%-%') + (select count(*) from finding_events where reason ilike '%-%')`,
+      0,
+    )
+    return { ms: Math.max(MAX_MS, MAX_FULL_READS * best), fullRead: best }
+  }
+
   async function load(path: string) {
     let started = performance.now()
     let response = await router.fetch(new Request(`http://localhost${path}`, { headers: { Cookie: cookie } }))
@@ -101,7 +132,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     return { status: response.status, html, bytes: Buffer.byteLength(html), ms: performance.now() - started }
   }
 
-  it(`answers /findings in under ${MAX_MS} ms with under ${MAX_BYTES / 1000} KB of HTML, page after page and filter after filter`, async () => {
+  it(`answers /findings in under ${MAX_MS} ms (or ${MAX_FULL_READS} full reads) with under ${MAX_BYTES / 1000} KB of HTML, page after page and filter after filter`, async () => {
     let first = await load('/findings')
     assert.equal(first.status, 200)
     assert.equal((first.html.match(/<tr id="finding-/g) ?? []).length, 50)
@@ -125,34 +156,28 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
       '/findings?q=module_16%2F',
       '/findings?status=all&q=aucun-titre-ne-contient-ceci',
     ]) {
-      // The best of 5 loads: the budget is for the work of the screen, not for a busy machine.
-      let runs = []
-      for (let n = 0; n < 5; n++) runs.push(await load(path))
-      let best = Math.min(...runs.map((run) => run.ms))
-      report.push(`${path}: ${best.toFixed(1)} ms, ${(runs[0]!.bytes / 1000).toFixed(1)} KB`)
-      assert.equal(runs[0]!.status, 200, path)
-      assert.ok(best < MAX_MS, `${path}: ${best.toFixed(1)} ms`)
-      assert.ok(runs[0]!.bytes < MAX_BYTES, `${path}: ${runs[0]!.bytes} bytes`)
+      let limit = await budget()
+      let { best, result } = await timed(() => load(path), limit.ms)
+      let line = `${path}: ${best.toFixed(1)} ms for a budget of ${limit.ms.toFixed(0)} ms (a full read: ${limit.fullRead.toFixed(1)} ms), ${(result.bytes / 1000).toFixed(1)} KB`
+      report.push(line)
+      assert.equal(result.status, 200, path)
+      assert.ok(best < limit.ms, line)
+      assert.ok(result.bytes < MAX_BYTES, `${path}: ${result.bytes} bytes`)
     }
     if (process.env.KENTO_VOLUME_REPORT) console.log(report.join('\n'))
   })
 
-  it(`reads the precision of the org, of its 300 repositories, of its rules and its reasons in under ${MAX_MS} ms`, async () => {
-    let runs: number[] = []
-    let report = await precisionReport(sql, orgId)
-    for (let n = 0; n < 5; n++) {
-      let started = performance.now()
-      report = await precisionReport(sql, orgId)
-      runs.push(performance.now() - started)
-    }
-    let best = Math.min(...runs)
-    if (process.env.KENTO_VOLUME_REPORT) console.log(`precision: ${best.toFixed(1)} ms, ${report.org.closed} closed findings`)
+  it(`reads the precision of the org, of its 300 repositories, of its rules and its reasons in under ${MAX_MS} ms (or ${MAX_FULL_READS} full reads)`, async () => {
+    let limit = await budget()
+    let { best, result: report } = await timed(() => precisionReport(sql, orgId), limit.ms)
+    let line = `precision: ${best.toFixed(1)} ms for a budget of ${limit.ms.toFixed(0)} ms (a full read: ${limit.fullRead.toFixed(1)} ms), ${report.org.closed} closed findings`
+    if (process.env.KENTO_VOLUME_REPORT) console.log(line)
     // One finding every 26 s, closed within 23 days: 3 in 8 are fixed or dismissed.
     assert.equal(report.org.closed, 37_500)
     assert.ok(report.repoCount > 200, `${report.repoCount}`)
     assert.equal(report.repos.length, 8)
     assert.ok(report.ruleCount > 10, `${report.ruleCount}`)
     assert.deepEqual(report.reasons.map((r) => r.reason).sort(), ['Déjà connu', 'Faux positif', 'Hors sujet'])
-    assert.ok(best < MAX_MS, `${best.toFixed(1)} ms`)
+    assert.ok(best < limit.ms, line)
   })
 })
