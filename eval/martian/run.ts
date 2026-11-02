@@ -12,9 +12,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
-import { isLevel, levelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
+import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
+import { costFromTable } from '../../packages/engine/src/prices.ts';
 
-const JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
+/**
+ * `--provider anthropic` calls the Messages API of Anthropic with `ANTHROPIC_API_KEY`, as the runner
+ * does with a provider of kind `anthropic`: the models take their Anthropic ids (`claude-haiku-5-5`),
+ * and the judge is the same model, Claude Sonnet 5.5, at Anthropic.
+ */
+let ANTHROPIC = false;
+let JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
 const REVIEWS_AT_ONCE = 6;
 const JUDGE_CALLS_AT_ONCE = 12;
 
@@ -55,9 +62,12 @@ type Review = {
   model?: string;
   error?: string;
   /** REV-20, in passes: the findings of each pass, the passes that failed, and the findings that the check dropped. */
-  passes?: { id: string; findings: number; error?: string }[];
+  passes?: { id: string; findings: number; cost: number; error?: string }[];
   dropped?: string[];
+  /** The candidates of the dropped findings, as the judge reads the kept ones. */
+  droppedCandidates?: string[];
   verification?: string;
+  verificationCost?: number;
 };
 type Mode = { level: Level; passes: boolean };
 
@@ -82,14 +92,23 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
   const timeout = process.env.REVIEW_TIMEOUT_MS ?? '480000';
   // The candidate that the judge reads: what a reader of the review reads.
   const candidate = (f: { path: string; line: number; title: string; scenario: string; fix: string }) => `${f.path}:${f.line} — ${f.title}. ${f.scenario} Fix: ${f.fix}`;
-  const input = { repoDir, base: pr.base, head: pr.head, level: mode.level, apiKey: process.env.OPENROUTER_API_KEY, log: (message: string) => failures.push(message) };
+  const input = {
+    repoDir,
+    base: pr.base,
+    head: pr.head,
+    level: mode.level,
+    ...(ANTHROPIC ? { kind: 'anthropic' as const, apiKey: process.env.ANTHROPIC_API_KEY } : { apiKey: process.env.OPENROUTER_API_KEY }),
+    log: (message: string) => failures.push(message),
+  };
   try {
     if (mode.passes) {
       // REV-20. The passes at the lite level with the model under test, the check with the model of the level.
       // The check reads no REVIEW_* but the time limit: REVIEW_MODELS names the model under test, and
       // the check must stay the same from one run to the next, as the judge does.
       const passConfig = levelConfig('lite', { ...process.env, REVIEW_MODELS: model, REVIEW_TIMEOUT_MS: timeout });
-      const verifyConfig = levelConfig(mode.level, { REVIEW_TIMEOUT_MS: timeout });
+      const verifyConfig = ANTHROPIC
+        ? providerLevelConfig(mode.level, 'anthropic', undefined, { REVIEW_TIMEOUT_MS: timeout })
+        : levelConfig(mode.level, { REVIEW_TIMEOUT_MS: timeout });
       const out = await reviewInPasses(input, { passConfig, verifyConfig });
       return {
         findings: out.findings.map(candidate),
@@ -97,9 +116,11 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
         seconds: Math.round((Date.now() - start) / 1000),
         model: out.passes.find((p) => p.model)?.model ?? undefined,
         error: failures[0],
-        passes: out.passes.map(({ id, findings, error }) => ({ id, findings, ...(error ? { error } : {}) })),
+        passes: out.passes.map(({ id, findings, cost, error }) => ({ id, findings, cost, ...(error ? { error } : {}) })),
         dropped: out.dropped.map((f) => `${candidate(f)} [${f.pass}: ${f.reason}]`),
+        droppedCandidates: out.dropped.map(candidate),
         verification: out.verification,
+        verificationCost: out.verificationUsage?.cost ?? 0,
       };
     }
     // A review in one pass, with the variables REVIEW_* of the environment, as the Action reads them.
@@ -115,10 +136,37 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
 let judgeCost = 0;
 let judgeErrors = 0;
 
+async function judgeAtAnthropic(golden: string, candidate: string): Promise<{ match: boolean; confidence: number }> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY ?? '', 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: JUDGE_MODEL,
+      max_tokens: 400,
+      messages: [{ role: 'user', content: JUDGE_PROMPT.replace('{golden_comment}', golden).replace('{candidate}', candidate) }],
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const out = await response.json();
+  if (!response.ok) throw new Error(`judge answered ${response.status}`);
+  const usage = out.usage ?? {};
+  judgeCost +=
+    costFromTable('anthropic', JUDGE_MODEL, {
+      input: usage.input_tokens ?? 0,
+      output: usage.output_tokens ?? 0,
+      cacheRead: usage.cache_read_input_tokens ?? 0,
+      cacheWrite: usage.cache_creation_input_tokens ?? 0,
+    }) ?? 0;
+  const text: string = (out.content ?? []).filter((block: { type: string }) => block.type === 'text').map((block: { text: string }) => block.text).join('');
+  const verdict = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+  return { match: verdict.match === true, confidence: Number(verdict.confidence) || 0 };
+}
+
 /** Gives null when the judge does not answer three times: the caller reports it as an error. */
 async function judge(golden: string, candidate: string): Promise<{ match: boolean; confidence: number } | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      if (ANTHROPIC) return await judgeAtAnthropic(golden, candidate);
       const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
@@ -155,6 +203,7 @@ async function score(pr: Pr, findings: string[]) {
   return {
     found: pr.golden.filter((g) => found.has(g.comment)).map((g) => ({ severity: g.severity, category: g.category })),
     golden: pr.golden.length,
+    comments: [...found],
   };
 }
 
@@ -185,8 +234,12 @@ async function main() {
       models: { type: 'string' },
       level: { type: 'string', default: 'lite' },
       passes: { type: 'boolean', default: false },
+      provider: { type: 'string', default: 'openrouter' },
     },
   });
+  if (values.provider !== 'openrouter' && values.provider !== 'anthropic') throw new Error(`--provider must be openrouter or anthropic, not "${values.provider}"`);
+  ANTHROPIC = values.provider === 'anthropic';
+  if (ANTHROPIC) JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'claude-sonnet-5-5';
   if (!isLevel(values.level)) throw new Error(`--level must be lite, balanced or heavy, not "${values.level}"`);
   const mode: Mode = { level: values.level, passes: values.passes === true };
   const prs: Pr[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
@@ -202,7 +255,13 @@ async function main() {
     judgeErrors = 0;
     const reviews = await pool(prs, REVIEWS_AT_ONCE, (pr) => review(pr, model, dirs[prs.indexOf(pr)], mode));
     const scores = await pool(prs, 4, (pr) => score(pr, reviews[prs.indexOf(pr)].findings));
-    const rows = prs.map((pr, i) => ({ url: pr.url, source: pr.source, ...reviews[i], ...scores[i] }));
+    // In passes, the judge reads the dropped findings too: a golden comment that only a dropped finding
+    // matches is a defect that the check removed.
+    const droppedScores = mode.passes ? await pool(prs, 4, (pr) => score(pr, reviews[prs.indexOf(pr)].droppedCandidates ?? [])) : [];
+    const rows = prs.map((pr, i) => {
+      const lost = (droppedScores[i]?.comments ?? []).filter((comment) => !scores[i].comments.includes(comment));
+      return { url: pr.url, source: pr.source, ...reviews[i], ...scores[i], ...(mode.passes ? { dropped_true: lost.length } : {}) };
+    });
     const all = metrics(rows);
     const martian = metrics(rows.filter((row) => row.source === 'martian'));
     const internal = metrics(rows.filter((row) => row.source === 'internal'));
@@ -220,6 +279,9 @@ async function main() {
       median_seconds: median(rows.map((row) => row.seconds)),
       // REV-20, in passes: the findings that the check dropped, and the passes that failed.
       dropped: rows.reduce((total, row) => total + (row.dropped?.length ?? 0), 0),
+      // The golden comments that only a dropped finding matched: the recall that the check cost.
+      dropped_true: rows.reduce((total, row) => total + (row.dropped_true ?? 0), 0),
+      verification_cost: rows.reduce((total, row) => total + (row.verificationCost ?? 0), 0),
       failed_passes: rows.reduce((total, row) => total + (row.passes?.filter((p) => p.error).length ?? 0), 0),
       martian,
       internal,
@@ -231,7 +293,9 @@ async function main() {
       `${model}${tag}: F1 martian ${martian.f1.toFixed(2)} · recall ${percent(all.recall)} · precision ${percent(all.precision)} · ` +
         `${all.findings} findings · ${result.failures} failures · ${judgeErrors} judge errors · review $${result.review_cost.toFixed(3)} · ` +
         `judge $${judgeCost.toFixed(3)} · median ${result.median_seconds}s · martian ${martian.found}/${martian.golden} · internal ${internal.found}/${internal.golden}` +
-        (mode.passes ? ` · ${result.dropped} dropped by the check · ${result.failed_passes} failed passes` : ''),
+        (mode.passes
+          ? ` · ${result.dropped} dropped by the check (${result.dropped_true} true) · check $${result.verification_cost.toFixed(3)} · ${result.failed_passes} failed passes`
+          : ''),
     );
   }
 }

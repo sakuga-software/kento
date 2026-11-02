@@ -57,7 +57,51 @@ OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.
   --out ../results --label m5 --level balanced --passes --models anthropic/claude-haiku-5.5
 ```
 
-Not measured yet: the results of these two runs go here, with F1 and the cost of a review.
+`--provider anthropic` calls the Messages API of Anthropic with `ANTHROPIC_API_KEY`, for the review,
+the check and the judge (Sonnet 5.5), with the prompt cache of production. The cost comes from
+the price table of the engine. With this provider, the run does not use the key of CI.
+
+## Results, 2026-11-02: one model or passes, at each level (REV-20)
+
+The same 20 pull requests, Anthropic direct. Each column gives one value a run. The cost is for the
+20 reviews; the judge is not in it. The cost of a defect is the review cost over the golden comments
+found (of 60).
+
+| Method | F1 Martian | Recall | Precision | Internal found | Review cost (20 PRs) | Cost of a defect | Median |
+|---|---|---|---|---|---|---|---|
+| `lite`: Haiku 5.5 | 0.43 / 0.38 | 33 / 28 % | 42 / 40 % | 1 / 1 of 10 | $0.20 / $0.20 | $0.011 | 134 / 106 s |
+| `balanced`: Sonnet 5.5 | 0.40 / 0.45 | 37 / 42 % | 37 / 42 % | 2 / 2 of 10 | $2.09 / $2.09 | $0.089 | 48 / 46 s |
+| `balanced` in passes: Haiku 5.5, Sonnet 5.5 check | 0.29 / 0.39 | 27 / 33 % | 31 / 41 % | 2 / 2 of 10 | $2.24 / $2.17 | $0.123 | 312 / 273 s |
+| `heavy`: Opus 5.5 | 0.55 | 47 % | 54 % | 2 of 10 | $5.92 | $0.211 | 191 s |
+| `heavy` in passes: Haiku 5.5, Opus 5.5 check | 0.43 | 35 % | 43 % | 1 of 10 | $4.26 | $0.203 | 305 s |
+
+The check of the passes:
+
+| Method | Check cost | Share of the review cost | Findings dropped | Golden comments found only by a dropped finding |
+|---|---|---|---|---|
+| `balanced` in passes | $1.72 / $1.65 | 77 / 76 % | 18 / 21 | 1 / 2 |
+| `heavy` in passes | $3.74 | 88 % | 21 | 4 |
+
+- **At each level, the passes find less than one model alone, and cost about as much.** At
+  `balanced`, F1 is 0.34 against 0.43 on average, for $2.2 against $2.1. At `heavy`, F1 is 0.43
+  against 0.55, for $4.3 against $5.9. The passes are also 1.6 to 6 times slower.
+- **The loss comes from the passes, not from the check.** Without the check, the passes find
+  1 to 4 golden comments more. That is still less than one model alone.
+- **The check is most of the cost.** One pass of Haiku costs about 1 cent; the check reads each
+  finding with its code at the model of the level.
+- **Opus 5.5 alone finds the most**: 28 golden comments of 60, for 30 cents a review.
+- **Haiku 5.5 alone finds about 80 % of what Sonnet 5.5 finds, for a tenth of the cost.**
+
+Limits of these numbers:
+
+- The passes read the pack of `lite` (with the definitions), and one model alone at `balanced` and
+  `heavy` reads the full pack. This bench measures the passes as `passes.ts` builds them, not
+  passes in general.
+- From one run to the next, F1 changes by 0.05 to 0.10. The `heavy` rows have one run each.
+- A judge error is one pair (golden comment, finding) that the judge did not answer after three
+  tries. It counts as no match. There are 1 to 4 in a run, of several thousand pairs.
+
+Cost of the bench: $19.17 of review and $5.04 of judge, for the 8 runs.
 
 ## Results, 2026-10-08: Claude Haiku 5.5 for `lite`
 
