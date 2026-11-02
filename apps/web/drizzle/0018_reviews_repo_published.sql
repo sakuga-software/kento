@@ -1,0 +1,1 @@
+CREATE INDEX "reviews_repo_published_idx" ON "reviews" USING btree ("repo_id","published_at" DESC NULLS FIRST,"id" DESC NULLS FIRST) WHERE "reviews"."github_review_id" is not null;

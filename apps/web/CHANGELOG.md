@@ -7,6 +7,17 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-53: An index for the Repos list
+
+Migration `0018_reviews_repo_published`, additive only: the index `reviews_repo_published_idx` on
+`reviews (repo_id, published_at desc, id desc)` for the published reviews. `/healthz` gives
+`"migrations":19`. No new variable, no new permission.
+
+The Repos list reads the last 20 published reviews of each repo of its page by this index, and no
+longer sorts every review of the repo. The migration builds the index in its transaction: writes to
+`reviews` wait for it, under a second at 200 000 reviews. Check: `explain` of the `recent`
+subquery of `apps/web/app/repos/store.ts` shows an Index Scan on `reviews_repo_published_idx`.
+
 ## REV-52: A job that waits in the queue shows
 
 Migration `0016_queue_notices`, additive only: the table `queue_notices`, with one row per pull

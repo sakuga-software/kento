@@ -354,6 +354,11 @@ export const reviews = pgTable(
     index('reviews_repo_pr_idx').on(table.repoId, table.prNumber),
     // The dashboard (REV-14): the last reviews and the cost of the day and the month of an org.
     index('reviews_repo_created_at_idx').on(table.repoId, table.createdAt),
+    // The Repos list (REV-53): the last published reviews of each repo of a page, read in order.
+    // NULLS FIRST is the default of DESC in Postgres: the index then gives the order of the query.
+    index('reviews_repo_published_idx')
+      .on(table.repoId, table.publishedAt.desc().nullsFirst(), table.id.desc().nullsFirst())
+      .where(sql`${table.githubReviewId} is not null`),
     check('reviews_score_range', sql`${table.score} between 1 and 5`),
   ],
 )
