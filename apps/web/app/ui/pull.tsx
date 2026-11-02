@@ -1,6 +1,7 @@
 import { isOneOf, LEVELS, type Level } from '@sakuga-review/protocol'
 import type { Handle } from 'remix/component'
 
+import { assignmentLine } from '../assignment/model.ts'
 import { FINDING_STATUSES, type FindingStatus } from '../findings/store.ts'
 import type { PullHeader } from '../pulls/github.ts'
 import { CELL_LABELS, STATUS_LABELS, type Cell } from '../pulls/sheet.ts'
@@ -81,6 +82,28 @@ export interface PullPageProps {
   rerunNotice?: RerunNotice | null
 }
 
+/**
+ * REV-21. What chose the level of the last review job: the assignment rule that matched, the
+ * command, the retry, the preference of the author, or the level of the repository. Null for a job
+ * queued before REV-21.
+ */
+export function levelLine(summary: Pick<PullSummary, 'assignment' | 'levelOrigin'>): string | null {
+  let origin = summary.levelOrigin
+  if (!origin) return null
+  switch (origin.source) {
+    case 'rule':
+      return summary.assignment ? assignmentLine(summary.assignment) : `Assignation : une règle d’assignation a choisi ${origin.level}.`
+    case 'command':
+      return `Niveau ${origin.level} : demandé par une commande, les règles d’assignation ne s’appliquent pas.`
+    case 'retry':
+      return `Niveau ${origin.level} : choisi à la relance depuis le tableau de bord.`
+    case 'preference':
+      return `Niveau ${origin.level} : préférence de l’auteur, aucune règle d’assignation ne correspond.`
+    case 'repo':
+      return `Niveau ${origin.level} : celui du repo, aucune règle d’assignation ne correspond.`
+  }
+}
+
 export function PullPage(handle: Handle<PullPageProps>) {
   return () => {
     let { frame, summary, header, sheet, query, githubUrl, now, estimates, rerunNotice } = handle.props
@@ -133,6 +156,7 @@ export function PullPage(handle: Handle<PullPageProps>) {
             </dd>
           </div>
         </dl>
+        {levelLine(summary) ? <p class="pull-assignment">{levelLine(summary)}</p> : null}
         {header ? null : <p class="hint pull-github-note">GitHub n’a pas répondu : le titre, l’auteur et les branches manquent.</p>}
 
         <section class="dash-tiles pull-tiles" aria-label="En bref">

@@ -1,6 +1,7 @@
 import type { JobKind, Level } from '@sakuga-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
+import { matchAssignment, needsFiles, unreadPathRules, type AssignmentRule, type JobAssignment } from '../assignment/model.ts'
 import type { Installation, PullAuthor, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
@@ -8,7 +9,7 @@ import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db, Tx } from './client.ts'
 import { orgCapHit, readRepoMonthCost } from './costs.ts'
-import { jobs, orgs, pullAuthors, repos, resolutions, userPrefs, users } from './schema.ts'
+import { assignmentRules, jobs, orgs, pullAuthors, repos, resolutions, userPrefs, users } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -88,12 +89,10 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
       return options.handleCommentCommand(command, deliveryId)
     }
-    if (command.type === 'enqueue_review' && options.listChangedFiles) {
-      let outside = await outsidePaths(db, command, options.listChangedFiles, deliveryId)
-      if (outside) return outside
-    }
     if (command.type === 'enqueue_review') {
-      let result = await db.transaction((tx) => enqueueReview(tx, command, deliveryId))
+      let before = await beforeEnqueue(db, command, options.listChangedFiles, deliveryId)
+      if ('outcome' in before) return before
+      let result = await db.transaction((tx) => enqueueReview(tx, command, deliveryId, before.files))
       if (result.outcome === 'capped' && options.onCapReached) {
         let hit: CapHit = { period: result.period, spentUsd: result.spentUsd, capUsd: result.capUsd, resetsAt: new Date(result.resetsAt) }
         await options.onCapReached(command, hit).catch((error) =>
@@ -185,35 +184,72 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
   }
 }
 
+/** REV-21. The assignment rules of a repository, in their order. */
+async function readAssignmentRules(db: Db | Tx, repoId: string): Promise<AssignmentRule[]> {
+  let rows = await db
+    .select({
+      id: assignmentRules.id,
+      position: assignmentRules.position,
+      authors: assignmentRules.authors,
+      paths: assignmentRules.paths,
+      labels: assignmentRules.labels,
+      action: assignmentRules.action,
+      level: assignmentRules.level,
+      mention: assignmentRules.mention,
+    })
+    .from(assignmentRules)
+    .where(eq(assignmentRules.repoId, repoId))
+    .orderBy(assignmentRules.position, assignmentRules.id)
+  return rows.map((r) => ({ ...r, action: r.action === 'command_only' ? 'command_only' : 'review' }))
+}
+
 /**
- * REV-12. A pull request that changes no file under the paths of the config of its repository gets
- * no automatic job. It reads GitHub, so it runs before the transaction, which holds the lock of the
- * repository: a change of the paths in between counts at the next push.
+ * What a push needs from GitHub: the changed files. GitHub is read before the transaction, which
+ * holds the lock of the repository.
+ *
+ * - REV-12. A pull request that changes no file under the paths of the config gets no automatic
+ *   job.
+ * - REV-21. The assignment rules need the files when one of them has paths. The transaction reads
+ *   the rules again and matches them: a rule removed or moved in between does not apply.
+ *
+ * The changed files are read once, only when the paths of the config or a rule need them. When
+ * GitHub does not answer, the paths filter nothing (a review too many costs less than a review
+ * missed), and a rule with paths does not match. A rule with paths added in between does not
+ * match either, when this push did not read the files.
  */
-async function outsidePaths(
+async function beforeEnqueue(
   db: Db,
   command: Extract<StoreCommand, { type: 'enqueue_review' }>,
-  listChangedFiles: ListChangedFiles,
+  listChangedFiles: ListChangedFiles | undefined,
   deliveryId: string,
-): Promise<WebhookResult | null> {
+): Promise<WebhookResult | { files: string[] | null }> {
   let [row] = await db
-    .select({ enabled: repos.enabled, config: repos.config, orgConfig: orgs.config })
+    .select({ id: repos.id, enabled: repos.enabled, config: repos.config, orgConfig: orgs.config })
     .from(repos)
     .innerJoin(orgs, eq(orgs.id, repos.orgId))
     .where(eq(repos.githubRepoId, command.repository.githubRepoId))
-  if (!row?.enabled) return null
+  if (!row?.enabled) return { files: null }
   let resolved = resolveConfig(readOverrides(row.orgConfig), readOverrides(row.config))
+  if (!triggerAllows(resolved.trigger.value, command.action)) return { files: null }
+  let rules = await readAssignmentRules(db, row.id)
+
   let patterns = resolved.paths.value
-  if (patterns.length === 0 || !triggerAllows(resolved.trigger.value, command.action)) return null
-  let files: string[] | null
-  try {
-    files = await listChangedFiles(command)
-  } catch (error) {
-    files = null
-    log('warn', 'webhook.changed_files_failed', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, error: errorMessage(error) })
+  let files: string[] | null = null
+  if (listChangedFiles && (patterns.length > 0 || needsFiles(rules))) {
+    // A rule with paths decides the level: one more try before it is left out.
+    let tries = needsFiles(rules) ? 2 : 1
+    for (let attempt = 1; attempt <= tries && files === null; attempt++) {
+      try {
+        files = await listChangedFiles(command)
+      } catch (error) {
+        log('warn', 'webhook.changed_files_failed', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, attempt, error: errorMessage(error) })
+      }
+    }
   }
-  if (files === null || pathsMatch(patterns, files)) return null
-  return { outcome: 'skipped', reason: 'no changed file under the paths of the config' }
+  if (patterns.length > 0 && files !== null && !pathsMatch(patterns, files)) {
+    return { outcome: 'skipped', reason: 'no changed file under the paths of the config' }
+  }
+  return { files }
 }
 
 function capped(hit: CapHit): Extract<WebhookResult, { outcome: 'capped' }> {
@@ -367,6 +403,7 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
         baseRef: input.baseRef,
         githubDeliveryId: input.deliveryId,
         githubCommentId: input.commentId,
+        levelSource: 'command',
       })
       .onConflictDoNothing()
       .returning({ id: jobs.id })
@@ -393,6 +430,7 @@ async function enqueueReview(
   tx: Tx,
   command: Extract<StoreCommand, { type: 'enqueue_review' }>,
   deliveryId: string,
+  files: string[] | null = null,
 ): Promise<WebhookResult> {
   let org = await upsertOrg(tx, command.installation, null)
   if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
@@ -403,13 +441,24 @@ async function enqueueReview(
   let [delivered] = await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.githubDeliveryId, deliveryId))
   if (delivered) return { outcome: 'duplicate', reason: 'delivery already created a job' }
 
+  // REV-21. The rules as they are now, under the lock of the repository: the first one that matches.
+  let rules = await readAssignmentRules(tx, repo.id)
+  let assigned = matchAssignment(rules, { author: command.author?.login ?? null, labels: command.labels, files })
+  // The rules with paths that GitHub kept from being tested: the job and its review say so.
+  let unread = unreadPathRules(rules, files, assigned?.rule ?? null)
+  if (unread.length > 0) {
+    log('warn', 'webhook.assignment_paths_unread', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, rules: unread })
+  }
+
   // REV-22. The preferences of the author of the pull request: no automatic review, or a level of
-  // their own. A rule of assignment of the repository (milestone M5) will come before them.
+  // their own. REV-21: a rule of assignment of the repository that matches wins over them.
   let prefs: AuthorPrefs | null = null
   if (command.author) {
     await recordPullAuthor(tx, repo.id, command.prNumber, command.author)
-    prefs = await authorPrefs(tx, repo.id, command.author.githubId)
-    if (prefs && !prefs.autoReview) return { outcome: 'skipped', reason: 'automatic review is off for the author of the pull request' }
+    if (!assigned) {
+      prefs = await authorPrefs(tx, repo.id, command.author.githubId)
+      if (prefs && !prefs.autoReview) return { outcome: 'skipped', reason: 'automatic review is off for the author of the pull request' }
+    }
   }
 
   // REV-12. The trigger of the config: a push of a repository set to « Ready for review » or to
@@ -418,6 +467,21 @@ async function enqueueReview(
   if (!triggerAllows(resolved.trigger.value, command.action)) {
     return { outcome: 'skipped', reason: `trigger of the config is ${resolved.trigger.value}` }
   }
+  // REV-21. The first assignment rule that matches sets the level, or leaves the push to the commands.
+  if (assigned?.rule.action === 'command_only') {
+    return { outcome: 'skipped', reason: `assignment rule ${assigned.rule.position} leaves the pull request to the commands` }
+  }
+  let level: Level = assigned?.rule.level ?? prefs?.level ?? resolved.level.value
+  let assignment: JobAssignment | null = assigned
+    ? {
+        ruleId: assigned.rule.id,
+        position: assigned.rule.position,
+        level,
+        mention: assigned.rule.mention,
+        reasons: assigned.reasons,
+        trigger: resolved.trigger.value,
+      }
+    : null
   // REV-13. The limit of the org, before the one of the repository: it is the one that protects the
   // budget, and its check run tells the pull request.
   let hit = await orgCapHit(tx, org)
@@ -457,11 +521,17 @@ async function enqueueReview(
     .limit(1)
   if (sameHead) return { outcome: 'duplicate', reason: 'head already had a review job' }
 
-  let level = prefs?.level ?? resolved.level.value
   let [job] = await insertReviewJob(tx, {
     repoId: repo.id,
     level,
-    config: jobConfig(resolved, level, repo.configVersion),
+    config: {
+      ...jobConfig(resolved, level, repo.configVersion),
+      ...(assignment ? { assignment } : {}),
+      ...(unread.length > 0 ? { assignmentUnread: unread } : {}),
+    },
+    // REV-21. What chose the level, for the screen of the pull request.
+    levelSource: assigned ? 'rule' : prefs?.level ? 'preference' : 'repo',
+    assignmentRuleId: assigned?.rule.id ?? null,
     prNumber: command.prNumber,
     headSha: command.headSha,
     // The runner diffs the head from its merge base with this branch.

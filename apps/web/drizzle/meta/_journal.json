@@ -134,6 +134,13 @@
       "when": 1793612329825,
       "tag": "0018_reviews_repo_published",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793616689894,
+      "tag": "0019_assignment_rules",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
+import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
 import { authRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
@@ -55,6 +56,8 @@ export interface AppDependencies {
   orgSettings?: OrgSettingsDependencies | null
   /** The rules of the repositories and of the org (REV-19). Without them, the tab Règles says « Bientôt ». */
   rules?: RulesStore | null
+  /** The assignment rules of the repositories (REV-21). Without them, the tab Assignation says « Bientôt ». */
+  assignment?: AssignmentStore | null
   /** The screen of a pull request (REV-17). Without it, the screen answers 404. */
   pulls?: PullsDependencies | null
   /** The screen of a user (REV-22). Without it, the screen answers 404. */
@@ -109,6 +112,7 @@ export function createAppRouter(deps: AppDependencies) {
     dashboard: deps.dashboard ?? null,
     orgSettings: deps.orgSettings ?? null,
     rules: deps.rules ?? null,
+    assignment: deps.assignment ?? null,
   })
   router.map(pageRoutes, ui.pages)
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))

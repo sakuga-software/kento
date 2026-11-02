@@ -6,9 +6,10 @@
 // page from the first finding on. The result of a review is read for the columns of the page only,
 // and only the few fields of its findings that the sheet compares.
 import { findingKey } from '@sakuga-review/engine/findings'
-import { UUID, type Level } from '@sakuga-review/protocol'
+import { isOneOf, UUID, type Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { readJobAssignment, type JobAssignment } from '../assignment/model.ts'
 import { toDate } from '../db/rows.ts'
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
@@ -81,7 +82,15 @@ export interface PullSummary {
   costUsd: number | null
   byStatus: Record<FindingStatus, number>
   active: PullActiveJob | null
+  /** REV-21. The assignment rule that chose the level of the last review job, or null: no rule did. */
+  assignment: JobAssignment | null
+  /** REV-21. What chose the level of the last review job, or null: a job queued before REV-21. */
+  levelOrigin: { source: LevelSource; level: Level } | null
 }
+
+/** REV-21. What chose the level of a job: `jobs.level_source`. */
+export const LEVEL_SOURCES = ['rule', 'preference', 'repo', 'command', 'retry'] as const
+export type LevelSource = (typeof LEVEL_SOURCES)[number]
 
 export interface PullSheet {
   /** Oldest first, left to right. */
@@ -168,6 +177,16 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
         select id, level, state, head_sha as "headSha", created_at as "createdAt" from jobs
         where repo_id = ${repoId} and pr_number = ${prNumber} and kind = 'review' and state in ('queued', 'running')
         order by created_at desc limit 1`
+      // REV-21. The last review job of the pull request, whatever created it, and what chose its
+      // level: the job records it when it is queued (`level_source`). A rule names itself only on
+      // the job whose level it chose. A cancelled job (a newer push, a close) reviewed nothing: the
+      // job before it counts.
+      let [last] = await sql<{ config: unknown; level: Level; levelSource: string | null }[]>`
+        select config, level, level_source as "levelSource" from jobs
+        where repo_id = ${repoId} and pr_number = ${prNumber} and kind = 'review' and state <> 'cancelled'
+        order by created_at desc, id desc limit 1`
+      let source = last && isOneOf(LEVEL_SOURCES, last.levelSource) ? last.levelSource : null
+      let assignment = source === 'rule' ? readJobAssignment(last!.config) : null
       let costs = [num(row.reviewsCost), num(row.resolutionsCost)].filter((c): c is number => c !== null)
       return {
         target: {
@@ -184,6 +203,8 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
         costUsd: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
         byStatus,
         active: active ? { ...active, createdAt: toDate(active.createdAt), number: row.reviews + 1 } : null,
+        assignment,
+        levelOrigin: source ? { source, level: last!.level } : null,
       }
     },
 

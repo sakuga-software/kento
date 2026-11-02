@@ -11,7 +11,7 @@ import type { PullSheet, PullsStore, PullSummary } from '../pulls/store.ts'
 import { createAppRouter } from '../router.ts'
 import { DISMISS_REASONS, replyText } from '../findings/dismiss.ts'
 import { codeText } from './finding.tsx'
-import { readPullQuery, scoreProgress } from './pull.tsx'
+import { levelLine, readPullQuery, scoreProgress } from './pull.tsx'
 
 const COOKIE = '__Host-kento_session'
 const REPO_ID = '22222222-2222-4222-8222-222222222222'
@@ -27,6 +27,8 @@ function summary(overrides: Partial<PullSummary> = {}): PullSummary {
     costUsd: 0.5361,
     byStatus: { open: 1, fixed: 1, stale: 0, dismissed: 1, wontfix: 1 },
     active: null,
+    assignment: null,
+    levelOrigin: null,
     ...overrides,
   }
 }
@@ -94,7 +96,7 @@ function detail(status: FindingDetail['status'] = 'dismissed'): FindingDetail {
   }
 }
 
-function setup(options: { header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error } = {}) {
+function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -105,7 +107,7 @@ function setup(options: { header?: PullHeader | Error | null; found?: boolean; b
   let store: PullsStore = {
     async summary(orgId, repoId, prNumber) {
       asked.push(`${orgId} ${repoId} ${prNumber}`)
-      return options.found === false ? null : summary()
+      return options.found === false ? null : summary({ assignment: options.assignment ?? null, levelOrigin: options.levelOrigin ?? null })
     },
     async sheet(_target, page) {
       if (options.badCursor && page.reviewsCursor) throw new InvalidCursorError()
@@ -222,6 +224,27 @@ describe('the screen of a pull request', () => {
     assert.match(html, /data-label="R2 · bbbbbbb"/)
     assert.match(html, /0,54\s\$/)
     assert.match(html, /https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142/)
+  })
+
+  it('says which assignment rule set the level of the last push (REV-21), and nothing without one', async () => {
+    let assignment = { ruleId: 'r1', position: 1, level: 'balanced' as const, mention: null, reasons: { author: 'sakuga-agent[bot]' }, trigger: 'push' as const }
+    let { request, signIn } = setup({ assignment, levelOrigin: { source: 'rule', level: 'balanced' } })
+    let html = await (await request(PATH, await signIn(CAMILLE))).text()
+    assert.match(html, /<p class="pull-assignment">Assignation : règle 1, l’auteur est sakuga-agent\[bot\], donc balanced à chaque push\.<\/p>/)
+    let none = setup()
+    assert.doesNotMatch(await (await none.request(PATH, await none.signIn(CAMILLE))).text(), /pull-assignment/)
+  })
+
+  it('says what else chose the level of the last job: a command, a retry, a preference, the repository (REV-21)', () => {
+    let line = (source: 'command' | 'retry' | 'preference' | 'repo' | 'rule', level: 'lite' | 'heavy' = 'heavy') =>
+      levelLine({ assignment: null, levelOrigin: { source, level } })
+    assert.equal(line('command'), 'Niveau heavy : demandé par une commande, les règles d’assignation ne s’appliquent pas.')
+    assert.equal(line('retry'), 'Niveau heavy : choisi à la relance depuis le tableau de bord.')
+    assert.equal(line('preference', 'lite'), 'Niveau lite : préférence de l’auteur, aucune règle d’assignation ne correspond.')
+    assert.equal(line('repo', 'lite'), 'Niveau lite : celui du repo, aucune règle d’assignation ne correspond.')
+    // A job of a rule with no copy of it in its config: the line still says that a rule chose the level.
+    assert.equal(line('rule'), 'Assignation : une règle d’assignation a choisi heavy.')
+    assert.equal(levelLine({ assignment: null, levelOrigin: null }), null)
   })
 
   it('answers 404 for a pull request that Kentō does not know, or a number that is not one', async () => {

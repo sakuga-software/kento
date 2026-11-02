@@ -305,6 +305,15 @@ export const jobs = pgTable(
      * a resolve job, or a job claimed before the column).
      */
     sentRules: jsonb('sent_rules'),
+    /**
+     * REV-21. What chose the level of the job: `rule` (an assignment rule of the repository),
+     * `preference` (the level of the author, REV-22), `repo` (the level of the config), `command` (a
+     * command or « Relancer » on the screen of the pull request), `retry` (a retry from the
+     * dashboard). Null on a job queued before the column.
+     */
+    levelSource: text('level_source'),
+    /** REV-21. The assignment rule that chose the level, with `level_source` `rule`; null once it is removed. */
+    assignmentRuleId: uuid('assignment_rule_id').references((): AnyPgColumn => assignmentRules.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     startedAt: timestamp('started_at', { withTimezone: true }),
     finishedAt: timestamp('finished_at', { withTimezone: true }),
@@ -323,6 +332,9 @@ export const jobs = pgTable(
     index('jobs_failed_repo_finished_idx').on(table.repoId, table.finishedAt).where(sql`${table.state} = 'failed'`),
     check('jobs_pr_number_positive', sql`${table.prNumber} > 0`),
     check('jobs_attempts_not_negative', sql`${table.attempts} >= 0`),
+    check('jobs_level_source', sql`${table.levelSource} in ('rule', 'preference', 'repo', 'command', 'retry')`),
+    // The removal of an assignment rule sets the rule of its jobs to null.
+    index('jobs_assignment_rule_id_idx').on(table.assignmentRuleId).where(sql`${table.assignmentRuleId} is not null`),
   ],
 )
 
@@ -688,7 +700,7 @@ export const pullAuthors = pgTable(
  * `repo_id`) or for one repository, which wins. `auto_review` false: a push of their pull request
  * queues no job, a command still does. `level` null: the level of the repository.
  *
- * The order: a rule of assignment of the repository (milestone M5) before these, these before the
+ * The order: a rule of assignment of the repository (REV-21) before these, these before the
  * level of the repository.
  */
 export const userPrefs = pgTable(
@@ -708,5 +720,46 @@ export const userPrefs = pgTable(
     // One row for every repository, and one per repository.
     uniqueIndex('user_prefs_global_idx').on(table.userId).where(sql`${table.repoId} is null`),
     uniqueIndex('user_prefs_repo_idx').on(table.userId, table.repoId).where(sql`${table.repoId} is not null`),
+  ],
+)
+
+/**
+ * REV-21. The assignment rules of a repository: who and what sets the level of the review of a push.
+ * The webhook reads them in `position` order, and the first one that matches wins; with none, the
+ * level of the config applies. A condition holds when every list that is not empty has a match:
+ * the author (a GitHub login), a changed path (a glob, as the paths of the config), a label of the
+ * pull request. `action` `command_only`: no job for a push, only a command creates one.
+ */
+export const assignmentRules = pgTable(
+  'assignment_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    authors: text('authors').array().notNull().default(sql`'{}'::text[]`),
+    paths: text('paths').array().notNull().default(sql`'{}'::text[]`),
+    labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
+    action: text('action').notNull(),
+    level: reviewLevel('level'),
+    /** A GitHub login that the published review mentions, or null. */
+    mention: text('mention'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    // One rule per place of a repository: the order has no tie.
+    uniqueIndex('assignment_rules_repo_position_idx').on(table.repoId, table.position),
+    check('assignment_rules_action', sql`${table.action} in ('review', 'command_only')`),
+    check('assignment_rules_level', sql`(${table.action} = 'review') = (${table.level} is not null)`),
+    check('assignment_rules_condition', sql`cardinality(${table.authors}) + cardinality(${table.paths}) + cardinality(${table.labels}) > 0`),
+    check('assignment_rules_counts', sql`cardinality(${table.authors}) <= 20 and cardinality(${table.paths}) <= 20 and cardinality(${table.labels}) <= 20`),
+    // 1 to 20, the places of the screen. 0: the place of a rule that moves, inside one transaction only.
+    check('assignment_rules_position', sql`${table.position} between 0 and 20`),
   ],
 )

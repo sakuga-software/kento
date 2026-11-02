@@ -7,6 +7,28 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-21: Assignment rules
+
+Migration `0019_assignment_rules`, additive only: the table `assignment_rules`, and two nullable
+columns of `jobs`, `level_source` and `assignment_rule_id` (what chose the level of a job; null on
+the jobs queued before). `/healthz` gives
+`"migrations":20`. No new variable, no new permission: the labels come in the payload of
+`pull_request`, and the changed files are read with the permission « Pull requests: read » that the
+paths of the config already use.
+
+The tab Assignation of the Config screen of a repository lists its rules in order: a condition on
+the author, the changed paths and the labels of the pull request, then a level, or no automatic
+review. The first rule that matches a push sets the level of its job; with none, the preferences of
+the author (REV-22), then the level of the repository apply. A rule wins over the preferences of the
+author, also over « automatic review off ». A rule can name a person: the published review mentions
+them. The review says which rule applied; the screen of the pull request says what chose the level
+of its last job: a rule, the preference of the author, the repository, a command or a retry. A command
+(`@kento-review heavy`) ignores the rules.
+
+Check: on a test repository, add a rule « l’auteur est <your login> → heavy » and push on your pull
+request: the job is `heavy`, and the review ends with « Assignation : règle 1, … ». Remove the rule:
+the next push gets the level of the repository again.
+
 ## REV-53: An index for the Repos list
 
 Migration `0018_reviews_repo_published`, additive only: the index `reviews_repo_published_idx` on

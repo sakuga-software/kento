@@ -4,6 +4,7 @@ import { getCsrfToken } from 'remix/middleware/csrf'
 import { createController, type Middleware } from 'remix/router'
 
 import { fallbackRoutes, pageRoutes } from '../routes.ts'
+import { assignmentActions } from './controllers/assignment.tsx'
 import { createAuth } from './controllers/auth.tsx'
 import { configActions } from './controllers/config.tsx'
 import { dashboardActions } from './controllers/dashboard.tsx'
@@ -51,6 +52,7 @@ export function createUiControllers(deps: UiDependencies) {
       ...runnersActions(kit),
       ...settingsActions(kit),
       ...rulesActions(kit),
+      ...assignmentActions(kit),
       ...frameActions,
     },
   })

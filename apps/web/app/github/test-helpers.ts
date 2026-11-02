@@ -53,6 +53,8 @@ export function pullRequestPayload(
     baseRef?: string
     /** The `changes` of an `edited` action: `{ base: { ref: { from } } }` for a new base. */
     changes?: Record<string, unknown>
+    /** REV-21. The names of the labels of the pull request. */
+    labels?: string[]
   } = {},
 ) {
   let repo = options.repo ?? REPO
@@ -64,6 +66,7 @@ export function pullRequestPayload(
       number: options.number ?? 24,
       draft: options.draft ?? false,
       user: options.author ?? { login: 'alex', type: 'User', id: 101 },
+      labels: (options.labels ?? []).map((name, i) => ({ id: i + 1, name, color: 'ededed' })),
       head: { sha: options.head ?? headSha(1), ref: 'feature', repo: headRepoId === null ? null : { id: headRepoId } },
       base: { sha: headSha(999), ref: options.baseRef ?? 'main', repo: { id: repo.id } },
     },

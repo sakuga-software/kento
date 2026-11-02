@@ -108,10 +108,10 @@ describe('publication of a review', () => {
   }
 
   /** A runner registers, claims the job of `head`, and sends `result`. */
-  async function runJob(head: string, result: ReviewPayload): Promise<string> {
+  async function runJob(head: string, result: ReviewPayload, config: unknown = null): Promise<string> {
     await database.sql`
-      insert into jobs (repo_id, level, pr_number, head_sha, base_ref)
-      values (${repoId}, 'lite', ${PR}, ${head}, 'main')`
+      insert into jobs (repo_id, level, pr_number, head_sha, base_ref, config)
+      values (${repoId}, 'lite', ${PR}, ${head}, 'main', ${config === null ? null : JSON.stringify(config)}::jsonb)`
     let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
     let { token } = await registered.json()
     let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true })
@@ -193,6 +193,28 @@ describe('publication of a review', () => {
     // Nothing is left to publish.
     assert.deepEqual(await publisher.publishPending(), [])
     assert.equal(fake.state.reviews.length, 1)
+  })
+
+  it('says in the review which assignment rule set its level, and mentions the person of the rule (REV-21)', async () => {
+    let assignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'alex', reasons: { path: 'db/migrations/0002.sql' }, trigger: 'push' }
+    await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignment })
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+    assert.match(posted!.body, /<sub>Assignation : règle 2, la PR touche db\/migrations\/0002\.sql, donc heavy à chaque push\.<\/sub>\n\nRelecture demandée par la règle : @alex/)
+    // The hidden marker of the review stays last.
+    assert.match(posted!.body, /@alex\n\n<!-- kento:review [0-9a-f-]+ -->$/)
+  })
+
+  it('says in the review which rules with paths GitHub kept from being tested (REV-21)', async () => {
+    await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignmentUnread: [1, 3] })
+    await publisher.stop()
+    assert.match(fake.state.reviews[0]!.body, /<sub>Assignation : sans la liste des fichiers de la PR, les règles 1, 3 \(chemins\) n’ont pas pu être testées\.<\/sub>/)
+  })
+
+  it('says nothing of an assignment for the review of a job without one', async () => {
+    await runJob(HEAD1, review())
+    await publisher.stop()
+    assert.doesNotMatch(fake.state.reviews[0]!.body, /Assignation|Relecture demandée/)
   })
 
   it('does not post twice a review whose row could not be marked, after a restart', async () => {

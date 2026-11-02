@@ -29,9 +29,21 @@ describe('commandFor pull_request', () => {
         headSha: headSha(7),
         baseRef: 'main',
         author: { githubId: 101, login: 'alex' },
+        labels: [],
       })
     })
   }
+
+  it('gives the author and the labels of the pull request, for the assignment rules (REV-21)', () => {
+    let command = commandFor('pull_request', pullRequestPayload({ author: { login: 'sakuga-agent[bot]', type: 'Bot', id: 4242 }, labels: ['risky', 'db'] }), {
+      ...policy,
+      trustedBots: new Set(['sakuga-agent[bot]']),
+    })
+    assert.deepEqual(command.type === 'enqueue_review' ? { author: command.author, labels: command.labels } : command, {
+      author: { githubId: 4242, login: 'sakuga-agent[bot]' },
+      labels: ['risky', 'db'],
+    })
+  })
 
   it('closed cancels the jobs of the pull request', () => {
     assert.deepEqual(commandFor('pull_request', pullRequestPayload({ action: 'closed' }), policy), {

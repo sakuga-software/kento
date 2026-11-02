@@ -41,6 +41,7 @@ import {
   type Match,
   type StoredFinding,
 } from '../findings/lifecycle.ts'
+import { assignmentLine, unreadPathsLine, type JobAssignment } from '../assignment/model.ts'
 import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
@@ -146,6 +147,13 @@ export async function publishReview(
      * threads of the bot only, as before the table.
      */
     findings?: FindingsLedger
+    /**
+     * REV-21. The assignment rule that set the level of the job of a push. The review says it, and
+     * mentions the person that the rule names.
+     */
+    assignment?: JobAssignment | null
+    /** REV-21. The rules with paths that the push could not test: GitHub did not list the files. */
+    assignmentUnread?: readonly number[]
     warn?: (event: string, fields: Record<string, unknown>) => void
   } = {},
 ): Promise<PublishOutcome> {
@@ -235,7 +243,7 @@ export async function publishReview(
 
   let reviewsPath = `${repo}/pulls/${pr}/reviews`
   let marker = options.marker ? `\n\n<!-- kento:review ${options.marker} -->` : ''
-  let body = reviewBody(answer, anchorOf, level, usage, POSTER) + goneNote(gone, review.base) + marker
+  let body = reviewBody(answer, anchorOf, level, usage, POSTER) + goneNote(gone, review.base) + assignmentNote(options.assignment ?? null, options.assignmentUnread ?? []) + marker
   let event = verdict(answer, anchorOf, level)
   // A review that an earlier try posted, and could not mark (a restart, a lost connection): it is
   // not posted again. The steps after it run once more.
@@ -455,6 +463,18 @@ export function ledgerEntries(
     entries.push({ id, values, events: [...(id === null ? [opened] : []), ...byReaction(s)] })
   }
   return entries
+}
+
+/**
+ * REV-21. The assignment rule of the job, and the person that it asks to read the review; and the
+ * rules with paths that GitHub kept from being tested.
+ */
+export function assignmentNote(assignment: JobAssignment | null, unread: readonly number[] = []): string {
+  let unreadLine = unread.length > 0 ? `\n\n<sub>${unreadPathsLine(unread)}</sub>` : ''
+  if (!assignment) return unreadLine
+  let mention = assignment.mention ? `\n\nRelecture demandée par la règle : @${assignment.mention}` : ''
+  // The rule that applied first, then the rules before it that could not be tested.
+  return `\n\n<sub>${assignmentLine(assignment)}</sub>${unreadLine}${mention}`
 }
 
 /**

@@ -44,11 +44,21 @@ const WORKFLOWS: Record<string, Record<string, string>> = {
 export const FAKE_PULLS: Record<string, string> = {
   'sakuga-software/dash-e2e#41': 'c'.repeat(40),
   'sakuga-software/orchard#142': 'd'.repeat(40),
+  // REV-21: a pull request of a person that touches a migration.
+  'sakuga-software/orchard#43': 'a43'.padStart(40, '0'),
+}
+
+/** REV-21. The files that a pull request changes, for the paths of the config and of the assignment rules. */
+const FAKE_PULL_FILES: Record<string, string[]> = {
+  'sakuga-software/orchard#42': ['src/agent.ts'],
+  'sakuga-software/orchard#43': ['src/sessions.ts', 'db/migrations/0007_sessions.sql'],
+  'sakuga-software/orchard#44': ['README.md'],
 }
 
 /** REV-17. The title, the author and the branches of a pull request, for the header of its screen. */
 const FAKE_PULL_DETAILS: Record<string, { title: string; user: { login: string }; head: { ref: string } }> = {
   'sakuga-software/orchard#142': { title: 'Sessions : expiration et rotation des clés', user: { login: 'camille' }, head: { ref: 'feat/session-expiry' } },
+  'sakuga-software/orchard#43': { title: 'Sessions : table et index', user: { login: 'camille' }, head: { ref: 'feat/sessions-table' } },
 }
 
 /** Lines of the files of orchard, by number, for the code of a finding (REV-17). */
@@ -150,6 +160,17 @@ let server = http.createServer(async (request, response) => {
     if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
     let lines = Array.from({ length: 120 }, (_, i) => FAKE_SOURCE[i + 1] ?? `// line ${i + 1}`)
     return json(response, 200, { encoding: 'base64', content: Buffer.from(lines.join('\n')).toString('base64') })
+  }
+
+  let pullFiles = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)\/files$/.exec(url.pathname)
+  if (request.method === 'GET' && pullFiles) {
+    if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
+    let known = FAKE_PULL_FILES[`${pullFiles[1]}#${pullFiles[2]}`]
+    // Another pull request: as before REV-21, GitHub does not answer, and the paths filter nothing.
+    if (!known) return json(response, 404, { message: 'Not Found' })
+    // One page: the service stops when a page holds fewer files than it asked for.
+    let names = url.searchParams.get('page') === '1' ? known : []
+    return json(response, 200, names.map((filename) => ({ filename, status: 'modified' })))
   }
 
   let pull = /^\/repos\/([^/]+\/[^/]+)\/pulls\/(\d+)$/.exec(url.pathname)

@@ -20,6 +20,10 @@ export const pageRoutes = route({
   repoConfig: get('/repos/:id/config'),
   repoConfigSave: post('/repos/:id/config'),
   repoConfigReset: post('/repos/:id/config/reset'),
+  /** REV-21: the assignment rules of a repository. A member reads them on the Config screen; an admin changes them. */
+  assignmentAdd: post('/repos/:id/assignment'),
+  assignmentMove: post('/repos/:id/assignment/:rule/move'),
+  assignmentRemove: post('/repos/:id/assignment/:rule/remove'),
   findings: get('/findings'),
   /** REV-18: an admin marks the findings checked on the Findings screen dismissed or wontfix. */
   findingsStatus: post('/findings/status'),

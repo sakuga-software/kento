@@ -653,6 +653,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
           repoId: failed.repoId,
           level,
           config: jobConfig(resolved, level, Number(failed.configVersion)),
+          levelSource: 'retry',
           prNumber: Number(failed.prNumber),
           headSha: failed.headSha,
           baseRef: failed.baseRef,

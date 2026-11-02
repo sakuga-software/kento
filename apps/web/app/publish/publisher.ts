@@ -11,6 +11,7 @@
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { readJobAssignment, readUnreadPathRules } from '../assignment/model.ts'
 import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
@@ -79,6 +80,8 @@ type Pending = {
   suspended: boolean
   /** The comment of the command that asked for the review, or null for the review of a push. */
   commentId: string | number | null
+  /** REV-21. `jobs.config`, with the assignment rule of a push. */
+  jobConfig: unknown
 }
 
 /** A job of a command that ended without a review: it failed, or a newer push cancelled it. */
@@ -221,6 +224,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       {
         checks,
         marker: row.id,
+        assignment: readJobAssignment(row.jobConfig),
+        assignmentUnread: readUnreadPathRules(row.jobConfig),
         async onPosted(id) {
           githubReviewId = id
           await deps.sql`
@@ -608,7 +613,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           select reviews.id, reviews.repo_id as "repoId", reviews.pr_number as "prNumber", reviews.head_sha as "headSha", reviews.result,
             repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
             orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
-            jobs.github_comment_id as "commentId"
+            jobs.github_comment_id as "commentId", jobs.config as "jobConfig"
           from reviews
           join jobs on jobs.id = reviews.job_id
           join repos on repos.id = reviews.repo_id

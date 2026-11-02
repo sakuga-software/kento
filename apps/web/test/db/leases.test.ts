@@ -289,6 +289,7 @@ describe('expired leases, attempts and cancel of a running job', () => {
           headSha: head,
           baseRef: 'main',
           author: null,
+          labels: [],
         },
         `delivery-${++delivery}`,
       )
@@ -370,7 +371,7 @@ describe('expired leases, attempts and cancel of a running job', () => {
       await database.sql`truncate jobs, reviews cascade`
       let head = i.toString(16).padStart(40, '0')
       await apply(
-        { type: 'enqueue_review', action: 'synchronize', installation: INSTALLATION, repository: REPOSITORY, prNumber: 28, headSha: head, baseRef: 'main', author: null },
+        { type: 'enqueue_review', action: 'synchronize', installation: INSTALLATION, repository: REPOSITORY, prNumber: 28, headSha: head, baseRef: 'main', author: null, labels: [] },
         `race-${++delivery}`,
       )
       let job = (await claim(runner))!

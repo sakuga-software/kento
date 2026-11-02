@@ -18,6 +18,7 @@ import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
 import { createConfigProviders } from './app/providers/catalog.ts'
 import { createRepoConfigStore } from './app/repo-config/store.ts'
+import { createAssignmentStore } from './app/assignment/store.ts'
 import { createRulesStore } from './app/rules/store.ts'
 import { createRepoCheck } from './app/repos/check.ts'
 import { createProbe } from './app/providers/probe.ts'
@@ -173,6 +174,8 @@ let router = createAppRouter({
   repoConfig: { store: createRepoConfigStore(database), providers: configProviders },
   // The rules of the repositories and of the org (REV-19), on the Config screen and in the settings.
   rules: createRulesStore(database.sql),
+  // The assignment rules of the repositories (REV-21), on the Config screen.
+  assignment: createAssignmentStore(database.sql),
   orgSettings: {
     store: orgSettingsStore,
     providers: configProviders,

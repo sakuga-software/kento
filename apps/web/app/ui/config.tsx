@@ -22,18 +22,14 @@ import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx
 import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine as sharedVersionLine } from './form-fields.tsx'
 import { moneyInput, usd, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
+import { AssignmentTab, type AssignmentTabProps } from './assignment.tsx'
 import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
-/** The tabs of the screen, in their order. Rules come with REV-19, assignment with M5. */
+/** The tabs of the screen, in their order. Rules come with REV-19, assignment with REV-21. */
 export const CONFIG_TABS = ['models', 'levels', 'trigger', 'rules', 'assignment'] as const
 export type ConfigTab = (typeof CONFIG_TABS)[number]
 
-/**
- * REV-32. The tabs that come with M5: named in the bar, with « Bientôt » and no link. Règles is one
- * of them only on a service without the rules (REV-19).
- */
-const SOON_TABS: readonly ConfigTab[] = ['assignment']
 
 const TAB_LABELS: Record<ConfigTab, string> = {
   models: 'Provider et modèles',
@@ -86,6 +82,8 @@ export interface ConfigPageProps {
   form: ConfigForm | null
   /** Null: the service has no rules; the tab says « Bientôt ». */
   rules?: ConfigRules | null
+  /** REV-21. The tab Assignation. Null: the service has no assignment rules; the tab says « Bientôt ». */
+  assignment?: Omit<AssignmentTabProps, 'repoId' | 'defaultLevel' | 'admin' | 'csrf'> | null
 }
 
 /** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
@@ -120,8 +118,9 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
  */
 export function ConfigPage(handle: Handle<ConfigPageProps>) {
   return () => {
-    let { frame, view, providers, tab, notice, form, rules } = handle.props
-    let soon = (key: ConfigTab) => SOON_TABS.includes(key) || (key === 'rules' && !rules)
+    let { frame, view, providers, tab, notice, form, rules, assignment } = handle.props
+    // REV-32. A tab that the service does not have yet: named in the bar, with « Bientôt » and no link.
+    let soon = (key: ConfigTab) => (key === 'rules' && !rules) || (key === 'assignment' && !assignment)
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
     let name = shortName(view.fullName, viewer.org.login)
@@ -188,6 +187,8 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
             />
           ) : tab === 'rules' && rules ? (
             <RulesTab rules={rules} repoId={view.id} name={name} admin={admin} csrf={frame.csrfToken} />
+          ) : tab === 'assignment' && assignment ? (
+            <AssignmentTab {...assignment} repoId={view.id} defaultLevel={resolved.level.value} admin={admin} csrf={frame.csrfToken} />
           ) : (
             <section class="empty" aria-labelledby="later-title">
               <h2 id="later-title">Bientôt ici</h2>

@@ -82,9 +82,9 @@ export async function rerunReview(
     let resolved = resolveConfig(readOverrides(repo.orgConfig), readOverrides(repo.repoConfig), repo.defaultLevel)
     let config = jobConfig(resolved, input.level, Number(repo.configVersion))
     let [job] = await tx<{ id: string }[]>`
-      insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref, config)
+      insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref, config, level_source)
       values (${input.repoId}, 'review', ${input.level}, 'queued', ${input.prNumber}, ${last.headSha}, ${last.baseRef},
-        ${JSON.stringify(config)}::text::jsonb)
+        ${JSON.stringify(config)}::text::jsonb, 'command')
       returning id`
     return { kind: 'queued', jobId: job!.id } as const
   })

@@ -38,6 +38,8 @@ export type WebhookCommand =
       baseRef: string
       /** REV-22. Null when the payload lacks it: no preference of a person applies then. */
       author: PullAuthor | null
+      /** REV-21. The names of the labels of the pull request: the assignment rules read them. */
+      labels: string[]
     }
   | {
       /**
@@ -142,7 +144,8 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
   if (headSha === null || !SHA.test(headSha) || baseRef === null) {
     return { type: 'invalid', reason: 'pull_request payload lacks head.sha or base.ref' }
   }
-  return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef, author: authorOf(obj(pr.user)) }
+  let labels = Array.isArray(pr.labels) ? pr.labels.map((label) => str(obj(label)?.name)).filter((name): name is string => name !== null) : []
+  return { type: 'enqueue_review', action, installation, repository, prNumber, headSha, baseRef, author: authorOf(obj(pr.user)), labels }
 }
 
 /**

@@ -117,6 +117,8 @@ export interface JobConfig {
   models: LevelModels
   /** Where the models came from, for the logs. */
   source: Source
+  /** REV-21. The assignment rule that set the level of a job of a push (`JobAssignment`). The runner never reads it. */
+  assignment?: unknown
 }
 
 export function jobConfig(resolved: ResolvedConfig, level: Level, repoConfigVersion: number): JobConfig {

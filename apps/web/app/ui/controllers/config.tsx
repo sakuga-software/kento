@@ -20,6 +20,7 @@ import type { SaveOutcome } from '../../repo-config/store.ts'
 import { pageRoutes } from '../../routes.ts'
 import { ConfigPage, isConfigTab, tabOf, type ConfigForm, type ConfigNotice, type ConfigTab } from '../config.tsx'
 import type { PageFrame } from '../shell.tsx'
+import { assignmentNotice, type AssignmentExtra } from './assignment.tsx'
 import { forbidden, formValues, isAdmin, redirect, REPOS_EXIT, rulesNotice, signedOf, type FormContext, type RulesExtra, type ScreenContext, type SignedIn, type UiKit } from './kit.tsx'
 import { conflictNotice, parseField, readVersionedForm, type FieldParsers } from './versioned.ts'
 
@@ -32,7 +33,7 @@ export async function renderConfig(
   signed: SignedIn,
   page: PageFrame,
   tab: ConfigTab,
-  extra: { notice?: ConfigNotice | null; form?: ConfigForm | null; rules?: RulesExtra },
+  extra: { notice?: ConfigNotice | null; form?: ConfigForm | null; rules?: RulesExtra; assignment?: AssignmentExtra },
   status: number,
   repoId: string,
 ) {
@@ -54,8 +55,26 @@ export async function renderConfig(
         }
       : { list: [], orgActive: 0, form: null, notice: null, noticeRule: null }
     : null
+  // REV-21. The tab Assignation reads its rules; the other tabs only need to know that it exists.
+  let assignment = deps.assignment
+    ? {
+        rules: tab === 'assignment' ? await deps.assignment.list(orgId, view.id) : [],
+        form: extra.assignment?.form ?? null,
+        notice: extra.assignment?.notice ?? null,
+        noticeRule: extra.assignment?.noticeRule ?? null,
+      }
+    : null
   return context.render(
-    <ConfigPage frame={page} view={view} providers={providers} tab={tab} notice={extra.notice ?? null} form={extra.form ?? null} rules={rules} />,
+    <ConfigPage
+      frame={page}
+      view={view}
+      providers={providers}
+      tab={tab}
+      notice={extra.notice ?? null}
+      form={extra.form ?? null}
+      rules={rules}
+      assignment={assignment}
+    />,
     { status },
   )
 }
@@ -144,7 +163,7 @@ export function configActions(kit: UiKit) {
       let version = Number(query.get('v'))
       let notice: ConfigNotice | null =
         (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null
-      return renderConfig(kit, context, signed, page, isConfigTab(tab) ? tab : 'models', { notice, rules: rulesNotice(query) }, 200, context.params.id)
+      return renderConfig(kit, context, signed, page, isConfigTab(tab) ? tab : 'models', { notice, rules: rulesNotice(query), assignment: assignmentNotice(query) }, 200, context.params.id)
     }),
     // cop() and csrf() of the session layer ran before.
     repoConfigSave: createAction(pageRoutes.repoConfigSave, (context) => changeConfig(context, false)),

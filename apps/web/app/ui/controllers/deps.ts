@@ -16,6 +16,7 @@ import type { ProviderCatalog } from '../../repo-config/providers.ts'
 import type { RepoConfigStore } from '../../repo-config/store.ts'
 import type { RepoCheck } from '../../repos/check.ts'
 import type { ReposStore } from '../../repos/store.ts'
+import type { AssignmentStore } from '../../assignment/store.ts'
 import type { RulesStore } from '../../rules/store.ts'
 import type { RunnersAdminStore } from '../../runner/admin.ts'
 
@@ -113,4 +114,6 @@ export interface UiDependencies {
   orgSettings?: OrgSettingsDependencies | null
   /** REV-19. The rules of the repositories and of the org. Null: the tab Règles says « Bientôt ». */
   rules?: RulesStore | null
+  /** REV-21. The assignment rules of the repositories. Null: the tab Assignation says « Bientôt ». */
+  assignment?: AssignmentStore | null
 }

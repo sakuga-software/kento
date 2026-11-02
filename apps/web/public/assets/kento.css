@@ -2971,6 +2971,68 @@ a.who-login:hover {
   align-items: flex-start;
   gap: var(--space-2);
 }
+/* REV-21. The assignment rules: an ordered list, its number at the left, its actions at the right. */
+.assignment-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.assignment-rule {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+}
+.assignment-rule:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.assignment-rule-current {
+  border-color: var(--focus);
+}
+.assignment-default {
+  border-style: dashed;
+}
+.assignment-position {
+  min-width: 1.75rem;
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  text-align: center;
+}
+.assignment-body p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.assignment-then {
+  color: var(--ink-soft);
+}
+.assignment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.assignment-condition {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+@media (max-width: 760px) {
+  .assignment-rule {
+    grid-template-columns: auto 1fr;
+  }
+  .assignment-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
 .rule-new > summary {
   list-style: none;
 }
@@ -3070,6 +3132,13 @@ a.who-login:hover {
 .pull-meta svg {
   width: 14px;
   height: 14px;
+}
+.pull-assignment {
+  margin: calc(-1 * var(--space-4)) 0 var(--space-6);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  overflow-wrap: anywhere;
 }
 .pull-github-note {
   margin: calc(-1 * var(--space-4)) 0 var(--space-6);
