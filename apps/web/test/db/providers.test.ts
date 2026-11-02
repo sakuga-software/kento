@@ -243,6 +243,62 @@ describe('providers and their encrypted keys', () => {
       assert.equal(row!.provider_id, provider.id)
     })
 
+    it('fails a job whose model id has the wrong form for its provider, before the token and any call (REV-62)', async () => {
+      // An id kept before the form refused it (#66): the store does not check the form.
+      await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: { lite: ['anthropic/claude-opus-5.5'] } })
+      let jobId = await queueJob()
+      let mints = 0
+      let app = router({
+        mintInstallationToken: async () => {
+          mints += 1
+          return { token: 'ghs_installation_token', expiresAt: '2027-01-15T09:00:00Z' }
+        },
+      })
+      let trusted = await runner({ trusted: true })
+      let response = await claim(trusted, NEW_RUNNER, app)
+      assert.equal(response.status, 204, 'the runner gets no job to call the provider with')
+      assert.equal(mints, 0, 'no installation token for a job that cannot run')
+      let [row] = await database.sql<{ state: string; failure_reason: string }[]>`select state, failure_reason from jobs where id = ${jobId}`
+      assert.equal(row!.state, 'failed')
+      assert.equal(
+        row!.failure_reason,
+        'id de modèle invalide pour Anthropic : anthropic/claude-opus-5.5. Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+      )
+    })
+
+    it('fails a job of the service whose config names an id without its vendor, for a runner of an earlier release too (REV-62)', async () => {
+      let config = { repoConfigVersion: 1, models: { provider: 'service', model: 'claude-haiku-5-5', fallback: null }, source: 'repo' }
+      let [queued] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref, config)
+        values (${otherRepoId}, 'lite', 28, ${HEAD}, 'main', ${JSON.stringify(config)}::jsonb) returning id`
+      // A runner without `providers` that reads the models: jobResponse would send it these models of `service`.
+      let serviceRunner = await runner({ orgId: null, trusted: true })
+      assert.equal((await claim(serviceRunner, { hasProviderKey: false, features: ['models'] })).status, 204)
+      let [row] = await database.sql<{ state: string; failure_reason: string }[]>`select state, failure_reason from jobs where id = ${queued!.id}`
+      assert.equal(row!.state, 'failed')
+      assert.match(row!.failure_reason, /^id de modèle invalide pour OpenRouter : claude-haiku-5-5\. OpenRouter attend le fournisseur/)
+    })
+
+    it('gives that job to a runner that does not read the models: it runs those of Kentō (REV-62)', async () => {
+      let config = { repoConfigVersion: 1, models: { provider: 'service', model: 'claude-haiku-5-5', fallback: null }, source: 'repo' }
+      let [queued] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref, config)
+        values (${otherRepoId}, 'lite', 28, ${HEAD}, 'main', ${JSON.stringify(config)}::jsonb) returning id`
+      let serviceRunner = await runner({ orgId: null, trusted: true })
+      let { job } = await claim(serviceRunner, { hasProviderKey: false })
+      assert.equal(job!.id, queued!.id)
+      assert.equal('models' in job!, false)
+    })
+
+    it('gives the job of a provider whose model ids have its form (REV-62)', async () => {
+      await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: { lite: ['claude-haiku-5-5'] } })
+      let jobId = await queueJob()
+      let trusted = await runner({ trusted: true })
+      let { job } = await claim(trusted)
+      assert.equal(job!.id, jobId)
+      assert.deepEqual(job!.providers![0]!.models, ['claude-haiku-5-5'])
+    })
+
     it('gives a runner with its own key of that kind the job without the key', async () => {
       await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueJob()

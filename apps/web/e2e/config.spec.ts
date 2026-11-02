@@ -165,6 +165,43 @@ test.describe('the Config screen of a repository', () => {
     })
   }
 
+  test('a model id of the wrong form already in the database shows in error, with what to do (REV-62)', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'alex')
+    await reset(page)
+    // As `sakuga-review` on 2026-10-29: an OpenRouter id on an Anthropic provider, kept before the
+    // form refused it (#66). Written in the database, since the form refuses it now.
+    let sql = database()
+    try {
+      let [provider] = await sql<{ id: string }[]>`
+        insert into providers (id, org_id, kind, label, runner_held)
+        select gen_random_uuid(), org_id, 'anthropic', 'Anthropic de Sakuga', true from repos where full_name = ${ORCHARD.full_name}
+        returning id`
+      let models = { balanced: { provider: provider!.id, model: 'anthropic/claude-opus-5.5', fallback: null } }
+      await sql`update repos set config = ${sql.json({ models })}, config_version = 1 where full_name = ${ORCHARD.full_name}`
+    } finally {
+      await sql.end()
+    }
+
+    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    let balanced = page.getByRole('region', { name: 'balanced' })
+    let alert = balanced.getByRole('alert')
+    await expect(alert).toContainText('L’id anthropic/claude-opus-5.5 n’a pas la forme d’un id Anthropic.')
+    await expect(alert).toContainText('sans « anthropic/ » : par exemple claude-sonnet-5-5')
+    await expect(alert).toContainText('Le prochain job de ce niveau échoue avant d’appeler le provider.')
+    await expect(alert).toContainText('le modèle de ce niveau dans le formulaire ci-dessous')
+    // The other levels have ids of the right form.
+    await expect(page.getByRole('region', { name: 'lite' }).getByRole('alert')).toHaveCount(0)
+    await expectNoAxeViolations(page)
+
+    // Corrected in the form, the error goes.
+    await balanced.getByLabel('Modèle', { exact: true }).fill('claude-opus-5-5')
+    await balanced.getByRole('button', { name: 'Enregistrer pour balanced' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v2)' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'balanced' }).getByRole('alert')).toHaveCount(0)
+    expect(errors).toEqual([])
+  })
+
   test('« Ready for review »: a push of a draft creates no job, its passage to ready creates one, a later push none', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'alex')

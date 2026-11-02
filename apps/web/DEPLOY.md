@@ -350,4 +350,5 @@ The events that need a person:
 | `job.queue_notice_failed`, `job.queue_notice_remove_failed` | GitHub refused the comment of the queue; the next run tries again. |
 | `job.queue_notice_search_capped` | The marker of the comment was looked for in the first 1000 comments only. |
 | `job.lease_expired` with `"state":"failed"` | A job lost its runner twice. |
+| `job.model_id_refused` | REV-62. A model id of the job has the wrong form for its provider (`anthropic/…` on Anthropic, no vendor on OpenRouter), kept before the form refused it. The job fails at the claim, before any call, and its pull request gets the comment of a failed job. Correct the id that Config or Réglages shows in red. |
 | `jobs.purge_failed` | The database refused the purge of the old jobs. |

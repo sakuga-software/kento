@@ -7,6 +7,18 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-62: A model id of the wrong form already in the database
+
+No migration, no new variable, no new permission.
+
+A level whose model id has not the form of its provider (`anthropic/claude-opus-5.5` on Anthropic,
+`claude-sonnet-5-5` on OpenRouter) shows in red on Config and Réglages, with what the provider
+expects and where to correct it. A job that would run such an id fails at the claim, before the
+installation token and any call to the provider, with the reason « id de modèle invalide pour
+Anthropic : … »; the log says `job.model_id_refused`, and the pull request gets the comment of a
+failed job. Check: write `anthropic/claude-opus-5.5` on an Anthropic provider in the config of a
+repo, open its Config, then push on a pull request of it.
+
 ## REV-54: An index for the Runners screen
 
 Migration `0020_jobs_runner_finished`, additive only: the index `jobs_runner_finished_idx` on

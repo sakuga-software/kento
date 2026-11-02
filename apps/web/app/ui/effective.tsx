@@ -1,6 +1,7 @@
 import type { Handle } from 'remix/component'
 
-import { originText, providerLine, type EffectiveLevel } from '../repo-config/effective.ts'
+import { KIND_LABELS } from '../providers/form.ts'
+import { originText, providerLine, wrongIdAction, type EffectiveLevel } from '../repo-config/effective.ts'
 import type { Source } from '../repo-config/model.ts'
 
 /**
@@ -8,6 +9,27 @@ import type { Source } from '../repo-config/model.ts'
  * provider « Par défaut » de Providers et clés ». The same words in Réglages and in Config.
  */
 export function EffectiveLine(handle: Handle<{ effective: EffectiveLevel; scope: 'org' | 'repo'; source: Source }>) {
+  return () => {
+    let { effective, scope, source } = handle.props
+    return (
+      <>
+        <EffectiveFacts effective={effective} scope={scope} source={source} />
+        {effective.wrongIds.length > 0 ? (
+          <div class="field-error effective-wrong-id" role="alert">
+            {effective.wrongIds.map(({ id, help }) => (
+              <p>
+                L’id <span class="mono">{id}</span> n’a pas la forme d’un id {KIND_LABELS[effective.provider.kind]}. {help}
+              </p>
+            ))}
+            <p>Le prochain job de ce niveau échoue avant d’appeler le provider. {wrongIdAction(effective, scope, source)}</p>
+          </div>
+        ) : null}
+      </>
+    )
+  }
+}
+
+function EffectiveFacts(handle: Handle<{ effective: EffectiveLevel; scope: 'org' | 'repo'; source: Source }>) {
   return () => {
     let { effective, scope, source } = handle.props
     return (

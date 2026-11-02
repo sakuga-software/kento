@@ -243,9 +243,9 @@ export function readModelsForm(form: FormData, providers: readonly { id: string;
   if (!kind) errors.provider = 'Choisissez un provider de l’organisation.'
   if (model === '') errors.model = 'Indiquez un modèle.'
   else if (!MODEL.test(model)) errors.model = MODEL_HELP
-  else if (kind && wrongIdForm(kind, model)) errors.model = ID_FORM_HELP[kind as 'openrouter' | 'anthropic']
+  else if (kind && idFormHelp(kind, model)) errors.model = idFormHelp(kind, model)!
   if (fallback !== '' && !MODEL.test(fallback)) errors.fallback = MODEL_HELP
-  else if (fallback !== '' && kind && wrongIdForm(kind, fallback)) errors.fallback = ID_FORM_HELP[kind as 'openrouter' | 'anthropic']
+  else if (fallback !== '' && kind && idFormHelp(kind, fallback)) errors.fallback = idFormHelp(kind, fallback)!
   else if (fallback !== '' && fallback === model) errors.fallback = 'Le repli doit être un autre modèle, ou rester vide.'
   if (Object.keys(errors).length > 0) return { ok: false, errors }
   return { ok: true, value: { provider, model, fallback: fallback === '' ? null : fallback } }
@@ -256,11 +256,15 @@ const MODEL_HELP = 'Un identifiant de modèle : lettres, chiffres et « . _ : / 
 /**
  * An OpenRouter id names its vendor (`anthropic/claude-sonnet-5.5`); an Anthropic id does not
  * (`claude-sonnet-5-5`). The other provider answers 404 to the wrong form.
+ *
+ * What the provider expects, for an id of the wrong form; null for an id it takes. The form refuses
+ * such an id (#66); the screens and the claim of a job read an id already in the database with it
+ * (REV-62).
  */
-function wrongIdForm(kind: ProviderKind, model: string): boolean {
-  if (kind === 'openrouter') return !model.includes('/')
-  if (kind === 'anthropic') return model.includes('/')
-  return false
+export function idFormHelp(kind: ProviderKind, model: string): string | null {
+  if (kind === 'openrouter') return model.includes('/') ? null : ID_FORM_HELP.openrouter
+  if (kind === 'anthropic') return model.includes('/') ? ID_FORM_HELP.anthropic : null
+  return null
 }
 
 const ID_FORM_HELP = {

@@ -13,6 +13,7 @@ import {
   type Job,
   type JobProvider,
   type JobRule,
+  type ProviderKind,
   type RegisterResponse,
   type ResolveInput,
 } from '@sakuga-review/protocol'
@@ -22,7 +23,8 @@ import { GITHUB_API_URL, type InstallationToken, type MintInstallationToken, typ
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
-import { jobModels } from '../repo-config/model.ts'
+import { KIND_LABELS } from '../providers/form.ts'
+import { idFormHelp, jobModels, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
 import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { ClaimedJob, RunnerRow, RunnerStore } from './store.ts'
@@ -214,7 +216,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     // would fail the job; it runs the models of the engine instead, and the log says why.
     let models = jobModels(job.config)
     let wantsModels = body.features?.includes('models') ?? false
-    let reachable = models !== null && (providers ? providers.some((p) => p.id === models.provider) : models.provider === 'service')
+    let reachable = carriesProvider(models, providers?.map((p) => p.id))
     if (models && (!wantsModels || !reachable)) {
       log('warn', 'job.models_not_sent', {
         jobId: job.id,
@@ -333,6 +335,17 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             await sleep(Math.min(claimPollMs, left), request.signal)
             continue
           }
+          // REV-62. An id of the wrong form, kept before the form refused it (#66), fails its job here:
+          // no token, no call to the provider. The comment of a failed job (#71) gives the reason.
+          let wrongId = wrongModelId(job, { wantsModels: body.features?.includes('models') ?? false, readsProviders })
+          if (wrongId) {
+            let stored = await deps.store.storeResult(job.id, runner.id, job.attempt, { outcome: 'failed', reason: wrongId })
+            // Not `stored`: a cancel or the sweep took the job first. It is not this claim's to fail, and
+            // a job back in the queue fails at its next claim, its id still wrong.
+            log('error', 'job.model_id_refused', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, state: stored, error: wrongId })
+            if (stored !== 'stored') log('warn', 'job.model_id_refusal_not_stored', { jobId: job.id, runnerId: runner.id, outcome: stored })
+            continue
+          }
           let prepared = await prepareJob(job, claim)
           if (!prepared) continue
           let keys = await prepareJobKey(job, claim)
@@ -404,6 +417,46 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       },
     },
   })
+}
+
+/**
+ * REV-12. Whether the job carries the provider of the models of its config, so that the runner can
+ * run them: `service`, or an entry of `providers`. `providers` is undefined for a runner that does
+ * not read them, which runs the OpenRouter of the service only.
+ */
+function carriesProvider(models: LevelModels | null, providers: readonly string[] | undefined): boolean {
+  return models !== null && (providers ? providers.includes(models.provider) : models.provider === 'service')
+}
+
+/**
+ * REV-62. Why the job cannot run: the ids that the runner would send to a provider that refuses
+ * their form, or null when every id has the form of its provider.
+ *
+ * The ids are those that the runner runs, as `jobResponse` sends them: the models of the config when
+ * the runner reads them and the job carries their provider (`carriesProvider`, with the providers
+ * that `prepareJobKey` sends), else the models of the provider of the org for the level. A job of the
+ * service without models of the config runs the models of Kentō, which have the form of OpenRouter.
+ */
+export function wrongModelId(
+  job: Pick<ClaimedJob, 'provider' | 'level' | 'config'>,
+  runner: { wantsModels: boolean; readsProviders: boolean },
+): string | null {
+  let kind: ProviderKind = job.provider?.kind ?? 'openrouter'
+  let models = jobModels(job.config)
+  // The same list as `prepareJobKey`: the provider of the org, else `service` for a runner that reads them.
+  let sent = job.provider ? [job.provider.id] : runner.readsProviders ? [SERVICE_PROVIDER] : undefined
+  // The runner runs the models of the config when it gets them, else those of the provider.
+  let ids =
+    models && runner.wantsModels && carriesProvider(models, sent)
+      ? [models.model, ...(models.fallback ? [models.fallback] : [])]
+      : (job.provider?.models[job.level] ?? [])
+  let wrong = ids.flatMap((id) => {
+    let help = idFormHelp(kind, id)
+    return help ? [{ id, help }] : []
+  })
+  if (wrong.length === 0) return null
+  let names = wrong.map((w) => w.id).join(', ')
+  return `id de modèle invalide pour ${KIND_LABELS[kind]} : ${names}. ${wrong[0]!.help}`
 }
 
 function json<T>(status: number, body: T, headers: Record<string, string> = {}): Response {

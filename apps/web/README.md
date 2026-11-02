@@ -179,7 +179,7 @@ A wrong, missing or revoked runner token gets 401 with no reason. Revoke a runne
 `update runners set revoked_at = now() where id = …`: its next call gets 401.
 
 Events: `runner.registered`, `runner.registration_refused`, `runner.auth_refused`, `job.claimed`,
-`job.installation_token_failed`, `job.result`, `job.lease_lost`, `job.lease_expired` (with `state`
+`job.installation_token_failed`, `job.model_id_refused`, `job.result`, `job.lease_lost`, `job.lease_expired` (with `state`
 `queued` or `failed`), `job.lease_sweep_failed`. No token or key is logged.
 
 ## Logs

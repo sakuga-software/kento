@@ -1,7 +1,7 @@
 import { defaultModels } from '@sakuga-review/engine/levels'
 import { UUID, type Level } from '@sakuga-review/protocol'
 
-import { SERVICE_PROVIDER, type LevelModels, type Resolved } from './model.ts'
+import { idFormHelp, SERVICE_PROVIDER, type LevelModels, type Resolved } from './model.ts'
 import type { ProviderOption } from './providers.ts'
 
 // REV-27. The provider and the models that the next job of a level uses, in the words of the screen.
@@ -39,9 +39,24 @@ export interface EffectiveLevel {
   fallback: string | null
   /** `missing` only: the model and fallback that the config names, which the next job does not run. */
   configured?: { model: string; fallback: string | null }
+  /**
+   * REV-62. The ids of the next job that its provider refuses for their form, with what it expects.
+   * The form refuses them (#66); an id already in the database shows here, and its job fails at the
+   * claim, before any call.
+   */
+  wrongIds: { id: string; help: string }[]
 }
 
 export function effectiveLevel(level: Level, resolved: Resolved<LevelModels>, providers: readonly ProviderOption[]): EffectiveLevel {
+  let effective = nextJob(level, resolved, providers)
+  let wrongIds = [effective.model, effective.fallback].flatMap((id) => {
+    let help = id ? idFormHelp(effective.provider.kind, id) : null
+    return id && help ? [{ id, help }] : []
+  })
+  return { ...effective, wrongIds }
+}
+
+function nextJob(level: Level, resolved: Resolved<LevelModels>, providers: readonly ProviderOption[]): Omit<EffectiveLevel, 'wrongIds'> {
   let service = providers.find((p) => p.id === SERVICE_PROVIDER)!
   let { provider: id, model, fallback } = resolved.value
   if (resolved.source !== 'kento') {
@@ -76,4 +91,20 @@ export function originText(effective: EffectiveLevel, scope: 'org' | 'repo', sou
       if (scope === 'repo') return source === 'repo' ? 'choisi pour ce repo' : 'choisi pour l’organisation'
       return 'choisi pour l’organisation, ne suit pas le provider « Par défaut »'
   }
+}
+
+/**
+ * REV-62. Where an admin corrects an id of the wrong form: the form of the level on this screen, the
+ * Réglages of the org for a repository that follows them, or the provider in Providers et clés.
+ */
+export function wrongIdAction(effective: EffectiveLevel, scope: 'org' | 'repo', source: Resolved<LevelModels>['source']): string {
+  if (effective.origin === 'default') {
+    return scope === 'repo'
+      ? 'Pour le corriger : les modèles de ce provider dans Providers et clés, ou un modèle pour ce repo dans le formulaire ci-dessous.'
+      : 'Pour le corriger : les modèles de ce provider dans Providers et clés, ou un modèle pour ce niveau dans le formulaire ci-dessous.'
+  }
+  if (scope === 'repo' && source === 'org') {
+    return 'Pour le corriger : le modèle de ce niveau dans les Réglages de l’organisation, ou un modèle pour ce repo dans le formulaire ci-dessous.'
+  }
+  return 'Pour le corriger : le modèle de ce niveau dans le formulaire ci-dessous.'
 }
