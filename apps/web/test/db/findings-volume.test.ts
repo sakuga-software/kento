@@ -118,11 +118,14 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
 
   /** The budget now: 10 full reads of `findings` and `finding_events`, timed now, and 250 ms at least. */
   async function budget() {
-    let { best } = await timed(
-      () => sql`select (select count(*) from findings where title ilike '%-%') + (select count(*) from finding_events where reason ilike '%-%')`,
-      0,
-    )
-    return { ms: Math.max(MAX_MS, MAX_FULL_READS * best), fullRead: best }
+    // The best of 5 full reads, all of them: `timed` would stop early.
+    let fullRead = Infinity
+    for (let n = 0; n < 5; n++) {
+      let started = performance.now()
+      await sql`select (select count(*) from findings where title ilike '%-%') + (select count(*) from finding_events where reason ilike '%-%')`
+      fullRead = Math.min(fullRead, performance.now() - started)
+    }
+    return { ms: Math.max(MAX_MS, MAX_FULL_READS * fullRead), fullRead }
   }
 
   async function load(path: string) {
