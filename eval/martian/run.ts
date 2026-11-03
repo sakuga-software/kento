@@ -15,6 +15,7 @@ import { parseArgs } from 'node:util';
 import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
 import { mergeSamples } from './merge.ts';
+import { PROFILES, profileMetrics, type Profile } from './profiles.ts';
 
 /**
  * `--provider anthropic` calls the Messages API of Anthropic with `ANTHROPIC_API_KEY`, as the runner
@@ -24,6 +25,7 @@ import { mergeSamples } from './merge.ts';
 let ANTHROPIC = false;
 let JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
 const REVIEWS_AT_ONCE = 6;
+const KENTO_REVIEWERS = /^(kento-review|sakuga-claude-review)\[bot\]$/;
 const JUDGE_CALLS_AT_ONCE = 12;
 
 // The judge prompt of Martian (offline/code_review_benchmark/step3_judge_comments.py), unchanged.
@@ -44,9 +46,9 @@ Instructions:
 Respond with ONLY a JSON object:
 {"reasoning": "brief explanation", "match": true/false, "confidence": 0.0-1.0}`;
 
-type Golden = { comment: string; severity: string; category: string };
+type Golden = { comment: string; severity: string; category: string; reviewers?: string[] };
 type Pr = {
-  source: 'martian' | 'internal';
+  source: 'martian' | 'internal' | 'feedback';
   repo: string;
   url: string;
   owner?: string;
@@ -55,6 +57,8 @@ type Pr = {
   base: string;
   head: string;
   golden: Golden[];
+  /** REV-69, internal cases: comments whose premise the author showed false. A finding that matches one is a sure false positive. */
+  false_positives?: { comment: string; reviewer: string }[];
 };
 type Review = {
   findings: string[];
@@ -213,10 +217,23 @@ async function score(pr: Pr, findings: string[]) {
   return {
     found: pr.golden.filter((g) => found.has(g.comment)).map((g) => ({ severity: g.severity, category: g.category })),
     golden: pr.golden.length,
+    categories: pr.golden.map((g) => g.category),
+    severities: pr.golden.map((g) => g.severity),
+    // A golden comment that Kentō alone found would measure Kentō against itself.
+    independent: pr.golden.map((g) => !g.reviewers || g.reviewers.some((r) => !KENTO_REVIEWERS.test(r))),
     comments: [...found],
     // For each finding, the indexes in pr.golden of the golden comments that it matches: [] is a finding with no match.
     matches: findings.map((_, index) => pairs.flatMap(({ g, index: other }, i) => (other === index && verdicts[i]?.match ? [pr.golden.indexOf(g)] : []))),
+    known_false: await knownFalse(pr, findings),
   };
+}
+
+/** The findings that match a known false positive of the pull request. */
+async function knownFalse(pr: Pr, findings: string[]): Promise<number> {
+  const known = pr.false_positives ?? [];
+  const pairs = known.flatMap((k) => findings.map((f, index) => ({ k, f, index })));
+  const verdicts = await pool(pairs, JUDGE_CALLS_AT_ONCE, ({ k, f }) => judge(k.comment, f));
+  return new Set(pairs.filter((_, i) => verdicts[i]?.match).map(({ index }) => index)).size;
 }
 
 type Row = { source: string; findings: string[]; found: unknown[]; golden: number };
@@ -281,6 +298,23 @@ async function main() {
     const all = metrics(rows);
     const martian = metrics(rows.filter((row) => row.source === 'martian'));
     const internal = metrics(rows.filter((row) => row.source === 'internal'));
+    const bySource = (source?: string) => {
+      const scored = rows.filter((row) => !source || row.source === source);
+      return Object.fromEntries(Object.keys(PROFILES).map((name) => [name, profileMetrics(scored, name as Profile)]));
+    };
+    const profiles = { all: bySource(), martian: bySource('martian'), internal: bySource('internal'), feedback: bySource('feedback') };
+    // Core on the golden comments of severity Medium or more: the defects that the prompt aims at.
+    const blockingRows = rows.map((row) => ({
+      categories: row.categories.map((category, i) => (row.severities[i] === 'Low' ? 'low' : category)),
+      matches: row.matches,
+    }));
+    const coreMediumUp = profileMetrics(blockingRows, 'core');
+    // The Core recall on the golden comments that a reviewer other than Kentō found.
+    const independentRows = rows.map((row) => ({
+      categories: row.categories.map((category, i) => (row.independent[i] ? category : 'not-independent')),
+      matches: row.matches,
+    }));
+    const independentRecall = profileMetrics(independentRows, 'core');
     const result = {
       model,
       label: values.label,
@@ -302,18 +336,24 @@ async function main() {
       merged: rows.reduce((total, row) => total + (row.merged ?? 0), 0),
       martian,
       internal,
+      profiles,
+      independent_recall: independentRecall.recall,
+      core_medium_up: coreMediumUp,
+      known_false: rows.reduce((total, row) => total + row.known_false, 0),
+      known_false_total: prs.reduce((total, pr) => total + (pr.false_positives?.length ?? 0), 0),
       rows,
     };
     writeFileSync(file, JSON.stringify(result, null, 2));
     const percent = (value: number) => `${(value * 100).toFixed(0)} %`;
     console.log(
-      `${model}${tag}: F1 martian ${martian.f1.toFixed(2)} · recall ${percent(all.recall)} · precision ${percent(all.precision)} · ` +
+      `${model}${tag}: F1 core ${profiles.all.core.f1.toFixed(2)} (martian ${profiles.martian.core.f1.toFixed(2)}, internal ${profiles.internal.core.f1.toFixed(2)}, feedback ${profiles.feedback.core.f1.toFixed(2)}) · F1 martian ${martian.f1.toFixed(2)} · recall ${percent(all.recall)} · precision ${percent(all.precision)} · ` +
         `${all.findings} findings · ${result.failures} failures · ${judgeErrors} judge errors · review $${result.review_cost.toFixed(3)} · ` +
         `judge $${judgeCost.toFixed(3)} · median ${result.median_seconds}s · martian ${martian.found}/${martian.golden} · internal ${internal.found}/${internal.golden}` +
         (mode.passes
           ? ` · ${result.dropped} dropped by the check (${result.dropped_true} true) · check $${result.verification_cost.toFixed(3)} · ${result.failed_passes} failed passes`
           : '') +
-        (mode.samples > 1 ? ` · ${result.merged} duplicates merged` : ''),
+        (mode.samples > 1 ? ` · ${result.merged} duplicates merged` : '') +
+        ` · F1 core medium+ ${coreMediumUp.f1.toFixed(2)} · independent recall ${percent(independentRecall.recall)} · ${result.known_false} findings repeat one of ${result.known_false_total} known false positives`,
     );
   }
 }

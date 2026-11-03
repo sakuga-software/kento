@@ -61,6 +61,70 @@ OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.
 the check and the judge (Sonnet 5.5), with the prompt cache of production. The cost comes from
 the price table of the engine. With this provider, the run does not use the key of CI.
 
+## The bench v2: cases from the feedback of the org (REV-69)
+
+[`subset-ts-v2.json`](subset-ts-v2.json) holds 80 pull requests and 240 golden comments: the 20 of
+`subset-ts.json`, and 60 cases of [`../internal/subset-feedback.json`](../internal/subset-feedback.json)
+(`source: "feedback"`). These cases come from the review comments of 9 repositories of the org, and
+from the answers to them:
+
+1. [`collect.sh`](../internal/collect.sh) gets the review comments of each pull request.
+2. [`label.ts`](../internal/label.ts) (Haiku) reads each comment with its answer
+   (`<!-- claude-reply -->`): `applied`, `partly`, `accepted`, `out_of_scope`, `wrong`, `duplicate`
+   or `unclear`, with a Martian category, a severity and the defect in one sentence.
+3. client-a has few answers. [`infer.ts`](../internal/infer.ts) compares each comment with the
+   diff of its lines up to the last head of the pull request (Haiku). Sonnet then compares the
+   comments of a pull request that are on the same file, at most 5 lines apart: `same`,
+   `different` or `opposite`. If two comments are opposite, the comment that the last head does
+   not follow is `wrong`.
+4. [`build.ts`](../internal/build.ts) keeps one commit for each pull request, at most 2000 changed
+   lines, and the code files only. An `applied`, `partly` or `accepted` comment is a golden comment.
+   A `wrong` comment is a known false positive (`false_positives`).
+
+Each run gives more numbers:
+
+- the scoring profiles of Martian ([`profiles.ts`](profiles.ts)): **Core** is the main score,
+  Strict and All show beside it. A finding that matches only a golden comment out of the profile
+  counts in `matched_excluded`, not as a false positive;
+- the F1 of Core for each source (`martian`, `internal`, `feedback`);
+- `core medium+`: Core on the golden comments of Medium severity and more. A finding that matches
+  only a Low golden comment counts in `matched_excluded`, as in the profiles: it is not a false
+  positive, and it is not a true finding of this view;
+- `independent recall`: the recall only (no precision) on the golden comments of a reviewer other than Kentō
+  (`kento-review[bot]`, `sakuga-claude-review[bot]`);
+- the findings that repeat a known false positive.
+
+Most golden comments of `feedback` come from other review bots: CodeRabbit 60, Copilot 47,
+Kilo 30, cubic 20, Greptile 14, Kentō 11 (a comment can have more than one reviewer). A case
+holds the union of the comments of all these reviewers on one commit, so the recall of one
+review stays far below 100 %.
+
+### Results, 2026-11-03: Haiku 5.5 at `lite` and Sonnet 5.5 at `balanced`, one run each
+
+F1 Core, recall and precision, Haiku / Sonnet:
+
+| Source | PRs | F1 Core | Recall | Precision | Findings |
+| --- | --- | --- | --- | --- | --- |
+| martian | 13 | 0.46 / 0.57 | 21 / 25 of 46 | 47 / 60 % | 49 / 47 |
+| internal | 7 | 0.33 / 0.11 | 3 / 1 of 10 | 38 / 13 % | 8 / 8 |
+| feedback | 60 | 0.16 / 0.14 | 21 / 20 of 165 | 23 / 16 % | 84 / 112 |
+| **all** | 80 | **0.25 / 0.24** | 20 / 21 % | 32 / 28 % | 141 / 167 |
+
+- `core medium+` 0.26 / 0.27, independent recall 20 / 21 %.
+- On `feedback`, Sonnet finds no more than Haiku. Of the 116 golden comments of Medium severity
+  and more, each model finds 21, but only 11 are the same: together they find 31 (27 %). The
+  limit is thus not the model alone, and two different reviews find more than one.
+- Sonnet: review $7.39, judge $1.56, no failure, 5 judge errors, 1 finding repeats a known false
+  positive.
+
+Haiku:
+
+- 2 findings repeat a known false positive (of 15), both on fruitback.
+- Haiku gives 1.4 findings for each `feedback` case, but the past reviews give 2.75 golden
+  comments. pantry (2/43) and atlas (2/38) lose most: their large pull requests hold many
+  golden comments. client-a finds 8 of 50.
+- Cost: review $0.62, judge $1.47. 1 failure (network), 5 judge errors.
+
 ## Results, 2026-11-02: the prompt and two samples (REV-67)
 
 An error analysis of the 8 runs of REV-20 gave the misses that no run finds: 23 golden comments of
