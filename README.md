@@ -78,6 +78,10 @@ The Config of a repository (**Repos → Config**) sets the level of a push, the 
 and a monthly cost limit. Each value without a choice comes from the organization, then from Kentō.
 
 The review sends `CLAUDE.md` and `AGENTS.md` of the head commit to the model, up to 400 lines each.
+It also sends the import statements of each changed file at the head, whole: a hunk rarely shows
+the top of its file. A finding that says a name is not imported or not defined is checked against
+its file at the head. It goes away when the file imports the name as a value, and goes to « Non
+relu » when its title names no name to check. The score stays the score of the model.
 
 Drafts get no review. Neither do the pull requests, pushes and comments of a bot, except the
 trusted bots of the organization (**Réglages → Bots de confiance**, `sakuga-agent[bot]` by

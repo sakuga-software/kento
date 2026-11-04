@@ -1,5 +1,6 @@
 // The pack: the first message of the review, with the diff, the docs of the repository and the context.
 import { git } from './git.ts';
+import { importsSection } from './imports.ts';
 import type { ContextKind } from './levels.ts';
 import { rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
 
@@ -153,7 +154,7 @@ function addedSqlNames(repo: string, base: string, head: string, paths: string[]
  * has no tool, so this is all it sees outside the diff.
  */
 export function buildContext(repo: string, base: string, head: string, paths: string[], budget: number, kind: ContextKind): string {
-  const atHead = new Set(git(repo, 'ls-tree', '-r', '--name-only', head, '--', ...paths).split('\n'));
+  const atHead = new Set(git(repo, 'ls-tree', '-r', '-z', '--name-only', head, '--', ...paths).split('\0'));
   const sources = paths.filter((p) => atHead.has(p) && SOURCE_FILE.test(p) && !TEST_FILE.test(p));
   const cache = new Map<string, string[]>();
   const snippets: Snippet[] = [];
@@ -298,8 +299,15 @@ export function buildPack(
     if (text.split('\n').length <= MAX_DOC_LINES) docs += `## ${doc}\n\n${text}\n\n`;
   }
 
+  // REV-70. The imports of each changed file at the head: a hunk rarely shows the top of its file.
+  // Without a path, `git ls-tree` lists the whole repository. Without `-z`, it quotes a path that is not ASCII.
+  const atHead = new Set(reviewed.length ? git(repo, 'ls-tree', '-r', '-z', '--name-only', head, '--', ...reviewed).split('\0') : []);
+  const headLines = (path: string) => (atHead.has(path) ? git(repo, 'show', `${head}:${path}`).split('\n') : null);
+  const importsOf = new Map(reviewed.map((path) => [path, importsSection([path], headLines)]));
+  const importsSize = [...importsOf.values()].reduce((sum, text) => sum + text.length, 0);
+
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
-  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - commits.length - 2000;
+  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - commits.length - importsSize - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
@@ -318,6 +326,14 @@ export function buildPack(
   );
   for (const path of reviewed) if (hunks.has(path)) parts.push(hunks.get(path)!);
   parts.push('```\n');
+  const imports = [...hunks.keys()].map((path) => importsOf.get(path) ?? '').join('');
+  if (imports) {
+    parts.push(
+      '\n## Imports\n\nThe import statements of each changed file at the head of the pull request, whole, ' +
+        'with their line numbers. The diff can show only part of them.\n\n',
+      imports,
+    );
+  }
   const room = Math.min(MAX_CONTEXT_BYTES, budget - size());
   const context = room > 0 ? buildContext(repo, base, head, [...hunks.keys()], room, contextKind) : '';
   if (context) {

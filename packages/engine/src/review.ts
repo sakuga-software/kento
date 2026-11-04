@@ -2,6 +2,7 @@
 import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
+import { checkMissingNames } from './imports.ts';
 import type { Level } from '../../protocol/src/index.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
@@ -108,7 +109,11 @@ export function finishReview<F extends Finding>(
     const { rule_id: _cited, ...rest } = f;
     return { ...rest, ...applyRule(f, rules) } as F;
   });
-  const fileAt = headFiles(input.repoDir, input.head, input.log ?? ((message) => process.stderr.write(`${message}\n`)));
+  const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
+  const fileAt = headFiles(input.repoDir, input.head, log);
+  // REV-70. A finding that says a name is not imported or not defined is checked against its file.
+  const { refuted } = checkMissingNames(answer, fileAt);
+  for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),

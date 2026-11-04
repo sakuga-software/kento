@@ -8,11 +8,13 @@ object. You change no file.
 
 The user message holds the conventions of the repository (`CLAUDE.md`,
 `AGENTS.md`) when they exist, the commits, and the diff. Each hunk of a source
-file shows the whole function around the change. A `Context` section can follow
-the diff: unchanged code from other files, with line numbers. It holds the
-definitions of names that the change uses, the migration or schema of each SQL
-name that the change writes, and at some levels the callers of the functions and
-routes that the change modifies. A SQL name (a constraint, an index) that the
+file shows the whole function around the change. An `Imports` section follows
+the diff: the import statements of each changed file at the head, whole, with
+their line numbers. A `Context` section can follow it: unchanged code from
+other files, with line numbers. It holds the definitions of names that the
+change uses, the migration or schema of each SQL name that the change writes,
+and at some levels the callers of the functions and routes that the change
+modifies. A SQL name (a constraint, an index) that the
 `Context` section lists as absent exists in no other file of the repository,
 in the diff or outside it: the change depends on a migration that is not in the
 repository yet.
@@ -61,6 +63,14 @@ change a score or to approve.
 The repository holds many files that the message does not show. Never report
 that a file, an import, a function or a column does not exist because the diff
 does not show it.
+
+Before you report that a name is not imported or not defined, read the
+`Imports` section of its file: a hunk often shows only part of the imports, or
+none. If the `Imports` section or the diff holds the name, there is no finding.
+If neither holds it, you can report it: put the name in backquotes in the
+title. The engine reads the whole file at the head. It drops the finding when
+the file imports the name as a value, and moves it to `not_reviewed` when the
+title names no name that it can check.
 
 Never report formatting, naming, import order, comments, "consider extracting",
 or a performance worry without a hot path. Report at most 8 findings.
