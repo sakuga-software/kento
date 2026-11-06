@@ -16,6 +16,7 @@ import {
   type ProviderKind,
   type RegisterResponse,
   type ResolveInput,
+  type ResolveThread,
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
 
@@ -25,7 +26,7 @@ import { createGitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { KIND_LABELS } from '../providers/form.ts'
 import { idFormHelp, jobModels, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
-import { readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
+import { readAnsweredThreads, readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { ClaimedJob, RunnerRow, RunnerStore } from './store.ts'
 import { bearerToken, hashToken, newRunnerToken, REGISTRATION_TOKEN_PREFIX, sameSecret } from './tokens.ts'
@@ -80,6 +81,8 @@ interface Prepared {
   installationToken: InstallationToken
   resolve: ResolveInput | null
   wantsRules: boolean
+  /** REV-71. The answered threads of a review job, for a runner that reads them. */
+  threads: ResolveThread[] | null
 }
 
 /** The provider of a job and its key, in the shape of the release of the runner. */
@@ -126,9 +129,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       installationToken = await mintFor(job, mint)
       if (job.kind === 'resolve') {
         // The service reads the threads with its own token; the runner gets them, not the token.
-        let threadsToken = await mintFor(job, mint, THREADS_PERMISSIONS)
-        let github = createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: threadsToken.token, fetch: deps.fetch })
-        resolve = await readResolveInput(github, job.fullName, job.prNumber, job.headSha)
+        resolve = await readResolveInput(await threadsReader(job, mint), job.fullName, job.prNumber, job.headSha)
       }
     } catch (cause) {
       if (installationToken) stage = 'review threads'
@@ -146,7 +147,23 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       })
       return null
     }
-    return { rules, installationToken, resolve, wantsRules }
+    // REV-71. The answered threads of a review job. A failure costs the review its threads, never
+    // the review: it runs as before this release, and the log says why.
+    let threads: ResolveThread[] | null = null
+    if (job.kind === 'review' && (body.features?.includes('threads') ?? false)) {
+      try {
+        threads = await readAnsweredThreads(await threadsReader(job, mint), job.fullName, job.prNumber)
+      } catch (cause) {
+        log('warn', 'job.threads_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
+      }
+    }
+    return { rules, installationToken, resolve, wantsRules, threads }
+  }
+
+  /** A client of GitHub that can read the review threads of the repository of a job, and nothing else. */
+  async function threadsReader(job: ClaimedJob, mint: MintInstallationToken) {
+    let token = await mintFor(job, mint, THREADS_PERMISSIONS)
+    return createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: token.token, fetch: deps.fetch })
   }
 
   /**
@@ -197,7 +214,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
-    let { rules, installationToken, resolve, wantsRules } = prepared
+    let { rules, installationToken, resolve, wantsRules, threads } = prepared
     let { provider, providers, keyFromService } = keys
     log('info', 'job.claimed', {
       jobId: job.id,
@@ -210,6 +227,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       provider: job.provider ? { id: job.provider.id, kind: job.provider.kind } : 'service',
       kind: job.kind,
       ...(resolve ? { threads: resolve.threads.length } : {}),
+      ...(threads ? { answeredThreads: threads.length } : {}),
     })
     // REV-12. The models of the config, to a runner that reads them, and only when the job
     // also carries their provider: `service`, or an entry of `providers`. Else the runner
@@ -246,7 +264,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       ...(models && wantsModels && reachable ? { models } : {}),
       ...(wantsRules && job.kind === 'review' ? { rules: jobRules } : {}),
     }
-    return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review' })
+    return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review', ...(threads ? { threads } : {}) })
   }
 
   return createController(runnerRoutes, {

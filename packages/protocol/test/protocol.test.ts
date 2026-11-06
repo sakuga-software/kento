@@ -249,6 +249,16 @@ test('a job carries the models of the config of its repository, or none (REV-12)
   assert.equal(parseJob({ ...job(), models: { provider: 'service', model: 'x' } }).ok, false);
 });
 
+test('a review job carries the answered threads with the feature threads; a resolve job never (REV-71)', () => {
+  assert.ok(parseClaimRequest({ hasProviderKey: true, features: ['providers', 'models', 'rules', 'threads'], ownProvider: null }).ok);
+  const threads = (resolveJob() as Extract<Job, { kind: 'resolve' }>).resolve.threads;
+  assert.deepEqual(parseJob({ ...job(), threads }), { ok: true, value: { ...job(), threads } });
+  assert.ok(parseJob({ ...job(), threads: [] }).ok);
+  assert.equal(parseJob({ ...resolveJob(), threads }).ok, false, 'a resolve job reads its threads in `resolve`');
+  assert.equal(parseJob({ ...job(), threads: Array(21).fill(threads[0]) }).ok, false, 'at most MAX_RESOLVE_THREADS');
+  assert.equal(parseJob({ ...job(), threads: [{ ...threads[0], comments: [{ ...threads[0]!.comments[0], body: 'x'.repeat(2101) }] }] }).ok, false, 'a comment comes cut');
+});
+
 // --- rules (REV-19) ---------------------------------------------------------------------------
 
 const RULE = {

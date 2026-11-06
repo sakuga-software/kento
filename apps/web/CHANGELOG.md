@@ -18,6 +18,24 @@ new variable, no new permission.
 
 Check: a comment `Fixed.` then `@kento-review` on the next line gets 👀, then a review.
 
+## REV-71: A review reads the replies in the open threads of Kentō
+
+No migration, no new variable, no new permission. A runner of this release says `threads` in the
+features of its claim. For a review job, the service then reads the open threads of the pull
+request with the token `pull_requests: read` that a resolve job already uses, and sends the threads
+of a finding of the bot in which someone else replied, cleaned as for a resolve job (at most 20).
+The review reads them as data: the model gives a verdict on each, and a finding near a thread that
+it calls refuted goes away when the file did not change since the thread. A failed read of the
+threads logs `job.threads_failed` and the review runs without them.
+
+Deploy `web` before the runners: a runner of this release sends the feature `threads` in its
+claim, and an earlier service refuses it. A runner of an earlier release does not say `threads`
+and gets its review jobs without threads, as before.
+
+Check: on a pull request with a thread of Kentō that a person answered, the log `job.claimed` of
+the next review gives `answeredThreads`, and a finding refuted on an unchanged file gives
+`job.finding_refuted_in_thread` in the log of the runner.
+
 ## REV-65: One index by runner less on the jobs
 
 Migration `0022_drop_jobs_runner_id_idx`, one `DROP INDEX "jobs_runner_id_idx"`: the index on

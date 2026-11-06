@@ -81,8 +81,10 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  *   repository chose for its level (REV-12).
  * - `rules`: a review job can carry `rules`, the active rules of its repository and of its org
  *   (REV-19), and a finding of the result can cite one with `rule_id`.
+ * - `threads`: a review job can carry `threads`, the open threads of the bot that someone answered
+ *   (REV-71). The review reads their replies as data.
  */
-export const FEATURES = ['providers', 'models', 'rules'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -223,8 +225,12 @@ type JobBase = {
   rules?: JobRule[];
 };
 
-/** A review job has no `resolve` key: a runner of an earlier release reads it as before. */
-export type Job = (JobBase & { kind: 'review' }) | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
+/**
+ * A review job has no `resolve` key: a runner of an earlier release reads it as before. `threads`:
+ * with the feature `threads` only (REV-71), the open threads of the bot that someone answered, the
+ * first MAX_RESOLVE_THREADS of them, cleaned as for a resolve job.
+ */
+export type Job = (JobBase & { kind: 'review'; threads?: ResolveThread[] }) | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
 const claimRequest = obj({
   hasProviderKey: bool,
@@ -300,7 +306,7 @@ const resolveThread = obj({
 });
 const count = int({ min: 0, max: 100_000 });
 const job = tagged('kind', {
-  review: obj({ ...jobBase, kind: oneOf(['review'] as const) }),
+  review: obj({ ...jobBase, kind: oneOf(['review'] as const), threads: optional(arr(resolveThread, { max: MAX_RESOLVE_THREADS })) }),
   resolve: obj({
     ...jobBase,
     kind: oneOf(['resolve'] as const),

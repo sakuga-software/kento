@@ -37,6 +37,17 @@ export const RESOLVE_SCHEMA = {
 };
 
 /**
+ * The comments of a thread as the model reads them: where it is, who opened it, then each comment
+ * cleaned and cut. `resolve` and the review (answered.ts, REV-71) both show a thread this way.
+ */
+export function threadComments(t: OpenThread, heading: string): string {
+  const opener = t.comments[0];
+  const parts = [`\`${t.path}:${t.line ?? '?'}\`, opened by ${opener.author} (${opener.isBot ? 'a bot' : 'a person'})\n\n${heading} Comments\n`];
+  for (const c of t.comments) parts.push(`\n**${c.author}** (${c.isBot ? 'bot' : 'person'}):\n\n${cleanBody(c.body)}\n`);
+  return parts.join('');
+}
+
+/**
  * The message that the model reads: each thread, the code at the head around it, and its diff since.
  * It stops before MAX_RESOLVE_PACK_BYTES, and gives the threads that it holds.
  */
@@ -48,8 +59,7 @@ export function resolvePack(repo: string, base: string, head: string, threads: O
   for (const t of threads) {
     const parts: string[] = [];
     const opener = t.comments[0];
-    parts.push(`\n## Thread ${t.id}\n\n\`${t.path}:${t.line ?? '?'}\`, opened by ${opener.author} (${opener.isBot ? 'a bot' : 'a person'})\n\n### Comments\n`);
-    for (const c of t.comments) parts.push(`\n**${c.author}** (${c.isBot ? 'bot' : 'person'}):\n\n${cleanBody(c.body)}\n`);
+    parts.push(`\n## Thread ${t.id}\n\n`, threadComments(t, '###'));
     let lines: string[] = [];
     try {
       lines = git(repo, 'show', `${head}:${t.path}`).split('\n');

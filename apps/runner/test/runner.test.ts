@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -826,4 +826,39 @@ test('a job of a service of an earlier release has no rules: the result has no r
   if (result.outcome !== 'done') return;
   assert.ok(!('rule_id' in result.review.findings[0]!), 'a finding without a rule sends no rule_id');
   assert.ok(!JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema has no rule_id without rules');
+});
+
+// --- answered threads (REV-71) ------------------------------------------------------------------
+
+test('a review job with an answered thread: the pack holds the reply, and a refuted finding on an unchanged file is not sent', async () => {
+  const { api, results } = fakeApi();
+  const bodies: any[] = [];
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    bodies.push(body);
+    const content = { ...answer(), confidence_score: 4, threads: [{ id: 'T1', verdict: 'refuted', reason: 'La ligne 2 soustrait à dessein.' }] };
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  const threads = [
+    {
+      id: 'PRRT_kwDO71',
+      path: 'sum.ts',
+      line: 2,
+      comments: [
+        { id: 1, author: 'kento-review', isBot: true, body: '**Soustraction**', commit: head },
+        { id: 2, author: 'alex', isBot: false, body: 'Voulu : `sum` soustrait dans ce module.', commit: head },
+      ],
+    },
+  ];
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, threads }), deps(api, model));
+
+  const pack = bodies[0].messages.at(-1).content as string;
+  assert.match(pack, /## Answered threads[\s\S]*\*\*alex\*\* \(person\):\n\nVoulu : `sum` soustrait dans ce module\./);
+  assert.ok(JSON.stringify(bodies[0].response_format).includes('"threads"'));
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  assert.deepEqual(result.review.findings, []);
+  assert.equal(result.review.score, 4);
+  assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === 'job.finding_refuted_in_thread' && l.path === 'sum.ts'));
 });

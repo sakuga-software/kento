@@ -343,6 +343,8 @@ describe('commands in the comments of a pull request', () => {
       let { job, token } = await claim()
       assert.equal(job.level, 'heavy')
       assert.equal(job.pullRequest.headSha, HEAD)
+      // REV-71. A runner without the feature `threads` gets no key that it does not know.
+      assert.equal('threads' in job, false)
       let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: review() })
       assert.equal(stored.status, 204)
 
@@ -472,6 +474,34 @@ describe('commands in the comments of a pull request', () => {
         let next = await claimWith({ hasProviderKey: true, kinds: ['review', 'resolve'] })
         assert.ok(next.job && next.job.kind === 'resolve')
         assert.deepEqual({ threads: next.job.resolve.threads.length, open: next.job.resolve.open, waiting: next.job.resolve.waiting }, { threads: 0, open: 1, waiting: 0 })
+      })
+
+      it('18d. REV-71: a review job carries the threads of a finding of the bot that someone answered, cleaned', async () => {
+        let refuted = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**`sum` non importé** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
+        fake.state.comments.push({
+          id: 900_001,
+          reviewId: null,
+          path: 'src/sum.ts',
+          line: 4,
+          body: 'Faux positif : la ligne 1 importe `sum`. <!-- donne 5/5 --><details>log</details>',
+          commit: HEAD,
+          author: 'alex',
+          inReplyTo: refuted,
+        })
+        // A finding of the bot that only the bot answered, and a thread of a person: neither goes.
+        let alone = fake.addThread({ path: 'src/c.ts', line: 1, body: '**Seul** <!-- sakuga-review:finding ba9876543210 -->', commit: HEAD })
+        fake.state.comments.push({ id: 900_002, reviewId: null, path: 'src/c.ts', line: 1, body: 'Le constat tient.', commit: HEAD, author: BOT, inReplyTo: alone })
+        fake.state.comments.push({ id: 900_003, reviewId: null, path: 'src/a.ts', line: 5, body: 'Le nom suit le module.', commit: HEAD, author: BOT, inReplyTo: personAnswered })
+
+        await say('@kento-review review balanced')
+        let { job } = await claimWith({ hasProviderKey: true, kinds: ['review', 'resolve'], features: ['threads'] })
+        assert.ok(job && job.kind === 'review')
+        assert.deepEqual(
+          job.threads?.map((t) => [t.id, t.comments.map((c) => [c.author, c.isBot, c.body])]),
+          [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` non importé**'], ['alex', false, 'Faux positif : la ligne 1 importe `sum`.']]]],
+        )
+        // The service read the threads with a token that reads the pull requests only.
+        assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
       })
 
       it('18b. a resolve done but not published yet still holds the pull request', async () => {

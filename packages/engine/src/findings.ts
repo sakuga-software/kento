@@ -38,7 +38,40 @@ export type Answer = {
   not_reviewed: string[];
   /** Whether a stronger level would review this pull request better, and why. */
   deeper_review: { recommended: boolean; reason: string };
+  /** REV-71. The verdict of the model on each answered thread of the pack (answered.ts). */
+  threads?: ThreadVerdict[] | null;
 };
+
+/** REV-71. Whether a reply in a thread refutes its finding (answered.ts). */
+export const THREAD_VERDICTS = ['refuted', 'upheld'] as const;
+/** `pass`: the pass that gave the verdict, in a review in passes (passes.ts). */
+export type ThreadVerdict = { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reason: string; pass?: string };
+
+/**
+ * The schema of the verdicts on the answered threads of the pack. The model can give null: a strict
+ * schema needs every key in `required`, and a section of the pack must never fail the whole review.
+ * The id is a free string: an id that names no thread is ignored (answered.ts).
+ */
+export function threadsSchema(refs: readonly string[]) {
+  return {
+    anyOf: [
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: `One of ${refs.join(', ')}.` },
+            verdict: { type: 'string', enum: [...THREAD_VERDICTS] },
+            reason: { type: 'string' },
+          },
+          required: ['id', 'verdict', 'reason'],
+          additionalProperties: false,
+        },
+      },
+      { type: 'null' },
+    ],
+  };
+}
 /**
  * The model that answered, its tokens and its cost in dollars. `cost_source` says where the cost
  * comes from (see prices.ts); with `unknown`, the cost is 0 and the review says that it is not known.
@@ -79,16 +112,22 @@ const FINDING_SCHEMA = {
 };
 /**
  * The answer schema. With the references of the rules of the pack (REV-19), each finding also gives
- * `rule_id`: one of these references, or null. Without rules, the schema stays as before.
+ * `rule_id`: one of these references, or null. With the references of the answered threads of the
+ * pack (REV-71), the answer also gives `threads`: a verdict on each. Without either, the schema stays
+ * as before.
  */
-export function answerSchema(ruleRefs: readonly string[] = []) {
-  if (!ruleRefs.length) return ANSWER_SCHEMA;
-  const finding = {
-    ...FINDING_SCHEMA,
-    properties: { ...FINDING_SCHEMA.properties, rule_id: { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] } },
-    required: [...FINDING_SCHEMA.required, 'rule_id'],
-  };
-  return { ...ANSWER_SCHEMA, properties: { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } } };
+export function answerSchema(ruleRefs: readonly string[] = [], threadRefs: readonly string[] = []) {
+  if (!ruleRefs.length && !threadRefs.length) return ANSWER_SCHEMA;
+  const finding = ruleRefs.length
+    ? {
+        ...FINDING_SCHEMA,
+        properties: { ...FINDING_SCHEMA.properties, rule_id: { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] } },
+        required: [...FINDING_SCHEMA.required, 'rule_id'],
+      }
+    : FINDING_SCHEMA;
+  const properties: Record<string, unknown> = { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } };
+  if (!threadRefs.length) return { ...ANSWER_SCHEMA, properties };
+  return { ...ANSWER_SCHEMA, properties: { ...properties, threads: threadsSchema(threadRefs) }, required: [...ANSWER_SCHEMA.required, 'threads'] };
 }
 
 export const ANSWER_SCHEMA = {

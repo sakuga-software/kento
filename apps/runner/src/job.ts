@@ -15,7 +15,7 @@ import {
   type ReviewResult,
   type ThreadVerdict,
 } from '@sakuga-review/engine';
-import { HEARTBEAT_SECONDS, type CostSource, type Job, type ProviderKind, type ResolvePayload, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
+import { HEARTBEAT_SECONDS, type CostSource, type Job, type ProviderKind, type ResolvePayload, type ResolveThread, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';
@@ -244,6 +244,8 @@ async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): 
       baseUrl: model.baseUrl,
       // REV-19. The rules come with the job, from the service: never from the checkout.
       rules: job.rules ?? [],
+      // REV-71. The answered threads come with the job, already cleaned by the service.
+      threads: job.kind === 'review' ? openThreads(job.threads ?? []) : [],
       fetch,
       log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
     });
@@ -251,8 +253,17 @@ async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): 
       // The trace of the rules: those that the job carried, and those that the pack held.
       log('info', 'job.rules', { jobId: job.id, received: job.rules.map((r) => r.id), packed: result.rules.map((r) => r.id) });
     }
+    for (const f of result.refutedInThread) log('info', 'job.finding_refuted_in_thread', { jobId: job.id, path: f.path, title: f.title });
     return payload(result, job.providers !== undefined);
   });
+}
+
+/** The threads of a job as the engine reads them: a comment with no commit has no `commit` key. */
+function openThreads(threads: ResolveThread[]): OpenThread[] {
+  return threads.map((t) => ({
+    ...t,
+    comments: t.comments.map(({ commit, ...c }) => ({ ...c, ...(commit ? { commit } : {}) })),
+  }));
 }
 
 /**
@@ -280,10 +291,7 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
   if (job.resolve.threads.length === 0) return empty;
 
   return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) => {
-    const threads: OpenThread[] = job.resolve.threads.map((t) => ({
-      ...t,
-      comments: t.comments.map(({ commit, ...c }) => ({ ...c, ...(commit ? { commit } : {}) })),
-    }));
+    const threads = openThreads(job.resolve.threads);
     // As the Action: the diff of a thread whose commit is gone starts at the merge base.
     const base = mergeBase(checkout.repoDir, checkout.base, checkout.head);
     const { pack, held } = resolvePack(checkout.repoDir, base, checkout.head, threads);

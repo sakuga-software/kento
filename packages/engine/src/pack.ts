@@ -269,6 +269,8 @@ export function buildPack(
   head: string,
   contextKind: ContextKind,
   rules: readonly Rule[] = [],
+  /** REV-71. The section of the answered threads (answered.ts), after the rules. */
+  answered = '',
 ): { pack: string; skipped: string[]; rules: PackedRule[] } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
@@ -307,7 +309,7 @@ export function buildPack(
   const importsSize = [...importsOf.values()].reduce((sum, text) => sum + text.length, 0);
 
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
-  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - commits.length - importsSize - 2000;
+  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
@@ -320,6 +322,7 @@ export function buildPack(
   if (skipped.length) parts.push(`## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n`);
   parts.push(docs);
   parts.push(rulesText);
+  parts.push(answered);
   parts.push(
     '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
       'A test file shows three lines of context.\n\n```diff\n',

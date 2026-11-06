@@ -1,6 +1,7 @@
 // The open review threads of a pull request, read by the service when a runner claims a resolve job
 // (REV-7). The query is the one of `resolve` in review/sakuga-review.ts. The runner gets the threads
 // in the job, already cleaned: it never reads GitHub with a token that can see the pull request.
+import { FINDING_KEY } from '@sakuga-review/engine/render'
 import { cleanBody, markerResolve } from '@sakuga-review/engine/threads'
 import { MAX_RESOLVE_THREADS, SHA, type ResolveInput, type ResolveThread } from '@sakuga-review/protocol'
 
@@ -81,8 +82,24 @@ export async function readResolveInput(github: GitHub, fullName: string, pr: num
   let marker = markerResolve(head)
   let open = await readOpenThreads(github, fullName, pr)
   // A thread that a resolve already answered at this head waits for a new push.
-  let waiting: ResolveThread[] = open
-    .filter((t) => !t.comments.some((c) => c.body.includes(marker)))
-    .map((t) => ({ ...t, comments: t.comments.map((c) => ({ ...c, body: cleanBody(c.body) })) }))
+  let waiting = cleaned(open.filter((t) => !t.comments.some((c) => c.body.includes(marker))))
   return { threads: waiting.slice(0, MAX_RESOLVE_THREADS), open: open.length, waiting: waiting.length }
+}
+
+/** The comments of threads as the model reads them: cleaned and cut. */
+const cleaned = (threads: OpenThread[]): ResolveThread[] =>
+  threads.map((t) => ({ ...t, comments: t.comments.map((c) => ({ ...c, body: cleanBody(c.body) })) }))
+
+/**
+ * REV-71. The threads of a review job: the open threads of a finding of the bot (its first comment
+ * holds the key of a finding) in which someone else replied, the first MAX_RESOLVE_THREADS of them,
+ * cleaned as for a resolve job. The review reads the replies as data (packages/engine/src/answered.ts).
+ */
+export async function readAnsweredThreads(github: GitHub, fullName: string, pr: number): Promise<ResolveThread[]> {
+  let open = await readOpenThreads(github, fullName, pr)
+  let answered = open.filter((t) => {
+    let [opener, ...replies] = t.comments
+    return opener !== undefined && opener.isBot && FINDING_KEY.test(opener.body) && replies.some((c) => c.author !== opener.author)
+  })
+  return cleaned(answered.slice(0, MAX_RESOLVE_THREADS))
 }

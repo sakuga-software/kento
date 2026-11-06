@@ -93,7 +93,7 @@ export async function reviewInPasses(
 ): Promise<PassesResult> {
   const passes = options.passes ?? BASE_PASSES;
   const prepared = prepareReview(input, options.passConfig);
-  const schema = answerSchema(prepared.rules.map((r) => r.ref));
+  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref));
   const settled = await Promise.allSettled(passes.map((pass) => askModel(input, options.passConfig, prepared.pack, schema, pass.focus)));
 
   const reports: PassReport[] = [];
@@ -125,6 +125,9 @@ export async function reviewInPasses(
     not_reviewed: [...new Set(answers.flatMap((a) => a.answer.not_reviewed ?? []))],
     deeper_review: answers.map((a) => a.answer.deeper_review).find((d) => d?.recommended) ?? lead.answer.deeper_review,
     findings: checked.kept,
+    // REV-71. The verdicts of every pass, with their pass: only the pass of a finding can uphold its
+    // thread against a refutation (answered.ts).
+    threads: answers.flatMap(({ pass, answer }) => (Array.isArray(answer.threads) ? answer.threads : []).map((v) => ({ ...v, pass: pass.id }))),
   };
   const usage: Usage = {
     model: `passes(${reports.map((r) => r.model ?? `${r.id} failed`).join(', ')}) + ${checked.usage?.model ?? 'no check'}`,

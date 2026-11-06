@@ -1,4 +1,5 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
+import { answeredSection, dropRefuted, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
@@ -7,6 +8,7 @@ import type { Level } from '../../protocol/src/index.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
+import type { OpenThread } from './resolve.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
 
 export type ReviewInput = ModelClient & {
@@ -23,6 +25,11 @@ export type ReviewInput = ModelClient & {
    * checkout. The pack holds those whose paths the change touches.
    */
   rules?: readonly Rule[];
+  /**
+   * REV-71. The open threads of the pull request, from the caller, with their comments. The pack
+   * holds those that a bot opened and someone else answered (answered.ts).
+   */
+  threads?: readonly OpenThread[];
 };
 
 /**
@@ -60,6 +67,10 @@ export type ReviewResult = {
   rules: PackedRule[];
   /** The changed lines of each file at the head: a comment can go on these lines only. */
   lines: ChangedLines;
+  /** REV-71. The answered threads that the pack held. */
+  threads: AnsweredThread[];
+  /** REV-71. The findings that a refuted thread removed. */
+  refutedInThread: Finding[];
 };
 
 /** The merge base of the tip of the base branch and the head. */
@@ -74,7 +85,7 @@ export function mergeBase(repoDir: string, base: string, head: string): string {
 export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResult> {
   const config = input.config ?? levelConfig(input.level);
   const prepared = prepareReview(input, config);
-  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref)));
+  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref)));
   return finishReview(input, prepared, answer, usage);
 }
 
@@ -85,12 +96,14 @@ export type PreparedReview = {
   skipped: string[];
   rules: PackedRule[];
   lines: ChangedLines;
+  threads: AnsweredThread[];
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
   const base = mergeBase(input.repoDir, input.base, input.head);
-  const { pack, skipped, rules } = buildPack(input.repoDir, base, input.head, config.context, input.rules);
-  return { base, pack, skipped, rules, lines: changedLines(input.repoDir, base, input.head) };
+  const answered = answeredSection(input.repoDir, input.head, input.threads ?? []);
+  const { pack, skipped, rules } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section);
+  return { base, pack, skipped, rules, lines: changedLines(input.repoDir, base, input.head), threads: answered.held };
 }
 
 /** The review from the answer of the model: the rules, the anchors, the fingerprints, the score and the verdict. */
@@ -100,7 +113,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines } = prepared;
+  const { base, pack, skipped, rules, lines, threads } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -114,6 +127,9 @@ export function finishReview<F extends Finding>(
   // REV-70. A finding that says a name is not imported or not defined is checked against its file.
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
+  // REV-71. A finding that a reply refuted in its thread, on a file that did not change since.
+  const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
+  for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),
@@ -136,6 +152,8 @@ export function finishReview<F extends Finding>(
     pack,
     rules,
     lines,
+    threads,
+    refutedInThread: answeredAway,
   };
 }
 
