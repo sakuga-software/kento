@@ -7,6 +7,17 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-72: A command on its own line, anywhere in the comment
+
+A line of a new comment that starts with `@kento-review` or `@sakuga-review` is a command, even
+after other text: a reply that ends with `@kento-review heavy` queues a heavy review. Before, only a
+comment that started with the name gave a command, and the rest were ignored without a word. A line
+in a block of code (a fence, or four spaces) or in a quote gives no command. A command line of the
+wrong form gets 😕 and the list of the commands, as at the start of a comment. No migration, no
+new variable, no new permission.
+
+Check: a comment `Fixed.` then `@kento-review` on the next line gets 👀, then a review.
+
 ## REV-65: One index by runner less on the jobs
 
 Migration `0022_drop_jobs_runner_id_idx`, one `DROP INDEX "jobs_runner_id_idx"`: the index on

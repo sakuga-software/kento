@@ -149,8 +149,8 @@ function pullRequestCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
 }
 
 /**
- * `issue_comment`: a new comment of an open pull request that starts with `@kento-review` or
- * `@sakuga-review`. An edited comment gives no command: a command costs money, and an edit would
+ * `issue_comment`: a new comment of an open pull request with a line that starts with
+ * `@kento-review` or `@sakuga-review`, out of a block of code and out of a quote. An edited comment gives no command: a command costs money, and an edit would
  * run it again. The command handler drops the command of a repository that is not enabled: that
  * repository keeps its commands in the workflow `review.yml`.
  */

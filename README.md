@@ -156,9 +156,11 @@ On the next push:
 
 ## Commands
 
-A comment of a pull request that starts with `@kento-review` gives a command. `@sakuga-review`, the
-old name, also works. Only the first line counts. Only a person who can write to the repository,
-or a trusted bot, can give a command, because a command costs money.
+A line of a comment of a pull request that starts with `@kento-review` gives a command, anywhere
+in the comment: a reply can end with it. `@sakuga-review`, the old name, also works. A line in a
+block of code or in a quote gives no command, and neither does a mention in the middle of a line.
+The first command line of the comment counts. Only a person who can write to the repository, or a
+trusted bot, can give a command, because a command costs money.
 
 | Command | What it does |
 | --- | --- |

@@ -46,8 +46,41 @@ describe('parseCommentCommand', () => {
     assert.deepEqual(parseCommentCommand('@kento-review frobnicate heavy'), { verb: 'unknown', text: '@kento-review frobnicate heavy' })
   })
 
-  it('gives null when the comment does not start with a name of the bot', () => {
+  it('reads a command on its own line anywhere in the comment (REV-72)', () => {
+    assert.deepEqual(parseCommentCommand('Fixed in abc1234, with a test.\n\n@kento-review balanced'), { verb: 'review', level: 'balanced', force: false })
+    assert.deepEqual(parseCommentCommand('Rebased on main.\n@sakuga-review review heavy\nThanks!'), { verb: 'review', level: 'heavy', force: false })
+    assert.deepEqual(parseCommentCommand('Done.\r\n\r\n@kento-review resolve balanced\r\n'), { verb: 'resolve', level: 'balanced', force: false })
+    // The first command of the comment counts, as one comment gives one job.
+    assert.deepEqual(parseCommentCommand('Two asks:\n@kento-review heavy\n@kento-review resolve'), { verb: 'review', level: 'heavy', force: false })
+  })
+
+  it('gives `unknown` for a command of the wrong form on its own line, so that the bot answers it (REV-72)', () => {
+    assert.deepEqual(parseCommentCommand('Thanks for the review.\n\n@kento-review hevy'), { verb: 'unknown', text: '@kento-review hevy' })
+    assert.deepEqual(parseCommentCommand('Fixed.\n@sakuga-review please review again'), { verb: 'unknown', text: '@sakuga-review please review again' })
+  })
+
+  it('reads no command in a code block or a quote (REV-72)', () => {
+    assert.equal(parseCommentCommand('Run this:\n```\n@kento-review heavy\n```'), null)
+    assert.equal(parseCommentCommand('Run this:\n~~~md\n@kento-review heavy\n~~~'), null)
+    assert.equal(parseCommentCommand('  ```sh\n@kento-review heavy\n  ```\nok'), null)
+    // A fence of four backticks ends only at four backticks or more.
+    assert.equal(parseCommentCommand('````\n```\n@kento-review heavy\n```\n````'), null)
+    // A fence that is never closed runs to the end of the comment.
+    assert.equal(parseCommentCommand('```\n@kento-review heavy'), null)
+    assert.equal(parseCommentCommand('Indented code:\n\n    @kento-review heavy'), null)
+    assert.equal(parseCommentCommand('> @kento-review heavy\n\nI did not ask for this.'), null)
+    assert.equal(parseCommentCommand('> quoted\n>\n>  @kento-review resolve\nAgreed.'), null)
+    // Markdown keeps in the quote the lines that follow it up to a blank line.
+    assert.equal(parseCommentCommand('> You said:\n@kento-review heavy'), null)
+    assert.equal(parseCommentCommand('Use `@kento-review heavy` for a deeper look.'), null)
+    // After the block, a command on its own line counts.
+    assert.deepEqual(parseCommentCommand('```\n@kento-review heavy\n```\n@kento-review balanced'), { verb: 'review', level: 'balanced', force: false })
+    assert.deepEqual(parseCommentCommand('> @kento-review heavy\n\n@kento-review resolve'), { verb: 'resolve', level: 'lite', force: false })
+  })
+
+  it('gives null when no line of the comment starts with a name of the bot', () => {
     assert.equal(parseCommentCommand('LGTM @kento-review review heavy'), null)
+    assert.equal(parseCommentCommand('Fixed.\nAsk @kento-review heavy if needed.'), null)
     assert.equal(parseCommentCommand('@kentobot review'), null)
     // `@kento` is a GitHub account of another person: a mention notifies it.
     assert.equal(parseCommentCommand('@kento review heavy'), null)

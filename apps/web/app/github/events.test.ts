@@ -174,6 +174,12 @@ describe('commandFor issue_comment', () => {
     })
   })
 
+  it('a command on its own line after a reply gives a command (REV-72)', () => {
+    let command = commandFor('issue_comment', issueCommentPayload({ body: 'Fixed in abc1234.\n\n@kento-review heavy' }), policy)
+    assert.ok(command.type === 'comment_command')
+    assert.deepEqual(command.command, { verb: 'review', level: 'heavy', force: false })
+  })
+
   it('an unknown command still goes to the handler, which answers with the list', () => {
     let command = commandFor('issue_comment', issueCommentPayload({ body: '@kento-review frobnicate' }), policy)
     assert.ok(command.type === 'comment_command')
@@ -188,6 +194,7 @@ describe('commandFor issue_comment', () => {
   it('a comment of an issue, or a comment that is not a command, gives nothing', () => {
     assert.equal(reasonOf(issueCommentPayload({ onPullRequest: false }), 'issue_comment'), 'comment is not on a pull request')
     assert.equal(reasonOf(issueCommentPayload({ body: 'Looks good. @kento-review review heavy' }), 'issue_comment'), 'comment is not a command')
+    assert.equal(reasonOf(issueCommentPayload({ body: 'Example:\n```\n@kento-review heavy\n```' }), 'issue_comment'), 'comment is not a command')
   })
 
   it('a comment of any repository gives the command: the handler reads whether the repository is enabled', () => {
