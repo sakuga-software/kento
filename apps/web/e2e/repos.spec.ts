@@ -252,7 +252,7 @@ test.describe('the Repos screen', () => {
   test('a member reads the list under « Lecture seule », with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')
-    await expect(page.getByText('Lecture seule.')).toBeVisible()
+    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
     await expect(page.getByRole('table')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Activer/ })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Désactiver' })).toHaveCount(0)

@@ -37,6 +37,8 @@ export function Document(handle: Handle<DocumentProps>) {
           <script src={`/assets/theme.js?v=${v}`}></script>
           {/* The confirmations of the destructive actions: « Annuler » and Échap. */}
           <script src={`/assets/confirm.js?v=${v}`} defer></script>
+          {/* REV-91: « Menu » under 760 px, and the org switch. */}
+          <script src={`/assets/frame.js?v=${v}`} defer></script>
         </head>
         <body>{children}</body>
       </html>

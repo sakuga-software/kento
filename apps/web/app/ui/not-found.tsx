@@ -2,7 +2,7 @@ import type { Handle } from 'remix/component'
 
 import { authRoutes, pageRoutes } from '../routes.ts'
 import { Document } from './document.tsx'
-import { MarkGlyph } from './icons.tsx'
+import { Logo } from './icons.tsx'
 import { Shell, type PageFrame, type Section } from './shell.tsx'
 
 /**
@@ -56,22 +56,20 @@ export function ErrorPage(handle: Handle<ErrorPageProps>) {
       return (
         <Document title={error.title} theme={frame.theme} assetVersion={frame.assetVersion}>
           <main class="signin">
-            <div>
+            <div class="signin-wrap signin-wrap-narrow">
               <div class="signin-card">
-                <span class="mark">
-                  <MarkGlyph />
-                  <span class="mark-name">Kentō</span>
-                  <span class="mark-kanji" aria-hidden="true">
-                    見当
+                <div class="signin-main">
+                  <span class="mark">
+                    <Logo />
                   </span>
-                </span>
-                <div>
-                  <h1>{error.title}</h1>
-                  <p>{error.text}</p>
+                  <div>
+                    <h1>{error.title}</h1>
+                    <p class="signin-lead">{error.text}</p>
+                  </div>
+                  <a class="button button-primary button-large" href={authRoutes.signIn.href()}>
+                    Se connecter à Kentō
+                  </a>
                 </div>
-                <a class="button button-primary button-large" href={authRoutes.signIn.href()}>
-                  Se connecter à Kentō
-                </a>
               </div>
               <p class="signin-foot">Kentō {frame.version} · par Sakuga</p>
             </div>

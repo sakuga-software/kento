@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
 import { Document } from './document.tsx'
-import { AlertIcon, ExternalIcon, GitHubIcon, MarkGlyph } from './icons.tsx'
+import { AlertIcon, ExternalIcon, GitHubIcon, Logo } from './icons.tsx'
 import type { Theme } from './theme.ts'
 
 /** Why the sign-in page is shown again. Each one has its sentence below. */
@@ -65,60 +65,72 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
     return (
       <Document title="Connexion" theme={theme} assetVersion={assetVersion}>
         <main class="signin">
-          <div>
+          <div class="signin-wrap">
             <div class="signin-card">
-              <span class="mark">
-                <MarkGlyph />
-                <span class="mark-name">Kentō</span>
-                <span class="mark-kanji" aria-hidden="true">
-                  見当
+              <div class="signin-main">
+                <span class="mark">
+                  <Logo />
                 </span>
-              </span>
-              <div>
-                <h1>Se connecter à Kentō</h1>
-                <p>La review des pull requests de votre organisation.</p>
-              </div>
-              {message ? (
-                <div class={`banner ${message.tone === 'alert' ? 'banner-alert' : 'banner-info'}`} role="alert">
-                  <AlertIcon />
-                  <p>
-                    <strong>{message.title}</strong>{' '}
-                    {refused && refusedLogin ? (
-                      <>
-                        Connecté à GitHub en tant que <strong class="mono">@{refusedLogin}</strong>.{' '}
-                      </>
-                    ) : null}
-                    {message.text}
+                <div>
+                  <h1>Se connecter à Kentō</h1>
+                  <p class="signin-lead">
+                    La review des pull requests de votre organisation. Chaque finding est suivi d’un push à l’autre, avec
+                    le coût de chaque review et la précision de chaque repo.
                   </p>
                 </div>
-              ) : null}
-              {refused ? (
-                <div class="signin-actions">
-                  <a class="button button-primary button-large" href={switchHref ?? signInHref!}>
-                    <GitHubIcon />
-                    Changer de compte GitHub
-                  </a>
-                  {installHref ? (
-                    <a class="button button-large" href={installHref} rel="noreferrer" target="_blank">
-                      Installer Kentō sur une organisation
-                      <ExternalIcon />
-                      <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                {message ? (
+                  <div class={`banner ${message.tone === 'alert' ? 'banner-alert' : 'banner-info'}`} role="alert">
+                    <AlertIcon />
+                    <p>
+                      <strong>{message.title}</strong>{' '}
+                      {refused && refusedLogin ? (
+                        <>
+                          Connecté à GitHub en tant que <strong class="mono">@{refusedLogin}</strong>.{' '}
+                        </>
+                      ) : null}
+                      {message.text}
+                    </p>
+                  </div>
+                ) : null}
+                {refused ? (
+                  <div class="signin-actions">
+                    <a class="button button-primary button-large" href={switchHref ?? signInHref!}>
+                      <GitHubIcon />
+                      Changer de compte GitHub
                     </a>
-                  ) : null}
-                  <p class="signin-note">
-                    Un admin vous a invité ? <a href={signInHref!}>Réessayer avec {refusedLogin ? `@${refusedLogin}` : 'ce compte'}</a>.
-                  </p>
+                    {installHref ? (
+                      <a class="button button-large" href={installHref} rel="noreferrer" target="_blank">
+                        Installer Kentō sur une organisation
+                        <ExternalIcon />
+                        <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                      </a>
+                    ) : null}
+                    <p class="signin-note">
+                      Un admin vous a invité ? <a href={signInHref!}>Réessayer avec {refusedLogin ? `@${refusedLogin}` : 'ce compte'}</a>.
+                    </p>
+                  </div>
+                ) : signInHref ? (
+                  <a class="button button-primary button-large" href={signInHref}>
+                    <GitHubIcon />
+                    Continuer avec GitHub
+                  </a>
+                ) : null}
+                <p class="signin-note">
+                  Réservé aux membres des organisations où l’App Kentō est installée. Kentō lit votre identifiant GitHub
+                  et votre rôle dans l’organisation ; il n’écrit rien en votre nom.
+                </p>
+              </div>
+              {/* REV-91: the facts of the design, without a price: none is known before the sign-in. */}
+              <dl class="signin-facts">
+                <div>
+                  <dt>Précision d’un repo</dt>
+                  <dd class="mono">fixed ÷ (fixed + dismissed) · n affiché</dd>
                 </div>
-              ) : signInHref ? (
-                <a class="button button-primary button-large" href={signInHref}>
-                  <GitHubIcon />
-                  Continuer avec GitHub
-                </a>
-              ) : null}
-              <p class="signin-note">
-                Réservé aux membres des organisations où l’App Kentō est installée. Kentō lit votre identifiant GitHub
-                et votre rôle dans l’organisation ; il n’écrit rien en votre nom.
-              </p>
+                <div>
+                  <dt>Où tournent les reviews</dt>
+                  <dd class="mono">vos runners, avec votre clé, ou le runner du service</dd>
+                </div>
+              </dl>
             </div>
             <p class="signin-foot">Kentō {version} · par Sakuga</p>
           </div>

@@ -280,7 +280,7 @@ test('a member reads the runners and has no form', async ({ page, request }) => 
   await signIn(page, 'camille')
   await page.goto('/runners')
   await expect(page.getByRole('heading', { level: 1, name: 'Runners' })).toBeVisible()
-  await expect(page.getByText('Lecture seule.')).toBeVisible()
+  await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
   await expect(page.locator('form[action^="/runners"]')).toHaveCount(0)
   await expect(page.getByText('Révoquer…')).toHaveCount(0)
   await expectNoAxeViolations(page)

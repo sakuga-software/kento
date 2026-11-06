@@ -175,7 +175,7 @@ describe('the Repos screen', () => {
     assert.match(admin, /action="\/repos\/check"/)
 
     let member = (await signIn(CAMILLE)).html
-    assert.match(member, /Lecture seule\./)
+    assert.match(member, /Lecture seule<\/strong>/)
     assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Gérer l’installation/)
   })
 

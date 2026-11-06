@@ -13,8 +13,8 @@ test('an admin of the org gets the full frame, with no « Lecture seule »', asy
   let who = page.locator('.who').locator('visible=true')
   await expect(who).toContainText('alex')
   await expect(who).toContainText('Admin')
-  await expect(page.getByText('Lecture seule.')).toHaveCount(0)
-  await expect(page.locator('.org-name').locator('visible=true').first()).toHaveText('sakuga-software')
+  await expect(page.getByText('Lecture seule', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.bar-org-box')).toHaveText('sakuga-software')
   await expectNoAxeViolations(page)
   expect(errors).toEqual([])
 })
@@ -24,7 +24,7 @@ test('a member sees « Lecture seule » on every screen', async ({ page }) => {
 
   for (let path of ['/', '/repos', '/settings']) {
     await page.goto(path)
-    await expect(page.getByRole('status')).toContainText('Lecture seule. Vous êtes membre de sakuga-software')
+    await expect(page.getByRole('status')).toContainText('Lecture seule Vous êtes membre de sakuga-software')
     await expect(page.locator('.page-actions')).toHaveCount(0)
   }
   await expect(page.locator('.who').locator('visible=true')).toContainText('Membre')
@@ -59,7 +59,7 @@ test('a screen asked before the sign-in opens after it', async ({ page }) => {
 
 test('sign out ends the session', async ({ page }) => {
   await signIn(page, 'alex')
-  await page.locator('.who').locator('visible=true').getByRole('button', { name: 'Se déconnecter' }).click()
+  await page.locator('.who').getByRole('button', { name: 'Se déconnecter' }).click()
 
   await expect(page).toHaveURL(/\/login\?notice=signed_out$/)
   await expect(page.getByRole('alert')).toContainText('Vous êtes déconnecté.')

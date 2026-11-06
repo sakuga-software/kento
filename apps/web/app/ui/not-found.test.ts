@@ -151,7 +151,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
       let html = await response.text()
       assert.match(html, /Ce repo n’est plus dans l’installation/, path)
       assert.match(html, /<a href="\/repos" class="button button-primary">Voir les repos<\/a>/, path)
-      assert.match(html, /<a href="\/repos" aria-current="page">/, path)
+      assert.match(html, /<a href="\/repos" aria-current="page" class="bar-link">/, path)
     }
   })
 

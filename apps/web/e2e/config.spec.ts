@@ -245,7 +245,7 @@ test.describe('the Config screen of a repository', () => {
     await signIn(page, 'camille')
     await page.goto('/repos')
     await page.getByRole('link', { name: 'Config de orchard' }).click()
-    await expect(page.getByText('Lecture seule.')).toBeVisible()
+    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: 'lite' }).getByText('anthropic/claude-haiku-5.5')).toBeVisible()
     await expect(page.getByRole('button', { name: /Remplacer ici|Revenir à l’org/ })).toHaveCount(0)
     await expectNoAxeViolations(page)

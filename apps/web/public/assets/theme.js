@@ -12,7 +12,7 @@ document.addEventListener('change', (event) => {
   document.documentElement.dataset.theme = input.value
   const secure = location.protocol === 'https:' ? '; Secure' : ''
   document.cookie = `kento_theme=${input.value}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`
-  // Every switch on the page shows the same choice (the sidebar and the mobile footer each have one).
+  // Every switch on the page shows the same choice (the foot of the frame and the screen of a user).
   for (const other of document.querySelectorAll(`form[data-theme-switch] input[name="theme"][value="${input.value}"]`)) {
     other.checked = true
   }

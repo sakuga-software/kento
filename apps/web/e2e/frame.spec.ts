@@ -32,15 +32,14 @@ test.describe('the frame of the screens', () => {
 
   test('the navigation leads to each screen and marks it', async ({ page }, testInfo) => {
     await page.goto('/')
-    let nav = page.getByRole('navigation', {
-      name: testInfo.project.name === 'mobile' ? 'Navigation principale, mobile' : 'Navigation principale',
-      exact: true,
-    })
+    let nav = page.getByRole('navigation', { name: 'Navigation principale', exact: true })
     await expect(nav).toBeVisible()
+    // REV-91: under 760 px, « Menu » opens the list of the screens.
+    if (testInfo.project.name === 'mobile') await nav.getByRole('button', { name: 'Menu' }).click()
     await nav.getByRole('link', { name: 'Runners' }).click()
     await expect(page).toHaveURL(/\/runners$/)
     await expect(page.getByRole('heading', { level: 1, name: 'Runners' })).toBeVisible()
-    await expect(nav.getByRole('link', { name: 'Runners' })).toHaveAttribute('aria-current', 'page')
+    await expect(nav.getByRole('link', { name: 'Runners', includeHidden: true })).toHaveAttribute('aria-current', 'page')
     await expect(page.getByText(/Kentō \d+\.\d+\.\d+ · par Sakuga/)).toBeVisible()
   })
 
@@ -69,15 +68,30 @@ test.describe('the frame of the screens', () => {
     let light = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
     await theme.getByText('Appareil', { exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'system')
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(23, 22, 20)')
-    expect(light).toBe('rgb(245, 240, 230)')
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(21, 20, 19)')
+    expect(light).toBe('rgb(243, 242, 238)')
   })
 
-  test('the mobile frame has a tab bar and no sidebar', async ({ page }, testInfo) => {
+  test('the mobile frame folds the screens under « Menu », which Échap closes', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'mobile only')
     await page.goto('/')
-    await expect(page.locator('.sidebar')).toBeHidden()
-    await expect(page.getByRole('navigation', { name: 'Navigation principale, mobile' })).toBeVisible()
+    let nav = page.getByRole('navigation', { name: 'Navigation principale', exact: true })
+    let menu = nav.getByRole('button', { name: 'Menu' })
+    await expect(menu).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav.getByRole('link', { name: 'Repos', exact: true })).toBeHidden()
+    await menu.click()
+    await expect(menu).toHaveAttribute('aria-expanded', 'true')
+    await expect(nav.getByRole('link', { name: 'Repos', exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveAttribute('aria-expanded', 'false')
+    await expect(menu).toBeFocused()
+    // A click on the icon of the button opens it; a click outside of the bar closes it.
+    await menu.locator('svg').click()
+    await expect(menu).toHaveAttribute('aria-expanded', 'true')
+    // The open list covers the top of the page: the click lands lower, on the page itself.
+    await page.mouse.click(195, 800)
+    await expect(menu).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav.getByRole('link', { name: 'Repos', exact: true })).toBeHidden()
     // Nothing is wider than the screen.
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)

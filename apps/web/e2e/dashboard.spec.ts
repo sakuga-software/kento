@@ -224,7 +224,7 @@ test.describe('the dashboard', () => {
     await context.clearCookies()
     await signIn(page, 'camille')
     await page.goto('/')
-    await expect(page.getByText('Lecture seule.')).toBeVisible()
+    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: /a échoué/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Masquer/ })).toHaveCount(0)

@@ -109,8 +109,8 @@ describe('the screen of a user', () => {
     assert.match(html, /1 open · 2 fixed/)
     assert.match(html, /Fermée/)
     assert.match(html, /<a href="\/users\/alex\?prs=20">Afficher 2 PR de plus<\/a>/)
-    // The sidebar leads to this screen.
-    assert.match(html, /<a href="\/users\/alex" class="who-login">alex<\/a>|<a class="who-login" href="\/users\/alex">alex<\/a>/)
+    // The avatar of the bar leads to this screen, and marks it.
+    assert.match(html, /<a href="\/users\/alex" aria-current="page" title="alex" class="bar-avatar">/)
   })
 
   it('shows another member the same screen to read, with no form', async () => {

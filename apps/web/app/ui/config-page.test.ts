@@ -216,7 +216,7 @@ describe('the Config screen of a repository', () => {
   it('shows a member the config under « Lecture seule », with no form, and refuses their POST (403)', async () => {
     let { request, signIn, saves } = setup()
     let { cookie, csrf, html } = await signIn(CAMILLE)
-    assert.match(html, /Lecture seule\./)
+    assert.match(html, /Lecture seule<\/strong>/)
     assert.match(html, /anthropic\/claude-haiku-5\.5/)
     // REV-27: a member reads the provider and the model of the next job, with where they come from.
     assert.match(html, /Prochain job<\/span> <strong>OpenRouter · clé du service<\/strong>/)

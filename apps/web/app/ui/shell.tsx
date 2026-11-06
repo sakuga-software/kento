@@ -2,31 +2,22 @@ import type { Handle, RemixNode } from 'remix/component'
 
 import { pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Document } from './document.tsx'
-import {
-  DashboardIcon,
-  EyeIcon,
-  SignOutIcon,
-  FindingsIcon,
-  MarkGlyph,
-  ReposIcon,
-  RunnersIcon,
-  SettingsIcon,
-} from './icons.tsx'
+import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
 import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
 
 /** The screens of the navigation, in its order. */
 export type Section = 'dashboard' | 'repos' | 'findings' | 'runners' | 'settings'
 
 /**
- * `soon`: the screen is not there yet (REV-32). The sidebar names it, with « Bientôt » and no link;
- * the tab bar leaves it out. No link of the navigation leads to an empty screen.
+ * `soon`: the screen is not there yet (REV-32). The bar names it, with « Bientôt » and no link. No link
+ * of the navigation leads to an empty screen.
  */
-const NAV: { key: Section; label: string; href: string; Icon: typeof DashboardIcon; soon?: boolean }[] = [
-  { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href(), Icon: DashboardIcon },
-  { key: 'repos', label: 'Repos', href: routes.repos.href(), Icon: ReposIcon },
-  { key: 'findings', label: 'Findings', href: routes.findings.href(), Icon: FindingsIcon },
-  { key: 'runners', label: 'Runners', href: routes.runners.href(), Icon: RunnersIcon },
-  { key: 'settings', label: 'Réglages', href: routes.settings.href(), Icon: SettingsIcon },
+const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
+  { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href() },
+  { key: 'repos', label: 'Repos', href: routes.repos.href() },
+  { key: 'findings', label: 'Findings', href: routes.findings.href() },
+  { key: 'runners', label: 'Runners', href: routes.runners.href() },
+  { key: 'settings', label: 'Réglages', href: routes.settings.href() },
 ]
 
 /** The person who is signed in, and their role in the org on screen. */
@@ -69,8 +60,9 @@ export interface ShellProps {
 }
 
 /**
- * The frame of every screen: sidebar on a wide screen; top bar and tab bar under 760 px; the page
- * header; the « Lecture seule » banner for a member; the footer « Kentō x.y.z · par Sakuga ».
+ * The frame of every screen (REV-91): the bar with the mark, the five screens, the org and the avatar;
+ * under 760 px, « Menu » opens the list (public/assets/frame.js). Then the page header, the « Lecture
+ * seule » notice for a member, and the foot: « Kentō x.y.z · par Sakuga », the theme and the sign-out.
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
@@ -82,25 +74,26 @@ export function Shell(handle: Handle<ShellProps>) {
         <a class="skip-link" href="#content">
           Aller au contenu
         </a>
-        <div class="shell">
-          <aside class="sidebar" aria-label="Kentō">
+        <header class="bar" data-bar="">
+          <div class="bar-in">
             <Mark />
-            {viewer ? <OrgCard frame={frame} viewer={viewer} /> : null}
-            <nav class="nav" aria-label="Navigation principale">
-              <ul>
-                {NAV.map(({ key, label, href, Icon, soon }) => (
+            <nav class="bar-nav" aria-label="Navigation principale">
+              <button class="bar-menu" type="button" aria-expanded="false" aria-controls="bar-links" data-bar-menu="">
+                <MenuIcon />
+                Menu
+              </button>
+              <ul id="bar-links">
+                {NAV.map(({ key, label, href, soon }) => (
                   <li>
                     {soon && key !== section ? (
-                      <span class="nav-soon">
-                        <Icon />
+                      <span class="bar-link">
                         {label}
                         <span class="tag tag-quiet">Bientôt</span>
                         {/* REV-32: a screen reader hears that it is no link yet. */}
                         <span class="visually-hidden"> : pas encore disponible</span>
                       </span>
                     ) : (
-                      <a href={href} aria-current={key === section ? 'page' : undefined}>
-                        <Icon />
+                      <a class="bar-link" href={href} aria-current={key === section ? 'page' : undefined}>
                         {label}
                       </a>
                     )}
@@ -108,61 +101,43 @@ export function Shell(handle: Handle<ShellProps>) {
                 ))}
               </ul>
             </nav>
-            <div class="sidebar-foot">
-              <ThemeSwitch frame={frame} />
-              {viewer ? <Who frame={frame} viewer={viewer} /> : null}
-            </div>
-          </aside>
-
-          <div class="main">
-            <header class="topbar">
-              <Mark />
-              {viewer ? <span class="org-name">{viewer.org.login}</span> : null}
-            </header>
-
-            <main class="content" id="content" tabIndex={-1}>
-              <div class="page-header">
-                <div>
-                  <h1 class="page-title">{title}</h1>
-                  {lead ? <p class="page-lead">{lead}</p> : null}
-                </div>
-                {actions && !readOnly ? <div class="page-actions">{actions}</div> : null}
+            {viewer ? (
+              <div class="bar-end">
+                <OrgSwitch frame={frame} viewer={viewer} />
+                <Avatar viewer={viewer} current={frame.path === userRoutes.user.href({ login: viewer.login })} />
               </div>
-              {readOnly && viewer ? (
-                <div class="banner" role="status">
-                  <EyeIcon />
-                  <p>
-                    <strong>Lecture seule.</strong> Vous êtes membre de {viewer.org.login} : vous voyez tout
-                    {memberCan ? `, ${memberCan}` : ''}, et seuls les admins de l’organisation modifient
-                    {memberCan ? ' le reste' : ''}.
-                  </p>
-                </div>
-              ) : null}
-              {children}
-            </main>
-
-            <footer class="footer">
-              <div class="footer-settings">
-                <ThemeSwitch frame={frame} />
-                {viewer ? <Who frame={frame} viewer={viewer} /> : null}
-              </div>
-              <p>Kentō {frame.version} · par Sakuga</p>
-            </footer>
+            ) : null}
           </div>
-        </div>
+        </header>
 
-        <nav class="tabbar" aria-label="Navigation principale, mobile">
-          <ul>
-            {NAV.filter((item) => !item.soon || item.key === section).map(({ key, label, href, Icon }) => (
-              <li>
-                <a href={href} aria-current={key === section ? 'page' : undefined}>
-                  <Icon />
-                  {label === 'Tableau de bord' ? 'Accueil' : label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        <main class="content" id="content" tabIndex={-1}>
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">{title}</h1>
+              {lead ? <p class="page-lead">{lead}</p> : null}
+            </div>
+            {actions && !readOnly ? <div class="page-actions">{actions}</div> : null}
+          </div>
+          {readOnly && viewer ? (
+            <div class="banner banner-info" role="status">
+              <LockIcon />
+              <p>
+                <strong class="banner-title">Lecture seule</strong> Vous êtes membre de {viewer.org.login} : vous voyez tout
+                {memberCan ? `, ${memberCan}` : ''}, et seuls les admins de l’organisation modifient
+                {memberCan ? ' le reste' : ''}.
+              </p>
+            </div>
+          ) : null}
+          {children}
+        </main>
+
+        <footer class="footer">
+          <p>Kentō {frame.version} · par Sakuga</p>
+          <div class="footer-settings">
+            <ThemeSwitch frame={frame} />
+            {viewer ? <Who frame={frame} viewer={viewer} /> : null}
+          </div>
+        </footer>
       </Document>
     )
   }
@@ -171,11 +146,7 @@ export function Shell(handle: Handle<ShellProps>) {
 function Mark(_handle: Handle<{}>) {
   return () => (
     <a class="mark" href={routes.home.href()} aria-label="Kentō, tableau de bord">
-      <MarkGlyph />
-      <span class="mark-name">Kentō</span>
-      <span class="mark-kanji" aria-hidden="true">
-        見当
-      </span>
+      <Logo />
     </a>
   )
 }
@@ -207,26 +178,26 @@ export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
   }
 }
 
-/** The org on screen; a switch when the person is a member of several. */
-function OrgCard(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
+/** The org on screen; a select when the person is a member of several. frame.js sends a choice at once. */
+function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
   return () => {
     let { frame, viewer } = handle.props
     if (viewer.orgs.length < 2) {
       return (
-        <div class="org">
-          <span class="org-label">Organisation</span>
-          <span class="org-name">{viewer.org.login}</span>
-        </div>
+        <span class="bar-org">
+          <span class="visually-hidden">Organisation : </span>
+          <span class="bar-org-box">{viewer.org.login}</span>
+        </span>
       )
     }
     return (
-      <form class="org" method="post" action={routes.org.href()}>
+      <form class="bar-org" method="post" action={routes.org.href()} data-org-switch="">
         {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
         <input type="hidden" name="returnTo" value={frame.path} />
-        <label class="org-label" for="org-switch">
+        <label class="visually-hidden" for="org-switch">
           Organisation
         </label>
-        <select class="org-select" id="org-switch" name="orgId">
+        <select class="bar-org-box" id="org-switch" name="orgId">
           {viewer.orgs.map((org) => (
             <option value={org.id} selected={org.id === viewer.org.id}>
               {org.login}
@@ -241,27 +212,49 @@ function OrgCard(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
   }
 }
 
+/**
+ * Two letters: the initials of the name, else the first two of the login. Array.from splits by code
+ * point, so a character outside the BMP stays whole.
+ */
+export function initials(viewer: Pick<Viewer, 'login' | 'name'>): string {
+  let words = (viewer.name ?? '').trim().split(/\s+/).filter(Boolean).map((word) => Array.from(word))
+  let first = words[0]
+  let last = words[words.length - 1]
+  let letters = words.length >= 2 ? [first![0]!, last![0]!] : (first ?? Array.from(viewer.login)).slice(0, 2)
+  return letters.join('').toUpperCase()
+}
+
+/** REV-22: the avatar leads to the screen of the person, with their preferences. */
+function Avatar(handle: Handle<{ viewer: Viewer; current: boolean }>) {
+  return () => {
+    let { viewer, current } = handle.props
+    return (
+      <a
+        class="bar-avatar"
+        href={userRoutes.user.href({ login: viewer.login })}
+        aria-current={current ? 'page' : undefined}
+        title={viewer.login}
+      >
+        <span aria-hidden="true">{initials(viewer)}</span>
+        <span class="visually-hidden">{viewer.login}, vos préférences</span>
+      </a>
+    )
+  }
+}
+
+/** The login, the role and the sign-out, in the foot. */
 function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
   return () => {
     let { frame, viewer } = handle.props
     return (
       <div class="who">
-        {viewer.avatarUrl ? (
-          <img class="avatar" src={viewer.avatarUrl} alt="" width={32} height={32} />
-        ) : (
-          <span class="avatar" aria-hidden="true"></span>
-        )}
-        <div class="who-text">
-          {/* REV-22: the screen of the person, with their preferences. */}
-          <a class="who-login" href={userRoutes.user.href({ login: viewer.login })}>
-            {viewer.login}
-          </a>
-          <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Membre'}</span>
-        </div>
+        <span class="who-login">{viewer.login}</span>
+        <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Membre'}</span>
         <form method="post" action={routes.signOut.href()}>
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
-          <button class="button button-ghost" type="submit" aria-label="Se déconnecter" title="Se déconnecter">
+          <button class="button button-ghost" type="submit">
             <SignOutIcon />
+            Se déconnecter
           </button>
         </form>
       </div>
