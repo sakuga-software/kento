@@ -53,10 +53,11 @@ export function capState(usd: number, cap: number | null, alertPct: number): Cap
 
 const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' }
 
-export const VERDICT_LABEL: Record<string, { text: string; status: string }> = {
-  APPROVE: { text: 'Approuvée', status: 'status-online' },
-  COMMENT: { text: 'Commentaire', status: 'status-wait' },
-  REQUEST_CHANGES: { text: 'Changements demandés', status: 'status-alert' },
+/** The verdict of a review: a word on a badge, pine, fallen leaf or vermilion (REV-91). */
+export const VERDICT_LABEL: Record<string, { text: string; tag: string }> = {
+  APPROVE: { text: 'Approuvée', tag: 'tag-ok' },
+  COMMENT: { text: 'Commentaire', tag: 'tag-warn' },
+  REQUEST_CHANGES: { text: 'Changements demandés', tag: 'tag-alert' },
 }
 
 const CAP_TEXT: Record<CapState, string> = {
@@ -228,19 +229,29 @@ function total(day: DayStats): number {
   return day.published.lite + day.published.balanced + day.published.heavy
 }
 
+/** The mean time of the reviews published over the days: each day weighs by its reviews. Null without one. */
+export function weekMeanDuration(week: DayStats[]): number | null {
+  let weighted = 0
+  let count = 0
+  for (let day of week) {
+    if (day.meanDurationMs === null) continue
+    weighted += day.meanDurationMs * total(day)
+    count += total(day)
+  }
+  return count === 0 ? null : Math.round(weighted / count)
+}
+
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
     let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
-    let today = screen.week.at(-1)
-    let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
-    let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
+    let org = frame.viewer?.org.login ?? ''
     let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })
     return (
-      <Shell frame={frame} section="dashboard" title="Tableau de bord" lead="Ce qui tourne, ce qui a échoué, et ce que ça coûte.">
+      <Shell frame={frame} section="dashboard" title="Tableau de bord">
         <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
-          <p class="dash-updated hint">
+          <p class="dash-updated">
             <span data-updated={screen.now.toISOString()}>Mis à jour à {hourSeconds(screen.now)}</span>
             {' · '}
             <a href={routes.home.href()}>Actualiser</a>
@@ -252,47 +263,26 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
             </div>
           ) : null}
 
-          {screen.stall ? <StallBanner stall={screen.stall} online={screen.runnerCounts.online} now={screen.now} /> : null}
-
           {steps ? <SetupSection steps={steps} admin={admin} /> : null}
 
-          {screen.banner ? <FailureBannerView banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} /> : null}
+          <TodoSection screen={screen} admin={admin} csrf={csrf} githubUrl={githubUrl} />
 
-          <section class="dash-tiles" aria-label="En bref">
-            <Tile label="Reviews publiées aujourd’hui" value={String(today ? total(today) : 0)} />
-            <Tile label="Reviews publiées sur 7 jours" value={String(weekPublished)} />
-            <Tile label="Échecs sur 7 jours" value={String(weekFailed)} alert={weekFailed > 0} />
-            <Tile label="File de jobs" value={`${screen.queue.runningCount} en cours · ${screen.queue.queuedCount} en attente`} />
-          </section>
+          <Kpis screen={screen} precision={precision ?? null} />
 
-          <div class="dash-grid">
-            <CostSection costs={screen.costs} caps={screen.caps} />
-            <WeekSection week={screen.week} />
-          </div>
+          <WeekSection week={screen.week} />
 
-          <RecentSection recent={screen.recent} now={screen.now} />
-
-          <div class="dash-grid">
-            <QueueSection queue={screen.queue} now={screen.now} githubUrl={githubUrl} />
-            <RunnersSection runners={screen.runners} counts={screen.runnerCounts} now={screen.now} />
+          <div class="dash-main">
+            <RecentSection recent={screen.recent} now={screen.now} org={org} />
+            <div class="dash-side">
+              <QueueRunnersSection queue={screen.queue} runners={screen.runners} counts={screen.runnerCounts} now={screen.now} githubUrl={githubUrl} />
+              <CostSection costs={screen.costs} caps={screen.caps} />
+            </div>
           </div>
 
           <div class="dash-grid">
             <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} admin={admin} csrf={csrf} />
-            <DashPrecision precision={precision ?? null} org={frame.viewer?.org.login ?? ''} />
+            <DashPrecision precision={precision ?? null} org={org} />
           </div>
-
-          {screen.workflowRepos.length > 0 ? (
-            <div class="banner banner-info dash-workflow" role="note">
-              <p>
-                <strong>
-                  {screen.workflowRepos.length === 1 ? '1 repo est encore sur' : `${screen.workflowRepos.length} repos sont encore sur`}{' '}
-                  <code>review.yml</code>
-                </strong>{' '}
-                ({screen.workflowRepos.join(', ')}). Leurs findings ne sont pas suivis ici. <a href={routes.repos.href()}>Voir les repos</a>
-              </p>
-            </div>
-          ) : null}
         </div>
         <script src={`/assets/dashboard.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
@@ -376,94 +366,327 @@ export function stallText(stall: QueueStall, online: number, now: Date): { title
   return { title, cause, action: 'Vérifiez leurs labels et leurs providers sur l’écran Runners, ou démarrez un runner de plus.' }
 }
 
-function StallBanner(handle: Handle<{ stall: QueueStall; online: number; now: Date }>) {
+/**
+ * REV-91. « À traiter »: what asks for a person now, one row each. The failure of the banner, the
+ * queue that waits, a cost over the alert threshold, the runners with no signal, the repositories
+ * still on review.yml. Each row: a mark and a word, what happened, then its actions.
+ */
+function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; csrf: string; githubUrl: string }>) {
+  return () => {
+    let { screen, admin, csrf, githubUrl } = handle.props
+    let { now } = screen
+    let costs = [
+      { id: 'day', usd: screen.costs.dayUsd, cap: screen.caps.dailyCapUsd, when: 'du jour' },
+      { id: 'month', usd: screen.costs.monthUsd, cap: screen.caps.monthlyCapUsd, when: 'du mois' },
+    ]
+      .map((cost) => ({ ...cost, state: capState(cost.usd, cost.cap, screen.caps.alertPct) }))
+      .filter((cost) => cost.state === 'alert' || cost.state === 'reached')
+    let silent = screen.runners.filter((runner) => {
+      let state = runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, now)
+      return state === 'late' || state === 'offline'
+    })
+    let silentCount = screen.runnerCounts.late + screen.runnerCounts.offline
+    let count =
+      (screen.banner ? 1 : 0) + (screen.stall ? 1 : 0) + costs.length + (silentCount > 0 ? 1 : 0) + (screen.workflowRepos.length > 0 ? 1 : 0)
+    return (
+      <section class="dash-todo" aria-labelledby="todo-title">
+        <h2 id="todo-title" class="section-title">
+          À traiter <span class="count">{count}</span>
+        </h2>
+        {count === 0 ? (
+          <p class="card todo-empty hint">Rien à traiter : aucun échec en cours, la file avance et les runners répondent.</p>
+        ) : (
+          <ul class="card todo-list">
+            {screen.stall ? <StallItem stall={screen.stall} online={screen.runnerCounts.online} now={now} /> : null}
+            {screen.banner ? <FailureItem banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} now={now} /> : null}
+            {costs.map((cost) => (
+              <li>
+                <section class="todo" aria-labelledby={`todo-cost-${cost.id}`}>
+                <span class="todo-kind">
+                  <span class="status status-cost">Coût</span>
+                </span>
+                <div class="todo-body">
+                  <h3 id={`todo-cost-${cost.id}`} class="todo-title">
+                    {cost.state === 'reached' ? `Plafond ${cost.when} atteint` : `Seuil d’alerte ${cost.when} atteint`}
+                  </h3>
+                  <p class="todo-meter">
+                    {/* A limit of 0 is reached at once (capState): no share of it, no bar. */}
+                    {cost.cap! > 0 ? <Bar parts={[{ pct: (cost.usd / cost.cap!) * 100, tone: 'kuchiba' }]} /> : null}
+                    <span class="mono">
+                      {usdPrecise(cost.usd)} sur {usdPrecise(cost.cap!)}
+                      {cost.cap! > 0 ? ` · ${Math.round((cost.usd / cost.cap!) * 100)} %` : ''}
+                    </span>
+                  </p>
+                </div>
+                <div class="todo-actions">
+                  <a class="button" href={`${routes.settings.href()}#plafond`}>
+                    {admin ? 'Modifier le plafond' : 'Voir le plafond'}
+                  </a>
+                </div>
+                </section>
+              </li>
+            ))}
+            {silentCount > 0 ? (
+              <li>
+                <section class="todo" aria-labelledby="todo-runners">
+                <span class="todo-kind">
+                  <span class="status status-late">Runner</span>
+                </span>
+                <div class="todo-body">
+                  {silentCount === 1 && silent.length === 1 ? (
+                    <>
+                      <h3 id="todo-runners" class="todo-title">
+                        <code>{silent[0]!.name}</code>{' '}
+                        {silent[0]!.lastSeenAt ? `ne donne plus de signal depuis ${elapsed(silent[0]!.lastSeenAt, now)}` : 'n’a jamais donné de signal'}
+                      </h3>
+                      <p class="hint">
+                        {silent[0]!.running === 0
+                          ? 'Aucun job ne lui est confié. Il repasse en ligne à son prochain signal.'
+                          : `${silent[0]!.running} ${plural(silent[0]!.running, 'job')} en cours : sans signal, ${silent[0]!.running === 1 ? 'il repart' : 'ils repartent'} en file.`}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 id="todo-runners" class="todo-title">
+                        {silentCount === 1 ? '1 runner ne donne plus de signal' : `${silentCount} runners ne donnent plus de signal`}
+                      </h3>
+                      <p class="hint">
+                        {/* The store bounds the list of runners: the silent ones may not be in it. */}
+                        {silent.length > 0
+                          ? `${silent
+                              .slice(0, 3)
+                              .map((runner) => runner.name)
+                              .join(', ')}${silentCount > Math.min(3, silent.length) ? ` et ${silentCount - Math.min(3, silent.length)} de plus` : ''}. `
+                          : ''}
+                        Un runner repasse en ligne à son prochain signal.
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div class="todo-actions">
+                  <a class="button" href={routes.runners.href()}>
+                    Voir les runners
+                  </a>
+                </div>
+                </section>
+              </li>
+            ) : null}
+            {screen.workflowRepos.length > 0 ? (
+              <li>
+                <section class="todo dash-workflow" aria-labelledby="todo-workflow">
+                <span class="todo-kind">
+                  <span class="status status-switch">Bascule</span>
+                </span>
+                <div class="todo-body">
+                  <h3 id="todo-workflow" class="todo-title">
+                    {screen.workflowRepos.length === 1 ? '1 repo est encore sur' : `${screen.workflowRepos.length} repos sont encore sur`}{' '}
+                    <code>review.yml</code>
+                  </h3>
+                  <p class="hint">{screen.workflowRepos.join(', ')}. Leurs findings ne sont pas suivis ici.</p>
+                </div>
+                <div class="todo-actions">
+                  <a class="button" href={routes.repos.href()}>
+                    Voir les repos
+                  </a>
+                </div>
+                </section>
+              </li>
+            ) : null}
+          </ul>
+        )}
+      </section>
+    )
+  }
+}
+
+/** REV-52, in « À traiter »: jobs wait for more than QUEUE_STALL_MINUTES, the probable cause and what to do. */
+function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date }>) {
   return () => {
     let { stall, online, now } = handle.props
     let text = stallText(stall, online, now)
     return (
-      <section class="banner banner-alert dash-stall" role="alert" aria-labelledby="stall-title">
-        <div class="banner-confirm-body">
-          <h2 id="stall-title" class="banner-confirm-title">
+      <li>
+        <section class="todo dash-stall" role="alert" aria-labelledby="todo-stall">
+        <span class="todo-kind">
+          <span class="status status-wait">File</span>
+        </span>
+        <div class="todo-body">
+          <h3 id="todo-stall" class="todo-title">
             {text.title}
-          </h2>
-          <p>{text.cause}</p>
-          <p>
+          </h3>
+          <p class="hint">{text.cause}</p>
+          <p class="hint">
             {text.action} Les PR concernées portent un commentaire de Kentō.
           </p>
-          <div class="banner-confirm-actions">
-            <a class="button button-primary" href={routes.runners.href()}>
-              Voir les runners
-            </a>
-          </div>
         </div>
-      </section>
+        <div class="todo-actions">
+          <a class="button" href={routes.runners.href()}>
+            Voir les runners
+          </a>
+        </div>
+        </section>
+      </li>
     )
   }
 }
 
-function Tile(handle: Handle<{ label: string; value: string; alert?: boolean }>) {
+function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csrf: string; githubUrl: string; now: Date }>) {
   return () => {
-    let { label, value, alert } = handle.props
-    return (
-      <div class={`dash-tile ${alert ? 'dash-tile-alert' : ''}`}>
-        <span class="dash-tile-label">{label}</span>
-        <span class="dash-tile-value">{value}</span>
-      </div>
-    )
-  }
-}
-
-function FailureBannerView(handle: Handle<{ banner: FailureBanner; admin: boolean; csrf: string; githubUrl: string }>) {
-  return () => {
-    let { banner, admin, csrf, githubUrl } = handle.props
+    let { banner, admin, csrf, githubUrl, now } = handle.props
     let reason = failureText(banner)
     return (
-      <section class="banner banner-alert dash-failure" aria-labelledby="failure-title">
-        <div class="banner-confirm-body">
-          <h2 id="failure-title" class="banner-confirm-title">
+      <li>
+        <section class="todo todo-wide dash-failure" aria-labelledby={`todo-failure-${banner.id}`}>
+        <span class="todo-kind">
+          <span class="status status-alert">Échec</span>
+        </span>
+        <div class="todo-body">
+          <h3 id={`todo-failure-${banner.id}`} class="todo-title">
             La review {banner.level} de <span class="mono">{banner.repo}#{banner.prNumber}</span> a échoué
-          </h2>
-          <p>Raison : {reason.text}. {reason.action}</p>
-          <TechDetails raw={reason.raw} />
-          <p>
+          </h3>
+          <p class="hint">
+            Raison : {reason.text}. {reason.action}{' '}
             {banner.previous
               ? `La review précédente (${banner.previous.score}/5, publiée le ${clock(banner.previous.publishedAt)}) reste publiée sur la PR.`
               : 'Aucune review n’est encore publiée sur cette PR.'}
           </p>
+          <TechDetails raw={reason.raw} />
           {banner.retry ? (
-            <p>
+            <p class="hint">
               <strong>
                 Relance en {banner.retry.level} {banner.retry.state === 'queued' ? 'en file' : 'en cours'}
               </strong>
-              . Ce bandeau disparaît quand sa review est publiée.
+              . Cette ligne disparaît quand sa review est publiée.
             </p>
           ) : null}
-          <div class="banner-confirm-actions">
-            <a class="button" href={prUrl(githubUrl, banner.repo, banner.prNumber)}>
-              Voir la PR
-            </a>
-            {admin && !banner.retry
-              ? LEVELS.map((level) => {
-                  let estimate = banner.estimates[level]
-                  return (
-                    <form method="post" action={routes.jobRetry.href({ id: banner.id })}>
-                      <input type="hidden" name="_csrf" value={csrf} />
-                      <input type="hidden" name="level" value={level} />
-                      <button class={`button ${level === banner.level ? 'button-primary' : ''}`} type="submit">
-                        Relancer en {LEVEL_LABEL[level]}
-                        <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
-                      </button>
-                    </form>
-                  )
-                })
-              : null}
-            {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Masquer l’échec de ${banner.repo}#${banner.prNumber}`} /> : null}
-          </div>
           {admin && !banner.retry ? (
             <p class="hint">L’estimation est la moyenne des dernières reviews de ce niveau sur ce repo.</p>
           ) : null}
         </div>
+        <div class="todo-actions">
+          {banner.finishedAt ? (
+            <time class="todo-when mono" dateTime={banner.finishedAt.toISOString()}>
+              {agoOrDate(banner.finishedAt, now)}
+            </time>
+          ) : null}
+          {admin && !banner.retry
+            ? LEVELS.map((level) => {
+                let estimate = banner.estimates[level]
+                return (
+                  <form class="todo-retry" method="post" action={routes.jobRetry.href({ id: banner.id })}>
+                    <input type="hidden" name="_csrf" value={csrf} />
+                    <input type="hidden" name="level" value={level} />
+                    <button class={`button ${level === banner.level ? 'button-primary' : ''}`} type="submit">
+                      Relancer en {LEVEL_LABEL[level]}
+                      <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
+                    </button>
+                  </form>
+                )
+              })
+            : null}
+          <a class="button button-ghost" href={prUrl(githubUrl, banner.repo, banner.prNumber)}>
+            Voir la PR
+          </a>
+          {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Masquer l’échec de ${banner.repo}#${banner.prNumber}`} ghost /> : null}
+        </div>
+        </section>
+      </li>
+    )
+  }
+}
+
+/** REV-91. Five numbers in one band: the reviews and failures of the week, the cost of the month, the precision, the queue. */
+function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null }>) {
+  return () => {
+    let { screen, precision } = handle.props
+    let today = screen.week.at(-1)
+    let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
+    let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
+    let mean = weekMeanDuration(screen.week)
+    let max = Math.max(1, ...screen.week.map(total))
+    let month = screen.costs.monthUsd
+    let cap = screen.caps.monthlyCapUsd
+    let org = precision?.org ?? null
+    return (
+      <section class="dash-kpis card" aria-label="En bref">
+        <div class="kpi">
+          <span class="kpi-label">Reviews publiées · 7 j</span>
+          <span class="kpi-row">
+            <span class="kpi-value">{weekPublished}</span>
+            <svg class="kpi-bars" viewBox="0 0 76 28" aria-hidden="true" focusable="false">
+              {screen.week.map((day, i) => {
+                let h = total(day) === 0 ? 2 : Math.max(4, Math.round((total(day) / max) * 28))
+                return <rect class={i === screen.week.length - 1 ? 'kpi-bar-today' : 'kpi-bar'} x={i * 11} y={28 - h} width={8} height={h} />
+              })}
+            </svg>
+          </span>
+          <span class="kpi-sub">
+            {today ? total(today) : 0} aujourd’hui{mean !== null ? ` · ${duration(mean)} en moyenne` : ''}
+          </span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Échecs · 7 j</span>
+          <span class={`kpi-value ${weekFailed > 0 ? 'kpi-alert' : ''}`}>{weekFailed}</span>
+          <span class="kpi-sub">{weekFailed === 0 ? 'aucun job en échec' : `${plural(weekFailed, 'job')} en échec`}</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Coût du mois</span>
+          <span class="kpi-value">{usdPrecise(month)}</span>
+          {cap !== null && cap > 0 ? (
+            <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />
+          ) : null}
+          <span class="kpi-sub">{cap === null ? 'pas de plafond' : `sur ${usdPrecise(cap)} · alerte à ${screen.caps.alertPct} %`}</span>
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">Précision · {PRECISION_DAYS} j</span>
+          {/* The share needs closed findings: a rate with none would divide by 0. */}
+          {org && org.rate !== null && org.closed > 0 ? (
+            <>
+              <span class="kpi-row">
+                <span class="kpi-value">{Math.round(org.rate * 100)} %</span>
+                <span class="kpi-sub">n = {org.closed}</span>
+              </span>
+              <Bar
+                parts={[
+                  { pct: (org.fixed / org.closed) * 100, tone: 'matsu' },
+                  { pct: (org.dismissed / org.closed) * 100, tone: 'kuchiba' },
+                ]}
+              />
+              <span class="kpi-sub">{precisionCounts(org)}</span>
+            </>
+          ) : (
+            <>
+              <span class="kpi-value kpi-pending">{org && org.closed > 0 ? `n = ${org.closed} sur ${PRECISION_MIN}` : '—'}</span>
+              <span class="kpi-sub">à partir de {PRECISION_MIN} findings clos</span>
+            </>
+          )}
+        </div>
+        <div class="kpi">
+          <span class="kpi-label">File de jobs</span>
+          <span class="kpi-value">
+            {screen.queue.runningCount} · {screen.queue.queuedCount}
+          </span>
+          <span class="kpi-sub">en cours · en attente</span>
+        </div>
       </section>
+    )
+  }
+}
+
+/** A bar of 0 to 100 %, in SVG: the policy of the screens allows no inline style. The text beside it holds the numbers. */
+function Bar(handle: Handle<{ parts: { pct: number; tone: 'ink' | 'matsu' | 'kuchiba' }[] }>) {
+  return () => {
+    let x = 0
+    return (
+      <svg class="dash-gauge" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+        <rect class="dash-gauge-track" width={100} height={8} />
+        {handle.props.parts.map((part) => {
+          let width = Math.max(0, Math.min(100 - x, part.pct))
+          let rect = <rect class={`dash-gauge-fill dash-gauge-${part.tone}`} x={x} width={width} height={8} />
+          x += width
+          return rect
+        })}
+      </svg>
     )
   }
 }
@@ -559,139 +782,137 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
   }
 }
 
-/** The bars of the week: one per day, the reviews published. The table under it holds every number. */
+/** The days of the week, folded under the numbers of the band: every number of the chart, per day. */
 function WeekSection(handle: Handle<{ week: DayStats[] }>) {
   return () => {
     let { week } = handle.props
-    let max = Math.max(1, ...week.map(total))
-    let width = 280
-    let height = 96
-    let slot = width / Math.max(1, week.length)
-    let bar = Math.max(4, slot - 8)
     return (
-      <section class="dash-section card" aria-labelledby="week-title">
-        <h2 id="week-title" class="section-title">
-          Reviews publiées · 7 jours
-        </h2>
-        <svg class="dash-chart" viewBox={`0 0 ${width} ${height + 2}`} aria-hidden="true" focusable="false">
-          <line class="dash-chart-base" x1={0} x2={width} y1={height + 1} y2={height + 1} />
-          {week.map((day, i) => {
-            let n = total(day)
-            let h = n === 0 ? 0 : Math.max(4, Math.round((n / max) * height))
-            return (
-              <rect class="dash-bar" x={i * slot + (slot - bar) / 2} y={height - h} width={bar} height={h} rx={2}>
-                <title>{`${weekday(day.day)} : ${n} ${plural(n, 'publiée')}`}</title>
-              </rect>
-            )
-          })}
-        </svg>
-        <div class="dash-week">
-          <table class="dash-table">
-            <caption class="visually-hidden">Reviews publiées par jour (UTC), par niveau, échecs et durée moyenne</caption>
-            <thead>
+      <details class="dash-week">
+        <summary>Reviews publiées · 7 jours, jour par jour</summary>
+        <table class="dash-table">
+          <caption class="visually-hidden">Reviews publiées par jour (UTC), par niveau, échecs et durée moyenne</caption>
+          <thead>
+            <tr>
+              <th scope="col">Jour</th>
+              <th scope="col">Publiées</th>
+              <th scope="col" class="num">
+                Échecs
+              </th>
+              <th scope="col" class="num">
+                Durée moy.
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...week].reverse().map((day) => (
               <tr>
-                <th scope="col">Jour</th>
-                <th scope="col">Publiées</th>
-                <th scope="col" class="num">
-                  Échecs
-                </th>
-                <th scope="col" class="num">
-                  Durée moy.
-                </th>
+                <th scope="row">{weekday(day.day)}</th>
+                <td>
+                  <strong>{total(day)}</strong>
+                  {total(day) > 0 ? (
+                    <span class="hint">
+                      {' '}
+                      ({LEVELS.filter((level) => day.published[level] > 0)
+                        .map((level) => `${day.published[level]} ${level}`)
+                        .join(', ')}
+                      )
+                    </span>
+                  ) : null}
+                </td>
+                <td class="num">{day.failed}</td>
+                <td class="num">{day.meanDurationMs === null ? '—' : duration(day.meanDurationMs)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {[...week].reverse().map((day) => (
-                <tr>
-                  <th scope="row">{weekday(day.day)}</th>
-                  <td>
-                    <strong>{total(day)}</strong>
-                    {total(day) > 0 ? (
-                      <span class="hint">
-                        {' '}
-                        ({LEVELS.filter((level) => day.published[level] > 0)
-                          .map((level) => `${day.published[level]} ${level}`)
-                          .join(', ')}
-                        )
-                      </span>
-                    ) : null}
-                  </td>
-                  <td class="num">{day.failed}</td>
-                  <td class="num">{day.meanDurationMs === null ? '—' : duration(day.meanDurationMs)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            ))}
+          </tbody>
+        </table>
+      </details>
     )
   }
 }
 
-function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date }>) {
+/** REV-91. The last reviews in one dense table; under 760 px each row is a card (kento.css). */
+function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: string }>) {
   return () => {
-    let { recent, now } = handle.props
+    let { recent, now, org } = handle.props
     return (
-      <section class="dash-section" aria-labelledby="recent-title">
-        <h2 id="recent-title" class="section-title">
-          Dernières reviews
-        </h2>
+      <section class="dash-section dash-recent" aria-labelledby="recent-title">
+        <div class="dash-section-head">
+          <h2 id="recent-title" class="section-title">
+            Dernières reviews
+          </h2>
+          <a href={routes.findings.href()}>Tous les findings</a>
+        </div>
         {recent.length === 0 ? (
           <div class="empty">
             <p>Aucune review pour l’instant. Activez un repo dans <a href={routes.repos.href()}>Repos</a>, et son prochain push en lancera une.</p>
           </div>
         ) : (
-          <ul class="dash-reviews">
-            {recent.map((review) => {
-              let verdict = review.verdict ? VERDICT_LABEL[review.verdict] : undefined
-              return (
-                <li class="dash-review">
-                  <div class="dash-review-head">
-                    <a class="mono dash-review-pr" href={pullRoutes.pull.href({ id: review.repoId, number: String(review.prNumber) })}>
-                      {review.repo}#{review.prNumber}
-                    </a>
-                    <span class="tag">{review.level}</span>
-                    {verdict ? <span class={`status ${verdict.status}`}>{verdict.text}</span> : null}
-                    {review.publishedAt ? null : <span class="status status-stale">Non publiée</span>}
-                  </div>
-                  <dl class="dash-facts">
-                    <div>
-                      <dt>Score</dt>
-                      <dd>{review.score}/5</dd>
-                    </div>
-                    <div>
-                      <dt>Findings</dt>
-                      <dd>{review.findings}</dd>
-                    </div>
-                    <div>
-                      <dt>Coût</dt>
-                      <dd>{review.costUsd === null ? 'inconnu' : usdPrecise(review.costUsd)}</dd>
-                    </div>
-                    <div>
-                      <dt>Durée</dt>
-                      <dd>{review.durationMs === null ? '—' : duration(review.durationMs)}</dd>
-                    </div>
-                    <div>
-                      <dt>Date</dt>
-                      <dd>
+          <div class="card dash-recent-card">
+            <table class="dash-reviews">
+              <caption class="visually-hidden">Dernières reviews</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Pull request</th>
+                  <th scope="col">Verdict</th>
+                  <th scope="col">Niveau</th>
+                  <th scope="col" class="num">
+                    Score
+                  </th>
+                  <th scope="col" class="num">
+                    Findings
+                  </th>
+                  <th scope="col" class="num">
+                    Coût
+                  </th>
+                  <th scope="col" class="num">
+                    Durée
+                  </th>
+                  <th scope="col" class="num">
+                    Quand
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((review) => {
+                  let verdict = review.verdict ? VERDICT_LABEL[review.verdict] : undefined
+                  return (
+                    <tr>
+                      <th scope="row" class="dash-review-pr">
+                        <a href={pullRoutes.pull.href({ id: review.repoId, number: String(review.prNumber) })} title={`${review.repo}#${review.prNumber}`}>
+                          {shortName(review.repo, org)} #{review.prNumber}
+                        </a>
+                      </th>
+                      <td class="dash-review-verdict">
+                        {verdict ? <span class={`tag ${verdict.tag}`}>{verdict.text}</span> : null}
+                        {review.publishedAt ? null : <span class="status status-stale">Non publiée</span>}
+                      </td>
+                      <td class="mono" data-label="Niveau">
+                        {review.level}
+                      </td>
+                      <td class="num mono" data-label="Score">
+                        {review.score}/5
+                      </td>
+                      <td class="num mono" data-label="Findings">
+                        {review.findings}
+                        <span class="dash-unit"> {plural(review.findings, 'finding')}</span>
+                      </td>
+                      <td class="num mono" data-label="Coût">
+                        {review.costUsd === null ? 'inconnu' : usdPrecise(review.costUsd)}
+                      </td>
+                      <td class="num mono" data-label="Durée">
+                        {review.durationMs === null ? '—' : duration(review.durationMs)}
+                      </td>
+                      <td class="num mono" data-label="Quand">
                         <time dateTime={review.createdAt.toISOString()} title={clock(review.createdAt)}>
                           {agoOrDate(review.createdAt, now)}
                         </time>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Config</dt>
-                      <dd>
-                        <a href={routes.repoConfig.href({ id: review.repoId })}>
-                          Config<span class="visually-hidden"> de {review.repo}</span>
-                        </a>
-                      </dd>
-                    </div>
-                  </dl>
-                </li>
-              )
-            })}
-          </ul>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     )
@@ -705,10 +926,12 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
     let waiting = job.notBefore !== null && job.notBefore > now
     return (
       <li class="dash-job">
-        <div class="dash-review-head">
-          <a class="mono" href={prUrl(githubUrl, job.repo, job.prNumber)}>
-            {job.repo}#{job.prNumber}
-          </a>
+        <div class="dash-job-head">
+          <span class={`status ${running ? 'status-running' : 'status-wait'}`}>
+            <a href={prUrl(githubUrl, job.repo, job.prNumber)}>
+              {job.repo}#{job.prNumber}
+            </a>
+          </span>
           <span class="tag">{job.kind === 'resolve' ? 'résolution' : job.level}</span>
         </div>
         <p class="hint">
@@ -745,96 +968,91 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
   }
 }
 
-function QueueSection(handle: Handle<{ queue: DashboardScreen['queue']; now: Date; githubUrl: string }>) {
+/** REV-91. The jobs running then waiting, and the runners, in one panel beside the last reviews. */
+function QueueRunnersSection(
+  handle: Handle<{ queue: DashboardScreen['queue']; runners: DashboardRunner[]; counts: RunnerCounts; now: Date; githubUrl: string }>,
+) {
   return () => {
-    let { queue, now, githubUrl } = handle.props
-    return (
-      <section class="dash-section card" aria-labelledby="queue-title">
-        <h2 id="queue-title" class="section-title">
-          File de jobs
-        </h2>
-        <h3 class="dash-subtitle">
-          En cours <span class="count">{queue.runningCount}</span>
-        </h3>
-        {queue.running.length === 0 ? (
-          <p class="hint">Aucun job en cours.</p>
-        ) : (
-          <ul class="dash-jobs">
-            {queue.running.map((job) => (
-              <QueueItem job={job} now={now} githubUrl={githubUrl} />
-            ))}
-          </ul>
-        )}
-        <h3 class="dash-subtitle">
-          En attente <span class="count">{queue.queuedCount}</span>
-        </h3>
-        {queue.queued.length === 0 ? (
-          <p class="hint">Aucun job en attente.</p>
-        ) : (
-          <ul class="dash-jobs">
-            {queue.queued.map((job) => (
-              <QueueItem job={job} now={now} githubUrl={githubUrl} />
-            ))}
-          </ul>
-        )}
-        {queue.queuedCount > queue.queued.length ? (
-          <p class="hint">et {queue.queuedCount - queue.queued.length} de plus.</p>
-        ) : null}
-      </section>
-    )
-  }
-}
-
-function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; counts: RunnerCounts; now: Date }>) {
-  return () => {
-    let { runners, counts, now } = handle.props
+    let { queue, runners, counts, now, githubUrl } = handle.props
     let total = counts.online + counts.late + counts.offline
     let more = total - runners.length
     return (
-      <section class="dash-section card" aria-labelledby="dash-runners-title">
+      <section class="dash-section" aria-labelledby="queue-title">
         <div class="dash-section-head">
-          <h2 id="dash-runners-title" class="section-title">
-            Runners
+          <h2 id="queue-title" class="section-title">
+            File et runners
           </h2>
-          <a class="button button-small" href={routes.runners.href()}>
-            Gérer<span class="visually-hidden"> les runners</span>
+          <a href={routes.runners.href()}>
+            Runners<span class="visually-hidden"> : gérer les runners</span>
           </a>
         </div>
-        {total === 0 ? (
-          <p class="hint">Aucun runner. Les jobs attendent en file. Créez-en un dans Runners.</p>
-        ) : (
-          <>
-            <p class="runner-counts">{countsText(counts)}</p>
-            {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
+        <div class="card dash-queue">
+          <h3 class="dash-subtitle">
+            En cours <span class="count">{queue.runningCount}</span>
+          </h3>
+          {queue.running.length === 0 ? (
+            <p class="hint">Aucun job en cours.</p>
+          ) : (
             <ul class="dash-jobs">
-              {runners.map((runner) => {
-                let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
-                let state = runnerState(seen, now)
-                return (
-                  <li class="dash-job">
-                    <div class="dash-review-head">
-                      <span class="mono">{runner.name}</span>
-                      <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
-                      {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
-                    </div>
-                    <p class="hint">
-                      {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
-                      signal{' '}
-                      {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
-                    </p>
-                  </li>
-                )
-              })}
+              {queue.running.map((job) => (
+                <QueueItem job={job} now={now} githubUrl={githubUrl} />
+              ))}
             </ul>
-            {more > 0 ? (
-              <p class="hint">
-                <a href={routes.runners.href()}>
-                  et {more} de plus<span class="visually-hidden"> sur l’écran Runners</span>
-                </a>
-              </p>
-            ) : null}
-          </>
-        )}
+          )}
+          <h3 class="dash-subtitle">
+            En attente <span class="count">{queue.queuedCount}</span>
+          </h3>
+          {queue.queued.length === 0 ? (
+            <p class="hint">Aucun job en attente.</p>
+          ) : (
+            <ul class="dash-jobs">
+              {queue.queued.map((job) => (
+                <QueueItem job={job} now={now} githubUrl={githubUrl} />
+              ))}
+            </ul>
+          )}
+          {queue.queuedCount > queue.queued.length ? <p class="hint">et {queue.queuedCount - queue.queued.length} de plus.</p> : null}
+          <section class="dash-runners" aria-labelledby="dash-runners-title">
+            <h3 id="dash-runners-title" class="dash-subtitle">
+              Runners
+            </h3>
+            {total === 0 ? (
+              <p class="hint">Aucun runner. Les jobs attendent en file. Créez-en un dans Runners.</p>
+            ) : (
+              <>
+                <p class="runner-counts">{countsText(counts)}</p>
+                {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
+                <ul class="dash-jobs">
+                  {runners.map((runner) => {
+                    let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
+                    let state = runnerState(seen, now)
+                    return (
+                      <li class="dash-job">
+                        <div class="dash-job-head">
+                          <span class="mono">{runner.name}</span>
+                          <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
+                          {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
+                        </div>
+                        <p class="hint">
+                          {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
+                          signal{' '}
+                          {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ul>
+                {more > 0 ? (
+                  <p class="hint">
+                    <a href={routes.runners.href()}>
+                      et {more} de plus<span class="visually-hidden"> sur l’écran Runners</span>
+                    </a>
+                  </p>
+                ) : null}
+              </>
+            )}
+          </section>
+        </div>
       </section>
     )
   }
@@ -844,13 +1062,13 @@ function RunnersSection(handle: Handle<{ runners: DashboardRunner[]; counts: Run
  * REV-59. « Masquer »: the failure leaves the banner and the list, for every member. The counts of
  * the week keep it. A failure of a pull request closed since shows nowhere.
  */
-function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; small?: boolean }>) {
+function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; small?: boolean; ghost?: boolean }>) {
   return () => {
-    let { id, csrf, label, small } = handle.props
+    let { id, csrf, label, small, ghost } = handle.props
     return (
       <form method="post" action={routes.jobDismiss.href({ id })}>
         <input type="hidden" name="_csrf" value={csrf} />
-        <button class={`button ${small ? 'button-small' : ''}`} type="submit" aria-label={label}>
+        <button class={`button ${small ? 'button-small' : ''} ${ghost ? 'button-ghost' : ''}`} type="submit" aria-label={label}>
           Masquer
         </button>
       </form>

@@ -135,7 +135,7 @@ test.describe('the dashboard', () => {
     await expect(cost.locator('.dash-cost').first().locator('.dash-cost-value')).toHaveText(expected)
 
     let recent = page.getByRole('region', { name: 'Dernières reviews' })
-    await expect(recent.getByRole('link', { name: 'sakuga-software/dash-e2e#41' })).toBeVisible()
+    await expect(recent.getByRole('link', { name: 'dash-e2e #41' })).toBeVisible()
     await expect(recent.getByText('Commentaire', { exact: true })).toBeVisible()
     await expectNoAxeViolations(page)
 
@@ -174,6 +174,8 @@ test.describe('the dashboard', () => {
     let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
     await expect(banner).toBeVisible()
     await expect(failures.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' })).toBeVisible()
+    // REV-91: the head of a failure (and of a step of « Mise en route », the same class) is one flex line.
+    expect(await failures.locator('.dash-review-head').first().evaluate((el) => getComputedStyle(el).display)).toBe('flex')
 
     await banner.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' }).click()
     await expect(page.getByText('Échec masqué. Il reste compté dans « Échecs sur 7 jours ».')).toBeVisible()
@@ -206,7 +208,7 @@ test.describe('the dashboard', () => {
     let errors = watchConsole(page)
     await seed()
     await page.goto('/')
-    let queue = page.getByRole('region', { name: 'File de jobs' })
+    let queue = page.getByRole('region', { name: 'File et runners' })
     await expect(queue.getByText('Aucun job en attente.')).toBeVisible()
     await expect(page.getByText(/Mis à jour il y a \d+ s/)).toBeVisible()
 
@@ -228,7 +230,7 @@ test.describe('the dashboard', () => {
     await expect(page.getByRole('region', { name: /a échoué/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Masquer/ })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: /Gérer/ })).toHaveAttribute('href', '/runners')
+    await expect(page.getByRole('link', { name: /gérer les runners/ })).toHaveAttribute('href', '/runners')
     await expectNoAxeViolations(page)
   })
 })

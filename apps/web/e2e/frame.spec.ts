@@ -43,6 +43,15 @@ test.describe('the frame of the screens', () => {
     await expect(page.getByText(/Kentō \d+\.\d+\.\d+ · par Sakuga/)).toBeVisible()
   })
 
+  // REV-91: the tiles of the screen of a user keep their grid after the redesign of the dashboard.
+  test('the screen of a user lays its tiles out as a grid', async ({ page }) => {
+    await page.goto('/users/alex')
+    let tiles = page.locator('.dash-tiles').first()
+    await expect(tiles).toBeVisible()
+    expect(await tiles.evaluate((el) => getComputedStyle(el).display)).toBe('grid')
+    expect(await page.locator('.dash-tile').first().evaluate((el) => getComputedStyle(el).borderTopStyle)).toBe('solid')
+  })
+
   test('the theme applies at once, with no save, and stays on the next page', async ({ page }) => {
     await page.goto('/repos')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'system')

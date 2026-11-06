@@ -88,7 +88,7 @@ test('the sheet shows a finding found again after its lines moved, with no new c
 
 test('the dashboard leads to the screen of the pull request', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('region', { name: 'Dernières reviews' }).getByRole('link', { name: 'sakuga-software/orchard#142' }).first().click()
+  await page.getByRole('region', { name: 'Dernières reviews' }).getByRole('link', { name: 'orchard #142' }).first().click()
   await expect(page).toHaveURL(new RegExp(`/repos/${repoId}/pulls/142$`))
   await expect(page.getByRole('heading', { name: 'Feuille d’exposition' })).toBeVisible()
 })

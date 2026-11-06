@@ -269,7 +269,7 @@ function PullRow(handle: Handle<{ pull: ReviewedPull; now: Date }>) {
         <td>{pull.reviews}</td>
         <td>{parts.length === 0 ? 'aucun' : parts.map(({ key, label }) => `${pull.findings[key]} ${label.toLowerCase()}`).join(' · ')}</td>
         <td>
-          {verdict ? <span class={`status ${verdict.status}`}>{verdict.text}</span> : '—'}
+          {verdict ? <span class={`tag ${verdict.tag}`}>{verdict.text}</span> : '—'}
           {pull.score !== null ? ` · ${pull.score}/5` : ''}
         </td>
         <td>
