@@ -5,6 +5,7 @@ import { ANSWER_SCHEMA, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
 import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type Schema } from './providers.ts';
+import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 
 export { OPENROUTER_BASE_URL, type Schema } from './providers.ts';
 
@@ -30,7 +31,8 @@ const stderr = (message: string) => process.stderr.write(`${message}\n`);
 
 /**
  * The answer of the first model of the level that gives one. `promptFile` is a file of `prompts/`;
- * `promptAddition`, when given, goes at the end of it (the focus of a pass, REV-20).
+ * `promptAddition`, when given, goes at the end of it (the focus of a pass, REV-20). `tools`: the
+ * tools of the review (REV-68), shared by the models of the level and by the passes.
  */
 export async function askJson<T>(
   client: ModelClient,
@@ -39,6 +41,7 @@ export async function askJson<T>(
   message: string,
   schema: Schema,
   promptAddition?: string,
+  tools?: RepoTools,
 ): Promise<{ answer: T; usage: Usage }> {
   const file = readFileSync(join(PROMPTS, promptFile), 'utf8');
   const prompt = promptAddition ? `${file.trimEnd()}\n\n${promptAddition}\n` : file;
@@ -49,6 +52,11 @@ export async function askJson<T>(
   const call = ADAPTERS[kind];
   let lastError: unknown;
   for (const [attempt, model] of config.models.entries()) {
+    // The calls and bytes of the tools are one budget for the review: a model that takes over gets
+    // what the failed attempts left, and its own rounds.
+    if (tools && attempt > 0 && tools.used.calls > 0) {
+      (client.log ?? stderr)(`attempt ${attempt + 1} with ${model} starts with ${tools.used.calls} of ${tools.budget.calls} tool calls and ${tools.used.bytes} of ${tools.budget.bytes} bytes used`);
+    }
     try {
       return await call<T>({
         apiKey: client.apiKey,
@@ -60,6 +68,7 @@ export async function askJson<T>(
         message,
         schema,
         timeoutMs: config.timeoutsMs[attempt] ?? config.timeoutsMs.at(-1)!,
+        ...(tools ? { tools } : {}),
       });
     } catch (error) {
       lastError = error;
@@ -74,10 +83,19 @@ export async function askJson<T>(
 
 /**
  * The review call. `schema`: the answer schema, `ANSWER_SCHEMA` or the one with the rules of the pack.
- * `focus`: the angle of a pass (REV-20), added to the prompt; none for a review in one pass.
+ * `focus`: the angle of a pass (REV-20), added to the prompt; none for a review in one pass. `tools`:
+ * the tools of REV-68, with their note at the end of the prompt; none for the pack alone.
  */
-export async function askModel(client: ModelClient, config: LevelConfig, pack: string, schema: object = ANSWER_SCHEMA, focus?: string): Promise<Reply> {
-  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema }, focus);
+export async function askModel(
+  client: ModelClient,
+  config: LevelConfig,
+  pack: string,
+  schema: object = ANSWER_SCHEMA,
+  focus?: string,
+  tools?: RepoTools,
+): Promise<Reply> {
+  const addition = [focus, tools ? TOOLS_NOTE : undefined].filter(Boolean).join('\n\n') || undefined;
+  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema }, addition, tools);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;
 }

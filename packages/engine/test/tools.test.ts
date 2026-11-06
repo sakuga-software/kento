@@ -35,6 +35,7 @@ describe('the tools of a review', () => {
     // A U+FFFD of the file itself, then two-byte characters: the cut must keep the first and split none.
     writeFileSync(join(repo, 'fffd.txt'), `${'a'.repeat(100)}\uFFFD${'é'.repeat(50)}\n`);
     symlinkSync('/etc/hosts', join(repo, 'link'));
+    writeFileSync(join(repo, 'empty.txt'), '');
     writeFileSync(join(repo, 'huge.txt'), 'x'.repeat(MAX_FILE_BYTES + 1));
     git(repo, 'add', '-A');
     // A submodule: a gitlink in the tree, whose commit the repository does not hold.
@@ -61,6 +62,8 @@ describe('the tools of a review', () => {
     assert.equal(lines.at(-2), `${10 + MAX_READ_LINES - 1}| row ${10 + MAX_READ_LINES - 1}`);
     assert.equal(lines.at(-1), `[long.txt: lines 10-${10 + MAX_READ_LINES - 1} of 1000]`);
     assert.match(new RepoTools(repo, head, big).run({ name: 'read_file', input: { path: 'long.txt', from: 2000 } }), /has 1000 lines/);
+    // Kentō on #146: an empty file says so.
+    assert.equal(new RepoTools(repo, head, big).run({ name: 'read_file', input: { path: 'empty.txt' } }), 'empty.txt is empty.');
   });
 
   test('read_file refuses a path out of the repository, a folder and a binary file', () => {
@@ -105,9 +108,15 @@ describe('the tools of a review', () => {
 
   test('the budget caps the calls, the bytes and the rounds', () => {
     const tools = new RepoTools(repo, head, { rounds: 2, calls: 2, bytes: 1_000_000 });
-    assert.equal(tools.startRound(), true);
-    assert.equal(tools.startRound(), true);
-    assert.equal(tools.startRound(), false);
+    assert.equal(tools.startRound(0), true);
+    assert.equal(tools.startRound(1), true);
+    assert.equal(tools.startRound(2), false);
+    // Another conversation of the same review (a pass) has its own rounds.
+    assert.equal(tools.startRound(0), true);
+    // Only a round whose tools ran counts.
+    assert.equal(tools.used.rounds, 0);
+    tools.ranRound();
+    assert.equal(tools.used.rounds, 1);
     tools.run({ name: 'grep', input: { pattern: 'sendEmail' } });
     tools.run({ name: 'grep', input: { pattern: 'sendEmail' } });
     assert.equal(tools.run({ name: 'grep', input: { pattern: 'sendEmail' } }), 'Tool budget used: answer now with what you have read.');
@@ -117,7 +126,7 @@ describe('the tools of a review', () => {
     const out = small.run({ name: 'read_file', input: { path: 'long.txt' } });
     assert.ok(Buffer.byteLength(out) <= 500);
     assert.match(out, /\[cut: the tool budget of this review is used\]$/);
-    assert.equal(small.startRound(), false);
+    assert.equal(small.startRound(0), false);
     assert.match(small.run({ name: 'read_file', input: { path: 'long.txt' } }), /budget used/);
 
     // Kentō on #146: a room smaller than the cut note overran the budget. Every room gives at most the budget.

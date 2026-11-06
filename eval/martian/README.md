@@ -33,6 +33,9 @@ does not answer for a pair, the summary line counts it in `judge errors`: run th
   production (0.5 / 3.5) excludes some models, for example Gemini 3.8 Flash.
 - A value of these variables, or of `REVIEW_MAX_TOKENS`, that is not a valid number stops the run
   at its start with the name of the variable.
+- `REVIEW_TOOLS=1` gives the model the tools `read_file` and `grep` on the head, with the budget of
+  the level (REV-68, `packages/engine/src/tools.ts`). Each review then records its tokens and what
+  the tools used (`tokens`, `tools`). Compare it with a run without, on the same models.
 
 **Cost**: about $0.20–0.50 of review and $0.30–0.80 of judge for each model and run. The key of the
 bench is the key of CI: a run that uses the daily limit stops the reviews of the whole organization

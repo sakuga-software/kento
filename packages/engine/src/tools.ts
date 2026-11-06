@@ -9,7 +9,10 @@ import type { Level } from '../../protocol/src/index.ts';
 
 /** What the tools of one review may use. */
 export type ToolBudget = {
-  /** The model calls that may ask for tools; the call after the last one must answer. */
+  /**
+   * The requests of one conversation (one pass, one model) that may ask for tools; the request after
+   * the last one must answer.
+   */
   rounds: number;
   /** The tool calls in all, across the rounds. */
   calls: number;
@@ -131,11 +134,19 @@ export class RepoTools {
     this.budget = budget;
   }
 
-  /** Whether the model may get tools in its next call. Counts the round when it may. */
-  startRound(): boolean {
-    if (this.used.rounds >= this.budget.rounds || this.exhausted()) return false;
+  /**
+   * Whether a conversation may offer tools in its request number `round` (from 0). Each conversation
+   * counts its own rounds: the passes of a review run at once, and one pass must not use the rounds
+   * of another. The calls and the bytes stay one budget for the whole review: they are what the
+   * review costs.
+   */
+  startRound(round: number): boolean {
+    return round < this.budget.rounds && !this.exhausted();
+  }
+
+  /** Counts a round whose tool calls ran, for `used.rounds`. */
+  ranRound(): void {
     this.used.rounds++;
-    return true;
   }
 
   /** Whether no call may run: no call left, or less room than MIN_ROOM bytes. */
@@ -190,6 +201,7 @@ export class RepoTools {
     if (text.includes('\0')) return `${path} is a binary file.`;
     const lines = text.split('\n');
     if (lines.at(-1) === '') lines.pop();
+    if (lines.length === 0) return `${path} is empty.`;
     const from = positive(input.from) ?? 1;
     if (from > lines.length) return `${path} has ${lines.length} lines: line ${from} is past its end.`;
     const to = Math.min(positive(input.to) ?? from + MAX_READ_LINES - 1, from + MAX_READ_LINES - 1, lines.length);
@@ -225,4 +237,24 @@ export class RepoTools {
     const more = rows.length > MAX_GREP_LINES ? `\n[${rows.length - MAX_GREP_LINES} more lines: narrow the pattern or the glob]` : '';
     return `${shown.join('\n')}${more}`;
   }
+}
+
+/** What the prompt of a review with tools adds: the pack first, the tools for what it lacks. */
+export const TOOLS_NOTE = [
+  '## Tools',
+  '',
+  'You can call `read_file` and `grep` on the repository at the head of the pull request. The pack above is your start: read it first.',
+  'Call a tool only when a finding depends on code that the pack does not show: a file left out of the pack, a caller, a definition, a guard, a convention.',
+  'Before you report that something is missing, undefined or not imported, check it with a tool.',
+  'You have a small budget of calls. When a tool says that the budget is used, answer with what you have.',
+].join('\n');
+
+/** The tools in the form of the Messages API of Anthropic. */
+export function anthropicTools(): object[] {
+  return TOOL_DEFINITIONS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
+}
+
+/** The tools in the form of the chat completions API (OpenRouter). */
+export function chatTools(): object[] {
+  return TOOL_DEFINITIONS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.input_schema } }));
 }

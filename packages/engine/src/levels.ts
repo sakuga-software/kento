@@ -1,5 +1,6 @@
 // The levels of a review: the model, its reasoning, its limits and the context of the pack.
 import type { Level, ProviderKind } from '../../protocol/src/index.ts';
+import { TOOL_BUDGETS, type ToolBudget } from './tools.ts';
 
 export type ContextKind = 'full' | 'definitions';
 export type LevelConfig = {
@@ -16,6 +17,11 @@ export type LevelConfig = {
    * the changed code, `definitions` only the definitions that the change uses and the SQL names.
    */
   context: ContextKind;
+  /**
+   * REV-68. The budget of the tools `read_file` and `grep`, or none: the model reads the pack only.
+   * No level has tools until the bench measures them; `REVIEW_TOOLS=1` gives them for a run.
+   */
+  tools?: ToolBudget;
 };
 
 /**
@@ -82,12 +88,12 @@ export function levelCost(level: Level): string {
 }
 
 /** The variables of the environment that change a level. */
-export type LevelEnv = Partial<Record<'REVIEW_MODELS' | 'REVIEW_EFFORT' | 'REVIEW_MAX_TOKENS' | 'REVIEW_TIMEOUT_MS' | 'REVIEW_MAX_PRICE', string>>;
+export type LevelEnv = Partial<Record<'REVIEW_MODELS' | 'REVIEW_EFFORT' | 'REVIEW_MAX_TOKENS' | 'REVIEW_TIMEOUT_MS' | 'REVIEW_MAX_PRICE' | 'REVIEW_TOOLS', string>>;
 
 /**
  * The configuration of a level. The bench sets REVIEW_MODELS, REVIEW_EFFORT, REVIEW_MAX_TOKENS,
- * REVIEW_TIMEOUT_MS and REVIEW_MAX_PRICE ("prompt,completion"). The caller passes the environment, or
- * nothing for the levels as they are.
+ * REVIEW_TIMEOUT_MS, REVIEW_MAX_PRICE ("prompt,completion") and REVIEW_TOOLS (1: the tools of
+ * REV-68). The caller passes the environment, or nothing for the levels as they are.
  *
  * A number that is not valid throws: before, `REVIEW_MAX_PRICE=1` sent no completion cap and `x`
  * sent NaN, which JSON writes as null, and the call went out with a wrong cap and no message.
@@ -108,6 +114,8 @@ export function levelConfig(level: Level, env: LevelEnv = {}): LevelConfig {
     config.timeoutsMs = config.models.map(() => timeoutMs);
   }
   if (env.REVIEW_MAX_PRICE) config.maxPrice = readMaxPrice(env.REVIEW_MAX_PRICE);
+  if (env.REVIEW_TOOLS === '1') config.tools = { ...TOOL_BUDGETS[level] };
+  else if (env.REVIEW_TOOLS && env.REVIEW_TOOLS !== '0') throw new Error(`REVIEW_TOOLS must be 1 (tools) or 0 (none), not "${env.REVIEW_TOOLS}"`);
   return config;
 }
 

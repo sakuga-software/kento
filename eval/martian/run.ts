@@ -66,6 +66,9 @@ type Review = {
   seconds: number;
   model?: string;
   error?: string;
+  /** REV-68: the tokens of the review, and what its tools used (REVIEW_TOOLS=1). */
+  tokens?: { prompt: number; completion: number; cacheRead: number };
+  tools?: { rounds: number; calls: number; bytes: number };
   /** REV-20, in passes: the findings of each pass, the passes that failed, and the findings that the check dropped. */
   passes?: { id: string; findings: number; cost: number; error?: string }[];
   dropped?: string[];
@@ -140,7 +143,15 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       return { findings: findings.map(candidate), cost, seconds: Math.round((Date.now() - start) / 1000), model: outs[0].usage.model, error: failures[0], merged };
     }
     const out = await reviewPullRequest({ ...input, config });
-    return { findings: out.findings.map(candidate), cost: out.usage.cost ?? 0, seconds: Math.round((Date.now() - start) / 1000), model: out.usage.model, error: failures[0] };
+    return {
+      findings: out.findings.map(candidate),
+      cost: out.usage.cost ?? 0,
+      seconds: Math.round((Date.now() - start) / 1000),
+      model: out.usage.model,
+      error: failures[0],
+      tokens: { prompt: out.usage.prompt_tokens ?? 0, completion: out.usage.completion_tokens ?? 0, cacheRead: out.usage.cache_read_tokens ?? 0 },
+      ...(out.toolUse ? { tools: out.toolUse } : {}),
+    };
   } catch (error) {
     const message = [...failures, String(error)].join('\n').slice(-600);
     return { findings: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: message };

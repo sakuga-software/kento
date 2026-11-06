@@ -10,6 +10,7 @@ import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
+import { RepoTools, type ToolUse } from './tools.ts';
 
 export type ReviewInput = ModelClient & {
   /** A checkout of the repository with the history of the base and the head. */
@@ -71,6 +72,8 @@ export type ReviewResult = {
   threads: AnsweredThread[];
   /** REV-71. The findings that a refuted thread removed. */
   refutedInThread: Finding[];
+  /** REV-68. What the tools used, when the level had tools. */
+  toolUse?: ToolUse;
 };
 
 /** The merge base of the tip of the base branch and the head. */
@@ -85,8 +88,14 @@ export function mergeBase(repoDir: string, base: string, head: string): string {
 export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResult> {
   const config = input.config ?? levelConfig(input.level);
   const prepared = prepareReview(input, config);
-  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref)));
-  return finishReview(input, prepared, answer, usage);
+  const tools = reviewTools(input, config);
+  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref)), undefined, tools);
+  return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
+}
+
+/** REV-68. The tools of one review on the head, when the level has a tool budget. */
+export function reviewTools(input: ReviewInput, config: LevelConfig): RepoTools | undefined {
+  return config.tools ? new RepoTools(input.repoDir, input.head, config.tools) : undefined;
 }
 
 /** What a review reads before its model call: the merge base, the pack and the changed lines. */

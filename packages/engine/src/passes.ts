@@ -4,7 +4,7 @@
 import { answerSchema, type Answer, type Finding, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import { askJson, askModel } from './model.ts';
-import { finishReview, prepareReview, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
+import { finishReview, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
 
 /** The angle of a pass: its id, and the text that the prompt of the review gets at its end. */
 export type Pass = { id: string; focus: string };
@@ -94,7 +94,9 @@ export async function reviewInPasses(
   const passes = options.passes ?? BASE_PASSES;
   const prepared = prepareReview(input, options.passConfig);
   const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref));
-  const settled = await Promise.allSettled(passes.map((pass) => askModel(input, options.passConfig, prepared.pack, schema, pass.focus)));
+  // REV-68. One budget for the review: the passes share it.
+  const tools = reviewTools(input, options.passConfig);
+  const settled = await Promise.allSettled(passes.map((pass) => askModel(input, options.passConfig, prepared.pack, schema, pass.focus, tools)));
 
   const reports: PassReport[] = [];
   const answers: { pass: Pass; answer: Answer }[] = [];
@@ -140,6 +142,7 @@ export async function reviewInPasses(
     dropped: checked.dropped,
     verification: checked.status,
     verificationUsage: checked.usage,
+    ...(tools ? { toolUse: tools.used } : {}),
   };
 }
 

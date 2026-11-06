@@ -4,6 +4,7 @@ import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
 import { costFromTable } from './prices.ts';
+import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
 /** The API of OpenRouter. A caller can give another base with the same API, for example a proxy. */
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -58,7 +59,23 @@ export type Call = {
   message: string;
   schema: Schema;
   timeoutMs: number;
+  /**
+   * REV-68. The tools of the review, or none. With tools, a call is a loop: the model may ask for
+   * tools while `startRound` allows it, then must answer. The time limit covers the whole loop, and
+   * past half of it the model gets no more tools. Anthropic and OpenRouter only.
+   */
+  tools?: RepoTools;
 };
+
+/** Whether the model may ask for tools in the request number `round` of the loop. */
+function offerTools(call: Call, started: number, round: number): boolean {
+  return !!call.tools && Date.now() - started < call.timeoutMs / 2 && call.tools.startRound(round);
+}
+
+/** A model that asks for a tool when the request offered none: the next model of the level takes over. */
+function toolAfterLastRound(name: string): ProviderError {
+  return new ProviderError(`${name} asked for a tool after its last round, with no answer`);
+}
 
 export type Called<T> = { answer: T; usage: Usage };
 
@@ -106,36 +123,93 @@ function priced(kind: ProviderKind, model: string, tokens: { input: number; outp
 // --- OpenRouter --------------------------------------------------------------------------------
 
 async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
-  const response = await call.fetch(endpoint(call.baseUrl, '/chat/completions'), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${call.apiKey}`,
-      'Content-Type': 'application/json',
-      'X-Title': 'Sakuga Review',
-    },
-    body: JSON.stringify({
-      model: call.model,
-      max_tokens: call.config.maxTokens,
-      reasoning: { effort: call.config.effort },
-      usage: { include: true },
-      // The diff goes only to a provider that keeps nothing and trains on nothing, and that honours
-      // the answer schema. Of those, the cheapest under MAX_PRICE answers first.
-      provider: { zdr: true, data_collection: 'deny', require_parameters: true, sort: 'price', max_price: call.config.maxPrice },
-      messages: [
-        { role: 'system', content: call.prompt },
-        { role: 'user', content: call.message },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: call.schema.name, strict: true, schema: call.schema.schema } },
-    }),
-    signal: AbortSignal.timeout(call.timeoutMs),
-  });
-  if (!response.ok) throw await refused(response, 'OpenRouter');
-  const out = await response.json();
-  const answer = parseObject<T>(out.choices?.[0]?.message?.content ?? '', 'OpenRouter');
-  const usage: Usage = { model: out.model, provider: out.provider, ...out.usage };
-  usage.cost_source = typeof usage.cost === 'number' ? 'provider' : 'unknown';
-  if (usage.cost_source === 'unknown') usage.cost = 0;
-  return { answer, usage };
+  const signal = AbortSignal.timeout(call.timeoutMs);
+  const started = Date.now();
+  // With tools, the pack is sent again at each round: a model of Anthropic reads it from the cache.
+  const userContent = call.tools
+    ? [{ type: 'text', text: call.message, ...(call.model.startsWith('anthropic/') ? { cache_control: { type: 'ephemeral' } } : {}) }]
+    : call.message;
+  const messages: object[] = [
+    { role: 'system', content: call.prompt },
+    { role: 'user', content: userContent },
+  ];
+  const total = { prompt: 0, completion: 0, cacheRead: 0, cost: 0, costKnown: true };
+  let last: any;
+  for (let round = 0; ; round++) {
+    const offer = offerTools(call, started, round);
+    const response = await call.fetch(endpoint(call.baseUrl, '/chat/completions'), {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${call.apiKey}`,
+        'Content-Type': 'application/json',
+        'X-Title': 'Sakuga Review',
+      },
+      body: JSON.stringify({
+        model: call.model,
+        max_tokens: call.config.maxTokens,
+        reasoning: { effort: call.config.effort },
+        usage: { include: true },
+        // The diff goes only to a provider that keeps nothing and trains on nothing, and that honours
+        // the answer schema (and the tools, when there are). Of those, the cheapest under MAX_PRICE
+        // answers first.
+        provider: { zdr: true, data_collection: 'deny', require_parameters: true, sort: 'price', max_price: call.config.maxPrice },
+        messages,
+        ...(call.tools ? { tools: chatTools(), tool_choice: offer ? 'auto' : 'none' } : {}),
+        response_format: { type: 'json_schema', json_schema: { name: call.schema.name, strict: true, schema: call.schema.schema } },
+      }),
+      signal,
+    });
+    if (!response.ok) throw await refused(response, 'OpenRouter');
+    last = await response.json();
+    if (!call.tools) {
+      const answer = parseObject<T>(last.choices?.[0]?.message?.content ?? '', 'OpenRouter');
+      const usage: Usage = { model: last.model, provider: last.provider, ...last.usage };
+      usage.cost_source = typeof usage.cost === 'number' ? 'provider' : 'unknown';
+      if (usage.cost_source === 'unknown') usage.cost = 0;
+      return { answer, usage };
+    }
+    total.prompt += count(last.usage?.prompt_tokens) ?? 0;
+    total.completion += count(last.usage?.completion_tokens) ?? 0;
+    total.cacheRead += count(last.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
+    if (typeof last.usage?.cost === 'number') total.cost += last.usage.cost;
+    else total.costKnown = false;
+    const message = last.choices?.[0]?.message ?? {};
+    const toolCalls: { id: string; function?: { name?: string; arguments?: string } }[] = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (offer && toolCalls.length > 0) {
+      call.tools.ranRound();
+      messages.push({ role: 'assistant', content: message.content ?? '', tool_calls: toolCalls });
+      for (const c of toolCalls) {
+        let input: unknown = {};
+        try {
+          input = JSON.parse(c.function?.arguments || '{}');
+        } catch {
+          // The tool answers that its input is missing, and the model can call again.
+        }
+        messages.push({ role: 'tool', tool_call_id: c.id, content: call.tools.run({ name: c.function?.name ?? '', input }) });
+      }
+      continue;
+    }
+    let answer: T;
+    try {
+      answer = parseObject<T>(message.content ?? '', 'OpenRouter');
+    } catch (error) {
+      // Tool calls with no JSON answer, when the request offered no tool.
+      if (toolCalls.length > 0) throw toolAfterLastRound('OpenRouter');
+      throw error;
+    }
+    return {
+      answer,
+      usage: {
+        model: last.model,
+        provider: last.provider,
+        prompt_tokens: total.prompt,
+        completion_tokens: total.completion,
+        cache_read_tokens: total.cacheRead,
+        cost: total.costKnown ? total.cost : 0,
+        cost_source: total.costKnown ? 'provider' : 'unknown',
+      },
+    };
+  }
 }
 
 // --- Anthropic ---------------------------------------------------------------------------------
@@ -145,54 +219,96 @@ async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
  * and Sonnet 5.5 refuse a forced tool (`tool_choice` `tool` answers 400), and the structured output
  * holds the answer to the schema in the same way. The system prompt is the same for every review of
  * a level: it carries the cache mark, so the next review with the same model within 5 minutes reads
- * it from the cache. The pack changes with each review and is sent once: it carries no mark, since
- * a cache write costs 1.25 times the input and would never be read.
+ * it from the cache. Without tools, the pack changes with each review and is sent once: it carries no
+ * mark, since a cache write costs 1.25 times the input and would never be read. With tools (REV-68),
+ * each round sends it again, so the last block of each request carries the mark (markLastBlock).
  */
 async function callAnthropic<T>(call: Call): Promise<Called<T>> {
-  const response = await call.fetch(endpoint(call.baseUrl, '/v1/messages'), {
-    method: 'POST',
-    headers: {
-      'x-api-key': call.apiKey ?? '',
-      'anthropic-version': ANTHROPIC_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: call.model,
-      max_tokens: call.config.maxTokens,
-      system: [{ type: 'text', text: call.prompt, cache_control: { type: 'ephemeral' } }],
-      messages: [{ role: 'user', content: call.message }],
-      output_config: { effort: call.config.effort, format: { type: 'json_schema', schema: call.schema.schema } },
-    }),
-    signal: AbortSignal.timeout(call.timeoutMs),
-  });
-  if (!response.ok) throw await refused(response, 'Anthropic');
-  const out = await response.json();
-  if (out.stop_reason === 'refusal') {
-    throw new ProviderError(`Anthropic declined the request (${out.stop_details?.category ?? 'no category'})`);
+  const signal = AbortSignal.timeout(call.timeoutMs);
+  const started = Date.now();
+  type Block = { type: string; cache_control?: object; [key: string]: unknown };
+  const messages: { role: string; content: string | Block[] }[] = [
+    { role: 'user', content: call.tools ? [{ type: 'text', text: call.message }] : call.message },
+  ];
+  const total = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  let model = call.model;
+  for (let round = 0; ; round++) {
+    const offer = offerTools(call, started, round);
+    if (call.tools) markLastBlock(messages);
+    const response = await call.fetch(endpoint(call.baseUrl, '/v1/messages'), {
+      method: 'POST',
+      headers: {
+        'x-api-key': call.apiKey ?? '',
+        'anthropic-version': ANTHROPIC_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: call.model,
+        max_tokens: call.config.maxTokens,
+        system: [{ type: 'text', text: call.prompt, cache_control: { type: 'ephemeral' } }],
+        messages,
+        // `none` on the last request: the conversation holds tool calls, so the tools stay declared.
+        ...(call.tools ? { tools: anthropicTools(), tool_choice: { type: offer ? 'auto' : 'none' } } : {}),
+        output_config: { effort: call.config.effort, format: { type: 'json_schema', schema: call.schema.schema } },
+      }),
+      signal,
+    });
+    if (!response.ok) throw await refused(response, 'Anthropic');
+    const out = await response.json();
+    if (out.stop_reason === 'refusal') {
+      throw new ProviderError(`Anthropic declined the request (${out.stop_details?.category ?? 'no category'})`);
+    }
+    if (typeof out.model === 'string') model = out.model;
+    total.input += count(out.usage?.input_tokens) ?? 0;
+    total.cacheRead += count(out.usage?.cache_read_input_tokens) ?? 0;
+    total.cacheWrite += count(out.usage?.cache_creation_input_tokens) ?? 0;
+    total.output += count(out.usage?.output_tokens) ?? 0;
+    const content: Block[] = Array.isArray(out.content) ? out.content : [];
+    const uses = content.filter((block) => block?.type === 'tool_use');
+    if (call.tools && offer && out.stop_reason === 'tool_use' && uses.length > 0) {
+      call.tools.ranRound();
+      // The answer goes back whole, thinking blocks included, as the API asks.
+      messages.push({ role: 'assistant', content });
+      messages.push({
+        role: 'user',
+        content: uses.map((use) => ({ type: 'tool_result', tool_use_id: use.id, content: call.tools!.run({ name: String(use.name), input: use.input }) })),
+      });
+      continue;
+    }
+    if (out.stop_reason === 'tool_use') throw toolAfterLastRound('Anthropic');
+    const text = content
+      .filter((block) => block?.type === 'text')
+      .map((block) => String(block.text ?? ''))
+      .join('');
+    const answer = parseObject<T>(text, 'Anthropic');
+    const { input, cacheRead, cacheWrite, output } = total;
+    return {
+      answer,
+      usage: {
+        model,
+        provider: 'Anthropic',
+        // `input_tokens` is the part that the cache did not hold: the prompt is the sum.
+        prompt_tokens: input + cacheRead + cacheWrite,
+        completion_tokens: output,
+        cache_read_tokens: cacheRead,
+        cache_write_tokens: cacheWrite,
+        ...priced('anthropic', model, { input, output, cacheRead, cacheWrite }),
+      },
+    };
   }
-  const text = (Array.isArray(out.content) ? out.content : [])
-    .filter((block: { type?: string }) => block?.type === 'text')
-    .map((block: { text?: string }) => block.text ?? '')
-    .join('');
-  const answer = parseObject<T>(text, 'Anthropic');
-  const model: string = typeof out.model === 'string' ? out.model : call.model;
-  const input = count(out.usage?.input_tokens) ?? 0;
-  const cacheRead = count(out.usage?.cache_read_input_tokens) ?? 0;
-  const cacheWrite = count(out.usage?.cache_creation_input_tokens) ?? 0;
-  const output = count(out.usage?.output_tokens) ?? 0;
-  return {
-    answer,
-    usage: {
-      model,
-      provider: 'Anthropic',
-      // `input_tokens` is the part that the cache did not hold: the prompt is the sum.
-      prompt_tokens: input + cacheRead + cacheWrite,
-      completion_tokens: output,
-      cache_read_tokens: cacheRead,
-      cache_write_tokens: cacheWrite,
-      ...priced('anthropic', model, { input, output, cacheRead, cacheWrite }),
-    },
-  };
+}
+
+/**
+ * With tools, each request sends the conversation again. The cache mark goes on its last block, and
+ * only there: the next request reads the whole conversation up to it from the cache, and the API
+ * takes at most four marks.
+ */
+function markLastBlock(messages: { content: string | { cache_control?: object }[] }[]): void {
+  for (const message of messages) {
+    if (Array.isArray(message.content)) for (const block of message.content) delete block.cache_control;
+  }
+  const last = messages.at(-1)?.content;
+  if (Array.isArray(last) && last.length) last[last.length - 1]!.cache_control = { type: 'ephemeral' };
 }
 
 // --- A server with the API of OpenAI -----------------------------------------------------------
