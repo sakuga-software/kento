@@ -10,6 +10,7 @@ import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
+import { diffHash, reuseKey } from './reuse.ts';
 import { RepoTools, type ToolUse } from './tools.ts';
 
 export type ReviewInput = ModelClient & {
@@ -31,6 +32,11 @@ export type ReviewInput = ModelClient & {
    * holds those that a bot opened and someone else answered (answered.ts).
    */
   threads?: readonly OpenThread[];
+  /**
+   * REV-89. The reuse key of the last review of the pull request, from the caller. When the key of
+   * this head is the same, `reviewUnlessUnchanged` calls no model.
+   */
+  previousKey?: string | null;
 };
 
 /**
@@ -74,7 +80,14 @@ export type ReviewResult = {
   refutedInThread: Finding[];
   /** REV-68. What the tools used, when the level had tools. */
   toolUse?: ToolUse;
+  /** REV-89. The hash of the reviewed files of the diff (reuse.ts). */
+  diffHash: string;
+  /** REV-89. The key of the whole input of the model (reuse.ts). */
+  reuseKey: string;
 };
+
+/** REV-89. A head whose input is the one of the last review: no model call. */
+export type UnchangedReview = { unchanged: true; level: Level; base: string; head: string; diffHash: string; reuseKey: string };
 
 /** The merge base of the tip of the base branch and the head. */
 export function mergeBase(repoDir: string, base: string, head: string): string {
@@ -87,10 +100,27 @@ export function mergeBase(repoDir: string, base: string, head: string): string {
  */
 export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResult> {
   const config = input.config ?? levelConfig(input.level);
-  const prepared = prepareReview(input, config);
+  return askAndFinish(input, config, prepareReview(input, config));
+}
+
+async function askAndFinish(input: ReviewInput, config: LevelConfig, prepared: PreparedReview): Promise<ReviewResult> {
   const tools = reviewTools(input, config);
   const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref)), undefined, tools);
   return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
+}
+
+/**
+ * REV-89. The review of the head, or nothing when its reuse key is `input.previousKey`: the pack
+ * reads the same diff, the same rules and the same threads as the last review, and the model would
+ * answer the same. A merge of the base branch or a rebase with no conflict gives such a head.
+ */
+export async function reviewUnlessUnchanged(input: ReviewInput): Promise<ReviewResult | UnchangedReview> {
+  const config = input.config ?? levelConfig(input.level);
+  const prepared = prepareReview(input, config);
+  if (input.previousKey && prepared.reuseKey === input.previousKey) {
+    return { unchanged: true, level: input.level, base: prepared.base, head: input.head, diffHash: prepared.diffHash, reuseKey: prepared.reuseKey };
+  }
+  return askAndFinish(input, config, prepared);
 }
 
 /** REV-68. The tools of one review on the head, when the level has a tool budget. */
@@ -106,13 +136,25 @@ export type PreparedReview = {
   rules: PackedRule[];
   lines: ChangedLines;
   threads: AnsweredThread[];
+  diffHash: string;
+  reuseKey: string;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
   const base = mergeBase(input.repoDir, input.base, input.head);
   const answered = answeredSection(input.repoDir, input.head, input.threads ?? []);
-  const { pack, skipped, rules } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section);
-  return { base, pack, skipped, rules, lines: changedLines(input.repoDir, base, input.head), threads: answered.held };
+  const { pack, skipped, rules, body } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section);
+  const key = reuseKey({ packBody: body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
+  return {
+    base,
+    pack,
+    skipped,
+    rules,
+    lines: changedLines(input.repoDir, base, input.head),
+    threads: answered.held,
+    diffHash: diffHash(input.repoDir, base, input.head),
+    reuseKey: key,
+  };
 }
 
 /** The review from the answer of the model: the rules, the anchors, the fingerprints, the score and the verdict. */
@@ -122,7 +164,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads } = prepared;
+  const { base, pack, skipped, rules, lines, threads, diffHash, reuseKey } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -163,6 +205,8 @@ export function finishReview<F extends Finding>(
     lines,
     threads,
     refutedInThread: answeredAway,
+    diffHash,
+    reuseKey,
   };
 }
 

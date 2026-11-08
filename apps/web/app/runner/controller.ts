@@ -12,6 +12,7 @@ import {
   type HeartbeatResponse,
   type Job,
   type JobProvider,
+  type JobReuse,
   type JobRule,
   type ProviderKind,
   type RegisterResponse,
@@ -86,6 +87,8 @@ interface Prepared {
   wantsRules: boolean
   /** REV-71. The answered threads of a review job, for a runner that reads them. */
   threads: ResolveThread[] | null
+  /** REV-89. The review that the runner may reuse; undefined for a runner that does not read it. */
+  reuse: JobReuse | null | undefined
 }
 
 /** The provider of a job and its key, in the shape of the release of the runner. */
@@ -165,7 +168,18 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         log('warn', 'job.threads_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
     }
-    return { rules, installationToken, resolve, wantsRules, threads }
+    // REV-89. The last review that the runner may publish again. A failure costs only the reuse.
+    let reuse: JobReuse | null | undefined
+    if (job.kind === 'review' && (body.features?.includes('reuse') ?? false)) {
+      try {
+        // A new attempt (the source moved, or a lease ended) gets a whole review: `reuse` null.
+        reuse = job.attempt > 1 ? null : await deps.store.reusableReview(job.id)
+      } catch (cause) {
+        reuse = null
+        log('warn', 'job.reuse_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
+      }
+    }
+    return { rules, installationToken, resolve, wantsRules, threads, reuse }
   }
 
   /**
@@ -225,7 +239,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
-    let { rules, installationToken, resolve, wantsRules, threads } = prepared
+    let { rules, installationToken, resolve, wantsRules, threads, reuse } = prepared
     let { provider, providers, keyFromService } = keys
     log('info', 'job.claimed', {
       jobId: job.id,
@@ -239,6 +253,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       kind: job.kind,
       ...(resolve ? { threads: resolve.threads.length } : {}),
       ...(threads ? { answeredThreads: threads.length } : {}),
+      ...(reuse ? { reuseOf: reuse.head } : {}),
     })
     // REV-12. The models of the config, to a runner that reads them, and only when the job
     // also carries their provider: `service`, or an entry of `providers`. Else the runner
@@ -275,7 +290,12 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       ...(models && wantsModels && reachable ? { models } : {}),
       ...(wantsRules && job.kind === 'review' ? { rules: jobRules } : {}),
     }
-    return json<Job>(200, resolve ? { ...message, kind: 'resolve', resolve } : { ...message, kind: 'review', ...(threads ? { threads } : {}) })
+    return json<Job>(
+      200,
+      resolve
+        ? { ...message, kind: 'resolve', resolve }
+        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}) },
+    )
   }
 
   return createController(runnerRoutes, {
@@ -423,10 +443,20 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           outcome: body.outcome,
           stored: outcome,
           ...(body.outcome === 'done'
-            ? { score: body.review.score, model: body.review.model, costUsd: body.review.costUsd }
+            ? {
+                score: body.review.score,
+                model: body.review.model,
+                costUsd: body.review.costUsd,
+                promptTokens: body.review.promptTokens,
+                // REV-89. What the provider read from its cache, and the hash of the diff.
+                ...(body.review.cachedTokens !== undefined ? { cachedTokens: body.review.cachedTokens } : {}),
+                ...(body.review.diffHash ? { diffHash: body.review.diffHash } : {}),
+              }
             : body.outcome === 'resolved'
               ? { threads: body.resolve.threads.length, model: body.resolve.model, costUsd: body.resolve.costUsd }
-              : { reason: body.reason }),
+              : body.outcome === 'unchanged'
+                ? { of: body.unchanged.of, diffHash: body.unchanged.diffHash, costUsd: 0 }
+                : { reason: body.reason }),
         })
         switch (outcome) {
           case 'stored':

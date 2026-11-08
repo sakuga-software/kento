@@ -12,6 +12,8 @@ const MAX_CONTEXT_BYTES = 60_000;
 
 const SKIP =
   /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$|\.snap$|(^|\/)(dist|build|vendor|\.next|\.react-router)\/|drizzle\/migrations\/meta\/|\.gen\.[a-z]+$|\.(png|jpe?g|gif|webp|avif|svg|ico|pdf|mp4|webm|woff2?|ttf|otf|zip|tgz)$/;
+/** A file that the pack never reviews: a lock file, a snapshot, a build output, a binary. */
+export const generatedFile = (path: string): boolean => SKIP.test(path);
 const TEST_FILE = /\.test\.|\.spec\.|(^|\/)(tests?|__tests__)\//;
 
 // The context: unchanged code that the change uses or that uses the change
@@ -261,7 +263,8 @@ function numstat(repo: string, base: string, head: string): { added: string; rem
 
 /**
  * The first message of the review, the files left out with their reason, and the rules that it holds
- * (REV-19): the rules of the caller whose paths a changed file matches.
+ * (REV-19): the rules of the caller whose paths a changed file matches. `body` is the pack after its
+ * first part (the heads and the commits).
  */
 export function buildPack(
   repo: string,
@@ -271,7 +274,7 @@ export function buildPack(
   rules: readonly Rule[] = [],
   /** REV-71. The section of the answered threads (answered.ts), after the rules. */
   answered = '',
-): { pack: string; skipped: string[]; rules: PackedRule[] } {
+): { pack: string; skipped: string[]; rules: PackedRule[]; body: string } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
@@ -347,5 +350,7 @@ export function buildPack(
       context,
     );
   }
-  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed };
+  // REV-89. `body`: the pack without its heads and its commits, which a merge of the base branch
+  // changes. The reuse key reads it (reuse.ts).
+  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed, body: parts.slice(1).join('') };
 }

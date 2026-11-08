@@ -28,7 +28,7 @@ export { buildPack } from './pack.ts';
 export { askJson } from './model.ts';
 export { costLine, descriptionBlock, FINDING_KEY, inlineBody, MARKER_GONE, REVIEW_COUNT, reviewBody, withBlock, type Link } from './render.ts';
 export { markerResolve, RESOLVE_SCHEMA, resolvePack, type OpenThread, type ThreadVerdict } from './resolve.ts';
-export { mergeBase, reviewPullRequest, type ReviewResult } from './review.ts';
+export { mergeBase, reviewPullRequest, reviewUnlessUnchanged, type ReviewResult, type UnchangedReview } from './review.ts';
 export { reviewInPasses, type Pass, type PassesResult, type PassReport } from './passes.ts';
 // The Action (review/sakuga-review.ts) imports these from the engine by their old names. They go away
 // with it (REV-24); the apps import them from packages/protocol.

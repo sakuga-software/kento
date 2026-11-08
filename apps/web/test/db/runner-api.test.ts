@@ -530,4 +530,212 @@ describe('runner API', () => {
       assert.deepEqual(job, { state: 'failed', failure_reason: 'clone failed: exit 128' })
     })
   })
+
+  describe('reuse of the last review (REV-89)', () => {
+    const PREVIOUS = 'd'.repeat(40)
+    const KEY = 'e'.repeat(64)
+    let finding = {
+      path: 'a.ts',
+      start_line: 1,
+      line: 2,
+      severity: 'major' as const,
+      category: 'bug' as const,
+      confidence: 90,
+      title: 't',
+      scenario: 's',
+      fix: 'f',
+      suggestion: '',
+      anchor: 2,
+      blocking: true,
+      suggestion_range: null,
+    }
+
+    /** The review of PREVIOUS on GitHub (review 555), with its reuse key. */
+    async function published(key: string | null = KEY): Promise<string> {
+      let [job] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let result = review({ head: PREVIOUS, score: 2, findings: [finding], ...(key ? { reuseKey: key, diffHash: '0123456789abcdef' } : {}) })
+      let [row] = await database.sql<{ id: string }[]>`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${job!.id}, ${repoId}, 28, ${PREVIOUS}, 2, 'anthropic/claude-haiku-5.5', 0.0123, ${JSON.stringify(result)}::jsonb, 555, now())
+        returning id`
+      return row!.id
+    }
+
+    const reader = { hasProviderKey: true, features: ['reuse'] }
+
+    it('sends the head and the key of the last review on GitHub to a runner that reads them, for a push only', async () => {
+      await published()
+      let runner = await register()
+      await queueJob()
+      let job: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(job.kind, 'review')
+      assert.deepEqual(job.kind === 'review' && job.reuse, { head: PREVIOUS, key: KEY })
+
+      // A runner of an earlier release gets no key that it does not know.
+      await queueJob()
+      let old: Job = await (await claim(runner.token)).json()
+      assert.ok(!('reuse' in old))
+
+      // A command asks for a new review: no reuse.
+      let [command] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref, level_source)
+        values (${repoId}, 'lite', 28, ${HEAD}, 'main', 'command') returning id`
+      let asked: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(asked.id, command!.id)
+      assert.equal(asked.kind === 'review' && asked.reuse, null)
+    })
+
+    it('sends null when the last review has no key', async () => {
+      await published(null)
+      let runner = await register()
+      await queueJob()
+      let job: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(job.kind === 'review' && job.reuse, null)
+    })
+
+    it('stores the outcome unchanged as a copy of the earlier review, at no cost, and marks the job done', async () => {
+      let sourceId = await published()
+      let runner = await register()
+      let jobId = await queueJob()
+      assert.equal((await claim(runner.token, reader)).status, 200)
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: KEY }
+      let response = await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })
+      assert.equal(response.status, 204)
+
+      let [row] = await database.sql<{ score: number; cost_usd: string; head_sha: string; github_review_id: string | null; result: any }[]>`
+        select score, cost_usd, head_sha, github_review_id, result from reviews where job_id = ${jobId}`
+      assert.equal(row!.score, 2, 'the score of the earlier review')
+      assert.equal(row!.cost_usd, '0.000000')
+      assert.equal(row!.head_sha, HEAD)
+      assert.equal(row!.github_review_id, null, 'the publisher writes it')
+      assert.deepEqual(row!.result.findings, [finding], 'the findings of the earlier review')
+      assert.equal(row!.result.head, HEAD)
+      assert.equal(row!.result.promptTokens, 0)
+      assert.deepEqual(row!.result.reusedFrom, { reviewId: sourceId, head: PREVIOUS, githubReviewId: 555 })
+      let [job] = await database.sql<{ state: string }[]>`select state from jobs where id = ${jobId}`
+      assert.equal(job!.state, 'done')
+    })
+
+    it('a copy of a copy that was posted as a review of its own is the source itself', async () => {
+      // The copy at PREVIOUS names R0 (555), but its source was gone: the publisher posted it as review 777.
+      let [job0] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let copy = { ...review({ head: PREVIOUS, score: 2, findings: [finding], reuseKey: KEY }), reusedFrom: { reviewId: crypto.randomUUID(), head: 'f'.repeat(40), githubReviewId: 555 } }
+      let [row0] = await database.sql<{ id: string }[]>`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${job0!.id}, ${repoId}, 28, ${PREVIOUS}, 2, 'm', 0, ${JSON.stringify(copy)}::jsonb, 777, now())
+        returning id`
+      let runner = await register()
+      let jobId = await queueJob()
+      assert.equal((await claim(runner.token, reader)).status, 200)
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: KEY }
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })).status, 204)
+      let [row] = await database.sql<{ result: any }[]>`select result from reviews where job_id = ${jobId}`
+      assert.deepEqual(row!.result.reusedFrom, { reviewId: row0!.id, head: PREVIOUS, githubReviewId: 777 })
+    })
+
+    it('two pushes with no publication in between compare with the same key, and copy the same review', async () => {
+      let sourceId = await published()
+      let runner = await register()
+      // Push 1: unchanged, stored, not published yet.
+      let first = await queueJob()
+      assert.equal((await claim(runner.token, reader)).status, 200)
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: KEY }
+      assert.equal((await call(`/api/runner/jobs/${first}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })).status, 204)
+      let [copy] = await database.sql<{ result: any; published: boolean }[]>`
+        select result, published_at is not null as published from reviews where job_id = ${first}`
+      assert.equal(copy!.published, false)
+      assert.equal(copy!.result.reuseKey, KEY, 'the copy has the key of its source')
+
+      // Push 2 before the publisher ran: the claim gives the source, with the same key as the copy.
+      const NEXT = 'f'.repeat(40)
+      let second = await queueJob({ headSha: NEXT })
+      let job: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(job.id, second)
+      assert.deepEqual(job.kind === 'review' && job.reuse, { head: PREVIOUS, key: copy!.result.reuseKey })
+      assert.equal(
+        (await call(`/api/runner/jobs/${second}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged: { ...unchanged, head: NEXT } } })).status,
+        204,
+      )
+      let [next] = await database.sql<{ result: any }[]>`select result from reviews where job_id = ${second}`
+      assert.deepEqual(next!.result.reusedFrom, copy!.result.reusedFrom, 'both copies name the same review')
+      assert.deepEqual(next!.result.reusedFrom, { reviewId: sourceId, head: PREVIOUS, githubReviewId: 555 })
+      assert.deepEqual(next!.result.findings, copy!.result.findings)
+    })
+
+    it('a copy of a copy names the review that a model made, not the copy in between', async () => {
+      let origin = { reviewId: crypto.randomUUID(), head: 'f'.repeat(40), githubReviewId: 555 }
+      let [job0] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let copy = { ...review({ head: PREVIOUS, score: 2, findings: [finding], reuseKey: KEY }), reusedFrom: origin }
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${job0!.id}, ${repoId}, 28, ${PREVIOUS}, 2, 'm', 0, ${JSON.stringify(copy)}::jsonb, 555, now())`
+      let runner = await register()
+      let jobId = await queueJob()
+      // The claim and the result name the same review: the published copy, with its own head.
+      let claimed: Job = await (await claim(runner.token, reader)).json()
+      assert.deepEqual(claimed.kind === 'review' && claimed.reuse, { head: PREVIOUS, key: KEY })
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: KEY }
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })).status, 204)
+      let [row] = await database.sql<{ result: any }[]>`select result from reviews where job_id = ${jobId}`
+      assert.deepEqual(row!.result.reusedFrom, origin)
+    })
+
+    it('publishes again only the last review on GitHub, never an older one of the pull request', async () => {
+      await published()
+      // A newer review, of another head, is now the last one on GitHub (a force-push came back).
+      let [other] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${'c'.repeat(40)}, 'main') returning id`
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${other!.id}, ${repoId}, 28, ${'c'.repeat(40)}, 5, 'm', 0.01,
+          ${JSON.stringify(review({ head: 'c'.repeat(40), score: 5, reuseKey: 'c'.repeat(64) }))}::jsonb, 556, now() + interval '1 second')`
+      let runner = await register()
+      let jobId = await queueJob()
+      assert.equal((await claim(runner.token, reader)).status, 200)
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: KEY }
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })).status, 204)
+      let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from reviews where job_id = ${jobId}`
+      assert.equal(count!.n, 0, 'the older review is not copied')
+      // The job goes back to the queue: the next claim reads the last review again.
+      let [queued] = await database.sql<{ state: string; failure_reason: string | null; waits: boolean }[]>`
+        select state, failure_reason, not_before > now() as waits from jobs where id = ${jobId}`
+      assert.deepEqual(queued, { state: 'queued', failure_reason: null, waits: true })
+      await database.sql`update jobs set not_before = null where id = ${jobId}`
+      let again: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(again.id, jobId)
+      assert.equal(again.attempt, 2)
+      assert.equal(again.kind === 'review' && again.reuse, null, 'the new attempt reviews the whole pull request')
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'done', attempt: 2, review: review() } })).status, 204)
+      let [done] = await database.sql<{ state: string }[]>`select state from jobs where id = ${jobId}`
+      assert.equal(done!.state, 'done')
+    })
+
+    it('queues the job again when the review to publish again is not there, and fails it at the last attempt', async () => {
+      await published()
+      let runner = await register()
+      let jobId = await queueJob()
+      assert.equal((await claim(runner.token, reader)).status, 200)
+      let unchanged = { level: 'lite', base: BASE, head: HEAD, of: PREVIOUS, diffHash: '0123456789abcdef', reuseKey: 'f'.repeat(64) }
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 1, unchanged } })).status, 204)
+      let [job] = await database.sql<{ state: string }[]>`select state from jobs where id = ${jobId}`
+      assert.equal(job!.state, 'queued')
+      await database.sql`update jobs set not_before = null where id = ${jobId}`
+      let again: Job = await (await claim(runner.token, reader)).json()
+      assert.equal(again.kind === 'review' && again.reuse, null, 'the new attempt reviews the whole pull request')
+      // A runner that still sends `unchanged` on its last attempt fails the job.
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'unchanged', attempt: 2, unchanged } })).status, 204)
+      let [last] = await database.sql<{ state: string; failure_reason: string }[]>`select state, failure_reason from jobs where id = ${jobId}`
+      assert.equal(last!.state, 'failed')
+      assert.match(last!.failure_reason, /to publish again is gone/)
+      let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from reviews where job_id = ${jobId}`
+      assert.equal(count!.n, 0)
+    })
+  })
 })

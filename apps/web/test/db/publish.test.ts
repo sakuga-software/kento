@@ -195,6 +195,200 @@ describe('publication of a review', () => {
     assert.equal(fake.state.reviews.length, 1)
   })
 
+  it('publishes again the review of the earlier head when the runner sends unchanged: block, label and check only (REV-89)', async () => {
+    const KEY = 'e'.repeat(64)
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', cachedTokens: 600 }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+
+    // A merge of main: a new head, the same reviewed files.
+    fake.state.pr.head = HEAD2
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
+    publisher = newPublisher()
+    let second = await claimNext()
+    assert.deepEqual(second.kind === 'review' && second.reuse, { head: HEAD1, key: KEY })
+    let unchanged = { level: 'lite', base: BASE, head: HEAD2, of: HEAD1, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+    await publisher.stop()
+
+    assert.equal(fake.state.reviews.length, 1, 'no second review')
+    assert.equal(fake.state.reviews[0]!.state, 'CHANGES_REQUESTED')
+    assert.equal(fake.botThreads().length, 1, 'no second thread')
+    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(fake.state.pr.body, /<!-- sakuga-review:count 1 -->/)
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    assert.deepEqual(fake.state.checkRuns.map((c) => c.head_sha), [HEAD1, HEAD2], 'the new head gets its check')
+    let [, row] = await rows()
+    assert.equal(row!.headSha, HEAD2)
+    assert.ok(row!.publishedAt)
+    assert.equal(Number(row!.githubReviewId), posted!.id, 'the review on GitHub is the one of HEAD1')
+  })
+
+  it('builds the block of a reused review from the threads and the findings as they are at publication (REV-89)', async () => {
+    const KEY = 'e'.repeat(64)
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
+    let mul = { ...review().findings[0]!, path: 'src/mul.ts', title: 'Le produit divise', scenario: 'mul(1, 2) rend 0,5.' }
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', findings: [...review().findings, mul] }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+
+    // Before the merge of main, a person resolves the thread of the first finding and dismisses the second.
+    let threads = fake.botThreads()
+    assert.equal(threads.length, 2)
+    let sumThread = threads.find((t) => t.path === 'src/sum.ts')!
+    fake.state.resolved.add(sumThread.id)
+    await database.sql`update findings set status = 'dismissed', status_reason = 'voulu' where title = 'Le produit divise'`
+    fake.state.pr.head = HEAD2
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
+    publisher = newPublisher()
+    let second = await claimNext()
+    assert.deepEqual(second.kind === 'review' && second.reuse, { head: HEAD1, key: KEY })
+    let unchanged = { level: 'lite', base: BASE, head: HEAD2, of: HEAD1, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+    await publisher.stop()
+
+    let body = fake.state.pr.body
+    assert.match(body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.doesNotMatch(body, /Le produit divise/, 'a finding dismissed since is out of the block')
+    assert.match(body, /La somme soustrait/)
+    assert.doesNotMatch(body, new RegExp(`#discussion_r${sumThread.id}`), 'a resolved thread gives no link')
+    assert.match(body, /sum\(1, 2\) rend -1\./, 'without a thread, the block shows the scenario')
+    assert.deepEqual(fake.state.reviews.map((r) => r.id), [posted!.id], 'no second review')
+  })
+
+  it('posts the copy as a review of its own when the review of the earlier head was dismissed (REV-89)', async () => {
+    const KEY = 'e'.repeat(64)
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', cachedTokens: 600 }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+
+    // A person dismissed the review of HEAD1, then main was merged.
+    fake.state.reviews[0]!.state = 'DISMISSED'
+    fake.state.pr.head = HEAD2
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
+    publisher = newPublisher()
+    let second = await claimNext()
+    assert.deepEqual(second.kind === 'review' && second.reuse, { head: HEAD1, key: KEY })
+    let unchanged = { level: 'lite', base: BASE, head: HEAD2, of: HEAD1, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+    await publisher.stop()
+
+    assert.equal(fake.state.reviews.length, 2, 'the copy is posted as a review of its own')
+    assert.equal(fake.state.reviews[1]!.commitId, HEAD2)
+    assert.doesNotMatch(fake.state.pr.body, /Aucun fichier relu n'a changé/)
+    let [, row] = await rows()
+    assert.equal(Number(row!.githubReviewId), fake.state.reviews[1]!.id)
+    assert.notEqual(Number(row!.githubReviewId), posted!.id)
+    let [stored] = await database.sql<{ reused: boolean }[]>`select result ? 'reusedFrom' as reused from reviews where head_sha = ${HEAD2}`
+    assert.equal(stored!.reused, false, 'the row is a review of its own: the next copy takes it as its source')
+  })
+
+  it('does not publish a copy when a later review of the bot came after its source (REV-89)', async () => {
+    const KEY = 'e'.repeat(64)
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', cachedTokens: 600 }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+
+    // A later review of the bot (a command) is posted on the pull request, then main is merged.
+    let later = fake.addReview({ state: 'COMMENTED', commitId: HEAD1 })
+    fake.state.pr.head = HEAD2
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
+    publisher = newPublisher()
+    let second = await claimNext()
+    assert.deepEqual(second.kind === 'review' && second.reuse, { head: HEAD1, key: KEY })
+    let unchanged = { level: 'lite', base: BASE, head: HEAD2, of: HEAD1, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+    await publisher.stop()
+
+    assert.deepEqual(fake.state.reviews.map((r) => r.id), [posted!.id, later], 'no review posted for the copy')
+    assert.doesNotMatch(fake.state.pr.body, /Aucun fichier relu n'a changé/, 'the block of the later review stays')
+    // The later review was of HEAD1: HEAD2 still gets its check, once.
+    assert.deepEqual(fake.state.checkRuns.map((c) => c.head_sha), [HEAD1, HEAD2], 'the new head is not left without a check')
+    let [, row] = await rows()
+    assert.ok(row!.publishedAt)
+    assert.equal(row!.githubReviewId, null, 'not published, on purpose')
+  })
+
+  it('uses no try of a reused review when GitHub fails to list the reviews (REV-89)', async () => {
+    const KEY = 'e'.repeat(64)
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', cachedTokens: 600 }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+
+    // A merge of main, while GitHub fails to list the reviews more times than a review has tries.
+    fake.state.pr.head = HEAD2
+    fake.state.failReviewLists = 4
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
+    publisher = newPublisher()
+    let second = await claimNext()
+    assert.deepEqual(second.kind === 'review' && second.reuse, { head: HEAD1, key: KEY })
+    let unchanged = { level: 'lite', base: BASE, head: HEAD2, of: HEAD1, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+    await publisher.stop()
+    for (let i = 0; i < 4; i++) await publisher.publishPending()
+
+    assert.equal(fake.state.failReviewLists, 0)
+    assert.equal(fake.state.reviews.length, 1, 'no second review')
+    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    let [, row] = await rows()
+    assert.ok(row!.publishedAt, 'published after the failures, its tries intact')
+    assert.equal(Number(row!.githubReviewId), posted!.id)
+  })
+
   it('says in the review which assignment rule set its level, and mentions the person of the rule (REV-21)', async () => {
     let assignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'alex', reasons: { path: 'db/migrations/0002.sql' }, trigger: 'push' }
     await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignment })

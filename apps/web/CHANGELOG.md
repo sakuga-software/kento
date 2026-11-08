@@ -7,6 +7,37 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-89: No new review of a push that changes no reviewed file
+
+No migration, no new variable, no new permission. A runner of this release says `reuse` in the
+features of its claim. For a review job of a push (not a command, a « Relancer » or a retry), the
+service then sends `reuse`: the head and the reuse key of the last review of the pull request on
+GitHub, or null. The runner builds the pack, and when its key is the same (the pack after its list
+of commits, the level, the provider, the models and the prompt: a merge of `main` or a rebase with
+no conflict), it calls no model and sends the outcome `unchanged`. The service stores a copy of the
+earlier review at no cost, and the publisher writes only the block of the description (with a note
+that names the earlier commit), the label and the check « Sakuga Review » of the new head. No new
+review, comment or reply on GitHub, and the findings of the database do not change. When the
+earlier review is no longer the last one on GitHub at the result, the job goes back to the queue
+(it fails after its last attempt); when a person dismissed it, the copy is posted as a review of
+its own. A new reply in
+a thread, a changed rule, another model or a changed reviewed file gives a new key and a new
+review.
+
+Each review of such a runner also carries `diffHash` (the hash of the paths and blobs of the
+reviewed files of `base...head`), `reuseKey` and `cachedTokens` (the tokens of the prompt that the
+provider read from its cache). The logs `job.result` of the service and `job.finished` of the
+runner give `diffHash`, `cachedTokens` and `promptTokens`.
+
+Deploy `web` before the runners: a runner of this release sends the feature `reuse` in its claim,
+and an earlier service refuses it. A runner of an earlier release does not say `reuse`, gets no
+`reuse`, sends none of the new keys, and reviews every push as before.
+
+Check: on a pull request with a review, a merge of `main` that touches no file of the pull request
+gives `job.review_unchanged` in the log of the runner, `review.republished` in the log of the
+service, a block that says « Aucun fichier relu n'a changé depuis le commit … », and a check on the
+new head. The cost of that review on the screens is 0.
+
 ## REV-93: The command `reject`, read in a thread and in the conversation
 
 **Before the deployment, in the settings of the GitHub App `kento-review`: subscribe to the event

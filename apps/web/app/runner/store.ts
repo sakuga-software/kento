@@ -1,6 +1,19 @@
 import type postgres from 'postgres'
 
-import { LEASE_SECONDS, MAX_ATTEMPTS, MAX_JOB_RULES, type JobKind, type JobRule, type Level, type ProviderKind, type ResolvePayload, type ReviewPayload } from '@sakuga-review/protocol'
+import {
+  LEASE_SECONDS,
+  MAX_ATTEMPTS,
+  MAX_JOB_RULES,
+  REUSE_KEY,
+  type JobKind,
+  type JobReuse,
+  type JobRule,
+  type Level,
+  type ProviderKind,
+  type ResolvePayload,
+  type ReviewPayload,
+  type UnchangedPayload,
+} from '@sakuga-review/protocol'
 
 import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'
@@ -86,7 +99,16 @@ export type ResultOutcome = 'stored' | 'not_found' | 'lease_lost' | 'not_running
 export type StoredResult =
   | { outcome: 'done'; review: ReviewPayload }
   | { outcome: 'resolved'; resolve: ResolvePayload }
+  | { outcome: 'unchanged'; unchanged: UnchangedPayload }
   | { outcome: 'failed'; reason: string; providerStatus?: number | null }
+
+/**
+ * REV-89. A review as `reviews.result` keeps it. `reusedFrom`: the review was not made by a model,
+ * it is the review of an earlier head with the same input (outcome `unchanged`). The publisher then
+ * writes only the block of the description, the label and the check: the findings are already on
+ * GitHub, in the review `githubReviewId`.
+ */
+export type StoredReview = ReviewPayload & { reusedFrom?: { reviewId: string; head: string; githubReviewId: number } }
 
 /** What one sweep of the expired leases did. */
 export interface ExpiredLeases {
@@ -167,6 +189,14 @@ export interface RunnerStore {
    * these only, with the title that they had then.
    */
   recordSentRules(jobId: string, runnerId: string, attempt: number, rules: JobRule[]): Promise<void>
+  /**
+   * REV-89. The last review on GitHub of the pull request of a review job, when the runner may reuse
+   * it: the job comes from a push (not a command, a « Relancer » or a retry), and that review has a
+   * reuse key. Null otherwise: the runner then reviews the head. A copy that waits for its
+   * publication (outcome `unchanged`) is not read yet: its source, still the last review on GitHub,
+   * has the same key and the same findings, so the runner compares with the same input.
+   */
+  reusableReview(jobId: string): Promise<JobReuse | null>
   /**
    * Stores the result of an attempt. A finding of a review keeps its `rule_id` only when it names a
    * rule of the repository of the job or of its org, and then gets the title of that rule.
@@ -398,6 +428,20 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return sent
     },
 
+    async reusableReview(jobId) {
+      let [job] = await sql<{ repoId: string; prNumber: number; headSha: string; push: boolean }[]>`
+        select repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha",
+          (github_comment_id is null and level_source is distinct from 'command'
+            and level_source is distinct from 'retry') as push
+        from jobs
+        where id = ${jobId} and kind = 'review'`
+      if (!job || !job.push) return null
+      let last = await lastReviewOnGitHub(sql, job.repoId, job.prNumber, job.headSha)
+      if (!last || last.key === null || !REUSE_KEY.test(last.key)) return null
+      // The head of the row: a published copy names its own head, and its key is that of its source.
+      return { head: last.headSha, key: last.key }
+    },
+
     async recordSentRules(jobId, runnerId, attempt, rules) {
       await sql`
         update jobs set sent_rules = ${JSON.stringify(rules)}::jsonb
@@ -470,6 +514,63 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           return 'stored' as const
         }
 
+        if (result.outcome === 'unchanged') {
+          let { unchanged } = result
+          if (job.kind !== 'review') return 'wrong_kind' as const
+          if (unchanged.head !== job.headSha) return 'wrong_head' as const
+          // REV-89. The review to publish again is the last review on GitHub of the pull request, the
+          // one that `reusableReview` gave the claim, with the same head and key: never an older
+          // review of the pull request. The runner called no model: the copy costs nothing, and keeps
+          // the findings, the score and the verdict.
+          let last = await lastReviewOnGitHub(tx, job.repoId, job.prNumber, job.headSha)
+          let source = last && last.headSha === unchanged.of && last.key === unchanged.reuseKey ? last : null
+          if (!source) {
+            // The retention removed it, or another review is now the last one. The job goes back to
+            // the queue, as `releaseJob` does: the next claim reads the last review again, and the
+            // runner reviews the head unless its key is that one. After the last attempt, it fails.
+            let reason = `the review of ${unchanged.of.slice(0, 9)} to publish again is gone, or is no longer the last one`
+            await tx`
+              update jobs set
+                state = case when attempts < ${MAX_ATTEMPTS} then 'queued'::job_state else 'failed'::job_state end,
+                failure_reason = case when attempts < ${MAX_ATTEMPTS} then null else ${reason} end,
+                finished_at = case when attempts < ${MAX_ATTEMPTS} then null else now() end,
+                not_before = case when attempts < ${MAX_ATTEMPTS}
+                  then now() + ${backoff}::interval * power(2, attempts - 1) else null end,
+                lease_expires_at = null,
+                updated_at = now()
+              where id = ${jobId}`
+            log('warn', 'job.reuse_source_moved', { jobId, of: unchanged.of })
+            return 'stored' as const
+          }
+          let previous = jsonOf<StoredReview>(source.result)
+          let copy: StoredReview = {
+            ...previous,
+            base: unchanged.base,
+            head: unchanged.head,
+            costUsd: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            cachedTokens: 0,
+            diffHash: unchanged.diffHash,
+            reuseKey: unchanged.reuseKey,
+            // A copy of a copy keeps the review that a model made: its head and its review on GitHub.
+            // A copy that the publisher posted as a review of its own (its source was gone) has
+            // another review on GitHub: it is then the source.
+            reusedFrom:
+              previous.reusedFrom && previous.reusedFrom.githubReviewId === Number(source.githubReviewId)
+                ? previous.reusedFrom
+                : { reviewId: source.id, head: unchanged.of, githubReviewId: Number(source.githubReviewId) },
+          }
+          await tx`
+            insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
+            values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${source.score},
+              ${source.model}, 0, ${JSON.stringify(copy)}::jsonb)`
+          await tx`
+            update jobs set state = 'done', finished_at = now(), lease_expires_at = null, updated_at = now()
+            where id = ${jobId}`
+          return 'stored' as const
+        }
+
         let { review } = result
         if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
@@ -513,6 +614,22 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return out
     },
   }
+}
+
+/**
+ * REV-89. The last review on GitHub of a pull request, of a head other than `head`: the one that the
+ * claim gives the runner (`reusableReview`), and the only one that an `unchanged` result can copy
+ * (`storeResult`). One definition for both, so that they never name two reviews. A published copy
+ * counts with its own head: its key and its findings are those of its source.
+ */
+async function lastReviewOnGitHub(q: postgres.Sql | postgres.TransactionSql, repoId: string, prNumber: number, head: string) {
+  let [last] = await q<{ id: string; headSha: string; key: string | null; result: unknown; score: number; model: string; githubReviewId: string | number }[]>`
+    select id, head_sha as "headSha", result->>'reuseKey' as key, result, score, model, github_review_id as "githubReviewId"
+    from reviews
+    where repo_id = ${repoId} and pr_number = ${prNumber} and github_review_id is not null and head_sha <> ${head}
+    order by published_at desc, created_at desc
+    limit 1`
+  return last ?? null
 }
 
 /**

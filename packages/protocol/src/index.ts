@@ -83,8 +83,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  *   (REV-19), and a finding of the result can cite one with `rule_id`.
  * - `threads`: a review job can carry `threads`, the open threads of the bot that someone answered
  *   (REV-71). The review reads their replies as data.
+ * - `reuse`: a review job carries `reuse`, the reuse key of the last review of the pull request
+ *   (REV-89). The runner then sends `diffHash`, `reuseKey` and `cachedTokens` with a review, and the
+ *   outcome `unchanged` when the key of the head is the same: no model call.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -93,6 +96,9 @@ export type CostSource = (typeof COST_SOURCES)[number];
 
 /** A uuid as Postgres writes it: lower case. */
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** REV-89. The hash of the reviewed files of a diff, and the key of the whole input of a review (packages/engine/src/reuse.ts). */
+export const DIFF_HASH = /^[0-9a-f]{16}$/;
+export const REUSE_KEY = /^[0-9a-f]{64}$/;
 /** The id of a git commit: SHA-1 (40 characters) or SHA-256 (64), lower case. */
 export const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 /** The id of a provider in a job: `service`, or the uuid of a provider of the org. */
@@ -226,11 +232,21 @@ type JobBase = {
 };
 
 /**
+ * REV-89. The last review of the pull request that the runner may reuse: its head and its reuse key.
+ * Only a review job of a push carries one; a command or « Relancer » always gets a new review.
+ */
+export type JobReuse = { head: string; key: string };
+
+/**
  * A review job has no `resolve` key: a runner of an earlier release reads it as before. `threads`:
  * with the feature `threads` only (REV-71), the open threads of the bot that someone answered, the
- * first MAX_RESOLVE_THREADS of them, cleaned as for a resolve job.
+ * first MAX_RESOLVE_THREADS of them, cleaned as for a resolve job. `reuse`: with the feature `reuse`
+ * only (REV-89); null when no review can be reused. Its presence tells the runner that the service
+ * reads the keys of REV-89 in the result.
  */
-export type Job = (JobBase & { kind: 'review'; threads?: ResolveThread[] }) | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
+export type Job =
+  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null })
+  | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
 const claimRequest = obj({
   hasProviderKey: bool,
@@ -305,8 +321,15 @@ const resolveThread = obj({
   comments: arr(resolveComment, { max: 30 }),
 });
 const count = int({ min: 0, max: 100_000 });
+const diffHash = str({ max: 16, pattern: DIFF_HASH });
+const reuseKey = str({ max: 64, pattern: REUSE_KEY });
 const job = tagged('kind', {
-  review: obj({ ...jobBase, kind: oneOf(['review'] as const), threads: optional(arr(resolveThread, { max: MAX_RESOLVE_THREADS })) }),
+  review: obj({
+    ...jobBase,
+    kind: oneOf(['review'] as const),
+    threads: optional(arr(resolveThread, { max: MAX_RESOLVE_THREADS })),
+    reuse: optional(nullable(obj({ head: sha, key: reuseKey }))),
+  }),
   resolve: obj({
     ...jobBase,
     kind: oneOf(['resolve'] as const),
@@ -383,7 +406,19 @@ export type ReviewPayload = {
   findings: ReviewFinding[];
   notReviewed: string[];
   skipped: string[];
+  /** REV-89, with the feature `reuse`. The hash of the reviewed files of the diff. */
+  diffHash?: string;
+  /** REV-89, with the feature `reuse`. The key of the whole input of the model. */
+  reuseKey?: string;
+  /** REV-89, with the feature `reuse`. The tokens of the prompt that the provider read from its cache. */
+  cachedTokens?: number | null;
 };
+
+/**
+ * REV-89. A head whose reuse key is the one of `JobReuse`: the runner called no model. `of` is the
+ * head of the review to publish again.
+ */
+export type UnchangedPayload = { level: Level; base: string; head: string; of: string; diffHash: string; reuseKey: string };
 
 export const THREAD_VERDICTS = ['fixed', 'answered', 'open'] as const;
 
@@ -415,6 +450,7 @@ export type ResolvePayload = {
 export type ResultRequest =
   | { outcome: 'done'; attempt: number; review: ReviewPayload }
   | { outcome: 'resolved'; attempt: number; resolve: ResolvePayload }
+  | { outcome: 'unchanged'; attempt: number; unchanged: UnchangedPayload }
   | { outcome: 'failed'; attempt: number; reason: string; providerStatus?: number | null };
 
 const line = int({ min: 0, max: 10_000_000 });
@@ -456,6 +492,9 @@ const review = obj({
   findings: arr(finding, { max: 100 }),
   notReviewed: arr(text(1000), { max: 200 }),
   skipped: arr(text(1000), { max: 2000 }),
+  diffHash: optional(diffHash),
+  reuseKey: optional(reuseKey),
+  cachedTokens: optional(tokens),
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),
@@ -479,6 +518,11 @@ const resultRequest = tagged('outcome', {
         { max: MAX_RESOLVE_THREADS },
       ),
     }),
+  }),
+  unchanged: obj({
+    outcome: oneOf(['unchanged'] as const),
+    attempt,
+    unchanged: obj({ level: oneOf(LEVELS), base: sha, head: sha, of: sha, diffHash, reuseKey }),
   }),
   failed: obj({
     outcome: oneOf(['failed'] as const),

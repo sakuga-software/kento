@@ -24,7 +24,8 @@ import { pageRoutes } from '../routes.ts'
 import { ONLINE_SECONDS } from '../runner/admin.ts'
 import { failureComment } from './failure.ts'
 import { createGitHub, GitHubError, type GitHub } from './github.ts'
-import { publishReview } from './publish.ts'
+import { botReviewState, postReusedCheck, publishReview, publishUnchanged } from './publish.ts'
+import type { StoredReview } from '../runner/store.ts'
 import { QUEUE_NOTICE_MAX_AGE, QUEUE_STALL_MINUTES, queuedComment, queuedMarker } from './queued.ts'
 
 /** What the review needs: read the code and the history, write the review, the description and the label. */
@@ -176,6 +177,13 @@ export interface Publisher {
   stop(): Promise<void>
 }
 
+/** REV-89. A publication that stopped before it wrote anything, on a failure of GitHub: it uses no try. */
+class NoTryUsed extends Error {
+  constructor(cause: unknown) {
+    super(errorMessage(cause), { cause })
+  }
+}
+
 export function createPublisher(deps: PublisherDependencies): Publisher {
   let webUrl = (deps.webUrl ?? 'https://github.com').replace(/\/+$/, '')
   let tries = new Map<string, number>()
@@ -186,7 +194,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   let lastReactionSweep = 0
 
   async function publishOne(row: Pending): Promise<PublishResult> {
-    let review = jsonOf<ReviewPayload>(row.result)
+    let review = jsonOf<StoredReview>(row.result)
     let [owner, name] = row.fullName.split('/') as [string, string]
     let github: GitHub | null = null
     let skip = async (reason: 'closed' | 'superseded' | 'suspended'): Promise<PublishResult> => {
@@ -214,6 +222,61 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       checks = createGitHub({ apiUrl: deps.apiUrl, token: checkToken.token, fetch: deps.fetch })
     } catch (error) {
       log('warn', 'review.check_token_refused', { reviewId: row.id, error: errorMessage(error) })
+    }
+
+    // REV-89. The review of an earlier head with the same input: only the block, the label and the check.
+    let on = { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl }
+    let source: 'stands' | 'replaced' | 'gone' = 'stands'
+    if (review.reusedFrom) {
+      try {
+        source = await botReviewState(github, on, review.reusedFrom.githubReviewId)
+      } catch (error) {
+        // Nothing is written yet: a failure of GitHub here costs no try of the review.
+        throw new NoTryUsed(error)
+      }
+    }
+    // A later review of the bot is on the pull request: the copy would write over its block. The head
+    // still gets its check when that review was of another head, so that it is never left without one.
+    if (source === 'replaced') {
+      if (checks && review.reusedFrom) {
+        let { head } = review.reusedFrom
+        await postReusedCheck(checks, on, review, head).catch((error) =>
+          log('warn', 'publish.step_failed', { reviewId: row.id, step: 'check', error: String(error) }),
+        )
+      }
+      return skip('superseded')
+    }
+    if (review.reusedFrom && source === 'gone') {
+      // The review of the earlier head is gone from GitHub, or a person dismissed it: the copy is
+      // posted as a review of its own, with its comments.
+      log('warn', 'review.reuse_source_gone', { reviewId: row.id, repo: row.fullName, pr: row.prNumber, githubReviewId: review.reusedFrom.githubReviewId })
+      let { reusedFrom: _gone, ...own } = review
+      review = own
+      // The row is a review of its own from now on: the next copy takes it as its source.
+      await deps.sql`update reviews set result = result - 'reusedFrom' where id = ${row.id}`
+    }
+    if (review.reusedFrom) {
+      let from = review.reusedFrom
+      let out = await publishUnchanged(github, on, review, from.head, {
+        checks,
+        findings: createFindingsLedger(deps.sql, { repoId: row.repoId, prNumber: row.prNumber, reviewId: row.id, head: row.headSha }),
+        warn: (event, fields) => log('warn', event, { reviewId: row.id, ...fields }),
+      })
+      // The review on GitHub is the one of the earlier head.
+      await deps.sql`update reviews set published_at = now(), github_review_id = ${from.githubReviewId} where id = ${row.id}`
+      log('info', 'review.republished', {
+        reviewId: row.id,
+        repo: row.fullName,
+        pr: row.prNumber,
+        head: row.headSha,
+        of: from.head,
+        githubReviewId: from.githubReviewId,
+        score: out.score,
+        findings: out.shown,
+        check: checks !== null,
+      })
+      await answerCommand(github, row, 'rocket')
+      return { kind: 'published', reviewId: row.id, githubReviewId: from.githubReviewId }
     }
 
     let githubReviewId = 0
@@ -633,6 +696,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
             results.push(await publishOne(row))
             tries.delete(row.id)
           } catch (error) {
+            // REV-89. A failure before anything is written gives the try back; MAX_AGE still ends it.
+            if (error instanceof NoTryUsed) tries.set(row.id, (tries.get(row.id) ?? 1) - 1)
             let message = errorMessage(error).slice(0, 500)
             log('error', 'review.publication_failed', {
               reviewId: row.id,

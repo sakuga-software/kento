@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -861,4 +861,51 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   assert.deepEqual(result.review.findings, []);
   assert.equal(result.review.score, 4);
   assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === 'job.finding_refuted_in_thread' && l.path === 'sum.ts'));
+});
+
+// --- reuse of the last review (REV-89) -----------------------------------------------------------
+
+test('a service that sends reuse gets the diff hash, the reuse key and the cached tokens of a review (REV-89)', async () => {
+  const { api, results } = fakeApi();
+  const model = stubModel();
+  assert.equal(await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: null }), deps(api, model.fetch)), 'done');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.match(result.review.diffHash ?? '', /^[0-9a-f]{16}$/);
+  assert.match(result.review.reuseKey ?? '', /^[0-9a-f]{64}$/);
+  // The stub gives no prompt_tokens_details: the provider said nothing of its cache.
+  assert.equal(result.review.cachedTokens, null);
+  assert.ok(logs.some((l) => l.includes('"event":"job.finished"') && l.includes(`"diffHash":"${result.review.diffHash}"`)), 'the log line of the job holds the diff hash');
+
+  // A service of an earlier release sends no `reuse`, and refuses a key that it does not know.
+  const earlier = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(earlier.api, model.fetch));
+  const old = earlier.results[0]!;
+  assert.ok(old.outcome === 'done' && !('diffHash' in old.review) && !('reuseKey' in old.review) && !('cachedTokens' in old.review));
+});
+
+test('a head with the reuse key of the last review calls no model, and sends unchanged (REV-89)', async () => {
+  const first = fakeApi();
+  const model = stubModel();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: null }), deps(first.api, model.fetch));
+  const done = first.results[0]!;
+  assert.ok(done.outcome === 'done');
+  assert.equal(model.keys.length, 1);
+
+  // The same head stands for a merge of main: the key is that of the pack after its commits.
+  const previous = '1111111111111111111111111111111111111111';
+  const { api, results } = fakeApi();
+  const outcome = await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: { head: previous, key: done.review.reuseKey! } }), deps(api, model.fetch));
+  assert.equal(outcome, 'done');
+  assert.equal(model.keys.length, 1, 'no model call');
+  const result = results[0]!;
+  assert.equal(result.outcome, 'unchanged');
+  if (result.outcome !== 'unchanged') return;
+  assert.deepEqual(result.unchanged, { level: 'lite', base: done.review.base, head, of: previous, diffHash: done.review.diffHash, reuseKey: done.review.reuseKey });
+
+  // Another key: a review.
+  const other = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: { head: previous, key: 'f'.repeat(64) } }), deps(other.api, model.fetch));
+  assert.equal(other.results[0]!.outcome, 'done');
+  assert.equal(model.keys.length, 2);
 });

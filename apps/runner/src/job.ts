@@ -10,12 +10,22 @@ import {
   type LevelConfig,
   RESOLVE_SCHEMA,
   resolvePack,
-  reviewPullRequest,
+  reviewUnlessUnchanged,
   type OpenThread,
   type ReviewResult,
   type ThreadVerdict,
 } from '@sakuga-review/engine';
-import { HEARTBEAT_SECONDS, type CostSource, type Job, type ProviderKind, type ResolvePayload, type ResolveThread, type ResultRequest, type ReviewPayload } from '@sakuga-review/protocol';
+import {
+  HEARTBEAT_SECONDS,
+  type CostSource,
+  type Job,
+  type ProviderKind,
+  type ResolvePayload,
+  type ResolveThread,
+  type ResultRequest,
+  type ReviewPayload,
+  type UnchangedPayload,
+} from '@sakuga-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';
@@ -96,7 +106,11 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
     if (job.kind === 'resolve') {
       result = { outcome: 'resolved', attempt: job.attempt, resolve: await resolveJob(job, deps, signal) };
     } else {
-      result = { outcome: 'done', attempt: job.attempt, review: await reviewJob(job, deps, signal) };
+      const reviewed = await reviewJob(job, deps, signal);
+      result =
+        'of' in reviewed
+          ? { outcome: 'unchanged', attempt: job.attempt, unchanged: reviewed }
+          : { outcome: 'done', attempt: job.attempt, review: reviewed };
     }
   } catch (error) {
     result = { outcome: 'failed', attempt: job.attempt, reason: errorMessage(error).slice(0, 2000) || 'unknown error' };
@@ -147,10 +161,19 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
       outcome: result.outcome,
       durationMs: Date.now() - started,
       ...(result.outcome === 'done'
-        ? { score: result.review.score, model: result.review.model, costUsd: result.review.costUsd }
+        ? {
+            score: result.review.score,
+            model: result.review.model,
+            costUsd: result.review.costUsd,
+            promptTokens: result.review.promptTokens,
+            ...(result.review.cachedTokens !== undefined ? { cachedTokens: result.review.cachedTokens } : {}),
+            ...(result.review.diffHash ? { diffHash: result.review.diffHash } : {}),
+          }
         : result.outcome === 'resolved'
           ? { threads: result.resolve.threads.length, model: result.resolve.model, costUsd: result.resolve.costUsd }
-          : { reason: result.reason }),
+          : result.outcome === 'unchanged'
+            ? { of: result.unchanged.of, diffHash: result.unchanged.diffHash, costUsd: 0 }
+            : { reason: result.reason }),
     });
     return result.outcome === 'failed' ? 'failed' : 'done';
   } finally {
@@ -231,9 +254,16 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
   }
 }
 
-async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload> {
+/**
+ * The review of a job, or, with the feature `reuse` (REV-89), the head of the last review when this
+ * head reads the same input: the service publishes that review again.
+ */
+async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDependencies, signal: AbortSignal): Promise<ReviewPayload | UnchangedPayload> {
+  // A service that sends `reuse` (null too) reads the keys of REV-89 in the result.
+  const reuse = job.reuse;
+  const readsReuse = reuse !== undefined;
   return withCheckout(job, deps, signal, async ({ checkout, model, fetch }) => {
-    const result = await reviewPullRequest({
+    const result = await reviewUnlessUnchanged({
       repoDir: checkout.repoDir,
       base: checkout.base,
       head: checkout.head,
@@ -245,16 +275,22 @@ async function reviewJob(job: Job, deps: JobDependencies, signal: AbortSignal): 
       // REV-19. The rules come with the job, from the service: never from the checkout.
       rules: job.rules ?? [],
       // REV-71. The answered threads come with the job, already cleaned by the service.
-      threads: job.kind === 'review' ? openThreads(job.threads ?? []) : [],
+      threads: openThreads(job.threads ?? []),
+      previousKey: reuse?.key ?? null,
       fetch,
       log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
     });
+    if ('unchanged' in result) {
+      // REV-89. `reuse` is set: the key can only match it.
+      log('info', 'job.review_unchanged', { jobId: job.id, of: reuse!.head, diffHash: result.diffHash });
+      return { level: result.level, base: result.base, head: result.head, of: reuse!.head, diffHash: result.diffHash, reuseKey: result.reuseKey };
+    }
     if (job.rules !== undefined) {
       // The trace of the rules: those that the job carried, and those that the pack held.
       log('info', 'job.rules', { jobId: job.id, received: job.rules.map((r) => r.id), packed: result.rules.map((r) => r.id) });
     }
     for (const f of result.refutedInThread) log('info', 'job.finding_refuted_in_thread', { jobId: job.id, path: f.path, title: f.title });
-    return payload(result, job.providers !== undefined);
+    return payload(result, job.providers !== undefined, readsReuse);
   });
 }
 
@@ -348,8 +384,9 @@ function costSourceOf(source: CostSource | undefined, cost: number | undefined):
 /**
  * The review as the protocol sends it: the result of the engine without the pack and the lines.
  * `withCostSource`: the service reads `costSource` (it sent `providers` with the job).
+ * `withReuse`: the service reads `diffHash`, `reuseKey` and `cachedTokens` (it sent `reuse`, REV-89).
  */
-export function payload(result: ReviewResult, withCostSource = false): ReviewPayload {
+export function payload(result: ReviewResult, withCostSource = false, withReuse = false): ReviewPayload {
   const { answer, usage } = result;
   return {
     level: result.level,
@@ -387,6 +424,7 @@ export function payload(result: ReviewResult, withCostSource = false): ReviewPay
     })),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),
+    ...(withReuse ? { diffHash: result.diffHash, reuseKey: result.reuseKey, cachedTokens: usage.cache_read_tokens ?? null } : {}),
   };
 }
 

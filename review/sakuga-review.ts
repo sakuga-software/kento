@@ -506,7 +506,7 @@ async function review(args: Args & { base: string }, dryRun: boolean, packOnly: 
   const { answer, usage, skipped, lines, pack } = result;
   log(
     `level=${args.level} model=${usage.model} provider=${usage.provider} tokens=${usage.prompt_tokens}+${usage.completion_tokens} ` +
-      `cost=${usage.cost} score=${result.score}/5 verdict=${result.verdict} findings=${answer.findings.length} ` +
+      `cached=${usage.cache_read_tokens ?? '?'} diff=${result.diffHash} cost=${usage.cost} score=${result.score}/5 verdict=${result.verdict} findings=${answer.findings.length} ` +
       `diagram=${result.diagram ? 'yes' : 'no'} deeper=${result.deeperReview ? 'yes' : 'no'}`,
   );
 

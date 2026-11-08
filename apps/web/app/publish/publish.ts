@@ -398,6 +398,133 @@ export async function publishReview(
 }
 
 /**
+ * REV-89. What the review `id` of the bot is on the pull request, for a reused review that links to it:
+ *
+ * - `stands`: it is the last review of the bot, and nobody dismissed it. The copy writes the block.
+ * - `replaced`: a later review of the bot came after it (another head, or a command). The copy is
+ *   not published: the block, the label and the check are those of that later review.
+ * - `gone`: it is not on the pull request any more, or a person dismissed it. The copy is posted as a
+ *   review of its own.
+ */
+export async function botReviewState(github: GitHub, target: PublishTarget, id: number): Promise<'stands' | 'replaced' | 'gone'> {
+  let reviews = await listReviews(github, `/repos/${target.owner}/${target.name}/pulls/${target.pr}/reviews`)
+  // GitHub lists the reviews oldest first.
+  let ours = reviews.filter((r) => r.user?.login === target.botLogin)
+  let source = ours.find((r) => r.id === id)
+  if (!source) return 'gone'
+  if (ours.at(-1) !== source) return 'replaced'
+  return source.state === 'DISMISSED' ? 'gone' : 'stands'
+}
+
+/**
+ * REV-89. Whether the check of Kentō is already on the head: a second try posts no second one. Only
+ * a check of this App counts: the job « Sakuga Review » of the Action has the same name.
+ */
+async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
+  let slug = botLogin.replace(/\[bot\]$/, '')
+  let out: { check_runs?: { name: string; app?: { slug?: string } | null }[] } = await checks.rest(
+    'GET',
+    `${repo}/commits/${head}/check-runs?check_name=${encodeURIComponent(CHECK_NAME)}`,
+  )
+  return (out?.check_runs ?? []).some((c) => c.name === CHECK_NAME && c.app?.slug === slug)
+}
+
+/**
+ * REV-89. The review of an earlier head, published again on a head with the same input (a merge of
+ * the base branch, a rebase with no conflict): the block of the description, the label and the
+ * check. The findings, their threads and the review are already on GitHub: nothing else is written,
+ * and the findings of the database do not change. The block keeps the count of the reviews. Every
+ * step up to the block throws, so the caller can try again; the label and the check do not.
+ */
+export async function publishUnchanged(
+  github: GitHub,
+  target: PublishTarget,
+  review: ReviewPayload,
+  reusedFrom: string,
+  options: { checks?: GitHub | null; findings?: FindingsLedger; warn?: (event: string, fields: Record<string, unknown>) => void } = {},
+): Promise<{ score: number; shown: number }> {
+  let { owner, name, pr } = target
+  let warn = options.warn ?? (() => {})
+  let repo = `/repos/${owner}/${name}`
+  let usage = usageOf(review)
+  let head = review.head
+  let threads = await botThreads(github, target)
+  let known = options.findings ? await options.findings.load() : []
+  let stored = [...known, ...adoptThreads(known, threads)]
+  // The same matching as a review: a finding that a person dismissed or kept stays out of the block.
+  let { matches } = matchFindings(review.findings, stored, threads)
+  let shown = matches.filter((m) => !m.suppressed)
+  let answer: Answer = { ...answerOf(review), findings: shown.map((m) => m.finding) }
+  let ordered = [...answer.findings].sort(
+    (a, b) =>
+      Number(isBlocking(b, anchorOf)) - Number(isBlocking(a, anchorOf)) ||
+      SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
+      b.confidence - a.confidence,
+  )
+  let carrier = new Map<Finding, number>(shown.flatMap((m) => (m.carrier ? [[m.finding as Finding, m.carrier.commentId] as const] : [])))
+  let value = score(answer, anchorOf)
+  let step = async (stepName: string, run: () => Promise<void>) => {
+    try {
+      await run()
+    } catch (error) {
+      warn('publish.step_failed', { step: stepName, error: String(error) })
+    }
+  }
+  // The block is the only text of this publication: a failure throws, the row stays to publish, and
+  // the next try writes it again. The label and the check after it are logged when they fail.
+  {
+    let links: Link[] = ordered.map((f) => {
+      let id = carrier.get(f)
+      return { finding: f, url: id ? `${target.webUrl}/${owner}/${name}/pull/${pr}#discussion_r${id}` : null }
+    })
+    let commit: { commit?: { message?: string } } = await github.rest('GET', `${repo}/commits/${head}`)
+    let subject = (commit?.commit?.message ?? '').split('\n')[0]!.trim()
+    let prPath = `${repo}/pulls/${pr}`
+    let current: string = (await github.rest('GET', prPath))?.body ?? ''
+    // No new review: the count stays.
+    let count = Math.max(1, Number(REVIEW_COUNT.exec(current)?.[1] ?? 0))
+    let block = descriptionBlock(answer, links, review.skipped, 0, usage, anchorOf, {
+      count,
+      head,
+      subject,
+      commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
+      level: review.level,
+      poster: POSTER,
+      reusedFrom,
+    })
+    await github.rest('PATCH', prPath, { body: withBlock(current, block) })
+  }
+  await step('label', () => setScoreLabel(github, repo, pr, value))
+  if (options.checks) {
+    let checks = options.checks
+    await step('check', () => postReusedCheck(checks, target, review, reusedFrom, answer))
+  }
+  return { score: value, shown: shown.length }
+}
+
+/**
+ * REV-89. The check « Sakuga Review » of a reused head, when the head has none of Kentō yet: a second
+ * try posts no second one. `answer`: the findings that the block shows; all of them when not given.
+ */
+export async function postReusedCheck(checks: GitHub, target: PublishTarget, review: ReviewPayload, reusedFrom: string, answer: Answer = answerOf(review)) {
+  let { owner, name, pr } = target
+  let repo = `/repos/${owner}/${name}`
+  if (await hasCheck(checks, repo, review.head, target.botLogin)) return
+  let value = score(answer, anchorOf)
+  let body =
+    reviewBody(answer, anchorOf, review.level, usageOf(review), POSTER) +
+    `\n\nAucun fichier relu n'a changé depuis le commit \`${reusedFrom.slice(0, 9)}\` : sa review vaut pour ce commit.`
+  await checks.rest('POST', `${repo}/check-runs`, {
+    name: CHECK_NAME,
+    head_sha: review.head,
+    status: 'completed',
+    conclusion: 'success',
+    details_url: `${target.webUrl}/${owner}/${name}/pull/${pr}`,
+    output: { title: `Score de confiance : ${value}/5`, summary: body.slice(0, 60_000) },
+  })
+}
+
+/**
  * The changes of a review to the findings of its pull request: each finding of the review (new,
  * found again, or open again), each open finding that it shows fixed, and the threads of an earlier
  * release that the database does not hold yet.

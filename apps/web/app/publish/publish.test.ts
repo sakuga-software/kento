@@ -6,7 +6,7 @@ import { describe, it } from 'remix/test'
 
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, CHECK_NAME, publishReview, usageOf } from './publish.ts'
+import { anchorOf, answerOf, CHECK_NAME, publishReview, publishUnchanged, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -63,7 +63,9 @@ function setup(head = HEAD1) {
   let warnings: { event: string; fields: Record<string, unknown> }[] = []
   let publish = (review: ReviewPayload, withChecks = true) =>
     publishReview(github, target, review, { checks: withChecks ? checks : null, warn: (event, fields) => warnings.push({ event, fields }) })
-  return { fake, publish, warnings }
+  let republish = (review: ReviewPayload, from: string) =>
+    publishUnchanged(github, target, review, from, { checks, warn: (event, fields) => warnings.push({ event, fields }) })
+  return { fake, publish, republish, warnings }
 }
 
 describe('publishReview', () => {
@@ -460,5 +462,68 @@ describe('publishReview', () => {
       asAction(descriptionBlock(answer, links, [], 0, usage, anchorOf, { ...context, poster })),
       descriptionBlock(answer, links, [], 0, usage, lines, context),
     )
+  })
+})
+
+describe('publishUnchanged (REV-89)', () => {
+  it('writes the block, the label and the check of the new head, and no review, comment or reply', async () => {
+    let { fake, publish, republish, warnings } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    let reviews = fake.state.reviews.length
+
+    // A merge of main: the new head reads the same diff. The review of HEAD1 holds for HEAD2.
+    fake.state.pr.head = HEAD2
+    let outcome = await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+
+    assert.deepEqual(warnings, [])
+    assert.equal(outcome.score, 2, 'the score of the review of HEAD1 stays')
+    assert.equal(fake.state.reviews.length, reviews, 'no new review')
+    assert.equal(fake.state.reviews[0]!.state, 'CHANGES_REQUESTED', 'the review of HEAD1 stays, not dismissed')
+    assert.equal(fake.botThreads().length, 1, 'no new thread')
+    assert.deepEqual(fake.repliesTo(thread!.id), [])
+    let body = fake.state.pr.body
+    assert.match(body, new RegExp(`#discussion_r${thread!.id}">▶</a>`), 'the finding links to its open thread')
+    assert.match(body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(body, /Dernier commit relu : \[docs: readme\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/2{40}\)/)
+    assert.match(body, /<!-- sakuga-review:count 1 -->/, 'no new review: the count stays')
+    assert.equal((body.match(/sakuga-review:start/g) ?? []).length, 1, 'one block, replaced')
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    let check = fake.state.checkRuns.at(-1)!
+    assert.equal(check.head_sha, HEAD2, 'the new head gets its check')
+    assert.equal(check.output.title, 'Score de confiance : 2/5')
+  })
+
+  it('throws when the block cannot be written, so that the publisher tries again', async () => {
+    let { fake, publish, republish } = setup()
+    await publish(payload())
+    fake.state.pr.head = HEAD2
+    fake.state.failPullEdits = 1
+    let checks = fake.state.checkRuns.length
+    await assert.rejects(republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1))
+    assert.equal(fake.state.checkRuns.length, checks, 'no check before the block')
+    await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+  })
+
+  it('posts its check on the head even when the job « Sakuga Review » of the Action already has one', async () => {
+    let { fake, publish, republish } = setup()
+    await publish(payload())
+    fake.state.pr.head = HEAD2
+    // The workflow of the Action names its job « Sakuga Review » too.
+    fake.state.checkRuns.push({ name: CHECK_NAME, head_sha: HEAD2, conclusion: 'success', output: { title: '', summary: '' }, token: 'actions', app: 'github-actions' })
+    await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+    let ours = fake.state.checkRuns.filter((c) => c.head_sha === HEAD2 && c.app === undefined)
+    assert.equal(ours.length, 1, 'the check of Kentō is posted')
+    assert.equal(ours[0]!.output.title, 'Score de confiance : 2/5')
+  })
+
+  it('posts one check on the head, also when it publishes twice', async () => {
+    let { fake, publish, republish } = setup()
+    await publish(payload())
+    fake.state.pr.head = HEAD2
+    await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+    await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+    assert.equal(fake.state.checkRuns.filter((c) => c.head_sha === HEAD2).length, 1)
   })
 })

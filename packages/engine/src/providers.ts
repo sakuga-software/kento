@@ -164,6 +164,9 @@ async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
     if (!call.tools) {
       const answer = parseObject<T>(last.choices?.[0]?.message?.content ?? '', 'OpenRouter');
       const usage: Usage = { model: last.model, provider: last.provider, ...last.usage };
+      // REV-89. OpenRouter gives the cached tokens of the prompt in `prompt_tokens_details`.
+      const cached = count(last.usage?.prompt_tokens_details?.cached_tokens);
+      if (cached !== undefined) usage.cache_read_tokens = cached;
       usage.cost_source = typeof usage.cost === 'number' ? 'provider' : 'unknown';
       if (usage.cost_source === 'unknown') usage.cost = 0;
       return { answer, usage };
@@ -371,9 +374,17 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
     answer = parseObject<T>(content, name);
   }
   const model: string = typeof out.model === 'string' && out.model ? out.model : call.model;
+  const cached = count(out.usage?.prompt_tokens_details?.cached_tokens);
   return {
     answer,
-    usage: { model, prompt_tokens: input, completion_tokens: output, ...priced('openai_compatible', model, { input, output }, out.usage?.cost) },
+    usage: {
+      model,
+      prompt_tokens: input,
+      completion_tokens: output,
+      // REV-89. The cached tokens of the last call, when the server gives them.
+      ...(cached !== undefined ? { cache_read_tokens: cached } : {}),
+      ...priced('openai_compatible', model, { input, output }, out.usage?.cost),
+    },
   };
 }
 

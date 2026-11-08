@@ -62,6 +62,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     failIssueCommentEdits: 0,
     /** REV-52. The next deletions of a comment of the pull request answer 502. */
     failIssueCommentDeletes: 0,
+    /** REV-89. The next edits of the description of the pull request answer 502. */
+    failPullEdits: 0,
+    /** REV-89. The next lists of the reviews of the pull request answer 502. */
+    failReviewLists: 0,
     /** The comments of the pull request (not of a review). */
     issueComments: [] as { id: number; body: string; author: string }[],
     reviews: [] as Review[],
@@ -70,7 +74,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     repoLabels: new Set<string>(),
     /** The description of each label that the App created. */
     labelDescriptions: new Map<string, string>(),
-    checkRuns: [] as { name: string; head_sha: string; conclusion: string; output: { title: string; summary: string }; token: string }[],
+    checkRuns: [] as { name: string; head_sha: string; conclusion: string; output: { title: string; summary: string }; token: string; app?: string }[],
     commits: { ...options.commits } as Record<string, string>,
     /** `from...to` → the answer of the compare API. A missing entry answers 404, a status `error` 500. */
     compare: new Map<string, { status: string; files: string[] }>(),
@@ -253,6 +257,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       return json(201, { id })
     }
     if (rest === prPath && method === 'PATCH') {
+      if (state.failPullEdits > 0) {
+        state.failPullEdits--
+        return json(502, { message: 'Bad Gateway' })
+      }
       state.pr.body = body.body
       return json(200, {})
     }
@@ -312,6 +320,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       return json(200, { id, state: reviewState })
     }
     if (rest === `${prPath}/reviews` && method === 'GET') {
+      if (state.failReviewLists > 0) {
+        state.failReviewLists--
+        return json(502, { message: 'Bad Gateway' })
+      }
       // GitHub pages the list: 30 per page by default, 100 at most.
       let perPage = Math.min(Number(url.searchParams.get('per_page') ?? 30), 100)
       let page = Number(url.searchParams.get('page') ?? 1)
@@ -360,6 +372,12 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       let label = decodeURIComponent(m[1]!)
       state.pr.labels = state.pr.labels.filter((l) => l !== label)
       return json(200, [])
+    }
+    if ((m = /^\/commits\/([0-9a-f]+)\/check-runs$/.exec(rest)) && method === 'GET') {
+      let name = url.searchParams.get('check_name')
+      let runs = state.checkRuns.filter((c) => c.head_sha === m![1] && (name === null || c.name === name))
+      // A check posted with an installation token is of the App; one added by a test names its own.
+      return json(200, { check_runs: runs.map((c) => ({ ...c, app: { slug: c.app ?? BOT.replace(/\[bot\]$/, '') } })) })
     }
     if (rest === '/check-runs' && method === 'POST') {
       if (!token.includes('checks')) return json(403, { message: 'Resource not accessible by integration' })
