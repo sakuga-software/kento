@@ -14,12 +14,13 @@ import {
   type FindingView,
 } from '../findings/screen.ts'
 import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
-import { REASON_MAX } from '../findings/store.ts'
+import { decodeCursor, REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
-import { reasonText, type PrecisionReport } from '../findings/precision.ts'
+import { PRECISION_DAYS, PRECISION_MIN, reasonText, type PrecisionReport } from '../findings/precision.ts'
 import { agoOrDate, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
+import { statusClass } from './pull.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -36,6 +37,8 @@ export interface FindingList extends FindingQuery {
   days: number | null
   after: string | null
   before: string | null
+  /** REV-91. The tab of the screen: the list, or the precision (`?vue=precision`). */
+  tab: 'list' | 'precision'
 }
 
 export interface FindingsPageProps {
@@ -92,13 +95,13 @@ export function readFindingsNotice(query: URLSearchParams): FindingsNotice | nul
 const BULK_FORM = 'findings-bulk'
 
 const VIEW_LABELS: Record<FindingView, string> = {
-  open: 'Open',
-  fixed: 'Fixed',
-  dismissed: 'Dismissed',
-  wontfix: 'Wontfix',
-  stale: 'Stale',
-  closed: 'Clos',
-  all: 'Tous',
+  open: 'open',
+  fixed: 'fixed',
+  dismissed: 'dismissed',
+  wontfix: 'wontfix',
+  stale: 'stale',
+  closed: 'clos',
+  all: 'tous',
 }
 
 /** The priority of a severity, as the comments of the bot write it (engine/render.ts). */
@@ -116,17 +119,19 @@ const CATEGORY_LABELS: Record<string, string> = {
   test: 'Test',
 }
 
-const STATUS_TAGS: Record<FindingRow['status'], string> = {
-  open: 'tag-info',
-  fixed: 'tag-ok',
-  dismissed: 'tag-quiet',
-  wontfix: 'tag-quiet',
-  stale: 'tag-warn',
+/** A cursor that does not decode is dropped at once: it leaves the URL of the list and of its links. */
+function cursorOf(value: string | null): string | null {
+  try {
+    return decodeCursor(value) ? value : null
+  } catch {
+    return null
+  }
 }
 
 /** The list that a query of the screen asks for. A value that the screen does not know is ignored. */
 export function readFindingList(query: URLSearchParams): FindingList {
   let view = query.get('status')
+  let after = cursorOf(query.get('after'))
   let severity = query.get('priority')
   let repo = query.get('repo')
   let rule = query.get('rule')
@@ -141,8 +146,9 @@ export function readFindingList(query: URLSearchParams): FindingList {
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
     author: author && LOGIN.test(author) ? author : null,
     days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
-    after: query.get('after') || null,
-    before: query.get('after') ? null : query.get('before') || null,
+    after,
+    before: after ? null : cursorOf(query.get('before')),
+    tab: query.get('vue') === 'precision' ? 'precision' : 'list',
   }
 }
 
@@ -159,6 +165,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.days) query.set('days', String(list.days))
   if (list.after) query.set('after', list.after)
   else if (list.before) query.set('before', list.before)
+  if (list.tab === 'precision') query.set('vue', 'precision')
   return query
 }
 
@@ -190,6 +197,13 @@ function hasFilters(list: FindingList): boolean {
  * The Findings screen (REV-18): every finding of the org, filtered by repository, status, priority,
  * rule and a search, a page of 50 at a time.
  */
+/** « Précision sur 30 j : 78 % (n = 40) », or « n = 5 sur 10 » under the minimum, for the lead of the screen. */
+export function precisionLead(report: PrecisionReport): string {
+  let org = report.org
+  let value = org.rate === null ? `n = ${org.closed} sur ${PRECISION_MIN}` : `${Math.round(org.rate * 100)} % (n = ${org.closed})`
+  return `Chaque finding des reviews de Kentō, et ce qu’il est devenu. Précision sur ${PRECISION_DAYS} j : ${value}.`
+}
+
 export function FindingsPage(handle: Handle<FindingsPageProps>) {
   return () => {
     let { frame, page, facets, list, precision, githubUrl, now, notice } = handle.props
@@ -197,10 +211,23 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
     // REV-18: an admin sets findings aside; a member reads.
     let admin = frame.viewer!.role === 'admin'
     let none = page.counts.all === 0 && !hasFilters(list)
+    let tabs = (
+      <nav class="tabs" aria-label="Vues des findings">
+        <a href={findingsHref({ ...filtersOf(list), tab: 'list' })} aria-current={list.tab === 'list' ? 'page' : undefined}>
+          Liste
+        </a>
+        {/* The filters ride along, unused by the precision: « Liste » gives them back. */}
+        <a href={findingsHref({ ...filtersOf(list), tab: 'precision' })} aria-current={list.tab === 'precision' ? 'page' : undefined}>
+          Précision
+        </a>
+      </nav>
+    )
     return (
-      <Shell frame={frame} section="findings" title="Findings" lead="Chaque finding des reviews de Kentō, et ce qu’il est devenu.">
+      <Shell frame={frame} section="findings" title="Findings" lead={precisionLead(precision)} tabs={tabs}>
         {notice ? <Notice notice={notice} /> : null}
-        {none ? (
+        {list.tab === 'precision' ? (
+          <PrecisionSection report={precision} org={org} />
+        ) : none ? (
           <section class="empty" aria-labelledby="empty-title">
             <h2 id="empty-title">Aucun finding pour l’instant</h2>
             <p>
@@ -210,8 +237,6 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
           </section>
         ) : (
           <>
-            <PrecisionSection report={precision} org={org} />
-            <h2 class="section-title findings-list-title">Liste</h2>
             <FilterForm list={list} facets={facets} org={org} />
             {list.reason ? (
               <p class="findings-reason">
@@ -225,47 +250,40 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                 <a href={findingsHref({ ...filtersOf(list), author: null, days: null })}>Retirer ce filtre</a>
               </p>
             ) : null}
-            <nav class="list-filters findings-views" aria-label="Statut des findings">
-              <ul>
-                {FINDING_VIEWS.map((view) => (
-                  <li>
-                    <a href={findingsHref({ ...filtersOf(list), view })} aria-current={view === list.view ? 'page' : undefined}>
-                      {VIEW_LABELS[view]}
-                      <span class="list-filter-count">{page.counts[view].toLocaleString('fr-FR')}</span>
-                    </a>
-                  </li>
-                ))}
-              </ul>
+            <nav class="segmented-links findings-views" aria-label="Statut des findings">
+              {FINDING_VIEWS.map((view) => (
+                <a href={findingsHref({ ...filtersOf(list), view })} aria-current={view === list.view ? 'page' : undefined}>
+                  {VIEW_LABELS[view]} <span class="list-filter-count">{page.counts[view].toLocaleString('fr-FR')}</span>
+                </a>
+              ))}
             </nav>
             {page.rows.length === 0 ? (
               <Empty page={page} list={list} />
             ) : (
-              <>
-              {admin ? <BulkBar csrf={frame.csrfToken} back={findingListQuery(list).toString()} assetVersion={frame.assetVersion} /> : null}
-              <div class="table-wrap">
+              <div class="table-wrap findings-wrap">
                 <table class="table findings-table">
                   <caption class="visually-hidden">
-                    Findings {VIEW_LABELS[list.view].toLowerCase()} de {org}, du plus récent au plus ancien
+                    Findings {VIEW_LABELS[list.view]} de {org}, du plus récent au plus ancien
                   </caption>
                   <thead>
                     <tr>
-                      <th scope="col">Priorité</th>
-                      <th scope="col">
-                        {admin ? (
-                          <span class="finding-select">
-                            {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
-                            <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Sélectionner tous les findings de la page" />
-                            Finding
-                          </span>
-                        ) : (
-                          'Finding'
-                        )}
-                      </th>
-                      <th scope="col">PR</th>
-                      <th scope="col">Source</th>
-                      <th scope="col">Confiance</th>
+                      {admin ? (
+                        <th scope="col" class="finding-check">
+                          {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
+                          <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Sélectionner tous les findings de la page" />
+                        </th>
+                      ) : null}
+                      <th scope="col">Finding</th>
+                      <th scope="col">Statut</th>
                       <th scope="col">Retrouvé</th>
-                      <th scope="col">Depuis</th>
+                      <th scope="col">Pull request</th>
+                      <th scope="col">Source</th>
+                      <th scope="col" class="num">
+                        Confiance
+                      </th>
+                      <th scope="col" class="num">
+                        Depuis
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -275,9 +293,11 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                   </tbody>
                 </table>
               </div>
-              </>
             )}
             <Pager page={page} list={list} />
+            {admin && page.rows.length > 0 ? <BulkBar csrf={frame.csrfToken} back={findingListQuery(list).toString()} /> : null}
+            {/* One load for every person: the filters apply on change; the selection, when the bar is there. */}
+            <script src={`/assets/findings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
           </>
         )}
       </Shell>
@@ -342,11 +362,14 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
         </div>
         <div class="findings-filter">
           <label class="field-label" for="findings-rule">
-            Règle
+            Source
           </label>
+          {/* With no rule, « Review et règles » is the only choice: the list says so and stays still. */}
+          {/* A disabled select is not sent: a rule of the URL that the org no longer has stays in the list. */}
+          {facets.rules.length === 0 && list.ruleId ? <input type="hidden" name="rule" value={list.ruleId} /> : null}
           <select class="input" id="findings-rule" name="rule" disabled={facets.rules.length === 0}>
             <option value="" selected={!list.ruleId}>
-              {facets.rules.length === 0 ? 'Aucune règle' : 'Toutes'}
+              Review et règles
             </option>
             {facets.rules.map((rule) => (
               <option value={rule.id} selected={rule.id === list.ruleId}>
@@ -356,7 +379,8 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </select>
         </div>
         <div class="findings-filter-actions">
-          <button class="button" type="submit">
+          {/* REV-91: with JavaScript a filter applies on change (findings.js); « Filtrer » serves a browser without it. */}
+          <button class="button findings-submit" type="submit">
             Filtrer
           </button>
           {hasFilters(list) ? (
@@ -417,71 +441,46 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
     let seenAgain = row.lastSeenSha !== row.firstSeenSha
     return (
       <tr id={`finding-${row.id}`}>
-        <td>
-          <span class={`tag ${priority.tag}`} title={`Priorité ${priority.name}`}>
-            {priority.label}
-          </span>
-        </td>
-        <th scope="row">
-          <span class={select ? 'finding-select' : undefined}>
-          {select && row.status !== 'fixed' ? (
-            <input
-              type="checkbox"
-              name="ids"
-              value={row.id}
-              form={BULK_FORM}
-              id={`select-${row.id}`}
-              aria-label={`Sélectionner « ${row.title} »`}
-            />
-          ) : select ? (
-            // A finding fixed by a push is not set aside by hand: its place stays, so the titles line up.
-            <span class="finding-select-gap" aria-hidden="true"></span>
-          ) : null}
-          <span class="stack finding-cell">
-            {row.githubCommentId !== null ? (
-              <a class="finding-title" href={`${pullUrl}#discussion_r${row.githubCommentId}`} rel="noreferrer">
-                {row.title}
-              </a>
-            ) : (
-              <span class="finding-title">{row.title}</span>
-            )}
-            <span class="hint mono finding-path">
-              {row.path}:{row.line}
-            </span>
-            {row.status !== 'open' ? (
-              <span class="finding-status">
-                <span class={`tag ${STATUS_TAGS[row.status]}`}>{row.status}</span>
-                {row.statusReason ? <span class="hint">{row.statusReason}</span> : null}
-              </span>
+        {select ? (
+          <td class="finding-check">
+            {row.status !== 'fixed' ? (
+              <input
+                type="checkbox"
+                name="ids"
+                value={row.id}
+                form={BULK_FORM}
+                id={`select-${row.id}`}
+                aria-label={`Sélectionner « ${row.title} »`}
+              />
             ) : null}
-          </span>
+          </td>
+        ) : null}
+        <th scope="row">
+          <span class="finding-cell">
+            <span class={`pri pri-${row.severity}`} title={`Priorité ${priority.name}`}>
+              {priority.label}
+            </span>
+            <span class="finding-text">
+              {row.githubCommentId !== null ? (
+                <a class="finding-title" href={`${pullUrl}#discussion_r${row.githubCommentId}`} rel="noreferrer">
+                  {row.title}
+                </a>
+              ) : (
+                <span class="finding-title">{row.title}</span>
+              )}
+              <span class="mono finding-path">
+                {row.path}:{row.line}
+              </span>
+            </span>
           </span>
         </th>
-        <td>
+        <td data-label="Statut">
           <span class="stack">
-            <a href={pullUrl} rel="noreferrer">
-              #{row.prNumber}
-            </a>
-            <span class="hint">{shortName(row.repo, org)}</span>
+            <span class={`status status-mono ${statusClass(row.status)}`}>{row.status}</span>
+            {row.statusReason ? <span class="hint">{row.statusReason}</span> : null}
           </span>
         </td>
-        <td>
-          {row.ruleTitle ? (
-            <span class="stack">
-              <span>Règle</span>
-              <span class="hint">{row.ruleTitle}</span>
-            </span>
-          ) : (
-            <span class="stack">
-              <span>Review</span>
-              <span class="hint">{CATEGORY_LABELS[row.category] ?? row.category}</span>
-            </span>
-          )}
-        </td>
-        <td>
-          <span class="mono">{row.confidence} %</span>
-        </td>
-        <td>
+        <td data-label="Retrouvé">
           {seenAgain ? (
             <span class="stack">
               <span>oui</span>
@@ -494,7 +493,31 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
             </>
           )}
         </td>
-        <td>
+        <td data-label="Pull request">
+          <span class="stack">
+            <a href={pullUrl} rel="noreferrer">
+              #{row.prNumber}
+            </a>
+            <span class="hint">{shortName(row.repo, org)}</span>
+          </span>
+        </td>
+        <td data-label="Source">
+          {row.ruleTitle ? (
+            <span class="stack">
+              <span>Règle</span>
+              <span class="hint">{row.ruleTitle}</span>
+            </span>
+          ) : (
+            <span class="stack">
+              <span>Review</span>
+              <span class="hint">{(CATEGORY_LABELS[row.category] ?? row.category).toLowerCase()}</span>
+            </span>
+          )}
+        </td>
+        <td data-label="Confiance" class="num mono">
+          {row.confidence} %
+        </td>
+        <td data-label="Depuis" class="num mono">
           <time datetime={row.createdAt.toISOString()}>{agoOrDate(row.createdAt, now)}</time>
         </td>
       </tr>
@@ -502,7 +525,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
   }
 }
 
-/** « 51–100 sur 1 234 », and the links to the pages around. Shown when the tab has more than a page. */
+/** « 1 à 50 sur 1 234 findings », and the links to the pages around. Shown when the tab has more than a page. */
 function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
   return () => {
     let { page, list } = handle.props
@@ -511,25 +534,30 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
     let to = page.offset + page.rows.length
     let filters = filtersOf(list)
     return (
-      <nav class="pager" aria-label="Pages de la liste">
-        {page.previous ? (
-          <a class="button button-small" href={findingsHref({ ...filters, before: page.previous })} rel="prev">
-            Précédents
-          </a>
-        ) : (
-          <span aria-hidden="true"></span>
-        )}
+      <nav class="pager findings-pager" aria-label="Pages de la liste">
         <p class="pager-range">
-          {from.toLocaleString('fr-FR')}–{to.toLocaleString('fr-FR')} sur {page.matching.toLocaleString('fr-FR')}{' '}
-          {plural(page.matching, 'finding')}
+          {from.toLocaleString('fr-FR')} à {to.toLocaleString('fr-FR')} sur {page.matching.toLocaleString('fr-FR')} {plural(page.matching, 'finding')}
         </p>
-        {page.next ? (
-          <a class="button button-small" href={findingsHref({ ...filters, after: page.next })} rel="next">
-            Suivants
-          </a>
-        ) : (
-          <span aria-hidden="true"></span>
-        )}
+        <span class="pager-links">
+          {page.previous ? (
+            <a class="button button-small" href={findingsHref({ ...filters, before: page.previous })} rel="prev">
+              Précédents
+            </a>
+          ) : (
+            <span class="button button-small" aria-disabled="true">
+              Précédents
+            </span>
+          )}
+          {page.next ? (
+            <a class="button button-small" href={findingsHref({ ...filters, after: page.next })} rel="next">
+              Suivants
+            </a>
+          ) : (
+            <span class="button button-small" aria-disabled="true">
+              Suivants
+            </span>
+          )}
+        </span>
       </nav>
     )
   }
@@ -538,26 +566,31 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
 /**
  * REV-18. The actions on the findings checked in the table: « Marquer dismissed… » with the dialog of
  * the reason (shared with the screen of a pull request), and « Marquer wontfix ». Each finding
- * changed gets a reply in its thread on GitHub.
+ * changed gets a reply in its thread on GitHub. REV-91: a bar that floats at the foot of the screen;
+ * with JavaScript it shows once a finding is checked, with « Désélectionner ».
  */
-function BulkBar(handle: Handle<{ csrf: string | null; back: string; assetVersion: string }>) {
+function BulkBar(handle: Handle<{ csrf: string | null; back: string }>) {
   return () => {
-    let { csrf, back, assetVersion } = handle.props
+    let { csrf, back } = handle.props
     return (
-      <div class="findings-bulk" role="group" aria-label="Actions sur les findings cochés">
+      <>
         <form id={BULK_FORM} method="post" action={routes.findingsStatus.href()} hidden>
           {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
           <input type="hidden" name="back" value={back} />
         </form>
-        <p class="hint findings-selected" data-selected aria-live="polite">
-          Cochez des findings pour les marquer.
-        </p>
-        <DismissDialog id="bulk" form={BULK_FORM} trigger="Marquer dismissed…" submit="Marquer dismissed" />
-        <button class="button" type="submit" form={BULK_FORM} name="status" value="wontfix">
-          Marquer wontfix
-        </button>
-        <script src={`/assets/findings.js?v=${encodeURIComponent(assetVersion)}`} defer></script>
-      </div>
+        <div class="findings-bulk" role="group" aria-label="Actions sur les findings cochés" data-bulk>
+          <p class="findings-selected" data-selected aria-live="polite">
+            Cochez des findings pour les marquer.
+          </p>
+          <DismissDialog id="bulk" form={BULK_FORM} trigger="Marquer dismissed…" submit="Marquer dismissed" />
+          <button class="button" type="submit" form={BULK_FORM} name="status" value="wontfix">
+            Marquer wontfix
+          </button>
+          <button class="button button-ghost findings-clear" type="button" data-select-none hidden>
+            Désélectionner
+          </button>
+        </div>
+      </>
     )
   }
 }

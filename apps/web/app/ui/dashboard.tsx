@@ -635,7 +635,13 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           {cap !== null && cap > 0 ? (
             <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />
           ) : null}
-          <span class="kpi-sub">{cap === null ? 'pas de plafond' : `sur ${usdPrecise(cap)} · alerte à ${screen.caps.alertPct} %`}</span>
+          <span class={`kpi-sub ${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? 'kpi-alert' : ''}`}>
+            {cap === null
+              ? 'pas de plafond'
+              : capState(month, cap, screen.caps.alertPct) === 'reached'
+                ? `plafond atteint · sur ${usdPrecise(cap)}`
+                : `sur ${usdPrecise(cap)} · alerte à ${screen.caps.alertPct} %`}
+          </span>
         </div>
         <div class="kpi">
           <span class="kpi-label">Précision · {PRECISION_DAYS} j</span>

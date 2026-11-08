@@ -353,6 +353,18 @@ describe('« À traiter » and the band of numbers (REV-91)', () => {
     assert.doesNotMatch(todo, /dash-gauge/)
   })
 
+  it('says in the band that the limit of the month is reached, 0 included (REV-91)', async () => {
+    for (let monthlyCapUsd of [0, 20]) {
+      let { signIn } = setup(screen({ caps: { dailyCapUsd: null, monthlyCapUsd, alertPct: 80 } }))
+      let { html } = await signIn(ALEX)
+      let kpis = html.slice(html.indexOf('class="dash-kpis'), html.indexOf('</section>', html.indexOf('class="dash-kpis')))
+      assert.match(kpis, new RegExp(`plafond atteint · sur ${monthlyCapUsd},00\\s\\$`))
+      assert.doesNotMatch(kpis, /alerte à 80/)
+    }
+    let { signIn } = setup(screen({ caps: { dailyCapUsd: null, monthlyCapUsd: 150, alertPct: 80 } }))
+    assert.match((await signIn(ALEX)).html, /sur 150,00\s\$ · alerte à 80 %/)
+  })
+
   it('says that nothing is to do when nothing is', async () => {
     let { signIn } = setup(
       screen({ banner: null, workflowRepos: [], runners: [], caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } }),

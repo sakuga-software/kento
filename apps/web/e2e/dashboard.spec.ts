@@ -204,6 +204,28 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
+  // REV-91: the name of a job in « File et runners » wraps; nothing goes past the column.
+  test('a queued job of a repository named with 80 characters stays in its column', async ({ page }) => {
+    let name = `sakuga-software/${'very-long-repository-name-'.repeat(3)}xx`.slice(0, 96)
+    let sql = database()
+    try {
+      let [org] = await sql<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+      await sql`delete from repos where github_repo_id = 7199`
+      let [repo] = await sql<{ id: string }[]>`
+        insert into repos (org_id, github_repo_id, full_name, enabled) values (${org!.id}, 7199, ${name}, true) returning id`
+      await sql`insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref) values (${repo!.id}, 'lite', 'queued', 12, ${'e'.repeat(40)}, 'main')`
+      await page.goto('/')
+      let queue = page.locator('.dash-queue')
+      await expect(queue.getByRole('link', { name: `${name}#12` })).toBeVisible()
+      let overflow = await queue.evaluate((el) => el.scrollWidth - el.clientWidth)
+      expect(overflow).toBeLessThanOrEqual(0)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+    } finally {
+      await sql`delete from repos where github_repo_id = 7199`
+      await sql.end()
+    }
+  })
+
   test('a push shows in the queue within 15 s, with no reload', async ({ page }) => {
     let errors = watchConsole(page)
     await seed()

@@ -3,10 +3,22 @@
 import { createAction } from 'remix/router'
 
 import { readStatusForm } from '../../findings/dismiss.ts'
+import type { FindingFacets, FindingScreenPage } from '../../findings/screen.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
 import { findingListQuery, FindingsPage, readFindingList, readFindingsNotice } from '../findings.tsx'
 import { forbidden, isAdmin, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
+
+/** What the tab « Précision » gets in place of the list: it shows neither. */
+const NO_PAGE: FindingScreenPage = {
+  rows: [],
+  counts: { open: 0, fixed: 0, dismissed: 0, wontfix: 0, stale: 0, closed: 0, all: 0 },
+  matching: 0,
+  offset: 0,
+  next: null,
+  previous: null,
+}
+const NO_FACETS: FindingFacets = { repos: [], rules: [] }
 
 export function findingsActions(kit: UiKit) {
   let { deps } = kit
@@ -19,9 +31,11 @@ export function findingsActions(kit: UiKit) {
       if (!findings) return context.render(<PlaceholderPage frame={page} section="findings" />)
       let orgId = signed.membership.org.id
       let list = readFindingList(context.url.searchParams)
+      // The tab « Précision » shows no row and no filter: no query for them.
+      let precisionTab = list.tab === 'precision'
       let [result, facets, precision] = await Promise.all([
-        findings.store.list(orgId, list),
-        findings.store.facets(orgId),
+        precisionTab ? NO_PAGE : findings.store.list(orgId, list),
+        precisionTab ? NO_FACETS : findings.store.facets(orgId),
         findings.store.precision(orgId),
       ])
       return context.render(
@@ -45,8 +59,9 @@ export function findingsActions(kit: UiKit) {
       let setStatus = deps.findings?.setStatus
       if (!setStatus || !isAdmin(signed)) return forbidden()
       let form = context.get(FormData)
-      // Back to the list on screen: its query, read again, so that nothing else comes through.
-      let back = findingListQuery(readFindingList(new URLSearchParams(String(form?.get('back') ?? ''))))
+      // Back to the list on screen: its query, read again, so that nothing else comes through. Always the
+      // tab « Liste »: the action and its count are there.
+      let back = findingListQuery({ ...readFindingList(new URLSearchParams(String(form?.get('back') ?? ''))), tab: 'list' })
       let read = readStatusForm(form)
       if (!read.ok) {
         back.set('error', read.error)

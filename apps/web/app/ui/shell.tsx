@@ -56,6 +56,8 @@ export interface ShellProps {
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */
   actions?: RemixNode
+  /** REV-91. The tabs of a screen at the right of its title, for every person (« Liste », « Précision »). */
+  tabs?: RemixNode
   /** REV-17. What a member can do on this screen, in place of « seuls les admins … modifient ». */
   memberCan?: string
   children?: RemixNode
@@ -68,7 +70,7 @@ export interface ShellProps {
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
-    let { frame, section, title, before, lead, actions, children, memberCan } = handle.props
+    let { frame, section, title, before, lead, actions, tabs, children, memberCan } = handle.props
     let { viewer } = frame
     let readOnly = viewer?.role === 'member'
     return (
@@ -119,6 +121,7 @@ export function Shell(handle: Handle<ShellProps>) {
               <h1 class="page-title">{title}</h1>
               {lead ? <p class="page-lead">{lead}</p> : null}
             </div>
+            {tabs ? <div class="page-tabs">{tabs}</div> : null}
             {actions && !readOnly ? <div class="page-actions">{actions}</div> : null}
           </div>
           {readOnly && viewer ? (

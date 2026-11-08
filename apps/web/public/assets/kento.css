@@ -1216,144 +1216,282 @@ select.bar-org-box:hover {
   }
 }
 
-/* ---------------------------------------------------------------- The Findings screen (REV-18) */
+/* ---------------------------------------------------------------- The Findings screen (REV-18, redesigned in REV-91) */
 
-.findings-filters {
+/* The tabs of a screen at the right of its title: « Liste », « Précision ». */
+.page-tabs {
+  align-self: flex-end;
+}
+.tabs {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  gap: var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+.tabs a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--ink-muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+.tabs a:hover {
+  color: var(--ink);
+}
+.tabs a[aria-current='page'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.tabs a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--ink);
+}
+
+/* The search, wide, then the repository, the priority and the source; they apply on change (findings.js). */
+.findings-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 160px) minmax(0, 140px) minmax(0, 240px) auto;
+  align-items: end;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-6);
 }
 .findings-filter {
-  display: flex;
-  flex: 1 1 160px;
-  flex-direction: column;
-  gap: var(--space-1);
+  display: grid;
+  gap: 6px;
   min-width: 0;
-  max-width: 240px;
-}
-.findings-filter-search {
-  flex-basis: 240px;
-  max-width: 360px;
 }
 .findings-filter .input {
   max-width: none;
-  min-height: var(--control-h);
 }
 .findings-filter-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--space-2);
 }
-.findings-views {
-  margin-bottom: var(--space-4);
+.js .findings-submit {
+  display: none;
 }
-.findings-views ul {
+/* The statuses: a segmented control of links, in mono, with their counts. */
+.segmented-links {
   display: inline-flex;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-6);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--paper-raised);
+  overflow: hidden;
+}
+.segmented-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 34px;
+  padding: 0 var(--space-4);
+  border-left: 1px solid var(--line-strong);
+  color: var(--ink-muted);
+  font: 400 var(--text-sm) var(--font-mono);
+  text-decoration: none;
+}
+.segmented-links a:first-child {
+  border-left: 0;
+}
+.segmented-links a:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+.segmented-links a[aria-current='page'] {
+  background: var(--action);
+  color: var(--on-action);
+}
+.list-filter-count {
+  color: inherit;
+}
+
+.findings-wrap {
+  padding: 0 var(--space-6);
+}
+.findings-table th,
+.findings-table td {
+  padding: var(--space-3) var(--space-4) var(--space-3) 0;
+  vertical-align: middle;
+}
+.findings-table th:last-child,
+.findings-table td:last-child {
+  padding-right: 0;
+}
+.findings-table .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.findings-table thead th {
+  padding-top: var(--space-4);
+}
+/* WCAG 2.5.8: each link of a row is a target of 24 px at least, even under the floating bar. */
+.findings-table td a {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  min-height: 24px;
+}
+.finding-check {
+  width: 18px;
+}
+.finding-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--action);
+}
+/* A checked row: a wash of indigo. */
+.findings-table tbody tr:has(input[name='ids']:checked) > * {
+  background: var(--ai-wash);
 }
 .finding-cell {
-  max-width: 56ch;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 520px;
+}
+.finding-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .finding-title {
   color: var(--ink);
-  font-weight: 700;
-  overflow-wrap: anywhere;
+  font-weight: 600;
+  text-decoration: none;
+}
+a.finding-title:hover {
+  text-decoration: underline;
 }
 .finding-path {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
-.finding-status {
+.status-mono {
+  font-family: var(--font-mono);
+}
+.findings-pager {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-.findings-table td:nth-child(5),
-.findings-table th:nth-child(5) {
-  text-align: right;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
-@media (max-width: 760px) {
-  /* The search on its own line, the three lists and the buttons two by two. */
+/* REV-18. The actions on the findings checked: a bar of ink that floats at the foot of the screen. */
+.findings-bulk {
+  position: sticky;
+  bottom: var(--space-6);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--space-6) auto 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow-2);
+}
+.findings-bulk[hidden] {
+  display: none;
+}
+/*
+ * With JavaScript, the bar shows once a finding is checked, or while its dialog of the reason is
+ * open. CSS decides it from the first paint: no bar flashes before findings.js runs. Without
+ * JavaScript, the bar stays: each finding is checked by hand, then the form is sent.
+ */
+.js main:not(:has(input[name='ids']:checked)) .findings-bulk:not(:has(details[open])) {
+  display: none;
+}
+.findings-selected {
+  margin: 0;
+  padding-right: var(--space-3);
+  border-right: 1px solid color-mix(in srgb, var(--paper) 30%, transparent);
+  font-weight: 600;
+}
+.findings-bulk .button {
+  background: var(--paper);
+  border-color: var(--paper);
+  color: var(--ink);
+}
+.findings-bulk .button:hover {
+  opacity: 0.9;
+}
+.findings-bulk .findings-clear {
+  background: transparent;
+  border-color: transparent;
+  color: var(--paper);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.findings-bulk .dismiss-dialog .confirm-body {
+  top: auto;
+  bottom: calc(100% + var(--space-2));
+  color: var(--ink);
+}
+
+@media (max-width: 1100px) {
   .findings-filters {
-    display: grid;
     grid-template-columns: 1fr 1fr;
-    align-items: end;
-  }
-  .findings-filter {
-    max-width: none;
   }
   .findings-filter-search {
     grid-column: 1 / -1;
-    max-width: none;
   }
-  .findings-filter-actions {
-    flex-wrap: nowrap;
-  }
+}
+
+@media (max-width: 760px) {
   .findings-filter .input,
   .findings-filter-actions .button {
     min-height: var(--control-h-touch);
+  }
+  .findings-wrap {
+    padding: 0;
   }
   /* A card: the finding on top, then its facts two by two. */
   .findings-table tbody th {
     order: -1;
   }
-  .findings-table td:nth-child(5) {
+  .findings-table .num {
     text-align: left;
-  }
-  .findings-table td:nth-child(1)::before {
-    content: 'Priorité';
-  }
-  .findings-table td:nth-child(3)::before {
-    content: 'PR';
-  }
-  .findings-table td:nth-child(4)::before {
-    content: 'Source';
-  }
-  .findings-table td:nth-child(5)::before {
-    content: 'Confiance';
-  }
-  .findings-table td:nth-child(6)::before {
-    content: 'Retrouvé';
-  }
-  .findings-table td:nth-child(7)::before {
-    content: 'Depuis';
   }
   .finding-cell {
     max-width: none;
   }
+  /* On a card the checkbox leads, and the whole card takes the wash once checked. */
+  .findings-table td.finding-check {
+    order: -2;
+    grid-column: 1 / -1;
+  }
+  .findings-table tbody tr:has(input[name='ids']:checked) {
+    background: var(--ai-wash);
+  }
+  .findings-table tbody tr:has(input[name='ids']:checked) > * {
+    background: none;
+  }
+  .findings-bulk {
+    bottom: var(--space-3);
+    width: 100%;
+    padding: var(--space-3);
+  }
+  .findings-selected {
+    flex-basis: 100%;
+    border-right: 0;
+  }
 }
 
-/* REV-18. The selection of findings and its actions: « Marquer dismissed… » and « Marquer wontfix ». */
-.findings-bulk {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-3);
-}
-.findings-selected {
-  flex: 1 1 200px;
-  align-self: center;
-  margin: 0;
-}
-.finding-select {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-}
-.finding-select-gap {
-  flex: none;
-  width: 20px;
-}
-.finding-select input[type='checkbox'] {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin: 2px 0 0;
-  accent-color: var(--shu);
-}
 /* Not a destruction: the colours of a plain dialog, not those of confirm.tsx. */
 .confirm.dismiss-dialog[open] > summary {
   background: var(--paper-sunken);
@@ -1494,9 +1632,6 @@ select.bar-org-box:hover {
   min-width: 6ch;
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-.findings-list-title {
-  margin-top: 0;
 }
 .findings-reason {
   margin: calc(-1 * var(--space-2)) 0 var(--space-4);
@@ -3052,6 +3187,12 @@ select.bar-org-box:hover {
 }
 .dash-job-head .status a {
   color: var(--ink);
+}
+/* A long name of repository wraps inside the column of 340 px (REV-91). */
+.dash-job-head .status {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .dash-job .hint {
   font-size: var(--text-xs);

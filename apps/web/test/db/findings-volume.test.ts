@@ -139,7 +139,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     let first = await load('/findings')
     assert.equal(first.status, 200)
     assert.equal((first.html.match(/<tr id="finding-/g) ?? []).length, 50)
-    assert.match(first.html, /1–50 sur 37\s500 findings/)
+    assert.match(first.html, /1 à 50 sur 37\s500 findings/)
 
     let next = /href="\/findings\?after=([\w-]+)"/.exec(first.html)?.[1]
     assert.ok(next, 'a link to the next page')
