@@ -21,8 +21,19 @@ function badges(finding: Finding): string {
   return badge(priority, colour) + (finding.category === 'security' ? ` ${badge('sécurité', '8e44ad')}` : '');
 }
 
+/** The length of the short id of a finding that a reader sees, and gives to `@kento-review reject`. */
+export const SHORT_ID_LENGTH = 6;
+
+/**
+ * REV-93. The short id of a finding as a reader sees it, `#3cf454`: the start of its key. A person
+ * names the finding by it in `@kento-review reject #3cf454 <cause>`.
+ */
+export function shortId(finding: Finding): string {
+  return `#${findingKey(finding).slice(0, SHORT_ID_LENGTH)}`;
+}
+
 export function inlineBody(finding: Finding, withSuggestion: boolean): string {
-  const out = [`${badges(finding)} **${finding.title}**`, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
+  const out = [`${badges(finding)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
@@ -105,7 +116,7 @@ export function descriptionBlock(
       if (line === null && context.commitUrl.startsWith('http')) {
         where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
       }
-      out.push(`${i + 1}. ${badges(f)}&nbsp;**${f.title}** ${where}${url ? ` <a href="${url}">▶</a>` : ''}`);
+      out.push(`${i + 1}. ${badges(f)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">▶</a>` : ''}`);
       // A finding with no thread shows its scenario here: this is the only place it appears.
       if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
     });

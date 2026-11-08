@@ -54,6 +54,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     reviewReactions: new Map<number, { content: string; login: string }[]>(),
     /** The reactions of the App on the comments of the pull request: `commentId:content`. */
     reactions: new Set<string>(),
+    /** REV-93. The reactions of the App on the review comments (the replies of a thread): `commentId:content`. */
+    reviewCommentReactions: new Set<string>(),
     /** The next comments of the pull request answer 502, as during an outage of GitHub. */
     failIssueComments: 0,
     /** REV-52. The next edits of a comment of the pull request answer 502. */
@@ -253,6 +255,21 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if (rest === prPath && method === 'PATCH') {
       state.pr.body = body.body
       return json(200, {})
+    }
+    if ((m = /^\/pulls\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'POST') {
+      if (!token.includes('pull_requests')) return json(403, { message: 'Resource not accessible by integration' })
+      let key = `${m[1]}:${body.content}`
+      let id = reactionIds.get(`review:${key}`) ?? nextId++
+      reactionIds.set(`review:${key}`, id)
+      if (state.reviewCommentReactions.has(key)) return json(200, { id, content: body.content })
+      state.reviewCommentReactions.add(key)
+      return json(201, { id, content: body.content })
+    }
+    if ((m = /^\/pulls\/comments\/(\d+)\/reactions\/(\d+)$/.exec(rest)) && method === 'DELETE') {
+      let key = [...reactionIds].find(([k, id]) => k.startsWith(`review:${m![1]}:`) && id === Number(m![2]))?.[0]?.slice('review:'.length)
+      if (!key || !state.reviewCommentReactions.has(key)) return json(404, { message: 'Not Found' })
+      state.reviewCommentReactions.delete(key)
+      return json(204, null)
     }
     if ((m = /^\/pulls\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'GET') {
       let id = Number(m[1])

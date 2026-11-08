@@ -303,7 +303,7 @@ describe('rules of a repository and of its org (REV-19)', () => {
     let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake', fetch: fake.fetch })
     await publishReview(github, { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }, stored!.result)
     let [comment] = fake.botThreads()
-    assert.match(comment!.body, /\*\*FK sans index\*\*\n\nRègle : « Index des FK »/)
+    assert.match(comment!.body, /\*\*FK sans index\*\* `#[0-9a-f]{6}`\n\nRègle : « Index des FK »/)
   })
 
   it('never sends a pattern out of the limits of the protocol, whatever the row holds', async () => {

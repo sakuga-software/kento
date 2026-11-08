@@ -55,7 +55,8 @@ Save. GitHub then asks the owners of the organization to accept the change: acce
 
 ### Events
 
-**Subscribe to events**: `Pull request` and `Issue comment`. Save. `Installation` and
+**Subscribe to events**: `Pull request`, `Issue comment` and `Pull request review comment` (REV-93:
+the `reject` command in the thread of a finding). Save. `Installation` and
 `Installation repositories` need no box: GitHub always sends them to an App.
 
 ### Webhook

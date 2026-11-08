@@ -1,8 +1,12 @@
-// The text of a command in a comment of a pull request: `@kento-review [review] [lite|balanced|heavy] [force]`
-// or `@kento-review resolve [lite|balanced|heavy]`. `@sakuga-review` is the old name of the bot, and
-// stays an alias. Pure functions: no database, no network.
+// The text of a command in a comment of a pull request: `@kento-review [review] [lite|balanced|heavy] [force]`,
+// `@kento-review resolve [lite|balanced|heavy]` or `@kento-review reject [<id>] <reason>` (REV-93).
+// `@sakuga-review` is the old name of the bot, and stays an alias. Pure functions: no database, no
+// network.
 import { levelCost } from '@sakuga-review/engine/levels'
+import { SHORT_ID_LENGTH } from '@sakuga-review/engine/render'
 import { isLevel, type Level } from '@sakuga-review/protocol'
+
+import { REASON_MAX } from '../findings/store.ts'
 
 export type CommentCommand =
   | {
@@ -11,7 +15,24 @@ export type CommentCommand =
       /** `force`: a review at a level that the head already has is paid again. Review only. */
       force: boolean
     }
+  | {
+      /**
+       * REV-93. Set a finding aside, with its reason. `id` is the short id of the finding (`3cf454`,
+       * lowercase, without `#`), or null when the line gives none. `reason` is the rest of the line,
+       * as the person wrote it; it can be empty, and then the bot refuses the command.
+       */
+      verb: 'reject'
+      id: string | null
+      reason: string
+    }
   | { verb: 'unknown'; text: string }
+
+/** The fewest characters of a short id: the id that the comments of Kentō show (`#3cf454`). */
+export const SHORT_ID_MIN = SHORT_ID_LENGTH
+/** The key of a finding has 12 hexadecimal characters (`findingKey` of the engine). */
+const SHORT_ID_MAX = 12
+// An id with `#` (`#3cf454`), or without `#` when it has a digit: `facade` is a word of a reason.
+const SHORT_ID = new RegExp(`^(?:#([0-9a-f]{${SHORT_ID_MIN},${SHORT_ID_MAX}})|(?=[a-f]*[0-9])([0-9a-f]{${SHORT_ID_MIN},${SHORT_ID_MAX}}))$`, 'i')
 
 /** The names that start a command. The first one is the name of the bot in the answers. */
 export const COMMAND_NAMES = ['kento-review', 'sakuga-review'] as const
@@ -74,6 +95,8 @@ export function parseCommentCommand(body: string): CommentCommand | null {
   let found = commandLine(body)
   if (!found) return null
   let line = found.rest
+  let reject = /^[ \t]+reject(?=[ \t]|$)/i.exec(line)
+  if (reject) return rejectCommand(line.slice(reject[0].length))
   let words = line.trim().split(/[ \t]+/).filter(Boolean).slice(0, 3).map((word) => word.toLowerCase())
   let text = `@${found.name.toLowerCase()}${line.trimEnd()}`.slice(0, 200)
 
@@ -94,6 +117,47 @@ export function parseCommentCommand(body: string): CommentCommand | null {
   return { verb, level, force }
 }
 
+/** `reject [<id>] <reason>`: an id first when its form is one, then the reason. */
+function rejectCommand(rest: string): CommentCommand {
+  let text = rest.trim()
+  let [first = ''] = text.split(/[ \t]+/, 1)
+  let id = SHORT_ID.exec(first)
+  if (!id) return { verb: 'reject', id: null, reason: text }
+  return { verb: 'reject', id: (id[1] ?? id[2])!.toLowerCase(), reason: text.slice(first.length).trim() }
+}
+
+/** Where a command was written: the conversation of the pull request, or a reply in a review thread. */
+export type PlaceKind = 'conversation' | 'thread'
+
+export type RejectProblem = 'reason_missing' | 'reason_long' | 'id_missing' | 'id_in_thread'
+
+/**
+ * Why a `reject` cannot run, before any read of the findings, or null. In a thread, the thread names
+ * the finding: an id there is refused, so that a reply never sets aside another finding than the one
+ * of its thread. In the conversation, the id is needed.
+ */
+export function rejectProblem(command: Extract<CommentCommand, { verb: 'reject' }>, place: PlaceKind): RejectProblem | null {
+  if (place === 'thread' && command.id !== null) return 'id_in_thread'
+  if (place === 'conversation' && command.id === null) return 'id_missing'
+  if (command.reason === '') return 'reason_missing'
+  if (command.reason.length > REASON_MAX) return 'reason_long'
+  return null
+}
+
+/** The short reply to a refused `reject`, after the mention of the person. */
+export function rejectProblemText(problem: RejectProblem): string {
+  switch (problem) {
+    case 'reason_missing':
+      return 'La commande `reject` demande une cause, sur la même ligne : `@kento-review reject <cause>`.'
+    case 'reason_long':
+      return `La cause d'un \`reject\` fait au plus ${REASON_MAX} caractères.`
+    case 'id_missing':
+      return "Dans la conversation de la PR, `reject` demande l'id du constat, affiché dans la liste de la description : `@kento-review reject #3cf454 <cause>`."
+    case 'id_in_thread':
+      return "Dans le fil d'un constat, `reject` vise ce constat : écrivez la cause sans id, `@kento-review reject <cause>`."
+  }
+}
+
 /** The answer to a command that the bot does not know: the list of the commands. */
 export const USAGE = [
   'Commandes de Kentō, dans un commentaire de la PR (`@sakuga-review` marche aussi) :',
@@ -101,11 +165,14 @@ export const USAGE = [
   '- `@kento-review [lite|balanced|heavy]` : une review de la PR au niveau donné (`lite` par défaut).',
   "- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).",
   '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
+  "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
+  "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
   '',
   `\`lite\` : le diff et les définitions qu'il utilise, ${levelCost('lite')}. ` +
     `\`balanced\` : en plus, le code qui appelle le changement, ${levelCost('balanced')}. ` +
     `\`heavy\` : le contexte de \`balanced\` avec plus de réflexion, ${levelCost('heavy')}. ` +
     'Le modèle de chaque niveau se règle dans la config du repo.',
   '',
-  'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
+  `La cause tient sur la ligne de la commande, en ${REASON_MAX} caractères au plus. ` +
+    'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
 ].join('\n')

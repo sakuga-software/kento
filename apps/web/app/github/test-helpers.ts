@@ -126,3 +126,39 @@ export function issueCommentPayload(
     installation: { id: 1001, node_id: 'MDIz' },
   }
 }
+
+/** REV-93. A reply in a review thread of the pull request, as GitHub delivers `pull_request_review_comment`. */
+export function reviewCommentPayload(
+  options: {
+    action?: string
+    body?: string
+    number?: number
+    commentId?: number
+    /** The first comment of the thread. Null: the comment starts a thread. */
+    inReplyTo?: number | null
+    user?: { login: string; type: string }
+    sender?: { login: string; type: string }
+    state?: string
+    repo?: typeof REPO
+  } = {},
+) {
+  let user = options.user ?? { login: 'alex', type: 'User' }
+  let inReplyTo = options.inReplyTo === undefined ? 7001 : options.inReplyTo
+  return {
+    action: options.action ?? 'created',
+    pull_request: {
+      number: options.number ?? 28,
+      state: options.state ?? 'open',
+      user: { login: 'camille', id: 102, type: 'User' },
+    },
+    comment: {
+      id: options.commentId ?? 9101,
+      body: options.body ?? '@kento-review reject the schema validates it',
+      user,
+      ...(inReplyTo === null ? {} : { in_reply_to_id: inReplyTo }),
+    },
+    repository: options.repo ?? REPO,
+    sender: options.sender ?? user,
+    installation: { id: 1001, node_id: 'MDIz' },
+  }
+}

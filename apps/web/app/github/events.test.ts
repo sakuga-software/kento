@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { commandFor, type EventPolicy } from './events.ts'
-import { headSha, issueCommentPayload, pullRequestPayload, REPO } from './test-helpers.ts'
+import { headSha, issueCommentPayload, pullRequestPayload, REPO, reviewCommentPayload } from './test-helpers.ts'
 
 const policy: EventPolicy = {
   trustedBots: new Set(['sakuga-agent[bot]']),
@@ -171,6 +171,7 @@ describe('commandFor issue_comment', () => {
       commenter: { login: 'alex', isBot: false },
       command: { verb: 'review', level: 'balanced', force: false },
       author: { githubId: 102, login: 'camille' },
+      place: { kind: 'conversation' },
     })
   })
 
@@ -226,5 +227,40 @@ describe('commandFor issue_comment', () => {
     let payload: Record<string, unknown> = issueCommentPayload()
     payload.comment = { body: '@kento-review review' }
     assert.match(reasonOf(payload, 'issue_comment'), /lacks installation, repository, number or comment/)
+  })
+})
+
+describe('commandFor pull_request_review_comment (REV-93)', () => {
+  it('a reply in a review thread with a command gives it, with the first comment of the thread', () => {
+    assert.deepEqual(commandFor('pull_request_review_comment', reviewCommentPayload({ body: 'Not a bug.\n\n@kento-review reject Zod validates it' }), policy), {
+      type: 'comment_command',
+      installation,
+      repository,
+      prNumber: 28,
+      commentId: 9101,
+      commenter: { login: 'alex', isBot: false },
+      command: { verb: 'reject', id: null, reason: 'Zod validates it' },
+      author: { githubId: 102, login: 'camille' },
+      place: { kind: 'thread', rootCommentId: 7001 },
+    })
+  })
+
+  it('the first comment of a thread, an edit and a comment that is not a command give nothing', () => {
+    assert.equal(reasonOf(reviewCommentPayload({ inReplyTo: null }), 'pull_request_review_comment'), 'review comment starts a thread')
+    assert.match(reasonOf(reviewCommentPayload({ action: 'edited' }), 'pull_request_review_comment'), /action edited gives no command/)
+    assert.equal(reasonOf(reviewCommentPayload({ body: 'I agree.' }), 'pull_request_review_comment'), 'comment is not a command')
+  })
+
+  it('the App, an untrusted bot and a closed pull request give nothing', () => {
+    let app = { login: 'kento-review[bot]', type: 'Bot' }
+    assert.equal(reasonOf(reviewCommentPayload({ user: app }), 'pull_request_review_comment'), 'comment of the App itself')
+    assert.equal(reasonOf(reviewCommentPayload({ user: { login: 'dependabot[bot]', type: 'Bot' } }), 'pull_request_review_comment'), 'command of an untrusted bot')
+    assert.equal(reasonOf(reviewCommentPayload({ state: 'closed' }), 'pull_request_review_comment'), 'pull request is closed')
+  })
+
+  it('a payload without its pull request is invalid', () => {
+    let payload: Record<string, unknown> = reviewCommentPayload()
+    delete payload.pull_request
+    assert.match(reasonOf(payload, 'pull_request_review_comment'), /lacks installation, repository, number or comment/)
   })
 })

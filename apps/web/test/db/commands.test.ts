@@ -8,12 +8,12 @@ import type { Job, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
-import { createCommandHandler } from '../../app/commands/handler.ts'
+import { createCommandHandler, findRejectTarget } from '../../app/commands/handler.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
 import { createInstallationTokenMinter, readPrivateKey } from '../../app/github/installation-token.ts'
-import { headSha, issueCommentPayload, pullRequestPayload, REPO, signedRequest, TEST_SECRET } from '../../app/github/test-helpers.ts'
+import { headSha, issueCommentPayload, pullRequestPayload, REPO, reviewCommentPayload, signedRequest, TEST_SECRET } from '../../app/github/test-helpers.ts'
 import { createPublisher } from '../../app/publish/publisher.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createRunnerStore } from '../../app/runner/store.ts'
@@ -651,6 +651,154 @@ describe('commands in the comments of a pull request', () => {
         let [row] = await database.sql<{ state: string; attempts: number }[]>`select state, attempts from jobs`
         assert.deepEqual({ ...row }, { state: 'queued', attempts: 1 })
       })
+    })
+  })
+
+  describe('reject (REV-93)', () => {
+    /** A finding of the pull request PR (or of `pr`), with its thread on the fake when `thread` is set. */
+    async function seedFinding(key: string, options: { thread?: boolean; pr?: number; status?: string } = {}) {
+      let commentId = options.thread ? fake.addThread({ path: 'src/a.ts', line: 3, body: `**Bug** \`#${key.slice(0, 6)}\``, commit: HEAD }) : null
+      let [row] = await database.sql<{ id: string }[]>`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status,
+          first_seen_sha, last_seen_sha, github_comment_id)
+        select id, ${options.pr ?? PR}, ${`fp-${key}`}, ${key}, 'src/a.ts', 3, 'Bug', 'major', 'bug', 90, ${options.status ?? 'open'}, ${HEAD}, ${HEAD}, ${commentId}
+        from repos where github_repo_id = ${REPO.id}
+        returning id`
+      return { id: row!.id, commentId }
+    }
+
+    /** A reply in a review thread, as GitHub delivers it. */
+    async function reply(body: string, rootCommentId: number, options: Parameters<typeof reviewCommentPayload>[0] & { deliveryId?: string } = {}) {
+      let payload = reviewCommentPayload({ body, inReplyTo: rootCommentId, commentId: ++comment, ...options })
+      let deliveryId = options.deliveryId ?? nextDelivery()
+      let response = await router().fetch(signedRequest(payload, { event: 'pull_request_review_comment', deliveryId }))
+      return { status: response.status, body: await response.json().catch(() => null), payload, deliveryId }
+    }
+
+    async function replayReply(payload: unknown, deliveryId: string) {
+      let response = await router().fetch(signedRequest(payload, { event: 'pull_request_review_comment', deliveryId }))
+      return { status: response.status, body: await response.json().catch(() => null) }
+    }
+
+    const threadReactionsOf = (id: number) =>
+      [...fake.state.reviewCommentReactions].filter((r) => r.startsWith(`${id}:`)).map((r) => r.split(':')[1]).sort()
+
+    it('R1. a reject in the thread of a finding names that finding, and answers 👀 on the reply', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let { status, body, payload } = await reply('Not a bug.\n\n@kento-review reject faux positif, la valeur est validée par le schéma', finding.commentId!)
+      assert.equal(status, 202)
+      assert.deepEqual(body, { outcome: 'accepted', findingId: finding.id })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes'])
+      // The reaction goes on the review comment, not on a comment of the conversation.
+      assert.deepEqual(reactionsOf(payload.comment.id), [])
+      assert.equal(fake.repliesTo(finding.commentId!).length, 0)
+      assert.equal((await jobs()).length, 0)
+    })
+
+    it('R13. a finding fixed by a push, or stale, refuses the reject with 😕 and a reason', async () => {
+      let fixed = await seedFinding('dddddd000001', { thread: true, status: 'fixed' })
+      let refused = await reply('@kento-review reject ok', fixed.commentId!)
+      assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
+      assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` n'est plus ouvert : un push l'a déjà corrigé/)
+      await seedFinding('eeeeee000001', { status: 'stale' })
+      let stale = await say('@kento-review reject #eeeeee ok')
+      assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
+      // A finding set aside before can be named again: REV-94 makes the second reject change nothing.
+      await seedFinding('ffffff000001', { status: 'dismissed' })
+      assert.equal((await say('@kento-review reject #ffffff ok')).body.outcome, 'accepted')
+    })
+
+    it('R14. without an id in the conversation, the lookup finds nothing, even when called past the guard', async () => {
+      await seedFinding('aaaaaa000001')
+      let message = {
+        type: 'comment_command' as const,
+        installation: { githubInstallationId: 1001, githubAccountId: 2001, login: 'sakuga-software' },
+        repository: { githubRepoId: REPO.id, fullName: REPO.full_name },
+        prNumber: PR,
+        commentId: 1,
+        commenter: { login: 'alex', isBot: false },
+        command: { verb: 'reject' as const, id: null, reason: 'ok' },
+        author: null,
+        place: { kind: 'conversation' as const },
+      }
+      assert.deepEqual(await findRejectTarget(database.db, message, message.command), { kind: 'unknown_id' })
+      assert.deepEqual(await findRejectTarget(database.db, message, { ...message.command, id: '' }), { kind: 'unknown_id' })
+    })
+
+    it('R2. `reject #<id>` in the conversation names the finding of that id, with or without `#`, in any case', async () => {
+      let finding = await seedFinding('3cf454aa0011')
+      await seedFinding('9d00aa110022')
+      let first = await say('@kento-review reject #3CF454 la valeur est validée par le schéma')
+      assert.deepEqual(first.body, { outcome: 'accepted', findingId: finding.id })
+      assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes'])
+      let second = await say('@sakuga-review reject 3cf454aa la valeur est validée')
+      assert.deepEqual(second.body, { outcome: 'accepted', findingId: finding.id })
+      assert.equal(fake.state.issueComments.length, 0)
+    })
+
+    it('R3. a reject without a reason gets 😕 and the usage in its thread, once', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let { body, payload, deliveryId } = await reply('@kento-review reject', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'refused', reason: 'reject: reason_missing' })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['confused'])
+      let replies = fake.repliesTo(finding.commentId!)
+      assert.equal(replies.length, 1)
+      assert.match(replies[0]!.body, /^@alex La commande `reject` demande une cause/)
+      assert.match(replies[0]!.body, /@kento-review reject <cause>/)
+      assert.equal(fake.state.issueComments.length, 0)
+      await replayReply(payload, deliveryId)
+      assert.equal(fake.repliesTo(finding.commentId!).length, 1)
+    })
+
+    it('R4. a reason too long, or an id in a thread, gets 😕 and a short reply', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let long = await reply(`@kento-review reject ${'x'.repeat(501)}`, finding.commentId!)
+      assert.deepEqual(long.body, { outcome: 'refused', reason: 'reject: reason_long' })
+      let withId = await reply('@kento-review reject #3cf454 faux positif', finding.commentId!)
+      assert.deepEqual(withId.body, { outcome: 'refused', reason: 'reject: id_in_thread' })
+      let replies = fake.repliesTo(finding.commentId!).map((c) => c.body)
+      assert.match(replies[0]!, /au plus 500 caractères/)
+      assert.match(replies[1]!, /vise ce constat/)
+    })
+
+    it('R5. in the conversation: no id, an unknown id, an ambiguous id, a finding of another pull request', async () => {
+      await seedFinding('aaa111bb0011')
+      await seedFinding('aaa111cc0022')
+      await seedFinding('bbb222dd0033', { pr: PR + 1 })
+      let missing = await say('@kento-review reject faux positif')
+      assert.deepEqual(missing.body, { outcome: 'refused', reason: 'reject: id_missing' })
+      let unknown = await say('@kento-review reject #ccc333 faux positif')
+      assert.deepEqual(unknown.body, { outcome: 'refused', reason: 'reject: unknown_id' })
+      let ambiguous = await say('@kento-review reject #aaa111 faux positif')
+      assert.deepEqual(ambiguous.body, { outcome: 'refused', reason: 'reject: ambiguous_id' })
+      let other = await say('@kento-review reject #bbb222 faux positif')
+      assert.deepEqual(other.body, { outcome: 'refused', reason: 'reject: unknown_id' })
+      for (let r of [missing, unknown, ambiguous, other]) assert.deepEqual(reactionsOf(r.payload.comment.id), ['confused'])
+      let texts = fake.state.issueComments.map((c) => c.body)
+      assert.match(texts[0]!, /demande l'id du constat/)
+      assert.match(texts[1]!, /Aucun constat de cette PR n'a l'id `#ccc333`/)
+      assert.match(texts[2]!, /`#aaa111` désigne plusieurs constats de cette PR : `#aaa111bb0011`, `#aaa111cc0022`/)
+      assert.match(texts[3]!, /Aucun constat de cette PR n'a l'id `#bbb222`/)
+    })
+
+    it('R6. a reject in a thread that is not the thread of a finding gets 😕', async () => {
+      let thread = fake.addThread({ path: 'src/a.ts', line: 3, body: 'A question of a person.', commit: HEAD, author: 'camille' })
+      let { body, payload } = await reply('@kento-review reject not relevant', thread)
+      assert.deepEqual(body, { outcome: 'refused', reason: 'reject: not_a_finding_thread' })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['confused'])
+      assert.match(fake.repliesTo(thread)[0]!.body, /n'est pas celui d'un constat de Kentō/)
+    })
+
+    it('R7. a person who cannot write gets no answer; another command in a thread gets 😕', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let reader = await reply('@kento-review reject faux positif', finding.commentId!, { user: { login: 'reader', type: 'User' } })
+      assert.deepEqual(reader.body, { outcome: 'refused', reason: 'commenter cannot write to the repository' })
+      assert.deepEqual(threadReactionsOf(reader.payload.comment.id), [])
+      let heavy = await reply('@kento-review heavy', finding.commentId!)
+      assert.deepEqual(heavy.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /ne lit que `@kento-review reject <cause>`/)
+      assert.equal((await jobs()).length, 0)
     })
   })
 })

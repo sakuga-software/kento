@@ -1,7 +1,9 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { parseCommentCommand, USAGE } from './comment-command.ts'
+import { parseCommentCommand, rejectProblem, USAGE } from './comment-command.ts'
+import { REASON_MAX } from '../findings/store.ts'
+import { inlineBody, shortId } from '@sakuga-review/engine/render'
 
 describe('parseCommentCommand', () => {
   it('reads the verb and the level, under both names and in any case', () => {
@@ -90,6 +92,60 @@ describe('parseCommentCommand', () => {
   })
 })
 
+describe('reject (REV-93)', () => {
+  it('reads the reason as written, with its case and its punctuation', () => {
+    assert.deepEqual(parseCommentCommand('@kento-review reject faux positif, la valeur est validée par le schéma'), {
+      verb: 'reject',
+      id: null,
+      reason: 'faux positif, la valeur est validée par le schéma',
+    })
+    assert.deepEqual(parseCommentCommand('@sakuga-review REJECT  Zod checks it  '), { verb: 'reject', id: null, reason: 'Zod checks it' })
+    assert.deepEqual(parseCommentCommand('Not a bug.\n\n@kento-review reject the caller checks `x`'), { verb: 'reject', id: null, reason: 'the caller checks `x`' })
+  })
+
+  it('reads a short id first: with `#`, or without `#` when it has a digit', () => {
+    assert.deepEqual(parseCommentCommand('@kento-review reject #3CF454 the schema validates it'), { verb: 'reject', id: '3cf454', reason: 'the schema validates it' })
+    assert.deepEqual(parseCommentCommand('@kento-review reject 3cf454a1b2c3 dup'), { verb: 'reject', id: '3cf454a1b2c3', reason: 'dup' })
+    // A word of hexadecimal letters is the start of the reason.
+    assert.deepEqual(parseCommentCommand('@kento-review reject facade is fine'), { verb: 'reject', id: null, reason: 'facade is fine' })
+    assert.deepEqual(parseCommentCommand('@kento-review reject #abcdef ok'), { verb: 'reject', id: 'abcdef', reason: 'ok' })
+    // Too short or too long for an id: the reason.
+    assert.deepEqual(parseCommentCommand('@kento-review reject #3cf45 ok'), { verb: 'reject', id: null, reason: '#3cf45 ok' })
+    assert.deepEqual(parseCommentCommand('@kento-review reject 3cf454a1b2c3d ok'), { verb: 'reject', id: null, reason: '3cf454a1b2c3d ok' })
+  })
+
+  it('reads the id exactly as a comment of Kentō shows it, `#` included', () => {
+    let finding = { path: 'src/a.ts', line: 3, severity: 'major', category: 'bug', confidence: 90, title: 'Le jeton `exp` passe', scenario: 's', fix: 'f', suggestion: '' }
+    let shown = /`(#[0-9a-f]{6})`/.exec(inlineBody(finding as never, false).split('\n')[0]!)?.[1]
+    assert.equal(shown, shortId(finding as never))
+    assert.deepEqual(parseCommentCommand(`@kento-review reject ${shown} the schema validates it`), {
+      verb: 'reject',
+      id: shown!.slice(1),
+      reason: 'the schema validates it',
+    })
+  })
+
+  it('gives an empty reason when the line has none, and reads only the line of the command', () => {
+    assert.deepEqual(parseCommentCommand('@kento-review reject'), { verb: 'reject', id: null, reason: '' })
+    assert.deepEqual(parseCommentCommand('@kento-review reject #3cf454'), { verb: 'reject', id: '3cf454', reason: '' })
+    assert.deepEqual(parseCommentCommand('@kento-review reject\nthe reason below'), { verb: 'reject', id: null, reason: '' })
+    // `rejected` is another word.
+    assert.equal(parseCommentCommand('@kento-review rejected')?.verb, 'unknown')
+  })
+
+  it('refuses a reject without a reason, with a reason too long, without an id in the conversation, with an id in a thread', () => {
+    let reject = (id: string | null, reason: string) => ({ verb: 'reject' as const, id, reason })
+    assert.equal(rejectProblem(reject(null, 'ok'), 'thread'), null)
+    assert.equal(rejectProblem(reject('3cf454', 'ok'), 'conversation'), null)
+    assert.equal(rejectProblem(reject(null, ''), 'thread'), 'reason_missing')
+    assert.equal(rejectProblem(reject('3cf454', ''), 'conversation'), 'reason_missing')
+    assert.equal(rejectProblem(reject(null, 'x'.repeat(REASON_MAX)), 'thread'), null)
+    assert.equal(rejectProblem(reject(null, 'x'.repeat(REASON_MAX + 1)), 'thread'), 'reason_long')
+    assert.equal(rejectProblem(reject(null, 'ok'), 'conversation'), 'id_missing')
+    assert.equal(rejectProblem(reject('3cf454', 'ok'), 'thread'), 'id_in_thread')
+  })
+})
+
 describe('USAGE', () => {
   it('lists the commands, and the cost of each level without the name of a model', () => {
     assert.equal(
@@ -100,13 +156,16 @@ describe('USAGE', () => {
         '- `@kento-review [lite|balanced|heavy]` : une review de la PR au niveau donné (`lite` par défaut).',
         '- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).',
         '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
+        "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
+        "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
         '',
         "`lite` : le diff et les définitions qu'il utilise, environ 1 centime. " +
           '`balanced` : en plus, le code qui appelle le changement, de 10 à 20 centimes. ' +
           '`heavy` : le contexte de `balanced` avec plus de réflexion, de 30 à 50 centimes. ' +
           'Le modèle de chaque niveau se règle dans la config du repo.',
         '',
-        'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
+        'La cause tient sur la ligne de la commande, en 500 caractères au plus. ' +
+          'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
       ].join('\n'),
     )
   })

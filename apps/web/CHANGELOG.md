@@ -7,6 +7,33 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-93: The command `reject`, read in a thread and in the conversation
+
+**Before the deployment, in the settings of the GitHub App `kento-review`: subscribe to the event
+`Pull request review comment`** (General > Permissions & events > Subscribe to events). Without it,
+GitHub sends no reply of a thread, and `reject` works only in the conversation. No new permission:
+the reactions and the replies on a review comment use `pull_requests: write`, which the commands
+already have. No migration, no new variable. No change of the protocol of the runners: deploy `web`
+alone.
+
+- `@kento-review reject <cause>`, in reply in the thread of a finding, names the finding of that
+  thread. `@kento-review reject #<id> <cause>` in the conversation names the finding of the pull
+  request whose key starts with the id (6 to 12 characters; `#` can be left out when the id has a
+  digit). The cause is the rest of the line, at most 500 characters (`REASON_MAX`).
+- Each comment of a finding, and each line of the list of the description, shows the short id of
+  the finding, `` `#3cf454` ``.
+- The command gets 👀 when it names a finding. It gets 😕 and a short reply (in the thread, or
+  under the pull request) for: no cause, a cause too long, an id in a thread, no id in the
+  conversation, an unknown id, an id of several findings, a thread that is not the thread of a
+  finding, another command in a thread. A person who cannot write to the repository gets no answer
+  (`command.not_allowed` in the log).
+- This release reads the command only: the finding stays `open`. REV-94 sets it aside.
+
+Check: in the thread of a finding, `@kento-review reject faux positif, la valeur est validée par le
+schéma` gets 👀 and the log `command.reject_accepted` with the id of the finding. In the
+conversation, `@kento-review reject #<id> …` with the id of a finding of the list gets 👀.
+`@kento-review reject` with no cause gets 😕 and the list of the commands.
+
 ## REV-72: A command on its own line, anywhere in the comment
 
 A line of a new comment that starts with `@kento-review` or `@sakuga-review` is a command, even

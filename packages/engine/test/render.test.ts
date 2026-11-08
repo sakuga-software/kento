@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { descriptionBlock, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
+import { descriptionBlock, findingKey, inlineBody, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
+import { shortId } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {
@@ -62,6 +63,21 @@ test('the block of the description by Kentō carries its name, and the markers t
   assert.match(block, /<!-- sakuga-review:count 2 -->\n<!-- sakuga-review:end -->$/);
   assert.doesNotMatch(block, /Sakuga Review|revue|🔍/);
   assert.match(descriptionBlock(answer, [], [], 0, usage, anchors, context), /^<h2>Sakuga Review · Score de confiance : 2\/5<\/h2>$/m);
+});
+
+test('a finding shows its short id in its comment and in the list of the description (REV-93)', () => {
+  const id = `#${findingKey(finding).slice(0, 6)}`;
+  assert.equal(shortId(finding), id);
+  assert.match(id, /^#[0-9a-f]{6}$/);
+  const body = inlineBody(finding, false);
+  assert.equal(body.split('\n')[0]!.endsWith(`**Le jeton expiré passe** \`${id}\``), true);
+  // The hidden key stays whole: the next review reads it back.
+  assert.match(body, new RegExp(`<!-- sakuga-review:finding ${findingKey(finding)} -->`));
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
+  const withThread = descriptionBlock(answer, [{ finding, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 0, usage, anchors, context);
+  assert.match(withThread, new RegExp(`^1\\. .*\\*\\*Le jeton expiré passe\\*\\* \`${id}\` \`src/auth\\.ts:12\``, 'm'));
+  const withoutThread = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, () => null, context);
+  assert.match(withoutThread, new RegExp(`^1\\. .*\`${id}\``, 'm'));
 });
 
 test('the cost of a level reads as a range of cents', () => {

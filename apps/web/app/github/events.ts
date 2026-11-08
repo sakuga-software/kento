@@ -2,6 +2,8 @@ import { SHA } from '@sakuga-review/protocol'
 
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
 
+export type CommandPlace = { kind: 'conversation' } | { kind: 'thread'; rootCommentId: number }
+
 // Turns a verified webhook into one command for the store. The functions here read the payload
 // only: no database, no network. A payload that lacks a field the command needs gives `invalid`.
 
@@ -56,6 +58,12 @@ export type WebhookCommand =
       command: CommentCommand
       /** REV-22. The author of the pull request, for the screen of a user. */
       author: PullAuthor | null
+      /**
+       * REV-93. Where the command was written. `conversation`: a comment of the pull request
+       * (`issue_comment`). `thread`: a reply in a review thread (`pull_request_review_comment`), whose
+       * first comment is `rootCommentId`. The reactions and the replies of the two use other routes.
+       */
+      place: CommandPlace
     }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
   /**
@@ -97,6 +105,8 @@ export function commandFor(event: string, payload: unknown, policy: EventPolicy)
       return installationRepositoriesCommand(payload)
     case 'issue_comment':
       return issueCommentCommand(payload, policy)
+    case 'pull_request_review_comment':
+      return reviewCommentCommand(payload, policy)
     default:
       return { type: 'ignore', reason: `event ${event} is not handled` }
   }
@@ -175,14 +185,8 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
     return { type: 'invalid', reason: 'issue_comment payload lacks installation, repository, number or comment' }
   }
 
-  // The App first: even in KENTO_TRUSTED_BOTS, its own answers never run a command.
-  let botLogin = (policy.botLogin ?? 'kento-review[bot]').toLowerCase()
-  if (login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
-    return { type: 'ignore', reason: 'comment of the App itself' }
-  }
-  if (isUntrustedBot(user, policy) || isUntrustedBot(obj(payload.sender), policy)) {
-    return { type: 'ignore', reason: 'command of an untrusted bot' }
-  }
+  let refused = commenterRefusal(login, user, payload, policy)
+  if (refused) return refused
   if (issue?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
 
   return {
@@ -194,7 +198,64 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
     commenter: { login, isBot: user?.type === 'Bot' },
     command,
     author: authorOf(obj(issue?.user)),
+    place: { kind: 'conversation' },
   }
+}
+
+/**
+ * REV-93. `pull_request_review_comment`: a new reply in a review thread with a command line, as for
+ * `issue_comment`. Only a reply counts (`in_reply_to_id`): the first comment of a thread is the
+ * finding of Kentō, or the thread of a person, and gives no command. GitHub gives a reply the id of
+ * the first comment of its thread in `in_reply_to_id`. The payload does not say who wrote that first
+ * comment: the handler finds the finding of the thread by it, and refuses a thread without one.
+ */
+function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand {
+  let action = str(payload.action)
+  if (action !== 'created') return { type: 'ignore', reason: `pull_request_review_comment action ${action ?? '(none)'} gives no command` }
+  let comment = obj(payload.comment)
+  let rootCommentId = int(comment?.in_reply_to_id)
+  if (rootCommentId === null) return { type: 'ignore', reason: 'review comment starts a thread' }
+  let body = typeof comment?.body === 'string' ? comment.body : ''
+  let command = parseCommentCommand(body)
+  if (command === null) return { type: 'ignore', reason: 'comment is not a command' }
+
+  let pr = obj(payload.pull_request)
+  let installation = installationFromRepository(payload)
+  let repository = repositoryOf(obj(payload.repository))
+  let prNumber = int(pr?.number)
+  let commentId = int(comment?.id)
+  let user = obj(comment?.user)
+  let login = str(user?.login)
+  if (!installation || !repository || prNumber === null || commentId === null || login === null) {
+    return { type: 'invalid', reason: 'pull_request_review_comment payload lacks installation, repository, number or comment' }
+  }
+  let refused = commenterRefusal(login, user, payload, policy)
+  if (refused) return refused
+  if (pr?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
+
+  return {
+    type: 'comment_command',
+    installation,
+    repository,
+    prNumber,
+    commentId,
+    commenter: { login, isBot: user?.type === 'Bot' },
+    command,
+    author: authorOf(obj(pr?.user)),
+    place: { kind: 'thread', rootCommentId },
+  }
+}
+
+/** The App first: even in KENTO_TRUSTED_BOTS, its own answers never run a command. Then the other bots. */
+function commenterRefusal(login: string, user: Obj | null, payload: Obj, policy: EventPolicy): WebhookCommand | null {
+  let botLogin = (policy.botLogin ?? 'kento-review[bot]').toLowerCase()
+  if (login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
+    return { type: 'ignore', reason: 'comment of the App itself' }
+  }
+  if (isUntrustedBot(user, policy) || isUntrustedBot(obj(payload.sender), policy)) {
+    return { type: 'ignore', reason: 'command of an untrusted bot' }
+  }
+  return null
 }
 
 function installationCommand(payload: Obj): WebhookCommand {
