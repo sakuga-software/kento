@@ -20,9 +20,10 @@ import {
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
 
-import { GITHUB_API_URL, type InstallationToken, type MintInstallationToken, type TokenPermissions } from '../github/installation-token.ts'
+import { GITHUB_API_URL, type InstallationToken, type MintInstallationToken } from '../github/installation-token.ts'
+import { createInstallationTokenCache, type InstallationTokenCache } from '../github/token-cache.ts'
 import { errorMessage, log } from '../log.ts'
-import { createGitHub } from '../publish/github.ts'
+import { createGitHub, type GitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { KIND_LABELS } from '../providers/form.ts'
 import { idFormHelp, jobModels, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
@@ -59,9 +60,9 @@ export interface RunnerApiDependencies {
   claimPollMs?: number
 }
 
-/** A token for the one repository of a job. */
-function mintFor(job: ClaimedJob, mint: MintInstallationToken, permissions?: TokenPermissions): Promise<InstallationToken> {
-  return mint({ installationId: job.githubInstallationId, githubRepoId: job.githubRepoId, ...(permissions ? { permissions } : {}) })
+/** The token of the runner: `contents: read` (the default of the mint) on the one repository of a job, a new one for each job. */
+function mintFor(job: ClaimedJob, mint: MintInstallationToken): Promise<InstallationToken> {
+  return mint({ installationId: job.githubInstallationId, githubRepoId: job.githubRepoId })
 }
 
 /** What a claim knows of its runner, for each job that it looks at. */
@@ -69,6 +70,8 @@ interface Claim {
   runner: RunnerRow
   body: ClaimRequest
   mint: MintInstallationToken
+  /** REV-92. The `pull_requests: read` tokens that the service keeps, to read the threads. */
+  threadsTokens: InstallationTokenCache
   ownProvider: ClaimRequest['ownProvider']
   ownKey: boolean
   readsProviders: boolean
@@ -96,6 +99,11 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   let claimWaitMs = deps.claimWaitMs ?? CLAIM_WAIT_SECONDS * 1000
   let claimPollMs = deps.claimPollMs ?? 1000
   let githubUrl = deps.githubUrl ?? 'https://github.com'
+  // REV-92. One `pull_requests: read` token per repository while it is valid, for the claims of
+  // review and resolve jobs. The token of the runner is never one of them: it is minted for each job.
+  let threadsTokens = deps.mintInstallationToken
+    ? createInstallationTokenCache({ mint: deps.mintInstallationToken, permissions: THREADS_PERMISSIONS })
+    : null
 
   /** The runner of the request, or the 401 to send. Never says why a token is refused. */
   async function authenticate(request: Request, action: string): Promise<RunnerRow | Response> {
@@ -114,7 +122,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
    * attempt, queued again after the backoff or failed after the last attempt.
    */
   async function prepareJob(job: ClaimedJob, claim: Claim): Promise<Prepared | null> {
-    let { runner, body, mint } = claim
+    let { runner, body, mint, threadsTokens } = claim
     let wantsRules = body.features?.includes('rules') ?? false
     let rules: JobRule[] | null = null
     let stage = 'rules'
@@ -129,7 +137,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       installationToken = await mintFor(job, mint)
       if (job.kind === 'resolve') {
         // The service reads the threads with its own token; the runner gets them, not the token.
-        resolve = await readResolveInput(await threadsReader(job, mint), job.fullName, job.prNumber, job.headSha)
+        resolve = await readThreads(job, threadsTokens, (github) => readResolveInput(github, job.fullName, job.prNumber, job.headSha))
       }
     } catch (cause) {
       if (installationToken) stage = 'review threads'
@@ -152,7 +160,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     let threads: ResolveThread[] | null = null
     if (job.kind === 'review' && (body.features?.includes('threads') ?? false)) {
       try {
-        threads = await readAnsweredThreads(await threadsReader(job, mint), job.fullName, job.prNumber)
+        threads = await readThreads(job, threadsTokens, (github) => readAnsweredThreads(github, job.fullName, job.prNumber))
       } catch (cause) {
         log('warn', 'job.threads_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
@@ -160,10 +168,13 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     return { rules, installationToken, resolve, wantsRules, threads }
   }
 
-  /** A client of GitHub that can read the review threads of the repository of a job, and nothing else. */
-  async function threadsReader(job: ClaimedJob, mint: MintInstallationToken) {
-    let token = await mintFor(job, mint, THREADS_PERMISSIONS)
-    return createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: token.token, fetch: deps.fetch })
+  /**
+   * Runs `read` with a client of GitHub that can read the review threads of the repository of a
+   * job, and nothing else. The token is the kept one of the repository (REV-92).
+   */
+  function readThreads<T>(job: ClaimedJob, tokens: InstallationTokenCache, read: (github: GitHub) => Promise<T>): Promise<T> {
+    let target = { installationId: job.githubInstallationId, githubRepoId: job.githubRepoId }
+    return tokens.run(target, (token) => read(createGitHub({ apiUrl: deps.githubApiUrl ?? GITHUB_API_URL, token: token.token, fetch: deps.fetch })))
   }
 
   /**
@@ -315,7 +326,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         let body = await readJson(request, parseClaimRequest)
         if (body instanceof Response) return body
         let mint = deps.mintInstallationToken
-        if (!mint) {
+        if (!mint || !threadsTokens) {
           // No job can run without the GitHub App. Hold the claim for the whole wait anyway, so that
           // a runner does not call again at once and loop on the service.
           await sleep(claimWaitMs, request.signal)
@@ -337,7 +348,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
 
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
         // stops the loop. A job that cannot go to this runner is released, and the loop looks again.
-        let claim: Claim = { runner, body, mint, ownProvider, ownKey, readsProviders, secrets }
+        let claim: Claim = { runner, body, mint, threadsTokens, ownProvider, ownKey, readsProviders, secrets }
         let deadline = Date.now() + claimWaitMs
         while (!request.signal.aborted) {
           let job = await deps.store.claimJob(runner.id, {

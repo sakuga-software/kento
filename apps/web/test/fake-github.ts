@@ -75,6 +75,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     /** The tokens that the App can mint, by permission. A permission outside the list answers 422. */
     appPermissions: new Set(['contents', 'pull_requests', 'issues', 'checks']),
     tokens: [] as { installationId: number; repositoryIds: number[]; permissions: Record<string, string>; token: string }[],
+    /** The `expires_at` of the tokens that the fake mints. */
+    tokenExpiresAt: '2030-01-01T00:00:00Z',
+    /** The tokens that GraphQL refuses with a 401, as for a token that GitHub revoked. */
+    revokedTokens: new Set<string>(),
     /** REV-16. Runs while GitHub takes a review: what a person does meanwhile. */
     onReview: null as null | (() => Promise<void>),
     /** The review API answers 502, as during an outage of GitHub. */
@@ -136,10 +140,11 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       }
       let issued = `ghs_fake_${Object.keys(permissions).sort().join('_')}_${nextId++}`
       state.tokens.push({ installationId: Number(m[1]), repositoryIds: body.repository_ids, permissions, token: issued })
-      return json(201, { token: issued, expires_at: '2030-01-01T00:00:00Z' })
+      return json(201, { token: issued, expires_at: state.tokenExpiresAt })
     }
 
     if (path === '/graphql') {
+      if (state.revokedTokens.has(token)) return json(401, { message: 'Bad credentials' })
       if (body.query.includes('resolveReviewThread')) {
         let minted = state.tokens.find((t) => t.token === token)
         if (!state.canResolve || (state.resolveNeedsWrite && minted?.permissions.contents !== 'write')) {

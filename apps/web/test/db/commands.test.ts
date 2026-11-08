@@ -309,8 +309,15 @@ describe('commands in the comments of a pull request', () => {
   })
 
   describe('the end of the job', () => {
+    // One router for every request of a test, as in the server: it keeps its tokens (REV-92).
+    // Null: a new router for each request.
+    let app: ReturnType<typeof router> | null = null
+    beforeEach(() => {
+      app = null
+    })
+
     async function call(path: string, token: string, body: unknown) {
-      return router().fetch(
+      return (app ?? router()).fetch(
         new Request(new URL(path, 'http://localhost'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -502,6 +509,73 @@ describe('commands in the comments of a pull request', () => {
         )
         // The service read the threads with a token that reads the pull requests only.
         assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
+      })
+
+      describe('REV-92: the token that reads the threads', () => {
+        const READS_THREADS = JSON.stringify({ pull_requests: 'read' })
+        const threadTokens = () => fake.state.tokens.filter((t) => JSON.stringify(t.permissions) === READS_THREADS)
+        const cloneTokens = () => fake.state.tokens.filter((t) => JSON.stringify(t.permissions) === JSON.stringify({ contents: 'read' }))
+
+        /** Queues a review, claims it as a runner that reads the threads, and sends its result. */
+        async function reviewClaim(): Promise<Extract<Job, { kind: 'review' }>> {
+          let queued = await say('@kento-review review balanced force')
+          assert.equal(queued.body.outcome, 'queued')
+          let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['review', 'resolve'], features: ['threads'] })
+          assert.ok(job && job.kind === 'review')
+          let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: review() })
+          assert.equal(stored.status, 204)
+          return job
+        }
+
+        beforeEach(() => {
+          app = router()
+        })
+
+        it('18e. two review claims on the same repository mint one `pull_requests: read` token', async () => {
+          let first = await reviewClaim()
+          let second = await reviewClaim()
+          assert.equal(threadTokens().length, 1)
+          assert.deepEqual(threadTokens()[0]!.repositoryIds, [REPO.id])
+          // Each job still gets its own token for the runner, with `contents: read` only.
+          assert.equal(cloneTokens().length, 2)
+          for (let job of [first, second]) {
+            assert.ok(cloneTokens().some((t) => t.token === job.installationToken.token))
+            assert.doesNotMatch(job.installationToken.token, /pull_requests/)
+          }
+          // The resolve of the same repository reads with the same kept token.
+          await say('@kento-review resolve')
+          let { job } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
+          assert.ok(job && job.kind === 'resolve')
+          assert.equal(job.resolve.threads.length, 3)
+          assert.equal(threadTokens().length, 1)
+          let reads = fake.state.calls.filter((c) => c.path === '/graphql').map((c) => c.token)
+          assert.deepEqual([...new Set(reads)], [threadTokens()[0]!.token])
+        })
+
+        it('18f. a token close to its expiry is minted again', async () => {
+          // GitHub gives a token that expires in 2 minutes: inside the margin, so the next claim mints.
+          fake.state.tokenExpiresAt = new Date(Date.now() + 2 * 60_000).toISOString()
+          await reviewClaim()
+          await reviewClaim()
+          assert.equal(threadTokens().length, 2)
+          fake.state.tokenExpiresAt = '2030-01-01T00:00:00Z'
+          await reviewClaim()
+          await reviewClaim()
+          assert.equal(threadTokens().length, 3)
+        })
+
+        it('18g. a 401 on the kept token mints a new one once, and the review still gets its threads', async () => {
+          let answered = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**Un constat** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
+          fake.state.comments.push({ id: 900_010, reviewId: null, path: 'src/sum.ts', line: 4, body: 'Faux positif.', commit: HEAD, author: 'alex', inReplyTo: answered })
+          await reviewClaim()
+          fake.state.revokedTokens.add(threadTokens()[0]!.token)
+          let job = await reviewClaim()
+          assert.equal(threadTokens().length, 2)
+          assert.deepEqual(job.threads?.map((t) => t.id), [`PRRT_${answered}`])
+          // The new token is kept: no third mint.
+          await reviewClaim()
+          assert.equal(threadTokens().length, 2)
+        })
       })
 
       it('18b. a resolve done but not published yet still holds the pull request', async () => {
