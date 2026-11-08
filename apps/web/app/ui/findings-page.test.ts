@@ -146,7 +146,7 @@ describe('the Findings screen, its selection and its actions', () => {
     let admin = await signIn()
     // « Filtrer » hides under `.js`: theme.js sets it, as a blocking script of the head, before the first paint.
     assert.match(admin.html, /<head>(?:(?!<\/head>).)*<script src="\/assets\/theme\.js\?v=[^"]*"><\/script>(?:(?!<\/head>).)*<\/head>/s)
-    assert.match(readFileSync(new URL('../../public/assets/theme.js', import.meta.url), 'utf8'), /^document\.documentElement\.classList\.add\('js'\)$/m)
+    assert.match(readFileSync(new URL('../../public/assets/theme.js', import.meta.url), 'utf8'), /^ *document\.documentElement\.classList\.add\('js'\)$/m)
     assert.equal(scripts(admin.html), 1)
     assert.equal(scripts(await (await request('/findings?q=cle', { cookie: admin.cookie })).text()), 1)
     let member = await signIn(CAMILLE)

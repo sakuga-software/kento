@@ -6,7 +6,7 @@
   const bar = document.querySelector('[data-bar]')
   const menu = document.querySelector('[data-bar-menu]')
 
-  function setOpen(open) {
+  const setOpen = (open) => {
     if (!bar || !menu) return
     bar.classList.toggle('bar-open', open)
     menu.setAttribute('aria-expanded', String(open))

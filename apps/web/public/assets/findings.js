@@ -10,7 +10,7 @@
   const count = document.querySelector('[data-selected]')
   const none = document.querySelector('[data-select-none]')
 
-  function update() {
+  const update = () => {
     const n = boxes.filter((box) => box.checked).length
     if (count) count.textContent = n === 0 ? 'Cochez des findings pour les marquer.' : n === 1 ? '1 finding coché' : `${n} findings cochés`
     if (all) {
