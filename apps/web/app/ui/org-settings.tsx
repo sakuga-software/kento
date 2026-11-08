@@ -117,7 +117,6 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
           </div>
         ))}
         {notice ? <Notice notice={notice} /> : null}
-        <p class="hint org-version">{orgVersionLine(view)}</p>
         <div class="org-settings">
           <CapSection {...props} />
           <DefaultsSection {...props} />
@@ -192,7 +191,8 @@ function CapSection(handle: Handle<SectionProps>) {
             Plafond de coût
           </h2>
         </header>
-        <dl class="config-facts">
+        {admin ? <p class="hint">Laissez un champ vide pour ne pas avoir de plafond.</p> : null}
+        <dl class="config-facts cap-facts">
           <Gauge label="Aujourd’hui (UTC)" spent={view.costs.dayUsd} cap={view.caps.dailyCapUsd} alertPct={view.caps.alertPct} />
           <Gauge label="Ce mois-ci (UTC)" spent={view.costs.monthUsd} cap={view.caps.monthlyCapUsd} alertPct={view.caps.alertPct} />
           <div>
@@ -221,56 +221,59 @@ function CapSection(handle: Handle<SectionProps>) {
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
             <VersionFields csrf={csrf} version={view.version} field="caps" />
             <FormErrors errors={errors} />
-            <div class="field">
-              <label class="field-label" for="cap-day">
-                Plafond par jour ($)
-              </label>
-              <input
-                class="input config-cap"
-                id="cap-day"
-                name="dailyCapUsd"
-                value={values.dailyCapUsd ?? ''}
-                inputMode="decimal"
-                autoComplete="off"
-                {...focusIf(first, 'dailyCapUsd')}
-                aria-invalid={errors.dailyCapUsd ? 'true' : undefined}
-                aria-describedby={describedBy('cap-day', errors.dailyCapUsd, true)}
-              />
-              <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Remis à zéro chaque nuit à minuit UTC. Laissez vide pour n’avoir aucun plafond." />
-            </div>
-            <div class="field">
-              <label class="field-label" for="cap-month">
-                Plafond par mois ($)
-              </label>
-              <input
-                class="input config-cap"
-                id="cap-month"
-                name="monthlyCapUsd"
-                value={values.monthlyCapUsd ?? ''}
-                inputMode="decimal"
-                autoComplete="off"
-                {...focusIf(first, 'monthlyCapUsd')}
-                aria-invalid={errors.monthlyCapUsd ? 'true' : undefined}
-                aria-describedby={describedBy('cap-month', errors.monthlyCapUsd, true)}
-              />
-              <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Le mois calendaire, en UTC. Laissez vide pour n’avoir aucun plafond." />
-            </div>
-            <div class="field">
-              <label class="field-label" for="cap-alert">
-                Seuil d’alerte (%)
-              </label>
-              <input
-                class="input config-cap"
-                id="cap-alert"
-                name="alertPct"
-                value={values.alertPct ?? ''}
-                inputMode="numeric"
-                autoComplete="off"
-                {...focusIf(first, 'alertPct')}
-                aria-invalid={errors.alertPct ? 'true' : undefined}
-                aria-describedby={describedBy('cap-alert', errors.alertPct, true)}
-              />
-              <FieldMessage id="cap-alert" error={errors.alertPct} hint="Ces réglages préviennent à partir de ce pourcentage d’un plafond." />
+            {/* REV-91: the three limits on one line, each with a short hint. */}
+            <div class="cap-fields">
+              <div class="field">
+                <label class="field-label" for="cap-day">
+                  Plafond par jour ($)
+                </label>
+                <input
+                  class="input config-cap"
+                  id="cap-day"
+                  name="dailyCapUsd"
+                  value={values.dailyCapUsd ?? ''}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  {...focusIf(first, 'dailyCapUsd')}
+                  aria-invalid={errors.dailyCapUsd ? 'true' : undefined}
+                  aria-describedby={describedBy('cap-day', errors.dailyCapUsd, true)}
+                />
+                <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Remis à zéro à minuit UTC." />
+              </div>
+              <div class="field">
+                <label class="field-label" for="cap-month">
+                  Plafond par mois ($)
+                </label>
+                <input
+                  class="input config-cap"
+                  id="cap-month"
+                  name="monthlyCapUsd"
+                  value={values.monthlyCapUsd ?? ''}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  {...focusIf(first, 'monthlyCapUsd')}
+                  aria-invalid={errors.monthlyCapUsd ? 'true' : undefined}
+                  aria-describedby={describedBy('cap-month', errors.monthlyCapUsd, true)}
+                />
+                <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Mois calendaire, en UTC." />
+              </div>
+              <div class="field">
+                <label class="field-label" for="cap-alert">
+                  Seuil d’alerte (%)
+                </label>
+                <input
+                  class="input config-cap"
+                  id="cap-alert"
+                  name="alertPct"
+                  value={values.alertPct ?? ''}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  {...focusIf(first, 'alertPct')}
+                  aria-invalid={errors.alertPct ? 'true' : undefined}
+                  aria-describedby={describedBy('cap-alert', errors.alertPct, true)}
+                />
+                <FieldMessage id="cap-alert" error={errors.alertPct} hint="Prévient avant le plafond." />
+              </div>
             </div>
             <button class="button button-primary" type="submit">
               Enregistrer le plafond

@@ -10,7 +10,7 @@ import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
-import { OrgSettingsSections, orgEffectiveLevels, type OrgSectionProps } from './org-settings.tsx'
+import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
 import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -84,7 +84,13 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     return (
-      <Shell frame={frame} section="settings" title="Réglages" lead="Ce qui vaut pour toute l’organisation.">
+      <Shell
+        frame={frame}
+        section="settings"
+        title="Réglages"
+        // REV-91: the version of the settings goes under the title, after « Pour toute l’organisation ».
+        lead={org ? `Pour toute l’organisation · ${orgVersionLine(org.view)}` : 'Ce qui vaut pour toute l’organisation.'}
+      >
         {refused.map((p) => {
           let levels = usage(p.id)
           let failing =
@@ -124,7 +130,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         <div class="settings-layout">
-          <SettingsNav org={!!org} rules={!!rules} providers={!!providers} add={admin && !!providers} />
+          <SettingsNav org={!!org} rules={!!rules} providers={!!providers} />
           <div class="settings-content">
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
@@ -203,13 +209,13 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
 }
 
 /**
- * The table of contents of the settings (REV-29): one link per section, at the side of the page
- * on a wide screen and at its top on a phone. Each section keeps its anchor: #plafond, #defauts,
- * #bots, #app, #providers, #nouveau-provider.
+ * The table of contents of the settings (REV-29): one link per section, as tabs under the title
+ * (REV-91). Each section keeps its anchor: #plafond, #defauts, #bots, #app, #regles, #providers.
+ * #nouveau-provider still opens the form (settings.js); the button of the section does too.
  */
-function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: boolean; add: boolean }>) {
+function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: boolean }>) {
   return () => {
-    let { org, rules, providers, add } = handle.props
+    let { org, rules, providers } = handle.props
     let links: [string, string][] = [
       ...(org
         ? ([
@@ -221,7 +227,6 @@ function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: b
         : []),
       ...(rules ? ([['#regles', 'Règles d’org']] as [string, string][]) : []),
       ...(providers ? ([['#providers', 'Providers et clés']] as [string, string][]) : []),
-      ...(add ? ([['#nouveau-provider', 'Ajouter un provider']] as [string, string][]) : []),
     ]
     if (links.length < 2) return null
     return (

@@ -37,7 +37,8 @@
           else link.removeAttribute('aria-current')
         }
       },
-      { rootMargin: '0px 0px -60% 0px' },
+      // The top 80 px: the sticky bar of a phone covers them, and the end of the card above sits there.
+      { rootMargin: '-80px 0px -60% 0px' },
     )
     for (const section of links.keys()) observer.observe(section)
   }

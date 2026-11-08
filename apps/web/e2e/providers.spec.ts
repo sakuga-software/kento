@@ -49,8 +49,8 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     // REV-29: the form is folded; the table of contents opens it.
     let form = page.locator('#nouveau-provider')
     await expect(form.getByLabel('Type')).toBeHidden()
-    await page.getByRole('navigation', { name: 'Sections des réglages' }).getByRole('link', { name: 'Ajouter un provider' }).click()
-    await expect(page).toHaveURL(/#nouveau-provider$/)
+    // REV-91: the button of the section opens it.
+    await form.getByText('Ajouter un provider', { exact: true }).click()
     await form.getByLabel('Type').selectOption('anthropic')
     await form.getByLabel('Nom').fill(label)
     await form.getByLabel('Clé', { exact: true }).fill(key)
@@ -132,9 +132,12 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'alex')
-  // A malformed hash stops nothing: settings.js still opens the form from a link of the table of contents.
+  // A malformed hash stops nothing: settings.js still opens the form on a later change of the hash.
   await page.goto('/settings#%E0%A4%A')
-  await page.getByRole('navigation', { name: 'Sections des réglages' }).getByRole('link', { name: 'Ajouter un provider' }).click()
+  // A link to #nouveau-provider in the page (the home screen has one) changes the hash: settings.js opens the form.
+  await page.evaluate(() => {
+    location.hash = 'nouveau-provider'
+  })
   await expect(page.locator('#nouveau-provider').getByLabel('Type')).toBeVisible()
   expect(errors.filter((e) => /URI/i.test(e))).toEqual([])
 

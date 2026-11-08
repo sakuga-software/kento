@@ -271,7 +271,8 @@ describe('the section « Providers et clés »', () => {
     let page = await (await request('/settings', { cookie })).text()
     let toggle = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
-    assert.match(page, /<a href="#providers">Providers et clés<\/a>.*<a href="#nouveau-provider">Ajouter un provider<\/a>/s)
+    // REV-91: no tab for the form; the button of the section opens it, and so does a link to #nouveau-provider.
+    assert.doesNotMatch(page, /<a href="#nouveau-provider">/)
     assert.match(page, /src="\/assets\/settings\.js\?v=/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     let open = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''

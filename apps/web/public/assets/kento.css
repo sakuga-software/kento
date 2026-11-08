@@ -2684,9 +2684,6 @@ a.finding-title:hover {
 
 /* ---------------------------------------------------------------- Réglages de l’org (REV-13) */
 
-.org-version {
-  margin-bottom: var(--space-4);
-}
 .org-settings {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
@@ -3440,49 +3437,93 @@ a.finding-title:hover {
   }
 }
 
-/* ---------------------------------------------------------------- Settings: table of contents (REV-29) */
+/* ---------------------------------------------------------------- Settings (REV-29, one column in REV-91) */
 
+/* One column of 760 px: the header, the banners, the tabs of the sections, then the cards. */
+.content:has(> .settings-layout) > * {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
 .settings-layout {
   display: grid;
-  grid-template-columns: 196px minmax(0, 1fr);
-  gap: var(--space-8);
-  align-items: start;
+  gap: var(--space-6);
 }
 .settings-content {
+  display: grid;
+  gap: var(--space-6);
   min-width: 0;
 }
-.settings-nav {
-  position: sticky;
-  top: var(--space-6);
+.settings-content > * {
+  margin-block: 0;
 }
+.settings-layout .org-settings {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The sections as tabs under the title; settings.js marks the one on screen. */
 .settings-nav ul {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
   margin: 0;
   padding: 0;
-  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   list-style: none;
 }
 .settings-nav a {
-  display: flex;
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  min-height: var(--control-h);
-  margin-left: -1px;
-  padding: 0 var(--space-3);
-  border-left: 3px solid transparent;
-  color: var(--ink-soft);
-  font-weight: 600;
+  min-height: 40px;
+  color: var(--ink-muted);
+  font-weight: 500;
   text-decoration: none;
 }
 .settings-nav a:hover {
   color: var(--ink);
 }
 .settings-nav a[aria-current] {
-  border-left-color: var(--shu);
   color: var(--ink);
+  font-weight: 600;
+}
+.settings-nav a[aria-current]::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: var(--ink);
 }
 .settings-content [id] {
-  scroll-margin-top: var(--space-6);
+  /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
+  scroll-margin-top: var(--space-4);
+}
+/* The two gauges side by side, the cost per provider under them. */
+.cap-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) var(--space-4);
+  margin-top: var(--space-4);
+}
+.cap-facts > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+.cap-facts .gauge-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.cap-fields {
+  display: grid;
+  align-self: stretch;
+  justify-self: stretch;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+  margin-bottom: var(--space-4);
+}
+.config-card .cap-fields .input.config-cap {
+  max-width: none;
 }
 /* « Ajouter un provider »: a secondary button until it is open, then the form under it. */
 .new-provider-toggle > summary {
@@ -3498,35 +3539,20 @@ a.finding-title:hover {
   margin-top: var(--space-3);
 }
 
-@media (max-width: 1100px) {
-  .settings-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
-  .settings-nav {
-    position: static;
-  }
+@media (max-width: 760px) {
   .settings-nav ul {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-2);
-    border-left: 0;
+    gap: 0 var(--space-4);
   }
   .settings-nav a {
     min-height: var(--control-h-touch);
-    margin-left: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-pill);
-    background: var(--paper-raised);
   }
-  .settings-nav a[aria-current] {
-    border-color: var(--shu);
-  }
-}
-@media (max-width: 760px) {
   .settings-content [id] {
     /* Under the sticky top bar of a phone. */
     scroll-margin-top: 72px;
+  }
+  .cap-facts,
+  .cap-fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
