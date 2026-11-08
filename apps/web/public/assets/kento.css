@@ -912,40 +912,9 @@ select.bar-org-box:hover {
   max-width: none;
   min-height: var(--control-h);
 }
-.list-filters ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-  padding: 2px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  background: var(--paper-sunken);
-  list-style: none;
-}
-.list-filters a {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  color: var(--ink-soft);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-}
-.list-filters a:hover {
-  color: var(--ink);
-}
-.list-filters a[aria-current='page'] {
-  background: var(--paper-raised);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-1);
-}
+/* The count of a filter in .segmented-links: the colour of its link, muted or on the action colour. */
 .list-filter-count {
-  color: var(--ink-muted);
+  color: inherit;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
@@ -1159,13 +1128,13 @@ select.bar-org-box:hover {
   }
   /* REV-36. The names of the columns of Repos come from here, not from an attribute on each of its cells. */
   .repos-table td:nth-child(2)::before {
-    content: 'Mode';
+    content: 'Reviews par';
   }
   .repos-table td:nth-child(3)::before {
     content: 'Niveau';
   }
   .repos-table td:nth-child(4)::before {
-    content: 'Provider · modèle';
+    content: 'Modèle';
   }
   .repos-table td:nth-child(5)::before {
     content: 'Bascule';
@@ -1174,10 +1143,7 @@ select.bar-org-box:hover {
     content: 'Dernière review';
   }
   .repos-table td:nth-child(7)::before {
-    content: 'Précision';
-  }
-  .repos-table td:nth-child(8)::before {
-    content: 'Action';
+    content: 'Précision 30 j';
   }
   .table tbody th,
   .table .row-action {
@@ -1214,6 +1180,155 @@ select.bar-org-box:hover {
   .row-action .button {
     min-height: var(--control-h-touch);
   }
+}
+
+/* ---------------------------------------------------------------- Repos, dense (REV-91) */
+
+.list-controls .segmented-links {
+  margin: 0;
+}
+.repos-table .row-action {
+  white-space: nowrap;
+  text-align: right;
+}
+.repos-table .row-action > * {
+  vertical-align: middle;
+}
+/* « Rechercher »: Entrée sends the search; the button shows only while the keyboard is on it. */
+.list-search-submit:not(:focus-visible) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* « … »: the config, the findings and « Désactiver Kentō… » of a row. Styled by structure: 50 rows a page. */
+.row-menu {
+  position: relative;
+  display: inline-block;
+  margin-left: var(--space-1);
+  text-align: left;
+}
+.row-menu > summary {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+}
+.row-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.row-menu > summary:hover,
+.row-menu[open] > summary {
+  border-color: var(--line-strong);
+  background: var(--paper-raised);
+}
+.row-menu > div {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  display: grid;
+  min-width: 220px;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+  white-space: normal;
+}
+.row-menu > div > a {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+.row-menu > div > a:hover {
+  background: var(--paper);
+}
+.row-menu .confirm {
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+.row-menu .confirm > summary {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: none;
+}
+.row-menu .confirm-body {
+  width: auto;
+  margin: var(--space-2) 0 0;
+}
+/* A sticky cell is a stacking context: the open one goes over the cells of the rows under it. */
+.row-action:has(.row-menu[open]) {
+  z-index: 16;
+}
+/* Set by row-menu.js: a browser without :has() also gets the open cell above the rows under it. */
+.row-action.row-action-open {
+  z-index: 16;
+}
+/* Without JavaScript nothing measures: the menu of the last two rows opens upwards, over the rows
+   above it (at least three, else there is no room there either). */
+html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)) .row-menu > div {
+  top: auto;
+  bottom: calc(100% + var(--space-1));
+}
+/* The table scrolls sideways, so it also clips a menu that goes past its bottom: row-menu.js measures
+   the open menu and gives the table that room (padding-bottom), and takes it back once closed. */
+@media (max-width: 760px) {
+  /* A row is a card and « … » is at its left: the menu opens to the right, in the page. */
+  .row-menu {
+    margin-left: 0;
+  }
+  .row-menu > div {
+    right: auto;
+    left: 0;
+    /* A very narrow screen: the panel, its confirmation included, stays inside the card (the page
+       gutter and the card padding on each side). */
+    min-width: min(220px, calc(100vw - 4 * var(--space-4)));
+    max-width: calc(100vw - 4 * var(--space-4));
+  }
+}
+.repos-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-4) 0 var(--space-6);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.repos-legend .tag {
+  margin-left: var(--space-2);
+}
+.repos-howto > summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+.repos-howto[open] > summary {
+  margin-bottom: var(--space-4);
+}
+.repos-howto .repos-notes {
+  margin: 0;
+}
+.repos-howto .note {
+  padding: 0;
+  border: 0;
+  box-shadow: none;
 }
 
 /* ---------------------------------------------------------------- The Findings screen (REV-18, redesigned in REV-91) */
@@ -1307,9 +1422,6 @@ select.bar-org-box:hover {
 .segmented-links a[aria-current='page'] {
   background: var(--action);
   color: var(--on-action);
-}
-.list-filter-count {
-  color: inherit;
 }
 
 .findings-wrap {

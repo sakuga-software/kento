@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The Config screen of a repository (REV-12) in a browser, against the server, Postgres and the
 // fake GitHub, with the tests of the ticket: a model replaced on balanced goes into the next job and
@@ -23,7 +23,7 @@ function database() {
  */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Actualiser' }).click()
+  await page.getByRole('button', { name: 'Relire GitHub' }).click()
   await expect(page.getByText('Liste à jour.')).toBeVisible()
   let sql = database()
   try {
@@ -114,7 +114,7 @@ test.describe('the Config screen of a repository', () => {
       await signIn(page, 'alex')
       await reset(page)
 
-      await page.getByRole('link', { name: 'Config de orchard' }).click()
+      await openRepoConfig(page, 'orchard')
       await expect(page.getByRole('heading', { level: 1, name: 'Config de orchard' })).toBeVisible()
       await expect(page.getByText('config v0, tout est hérité de l’organisation')).toBeVisible()
       let balanced = page.getByRole('region', { name: 'balanced' })
@@ -183,7 +183,7 @@ test.describe('the Config screen of a repository', () => {
       await sql.end()
     }
 
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     let balanced = page.getByRole('region', { name: 'balanced' })
     let alert = balanced.getByRole('alert')
     await expect(alert).toContainText('L’id anthropic/claude-opus-5.5 n’a pas la forme d’un id Anthropic.')
@@ -206,7 +206,7 @@ test.describe('the Config screen of a repository', () => {
     let errors = watchConsole(page)
     await signIn(page, 'alex')
     await reset(page)
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Déclenchement' }).click()
     await expectNoAxeViolations(page)
 
@@ -244,7 +244,7 @@ test.describe('the Config screen of a repository', () => {
     await page.context().clearCookies()
     await signIn(page, 'camille')
     await page.goto('/repos')
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: 'lite' }).getByText('anthropic/claude-haiku-5.5')).toBeVisible()
     await expect(page.getByRole('button', { name: /Remplacer ici|Revenir à l’org/ })).toHaveCount(0)

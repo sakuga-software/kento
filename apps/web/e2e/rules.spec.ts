@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The rules of a repository and of the org (REV-19) in a browser, with the test of the ticket: a
 // rule written in Config › Règles goes with the next job to a runner that reads the rules; disabled,
@@ -20,7 +20,7 @@ function database() {
 /** orchard enabled, with no job and no rule. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Actualiser' }).click()
+  await page.getByRole('button', { name: 'Relire GitHub' }).click()
   await expect(page.getByText('Liste à jour.')).toBeVisible()
   let sql = database()
   try {
@@ -95,7 +95,7 @@ test.describe('the rules of a repository and of the org', () => {
     await signIn(page, 'alex')
     await reset(page)
 
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Règles', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Règles de orchard/ })).toBeVisible()
     await expect(page.getByText('Aucune règle pour ce repo.')).toBeVisible()
@@ -153,7 +153,7 @@ test.describe('the rules of a repository and of the org', () => {
     await expectNoAxeViolations(page)
 
     await page.goto('/repos')
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Règles', exact: true }).click()
     await expect(page.getByRole('link', { name: '1 règle d’org active' })).toBeVisible()
 
@@ -176,7 +176,7 @@ test.describe('the rules of a repository and of the org', () => {
     await page.context().clearCookies()
     await signIn(page, 'camille')
     await page.goto('/repos')
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Règles', exact: true }).click()
     await page.getByText(FK_RULE).click()
     await expect(page.getByText('Chaque FK a son index.')).toBeVisible()

@@ -21,7 +21,7 @@ function database() {
 /** orchard enabled with one review that cost 0,02 $ today; the org at the values of a new org. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Actualiser' }).click()
+  await page.getByRole('button', { name: 'Relire GitHub' }).click()
   await expect(page.getByText('Liste à jour.')).toBeVisible()
   let sql = database()
   try {

@@ -26,7 +26,7 @@ async function reset() {
 /** Reads GitHub at once, as an admin, and waits for the list. */
 async function checkNow(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Actualiser' }).click()
+  await page.getByRole('button', { name: 'Relire GitHub' }).click()
   await expect(page.getByText('Liste à jour.')).toBeVisible()
 }
 
@@ -49,7 +49,9 @@ test.describe('the Repos screen', () => {
       let orchard = rowOf(page, 'orchard')
       await expect(orchard.getByText('review.yml@stable')).toBeVisible()
       await expect(rowOf(page, 'fruitback').getByText('copie de review.yml')).toBeVisible()
-      await expect(rowOf(page, 'infra-repo').getByText('installée sans job')).toBeVisible()
+      await expect(rowOf(page, 'infra-repo').getByText('aucune', { exact: true })).toBeVisible()
+      // REV-91: the notes on the switch are folded under the table.
+      await page.getByText('Comment se passe la bascule de review.yml vers Kentō').click()
       await expect(page.getByRole('heading', { name: 'Critère de bascule' })).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Repli pendant la transition' })).toBeVisible()
       await expect(page.getByRole('link', { name: /Gérer l’installation/ })).toHaveAttribute(
@@ -60,20 +62,30 @@ test.describe('the Repos screen', () => {
 
       await orchard.getByRole('button', { name: 'Activer orchard' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('App Kentō')).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('review.yml encore là')).toBeVisible()
+      await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
+      await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
       await expectNoAxeViolations(page)
 
       // REV-33: the confirmation opens in the row, at the keyboard; Échap and « Annuler » close it and
       // give the focus back to its trigger.
       let row = rowOf(page, 'orchard')
+      // REV-91: « Désactiver Kentō… » sits in the menu « … » of the row.
+      await row.locator('.row-menu > summary').click()
       let trigger = row.locator('summary', { hasText: 'Désactiver' })
       let act = row.getByRole('button', { name: 'Désactiver orchard' })
       await trigger.focus()
       await page.keyboard.press('Enter')
-      await expect(row).toContainText('Les reviews déjà publiées restent sur GitHub')
+      await expect(row).toContainText('Les reviews publiées et le compteur restent')
       await expect(act).toBeVisible()
+      // The table clips what goes past its bottom: it makes room for the open menu and its confirmation.
+      let inside = () =>
+        act.evaluate((button) => {
+          let wrap = button.closest('.table-wrap')!.getBoundingClientRect()
+          let box = button.getBoundingClientRect()
+          return box.top >= wrap.top && box.bottom <= wrap.bottom
+        })
+      expect(await inside()).toBe(true)
       await expectNoAxeViolations(page)
       await page.keyboard.press('Tab')
       await expect(act).toBeFocused()
@@ -84,7 +96,12 @@ test.describe('the Repos screen', () => {
       await page.keyboard.press('Enter')
       await row.getByRole('button', { name: 'Annuler' }).click()
       await expect(act).toBeHidden()
-      await expect(trigger).toBeFocused()
+      // REV-91: « Annuler » also closes the menu « … », and gives the focus back to it.
+      await expect(row.locator('.row-menu')).not.toHaveAttribute('open', '')
+      await expect(row.locator('.row-menu > summary')).toBeFocused()
+      // The room under the table goes with the menu.
+      expect(await page.locator('.table-wrap').evaluate((wrap) => wrap.style.paddingBottom)).toBe('')
+      await row.locator('.row-menu > summary').click()
 
       // The destructive buttons have their own colour; no button of a row has the primary style (REV-36).
       let colors = await page.evaluate(() => {
@@ -172,7 +189,8 @@ test.describe('the Repos screen', () => {
       let layout = await page.evaluate(() => {
         let wrap = document.querySelector('.table-wrap')!
         let box = wrap.getBoundingClientRect()
-        let actions = [...document.querySelectorAll('.row-action .button')].map((button) => {
+        // REV-91: a row shows « Activer » and the menu « … »; « Désactiver Kentō… » is in the menu.
+        let actions = [...document.querySelectorAll('.row-action > .button, .row-action > .row-menu > summary')].map((button) => {
           let r = button.getBoundingClientRect()
           return r.left >= box.left - 0.5 && r.right <= Math.min(box.right, window.innerWidth) + 0.5
         })
@@ -197,8 +215,106 @@ test.describe('the Repos screen', () => {
       expect(layout.actions.length, `rows at ${viewport} px`).toBeGreaterThanOrEqual(4)
       expect(layout.actions, `actions at ${viewport} px`).not.toContain(false)
       expect(layout.broken, `tags and model ids at ${viewport} px`).toEqual([])
+
+      await row.locator('.row-menu > summary').click()
+      let disable = row.locator('summary', { hasText: 'Désactiver' })
+      await disable.scrollIntoViewIfNeeded()
+      await expect(disable).toBeInViewport({ ratio: 1 })
+      let right = await disable.evaluate((el) => el.getBoundingClientRect().right - window.innerWidth)
+      expect(right, `« Désactiver » at ${viewport} px`).toBeLessThanOrEqual(0)
+      // The open menu covers the row under it: closed again for axe.
+      await row.locator('.row-menu > summary').click()
     }
     await expectNoAxeViolations(page)
+  })
+
+  test('a click inside the inner confirmation does not close the menu, and « Annuler » gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
+    await signIn(page, 'alex')
+    await checkNow(page)
+    let row = rowOf(page, 'orchard')
+    let enable = row.getByRole('button', { name: 'Activer orchard' })
+    if (await enable.count()) {
+      await enable.click()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
+      row = rowOf(page, 'orchard')
+    }
+    let menu = row.locator('.row-menu')
+    let summary = menu.locator('> summary')
+    let confirm = menu.locator('details[data-confirm]')
+    await summary.click()
+    // The trigger of the confirmation, then its text: both are clicks inside the menu.
+    await confirm.locator('> summary').click()
+    await expect(confirm).toHaveAttribute('open', '')
+    await confirm.getByText('Les reviews publiées et le compteur restent').click()
+    await expect(menu).toHaveAttribute('open', '')
+    await expect(confirm).toHaveAttribute('open', '')
+    // « Annuler »: confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
+    await confirm.getByRole('button', { name: 'Annuler' }).click()
+    await expect(confirm).not.toHaveAttribute('open', '')
+    await expect(menu).not.toHaveAttribute('open', '')
+    await expect(summary).toBeFocused()
+
+    // Back from the next page (bfcache), the page comes back as it was left: the menu closes.
+    await summary.click()
+    await expect(menu).toHaveAttribute('open', '')
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    await expect(menu).not.toHaveAttribute('open', '')
+    await expect(row.locator('.row-action')).not.toHaveClass(/row-action-open/)
+  })
+
+  test('a menu « … » closes on Échap and on a click outside, one open at a time; « Rechercher » shows at the keyboard (REV-91)', async ({ page }) => {
+    await signIn(page, 'alex')
+    await checkNow(page)
+    let orchard = rowOf(page, 'orchard').locator('.row-menu')
+    let fruitback = rowOf(page, 'fruitback').locator('.row-menu')
+    await orchard.locator('summary').first().click()
+    await expect(orchard).toHaveAttribute('open', '')
+    // An admin's card has no label on its actions either, under 760 px as above.
+    expect(await rowOf(page, 'orchard').locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
+    // The open cell is marked by row-menu.js, not only by :has(): it sits above the rows under it.
+    await expect(rowOf(page, 'orchard').locator('.row-action')).toHaveClass(/row-action-open/)
+    await fruitback.locator('summary').first().click()
+    await expect(fruitback).toHaveAttribute('open', '')
+    await expect(orchard).not.toHaveAttribute('open', '')
+    await expect(rowOf(page, 'orchard').locator('.row-action')).not.toHaveClass(/row-action-open/)
+    await expect(rowOf(page, 'fruitback').locator('.row-action')).toHaveClass(/row-action-open/)
+    await page.keyboard.press('Escape')
+    await expect(fruitback).not.toHaveAttribute('open', '')
+    await expect(fruitback.locator('summary').first()).toBeFocused()
+    await fruitback.locator('summary').first().click()
+    await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
+    await expect(fruitback).not.toHaveAttribute('open', '')
+
+    let search = page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' })
+    let submit = page.getByRole('button', { name: 'Rechercher', exact: true })
+    expect((await submit.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1)
+    await search.focus()
+    await page.keyboard.press('Tab')
+    await expect(submit).toBeFocused()
+    expect((await submit.boundingBox())!.width).toBeGreaterThan(40)
+    await expectNoAxeViolations(page)
+  })
+
+  test('on a screen of 280 px, the menu « … » and its confirmation stay inside the screen (REV-91)', async ({ page }) => {
+    await signIn(page, 'alex')
+    await checkNow(page)
+    let row = rowOf(page, 'orchard')
+    let enable = row.getByRole('button', { name: 'Activer orchard' })
+    if (await enable.count()) {
+      await enable.click()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
+      row = rowOf(page, 'orchard')
+    }
+    await page.setViewportSize({ width: 280, height: 800 })
+    await row.locator('.row-menu > summary').click()
+    await row.locator('summary', { hasText: 'Désactiver' }).click()
+    let panel = row.locator('.row-menu > div')
+    let edges = await panel.evaluate((el) => {
+      let box = el.getBoundingClientRect()
+      return { left: box.left, right: box.right, width: window.innerWidth }
+    })
+    expect(edges.left).toBeGreaterThanOrEqual(0)
+    expect(edges.right).toBeLessThanOrEqual(edges.width)
   })
 
   test('a long list: 50 rows a page, the enabled ones first, a search and the filters (REV-36)', async ({ page }) => {
@@ -217,21 +333,22 @@ test.describe('the Repos screen', () => {
       await expect(rows).toHaveCount(50)
       await expect(rows.first().getByRole('rowheader')).toHaveText(/^orchard/)
       let total = Number(await page.getByRole('link', { name: /^Tous/ }).locator('.list-filter-count').textContent())
-      await expect(page.locator('.pager-range')).toHaveText(`1–50 sur ${total}`)
+      await expect(page.locator('.pager-range')).toHaveText(`1 à 50 sur ${total}`)
       await page.getByRole('link', { name: 'Suivants' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`51–${total} sur ${total}`)
+      await expect(page.locator('.pager-range')).toHaveText(`51 à ${total} sur ${total}`)
       await page.getByRole('link', { name: 'Précédents' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`1–50 sur ${total}`)
+      await expect(page.locator('.pager-range')).toHaveText(`1 à 50 sur ${total}`)
 
+      // REV-91: Entrée sends the search, with no visible button.
       await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('BULK-0')
-      await page.getByRole('button', { name: 'Rechercher' }).click()
+      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).press('Enter')
       await expect(rows).toHaveCount(9)
       await expect(page.locator('.pager')).toHaveCount(0)
 
       await page.getByRole('link', { name: /^Activés/ }).click()
       await expect(page.getByText('Aucun repo ne correspond')).toBeVisible()
       await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('')
-      await page.getByRole('button', { name: 'Rechercher' }).click()
+      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).press('Enter')
       await expect(page).toHaveURL(/[?&]filter=enabled(&|$)/)
       await expect(rows).toHaveCount(1)
 
@@ -256,7 +373,48 @@ test.describe('the Repos screen', () => {
     await expect(page.getByRole('table')).toBeVisible()
     await expect(page.getByRole('button', { name: /^Activer/ })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Désactiver' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Actualiser' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Relire GitHub' })).toHaveCount(0)
+    // REV-91: a member keeps the menu « … » with the config and the findings; its cell has no label.
+    let row = rowOf(page, 'orchard')
+    expect(await row.locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
+    // Under 760 px each other cell keeps its label, « Précision 30 j » included for a repo without Kentō.
+    if (page.viewportSize()!.width <= 760) {
+      let gh = rowOf(page, 'infra-repo')
+      expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Précision 30 j"')
+      await expect(gh.locator('td').nth(5)).toContainText('Kentō non activé')
+    }
+    await row.locator('.row-menu > summary').click()
+    for (let name of ['Ouvrir la config', 'Voir les findings']) {
+      await row.getByRole('link', { name }).scrollIntoViewIfNeeded()
+      await expect(row.getByRole('link', { name })).toBeInViewport({ ratio: 1 })
+    }
     await expectNoAxeViolations(page)
+  })
+})
+
+test.describe('the Repos screen without JavaScript', () => {
+  test.use({ javaScriptEnabled: false })
+
+  test('the menu « … » of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
+    // The list comes from GitHub: read once in a browser with JavaScript, which waits for it.
+    let reader = await browser.newContext({ baseURL, javaScriptEnabled: true })
+    let readerPage = await reader.newPage()
+    await signIn(readerPage, 'alex')
+    await checkNow(readerPage)
+    await reader.close()
+
+    await signIn(page, 'alex')
+    await page.goto('/repos')
+    await expect(page.locator('html')).not.toHaveClass(/\bjs\b/)
+    let last = page.locator('.repos-table tbody tr').last()
+    await last.locator('.row-menu > summary').click()
+    let fits = await last.locator('.row-menu > div').evaluate((menu) => {
+      let wrap = menu.closest('.table-wrap')!
+      let box = menu.getBoundingClientRect()
+      let frame = wrap.getBoundingClientRect()
+      // Under 760 px the table does not clip: the menu may go past it, in the page.
+      return getComputedStyle(wrap).overflowX === 'visible' || (box.top >= frame.top && box.bottom <= frame.bottom)
+    })
+    expect(fits).toBe(true)
   })
 })

@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
-import { pageRoutes as routes } from '../routes.ts'
+import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
 import { Confirm } from './confirm.tsx'
 import { findingsHref } from './findings.tsx'
@@ -109,20 +109,19 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         frame={frame}
         section="repos"
         title="Repos"
-        lead="Les repos de l’installation, et où en est chacun dans sa bascule."
         actions={
           <>
+            <a class="button button-ghost" href={installationUrl} rel="noreferrer" target="_blank">
+              Gérer l’installation sur GitHub
+              <ExternalIcon />
+              <span class="visually-hidden">(nouvel onglet)</span>
+            </a>
             <form method="post" action={routes.reposCheck.href()}>
               {csrf}
               <button class="button" type="submit">
-                Actualiser
+                Relire GitHub
               </button>
             </form>
-            <a class="button" href={installationUrl} rel="noreferrer" target="_blank">
-              Gérer l’installation
-              <ExternalIcon />
-              <span class="visually-hidden">(GitHub, nouvel onglet)</span>
-            </a>
           </>
         }
       >
@@ -130,14 +129,14 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
 
 
         <p class="repos-summary" aria-live="polite">
-          {all} {plural(all, 'repo')} · {enabled} {plural(enabled, 'activé')} ·{' '}
+          {all} {plural(all, 'repo')} dans l’installation · {enabled} {plural(enabled, 'activé')} ·{' '}
           {checking ? (
             // REV-26: public/assets/repos.js reads the screen again until the check is over.
             <span data-recheck="">
               vérification en cours sur GitHub · <a href={routes.repos.href()}>Recharger</a>
             </span>
           ) : checkedAt
-              ? `vérifiés sur GitHub ${agoOrDate(checkedAt, now)}`
+              ? `relus sur GitHub ${agoOrDate(checkedAt, now)}`
               : 'pas encore vérifiés sur GitHub'}
         </p>
 
@@ -174,19 +173,17 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                   <thead>
                     <tr>
                       <th scope="col">Repo</th>
-                      <th scope="col">Mode</th>
+                      <th scope="col">Reviews par</th>
                       <th scope="col">Niveau</th>
-                      <th scope="col">Provider · modèle</th>
+                      <th scope="col">Modèle</th>
                       <th scope="col">Bascule</th>
                       <th scope="col">Dernière review</th>
                       <th scope="col">
-                        Précision<span class="visually-hidden"> sur 30 jours</span>
+                        Précision 30 j
                       </th>
-                      {admin ? (
-                        <th scope="col">
-                          <span class="visually-hidden">Action</span>
-                        </th>
-                      ) : null}
+                      <th scope="col">
+                        <span class="visually-hidden">Actions</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -209,36 +206,50 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </>
         )}
 
-        <div class="repos-notes">
-          <section class="card note" aria-labelledby="criterion-title">
-            <h2 id="criterion-title">Critère de bascule</h2>
-            <ul>
-              <li>
-                <strong>{SWITCH_TARGET} reviews publiées par Kentō</strong> d’affilée sur le repo, sans job en échec ni
-                double publication.
-              </li>
-              <li>Un job en échec remet le compteur à zéro ; une double publication aussi.</li>
-              <li>
-                À {SWITCH_TARGET}/{SWITCH_TARGET}, « Retirer review.yml » ouvre la suppression du fichier sur GitHub. Le commit
-                qui le retire termine la bascule.
-              </li>
-            </ul>
-          </section>
-          <section class="card note" aria-labelledby="fallback-title">
-            <h2 id="fallback-title">Repli pendant la transition</h2>
-            <ul>
-              <li>
-                Tant que review.yml reste dans le repo, l’Action relit aussi chaque push. La PR reçoit alors deux reviews, et celle de
-                l’Action sert de repli si Kentō échoue.
-              </li>
-              <li>
-                Une commande <code>@sakuga-review</code> reçoit alors deux réponses ; <code>@kento-review</code> ne s’adresse qu’à Kentō.
-              </li>
-              <li>Désactiver le repo rend la main à review.yml seul, au push suivant. Les reviews publiées restent.</li>
-            </ul>
-          </section>
-        </div>
+        {all > 0 ? (
+          <p class="repos-legend">
+            Reviews par :<span class="tag tag-ok">Kentō</span> l’App fait les reviews
+            <span class="tag tag-warn">Kentō + review.yml</span> bascule en cours, deux reviews par push
+            <span class="tag">review.yml</span> l’Action GitHub seule
+            <span class="tag">aucune</span> installé, sans review
+          </p>
+        ) : null}
+        {/* REV-91: the notes of the switch are asked for, not shown at all times. */}
+        <details class="card repos-howto">
+          <summary>Comment se passe la bascule de review.yml vers Kentō</summary>
+            <div class="repos-notes">
+            <section class="card note" aria-labelledby="criterion-title">
+              <h2 id="criterion-title">Critère de bascule</h2>
+              <ul>
+                <li>
+                  <strong>{SWITCH_TARGET} reviews publiées par Kentō</strong> d’affilée sur le repo, sans job en échec ni
+                  double publication.
+                </li>
+                <li>Un job en échec remet le compteur à zéro ; une double publication aussi.</li>
+                <li>
+                  À {SWITCH_TARGET}/{SWITCH_TARGET}, « Retirer review.yml » ouvre la suppression du fichier sur GitHub. Le commit
+                  qui le retire termine la bascule.
+                </li>
+              </ul>
+            </section>
+            <section class="card note" aria-labelledby="fallback-title">
+              <h2 id="fallback-title">Repli pendant la transition</h2>
+              <ul>
+                <li>
+                  Tant que review.yml reste dans le repo, l’Action relit aussi chaque push. La PR reçoit alors deux reviews, et celle de
+                  l’Action sert de repli si Kentō échoue.
+                </li>
+                <li>
+                  Une commande <code>@sakuga-review</code> reçoit alors deux réponses ; <code>@kento-review</code> ne s’adresse qu’à Kentō.
+                </li>
+                <li>Désactiver le repo rend la main à review.yml seul, au push suivant. Les reviews publiées restent.</li>
+              </ul>
+            </section>
+          </div>
+        </details>
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
+        {/* REV-91: the menus « … » of the rows close on Échap and on a click outside. */}
+        <script src={`/assets/row-menu.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
     )
   }
@@ -308,19 +319,12 @@ function RepoRow(handle: Handle<RepoRowProps>) {
           <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
             {name}
           </a>
-          <span class="tag tag-quiet">{repo.private === null ? 'visibilité inconnue' : repo.private ? 'privé' : 'public'}</span>
+          <span class="hint">{repo.private === null ? 'visibilité inconnue' : repo.private ? 'privé' : 'public'}</span>
         </th>
         <td>
           <Mode repo={repo} />
         </td>
-        <td>
-          <span class="stack">
-            <span class="mono">{LEVELS[repo.defaultLevel]}</span>
-            <a href={routes.repoConfig.href({ id: repo.id })}>
-              Config<span class="visually-hidden"> de {name}</span>
-            </a>
-          </span>
-        </td>
+        <td class="mono">{LEVELS[repo.defaultLevel]}</td>
         <td>{repo.lastReview ? <ProviderModel model={repo.lastReview.model} /> : '–'}</td>
         <td>
           <Switch repo={repo} admin={admin} githubUrl={githubUrl} />
@@ -328,7 +332,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
         <td>
           {repo.lastReview ? (
             <span class="stack">
-              <a href={`${repoUrl}/pull/${repo.lastReview.prNumber}`} rel="noreferrer">
+              <a href={pullRoutes.pull.href({ id: repo.id, number: String(repo.lastReview.prNumber) })} class="mono">
                 #{repo.lastReview.prNumber} · {repo.lastReview.score}/5
               </a>
               <span class="hint">{agoOrDate(repo.lastReview.publishedAt, now)}</span>
@@ -343,38 +347,45 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               <PrecisionValue precision={precision} />
               <span class="visually-hidden"> : les findings clos de {name}</span>
             </a>
-          ) : (
+          ) : repo.enabled ? (
             '–'
+          ) : (
+            <span class="hint">Kentō non activé</span>
           )}
         </td>
-        {admin ? (
-          <td class="row-action">
-            {repo.enabled ? (
-              <Confirm
-                trigger={
-                  // One flex item: the gap of .button would split the visible « Désactiver… ».
-                  <span>
-                    Désactiver<span class="visually-hidden"> {name}</span>…
-                  </span>
-                }
-                action={routes.repoDisable.href({ id: repo.id }) + suffix}
-                csrf={null}
-                form="repo-actions"
-                submit={`Désactiver ${name}`}
-              >
-                <p>
-                  Aucun nouveau job ne part. Le prochain push ne crée rien, et les jobs en file sont annulés. Les reviews
-                  déjà publiées restent sur GitHub, et le compteur de bascule garde sa valeur.
-                </p>
-              </Confirm>
-            ) : (
-              // REV-36: a secondary button. The primary style stays for the main action of a screen.
-              <button class="button button-small" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
-                Activer<span class="visually-hidden"> {name}</span>
-              </button>
-            )}
-          </td>
-        ) : null}
+        <td class="row-action">
+          {admin && !repo.enabled ? (
+            // REV-36: a secondary button. The primary style stays for the main action of a screen.
+            <button class="button button-small" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
+              Activer<span class="visually-hidden"> {name}</span>
+            </button>
+          ) : null}
+          {/* REV-91: the other actions of a row sit in « … »: the config, the findings, and « Désactiver Kentō… ». */}
+          <details class="row-menu">
+            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 50 of them (budget of 110 KB). */}
+            <summary aria-label={`Actions de ${name}`}>…</summary>
+            <div>
+              <a href={routes.repoConfig.href({ id: repo.id })}>Ouvrir la config</a>
+              <a href={findingsHref({ repoId: repo.id })}>Voir les findings</a>
+              {admin && repo.enabled ? (
+                <Confirm
+                  trigger={
+                    // One flex item: the gap of .button would split the visible « Désactiver… ».
+                    <span>
+                      Désactiver<span class="visually-hidden"> {name}</span> Kentō…
+                    </span>
+                  }
+                  action={routes.repoDisable.href({ id: repo.id }) + suffix}
+                  csrf={null}
+                  form="repo-actions"
+                  submit={`Désactiver ${name}`}
+                >
+                  <p>Aucun nouveau job ne part et les jobs en file sont annulés. Les reviews publiées et le compteur restent.</p>
+                </Confirm>
+              ) : null}
+            </div>
+          </details>
+        </td>
       </tr>
     )
   }
@@ -397,25 +408,23 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
             name="q"
             value={list.search}
             maxlength={SEARCH_MAX}
-            placeholder="Rechercher un repo"
+            placeholder="Nom du repo"
             autocomplete="off"
           />
           {list.filter !== 'all' ? <input type="hidden" name="filter" value={list.filter} /> : null}
-          <button class="button" type="submit">
+          {/* Entrée sends the search; the button serves a screen reader and a browser without it. */}
+          {/* Out of sight until the keyboard reaches it: then it shows, with its focus ring. */}
+          <button class="button list-search-submit" type="submit">
             Rechercher
           </button>
         </form>
-        <nav class="list-filters" aria-label="Filtrer les repos">
-          <ul>
-            {REPO_FILTERS.map((filter) => (
-              <li>
-                <a href={reposHref({ filter, search: list.search })} aria-current={filter === list.filter ? 'page' : undefined}>
-                  {FILTER_LABELS[filter]}
-                  <span class="list-filter-count">{page.counts[filter]}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
+        <nav class="segmented-links" aria-label="Filtrer les repos">
+          {REPO_FILTERS.map((filter) => (
+            <a href={reposHref({ filter, search: list.search })} aria-current={filter === list.filter ? 'page' : undefined}>
+              {FILTER_LABELS[filter]}
+              <span class="list-filter-count">{page.counts[filter]}</span>
+            </a>
+          ))}
         </nav>
       </div>
     )
@@ -439,7 +448,7 @@ function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           <span aria-hidden="true"></span>
         )}
         <p class="pager-range">
-          {from}–{to} sur {page.matching}
+          {from} à {to} sur {page.matching}
         </p>
         {page.next ? (
           <a class="button button-small" href={reposHref({ filter: list.filter, search: list.search, after: page.next })} rel="next">
@@ -458,34 +467,40 @@ function ProviderModel(handle: Handle<{ model: string }>) {
   return () => {
     let { model } = handle.props
     let slash = model.indexOf('/')
-    if (slash <= 0) return <span class="mono">{model}</span>
+    // REV-91: the model alone, as on the board; its provider in the title.
     return (
-      <span class="stack">
-        <span class="mono">{model.slice(slash + 1)}</span>
-        <span class="hint">{model.slice(0, slash)}</span>
+      <span class="mono" title={model}>
+        {slash > 0 ? model.slice(slash + 1) : model}
       </span>
     )
   }
 }
 
+/** REV-91. Who reviews the repository, in the four words of the design, with the detail under it. */
 function Mode(handle: Handle<{ repo: RepoView }>) {
   return () => {
     let { repo } = handle.props
     let workflowLeft = repo.workflow === 'reusable' || repo.workflow === 'copy'
+    let detail =
+      repo.workflow === 'reusable' ? (
+        <span class="hint mono">review.yml@{repo.workflowRef}</span>
+      ) : repo.workflow === 'copy' ? (
+        <span class="hint">copie de review.yml</span>
+      ) : repo.workflow === null ? (
+        <span class="hint">pas encore vérifié</span>
+      ) : null
     if (repo.enabled) {
       return (
         <span class="stack">
-          <span class="tag tag-ok">App Kentō</span>
-          {workflowLeft ? <span class="hint">review.yml encore là</span> : null}
+          <span class={`tag ${workflowLeft ? 'tag-warn' : 'tag-ok'}`}>{workflowLeft ? 'Kentō + review.yml' : 'Kentō'}</span>
+          {workflowLeft ? detail : null}
         </span>
       )
     }
-    if (repo.workflow === 'reusable') return <span class="tag tag-info mono">review.yml@{repo.workflowRef}</span>
-    if (repo.workflow === 'copy') return <span class="tag tag-info">copie de review.yml</span>
     return (
       <span class="stack">
-        <span class="tag tag-quiet">installée sans job</span>
-        {repo.workflow === null ? <span class="hint">pas encore vérifié</span> : null}
+        <span class="tag">{workflowLeft ? 'review.yml' : 'aucune'}</span>
+        {detail}
       </span>
     )
   }

@@ -149,14 +149,15 @@ describe('the Repos screen', () => {
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     assert.match(html, /review\.yml@stable/)
-    assert.match(html, /App Kentō/)
-    assert.match(html, /review\.yml encore là/)
+    // REV-91: « Reviews par » in the four words of the design, with the detail under it.
+    assert.match(html, /Kentō \+ review\.yml/)
+    assert.match(html, /<span class="tag">review\.yml<\/span>/)
     assert.match(html, /3\/20/)
     assert.match(html, /remis à zéro après un échec/)
     assert.match(html, /claude-haiku-5\.5/)
-    assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/677"/)
+    assert.match(html, new RegExp(`href="/repos/${FRUITBACK}/pulls/677"`))
     assert.match(html, /#677 · 4\/5/)
-    assert.match(html, /Précision<span class="visually-hidden"> sur 30 jours<\/span>/)
+    assert.match(html, /Précision 30 j/)
     // REV-25: the name can be cut short on screen; its title keeps it whole.
     assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
     assert.match(html, /Critère de bascule/)
@@ -195,12 +196,14 @@ describe('the Repos screen', () => {
     let { cookie, csrf, html: page } = await signIn()
     // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and « Annuler ».
     let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
-    assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Désactiver<span class="visually-hidden"> fruitback<\/span>…<\/span><\/summary>/)
+    // REV-91: « Désactiver Kentō… » sits in the menu « … » of its row.
+    assert.match(row, /<details class="row-menu"><summary aria-label="Actions de fruitback">…<\/summary>/)
+    assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Désactiver<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
     assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Désactiver fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
     assert.match(row, /<button type="button" data-confirm-cancel hidden class="button">Annuler<\/button>/)
-    assert.match(row, /Les reviews déjà publiées restent sur GitHub/)
+    assert.match(row, /Les reviews publiées et le compteur restent/)
     // No destructive button has the style of the main action.
     assert.doesNotMatch(page, /button-primary[^>]*>\s*Désactiver/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
@@ -251,6 +254,11 @@ describe('the Repos screen', () => {
     let { cookie, html } = await signIn()
     assert.doesNotMatch(html, /data-recheck/)
     assert.doesNotMatch(html, /assets\/repos.js/)
+    // REV-91: the menus « … » close on Échap and on a click outside, on every read of the screen.
+    assert.equal(html.match(/src="\/assets\/row-menu\.js\?v=1\.2\.3"/g)?.length, 1)
+    // Both deferred: confirm.js, in the head, registers its listeners first.
+    assert.ok(html.indexOf('/assets/confirm.js') < html.indexOf('/assets/row-menu.js'))
+    assert.match(html, /<button type="submit" class="button list-search-submit">Rechercher<\/button>/)
     checking.now = true
     html = await (await request('/repos', { cookie })).text()
     assert.match(html, /<span data-recheck="">vérification en cours sur GitHub · <a href="\/repos">Recharger<\/a><\/span>/)
@@ -311,7 +319,7 @@ describe('the Repos screen', () => {
     Object.assign(pages, { offset: 50, matching: 120, previous: ORCHARD, next: FRUITBACK })
     html = await (await request('/repos?filter=enabled&q=s', { cookie })).text()
     assert.match(html, /<nav aria-label="Pages de la liste" class="pager">/)
-    assert.match(html, /51–51 sur 120/)
+    assert.match(html, /51 à 51 sur 120/)
     assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;before=${ORCHARD}" rel="prev"`))
     assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;after=${FRUITBACK}" rel="next"`))
   })

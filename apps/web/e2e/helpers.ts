@@ -21,6 +21,12 @@ export function watchConsole(page: Page): string[] {
   return errors
 }
 
+/** REV-91: on the Repos screen, opens the menu « … » of a repository and its link « Ouvrir la config ». */
+export async function openRepoConfig(page: Page, repo: string) {
+  await page.locator(`summary[aria-label="Actions de ${repo}"]`).click()
+  await page.locator(`summary[aria-label="Actions de ${repo}"] + div`).getByRole('link', { name: 'Ouvrir la config' }).click()
+}
+
 /**
  * Signs in through the sign-in page and the fake GitHub, as one of its accounts
  * (e2e/fake-github.ts), and puts the org of the fake in the database first.

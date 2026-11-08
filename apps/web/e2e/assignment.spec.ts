@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG, FAKE_PULLS } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The assignment rules of a repository (REV-21) in a browser, with the test of the ticket on orchard:
 // rule 1 gives the pull requests of the agent balanced; rule 2 gives a pull request that touches a
@@ -19,7 +19,7 @@ function database() {
 /** orchard enabled, with no job, no config and no assignment rule. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Actualiser' }).click()
+  await page.getByRole('button', { name: 'Relire GitHub' }).click()
   await expect(page.getByText('Liste à jour.')).toBeVisible()
   let sql = database()
   try {
@@ -89,7 +89,7 @@ test.describe('the assignment rules of a repository', () => {
     await signIn(page, 'alex')
     await reset(page)
 
-    await page.getByRole('link', { name: 'Config de orchard' }).click()
+    await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Assignation', exact: true }).click()
     await expect(page.getByRole('heading', { name: /Assignation/ })).toBeVisible()
     await expect(page.getByText(/puis le niveau par défaut du repo, lite/)).toBeVisible()
