@@ -7,11 +7,11 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
 import type { PullRequestNow } from '../dashboard/github.ts'
 import type { PullHeader } from '../pulls/github.ts'
-import type { PullSheet, PullsStore, PullSummary } from '../pulls/store.ts'
+import { jobDuration, type PullSheet, type PullsStore, type PullSummary } from '../pulls/store.ts'
 import { createAppRouter } from '../router.ts'
 import { DISMISS_REASONS, replyText } from '../findings/dismiss.ts'
 import { codeText } from './finding.tsx'
-import { levelLine, readPullQuery, scoreProgress } from './pull.tsx'
+import { firstSentence, levelLine, modelName, readPullQuery, scoreProgress } from './pull.tsx'
 
 const COOKIE = '__Host-kento_session'
 const REPO_ID = '22222222-2222-4222-8222-222222222222'
@@ -45,6 +45,9 @@ function sheet(): PullSheet {
     findings: 2,
     createdAt: NOW,
     publishedAt: NOW,
+    verdict: n === 2 ? 'REQUEST_CHANGES' : 'COMMENT',
+    summary: n === 2 ? 'Deux findings restent ouverts, dont un P1 sur l’expiration des jetons. Le reste est corrigé.\n\nDétail plus bas.' : null,
+    durationMs: 160_000,
   })
   return {
     columns: [review(1, 'a'), review(2, 'b')],
@@ -209,6 +212,27 @@ describe('the screen of a pull request', () => {
     assert.match(response.headers.get('Location')!, /\/login\?returnTo=%2Frepos%2F/)
   })
 
+  it('gives the time of a job only when it is a time: none, negative or not finite reads null (REV-91)', () => {
+    assert.equal(jobDuration(160_000.4), 160_000)
+    assert.equal(jobDuration(0), 0)
+    assert.equal(jobDuration(null), null)
+    assert.equal(jobDuration(undefined), null)
+    assert.equal(jobDuration(-5_000), null)
+    assert.equal(jobDuration(Number.NaN), null)
+    assert.equal(jobDuration(Number.POSITIVE_INFINITY), null)
+  })
+
+  it('says a summary in its first sentence, and a model without its provider (REV-91)', () => {
+    assert.equal(firstSentence('Deux findings restent ouverts. Le reste est corrigé.'), 'Deux findings restent ouverts.')
+    assert.equal(firstSentence('Sans point final\n\nUn autre paragraphe.'), 'Sans point final')
+    assert.equal(firstSentence('  \n '), null)
+    assert.equal(firstSentence(null), null)
+    assert.equal(firstSentence('v1.2 garde son point. Fin.'), 'v1.2 garde son point.')
+    assert.equal(firstSentence('x'.repeat(300))?.length, 240)
+    assert.equal(modelName('anthropic/claude-sonnet-5.5'), 'claude-sonnet-5.5')
+    assert.equal(modelName('claude-haiku-4-5'), 'claude-haiku-4-5')
+  })
+
   it('shows the header, the numbers and the sheet to a member, for the org of the session', async () => {
     let { request, signIn, asked } = setup()
     let cookie = await signIn(CAMILLE)
@@ -216,11 +240,19 @@ describe('the screen of a pull request', () => {
     assert.equal(response.status, 200)
     let html = await response.text()
     assert.deepEqual(asked, [`${ORG.id} ${REPO_ID} 142`])
-    assert.match(html, /orchard #142 · Sessions : expiration/)
+    // REV-91: the title of the pull request is the title of the page; « orchard #142 » leads its facts.
+    assert.match(html, /<h1 class="page-title">Sessions : expiration/)
+    assert.match(html, /<span class="mono">orchard #142<\/span>/)
     assert.match(html, /@camille/)
     assert.match(html, /feat\/x → main/)
     assert.match(html, /Feuille d’exposition/)
-    assert.match(html, /cell cell-moved[^>]*>déplacé<span class="cell-line"> l\.47/)
+    assert.match(html, /title="déplacé, ligne 47" class="cell cell-moved"><span class="visually-hidden">déplacé l\.47/)
+    // The last review: its verdict on a stamp, its facts, the first sentence of its summary.
+    assert.match(html, /Dernière review, R2/)
+    assert.match(html, /<span class="stamp-text">Changements demandés<\/span><span class="stamp-score">3\/5<\/span>/)
+    assert.match(html, /lite · m · bbbbbbb · 0,010\s\$ · 2 min 40 s · /)
+    assert.match(html, /<p class="pull-last-summary">Deux findings restent ouverts, dont un P1 sur l’expiration des jetons\.<\/p>/)
+    assert.match(html, /Une seule passe par review/)
     assert.match(html, /data-label="R2 · bbbbbbb"/)
     assert.match(html, /0,54\s\$/)
     assert.match(html, /https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142/)
@@ -262,6 +294,9 @@ describe('the screen of a pull request', () => {
     let html = await (await request(PATH, await signIn())).text()
     assert.match(html, /GitHub n’a pas répondu/)
     assert.match(html, /Feuille d’exposition/)
+    // REV-91: with no title from GitHub, the title is « orchard #142 », and an admin keeps « Relancer R5… ».
+    assert.match(html, /<h1 class="page-title">orchard #142<\/h1>/)
+    assert.match(html, /<summary class="button">Relancer R\d+…<\/summary>/)
   })
 
   it('drops the cursor of the findings from the links of the status filter', async () => {

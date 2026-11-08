@@ -7,7 +7,7 @@ import type { PullHeader } from '../pulls/github.ts'
 import { CELL_LABELS, STATUS_LABELS, type Cell } from '../pulls/sheet.ts'
 import type { PullActiveJob, PullFinding, PullReview, PullSheet, PullSummary } from '../pulls/store.ts'
 import { pageRoutes, pullRoutes } from '../routes.ts'
-import { agoOrDate, clock, plural, usdPrecise } from './format.ts'
+import { agoOrDate, clock, duration, plural, usdPrecise } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -104,6 +104,30 @@ export function levelLine(summary: Pick<PullSummary, 'assignment' | 'levelOrigin
   }
 }
 
+/** The words of the verdict on the stamp of the last review (REV-91). */
+const STAMPS: Record<string, string> = {
+  APPROVE: 'Approuvé',
+  COMMENT: 'Commentaire',
+  REQUEST_CHANGES: 'Changements demandés',
+}
+
+/** The first sentence of a summary, at most 240 characters: the card says it in one line. */
+export function firstSentence(summary: string | null): string | null {
+  let text = (summary ?? '').trim().split(/\n\s*\n/)[0]?.replace(/\s+/g, ' ').trim() ?? ''
+  if (!text) return null
+  let end = text.search(/[.!?](\s|$)/)
+  let sentence = end === -1 ? text : text.slice(0, end + 1)
+  return sentence.length > 240 ? `${sentence.slice(0, 239).trimEnd()}…` : sentence
+}
+
+/** A model id without its provider: `anthropic/claude-sonnet-5.5` reads `claude-sonnet-5.5`. */
+export function modelName(model: string): string {
+  return model.includes('/') ? model.slice(model.lastIndexOf('/') + 1) : model
+}
+
+/** The level in the head of a column, as the board writes it: lite, bal., heavy. */
+const LEVEL_SHORT: Record<Level, string> = { lite: 'lite', balanced: 'bal.', heavy: 'heavy' }
+
 export function PullPage(handle: Handle<PullPageProps>) {
   return () => {
     let { frame, summary, header, sheet, query, githubUrl, now, estimates, rerunNotice } = handle.props
@@ -112,76 +136,78 @@ export function PullPage(handle: Handle<PullPageProps>) {
     let progress = scoreProgress(summary)
     let total = FINDING_STATUSES.reduce((n, s) => n + summary.byStatus[s], 0)
     let base = header?.baseRef || summary.baseRef
+    let state = header ? (header.state === 'open' ? 'ouverte' : header.state === 'merged' ? 'mergée' : 'fermée') : null
+    let canRerun = !!estimates && !summary.active && header?.state !== 'closed' && header?.state !== 'merged'
+    // The card of the last review shows on the newest page only: an older page has older columns.
+    let last = query.reviews ? null : (sheet.columns.at(-1) ?? null)
     return (
       <Shell
         frame={frame}
         section="repos"
-        title={`${repoName} #${target.prNumber}${header?.title ? ` · ${header.title}` : ''}`}
+        title={header?.title || `${repoName} #${target.prNumber}`}
+        actions={canRerun ? <RerunMenu summary={summary} estimates={estimates!} csrf={frame.csrfToken ?? ''} /> : undefined}
         memberCan="vous dismissez, gardez (wontfix) ou rouvrez un finding depuis son détail"
+        before={
+          <nav class="crumbs" aria-label="Fil d’Ariane">
+            <a href={pageRoutes.repos.href()}>Repos</a>
+            <span aria-hidden="true">/</span>
+            <a href={pageRoutes.repoConfig.href({ id: target.repoId })} title={target.fullName}>
+              {repoName}
+            </a>
+            <span aria-hidden="true">/</span>
+            <span aria-current="page">#{target.prNumber}</span>
+          </nav>
+        }
       >
-        <nav class="crumbs" aria-label="Fil d’Ariane">
-          <a href={pageRoutes.repos.href()}>Repos</a>
-          <span aria-hidden="true">/</span>
-          <a href={pageRoutes.repoConfig.href({ id: target.repoId })}>{target.fullName}</a>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page">#{target.prNumber}</span>
-        </nav>
-
-        <dl class="pull-meta">
-          <div>
-            <dt>Auteur</dt>
-            <dd>{header?.author ? `@${header.author}` : 'inconnu'}</dd>
-          </div>
-          <div>
-            <dt>Branches</dt>
-            <dd class="mono">
-              {header?.headRef || '?'} → {base || '?'}
-            </dd>
-          </div>
-          <div>
-            <dt>Head</dt>
-            <dd class="mono">{short(header?.headSha || summary.headSha)}</dd>
-          </div>
-          <div>
-            <dt>État</dt>
-            <dd>{header ? (header.state === 'open' ? 'ouverte' : header.state === 'merged' ? 'mergée' : 'fermée') : 'inconnu'}</dd>
-          </div>
-          <div>
-            <dt>GitHub</dt>
-            <dd>
-              <a href={pullUrl(githubUrl, target.fullName, target.prNumber)}>
-                Voir sur GitHub
-                <ExternalIcon />
-              </a>
-            </dd>
-          </div>
-        </dl>
+        <p class="pull-meta">
+          <span class="mono">
+            {repoName} #{target.prNumber}
+          </span>
+          <span>par {header?.author ? `@${header.author}` : 'un auteur inconnu'}</span>
+          <span class="mono">
+            {header?.headRef || '?'} → {base || '?'}
+          </span>
+          <span class="mono" title="Le dernier commit de la PR">
+            {short(header?.headSha || summary.headSha)}
+          </span>
+          {state ? <span class={`status ${header!.state === 'open' ? 'status-open' : 'status-neutral'}`}>{state}</span> : null}
+          <a href={pullUrl(githubUrl, target.fullName, target.prNumber)}>
+            Voir sur GitHub
+            <ExternalIcon />
+          </a>
+        </p>
         {levelLine(summary) ? <p class="pull-assignment">{levelLine(summary)}</p> : null}
         {header ? null : <p class="hint pull-github-note">GitHub n’a pas répondu : le titre, l’auteur et les branches manquent.</p>}
 
-        <section class="dash-tiles pull-tiles" aria-label="En bref">
-          <div class="dash-tile">
-            <span class="dash-tile-label">Reviews</span>
-            <span class="dash-tile-value">{summary.reviews}</span>
+        <section aria-label="En bref">
+        <dl class="pull-stats">
+          <div>
+            <dt>Reviews</dt>
+            <dd>{summary.reviews}</dd>
           </div>
-          <div class="dash-tile">
-            <span class="dash-tile-label">Score</span>
-            <span class="dash-tile-value">{progress.value}</span>
-            {progress.change ? <span class="hint">{progress.change}</span> : null}
+          <div>
+            <dt>Score</dt>
+            <dd>
+              {progress.value}
+              {progress.change ? <span class={progress.change.startsWith('+') ? 'pull-up' : 'pull-same'}> {progress.change}</span> : null}
+            </dd>
           </div>
-          <div class="dash-tile">
-            <span class="dash-tile-label">Findings</span>
-            <span class="dash-tile-value">{total}</span>
-            <span class="hint">
-              {FINDING_STATUSES.filter((s) => summary.byStatus[s] > 0)
-                .map((s) => `${summary.byStatus[s]} ${STATUS_LABELS[s]}`)
-                .join(' · ') || 'aucun'}
-            </span>
+          <div>
+            <dt>Findings</dt>
+            <dd>
+              {total}
+              {total > 0
+                ? ` · ${FINDING_STATUSES.filter((s) => summary.byStatus[s] > 0)
+                    .map((s) => `${summary.byStatus[s]} ${STATUS_LABELS[s]}`)
+                    .join(' · ')}`
+                : ''}
+            </dd>
           </div>
-          <div class="dash-tile">
-            <span class="dash-tile-label">Coût cumulé</span>
-            <span class="dash-tile-value">{summary.costUsd === null ? '—' : usdPrecise(summary.costUsd)}</span>
+          <div>
+            <dt>Coût cumulé</dt>
+            <dd>{summary.costUsd === null ? '—' : usdPrecise(summary.costUsd)}</dd>
           </div>
+        </dl>
         </section>
 
         {rerunNotice ? (
@@ -192,25 +218,59 @@ export function PullPage(handle: Handle<PullPageProps>) {
 
         {summary.active ? <ActiveBanner job={summary.active} now={now} /> : null}
 
-        {estimates && !summary.active && header?.state !== 'closed' && header?.state !== 'merged' ? (
-          <RerunSection summary={summary} estimates={estimates} csrf={frame.csrfToken ?? ''} />
-        ) : null}
+        {last ? <LastReview review={last} now={now} /> : null}
 
         <section class="pull-sheet" aria-labelledby="sheet-title">
-          <div class="dash-section-head">
+          <div class="pull-sheet-head">
             <h2 id="sheet-title" class="section-title">
               Feuille d’exposition
             </h2>
+            <SheetHelp />
+            <StatusFilter summary={summary} query={query} />
           </div>
-          <p class="hint">
-            Une colonne par review, une ligne par finding. Chaque case dit ce que la review a fait du finding : posté, retrouvé
-            (même ligne, sans nouveau commentaire), déplacé (autre ligne, sans nouveau commentaire), rouvert, fixed, dismissed,
-            wontfix ou absent. Une case dit l’état au moment de sa review ; le statut sous chaque titre est celui d’aujourd’hui.
-          </p>
-          <StatusFilter summary={summary} query={query} />
           <SheetTable summary={summary} sheet={sheet} query={query} now={now} />
         </section>
       </Shell>
+    )
+  }
+}
+
+/** REV-91. The last review: its verdict on a stamp, its facts, its summary in one sentence. */
+function LastReview(handle: Handle<{ review: PullReview; now: Date }>) {
+  return () => {
+    let { review, now } = handle.props
+    let stamp = review.verdict ? STAMPS[review.verdict] : undefined
+    let sentence = firstSentence(review.summary)
+    return (
+      <section class="card pull-last" aria-labelledby="last-title">
+        {stamp ? (
+          <p class={`stamp stamp-${review.verdict === 'APPROVE' ? 'ok' : review.verdict === 'REQUEST_CHANGES' ? 'alert' : 'note'}`}>
+            <span class="stamp-text">{stamp}</span>
+            <span class="stamp-score">{review.score}/5</span>
+          </p>
+        ) : (
+          <p class="stamp stamp-note">
+            <span class="stamp-score">{review.score}/5</span>
+          </p>
+        )}
+        <div class="pull-last-body">
+          <h2 id="last-title" class="pull-last-title">
+            Dernière review, R{review.number}
+          </h2>
+          <p class="pull-last-facts mono">
+            {review.level} · {modelName(review.model)} · {short(review.headSha)} ·{' '}
+            {review.costUsd === null ? 'coût inconnu' : usdPrecise(review.costUsd)}
+            {review.durationMs === null ? '' : ` · ${duration(review.durationMs)}`} ·{' '}
+            <time dateTime={review.createdAt.toISOString()} title={clock(review.createdAt)}>
+              {agoOrDate(review.createdAt, now)}
+            </time>
+          </p>
+          {sentence ? <p class="pull-last-summary">{sentence}</p> : null}
+          {review.publishedAt ? null : <p class="status status-stale">Non publiée</p>}
+        </div>
+        {/* The design shows a seal per pass (sécurité, données, logique, règles, vérif.); no level runs passes yet. */}
+        <p class="pull-passes hint">Une seule passe par review : les passes séparées ne tournent pas encore.</p>
+      </section>
     )
   }
 }
@@ -234,36 +294,83 @@ function ActiveBanner(handle: Handle<{ job: PullActiveJob; now: Date }>) {
 
 const LEVEL_DEFAULT_HINT = 'L’estimation est la moyenne des dernières reviews de ce niveau sur ce repo.'
 
-function RerunSection(handle: Handle<{ summary: PullSummary; estimates: Record<Level, number | null>; csrf: string }>) {
+/** « Relancer R5… » beside the title: it opens the three levels with their estimate (confirm.js closes it on Échap). */
+function RerunMenu(handle: Handle<{ summary: PullSummary; estimates: Record<Level, number | null>; csrf: string }>) {
   return () => {
     let { summary, estimates, csrf } = handle.props
     let { repoId, prNumber } = summary.target
     return (
-      <section class="pull-rerun" aria-labelledby="rerun-title">
-        <h2 id="rerun-title" class="section-title">
-          Relancer R{summary.reviews + 1}
-        </h2>
-        <p class="hint">
-          Une nouvelle review de <span class="mono">{short(summary.headSha)}</span>, le dernier commit relu. Un nouveau push l’annule. {LEVEL_DEFAULT_HINT}
-        </p>
-        <div class="pull-rerun-actions">
-          {LEVELS.map((level) => {
-            let estimate = estimates[level]
-            return (
-              <form method="post" action={pullRoutes.pullRerun.href({ id: repoId, number: String(prNumber) })}>
-                <input type="hidden" name="_csrf" value={csrf} />
-                <input type="hidden" name="level" value={level} />
-                <button class="button" type="submit">
-                  Relancer en {level}
-                  <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
-                </button>
-              </form>
-            )
-          })}
+      <details class="confirm pull-rerun" data-confirm>
+        <summary class="button">Relancer R{summary.reviews + 1}…</summary>
+        <div class="confirm-body" role="group" aria-labelledby="rerun-title">
+          <p id="rerun-title" class="pull-rerun-title">
+            Relancer R{summary.reviews + 1}
+          </p>
+          <p class="hint">
+            Une nouvelle review de <span class="mono">{short(summary.headSha)}</span>, le dernier commit relu. Un nouveau push l’annule. {LEVEL_DEFAULT_HINT}
+          </p>
+          <div class="pull-rerun-actions">
+            {LEVELS.map((level) => {
+              let estimate = estimates[level]
+              return (
+                <form method="post" action={pullRoutes.pullRerun.href({ id: repoId, number: String(prNumber) })}>
+                  <input type="hidden" name="_csrf" value={csrf} />
+                  <input type="hidden" name="level" value={level} />
+                  <button class="button" type="submit">
+                    Relancer en {level}
+                    <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
+                  </button>
+                </form>
+              )
+            })}
+            <button class="button button-ghost" type="button" data-confirm-cancel hidden>
+              Annuler
+            </button>
+          </div>
         </div>
-      </section>
+      </details>
     )
   }
+}
+
+/** The order of the legend, and what each case says (REV-91, « Lire la feuille »). */
+const LEGEND: { state: Exclude<Cell['state'], 'none'>; text: string }[] = [
+  { state: 'posted', text: 'posté' },
+  { state: 'found', text: 'retrouvé, sans nouveau commentaire' },
+  { state: 'moved', text: 'retrouvé à une autre ligne' },
+  { state: 'reopened', text: 'rouvert' },
+  { state: 'fixed', text: 'fixed par un push' },
+  { state: 'dismissed', text: 'dismissed' },
+  { state: 'wontfix', text: 'wontfix' },
+  { state: 'absent', text: 'absent de cette review' },
+]
+
+/** « ? »: how to read the sheet. Help is asked for, not shown at all times. */
+function SheetHelp(_handle: Handle<{}>) {
+  return () => (
+    <details class="sheet-help">
+      <summary class="sheet-help-button">
+        <span aria-hidden="true">?</span>
+        <span class="visually-hidden">Lire la feuille</span>
+      </summary>
+      <div class="sheet-legend card">
+        <p class="sheet-legend-title">Lire la feuille</p>
+        <p class="hint">
+          Une trace par finding, une case par review. La couleur dit ce que la review en a fait ; une case pâle, ce qu’elle reprend
+          d’une review précédente. Le statut de la dernière colonne est celui d’aujourd’hui.
+        </p>
+        <ul class="sheet-legend-list">
+          {LEGEND.map(({ state, text }) => (
+            <li>
+              <span class={`cell cell-${state}`} aria-hidden="true"></span>
+              {text}
+            </li>
+          ))}
+        </ul>
+        <p class="hint">Survolez une case pour voir sa ligne.</p>
+      </div>
+    </details>
+  )
 }
 
 function StatusFilter(handle: Handle<{ summary: PullSummary; query: PullQuery }>) {
@@ -271,13 +378,15 @@ function StatusFilter(handle: Handle<{ summary: PullSummary; query: PullQuery }>
     let { summary, query } = handle.props
     let { repoId, prNumber } = summary.target
     let all = query.statuses.length === 0
+    let total = FINDING_STATUSES.reduce((n, s) => n + summary.byStatus[s], 0)
+    let current = (s: FindingStatus) => !all && query.statuses.length === 1 && query.statuses[0] === s
     return (
       <nav class="pull-filter" aria-label="Filtrer par statut">
         <a href={pullHref(repoId, prNumber, { reviews: query.reviews })} aria-current={all ? 'page' : undefined}>
-          Tous
+          Tous <span class="count">{total}</span>
         </a>
-        {FINDING_STATUSES.map((s) => (
-          <a href={pullHref(repoId, prNumber, { statuses: [s], reviews: query.reviews })} aria-current={!all && query.statuses.length === 1 && query.statuses[0] === s ? 'page' : undefined}>
+        {FINDING_STATUSES.filter((s) => summary.byStatus[s] > 0 || current(s)).map((s) => (
+          <a href={pullHref(repoId, prNumber, { statuses: [s], reviews: query.reviews })} aria-current={current(s) ? 'page' : undefined}>
             {STATUS_LABELS[s]} <span class="count">{summary.byStatus[s]}</span>
           </a>
         ))}
@@ -315,38 +424,37 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
               <tr>
                 <th scope="col">Finding</th>
                 {sheet.columns.map((review) => (
-                  <th scope="col" class="sheet-col">
-                    <span class="sheet-col-name">R{review.number}</span> <span class="tag">{review.level}</span>
-                    <span class="sheet-col-facts">
-                      <span class="mono">{short(review.headSha)}</span>
-                      <time dateTime={review.createdAt.toISOString()} title={clock(review.createdAt)}>
-                        {agoOrDate(review.createdAt, now)}
-                      </time>
-                      <span>
-                        {review.score}/5 · {review.costUsd === null ? 'coût inconnu' : usdPrecise(review.costUsd)}
-                      </span>
-                      <span>
-                        {review.findings} {plural(review.findings, 'finding')}
-                      </span>
-                      {review.publishedAt ? null : <span class="status status-stale">Non publiée</span>}
+                  <th
+                    scope="col"
+                    class="sheet-col"
+                    title={`${short(review.headSha)} · ${clock(review.createdAt)} · ${review.score}/5 · ${review.costUsd === null ? 'coût inconnu' : usdPrecise(review.costUsd)} · ${review.findings} ${plural(review.findings, 'finding')}`}
+                  >
+                    <span class="sheet-col-name">R{review.number}</span>
+                    <span class="sheet-col-level">{LEVEL_SHORT[review.level]}</span>
+                    <span class="visually-hidden">
+                      {' '}
+                      {review.level}, {short(review.headSha)}, {agoOrDate(review.createdAt, now)}, {review.score}/5,{' '}
+                      {review.costUsd === null ? 'coût inconnu' : usdPrecise(review.costUsd)}, {review.findings} {plural(review.findings, 'finding')}
                     </span>
+                    {review.publishedAt ? null : <span class="status status-stale">Non publiée</span>}
                   </th>
                 ))}
                 {active ? (
                   <th scope="col" class="sheet-col sheet-col-active">
-                    <span class="sheet-col-name">R{active.number}</span> <span class="tag">{active.level}</span>
-                    <span class="sheet-col-facts">
-                      <span class="mono">{short(active.headSha)}</span>
-                      <span class="status status-wait">{active.state === 'running' ? 'En cours…' : 'En file…'}</span>
-                    </span>
+                    <span class="sheet-col-name">R{active.number}</span>
+                    <span class="sheet-col-level">{LEVEL_SHORT[active.level]}</span>
+                    <span class="status status-wait">{active.state === 'running' ? 'En cours…' : 'En file…'}</span>
                   </th>
                 ) : null}
+                <th scope="col" class="sheet-today">
+                  Aujourd’hui
+                </th>
               </tr>
             </thead>
             <tbody>
               {sheet.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={sheet.columns.length + 1 + (active ? 1 : 0)}>
+                  <td colSpan={sheet.columns.length + 2 + (active ? 1 : 0)}>
                     {query.statuses.length ? 'Aucun finding de ce statut.' : 'Aucun finding sur cette PR.'}
                   </td>
                 </tr>
@@ -355,22 +463,30 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
                   <tr>
                     <th scope="row" class="sheet-finding">
                       <div class="sheet-finding-body">
-                        <a class="sheet-title" href={pullRoutes.finding.href({ id: finding.id })}>
-                          {finding.title || 'Sans titre'}
-                        </a>
-                        <span class="sheet-where mono">
-                          {finding.path}:{finding.line}
-                        </span>
-                        <span class="sheet-tags">
-                          <span class="tag">{SEVERITY_BADGES[finding.severity]}</span>
-                          <span class={`status ${statusClass(finding.status)}`}>{STATUS_LABELS[finding.status]}</span>
+                        <span class={`pri pri-${finding.severity}`}>{SEVERITY_BADGES[finding.severity]}</span>
+                        <span class="sheet-finding-text">
+                          <a class="sheet-title" href={pullRoutes.finding.href({ id: finding.id })}>
+                            {finding.title || 'Sans titre'}
+                          </a>
+                          <span class="sheet-where mono">
+                            {finding.path}:{finding.line}
+                          </span>
                         </span>
                       </div>
                     </th>
                     {sheet.columns.map((review, i) => (
                       <SheetCell cell={cells[i] ?? { state: 'none', carried: false, line: null }} label={columnLabel(review)} />
                     ))}
-                    {active ? <td data-label={`R${active.number}`} class="sheet-cell"><span class="cell cell-pending">…</span></td> : null}
+                    {active ? (
+                      <td data-label={`R${active.number}`} class="sheet-cell">
+                        <span class="cell cell-pending" title="En cours">
+                          <span class="visually-hidden">en cours</span>
+                        </span>
+                      </td>
+                    ) : null}
+                    <td data-label="Aujourd’hui" class="sheet-today">
+                      <span class={`status ${statusClass(finding.status)}`}>{STATUS_LABELS[finding.status]}</span>
+                    </td>
                   </tr>
                 ))
               )}
@@ -396,34 +512,44 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
   }
 }
 
+/** One case of the trace: a bar in the colour of its state, its word for a screen reader, its line on hover. */
 function SheetCell(handle: Handle<{ cell: Cell; label: string }>) {
   return () => {
     let { cell, label } = handle.props
     if (cell.state === 'none') {
       return (
         <td data-label={label} class="sheet-cell">
-          <span class="visually-hidden">pas encore trouvé</span>
+          <span class="cell cell-none">
+            <span class="visually-hidden">pas encore trouvé</span>
+          </span>
         </td>
       )
     }
     let text = CELL_LABELS[cell.state]
     return (
       <td data-label={label} class="sheet-cell">
-        <span class={`cell cell-${cell.state}${cell.carried ? ' cell-carried' : ''}`} title={cell.line === null ? undefined : `ligne ${cell.line}`}>
-          {text}
-          {cell.line !== null && (cell.state === 'moved' || cell.state === 'posted') ? <span class="cell-line"> l.{cell.line}</span> : null}
+        <span class={`cell cell-${cell.state}${cell.carried ? ' cell-carried' : ''}`} title={cell.line === null ? text : `${text}, ligne ${cell.line}`}>
+          <span class="visually-hidden">
+            {text}
+            {cell.line !== null && (cell.state === 'moved' || cell.state === 'posted') ? ` l.${cell.line}` : ''}
+          </span>
         </span>
       </td>
     )
   }
 }
 
+/** The mark of a status today: a ring open, a dot fixed, a cross dismissed, a dash wontfix (REV-91). */
 export function statusClass(status: FindingStatus): string {
   switch (status) {
     case 'open':
-      return 'status-alert'
+      return 'status-open'
     case 'fixed':
       return 'status-online'
+    case 'dismissed':
+      return 'status-dismissed'
+    case 'wontfix':
+      return 'status-wontfix'
     default:
       return 'status-neutral'
   }

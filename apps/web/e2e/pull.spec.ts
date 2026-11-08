@@ -52,7 +52,8 @@ test.beforeEach(async ({ page }) => {
 test('the sheet shows a finding found again after its lines moved, with no new comment', async ({ page }, info) => {
   let errors = watchConsole(page)
   await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('orchard #142 · Sessions : expiration et rotation des clés')
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Sessions : expiration et rotation des clés')
+  await expect(page.getByText('orchard #142', { exact: true })).toBeVisible()
   await expect(page.getByText('@camille')).toBeVisible()
   await expect(page.getByText('feat/session-expiry → main')).toBeVisible()
   await expect(page.getByRole('link', { name: 'Voir sur GitHub' })).toHaveAttribute('href', /\/sakuga-software\/orchard\/pull\/142$/)
@@ -64,12 +65,13 @@ test('the sheet shows a finding found again after its lines moved, with no new c
   let sheet = page.getByRole('table')
   let row = (title: string) => sheet.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(title) }) })
   let moved = row('Le jeton de session')
-  await expect(moved.getByRole('cell')).toHaveText(['posté l.42', 'déplacé l.47', 'retrouvé', 'retrouvé'])
-  await expect(row('Clé API').getByRole('cell')).toHaveText(['posté l.88', 'fixed', 'fixed', 'fixed'])
-  await expect(row('Liste sans clé').getByRole('cell')).toHaveText(['posté l.12', 'retrouvé', 'dismissed', 'dismissed'])
+  // REV-91: the last cell is the status of today.
+  await expect(moved.getByRole('cell')).toHaveText(['posté l.42', 'déplacé l.47', 'retrouvé', 'retrouvé', 'ouvert'])
+  await expect(row('Clé API').getByRole('cell')).toHaveText(['posté l.88', 'fixed', 'fixed', 'fixed', 'fixed'])
+  await expect(row('Liste sans clé').getByRole('cell')).toHaveText(['posté l.12', 'retrouvé', 'dismissed', 'dismissed', 'dismissed'])
   // On a phone, the card leaves out the reviews from before the finding.
   let before = info.project.name === 'mobile' ? [] : ['pas encore trouvé']
-  await expect(row('Requête SQL').getByRole('cell')).toHaveText([...before, 'posté l.30', 'absent', 'wontfix'])
+  await expect(row('Requête SQL').getByRole('cell')).toHaveText([...before, 'posté l.30', 'absent', 'wontfix', 'wontfix'])
 
   if (info.project.name === 'mobile') {
     // A finding is a card: the label of each review sits over its cell, with no horizontal scroll.
@@ -164,13 +166,15 @@ test('an admin re-runs the review in heavy: a column R5 waits, then shows the pu
   await page.context().clearCookies()
   await signIn(page, 'alex')
   await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
-  let rerun = page.getByRole('region', { name: 'Relancer R5' })
+  // REV-91: « Relancer R5… » beside the title opens the three levels.
+  await page.getByText('Relancer R5…').click()
+  let rerun = page.getByRole('group', { name: 'Relancer R5' })
   await expect(rerun.getByRole('button', { name: /Relancer en heavy · ≈ 0,41/ })).toBeVisible()
   await rerun.getByRole('button', { name: /Relancer en heavy/ }).click()
 
   await expect(page.getByText('Review relancée : elle est en file. Un nouveau push l’annule.')).toBeVisible()
   await expect(page.getByText(/R5 en file…/)).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Relancer R5' })).toHaveCount(0)
+  await expect(page.getByText('Relancer R5…')).toHaveCount(0)
   let sheet = page.getByRole('table')
   await expect(sheet.getByRole('columnheader', { name: /R5/ })).toContainText('En file…')
   await expectNoAxeViolations(page)

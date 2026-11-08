@@ -57,18 +57,25 @@ export function FindingPage(handle: Handle<FindingPageProps>) {
     let thread = threadUrl(githubUrl, finding)
     let review = finding.review
     return (
-      <Shell frame={frame} section="repos" title={finding.title || 'Finding sans titre'} memberCan={MEMBER_CAN}>
-        <nav class="crumbs" aria-label="Fil d’Ariane">
-          <a href={pageRoutes.repos.href()}>Repos</a>
-          <span aria-hidden="true">/</span>
-          <a href={pageRoutes.repoConfig.href({ id: target.repoId })}>{target.fullName}</a>
-          <span aria-hidden="true">/</span>
-          <a href={pullHref(target.repoId, target.prNumber)}>
-            {repoName} #{target.prNumber}
-          </a>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page">Finding</span>
-        </nav>
+      <Shell
+        frame={frame}
+        section="repos"
+        title={finding.title || 'Finding sans titre'}
+        memberCan={MEMBER_CAN}
+        before={
+            <nav class="crumbs" aria-label="Fil d’Ariane">
+              <a href={pageRoutes.repos.href()}>Repos</a>
+              <span aria-hidden="true">/</span>
+              <a href={pageRoutes.repoConfig.href({ id: target.repoId })}>{target.fullName}</a>
+              <span aria-hidden="true">/</span>
+              <a href={pullHref(target.repoId, target.prNumber)}>
+                {repoName} #{target.prNumber}
+              </a>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page">Finding</span>
+            </nav>
+        }
+      >
 
         {notice}
 

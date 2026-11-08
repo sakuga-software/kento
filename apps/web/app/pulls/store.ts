@@ -43,6 +43,21 @@ export interface PullReview {
   findings: number
   createdAt: Date
   publishedAt: Date | null
+  /** REV-91. The verdict of the result (APPROVE, COMMENT, REQUEST_CHANGES), and its summary. Null when absent. */
+  verdict: string | null
+  summary: string | null
+  /** From the claim of the job to its result. Null when the job holds no start or no end. */
+  durationMs: number | null
+}
+
+/**
+ * REV-91. The time of a job from its claim to its result, in ms. Null without one, and null when the
+ * clock of the database gives a negative or not finite time: the screen shows no time rather than a
+ * wrong one.
+ */
+export function jobDuration(ms: number | null | undefined): number | null {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return null
+  return Math.round(ms)
 }
 
 /** A review job of the pull request queued or running: the next column, « R5 en cours… ». */
@@ -218,6 +233,8 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
       let reviews = await sql<(Omit<PullReview, 'costUsd'> & { costUsd: string | null; cursorAt: string })[]>`
         select r.id, r.head_sha as "headSha", r.model, r.score, r.cost_usd::text as "costUsd", j.level,
           coalesce(jsonb_array_length(r.result->'findings'), 0)::int as findings,
+          r.result->>'verdict' as verdict, r.result->>'summary' as summary,
+          (extract(epoch from (j.finished_at - j.started_at)) * 1000)::float8 as "durationMs",
           r.created_at as "createdAt", r.published_at as "publishedAt",
           ${sql.unsafe(cursorAt('r.created_at'))} as "cursorAt",
           (select count(*)::int from reviews e
@@ -243,6 +260,9 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
         findings: r.findings,
         createdAt: toDate(r.createdAt),
         publishedAt: toDate(r.publishedAt),
+        verdict: r.verdict ?? null,
+        summary: r.summary ?? null,
+        durationMs: jobDuration(r.durationMs),
       })
       let columns = shown.map(toReview).reverse()
 

@@ -51,6 +51,8 @@ export interface ShellProps {
   /** The current item of the navigation. None: a page outside of it (REV-40, a 404). */
   section?: Section
   title: string
+  /** REV-91. Above the title: the crumbs of a screen that has a parent. */
+  before?: RemixNode
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */
   actions?: RemixNode
@@ -66,7 +68,7 @@ export interface ShellProps {
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
-    let { frame, section, title, lead, actions, children, memberCan } = handle.props
+    let { frame, section, title, before, lead, actions, children, memberCan } = handle.props
     let { viewer } = frame
     let readOnly = viewer?.role === 'member'
     return (
@@ -111,6 +113,7 @@ export function Shell(handle: Handle<ShellProps>) {
         </header>
 
         <main class="content" id="content" tabIndex={-1}>
+          {before}
           <div class="page-header">
             <div>
               <h1 class="page-title">{title}</h1>
