@@ -1,5 +1,5 @@
 // The review as a reader sees it: the inline comments, the body of the review and the block of the description.
-import { anchor, deeperReview, diagram, findingKey, isBlocking, score, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
+import { anchor, deeperReview, diagram, findingKey, isBlocking, score, toConsider, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
 import type { Level } from '../../protocol/src/index.ts';
 import { levelCost } from './levels.ts';
 
@@ -147,20 +147,34 @@ export function descriptionBlock(
   const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
   const deeper = deeperReview(answer, context.level);
   if (deeper) out.push(deeperReviewNote(deeper, context.poster), '');
-  if (links.length) {
+  const item = ({ finding: f, url }: Link, i: number) => {
+    // The line of the thread: the nearest changed line when the model named one outside the diff.
+    const line = anchor(f, lines);
+    let where = `\`${f.path}:${line ?? f.line}\``;
+    // A finding outside the diff has no thread: link the line in the file at the reviewed commit.
+    if (line === null && context.commitUrl.startsWith('http')) {
+      where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
+    }
+    out.push(`${i + 1}. ${badges(f)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">▶</a>` : ''}`);
+    // A finding with no thread shows its scenario here: this is the only place it appears.
+    if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
+  };
+  // REV-100. The new findings on code that an earlier review already read go in a list of their own.
+  const main = links.filter((l) => !toConsider(l.finding));
+  const considered = links.filter((l) => toConsider(l.finding));
+  if (main.length) {
     out.push('<h3>Constats</h3>', '');
-    links.forEach(({ finding: f, url }, i) => {
-      // The line of the thread: the nearest changed line when the model named one outside the diff.
-      const line = anchor(f, lines);
-      let where = `\`${f.path}:${line ?? f.line}\``;
-      // A finding outside the diff has no thread: link the line in the file at the reviewed commit.
-      if (line === null && context.commitUrl.startsWith('http')) {
-        where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
-      }
-      out.push(`${i + 1}. ${badges(f)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">▶</a>` : ''}`);
-      // A finding with no thread shows its scenario here: this is the only place it appears.
-      if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
-    });
+    main.forEach(item);
+    out.push('');
+  }
+  if (considered.length) {
+    out.push(
+      '<h3>À considérer (code déjà relu)</h3>',
+      '',
+      "Ces constats portent sur du code qu'une review précédente a déjà relu, et qui n'a pas changé depuis. Ils ne bloquent pas la PR.",
+      '',
+    );
+    considered.forEach(item);
     out.push('');
   }
   out.push('<details><summary>Résumé</summary>', '', answer.summary, '');

@@ -33,6 +33,11 @@ export type Finding = {
    * (`E1`) or null; the engine replaces it with the key of that finding, or removes it (earlier.ts).
    */
   follows?: string | null;
+  /**
+   * REV-100. The code of the finding did not change since the last commit that a review of Kentō read
+   * on the pull request (seen.ts). The engine sets it; the model never gives it.
+   */
+  seen?: boolean;
 };
 export type Answer = {
   confidence_score: number;
@@ -184,11 +189,23 @@ export function anchor(finding: Finding, lines: Anchors): number | null {
 }
 
 /**
+ * REV-100. A new finding on code that an earlier review already read, not critical: the earlier
+ * review saw that code and did not report it. It does not block, gets no thread, and the summary
+ * lists it apart (« À considérer »). A critical one blocks as before, and so does a finding that
+ * follows an earlier finding (REV-99): that defect was already reported.
+ */
+export function toConsider(finding: Finding): boolean {
+  return finding.seen === true && !finding.follows && finding.severity !== 'critical';
+}
+
+/**
  * A finding blocks only on a line that the pull request changes: the bench saw the model block a
- * clean pull request for code that the pull request did not touch.
+ * clean pull request for code that the pull request did not touch. REV-100: a finding to consider
+ * never blocks.
  */
 export function isBlocking(finding: Finding, lines: Anchors): boolean {
   return (
+    !toConsider(finding) &&
     BLOCKING_SEVERITIES.has(finding.severity) &&
     finding.confidence >= BLOCKING_CONFIDENCE &&
     anchor(finding, lines) !== null

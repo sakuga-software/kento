@@ -280,7 +280,8 @@ export function buildPack(
    * REV-99. A section after `answered` that the model reads but `body` leaves out: the earlier
    * findings, which every review changes. In `body`, they would give each head a new reuse key. It
    * stays out of the budget of the diff too, so that it never changes which hunks the body holds:
-   * the pack can then pass MAX_PACK_BYTES by its size, which its own cap bounds (MAX_EARLIER_BYTES).
+   * the pack can then pass MAX_PACK_BYTES by its size, which the caps of its parts bound
+   * (MAX_EARLIER_BYTES, and MAX_CHANGED_ZONES_BYTES of REV-100).
    */
   unkeyed = '',
 ): { pack: string; skipped: string[]; rules: PackedRule[]; body: string } {

@@ -11,7 +11,7 @@
 // with a word of its title, is linked to it too. The service then answers in the thread of the
 // earlier finding instead of opening a new one, and the score counts the defect once.
 import { NEAR_THREAD_LINES } from './answered.ts';
-import { findingKey, type Answer, type Finding } from './findings.ts';
+import { findingKey, toConsider, type Answer, type Finding } from './findings.ts';
 import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
 import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
@@ -144,7 +144,10 @@ export function linkEarlier<F extends Finding>(
   return { dropped, byModel, byNet };
 }
 
-/** Whether a finding is a defect that no earlier finding names: it may lower the score. */
+/**
+ * Whether a finding is a defect that no earlier finding names: it may lower the score. REV-100: a new
+ * finding to consider (on code already read, not critical) does not lower it either.
+ */
 export function isNewDefect<F extends Finding>(f: F, held: readonly HeldEarlier[]): boolean {
-  return followedBy(f, held) === null;
+  return followedBy(f, held) === null && !toConsider(f);
 }

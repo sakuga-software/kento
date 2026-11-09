@@ -851,6 +851,31 @@ describe('runner API', () => {
       assert.ok(heavy.kind === 'review' && heavy.earlier?.findings.length === 3 && heavy.earlier.last === null)
     })
 
+    it('sends the head of the last review on GitHub, of any level, to a runner that reads it (REV-100)', async () => {
+      let runner = await register()
+      // Before the first review: null.
+      await queueJob()
+      let first: Job = await (await claim(runner.token, { hasProviderKey: true, features: ['reviewed'] })).json()
+      assert.ok(first.kind === 'review' && first.reviewed === null)
+      await published()
+      // A later review of another level, published after: it is the last reviewed commit.
+      let LATER = 'c'.repeat(40)
+      let [j] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'heavy', 'done', 28, ${LATER}, 'main') returning id`
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${j!.id}, ${repoId}, 28, ${LATER}, 4, 'm', 0.01, ${JSON.stringify(review({ level: 'heavy', head: LATER, score: 4 }))}::jsonb, 557, now() + interval '1 second')`
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reviewed'] })).json()
+      assert.ok(parseJob(raw).ok)
+      assert.equal((raw as Job).kind === 'review' && (raw as Extract<Job, { kind: 'review' }>).reviewed, LATER)
+      // A runner of an earlier release gets no key that it does not know.
+      await queueJob()
+      let old: Job = await (await claim(runner.token, { hasProviderKey: true })).json()
+      assert.ok(!('reviewed' in old))
+    })
+
     it('queues the job again when the review to publish again is not there, and fails it at the last attempt', async () => {
       await published()
       let runner = await register()

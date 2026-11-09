@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -985,4 +985,25 @@ test('a service that sends earlier findings gets `follows` on a finding that con
   const old = fakeApi();
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, stubModel().fetch));
   assert.ok(old.results[0]!.outcome === 'done' && !('follows' in old.results[0]!.review.findings[0]!));
+});
+
+// --- code already read (REV-100) -----------------------------------------------------------------
+
+test('a service that sends the last reviewed commit gets `seen` on a finding whose code did not change, and an earlier service gets none (REV-100)', async () => {
+  // The head itself was reviewed: no line changed since.
+  const sent = job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reviewed: head });
+  assert.ok(parseJob(JSON.parse(JSON.stringify(sent))).ok, 'the job is the protocol');
+  const { api, results } = fakeApi();
+  assert.equal(await runJob(sent, deps(api, stubModel().fetch)), 'done');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.equal(result.review.findings[0]!.seen, true);
+  assert.equal(result.review.findings[0]!.blocking, false, 'a new P1 on code already read does not block');
+  assert.notEqual(result.review.verdict, 'REQUEST_CHANGES');
+  assert.ok(logs.some((l) => l.includes('job.seen_code') && l.includes('"seen":1')));
+
+  const old = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, stubModel().fetch));
+  assert.ok(old.results[0]!.outcome === 'done' && !('seen' in old.results[0]!.review.findings[0]!));
+  assert.equal(old.results[0]!.review.verdict, 'REQUEST_CHANGES');
 });

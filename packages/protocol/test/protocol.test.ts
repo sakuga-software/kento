@@ -362,3 +362,13 @@ test('a review job carries the earlier findings with the feature earlier, and a 
   assert.equal(parseResultRequest(done('abcdef012345')).ok, true);
   assert.equal(parseResultRequest(done('E1')).ok, false);
 });
+
+test('a review job carries the last reviewed commit with the feature reviewed, and a finding may say that its code was read (REV-100)', () => {
+  assert.equal(parseJob({ ...job(), reviewed: SHA }).ok, true);
+  assert.equal(parseJob({ ...job(), reviewed: null }).ok, true);
+  assert.equal(parseJob({ ...job(), reviewed: 'abc' }).ok, false);
+  assert.ok(FEATURES.includes('reviewed'));
+  const f = review().findings[0]!;
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), findings: [{ ...f, seen: true }] } }).ok, true);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), findings: [{ ...f, seen: 'yes' }] } }).ok, false);
+});

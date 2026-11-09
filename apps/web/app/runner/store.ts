@@ -12,6 +12,7 @@ import {
   parseReviewFinding,
   parseSettledFinding,
   REUSE_KEY,
+  SHA,
   type EarlierFinding,
   type JobDelta,
   type JobEarlier,
@@ -233,6 +234,11 @@ export interface RunnerStore {
    * of the last review of the pull request at the level of the job, or null.
    */
   jobEarlier(jobId: string): Promise<JobEarlier>
+  /**
+   * REV-100. The head of the last review of Kentō published on the pull request of a review job, of
+   * any level (the head of the job too), or null before the first one.
+   */
+  jobReviewed(jobId: string): Promise<string | null>
   /**
    * Stores the result of an attempt. A finding of a review keeps its `rule_id` only when it names a
    * rule of the repository of the job or of its org, and then gets the title of that rule.
@@ -552,6 +558,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         limit 1`
       let score = last ? Number(jsonOf<StoredReview>(last.result).score) : NaN
       return { findings, last: last && Number.isInteger(score) && score >= 1 && score <= 5 ? { head: last.head, score } : null }
+    },
+
+    async jobReviewed(jobId) {
+      let [row] = await sql<{ head: string }[]>`
+        select reviews.head_sha as head
+        from jobs
+        join reviews on reviews.repo_id = jobs.repo_id and reviews.pr_number = jobs.pr_number
+          and reviews.github_review_id is not null
+        where jobs.id = ${jobId}
+        order by reviews.published_at desc nulls last, reviews.created_at desc
+        limit 1`
+      return row && SHA.test(row.head) ? row.head : null
     },
 
     async recordSentRules(jobId, runnerId, attempt, rules) {

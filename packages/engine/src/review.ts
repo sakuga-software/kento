@@ -1,12 +1,13 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
+import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
 import { inHistory } from './history.ts';
+import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
@@ -55,6 +56,11 @@ export type ReviewInput = ModelClient & {
    * in the score.
    */
   earlier?: JobEarlier | null;
+  /**
+   * REV-100. The last commit that a review of Kentō read on the pull request, of any level, from the
+   * caller. A finding whose code did not change since is marked `seen` (seen.ts).
+   */
+  reviewed?: string | null;
 };
 
 /**
@@ -118,6 +124,8 @@ export type ReviewResult = {
   followed: { byModel: number; byNet: number };
   /** REV-99. The findings that continued a dismissed or kept finding whose file did not change. */
   droppedAsSettled: Finding[];
+  /** REV-100. The last reviewed commit that the review compared with, or null (first review, force-push). */
+  seenSince: string | null;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -176,6 +184,8 @@ export type PreparedReview = {
   diffHash: string;
   reuseKey: string;
   delta: DeltaPlan | null;
+  /** REV-100. What changed since the last reviewed commit, or null. */
+  seen: SeenCode | null;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
@@ -187,33 +197,39 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   const sections = answered.section + rejected.section;
   // REV-99. The earlier findings follow, out of the reuse key: each review changes them.
   const earlierFindings = earlierFindingsSection(input.repoDir, input.head, input.earlier?.findings ?? []);
-  // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
-  // same input gets the same key.
-  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, earlierFindings.section);
-  const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   // REV-88. With the last review, the pack reads only what changed since, when that head is still
   // in the history of this one. A force-push or a rebase reads the whole pull request again.
   // No file of the pull request changed since then, and yet the key differs (a rule, a reply, a doc
   // or the context changed): the change is not in the diff, so the review reads the whole pull request.
   const planned = input.delta ? planDelta(input.repoDir, base, input.head, input.delta.since) : null;
   const delta = planned && planned.files.length > 0 ? planned : null;
+  // REV-100. The zones that changed since the last reviewed commit, for a whole review: an
+  // incremental one (REV-88) shows only them already. Out of the reuse key, as the earlier findings.
+  const seen = seenCode(input.repoDir, input.reviewed, input.head);
+  const lines = changedLines(input.repoDir, base, input.head);
+  const unkeyed = earlierFindings.section + (delta ? '' : changedZonesSection(seen, [...lines.keys()]));
+  // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
+  // same input gets the same key.
+  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
+  const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
   const { pack, skipped, rules } =
     delta || earlier
-      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, earlierFindings.section)
+      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
   return {
     base,
     pack,
     skipped,
     rules,
-    lines: changedLines(input.repoDir, base, input.head),
+    lines,
     threads: answered.held,
     rejected: rejected.held,
     earlier: earlierFindings.held,
     diffHash: diffHash(input.repoDir, base, input.head),
     reuseKey: key,
     delta,
+    seen,
   };
 }
 
@@ -224,7 +240,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads, rejected, earlier, diffHash, reuseKey, delta } = prepared;
+  const { base, pack, skipped, rules, lines, threads, rejected, earlier, diffHash, reuseKey, delta, seen } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -239,7 +255,14 @@ export function finishReview<F extends Finding>(
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
   for (const f of linked.dropped) log(`finding dropped, it continues a finding that a person set aside and its file did not change: ${f.path}: ${f.title}`);
-  const isVariant = (f: F) => followedBy(f, earlier) !== null;
+  // REV-100. A finding whose code did not change since the last reviewed commit is `seen`; the model
+  // never sets it.
+  answer.findings = answer.findings.map((f) => {
+    const { seen: _given, ...rest } = f;
+    return (seen && isSeen(f, seen) ? { ...rest, seen: true } : rest) as F;
+  });
+  // A rewording of an earlier finding, or a new finding to consider (REV-100), is no new defect.
+  const isVariant = (f: F) => !isNewDefect(f, earlier);
   // REV-88. The findings of the last review on the files not read again, the settled findings
   // dropped, and the score kept without a new finding.
   let settledAgain: F[] = [];
@@ -268,8 +291,10 @@ export function finishReview<F extends Finding>(
   // REV-99. A whole review (no incremental plan) whose findings all continue earlier findings keeps
   // at least the score of the last review at this level, when that head is in the history of this
   // one: the defect was counted then. A new defect, or a more severe one, lowers it as before.
+  // REV-100: so does a finding to consider. With no earlier finding and no finding to consider, the
+  // floor has nothing to count once, and the score is the one of the model.
   const last = input.earlier?.last ?? null;
-  if (!delta && last && earlier.length && answer.findings.every((f) => !isNewDefect(f, earlier)) && inHistory(input.repoDir, last.head, input.head)) {
+  if (!delta && last && (earlier.length > 0 || answer.findings.some(toConsider)) && answer.findings.every((f) => !isNewDefect(f, earlier)) && inHistory(input.repoDir, last.head, input.head)) {
     const said = Number(answer.confidence_score) || 0;
     if (said < last.score) {
       answer = { ...answer, confidence_score: last.score };
@@ -311,6 +336,7 @@ export function finishReview<F extends Finding>(
     earlier,
     followed: { byModel: linked.byModel, byNet: linked.byNet },
     droppedAsSettled: linked.dropped,
+    seenSince: seen?.since ?? null,
   };
 }
 

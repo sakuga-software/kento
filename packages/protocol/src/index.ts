@@ -95,8 +95,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `earlier`: a review job can carry `earlier`, every finding of the pull request whatever its
  *   status (REV-99). A finding of the result can then name the finding that it continues with
  *   `follows`.
+ * - `reviewed`: a review job can carry `reviewed`, the last commit that a review of Kentō read on the
+ *   pull request (REV-100). A finding of the result can then say with `seen` that its code did not
+ *   change since.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -337,10 +340,12 @@ export type JobEarlier = { findings: EarlierFinding[]; last: { head: string; sco
  * only (REV-89); null when no review can be reused. Its presence tells the runner that the service
  * reads the keys of REV-89 in the result. `rejected`: with the feature `rejected` only (REV-95).
  * `earlier`: with the feature `earlier` only (REV-99). Its presence tells the runner that the service
- * reads `follows` in the result.
+ * reads `follows` in the result. `reviewed`: with the feature `reviewed` only (REV-100), the head of
+ * the last review of Kentō on the pull request, of any level, or null before the first one. Its
+ * presence tells the runner that the service reads `seen` in the result.
  */
 export type Job =
-  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null; rejected?: RejectedFinding[]; earlier?: JobEarlier })
+  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null; rejected?: RejectedFinding[]; earlier?: JobEarlier; reviewed?: string | null })
   | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
 const claimRequest = obj({
@@ -446,6 +451,7 @@ const finding = obj({
   rule_id: optional(uuid),
   fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
   follows: optional(str({ max: 12, pattern: FINDING_KEY_PATTERN })),
+  seen: optional(bool),
 });
 const earlierFinding = obj({
   key: str({ max: 12, pattern: FINDING_KEY_PATTERN }),
@@ -501,6 +507,7 @@ const job = tagged('kind', {
     ),
     rejected: optional(arr(rejectedFinding, { max: MAX_REJECTED_FINDINGS })),
     earlier: optional(jobEarlier),
+    reviewed: optional(nullable(sha)),
   }),
   resolve: obj({
     ...jobBase,
@@ -560,6 +567,12 @@ export type ReviewFinding = {
    * same defect, reworded, or what a fix left of it. Only when the job carried `earlier`.
    */
   follows?: string;
+  /**
+   * REV-100. The code of the finding (its lines, and 5 lines around) did not change since the last
+   * commit that a review of Kentō read on the pull request. Only when the job carried `reviewed`.
+   * A new finding of this kind, not critical, does not block (`toConsider` of packages/engine).
+   */
+  seen?: boolean;
 };
 
 /** The review of a job: what `reviewPullRequest` of packages/engine returns, without the pack. */

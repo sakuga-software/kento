@@ -95,6 +95,8 @@ interface Prepared {
   rejected: RejectedFinding[] | null
   /** REV-99. The findings of the pull request of a review job, for a runner that reads them. */
   earlier: JobEarlier | null
+  /** REV-100. The last reviewed commit of the pull request of a review job (null: none), or undefined for a runner that does not read it. */
+  reviewed: string | null | undefined
 }
 
 /** The provider of a job and its key, in the shape of the release of the runner. */
@@ -208,7 +210,16 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         log('warn', 'job.earlier_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
     }
-    return { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier }
+    // REV-100. The last commit that a review of Kentō read. A failure costs the review this rule only.
+    let reviewed: string | null | undefined
+    if (job.kind === 'review' && (body.features?.includes('reviewed') ?? false)) {
+      try {
+        reviewed = await deps.store.jobReviewed(job.id)
+      } catch (cause) {
+        log('warn', 'job.reviewed_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
+      }
+    }
+    return { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier, reviewed }
   }
 
   /**
@@ -268,7 +279,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
-    let { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier } = prepared
+    let { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier, reviewed } = prepared
     let { provider, providers, keyFromService } = keys
     log('info', 'job.claimed', {
       jobId: job.id,
@@ -325,7 +336,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       200,
       resolve
         ? { ...message, kind: 'resolve', resolve }
-        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}), ...(rejected ? { rejected } : {}), ...(earlier ? { earlier } : {}) },
+        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}), ...(rejected ? { rejected } : {}), ...(earlier ? { earlier } : {}), ...(reviewed !== undefined ? { reviewed } : {}) },
     )
   }
 

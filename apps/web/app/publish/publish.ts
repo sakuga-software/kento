@@ -12,6 +12,7 @@ import {
   findingKey,
   isBlocking,
   score,
+  toConsider,
   verdict,
   type Answer,
   type Finding,
@@ -226,6 +227,8 @@ export async function publishReview(
   for (let f of ordered) {
     // A finding that an open thread already carries is not posted again.
     if (matchOf.get(f)?.carrier) continue
+    // REV-100. A new finding on code already read, not critical, gets no thread: the block lists it.
+    if (toConsider(f)) continue
     let line = anchorOf(f)
     if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null

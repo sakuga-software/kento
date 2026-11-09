@@ -68,6 +68,11 @@ score. A finding that follows an earlier one, with the same severity or a
 lower one, does not lower `confidence_score` again; a more severe one is a new
 fact, and lowers it.
 
+A `Changed since the last review` section can follow: the zones of the head
+that changed since an earlier review read this pull request. Look at them
+first. The rest of the code was read by that review; report a defect there
+only when you are sure of it, with the severity that it has.
+
 # Method
 
 1. Read `CLAUDE.md` and `AGENTS.md` if the first message holds them. The conventions
