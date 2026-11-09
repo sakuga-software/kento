@@ -4,8 +4,8 @@ import { git } from './git.ts';
 import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
 
 // A finding blocks the merge at this severity and confidence.
-const BLOCKING_SEVERITIES = new Set(['critical', 'major']);
-const BLOCKING_CONFIDENCE = 70;
+export const BLOCKING_SEVERITIES = new Set(['critical', 'major']);
+export const BLOCKING_CONFIDENCE = 70;
 
 // A finding can anchor on a changed line this far from the line the model named.
 const ANCHOR_DISTANCE = 10;

@@ -7,6 +7,46 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-94: `reject` sets the finding aside, resolves its thread, and lifts the CHANGES_REQUESTED
+
+Migration `0023_finding_event_source`, one `ALTER TABLE "finding_events" ADD COLUMN "source" text`
+(nullable, no rewrite of the table). `/healthz` gives `"migrations":24`. No new variable, no new
+permission: the resolve of a thread uses the token `contents: write` that a resolve job already asks
+for (REV-71), and the dismissal of a review uses `pull_requests: write`. No change of the protocol
+of the runners: deploy `web` alone. Deploy it with REV-93 (the subscription to `Pull request review
+comment` of REV-93 comes first).
+
+A `reject` that names a finding now has its effect at once, without a new review:
+
+- The finding becomes `dismissed`, with the cause as its reason and the login of the person. A
+  `wontfix` finding becomes `dismissed` too (a false positive is more than « accepted as is »); its
+  events keep both decisions. Its
+  event has `source = 'command'`. The screens show it as a dismissal of REV-18, and the precision
+  counts it as a false positive.
+- The thread of the finding gets the reply `replyText` and is resolved. Without `contents: write`,
+  the reply says that a person can resolve it. A command of the conversation also gets a reply under
+  the pull request.
+- When the last review of Kentō on the head is `CHANGES_REQUESTED` and no finding that the engine
+  marked blocking in it stays open (`blocking` in `reviews.result`, matched to the findings by their
+  key), Kentō dismisses that review with a message that names the finding and the person. A review
+  that Kentō did not store is left as it is; a review kept is logged `command.reject_review_kept`.
+- The confidence score of the review does not change: the next review computes it again.
+- 👀 on receipt, 🚀 after the effect, 😕 when a step on GitHub failed (the finding stays dismissed;
+  the log `command.reject_<step>_failed` names the step). GitHub never sends a delivery again by
+  itself, whatever its status: after a 😕, the person writes the same `reject` again (or redelivers
+  the webhook from the settings of the App), and Kentō does the missing steps then (the reply by its
+  marker, the resolve of the thread, the dismissal of the review), without a second reply. When a
+  redelivery of the same comment succeeds, the handler tries to take its 😕 back before 🚀, and a
+  redelivery that fails takes its 🚀 back before 😕. One
+  case gets no retry: a push that fixed the finding in between makes the reject refused; the next
+  review then dismisses the old `CHANGES_REQUESTED` by itself (`publish.ts`). A redelivery, or a second `reject` of the
+  same finding, posts only a reply that is missing: each reply carries the hidden marker
+  `<!-- kento:reject <finding id> -->`, and a reply that failed the first time goes then, once. A finding `fixed` or `stale` refuses the command with 😕.
+
+Check: on a pull request whose review has one blocking finding, `@kento-review reject <cause>` in its
+thread. The thread is resolved, the reply quotes the cause, the review `CHANGES_REQUESTED` is
+dismissed, and the log `command.rejected` gives `dismissedReview`. The finding is `dismissed` with
+the cause on the Findings screen.
 ## REV-89: No new review of a push that changes no reviewed file
 
 No migration, no new variable, no new permission. A runner of this release says `reuse` in the

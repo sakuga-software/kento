@@ -22,8 +22,11 @@ export type WebhookResult =
   | { outcome: 'updated'; repositories: number; cancelled: number }
   /** A command that the bot refused: no permission, an unknown command, a fork, a head already reviewed. */
   | { outcome: 'refused'; reason: string }
-  /** REV-93. A `reject` that names a finding of the pull request. */
-  | { outcome: 'accepted'; findingId: string }
+  /**
+   * REV-94. A `reject` set the finding aside (`dismissed`), or found it already set aside
+   * (`unchanged`). `dismissedReview`: the review of Kentō that it dismissed, or null.
+   */
+  | { outcome: 'dismissed' | 'unchanged'; findingId: string; dismissedReview: number | null }
   /** REV-13. The org reached its cost limit of the day or of the month: no job. */
   | { outcome: 'capped'; reason: string; period: CapHit['period']; spentUsd: number; capUsd: number; resetsAt: string }
 

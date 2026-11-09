@@ -13,11 +13,14 @@
 //   of every visitor. The log says why.
 //
 // REV-93. `@kento-review reject <cause>` in the thread of a finding, or `@kento-review reject <id>
-// <cause>` in the conversation, names a finding of the pull request. A command in a review thread
+// <cause>` in the conversation, names a finding of the pull request. REV-94 sets it aside at once
+// (reject.ts): 👀 on receipt, 🚀 after the effect, 😕 when a step on GitHub failed. A command in a review thread
 // (`pull_request_review_comment`) gets its reactions and its reply on the routes of the review
 // comments. In a thread, only `reject` is read: the other commands go in the conversation.
 import { SHA } from '@sakuga-review/protocol'
 import { and, eq, sql } from 'drizzle-orm'
+
+import type postgres from 'postgres'
 
 import type { Db } from '../db/client.ts'
 import { findings, repos } from '../db/schema.ts'
@@ -26,6 +29,7 @@ import type { MintInstallationToken, TokenPermissions } from '../github/installa
 import { rejectProblem, rejectProblemText, USAGE, type CommentCommand } from '../github/comment-command.ts'
 import type { CommandPlace } from '../github/events.ts'
 import { WRITERS } from '../github/permissions.ts'
+import { applyReject, REJECT_REFUSED, REJECT_THREAD_PERMISSIONS, type RejectTarget as RejectFinding } from './reject.ts'
 import { errorMessage, log } from '../log.ts'
 import { capSentence } from '../org-settings/notice.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
@@ -41,6 +45,10 @@ export type Reaction = 'eyes' | 'rocket' | 'confused'
 
 export interface CommandHandlerDependencies {
   db: Db
+  /** REV-94. The same database, for the status of the findings (`setFindingStatus`). */
+  sql: postgres.Sql
+  /** REV-94. The login of the App: the reviews that a `reject` can dismiss are its own. */
+  botLogin?: string
   /** Null without the GitHub App: a command is then skipped. */
   mintInstallationToken: MintInstallationToken | null
   apiUrl: string
@@ -65,6 +73,20 @@ function commentPath(fullName: string, commentId: number, place: CommandPlace): 
 async function reactWithId(github: GitHub, fullName: string, commentId: number, content: Reaction, place: CommandPlace = CONVERSATION) {
   let { status, body } = await github.send<{ id?: number }>('POST', `${commentPath(fullName, commentId, place)}/reactions`, { content })
   return { created: status === 201, id: typeof body?.id === 'number' ? body.id : null }
+}
+
+/**
+ * Removes a reaction of the App from a comment. GitHub gives the id of a reaction only when it is
+ * posted (200 when it was already there, 201 when it is new): the call then deletes that id, so the
+ * reaction is gone either way. A failure is logged, never thrown: it is a reaction.
+ */
+async function clearReaction(github: GitHub, fullName: string, commentId: number, content: Reaction, place: CommandPlace) {
+  try {
+    let { id } = await reactWithId(github, fullName, commentId, content, place)
+    if (id !== null) await github.send('DELETE', `${commentPath(fullName, commentId, place)}/reactions/${id}`)
+  } catch (error) {
+    log('warn', 'command.reaction_not_removed', { repo: fullName, commentId, content, error: errorMessage(error) })
+  }
 }
 
 /**
@@ -144,15 +166,59 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       if (target.kind !== 'found') {
         return refuse(`reject: ${target.kind}`, `@${message.commenter.login} ${targetProblemText(target, command)}`)
       }
-      // A push fixed the finding, or the pull request closed: there is nothing to set aside.
-      if (target.status === 'fixed' || target.status === 'stale') {
-        let why = target.status === 'fixed' ? "un push l'a déjà corrigé" : 'il ne vaut plus pour cette PR (stale)'
-        return refuse(`reject: finding is ${target.status}`, `@${message.commenter.login} Le constat \`#${target.key.slice(0, 6)}\` n'est plus ouvert : ${why}. Il n'y a rien à écarter.`)
+      let finding = target.finding
+      // The status of the finding first: it costs no call to GitHub.
+      if (REJECT_REFUSED.has(finding.status)) {
+        let why = finding.status === 'fixed' ? 'un push l\'a déjà corrigé' : 'il ne vaut plus pour cette PR (stale)'
+        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} Le constat \`#${finding.key.slice(0, 6)}\` n'est plus ouvert : ${why}. Il n'y a rien à écarter.`)
       }
-      // REV-94 sets the finding aside here. Until then, 👀 says that the command names a finding.
+      // As for the other commands: a pull request closed since the comment gets nothing.
+      let open: { state?: string } = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
+      if (open.state !== 'open') return { outcome: 'skipped', reason: 'pull request is closed' }
       await reactWithId(github, fullName, message.commentId, 'eyes', place)
-      log('info', 'command.reject_accepted', { ...fields, findingId: target.findingId, reasonLength: command.reason.length })
-      return { outcome: 'accepted', findingId: target.findingId }
+      let rejecting = applyReject({
+        sql: deps.sql,
+        github,
+        writer: async () => {
+          let write = await mint({
+            installationId: message.installation.githubInstallationId,
+            githubRepoId: message.repository.githubRepoId,
+            permissions: REJECT_THREAD_PERMISSIONS,
+          })
+          return createGitHub({ apiUrl: deps.apiUrl, token: write.token, fetch: deps.fetch })
+        },
+        fullName,
+        prNumber: message.prNumber,
+        place,
+        login: message.commenter.login,
+        botLogin: deps.botLogin ?? 'kento-review[bot]',
+        reason: command.reason,
+        finding,
+        warn: (event, extra) => log('warn', event, { ...fields, findingId: finding.id, ...extra }),
+      })
+      // The status could not be written: 😕, then the delivery fails (500). GitHub never sends it
+      // again by itself: a redelivery from the settings of the App, or the same reject again, retries.
+      let result = await rejecting.catch(async (error: unknown) => {
+        await reactWithId(github, fullName, message.commentId, 'confused', place).catch(() => {})
+        throw error
+      })
+      if (result.refusedStatus) {
+        let why = result.refusedStatus === 'fixed' ? "un push l'a déjà corrigé" : 'il ne vaut plus pour cette PR (stale)'
+        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} Le constat \`#${finding.key.slice(0, 6)}\` n'est plus ouvert : ${why}. Il n'y a rien à écarter.`)
+      }
+      // A redelivery or a second reject reacts again: GitHub keeps one reaction.
+      if (result.failed.length) {
+        // A redelivery that fails after a try that succeeded: the 🚀 of that try goes too.
+        await clearReaction(github, fullName, message.commentId, 'rocket', place)
+        await reactWithId(github, fullName, message.commentId, 'confused', place)
+      } else {
+        // A delivery sent again after a 😕 that now succeeds: the handler tries to take its 😕 back
+        // (a failure is only logged), then adds 🚀.
+        await clearReaction(github, fullName, message.commentId, 'confused', place)
+        await reactWithId(github, fullName, message.commentId, 'rocket', place)
+      }
+      log('info', 'command.rejected', { ...fields, findingId: finding.id, reasonLength: command.reason.length, ...result })
+      return { outcome: result.changed ? 'dismissed' : 'unchanged', findingId: finding.id, dismissedReview: result.dismissedReview }
     }
     if (place.kind === 'thread') {
       return refuse(
@@ -226,7 +292,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
 type RejectCommand = Extract<CommentCommand, { verb: 'reject' }>
 
 type RejectTarget =
-  | { kind: 'found'; findingId: string; key: string; status: string }
+  | { kind: 'found'; finding: RejectFinding }
   /** The thread of the command is not the thread of a finding of Kentō. */
   | { kind: 'not_a_finding_thread' }
   /** No finding of the pull request has a key that starts with the id. */
@@ -244,7 +310,15 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
   // match every finding of the pull request.
   if (message.place.kind === 'conversation' && !command.id) return { kind: 'unknown_id' }
   let rows = await db
-    .select({ id: findings.id, key: findings.key, status: findings.status })
+    .select({
+      id: findings.id,
+      orgId: repos.orgId,
+      key: findings.key,
+      title: findings.title,
+      status: findings.status,
+      githubCommentId: findings.githubCommentId,
+      githubThreadId: findings.githubThreadId,
+    })
     .from(findings)
     .innerJoin(repos, eq(repos.id, findings.repoId))
     .where(
@@ -258,7 +332,7 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
     )
     .orderBy(findings.key)
     .limit(5)
-  if (rows.length === 1) return { kind: 'found', findingId: rows[0]!.id, key: rows[0]!.key, status: rows[0]!.status }
+  if (rows.length === 1) return { kind: 'found', finding: rows[0]! }
   if (message.place.kind === 'thread') {
     // One thread has one finding: two rows would be a bug of the ledger. The thread is refused.
     return { kind: 'not_a_finding_thread' }

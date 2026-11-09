@@ -4,6 +4,7 @@
 // of the commenter, and keeps the reactions and the comments of the bot.
 import { generateKeyPairSync } from 'node:crypto'
 
+import { findingKey } from '@sakuga-review/engine/findings'
 import type { Job, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
@@ -42,6 +43,8 @@ describe('commands in the comments of a pull request', () => {
   let fake: FakeGitHub
   let delivery = 0
   let comment = 9000
+  /** REV-94. The database of the command handler, when a test makes it fail. */
+  let commandSql: Database['sql'] | null = null
 
   function mint() {
     return createInstallationTokenMinter({ appId: '12345', privateKey: readPrivateKey(pem), apiUrl: fake.apiUrl, fetch: fake.fetch })
@@ -59,6 +62,8 @@ describe('commands in the comments of a pull request', () => {
         apply: createWebhookStore(database.db, {
           handleCommentCommand: createCommandHandler({
             db: database.db,
+            sql: commandSql ?? database.sql,
+            botLogin: BOT,
             mintInstallationToken: mint(),
             apiUrl: fake.apiUrl,
             fetch: fake.fetch,
@@ -120,6 +125,7 @@ describe('commands in the comments of a pull request', () => {
     await database.sql`truncate orgs, repos, runners, jobs, reviews cascade`
     await seedEnabledRepo(database.sql)
     fake = createFakeGitHub({ head: HEAD, pr: PR, repoId: REPO.id })
+    commandSql = null
     fake.state.permissions.set('alex', 'admin')
     fake.state.permissions.set('writer', 'write')
     fake.state.permissions.set('maintainer', 'maintain')
@@ -365,6 +371,32 @@ describe('commands in the comments of a pull request', () => {
       let reactions = fake.state.calls.filter((c) => c.path.endsWith('/reactions')).length
       await publisher().publishPending()
       assert.equal(fake.state.calls.filter((c) => c.path.endsWith('/reactions')).length, reactions)
+    })
+
+    it('15b. REV-94: a review published with one blocking finding, then `reject` in its thread: the key of the ledger matches, the review is dismissed (end to end)', async () => {
+      fake.state.canResolve = true
+      await say('@kento-review review heavy')
+      let { job, token } = await claim()
+      let finding = {
+        path: 'src/sum.ts', start_line: 4, line: 4, severity: 'major', category: 'bug', confidence: 90,
+        title: 'La somme soustrait', scenario: 'sum(1, 2) donne -1.', fix: 'a + b', suggestion: '',
+        anchor: 4, blocking: true, suggestion_range: null,
+      }
+      let payload = { ...review(), score: 2, verdict: 'REQUEST_CHANGES', findings: [finding] }
+      let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'done', attempt: job.attempt, review: payload })
+      assert.equal(stored.status, 204)
+      assert.equal((await publisher().publishPending())[0]?.kind, 'published')
+      let posted = fake.state.reviews.at(-1)!
+      assert.equal(posted.state, 'CHANGES_REQUESTED')
+      let [row] = await database.sql<{ key: string; commentId: number }[]>`select key, github_comment_id::float8 as "commentId" from findings`
+      assert.ok(row && row.commentId)
+
+      let command = reviewCommentPayload({ body: '@kento-review reject faux positif : sum soustrait à dessein', inReplyTo: row.commentId, commentId: ++comment })
+      let response = await router().fetch(signedRequest(command, { event: 'pull_request_review_comment', deliveryId: nextDelivery() }))
+      let body = await response.json()
+      assert.equal(body.outcome, 'dismissed')
+      assert.equal(body.dismissedReview, posted.id)
+      assert.equal(posted.state, 'DISMISSED')
     })
 
     it('16. a job of a command that fails gets 😕, once', async () => {
@@ -656,12 +688,14 @@ describe('commands in the comments of a pull request', () => {
 
   describe('reject (REV-93)', () => {
     /** A finding of the pull request PR (or of `pr`), with its thread on the fake when `thread` is set. */
-    async function seedFinding(key: string, options: { thread?: boolean; pr?: number; status?: string } = {}) {
-      let commentId = options.thread ? fake.addThread({ path: 'src/a.ts', line: 3, body: `**Bug** \`#${key.slice(0, 6)}\``, commit: HEAD }) : null
+    async function seedFinding(key: string, options: { thread?: boolean; pr?: number; status?: string; severity?: string; confidence?: number; lastSeen?: string; title?: string } = {}) {
+      let title = options.title ?? 'Bug'
+      let commentId = options.thread ? fake.addThread({ path: 'src/a.ts', line: 3, body: `**${title}** \`#${key.slice(0, 6)}\``, commit: HEAD }) : null
       let [row] = await database.sql<{ id: string }[]>`
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status,
-          first_seen_sha, last_seen_sha, github_comment_id)
-        select id, ${options.pr ?? PR}, ${`fp-${key}`}, ${key}, 'src/a.ts', 3, 'Bug', 'major', 'bug', 90, ${options.status ?? 'open'}, ${HEAD}, ${HEAD}, ${commentId}
+          first_seen_sha, last_seen_sha, github_comment_id, github_thread_id)
+        select id, ${options.pr ?? PR}, ${`fp-${key}`}, ${key}, 'src/a.ts', 3, ${title}, ${options.severity ?? 'major'}, 'bug', ${options.confidence ?? 90},
+          ${options.status ?? 'open'}, ${HEAD}, ${options.lastSeen ?? HEAD}, ${commentId}, ${commentId === null ? null : `PRRT_${commentId}`}
         from repos where github_repo_id = ${REPO.id}
         returning id`
       return { id: row!.id, commentId }
@@ -683,15 +717,34 @@ describe('commands in the comments of a pull request', () => {
     const threadReactionsOf = (id: number) =>
       [...fake.state.reviewCommentReactions].filter((r) => r.startsWith(`${id}:`)).map((r) => r.split(':')[1]).sort()
 
-    it('R1. a reject in the thread of a finding names that finding, and answers 👀 on the reply', async () => {
+    async function statusOf(id: string) {
+      let [row] = await database.sql<{ status: string; reason: string | null }[]>`select status, status_reason as reason from findings where id = ${id}`
+      return { ...row }
+    }
+
+    async function eventsOf(id: string) {
+      return (await database.sql<{ type: string; actor: string; reason: string | null; source: string | null }[]>`
+        select type, actor, reason, source from finding_events where finding_id = ${id} order by created_at, id`).map((e) => ({ ...e }))
+    }
+
+    it('R1. a reject in the thread of a finding dismisses it, replies with the cause, resolves the thread, then 🚀 (REV-94)', async () => {
+      fake.state.canResolve = true
+      fake.state.resolveNeedsWrite = true
       let finding = await seedFinding('3cf454aa0011', { thread: true })
-      let { status, body, payload } = await reply('Not a bug.\n\n@kento-review reject faux positif, la valeur est validée par le schéma', finding.commentId!)
+      let cause = 'faux positif, la valeur est validée par le schéma'
+      let { status, body, payload } = await reply(`Not a bug.\n\n@kento-review reject ${cause}`, finding.commentId!)
       assert.equal(status, 202)
-      assert.deepEqual(body, { outcome: 'accepted', findingId: finding.id })
-      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes'])
-      // The reaction goes on the review comment, not on a comment of the conversation.
+      assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes', 'rocket'])
+      // The reactions go on the review comment, not on a comment of the conversation.
       assert.deepEqual(reactionsOf(payload.comment.id), [])
-      assert.equal(fake.repliesTo(finding.commentId!).length, 0)
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: cause })
+      assert.deepEqual(await eventsOf(finding.id), [{ type: 'dismissed', actor: 'alex', reason: cause, source: 'command' }])
+      let replies = fake.repliesTo(finding.commentId!)
+      assert.equal(replies.length, 1)
+      assert.equal(replies[0]!.body, `Finding écarté (dismissed) par @alex sur Kentō. Motif : « ${cause} ». Les prochaines reviews ne le commenteront plus.\n\n<!-- kento:reject ${finding.id} -->`)
+      assert.ok(fake.state.resolved.has(finding.commentId!))
+      assert.equal(fake.state.issueComments.length, 0)
       assert.equal((await jobs()).length, 0)
     })
 
@@ -704,9 +757,9 @@ describe('commands in the comments of a pull request', () => {
       await seedFinding('eeeeee000001', { status: 'stale' })
       let stale = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
-      // A finding set aside before can be named again: REV-94 makes the second reject change nothing.
+      // A finding set aside before can be named again: the second reject changes nothing.
       await seedFinding('ffffff000001', { status: 'dismissed' })
-      assert.equal((await say('@kento-review reject #ffffff ok')).body.outcome, 'accepted')
+      assert.equal((await say('@kento-review reject #ffffff ok')).body.outcome, 'unchanged')
     })
 
     it('R14. without an id in the conversation, the lookup finds nothing, even when called past the guard', async () => {
@@ -730,11 +783,330 @@ describe('commands in the comments of a pull request', () => {
       let finding = await seedFinding('3cf454aa0011')
       await seedFinding('9d00aa110022')
       let first = await say('@kento-review reject #3CF454 la valeur est validée par le schéma')
-      assert.deepEqual(first.body, { outcome: 'accepted', findingId: finding.id })
-      assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes'])
+      assert.deepEqual(first.body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
+      assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes', 'rocket'])
+      // The reply goes under the pull request: this finding has no thread.
+      assert.deepEqual(fake.state.issueComments.map((c) => c.body), [
+        `@alex Le constat \`#3cf454\` « Bug » est écarté (dismissed). Motif : « la valeur est validée par le schéma ». Les prochaines reviews ne le commenteront plus.\n\n<!-- kento:reject ${finding.id} -->`,
+      ])
+      // A second reject of the same finding, even with another cause, changes nothing and posts nothing.
       let second = await say('@sakuga-review reject 3cf454aa la valeur est validée')
-      assert.deepEqual(second.body, { outcome: 'accepted', findingId: finding.id })
+      assert.deepEqual(second.body, { outcome: 'unchanged', findingId: finding.id, dismissedReview: null })
+      assert.equal(fake.state.issueComments.length, 1)
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'la valeur est validée par le schéma' })
+      assert.equal((await eventsOf(finding.id)).length, 1)
+    })
+
+    it('R2b. a reject in the conversation of a finding with a thread replies in both, and resolves the thread', async () => {
+      fake.state.canResolve = true
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let { body } = await say('@kento-review reject #3cf454 dup of #12')
+      assert.equal(body.outcome, 'dismissed')
+      assert.equal(fake.repliesTo(finding.commentId!).length, 1)
+      assert.equal(fake.state.issueComments.length, 1)
+      assert.ok(fake.state.resolved.has(finding.commentId!))
+    })
+
+    /** The key of a finding of `src/a.ts` with this title, as the engine computes it. */
+    const keyOf = (title: string) => findingKey({ path: 'src/a.ts', title } as never)
+
+    /**
+     * A review of Kentō on GitHub (the fake) and in the database, with the findings that the engine
+     * gave it: `blocking` as the engine marked them.
+     */
+    async function storeReview(state: string, findings: { title: string; blocking: boolean }[], commitId = HEAD) {
+      let githubReviewId = fake.addReview({ state, commitId })
+      let [job] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+        select id, 'lite', ${PR}, ${commitId}, ${`delivery-review-${githubReviewId}`} from repos where github_repo_id = ${REPO.id}
+        returning id`
+      // Each finding as the runner stores it (ReviewFinding of the protocol), every field set.
+      let result = {
+        findings: findings.map((f) => ({
+          path: 'src/a.ts',
+          start_line: 3,
+          line: 3,
+          severity: 'major',
+          category: 'bug',
+          confidence: 90,
+          title: f.title,
+          scenario: 'Un scénario.',
+          fix: 'Une correction.',
+          suggestion: '',
+          anchor: f.blocking ? 3 : null,
+          blocking: f.blocking,
+          suggestion_range: null,
+          // A finding that cites a rule: its key is still the path and the title, as in the ledger.
+          rule_id: '00000000-0000-4000-8000-000000000001',
+        })),
+      }
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        select ${job!.id}, id, ${PR}, ${commitId}, 2, 'm', 0, ${JSON.stringify(result)}::jsonb, ${githubReviewId}, now()
+        from repos where github_repo_id = ${REPO.id}`
+      return githubReviewId
+    }
+
+    it('R8. the last review of Kentō on the head asks for changes: a reject of its only blocking finding dismisses it', async () => {
+      fake.state.canResolve = true
+      let older = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }], headSha(0x123))
+      let review = await storeReview('CHANGES_REQUESTED', [
+        { title: 'Bug', blocking: true },
+        // Findings that the engine did not mark blocking hold nothing, even when they stay open.
+        { title: 'Style', blocking: false },
+      ])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      await seedFinding(keyOf('Style'), { thread: true, title: 'Style' })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: review })
+      let id = keyOf('Bug').slice(0, 6)
+      assert.deepEqual(fake.state.dismissals, [
+        { reviewId: review, message: `Retirée par Kentō : @alex a écarté le constat \`#${id}\` « Bug », et aucun constat bloquant ne reste ouvert.` },
+      ])
+      // The review of an older head is not the last one on the head: publish.ts dismisses it at the next review.
+      assert.equal(fake.state.reviews.find((r) => r.id === older)!.state, 'CHANGES_REQUESTED')
+    })
+
+    it('R9. another blocking finding of that review still open, or a last review that does not ask for changes: no dismissal', async () => {
+      await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Autre', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      await seedFinding(keyOf('Autre'), { thread: true, title: 'Autre', lastSeen: headSha(0x123) })
+      let lines: string[] = []
+      let write = process.stderr.write.bind(process.stderr)
+      process.stderr.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+        lines.push(String(chunk))
+        return write(chunk, ...rest)
+      }) as typeof process.stderr.write
+      let first
+      try {
+        first = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      } finally {
+        process.stderr.write = write
+      }
+      assert.equal(first.body.dismissedReview, null, 'the other blocking finding of the review holds it, whatever its last head')
+      let kept = lines.flatMap((l) => l.split('\n')).filter(Boolean).map((l) => JSON.parse(l)).find((l) => l.event === 'command.reject_review_kept')
+      assert.deepEqual(kept?.blocking, [`#${keyOf('Autre').slice(0, 6)}`])
+      assert.equal(fake.state.dismissals.length, 0)
+
+      await database.sql`truncate findings, reviews, jobs cascade`
+      fake.state.reviews.length = 0
+      await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }])
+      await storeReview('COMMENTED', [])
+      let other = await seedFinding(keyOf('Bug'), { thread: true })
+      let second = await reply('@kento-review reject ok', other.commentId!)
+      assert.equal(second.body.dismissedReview, null)
+      assert.equal(fake.state.dismissals.length, 0)
+    })
+
+    it('R24. a blocking finding of the review that is no longer open (fixed) holds nothing: the review is lifted', async () => {
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Autre', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      await seedFinding(keyOf('Autre'), { thread: true, title: 'Autre', status: 'fixed' })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(body.dismissedReview, review)
+    })
+
+    it('R25. a blocking finding of the review with no row of the ledger holds nothing, and the log names it', async () => {
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Jamais écrit', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(body.dismissedReview, review)
+    })
+
+    it('R15. only the blocking findings of the review count: an open finding that it did not report holds nothing; a review that Kentō did not store is left', async () => {
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      await seedFinding(keyOf('Ancien'), { thread: true, title: 'Ancien', lastSeen: headSha(0x123) })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(body.dismissedReview, review)
+
+      await database.sql`truncate findings, reviews, jobs cascade`
+      fake.state.reviews.length = 0
+      fake.state.dismissals.length = 0
+      fake.addReview({ state: 'CHANGES_REQUESTED' })
+      let unknown = await seedFinding(keyOf('Bug'), { thread: true })
+      let lines: string[] = []
+      let write = process.stderr.write.bind(process.stderr)
+      process.stderr.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+        lines.push(String(chunk))
+        return write(chunk, ...rest)
+      }) as typeof process.stderr.write
+      let second
+      try {
+        second = await reply('@kento-review reject ok', unknown.commentId!)
+      } finally {
+        process.stderr.write = write
+      }
+      assert.ok(lines.join('').includes('"event":"command.reject_review_not_stored"'))
+      assert.equal(second.body.dismissedReview, null)
+      assert.equal(fake.state.dismissals.length, 0)
+    })
+
+    it('R18. a review that someone dismissed between the list and the dismissal (422) is a success, not 😕', async () => {
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      fake.state.dismissRefused = true
+      let { body, payload } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: review })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes', 'rocket'])
+    })
+
+    it('R19. a dismissal of the review that GitHub refused: 😕, and the next reject of the finding does it, without a second reply', async () => {
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }])
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      fake.state.failDismissals = 1
+      let first = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(first.body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
+      assert.deepEqual(threadReactionsOf(first.payload.comment.id), ['confused', 'eyes'])
+      assert.equal(fake.state.reviews.find((r) => r.id === review)!.state, 'CHANGES_REQUESTED')
+      let again = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(again.body, { outcome: 'unchanged', findingId: finding.id, dismissedReview: review })
+      assert.deepEqual(threadReactionsOf(again.payload.comment.id), ['eyes', 'rocket'])
+      assert.equal(fake.state.reviews.find((r) => r.id === review)!.state, 'DISMISSED')
+      assert.equal(fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT).length, 1)
+    })
+
+    it('R20. a review whose stored findings have no path or title is left, logged, and the reject still ends with 🚀', async () => {
+      let githubReviewId = fake.addReview({ state: 'CHANGES_REQUESTED' })
+      let [job] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+        select id, 'lite', ${PR}, ${HEAD}, 'delivery-broken' from repos where github_repo_id = ${REPO.id} returning id`
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        select ${job!.id}, id, ${PR}, ${HEAD}, 2, 'm', 0, ${JSON.stringify({ findings: [{ blocking: true, line: 3 }] })}::jsonb, ${githubReviewId}, now()
+        from repos where github_repo_id = ${REPO.id}`
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      let { body, payload } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes', 'rocket'])
+      assert.equal(fake.state.dismissals.length, 0)
+    })
+
+    it('R21. a reply whose presence GitHub could not tell is not posted blind: 😕, and the next try posts it once', async () => {
+      let finding = await seedFinding(keyOf('Bug'), { thread: true, status: 'dismissed' })
+      fake.state.failCommentLists = 1
+      let first = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(first.body.outcome, 'unchanged')
+      assert.deepEqual(threadReactionsOf(first.payload.comment.id), ['confused', 'eyes'])
+      assert.equal(fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT).length, 0)
+      let again = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(threadReactionsOf(again.payload.comment.id), ['eyes', 'rocket'])
+      assert.equal(fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT).length, 1)
+      await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT).length, 1)
+    })
+
+    it('R22. a pull request closed since the comment: the reject does nothing', async () => {
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      fake.state.pr.state = 'closed'
+      let { body, payload } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'skipped', reason: 'pull request is closed' })
+      assert.equal((await statusOf(finding.id)).status, 'open')
+      assert.deepEqual(threadReactionsOf(payload.comment.id), [])
+      assert.equal(fake.repliesTo(finding.commentId!).length, 0)
+    })
+
+    it('R26. a redelivery that fails after a try that succeeded takes its 🚀 back: 😕 alone', async () => {
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      let first = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(threadReactionsOf(first.payload.comment.id), ['eyes', 'rocket'])
+      fake.state.failCommentLists = 1
+      await replayReply(first.payload, first.deliveryId)
+      assert.deepEqual(threadReactionsOf(first.payload.comment.id), ['confused', 'eyes'])
+    })
+
+    it('R16. a database that fails while the status is written: 😕 on the command, the delivery fails, and the same reject again does it', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      commandSql = new Proxy(database.sql, {
+        get: (target, key, receiver) => (key === 'begin' ? () => Promise.reject(new Error('connection lost')) : Reflect.get(target, key, receiver)),
+      })
+      let failed = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(failed.status, 500)
+      assert.deepEqual(threadReactionsOf(failed.payload.comment.id), ['confused', 'eyes'])
+      assert.equal((await statusOf(finding.id)).status, 'open')
+      assert.equal(fake.repliesTo(finding.commentId!).length, 0)
+      // A redelivery of the same comment from the settings of the App: the 😕 goes, 🚀 stays alone.
+      commandSql = null
+      await replayReply(failed.payload, failed.deliveryId)
+      assert.deepEqual(threadReactionsOf(failed.payload.comment.id), ['eyes', 'rocket'])
+      // GitHub does not send the delivery again: the person can also write the reject again.
+      let again = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(again.body.outcome, 'unchanged')
+      assert.equal((await statusOf(finding.id)).status, 'dismissed')
+    })
+
+    it('R17b. a finding dismissed with a cause on the screen, then rejected again: the missing reply quotes the cause of the row', async () => {
+      let finding = await seedFinding(keyOf('Bug'), { thread: true, status: 'dismissed' })
+      await database.sql`update findings set status_reason = 'Faux positif' where id = ${finding.id}`
+      await reply('@kento-review reject une autre cause', finding.commentId!)
+      let replies = fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT)
+      assert.equal(replies.length, 1)
+      assert.match(replies[0]!.body, /Motif : « Faux positif »/)
+    })
+
+    it('R23. a wontfix finding becomes dismissed with the cause of the reject, and its events keep both decisions', async () => {
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      await database.sql`update findings set status = 'wontfix' where id = ${finding.id}`
+      await database.sql`insert into finding_events (finding_id, type, actor) values (${finding.id}, 'wontfix', 'camille')`
+      let { body } = await reply('@kento-review reject faux positif', finding.commentId!)
+      assert.equal(body.outcome, 'dismissed')
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'faux positif' })
+      assert.deepEqual((await eventsOf(finding.id)).map((e) => [e.type, e.actor]), [['wontfix', 'camille'], ['dismissed', 'alex']])
+    })
+
+    it('R10. a redelivery posts nothing more; a finding fixed or stale is refused with 😕', async () => {
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let first = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      await replayReply(first.payload, first.deliveryId)
+      assert.equal(fake.repliesTo(finding.commentId!).length, 1)
+      assert.equal((await eventsOf(finding.id)).length, 1)
+
+      let fixed = await seedFinding('dddddd000001', { thread: true, status: 'fixed' })
+      let refused = await reply('@kento-review reject ok', fixed.commentId!)
+      assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
+      assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /n'est plus ouvert : un push l'a déjà corrigé/)
+      let stale = await seedFinding('eeeeee000001', { status: 'stale' })
+      let staleRefused = await say('@kento-review reject #eeeeee ok')
+      assert.deepEqual(staleRefused.body, { outcome: 'refused', reason: 'reject: finding is stale' })
+      assert.deepEqual(await statusOf(stale.id), { status: 'stale', reason: null })
+    })
+
+    it('R11. without `contents: write`, the reply says that a person can resolve the thread, and the reject still succeeds', async () => {
+      fake.state.canResolve = true
+      fake.state.readOnly.add('contents')
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let { body, payload } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(body.outcome, 'dismissed')
+      assert.equal(fake.state.resolved.size, 0)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /Kentō n'a pas pu résoudre ce fil : s'il est encore ouvert, il peut être résolu à la main\.\n\n<!-- kento:reject /)
+      assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes', 'rocket'])
+    })
+
+    it('R17. a reply that GitHub refused is posted at the next reject, with the first cause, and only once', async () => {
+      let finding = await seedFinding('3cf454aa0011')
+      fake.state.failIssueComments = 1
+      let first = await say('@kento-review reject #3cf454 la valeur est validée')
+      assert.equal(first.body.outcome, 'dismissed')
       assert.equal(fake.state.issueComments.length, 0)
+      // A redelivery of the same comment posts the missing reply, with the cause of the dismissal.
+      await replay(first.payload, first.deliveryId)
+      let second = await say('@kento-review reject #3cf454 une autre cause')
+      assert.equal(second.body.outcome, 'unchanged')
+      assert.deepEqual(fake.state.issueComments.map((c) => c.body.split('\n')[0]), [
+        '@alex Le constat `#3cf454` « Bug » est écarté (dismissed). Motif : « la valeur est validée ». Les prochaines reviews ne le commenteront plus.',
+      ])
+      assert.deepEqual(reactionsOf(second.payload.comment.id), ['eyes', 'rocket'])
+      assert.equal((await eventsOf(finding.id)).length, 1)
+    })
+
+    it('R12. a reply that GitHub refuses leaves the finding dismissed and answers 😕', async () => {
+      let finding = await seedFinding('3cf454aa0011')
+      fake.state.failIssueComments = 1
+      let { body, payload } = await say('@kento-review reject #3cf454 ok')
+      assert.equal(body.outcome, 'dismissed')
+      assert.deepEqual(reactionsOf(payload.comment.id), ['confused', 'eyes'])
+      assert.equal((await statusOf(finding.id)).status, 'dismissed')
     })
 
     it('R3. a reject without a reason gets 😕 and the usage in its thread, once', async () => {

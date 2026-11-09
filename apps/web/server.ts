@@ -233,6 +233,8 @@ let router = createAppRouter({
       // The commands of the comments (REV-7): `@kento-review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
         db: database.db,
+        sql: database.sql,
+        botLogin: config.botLogin,
         mintInstallationToken,
         apiUrl: config.githubApp?.apiUrl ?? GITHUB_API_URL,
       }),

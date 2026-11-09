@@ -1,0 +1,1 @@
+ALTER TABLE "finding_events" ADD COLUMN "source" text;

@@ -600,6 +600,11 @@ export const findingEvents = pgTable(
     type: findingEventType('type').notNull(),
     actor: text('actor').notNull(),
     reason: text('reason'),
+    /**
+     * REV-94. Where the change of a person came from: `command` for `@kento-review reject` on
+     * GitHub. Null for the other events: a screen of Kentō, a 👎, a review.
+     */
+    source: text('source'),
     createdAt: createdAt(),
   },
   (table) => [

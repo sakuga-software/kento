@@ -207,7 +207,23 @@ export type StatusChange =
  */
 export async function setFindingStatus(
   sql: postgres.Sql,
-  input: { orgId: string; findingId: string; status: PersonStatus; reason?: string | null; actor: string },
+  input: {
+    orgId: string
+    findingId: string
+    status: PersonStatus
+    reason?: string | null
+    actor: string
+    /** REV-94. Where the change came from, in the event: `command` for `@kento-review reject`. */
+    source?: 'command'
+    /**
+     * REV-94. A finding already dismissed stays as it is, with its first reason, and a finding that a
+     * push fixed or a close made stale stays too: `unchanged`. A `wontfix` finding does become
+     * `dismissed`: `reject` says that it is a false positive, which is more than « accepted as is »,
+     * and its events keep both decisions. The status is read under the lock of
+     * the row, so a push that fixed the finding after the caller read it is not undone.
+     */
+    keepDismissed?: boolean
+  },
 ): Promise<StatusChange> {
   if (!PERSON_STATUSES.includes(input.status)) return { outcome: 'invalid', reason: 'unknown status' }
   let reason = input.status === 'open' ? null : input.reason?.trim() || null
@@ -223,13 +239,14 @@ export async function setFindingStatus(
       for update of findings`
     if (!current) return null
     if (current.status === input.status && current.statusReason === reason) return false
+    if (input.keepDismissed && (current.status === 'dismissed' || current.status === 'fixed' || current.status === 'stale')) return false
     await tx`
       update findings set status = ${input.status}, status_reason = ${reason}, updated_at = now()
       where id = ${input.findingId}`
     let type: FindingEventType = input.status === 'open' ? 'reopened' : input.status
     await tx`
-      insert into finding_events (finding_id, type, actor, reason)
-      values (${input.findingId}, ${type}, ${input.actor}, ${reason})`
+      insert into finding_events (finding_id, type, actor, reason, source)
+      values (${input.findingId}, ${type}, ${input.actor}, ${reason}, ${input.source ?? null})`
     return true
   })
   if (changed === null) return { outcome: 'not_found' }

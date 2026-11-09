@@ -69,6 +69,14 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     /** The comments of the pull request (not of a review). */
     issueComments: [] as { id: number; body: string; author: string }[],
     reviews: [] as Review[],
+    /** REV-94. The next dismissal answers 422, as when the review was dismissed meanwhile. */
+    dismissRefused: false,
+    /** REV-94. The next dismissals of reviews answer 502, as during an outage of GitHub. */
+    failDismissals: 0,
+    /** REV-94. The next lists of the review comments of the pull request answer 502. */
+    failCommentLists: 0,
+    /** REV-94. The dismissals of reviews, with their message. */
+    dismissals: [] as { reviewId: number; message: string }[],
     comments: [] as Comment[],
     resolved: new Set<number>(),
     repoLabels: new Set<string>(),
@@ -290,6 +298,16 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
           .map((r) => ({ content: r.content, user: { login: r.login, type: r.login.endsWith('[bot]') ? 'Bot' : 'User' } })),
       )
     }
+    if (rest === `${prPath}/comments` && method === 'GET') {
+      if (state.failCommentLists > 0) {
+        state.failCommentLists--
+        return json(502, { message: 'Bad Gateway' })
+      }
+      let perPage = Number(url.searchParams.get('per_page') ?? 30)
+      let page = Number(url.searchParams.get('page') ?? 1)
+      let list = state.comments.slice((page - 1) * perPage, page * perPage)
+      return json(200, list.map((c) => ({ id: c.id, body: c.body, path: c.path, line: c.line, in_reply_to_id: c.inReplyTo ?? undefined, user: { login: c.author } })))
+    }
     if ((m = /^\/pulls\/\d+\/comments\/(\d+)\/replies$/.exec(rest)) && method === 'POST') {
       let parent = state.comments.find((c) => c.id === Number(m![1]))
       if (!parent || state.deletedComments.has(parent.id)) return json(404, { message: 'Not Found' })
@@ -337,7 +355,14 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if ((m = /^\/pulls\/\d+\/reviews\/(\d+)\/dismissals$/.exec(rest)) && method === 'PUT') {
       let review = state.reviews.find((r) => r.id === Number(m![1]))
       if (!review) return json(404, { message: 'Not Found' })
+      // GitHub refuses to dismiss a review that is not a CHANGES_REQUESTED or an APPROVED any more.
+      if (state.dismissRefused) return json(422, { message: 'Can not dismiss a dismissed pull request review' })
+      if (state.failDismissals > 0) {
+        state.failDismissals--
+        return json(502, { message: 'Bad Gateway' })
+      }
       review.state = 'DISMISSED'
+      state.dismissals.push({ reviewId: review.id, message: body?.message ?? '' })
       return json(200, {})
     }
     if ((m = /^\/pulls\/\d+\/reviews\/(\d+)\/comments$/.exec(rest)) && method === 'GET') {

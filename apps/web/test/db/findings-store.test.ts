@@ -5,7 +5,7 @@ import { after, before, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
-import { getFinding, InvalidCursorError, listFindingEvents, listFindings, PAGE_MAX } from '../../app/findings/store.ts'
+import { getFinding, InvalidCursorError, listFindingEvents, listFindings, PAGE_MAX, setFindingStatus } from '../../app/findings/store.ts'
 import { createTestDatabase } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
@@ -113,6 +113,16 @@ describe('findings store', () => {
     ])
     assert.equal(second.nextCursor, null)
     assert.deepEqual((await listFindingEvents(database.sql, { orgId: otherOrgId, findingId: id })).items, [])
+  })
+
+  it('REV-94: with keepDismissed, a finding fixed or stale, read under the lock, is not dismissed', async () => {
+    for (let status of ['fixed', 'stale']) {
+      let id = await insertFinding({ repoId, prNumber: 77, title: `race ${status}`, status })
+      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'faux positif', actor: 'alex', source: 'command', keepDismissed: true })
+      assert.equal(change.outcome, 'unchanged')
+      assert.equal(change.outcome === 'unchanged' && change.finding.status, status)
+      assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 0)
+    }
   })
 
   it('refuses a reason on a finding that no person dismissed', async () => {

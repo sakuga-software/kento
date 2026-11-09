@@ -47,7 +47,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
         recordDelivery: (record) => settings.recordDelivery(record),
         apply: createWebhookStore(database.db, {
           onCapReached: createCapNotice({ mintInstallationToken: mint, apiUrl: fake.apiUrl, settingsUrl: 'https://review.sakuga.dev/settings#plafond', fetch: fake.fetch }),
-          handleCommentCommand: createCommandHandler({ db: database.db, mintInstallationToken: mint, apiUrl: fake.apiUrl, fetch: fake.fetch }),
+          handleCommentCommand: createCommandHandler({ db: database.db, sql: database.sql, mintInstallationToken: mint, apiUrl: fake.apiUrl, fetch: fake.fetch }),
         }),
       },
     })
