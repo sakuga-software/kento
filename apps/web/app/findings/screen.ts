@@ -39,6 +39,8 @@ export interface FindingQuery {
   author?: string | null
   /** REV-22. The findings of the last N days only (1 to 365). */
   days?: number | null
+  /** REV-102. The findings to consider only: new on code already read, not blocking (REV-100). */
+  considered?: boolean
   /** The rows after this cursor, in the order of the screen (the next page). */
   after?: string | null
   /** The rows before this cursor (the previous page). Ignored with `after`. */
@@ -66,6 +68,11 @@ export interface FindingRow {
   firstSeenSha: string
   lastSeenSha: string
   githubCommentId: number | null
+  /**
+   * REV-102. The last review that found it lists it under « À considérer (code déjà relu) »: new on
+   * code that an earlier review read, not critical, continuing no earlier finding. It does not block.
+   */
+  considered: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -88,6 +95,34 @@ export interface FindingScreenPage {
 export interface FindingFacets {
   repos: { id: string; fullName: string }[]
   rules: { id: string; title: string; repo: string | null }[]
+}
+
+/**
+ * REV-102. Whether the last review of a finding lists it as one to consider: an entry of its result
+ * (`reviews.result.findings`) that is the finding carries `seen`, no `follows`, and is not critical.
+ * The entries that are the finding: those of its fingerprint; when the result has none (a runner of
+ * an earlier release), those of its path and title. The rule of `toConsider`
+ * (packages/engine/src/findings.ts), in SQL, so that the screen filters on it; `consideredOf`
+ * (pulls/finding.ts) is the same rule for the detail. `table` is the name of the findings in the query.
+ */
+export function consideredSql(sql: postgres.Sql, table = 'findings') {
+  let t = sql.unsafe(table)
+  let entries = sql`jsonb_array_elements(case when jsonb_typeof(r.result->'findings') = 'array' then r.result->'findings' else '[]'::jsonb end)`
+  return sql`exists (
+    select 1 from reviews r
+    cross join lateral ${entries} f
+    where r.id = ${t}.last_review_id
+      and f->'seen' = 'true'::jsonb
+      and coalesce(f->>'follows', '') = ''
+      and f->>'severity' is distinct from 'critical'
+      and (
+        (${t}.fingerprint <> '' and f->>'fingerprint' = ${t}.fingerprint)
+        or (
+          f->>'path' = ${t}.path and f->>'title' = ${t}.title
+          and not exists (select 1 from ${entries} g where ${t}.fingerprint <> '' and g->>'fingerprint' = ${t}.fingerprint)
+        )
+      )
+  )`
 }
 
 /** `%`, `_` and `\\` stand for themselves in a search. */
@@ -153,7 +188,8 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${reason ? sql`and lower(${reasonOf(sql, 'findings.status_reason')}) = lower(${reason})` : sql``}
     ${search ? sql`and (findings.title ilike ${likePattern(search)} or findings.path ilike ${likePattern(search)})` : sql``}
     ${author ? sql`and exists (select 1 from pull_authors where pull_authors.repo_id = findings.repo_id and pull_authors.pr_number = findings.pr_number and lower(pull_authors.login) = lower(${author}))` : sql``}
-    ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}`
+    ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}
+    ${query.considered ? sql`and ${consideredSql(sql)}` : sql``}`
   let inView = sql`findings.status = any(${sql.array([...statusesOf(view)])}::finding_status[])`
   let key = sql`(findings.created_at, findings.id)`
 
@@ -162,7 +198,8 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
       findings.path, findings.line, findings.title, findings.severity, findings.category, findings.confidence,
       findings.status, findings.status_reason as "statusReason", findings.rule_id as "ruleId", rules.title as "ruleTitle",
       findings.first_seen_sha as "firstSeenSha", findings.last_seen_sha as "lastSeenSha",
-      findings.github_comment_id::float8 as "githubCommentId", findings.created_at as "createdAt", findings.updated_at as "updatedAt",
+      findings.github_comment_id::float8 as "githubCommentId", ${consideredSql(sql)} as considered,
+      findings.created_at as "createdAt", findings.updated_at as "updatedAt",
       ${sql.unsafe(cursorAt('findings.created_at'))} as "cursorAt"
     from findings
     join repos on repos.id = findings.repo_id

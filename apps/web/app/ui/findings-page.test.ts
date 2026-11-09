@@ -21,7 +21,7 @@ function finding(id: string, title: string): FindingRow {
   return {
     id, repoId: 'r', repo: 'sakuga-software/orchard', prNumber: 12, path: 'a.ts', line: 3, title, severity: 'major', category: 'bug',
     confidence: 80, status: 'open', statusReason: null, ruleId: null, ruleTitle: null, firstSeenSha: 'a'.repeat(40),
-    lastSeenSha: 'a'.repeat(40), githubCommentId: 900_001, createdAt: new Date('2026-10-29T10:00:00Z'), updatedAt: new Date('2026-10-29T10:00:00Z'),
+    lastSeenSha: 'a'.repeat(40), githubCommentId: 900_001, considered: false, createdAt: new Date('2026-10-29T10:00:00Z'), updatedAt: new Date('2026-10-29T10:00:00Z'),
   }
 }
 
@@ -29,7 +29,7 @@ function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, mi
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
-  let rows = [finding(A, 'Clé lue sans expiration'), finding(B, 'Erreur avalée'), { ...finding(C, 'Déjà corrigé'), status: 'fixed' as const }]
+  let rows = [finding(A, 'Clé lue sans expiration'), { ...finding(B, 'Erreur avalée'), considered: true }, { ...finding(C, 'Déjà corrigé'), status: 'fixed' as const }]
   let { store, lists } = fakeFindingsScreenStore({ page: empty ? EMPTY_PAGE : { ...EMPTY_PAGE, rows, counts: { ...EMPTY_PAGE.counts, open: 2, all: 2 }, matching: 2 } })
   let calls: { orgId: string; ids: string[]; status: BulkStatus; reason: string | null; actor: string }[] = []
   let router = createAppRouter({
@@ -65,6 +65,28 @@ function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, mi
   }
   return { request, signIn, calls, lists }
 }
+
+describe('the findings to consider (REV-102)', () => {
+  it('tags a finding that its last review lists « À considérer », and only that one', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn()
+    let tagged = [...html.matchAll(/<tr id="finding-([0-9a-f-]+)">[\s\S]*?<\/tr>/g)].filter((m) => m[0].includes('>À considérer</span>')).map((m) => m[1])
+    assert.deepEqual(tagged, [B])
+    assert.match(html, /<span title="Code déjà relu par une review précédente : ce finding ne bloque pas la PR\." class="tag tag-info">À considérer<\/span>|<span class="tag tag-info" title="Code déjà relu par une review précédente : ce finding ne bloque pas la PR\.">À considérer<\/span>/)
+  })
+
+  it('filters them with « Type », in the URL, and keeps the filter through the tabs and « Effacer les filtres »', async () => {
+    let { request, signIn, lists } = setup()
+    let { cookie } = await signIn()
+    let html = await (await request('/findings?type=a-considerer', { cookie })).text()
+    assert.equal(lists.at(-1)!.considered, true)
+    assert.match(html, /<option value="a-considerer" selected>\s*À considérer \(code déjà relu\)\s*<\/option>/)
+    assert.match(html, /href="\/findings\?status=all&amp;type=a-considerer"/)
+    assert.match(html, /<a href="\/findings" class="button button-ghost">Effacer les filtres/)
+    await request('/findings?type=autre', { cookie })
+    assert.equal(lists.at(-1)!.considered, false, 'a value that the screen does not know is ignored')
+  })
+})
 
 describe('the Findings screen, its selection and its actions', () => {
   it('gives an admin a checkbox per finding, the dialog of the reasons and « Marquer wontfix »; a member none of them', async () => {

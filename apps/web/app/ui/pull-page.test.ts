@@ -78,7 +78,7 @@ function sheet(): PullSheet {
 
 const FINDING_ID = '33333333-3333-4333-8333-333333333333'
 
-function detail(status: FindingDetail['status'] = 'dismissed'): FindingDetail {
+function detail(status: FindingDetail['status'] = 'dismissed', considered = false): FindingDetail {
   return {
     id: FINDING_ID,
     target: summary().target,
@@ -95,11 +95,11 @@ function detail(status: FindingDetail['status'] = 'dismissed'): FindingDetail {
     firstSeenSha: 'a'.repeat(40),
     lastSeenSha: 'd'.repeat(40),
     githubCommentId: 914201,
-    review: { id: 'r4', number: 4, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'Un jeton volé reste valide.', fix: 'Ajouter exp.', suggestion: '' },
+    review: { id: 'r4', number: 4, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'Un jeton volé reste valide.', fix: 'Ajouter exp.', suggestion: '', considered },
   }
 }
 
-function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error } = {}) {
+function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error; considered?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, ALEX, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -118,7 +118,7 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
     },
     async finding(orgId, id) {
       asked.push(`finding ${orgId} ${id}`)
-      return id === FINDING_ID ? detail(options.status) : null
+      return id === FINDING_ID ? detail(options.status, options.considered) : null
     },
     async setStatus(input) {
       decisions.push(`${input.orgId} ${input.findingId} ${input.status} ${input.reason} ${input.actor}`)
@@ -334,6 +334,16 @@ describe('the detail of a finding', () => {
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142#discussion_r914201"/)
     assert.match(html, /href="\/findings\/33333333-3333-4333-8333-333333333333\?historique=next"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/pulls\/142"/)
+  })
+
+  it('says « À considérer : code déjà relu, non bloquant » for a finding that its last review lists so (REV-102)', async () => {
+    let considered = setup({ considered: true, status: 'open' })
+    let html = await (await considered.request(DETAIL, await considered.signIn(CAMILLE))).text()
+    assert.match(html, /<span class="tag tag-info">À considérer<\/span>/)
+    assert.match(html, /<span class="hint">À considérer : code déjà relu, non bloquant\.<\/span>/)
+    let plain = setup({ status: 'open' })
+    let other = await (await plain.request(DETAIL, await plain.signIn(CAMILLE))).text()
+    assert.doesNotMatch(other, /À considérer/)
   })
 
   it('answers 404 for a finding of another org, or an id that is not one', async () => {

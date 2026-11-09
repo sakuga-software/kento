@@ -24,6 +24,13 @@ import { statusClass } from './pull.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
+/** REV-102. The value of `type` that keeps the findings to consider only. */
+export const CONSIDERED = 'a-considerer'
+
+/** REV-102. What the screens say of a finding to consider (REV-100). */
+export const CONSIDERED_LABEL = 'À considérer'
+export const CONSIDERED_HINT = 'Code déjà relu par une review précédente : ce finding ne bloque pas la PR.'
+
 /** The filters, the search and the page of the list, as the query of the screen gives them. */
 export interface FindingList extends FindingQuery {
   view: FindingView
@@ -35,6 +42,8 @@ export interface FindingList extends FindingQuery {
   /** REV-22. The pull requests of one person: the link « Voir mes N findings open » of their screen. */
   author: string | null
   days: number | null
+  /** REV-102. The findings to consider only (`?type=a-considerer`). */
+  considered: boolean
   after: string | null
   before: string | null
   /** REV-91. The tab of the screen: the list, or the precision (`?vue=precision`). */
@@ -146,6 +155,7 @@ export function readFindingList(query: URLSearchParams): FindingList {
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
     author: author && LOGIN.test(author) ? author : null,
     days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
+    considered: query.get('type') === CONSIDERED,
     after,
     before: after ? null : cursorOf(query.get('before')),
     tab: query.get('vue') === 'precision' ? 'precision' : 'list',
@@ -163,6 +173,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.search) query.set('q', list.search)
   if (list.author) query.set('author', list.author)
   if (list.days) query.set('days', String(list.days))
+  if (list.considered) query.set('type', CONSIDERED)
   if (list.after) query.set('after', list.after)
   else if (list.before) query.set('before', list.before)
   if (list.tab === 'precision') query.set('vue', 'precision')
@@ -186,11 +197,12 @@ function filtersOf(list: FindingList): Partial<FindingList> {
     search: list.search,
     author: list.author,
     days: list.days,
+    considered: list.considered,
   }
 }
 
 function hasFilters(list: FindingList): boolean {
-  return Boolean(list.repoId || list.severity || list.ruleId || list.reason || list.search || list.author || list.days)
+  return Boolean(list.repoId || list.severity || list.ruleId || list.reason || list.search || list.author || list.days || list.considered)
 }
 
 /**
@@ -378,6 +390,20 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
             ))}
           </select>
         </div>
+        <div class="findings-filter">
+          <label class="field-label" for="findings-type">
+            Type
+          </label>
+          {/* REV-102: the findings that the last review lists under « À considérer (code déjà relu) ». */}
+          <select class="input" id="findings-type" name="type">
+            <option value="" selected={!list.considered}>
+              Tous les findings
+            </option>
+            <option value={CONSIDERED} selected={list.considered}>
+              À considérer (code déjà relu)
+            </option>
+          </select>
+        </div>
         <div class="findings-filter-actions">
           {/* REV-91: with JavaScript a filter applies on change (findings.js); « Filtrer » serves a browser without it. */}
           <button class="button findings-submit" type="submit">
@@ -470,6 +496,14 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
               )}
               <span class="mono finding-path">
                 {row.path}:{row.line}
+                {row.considered ? (
+                  <>
+                    {' '}
+                    <span class="tag tag-info" title={CONSIDERED_HINT}>
+                      {CONSIDERED_LABEL}
+                    </span>
+                  </>
+                ) : null}
               </span>
             </span>
           </span>

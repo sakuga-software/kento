@@ -1,7 +1,7 @@
 // REV-17. The detail of one finding: where it comes from (a pass of the model or a rule), the last
 // review that found it (its model, its scenario and its fix), the code around its line on GitHub, and
 // the history of its status. Every read takes the org of the session.
-import { findingKey } from '@sakuga-review/engine/findings'
+import { findingKey, toConsider } from '@sakuga-review/engine/findings'
 import { UUID, type Level } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
@@ -33,8 +33,22 @@ export interface FindingDetail {
   firstSeenSha: string
   lastSeenSha: string
   githubCommentId: number | null
-  /** The last review that found it, and what its result says of it. Null once that review is removed. */
-  review: { id: string; number: number; level: Level; model: string; headSha: string; scenario: string; fix: string; suggestion: string } | null
+  /**
+   * The last review that found it, and what its result says of it. Null once that review is removed.
+   * `considered` (REV-102): that review lists it under « À considérer (code déjà relu) » (REV-100):
+   * new on code already read, not critical, continuing no earlier finding. It does not block.
+   */
+  review: {
+    id: string
+    number: number
+    level: Level
+    model: string
+    headSha: string
+    scenario: string
+    fix: string
+    suggestion: string
+    considered: boolean
+  } | null
 }
 
 export interface HistoryEvent {
@@ -48,6 +62,23 @@ export interface HistoryEvent {
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
+
+/** An entry of the result of a review, as the detail reads it. */
+type ResultEntry = { fingerprint: string | null; path: unknown; title: unknown; seen: unknown; follows: unknown; severity: unknown }
+
+/**
+ * REV-102. Whether the last review lists the finding as one to consider: the rule of `consideredSql`
+ * (findings/screen.ts), so that the detail and the Findings screen agree. The entries of the finding
+ * are those of its fingerprint, else (no entry has it) those of its path and title; one of them is to
+ * consider by `toConsider` of the engine.
+ */
+export function consideredOf(entries: readonly ResultEntry[], row: { fingerprint: string; path: string; title: string }): boolean {
+  let byPrint = row.fingerprint === '' ? [] : entries.filter((f) => f.fingerprint === row.fingerprint)
+  let mine = byPrint.length ? byPrint : entries.filter((f) => f.path === row.path && f.title === row.title)
+  return mine.some((f) =>
+    toConsider({ seen: f.seen === true, follows: typeof f.follows === 'string' ? f.follows : null, severity: text(f.severity) } as never),
+  )
+}
 
 /** The finding `id` of the org, or null. */
 export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: string): Promise<FindingDetail | null> {
@@ -100,16 +131,29 @@ export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: st
       from reviews r join jobs j on j.id = r.job_id
       where r.id = ${row.lastReviewId}`
     // The finding in the result of that review only: its fingerprint, else its key.
-    let found = await sql<{ fingerprint: string | null; path: unknown; title: unknown; scenario: unknown; fix: unknown; suggestion: unknown }[]>`
+    let found = await sql<
+      {
+        fingerprint: string | null
+        path: unknown
+        title: unknown
+        scenario: unknown
+        fix: unknown
+        suggestion: unknown
+        seen: unknown
+        follows: unknown
+        severity: unknown
+      }[]
+    >`
       select f->>'fingerprint' as fingerprint, f->'path' as path, f->'title' as title, f->'scenario' as scenario,
-        f->'fix' as fix, f->'suggestion' as suggestion
+        f->'fix' as fix, f->'suggestion' as suggestion, f->'seen' as seen, f->'follows' as follows, f->'severity' as severity
       from reviews r
       cross join lateral jsonb_array_elements(case when jsonb_typeof(r.result->'findings') = 'array' then r.result->'findings' else '[]'::jsonb end) f
       where r.id = ${row.lastReviewId}`
     let hit =
       found.find((f) => row.fingerprint !== '' && f.fingerprint === row.fingerprint) ??
       found.find((f) => typeof f.path === 'string' && typeof f.title === 'string' && findingKey({ path: f.path, title: f.title } as never) === row.key)
-    if (r) review = { ...r, scenario: text(hit?.scenario), fix: text(hit?.fix), suggestion: text(hit?.suggestion) }
+    let considered = consideredOf(found, row)
+    if (r) review = { ...r, scenario: text(hit?.scenario), fix: text(hit?.fix), suggestion: text(hit?.suggestion), considered }
   }
 
   return {

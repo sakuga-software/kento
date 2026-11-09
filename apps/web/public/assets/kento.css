@@ -1369,9 +1369,10 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 }
 
 /* The search, wide, then the repository, the priority and the source; they apply on change (findings.js). */
+/* Search, Repo, Priorité, Source, Type (REV-102), then the actions: one row. */
 .findings-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 160px) minmax(0, 140px) minmax(0, 240px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 160px) minmax(0, 140px) minmax(0, 240px) minmax(0, 220px) auto;
   align-items: end;
   gap: var(--space-3);
   margin-bottom: var(--space-6);

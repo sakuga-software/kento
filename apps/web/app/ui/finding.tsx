@@ -5,6 +5,7 @@ import type { CodeExcerpt, CodeRead, FindingDetail, HistoryEvent } from '../pull
 import { STATUS_LABELS } from '../pulls/sheet.ts'
 import { pageRoutes, pullRoutes } from '../routes.ts'
 import { agoOrDate, clock, plural } from './format.ts'
+import { CONSIDERED_LABEL } from './findings.tsx'
 import { ExternalIcon } from './icons.tsx'
 import { pullHref, pullUrl, SEVERITY_BADGES, statusClass } from './pull.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -83,7 +84,10 @@ export function FindingPage(handle: Handle<FindingPageProps>) {
           <span class="tag">{SEVERITY_BADGES[finding.severity]}</span>
           <span class={`status ${statusClass(finding.status)}`}>{STATUS_LABELS[finding.status]}</span>
           <span class="tag tag-quiet">{finding.category === 'security' ? 'sécurité' : finding.category}</span>
+          {/* REV-102: the last review lists it under « À considérer (code déjà relu) », as the block of the PR does. */}
+          {review?.considered ? <span class="tag tag-info">{CONSIDERED_LABEL}</span> : null}
           {finding.statusReason ? <span class="hint">Motif : {finding.statusReason}</span> : null}
+          {review?.considered ? <span class="hint">{CONSIDERED_LABEL} : code déjà relu, non bloquant.</span> : null}
         </div>
 
         <dl class="pull-meta finding-facts">
