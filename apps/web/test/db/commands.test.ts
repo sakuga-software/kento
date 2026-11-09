@@ -10,6 +10,8 @@ import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import { createCommandHandler, findRejectTarget } from '../../app/commands/handler.ts'
+import { createHintHandler } from '../../app/commands/hint.ts'
+import { HINT_MARKER } from '../../app/commands/refutation.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
@@ -24,6 +26,7 @@ import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = headSha(0xabc)
 const PR = 28
+const DOCS_URL = 'https://review.sakuga.dev/docs/commandes'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 
@@ -66,6 +69,16 @@ describe('commands in the comments of a pull request', () => {
             botLogin: BOT,
             mintInstallationToken: mint(),
             apiUrl: fake.apiUrl,
+            fetch: fake.fetch,
+            docsUrl: DOCS_URL,
+          }),
+          handleRefutationReply: createHintHandler({
+            db: database.db,
+            sql: database.sql,
+            botLogin: BOT,
+            mintInstallationToken: mint(),
+            apiUrl: fake.apiUrl,
+            docsUrl: DOCS_URL,
             fetch: fake.fetch,
           }),
         }),
@@ -1331,6 +1344,119 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(heavy.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
       assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /ne lit que `@kento-review reject <cause>`/)
       assert.equal((await jobs()).length, 0)
+    })
+
+    describe('the hint of `reject` (REV-96)', () => {
+      const hints = (root: number) => fake.repliesTo(root).filter((c) => c.body.includes(HINT_MARKER))
+
+      it('H1. « Not applied » in the thread of a finding gets the hint once, even after a second reply of the same kind; the finding stays open', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let first = await reply('Not applied: the value is validated by the schema', finding.commentId!)
+        assert.equal(first.status, 202)
+        assert.deepEqual(first.body, { outcome: 'hinted', findingId: finding.id })
+        let [hint] = hints(finding.commentId!)
+        assert.equal(
+          hint!.body,
+          "@alex Cette réponse semble écarter le constat. Pour qu'il compte comme rejeté (il ne reviendra pas et ne baissera plus la note) : " +
+            `\`@kento-review reject <cause>\`. [Les commandes de Kentō](${DOCS_URL})\n\n${HINT_MARKER}`,
+        )
+        let second = await reply('Non retenu : même cause, la valeur est validée.', finding.commentId!, { user: { login: 'writer', type: 'User' } })
+        assert.deepEqual(second.body, { outcome: 'skipped', reason: 'thread already has a hint' })
+        assert.equal(hints(finding.commentId!).length, 1)
+        assert.deepEqual(await statusOf(finding.id), { status: 'open', reason: null })
+        // No reaction, no job: the hint is a reply, not a command.
+        assert.deepEqual(threadReactionsOf(first.payload.comment.id), [])
+        assert.equal((await jobs()).length, 0)
+      })
+
+      it('H2. « Applied in abc123 » gets nothing: the webhook ignores it before the hint handler', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let applied = await reply('Applied in abc123', finding.commentId!)
+        assert.deepEqual(applied.body, { outcome: 'ignored', reason: 'comment is not a command' })
+        assert.deepEqual(fake.repliesTo(finding.commentId!), [])
+      })
+
+      it('H3. guard: no hint for a reader, in a resolved thread, for a finding set aside, or in the thread of a person', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let reader = await reply('Not applied: the schema validates it.', finding.commentId!, { user: { login: 'reader', type: 'User' } })
+        assert.deepEqual(reader.body, { outcome: 'skipped', reason: 'commenter cannot write to the repository' })
+
+        fake.state.resolved.add(finding.commentId!)
+        let resolved = await reply('Not applied: the schema validates it.', finding.commentId!)
+        assert.deepEqual(resolved.body, { outcome: 'skipped', reason: 'thread is resolved' })
+        fake.state.resolved.delete(finding.commentId!)
+
+        let dismissed = await seedFinding('4cf454aa0011', { thread: true, status: 'dismissed' })
+        let set = await reply('Kept as is: the order is the one of main.', dismissed.commentId!)
+        assert.deepEqual(set.body, { outcome: 'skipped', reason: 'finding is dismissed' })
+
+        let personal = fake.addThread({ path: 'src/a.ts', line: 3, body: 'A question of a person', commit: HEAD, author: 'camille' })
+        let theirs = await reply('No change, on purpose.', personal)
+        assert.deepEqual(theirs.body, { outcome: 'skipped', reason: 'thread is not the thread of a finding' })
+
+        assert.deepEqual([...hints(finding.commentId!), ...hints(dismissed.commentId!), ...hints(personal)], [])
+      })
+
+      it('H4. guard: a reply that names `reject` in a block of code gets no hint, and a repository that Kentō does not serve neither', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let named = await reply('Not applied.\n\n```\n@kento-review reject the schema validates it\n```', finding.commentId!)
+        assert.deepEqual(named.body, { outcome: 'ignored', reason: 'comment is not a command' })
+        await database.sql`update repos set enabled = false`
+        let off = await reply('Not applied: the schema validates it.', finding.commentId!)
+        assert.deepEqual(off.body, { outcome: 'skipped', reason: 'repository is not enabled' })
+        assert.deepEqual(hints(finding.commentId!), [])
+      })
+
+      it('H6. two refutations delivered at once post one hint: the claim of the finding in the database decides', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let [a, b] = await Promise.all([
+          reply('Not applied: the schema validates it.', finding.commentId!),
+          reply('Kept as is: same cause.', finding.commentId!, { user: { login: 'writer', type: 'User' } }),
+        ])
+        assert.deepEqual([a.body.outcome, b.body.outcome].sort(), ['hinted', 'skipped'])
+        assert.equal(hints(finding.commentId!).length, 1)
+        let [row] = await database.sql<{ claimed: boolean }[]>`select reject_hint_at is not null as claimed from findings where id = ${finding.id}`
+        assert.equal(row!.claimed, true)
+      })
+
+      it('H7. a hint that GitHub refuses gives its claim back: the next refutation posts it', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        fake.state.deletedComments.add(finding.commentId!)
+        let gone = await reply('Not applied: the schema validates it.', finding.commentId!)
+        assert.deepEqual(gone.body, { outcome: 'skipped', reason: 'thread is gone' })
+        fake.state.deletedComments.delete(finding.commentId!)
+        let again = await reply('Not applied: the schema validates it.', finding.commentId!)
+        assert.deepEqual(again.body, { outcome: 'hinted', findingId: finding.id })
+        assert.equal(hints(finding.commentId!).length, 1)
+      })
+
+      it('H8. a post without an answer of GitHub keeps the claim: the hint may be there, and a second one is worse than none', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        let real = fake.fetch
+        let lost = (async (input: string | URL | Request, init?: RequestInit) => {
+          if (String(input).endsWith(`/comments/${finding.commentId}/replies`)) {
+            await real(input, init)
+            throw new TypeError('fetch failed: the connection was lost after the request')
+          }
+          return real(input, init)
+        }) as typeof globalThis.fetch
+        fake.fetch = lost
+        try {
+          let first = await reply('Not applied: the schema validates it.', finding.commentId!)
+          assert.equal(first.status, 500)
+        } finally {
+          fake.fetch = real
+        }
+        let second = await reply('Not applied: the schema validates it.', finding.commentId!)
+        assert.deepEqual(second.body, { outcome: 'skipped', reason: 'thread already has a hint' })
+        assert.equal(hints(finding.commentId!).length, 1)
+      })
+
+      it('H5. the list of the commands links the page of the commands', async () => {
+        let finding = await seedFinding('3cf454aa0011', { thread: true })
+        await reply('@kento-review reject', finding.commentId!)
+        assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /\[Les commandes de Kentō\]\(https:\/\/review\.sakuga\.dev\/docs\/commandes\)/)
+      })
     })
   })
 })

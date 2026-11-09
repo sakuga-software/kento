@@ -41,6 +41,12 @@ export type BotThread = {
   answered: boolean
   /** REV-99. The markers of the replies of the bot to a finding that follows this one (`kento:variant`). */
   variants?: string[]
+  /** REV-96. The thread holds the hint of `reject` already. */
+  hinted?: boolean
+  /** REV-96. A reply of a person in the thread names `@kento-review reject` already. */
+  namesReject?: boolean
+  /** REV-96. The logins of the people who replied in the thread, without the bots. */
+  repliers?: string[]
   /** The first comment of the thread, for a thread that has no finding in the database yet. */
   body: string
 }

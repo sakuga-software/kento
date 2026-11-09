@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -861,6 +861,14 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   assert.deepEqual(result.review.findings, []);
   assert.equal(result.review.score, 4);
   assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === 'job.finding_refuted_in_thread' && l.path === 'sum.ts'));
+  // REV-96. The service that sent the thread gets its id back, to answer it with the hint of `reject`.
+  assert.deepEqual(result.review.refutedThreads, ['PRRT_kwDO71']);
+  assert.ok(parseResultRequest(JSON.parse(JSON.stringify(result))).ok, 'the result is the protocol');
+
+  // A job without threads (a service that does not read them) gets no `refutedThreads`.
+  const old = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, model));
+  assert.ok(old.results[0]!.outcome === 'done' && !('refutedThreads' in old.results[0]!.review));
 });
 
 // --- rejected findings (REV-95) -----------------------------------------------------------------

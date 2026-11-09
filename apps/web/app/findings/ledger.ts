@@ -15,6 +15,27 @@ export interface FindingsLedger {
   load(): Promise<StoredFinding[]>
   /** Writes every entry and its events in one transaction. */
   save(entries: LedgerEntry[]): Promise<void>
+  /** REV-96. Claims the one hint of `reject` of an open finding: false when it is taken or the finding is not open. */
+  claimHint?(findingId: string): Promise<boolean>
+  /** REV-96. Gives the claim back, after a hint that GitHub refused. */
+  releaseHint?(findingId: string): Promise<void>
+}
+
+/**
+ * REV-96. Claims the one hint of `reject` of a finding, in one statement: of two deliveries or reviews
+ * that race for it, one only gets it. Only an open finding can be claimed.
+ */
+export async function claimRejectHint(sql: postgres.Sql, findingId: string): Promise<boolean> {
+  let rows = await sql`
+    update findings set reject_hint_at = now()
+    where id = ${findingId} and reject_hint_at is null and status = 'open'
+    returning id`
+  return rows.length === 1
+}
+
+/** REV-96. Gives a claim back: the hint did not reach GitHub, and the next refutation tries again. */
+export async function releaseRejectHint(sql: postgres.Sql, findingId: string): Promise<void> {
+  await sql`update findings set reject_hint_at = null where id = ${findingId}`
 }
 
 /**
@@ -23,6 +44,8 @@ export interface FindingsLedger {
  */
 export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string; prNumber: number; reviewId: string; head: string }): FindingsLedger {
   return {
+    claimHint: (findingId) => claimRejectHint(sql, findingId),
+    releaseHint: (findingId) => releaseRejectHint(sql, findingId),
     async load() {
       let rows = await sql<(StoredFinding & { githubCommentId: number | null })[]>`
         select id, fingerprint, key, rule_id as "ruleId", path, line, title, severity, category, confidence, status,

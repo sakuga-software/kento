@@ -4467,3 +4467,132 @@ a.sheet-title {
 .user-received dd {
   margin: 0;
 }
+
+/* ---------------------------------------------------------------- Docs */
+
+/* REV-96: the public page of the commands. One column, readable without a sign-in. */
+.docs {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4) var(--space-12);
+}
+.docs-head .mark {
+  display: inline-flex;
+  height: 32px;
+  color: var(--ink);
+}
+.docs-head .mark svg {
+  height: 32px;
+  width: auto;
+}
+.docs-body {
+  margin-top: var(--space-8);
+  padding: var(--space-10);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+}
+.docs-body h1 {
+  font-size: var(--text-2xl);
+  line-height: var(--leading-2xl);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.docs-lead {
+  max-width: 64ch;
+  margin-top: var(--space-3);
+  color: var(--ink-muted);
+  font-size: var(--text-md);
+  line-height: 26px;
+}
+.docs-toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-toc a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+}
+.docs-toc a:hover {
+  border-color: var(--line-strong);
+}
+.docs-command {
+  margin-top: var(--space-10);
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: var(--space-6);
+}
+.docs-command h2 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-lg);
+  font-weight: 700;
+}
+.docs-command > p {
+  max-width: 64ch;
+  margin-top: var(--space-2);
+}
+.docs-facts {
+  display: grid;
+  gap: var(--space-4);
+  margin: var(--space-5) 0 0;
+}
+.docs-facts > div {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: var(--space-4);
+}
+.docs-facts dt {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-base);
+}
+.docs-facts dd {
+  margin: 0;
+  line-height: var(--leading-base);
+}
+.docs-syntax {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-syntax li {
+  display: grid;
+  gap: var(--space-1);
+}
+.docs-syntax span {
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+.docs-syntax code {
+  justify-self: start;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--paper-sunken);
+  overflow-wrap: anywhere;
+}
+.docs-note {
+  margin-top: var(--space-10);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+@media (max-width: 760px) {
+  .docs-body {
+    padding: var(--space-6) var(--space-4);
+  }
+  .docs-facts > div {
+    grid-template-columns: 1fr;
+    gap: var(--space-1);
+  }
+}

@@ -561,6 +561,11 @@ export const findings = pgTable(
     githubThreadId: text('github_thread_id'),
     /** When the sweep last read the reactions of its comment (a 👎 dismisses it). */
     reactionsCheckedAt: timestamp('reactions_checked_at', { withTimezone: true }),
+    /**
+     * REV-96. When Kentō suggested `reject` in its thread, or null. The hint is claimed here before it
+     * is posted: one hint per finding, whatever the deliveries and the reviews that race for it.
+     */
+    rejectHintAt: timestamp('reject_hint_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -24,7 +24,7 @@ type Reaction = { content: string; user: { login: string; type?: string } | null
  * is not a collaborator. Any other error throws: the finding then stays open, and the next read
  * tries again.
  */
-async function canWrite(github: GitHub, fullName: string, login: string, cache: Map<string, boolean>): Promise<boolean> {
+export async function canWrite(github: GitHub, fullName: string, login: string, cache: Map<string, boolean> = new Map()): Promise<boolean> {
   let known = cache.get(login)
   if (known !== undefined) return known
   let writer = false

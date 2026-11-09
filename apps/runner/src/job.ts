@@ -17,6 +17,7 @@ import {
 } from '@sakuga-review/engine';
 import {
   HEARTBEAT_SECONDS,
+  MAX_RESOLVE_THREADS,
   type CostSource,
   type Job,
   type ProviderKind,
@@ -307,7 +308,7 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
     for (const f of result.droppedAsSettled) log('info', 'job.finding_dropped_as_settled', { jobId: job.id, path: f.path, title: f.title });
     // REV-100. The findings on code that the last reviewed commit already held.
     if (job.reviewed !== undefined) log('info', 'job.seen_code', { jobId: job.id, since: result.seenSince, seen: result.findings.filter((f) => f.seen).length });
-    const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined);
+    const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined);
     // A service that sends `delta` reads it in the result.
     return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;
   });
@@ -406,8 +407,17 @@ function costSourceOf(source: CostSource | undefined, cost: number | undefined):
  * `withReuse`: the service reads `diffHash`, `reuseKey` and `cachedTokens` (it sent `reuse`, REV-89).
  * `withFollows`: the service reads `follows` (it sent `earlier`, REV-99).
  * `withSeen`: the service reads `seen` (it sent `reviewed`, REV-100).
+ * `withRefuted`: the service reads `refutedThreads` (it sent `threads` to a runner that claims
+ * `refuted`, REV-96: a service of an earlier release refuses that claim).
  */
-export function payload(result: ReviewResult, withCostSource = false, withReuse = false, withFollows = false, withSeen = false): ReviewPayload {
+export function payload(
+  result: ReviewResult,
+  withCostSource = false,
+  withReuse = false,
+  withFollows = false,
+  withSeen = false,
+  withRefuted = false,
+): ReviewPayload {
   const { answer, usage } = result;
   return {
     level: result.level,
@@ -450,6 +460,8 @@ export function payload(result: ReviewResult, withCostSource = false, withReuse 
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),
     ...(withReuse ? { diffHash: result.diffHash, reuseKey: result.reuseKey, cachedTokens: usage.cache_read_tokens ?? null } : {}),
+    // REV-96. The ids come from the threads of the job: at most MAX_RESOLVE_THREADS of them.
+    ...(withRefuted && result.refutedThreads.length ? { refutedThreads: [...new Set(result.refutedThreads)].slice(0, MAX_RESOLVE_THREADS) } : {}),
   };
 }
 

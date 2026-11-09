@@ -34,11 +34,16 @@ export function shortId(finding: Finding): string {
   return `#${findingKey(finding).slice(0, SHORT_ID_LENGTH)}`;
 }
 
-export function inlineBody(finding: Finding, withSuggestion: boolean): string {
+/**
+ * The comment of a finding. `docsUrl`: the page of the commands of the service (REV-96), linked in
+ * the footer; the Action gives none.
+ */
+export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: string | null): string {
   const out = [`${badges(finding)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
+  if (docsUrl) out.push('', `<sub>Constat faux : \`@kento-review reject <cause>\` en réponse dans ce fil. [Les commandes de Kentō](${docsUrl})</sub>`);
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');
 }

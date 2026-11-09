@@ -98,8 +98,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `reviewed`: a review job can carry `reviewed`, the last commit that a review of Kentō read on the
  *   pull request (REV-100). A finding of the result can then say with `seen` that its code did not
  *   change since.
+ * - `refuted`: a review can carry `refutedThreads`, the answered threads of the job that the model
+ *   called refuted (REV-96). A service of an earlier release refuses the claim of this feature, and
+ *   so never receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -607,6 +610,12 @@ export type ReviewPayload = {
    * `since` (`files` of them). Absent: the review read the whole pull request.
    */
   delta?: { since: string; files: number };
+  /**
+   * REV-96, with the feature `refuted`, when the job carried `threads`: the ids of the answered
+   * threads (`ResolveThread.id`) that the model called refuted. The service answers them with the
+   * hint of the command `reject`.
+   */
+  refutedThreads?: string[];
 };
 
 /**
@@ -672,6 +681,7 @@ const review = obj({
   reuseKey: optional(reuseKey),
   cachedTokens: optional(tokens),
   delta: optional(obj({ since: sha, files: int({ min: 0, max: 100_000 }) })),
+  refutedThreads: optional(arr(str({ min: 1, max: 100 }), { max: MAX_RESOLVE_THREADS })),
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),

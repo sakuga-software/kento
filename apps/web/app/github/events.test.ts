@@ -264,3 +264,37 @@ describe('commandFor pull_request_review_comment (REV-93)', () => {
     assert.match(reasonOf(payload, 'pull_request_review_comment'), /lacks installation, repository, number or comment/)
   })
 })
+
+describe('a reply that sets a finding aside in words (REV-96)', () => {
+  const reply = (body: string, extra: Parameters<typeof reviewCommentPayload>[0] = {}) =>
+    commandFor('pull_request_review_comment', reviewCommentPayload({ body, inReplyTo: 7001, commentId: 9200, ...extra }), policy)
+
+  it('gives `refutation_reply` for « Not applied », with the first comment of the thread', () => {
+    assert.deepEqual(reply('Not applied: the value is validated by the schema'), {
+      type: 'refutation_reply',
+      installation: { githubInstallationId: 1001, githubAccountId: REPO.owner.id, login: REPO.owner.login },
+      repository: { githubRepoId: REPO.id, fullName: REPO.full_name },
+      prNumber: 28,
+      commentId: 9200,
+      rootCommentId: 7001,
+      commenter: { login: 'alex', isBot: false },
+      author: { githubId: 102, login: 'camille' },
+    })
+  })
+
+  it('ignores a reply that applied the fix, a first comment, a closed pull request, the App and an untrusted bot', () => {
+    assert.deepEqual(reply('Applied in abc123'), { type: 'ignore', reason: 'comment is not a command' })
+    assert.equal(reply('Not applied.', { inReplyTo: null }).type, 'ignore')
+    assert.deepEqual(reply('Not applied.', { state: 'closed' }), { type: 'ignore', reason: 'pull request is closed' })
+    assert.equal(reply('Not applied.', { user: { login: 'kento-review[bot]', type: 'Bot' } }).type, 'ignore')
+    assert.deepEqual(reply('Not applied.', { user: { login: 'other[bot]', type: 'Bot' } }), { type: 'ignore', reason: 'command of an untrusted bot' })
+    // A reply that opens with the account of the App names it: no command, a refutation.
+    assert.equal(reply('@kento-review[bot] **Not applied.** The guard runs first.').type, 'refutation_reply')
+    // A trusted bot can run the command: it gets the hint.
+    assert.equal(reply('Not applied.', { user: { login: 'sakuga-agent[bot]', type: 'Bot' } }).type, 'refutation_reply')
+  })
+
+  it('keeps a command a command: `reject` in a reply is never a refutation to hint', () => {
+    assert.equal(reply('Not applied.\n\n@kento-review reject the schema validates it').type, 'comment_command')
+  })
+})

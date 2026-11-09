@@ -1,5 +1,5 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
-import { answeredSection, dropRefuted, type AnsweredThread } from './answered.ts';
+import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
@@ -102,6 +102,8 @@ export type ReviewResult = {
   threads: AnsweredThread[];
   /** REV-71. The findings that a refuted thread removed. */
   refutedInThread: Finding[];
+  /** REV-96. The ids of the answered threads that the model called refuted. */
+  refutedThreads: string[];
   /** REV-95. The rejected findings that the pack held. */
   rejected: HeldRejection[];
   /** REV-95. The findings that a rejection on an unchanged file removed. */
@@ -282,6 +284,7 @@ export function finishReview<F extends Finding>(
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
   // REV-71. A finding that a reply refuted in its thread, on a file that did not change since.
+  const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
   for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
   // REV-95. A finding near a rejected finding, on a file that did not change since the rejection. It
@@ -326,6 +329,7 @@ export function finishReview<F extends Finding>(
     lines,
     threads,
     refutedInThread: answeredAway,
+    refutedThreads,
     rejected,
     droppedAsRejected: rejectedAway,
     diffHash,

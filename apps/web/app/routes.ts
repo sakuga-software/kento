@@ -98,6 +98,11 @@ export const fallbackRoutes = route({
   notFound: get('*path'),
 })
 
+/** REV-96. The pages of documentation. Open to anyone, without a sign-in: the comments of Kentō link to them. */
+export const docsRoutes = route({
+  commands: get('/docs/commandes'),
+})
+
 /** The GitHub sign-in. Open to anyone. */
 export const authRoutes = route({
   signIn: get('/login'),

@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { parseCommentCommand, rejectProblem, USAGE } from './comment-command.ts'
+import { parseCommentCommand, rejectProblem, usage, USAGE } from './comment-command.ts'
 import { REASON_MAX } from '../findings/store.ts'
 import { inlineBody, shortId } from '@sakuga-review/engine/render'
 
@@ -168,5 +168,22 @@ describe('USAGE', () => {
           'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
       ].join('\n'),
     )
+  })
+})
+
+describe('the account of the App (REV-96)', () => {
+  it('reads `@kento-review[bot]` as a mention of the App, not as a command', () => {
+    assert.equal(parseCommentCommand('@kento-review[bot] thanks, not applied: the schema validates it'), null)
+    assert.equal(parseCommentCommand('@Sakuga-Review[bot] ok'), null)
+    assert.deepEqual(parseCommentCommand('@kento-review[bot] see below\n@kento-review heavy'), { verb: 'review', level: 'heavy', force: false })
+  })
+})
+
+describe('usage (REV-96)', () => {
+  it('links the page of the commands when the service knows its public URL', () => {
+    assert.equal(usage(null), USAGE)
+    assert.match(usage('https://review.sakuga.dev/docs/commandes'), /\[Les commandes de Kentō\]\(https:\/\/review\.sakuga\.dev\/docs\/commandes\)\.$/)
+    assert.ok(usage('https://review.sakuga.dev/docs/commandes').startsWith(USAGE))
+    assert.match(USAGE, /`@kento-review reject <cause>`/)
   })
 })

@@ -45,8 +45,9 @@ import {
   type StoredFinding,
 } from '../findings/lifecycle.ts'
 import { assignmentLine, unreadPathsLine, type JobAssignment } from '../assignment/model.ts'
-import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
+import { canWrite, REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
+import { HINT_MARKER, hintText, namesReject } from '../commands/refutation.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { resolveReviewThread, reviewThreadPages, unresolveReviewThread } from '../github/graphql.ts'
 import { GitHubError, type GitHub } from './github.ts'
@@ -73,6 +74,11 @@ export interface PublishTarget {
   botLogin: string
   /** `https://github.com`: the links of the description. */
   webUrl: string
+  /**
+   * REV-96. The public page of the commands of Kentō, linked in the comment of each finding and in the
+   * hint. Null or absent when the service does not know its public URL.
+   */
+  docsUrl?: string | null
 }
 
 export interface PublishOutcome {
@@ -87,6 +93,8 @@ export interface PublishOutcome {
   suppressed: number
   /** REV-99. The replies in the thread of an earlier finding, instead of a new thread. */
   followed: number
+  /** REV-96. The threads that the model called refuted and that got the hint of `reject`. */
+  hinted: number
 }
 
 type InlineComment = {
@@ -232,7 +240,7 @@ export async function publishReview(
     let line = anchorOf(f)
     if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null
-    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null) }
+    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl) }
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' })
     inline.push(f)
     comments.push(comment)
@@ -373,6 +381,48 @@ export async function publishReview(
     })
   }
 
+  // REV-96. A thread that the model called refuted (REV-71) gets the hint of `reject` once, as a reply
+  // that the pattern of the webhook reads as a refutation. Only an open thread of an open finding, in
+  // which a person who can write to the repository replied: the hint names a command that only such
+  // a person can run.
+  let hinted = 0
+  for (let id of new Set(review.refutedThreads ?? [])) {
+    let thread = threads.find((t) => t.id === id)
+    // A thread whose replies already name `reject` knows the command.
+    if (!thread || thread.resolved || thread.hinted || thread.namesReject) continue
+    // The finding of the thread in the database: by its first comment, or by its key when a later
+    // thread carries it. A thread that the database does not know is a finding of an earlier release.
+    let finding =
+      known.find((s) => s.githubCommentId === thread.commentId) ??
+      known.find((s) => s.key === thread.key) ??
+      stored.find((s) => s.githubCommentId === thread.commentId)
+    // A finding that a 👎 dismissed, or that this review shows fixed (its thread is closed above).
+    if (finding && (finding.status !== 'open' || fixed.includes(finding))) continue
+    if (toClose.includes(thread)) continue
+    await step('hint', async () => {
+      let replier = false
+      for (let login of thread.repliers ?? []) {
+        if (await canWrite(github, `${owner}/${name}`, login, writers)) {
+          replier = true
+          break
+        }
+      }
+      if (!replier) return
+      // One hint per finding: the claim in the database before the post (REV-96), as the webhook does.
+      // A finding with no row (a thread of an earlier release) cannot be claimed: it gets no hint.
+      let claimed = finding?.id && ledger?.claimHint ? finding.id : null
+      if (!claimed || !(await ledger!.claimHint!(claimed))) return
+      try {
+        await github.rest('POST', `${repo}/pulls/${pr}/comments/${thread.commentId}/replies`, { body: hintText(null, target.docsUrl ?? null) })
+      } catch (error) {
+        // As in the webhook: only an answer of GitHub proves that the hint did not go.
+        if (error instanceof GitHubError) await ledger!.releaseHint?.(claimed)
+        throw error
+      }
+      hinted++
+    })
+  }
+
   // A COMMENT does not lift an earlier REQUEST_CHANGES, so the review of the previous head would keep
   // the pull request blocked after its findings are fixed. The dismissal clears it.
   await step('dismiss', async () => {
@@ -442,6 +492,7 @@ export async function publishReview(
     fixed: fixed.length,
     suppressed: matches.length - shown.length,
     followed,
+    hinted,
   }
 }
 
@@ -793,7 +844,7 @@ type ThreadNode = {
   isResolved: boolean
   path: string
   line: number | null
-  comments: { nodes: { databaseId: number; body: string; author: { login: string } | null; commit: { oid: string } | null }[] }
+  comments: { nodes: { databaseId: number; body: string; author: { login: string; __typename?: string } | null; commit: { oid: string } | null }[] }
 }
 
 /** The review threads that the bot opened on the pull request. */
@@ -801,7 +852,7 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
   // GraphQL gives the login of an App without `[bot]`.
   let logins = new Set([target.botLogin, target.botLogin.replace(/\[bot\]$/, '')])
   let threads: BotThread[] = []
-  let fields = 'id isResolved path line comments(first: 50) { nodes { databaseId body author { login } commit { oid } } }'
+  let fields = 'id isResolved path line comments(first: 50) { nodes { databaseId body author { login __typename } commit { oid } } }'
   for await (let nodes of reviewThreadPages<ThreadNode>(github, target, fields)) {
     for (let node of nodes) {
       let first = node.comments.nodes[0]
@@ -811,7 +862,11 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
       let later = node.comments.nodes.slice(1)
       // The last word of the bot in the thread: its reply that the finding is gone, or (REV-99) its
       // reply that a later review found the defect again, which makes the thread live again.
-      let lastWord = later.filter((c) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? '')).at(-1)
+      // REV-96. The hint of `reject` is no last word: the finding stays live in its thread.
+      let lastWord = later
+        .filter((c) => !c.body.includes(HINT_MARKER))
+        .filter((c) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? ''))
+        .at(-1)
       threads.push({
         id: node.id,
         resolved: node.isResolved,
@@ -828,6 +883,17 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
           let mark = MARKER_VARIANT.exec(c.body)
           return mark ? [`${mark[1]} ${mark[2]}`] : []
         }),
+        hinted: later.some((c) => c.body.includes(HINT_MARKER)),
+        // REV-96. A person already named `reject` in a reply, in a quote or a block of code too.
+        namesReject: later.some((c) => !logins.has(c.author?.login ?? '') && namesReject(c.body)),
+        // The people who replied: a bot never runs the hint's command on its own.
+        repliers: [
+          ...new Set(
+            later
+              .filter((c) => c.author && c.author.__typename !== 'Bot' && !logins.has(c.author.login) && !c.author.login.endsWith('[bot]'))
+              .map((c) => c.author!.login),
+          ),
+        ],
       })
     }
   }

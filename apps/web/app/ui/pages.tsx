@@ -3,7 +3,7 @@
 import { getCsrfToken } from 'remix/middleware/csrf'
 import { createController, type Middleware } from 'remix/router'
 
-import { fallbackRoutes, pageRoutes } from '../routes.ts'
+import { docsRoutes, fallbackRoutes, pageRoutes } from '../routes.ts'
 import { assignmentActions } from './controllers/assignment.tsx'
 import { createAuth } from './controllers/auth.tsx'
 import { configActions } from './controllers/config.tsx'
@@ -11,6 +11,7 @@ import { dashboardActions } from './controllers/dashboard.tsx'
 import type { UiDependencies } from './controllers/deps.ts'
 import { findingsActions } from './controllers/findings.tsx'
 import { createKit, forbidden, redirect, Signed, signedOf } from './controllers/kit.tsx'
+import { CommandsPage } from './docs-commands.tsx'
 import { reposActions } from './controllers/repos.tsx'
 import { rulesActions } from './controllers/rules.tsx'
 import { runnersActions } from './controllers/runners.tsx'
@@ -82,6 +83,20 @@ export function createUiControllers(deps: UiDependencies) {
   })
 
   /**
+   * REV-96. The pages of documentation: no session, no sign-in. The link of a comment of Kentō on
+   * GitHub opens them for every reader of the pull request.
+   */
+  let docs = createController(docsRoutes, {
+    middleware: [securityHeaders()],
+    actions: {
+      commands(context) {
+        let page = <CommandsPage theme={readTheme(context.headers.get('Cookie'))} version={deps.version} assetVersion={kit.assetVersion} />
+        return context.render(page)
+      },
+    },
+  })
+
+  /**
    * REV-17. What a screen in a file of its own needs from the frame: the middleware of the session,
    * the signed-in person, the frame of the page, and the 404 or 400 page.
    */
@@ -97,7 +112,7 @@ export function createUiControllers(deps: UiDependencies) {
     forbidden,
   }
 
-  return { pages, signIn, notFound, screens }
+  return { pages, signIn, notFound, screens, docs }
 }
 
 /** The person on a screen, as a screen in a file of its own reads them. */

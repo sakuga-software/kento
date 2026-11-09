@@ -1,5 +1,6 @@
 import { SHA } from '@sakuga-review/protocol'
 
+import { looksRefuted } from '../commands/refutation.ts'
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
 
 export type CommandPlace = { kind: 'conversation' } | { kind: 'thread'; rootCommentId: number }
@@ -64,6 +65,21 @@ export type WebhookCommand =
        * first comment is `rootCommentId`. The reactions and the replies of the two use other routes.
        */
       place: CommandPlace
+    }
+  | {
+      /**
+       * REV-96. A reply in a review thread that reads as a refutation of the finding of the thread,
+       * without `reject` (commands/refutation.ts). The hint handler answers it once with the command.
+       */
+      type: 'refutation_reply'
+      installation: Installation
+      repository: Repository
+      prNumber: number
+      commentId: number
+      /** The first comment of the thread. */
+      rootCommentId: number
+      commenter: { login: string; isBot: boolean }
+      author: PullAuthor | null
     }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
   /**
@@ -217,7 +233,9 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (rootCommentId === null) return { type: 'ignore', reason: 'review comment starts a thread' }
   let body = typeof comment?.body === 'string' ? comment.body : ''
   let command = parseCommentCommand(body)
-  if (command === null) return { type: 'ignore', reason: 'comment is not a command' }
+  // REV-96. A reply that sets the finding aside in words, without the command, gets a hint.
+  let refutes = command === null && looksRefuted(body)
+  if (command === null && !refutes) return { type: 'ignore', reason: 'comment is not a command' }
 
   let pr = obj(payload.pull_request)
   let installation = installationFromRepository(payload)
@@ -233,13 +251,17 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (refused) return refused
   if (pr?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
 
+  let commenter = { login, isBot: user?.type === 'Bot' }
+  if (command === null) {
+    return { type: 'refutation_reply', installation, repository, prNumber, commentId, rootCommentId, commenter, author: authorOf(obj(pr?.user)) }
+  }
   return {
     type: 'comment_command',
     installation,
     repository,
     prNumber,
     commentId,
-    commenter: { login, isBot: user?.type === 'Bot' },
+    commenter,
     command,
     author: authorOf(obj(pr?.user)),
     place: { kind: 'thread', rootCommentId },

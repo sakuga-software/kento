@@ -1,0 +1,1 @@
+ALTER TABLE "findings" ADD COLUMN "reject_hint_at" timestamp with time zone;

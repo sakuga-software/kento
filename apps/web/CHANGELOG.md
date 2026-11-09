@@ -7,6 +7,34 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-96: Kentō suggests `reject` on a reply that sets a finding aside; the page of the commands
+
+**Deploy `web` first, then the runners.** A runner of this release claims the feature `refuted`; a
+web service of an earlier release refuses a claim with a feature that it does not know. Migration
+`0024_finding_reject_hint`: one nullable column, `findings.reject_hint_at` (no rewrite of the table).
+`/healthz` gives `"migrations":25`. No new variable, no new permission: the App already receives
+`pull_request_review_comment` since REV-93.
+
+- A reply in the thread of an open finding whose start sets it aside in words (« Not applied »,
+  « Non retenu », « Risque accepté », « Kept as is »…) gets one reply of Kentō with the command
+  `@kento-review reject <cause>` and a link to the page of the commands. The pattern reads the start
+  of the reply only, with no call to a model (`app/commands/refutation.ts`: precision 98.9 %, recall
+  82.5 % on 1,051 replies of the org labelled by hand). No hint in a resolved thread, for a finding
+  that is no longer open, on a reply that names `reject` already, or on a reply of a person who cannot
+  write to the repository or of an untrusted bot. One hint per finding: `findings.reject_hint_at` is
+  claimed before the post, so two deliveries, or a delivery and a review, never both post it; a post
+  that GitHub refuses gives the claim back. The hint changes no status, and the thread still carries
+  its finding (its hidden marker `<!-- kento:reject-hint -->` is no last word of the bot).
+- At the next review, a thread that the model calls refuted (REV-71) gets the same hint when it has
+  none: the runner sends `refutedThreads`, the ids of these threads.
+- `/docs/commandes`: a public page, without a sign-in, that describes `review`, `force`, `resolve` and
+  `reject`. The list of the commands of a refused command, the hint, and the footer of the comment of
+  each finding link to it, under `KENTO_PUBLIC_URL`. Without that variable, no link.
+
+Check: on a test pull request, the reply « Not applied: the value is validated by the schema » in the
+thread of a finding gets the hint once, even after a second reply of the same kind; « Applied in
+abc123 » gets nothing; the link of the hint opens `/docs/commandes` in a private window.
+
 ## REV-101: A head that no reviewed file changed gets its own review
 
 No migration, no new variable, no new permission, no change to the protocol of the runners: deploy

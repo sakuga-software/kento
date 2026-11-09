@@ -60,6 +60,21 @@ export function answeredSection(repo: string, head: string, threads: readonly Op
 }
 
 /**
+ * REV-96. The ids of the threads (`OpenThread.id`) that a verdict of the model calls refuted, whether
+ * their file changed or not: the service answers them with the hint of `reject`. A verdict of a wrong
+ * shape counts for nothing.
+ */
+export function refutedThreadIds(answer: Answer, held: readonly AnsweredThread[]): string[] {
+  const given: unknown = answer.threads;
+  const refuted = new Set(
+    (Array.isArray(given) ? given : [])
+      .filter((v): v is ThreadVerdict => typeof v === 'object' && v !== null && typeof v.id === 'string' && v.verdict === 'refuted')
+      .map((v) => v.id),
+  );
+  return held.filter((t) => refuted.has(t.ref)).map((t) => t.id);
+}
+
+/**
  * Removes from the answer the findings of the refuted threads whose file did not change since the
  * thread: same file, and the line or the title of the thread. Gives the findings removed.
  *

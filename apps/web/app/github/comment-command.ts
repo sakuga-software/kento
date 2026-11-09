@@ -38,8 +38,9 @@ const SHORT_ID = new RegExp(`^(?:#([0-9a-f]{${SHORT_ID_MIN},${SHORT_ID_MAX}})|(?
 export const COMMAND_NAMES = ['kento-review', 'sakuga-review'] as const
 
 // At the start of a line, after at most three spaces (four make a block of code): the name, then
-// the end of the word. `@kentobot` and `@sakuga-review-ci` are other accounts.
-const MENTION = new RegExp(`^ {0,3}@(${COMMAND_NAMES.join('|')})(?![\\w-])`, 'i')
+// the end of the word. `@kentobot` and `@sakuga-review-ci` are other accounts. REV-96: so is
+// `@kento-review[bot]`, the account of the App: a reply that names it gives no command.
+const MENTION = new RegExp(`^ {0,3}@(${COMMAND_NAMES.join('|')})(?![\\w-]|\\[bot\\])`, 'i')
 // A fence of code: three backticks or tildes or more, after at most three spaces.
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
 // A line of a quote: `>` after at most three spaces.
@@ -176,3 +177,11 @@ export const USAGE = [
   `La cause tient sur la ligne de la commande, en ${REASON_MAX} caractères au plus. ` +
     'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
 ].join('\n')
+
+/**
+ * REV-96. The list of the commands, with the link to their page when the service knows its public
+ * URL.
+ */
+export function usage(docsUrl: string | null | undefined): string {
+  return docsUrl ? `${USAGE}\n\nToutes les commandes, avec des exemples : [Les commandes de Kentō](${docsUrl}).` : USAGE
+}

@@ -169,6 +169,13 @@
       "when": 1794159908228,
       "tag": "0023_finding_event_source",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794254258660,
+      "tag": "0024_finding_reject_hint",
+      "breakpoints": true
     }
   ]
 }

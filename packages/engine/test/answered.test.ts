@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { refutedThreadIds, type AnsweredThread } from '../src/answered.ts';
 import { ANSWER_SCHEMA, type ThreadVerdict } from '../src/findings.ts';
 import { levelConfig, reviewInPasses, reviewPullRequest, type Answer, type Finding, type OpenThread } from '../src/index.ts';
 import { BASE_PASSES } from '../src/passes.ts';
@@ -123,6 +124,8 @@ test('gallery-app#13: a forced review on the same head, with the P1 refuted in i
   assert.equal(result.score, 4, 'the refuted finding does not lower the score');
   assert.notEqual(result.verdict, 'REQUEST_CHANGES');
   assert.equal(result.refutedInThread.length, 1);
+  // REV-96. The service answers the refuted thread with the hint of `reject`.
+  assert.deepEqual(result.refutedThreads, ['PRRT_kwDOgallery-app13']);
   assert.match(logs.join('\n'), /finding dropped, a reply refuted it in its thread and its file did not change: app\/routes\/regie\/account\.tsx/);
   // The model read the reply, as data, and must give a verdict on the thread.
   const pack = calls[0]!.pack;
@@ -241,4 +244,20 @@ test('balanced, two passes: a pass that did not report the finding refutes it, t
 test('balanced, two passes: the pass that reported the finding upholds its thread, the finding stays', async () => {
   const result = await inPasses({ contracts: answer([finding()], 4, UPHELD), security: answer([], 4, REFUTED) });
   assert.equal(result.findings.length, 1);
+});
+
+test('REV-96: the refuted threads are those of a verdict `refuted`, whether their file changed or not', () => {
+  const held = (ref: string, id: string, changed: boolean | null): AnsweredThread => ({ ...thread(head), id, ref, changed });
+  const threads = [held('T1', 'PRRT_a', false), held('T2', 'PRRT_b', true), held('T3', 'PRRT_c', null)];
+  const verdicts = [
+    { id: 'T1', verdict: 'refuted', reason: 'x' },
+    { id: 'T2', verdict: 'refuted', reason: 'x' },
+    { id: 'T3', verdict: 'upheld', reason: 'x' },
+    // A verdict of a wrong shape, or of a thread that the pack did not hold, counts for nothing.
+    { id: 'T9', verdict: 'refuted', reason: 'x' },
+    { id: 3, verdict: 'refuted' },
+    null,
+  ];
+  assert.deepEqual(refutedThreadIds({ ...answer([], 4), threads: verdicts } as unknown as Answer, threads), ['PRRT_a', 'PRRT_b']);
+  assert.deepEqual(refutedThreadIds({ ...answer([], 4), threads: null } as unknown as Answer, threads), []);
 });

@@ -27,6 +27,8 @@ export type WebhookResult =
    * (`unchanged`). `dismissedReview`: the review of Kentō that it dismissed, or null.
    */
   | { outcome: 'dismissed' | 'unchanged'; findingId: string; dismissedReview: number | null }
+  /** REV-96. Kentō answered a reply that sets a finding aside in words with the command `reject`. */
+  | { outcome: 'hinted'; findingId: string }
   /** REV-13. The org reached its cost limit of the day or of the month: no job. */
   | { outcome: 'capped'; reason: string; period: CapHit['period']; spentUsd: number; capUsd: number; resetsAt: string }
 
@@ -63,6 +65,8 @@ export type ListChangedFiles = (command: Extract<StoreCommand, { type: 'enqueue_
 export interface StoreOptions {
   /** The commands of the comments (REV-7). Without it, a command is skipped. */
   handleCommentCommand?: HandleCommentCommand
+  /** REV-96. The hint on a reply that sets a finding aside in words. Without it, the reply is skipped. */
+  handleRefutationReply?: (reply: Extract<StoreCommand, { type: 'refutation_reply' }>, deliveryId: string) => Promise<WebhookResult>
   /**
    * REV-12. Reads the changed files of a pull request, for a repository whose config has paths.
    * Without it, or when GitHub does not answer, the paths filter nothing: a review too many costs
@@ -93,6 +97,10 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
     if (command.type === 'comment_command') {
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
       return options.handleCommentCommand(command, deliveryId)
+    }
+    if (command.type === 'refutation_reply') {
+      if (!options.handleRefutationReply) return { outcome: 'skipped', reason: 'hints are not configured' }
+      return options.handleRefutationReply(command, deliveryId)
     }
     if (command.type === 'enqueue_review') {
       let before = await beforeEnqueue(db, command, options.listChangedFiles, deliveryId)

@@ -11,7 +11,7 @@ import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { authRoutes, docsRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
@@ -118,6 +118,7 @@ export function createAppRouter(deps: AppDependencies) {
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))
   router.map(userRoutes, createUserControllers(ui.screens, deps.users ?? null))
   router.map(authRoutes, ui.signIn)
+  router.map(docsRoutes, ui.docs)
   fallback.map(fallbackRoutes, ui.notFound)
   if (deps.runner) router.map(runnerRoutes, createRunnerController(deps.runner))
   return router

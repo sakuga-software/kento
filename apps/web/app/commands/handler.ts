@@ -26,7 +26,7 @@ import type { Db } from '../db/client.ts'
 import { findings, repos } from '../db/schema.ts'
 import { enqueueCommandJob, isRepoEnabled, type CommentCommandMessage, type HandleCommentCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
-import { rejectProblem, rejectProblemText, USAGE, type CommentCommand } from '../github/comment-command.ts'
+import { rejectProblem, rejectProblemText, usage, type CommentCommand } from '../github/comment-command.ts'
 import type { CommandPlace } from '../github/events.ts'
 import { WRITERS } from '../github/permissions.ts'
 import { applyReject, REJECT_REFUSED, REJECT_THREAD_PERMISSIONS, type RejectTarget as RejectFinding } from './reject.ts'
@@ -52,6 +52,8 @@ export interface CommandHandlerDependencies {
   /** Null without the GitHub App: a command is then skipped. */
   mintInstallationToken: MintInstallationToken | null
   apiUrl: string
+  /** REV-96. The public page of the commands, linked in the list of the commands. Null: no link. */
+  docsUrl?: string | null
   fetch?: typeof globalThis.fetch
 }
 
@@ -157,11 +159,11 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
 
     let { command } = message
     if (command.verb === 'unknown') {
-      return refuse('unknown command', `@${message.commenter.login} \`${command.text.replaceAll('`', "'")}\` n'est pas une commande de Kentō.\n\n${USAGE}`)
+      return refuse('unknown command', `@${message.commenter.login} \`${command.text.replaceAll('`', "'")}\` n'est pas une commande de Kentō.\n\n${usage(deps.docsUrl)}`)
     }
     if (command.verb === 'reject') {
       let problem = rejectProblem(command, place.kind)
-      if (problem) return refuse(`reject: ${problem}`, `@${message.commenter.login} ${rejectProblemText(problem)}\n\n${USAGE}`)
+      if (problem) return refuse(`reject: ${problem}`, `@${message.commenter.login} ${rejectProblemText(problem)}\n\n${usage(deps.docsUrl)}`)
       let target = await findRejectTarget(deps.db, message, command)
       if (target.kind !== 'found') {
         return refuse(`reject: ${target.kind}`, `@${message.commenter.login} ${targetProblemText(target, command)}`)

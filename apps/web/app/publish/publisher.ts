@@ -11,6 +11,7 @@
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
+import { DOCS_PATH } from '../commands/refutation.ts'
 import { readJobAssignment, readUnreadPathRules } from '../assignment/model.ts'
 import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
@@ -186,6 +187,8 @@ class NoTryUsed extends Error {
 
 export function createPublisher(deps: PublisherDependencies): Publisher {
   let webUrl = (deps.webUrl ?? 'https://github.com').replace(/\/+$/, '')
+  // REV-96. The page of the commands, linked in the comment of each finding and in the hint of `reject`.
+  let docsUrl = deps.publicUrl ? new URL(DOCS_PATH, deps.publicUrl).toString() : null
   let tries = new Map<string, number>()
   let exhausted = () => [...tries].filter(([, n]) => n >= MAX_TRIES).map(([id]) => id)
   let running: Promise<unknown> | null = null
@@ -289,7 +292,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
     let githubReviewId = 0
     let outcome = await publishReview(
       github,
-      { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl },
+      { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl, docsUrl },
       review,
       {
         checks,
