@@ -88,8 +88,10 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  *   outcome `unchanged` when the key of the head is the same: no model call.
  * - `rejected`: a review job can carry `rejected`, the findings of the pull request that a person set
  *   aside (REV-95). The review reads their causes as data.
+ * - `delta`: `reuse` can carry `delta` (REV-88), and the runner then reviews only the files that
+ *   changed since that head, and sends `delta` with its review.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -256,7 +258,30 @@ export type RejectedFinding = {
  * REV-89. The last review of the pull request that the runner may reuse: its head and its reuse key.
  * Only a review job of a push carries one; a command or « Relancer » always gets a new review.
  */
-export type JobReuse = { head: string; key: string };
+export type JobReuse = { head: string; key: string; delta?: JobDelta };
+
+/** REV-88. The statuses of a finding that a review does not raise again. */
+export const SETTLED_STATUSES = ['fixed', 'dismissed', 'wontfix'] as const;
+/** REV-88. A job carries at most this many settled findings, and this many open findings of the last review. */
+export const MAX_SETTLED = 200;
+export const MAX_DELTA_FINDINGS = 100;
+
+/**
+ * REV-88, with the feature `delta`. What the runner needs to review only the change since the head
+ * of `JobReuse`, sent only when that review is of the level of the job:
+ *
+ * - `score`: the score of that review. Without a new finding, the review keeps at least this score.
+ * - `findings`: its findings that are still open (not fixed, dismissed or kept). Those on a file that
+ *   did not change since come back in the result as they are.
+ * - `settled`: the findings of the pull request that a review showed fixed, or that a person
+ *   dismissed (`dismissed`) or kept (`wontfix`). The model is told not to raise them again, and the
+ *   runner drops a dismissed or kept one that it raises again.
+ */
+export type JobDelta = {
+  score: number;
+  findings: ReviewFinding[];
+  settled: { path: string; line: number; title: string; status: (typeof SETTLED_STATUSES)[number]; key: string; fingerprint: string }[];
+};
 
 /**
  * A review job has no `resolve` key: a runner of an earlier release reads it as before. `threads`:
@@ -352,6 +377,44 @@ const rejectedFinding = obj({
   commit: sha,
 });
 const count = int({ min: 0, max: 100_000 });
+const line = int({ min: 0, max: 10_000_000 });
+const tokens = nullable(int({ min: 0, max: 100_000_000 }));
+const finding = obj({
+  path: str({ min: 1, max: 1000 }),
+  start_line: line,
+  line,
+  severity: oneOf(SEVERITIES),
+  category: oneOf(CATEGORIES),
+  confidence: num({ min: 0, max: 100 }),
+  title: text(1000),
+  scenario: text(20_000),
+  fix: text(20_000),
+  suggestion: text(20_000),
+  anchor: nullable(line),
+  blocking: bool,
+  suggestion_range: nullable(tuple2(line, line)),
+  rule_id: optional(uuid),
+  fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
+});
+const settledFinding = obj({
+  path: str({ min: 1, max: 1000 }),
+  line,
+  title: text(1000),
+  status: oneOf(SETTLED_STATUSES),
+  key: str({ max: 12, pattern: /^[0-9a-f]{12}$/ }),
+  fingerprint: str({ max: 16, pattern: /^[0-9a-f]{16}$/ }),
+});
+const jobDelta = obj({
+  score: int({ min: 1, max: 5 }),
+  findings: arr(finding, { max: MAX_DELTA_FINDINGS }),
+  settled: arr(settledFinding, { max: MAX_SETTLED }),
+});
+/**
+ * REV-88. The checks of the runner, for the service: a finding or a settled finding of a `delta`
+ * that fails them would make the runner refuse the whole job.
+ */
+export const parseReviewFinding = (value: unknown): Checked<ReviewFinding> => run(finding, value) as Checked<ReviewFinding>;
+export const parseSettledFinding = (value: unknown): Checked<JobDelta['settled'][number]> => run(settledFinding, value) as Checked<JobDelta['settled'][number]>;
 const diffHash = str({ max: 16, pattern: DIFF_HASH });
 const reuseKey = str({ max: 64, pattern: REUSE_KEY });
 const job = tagged('kind', {
@@ -359,7 +422,15 @@ const job = tagged('kind', {
     ...jobBase,
     kind: oneOf(['review'] as const),
     threads: optional(arr(resolveThread, { max: MAX_RESOLVE_THREADS })),
-    reuse: optional(nullable(obj({ head: sha, key: reuseKey }))),
+    reuse: optional(
+      nullable(
+        obj({
+          head: sha,
+          key: reuseKey,
+          delta: optional(jobDelta),
+        }),
+      ),
+    ),
     rejected: optional(arr(rejectedFinding, { max: MAX_REJECTED_FINDINGS })),
   }),
   resolve: obj({
@@ -444,6 +515,11 @@ export type ReviewPayload = {
   reuseKey?: string;
   /** REV-89, with the feature `reuse`. The tokens of the prompt that the provider read from its cache. */
   cachedTokens?: number | null;
+  /**
+   * REV-88, when the job carried `delta`: the review read only the files that changed since the head
+   * `since` (`files` of them). Absent: the review read the whole pull request.
+   */
+  delta?: { since: string; files: number };
 };
 
 /**
@@ -485,25 +561,6 @@ export type ResultRequest =
   | { outcome: 'unchanged'; attempt: number; unchanged: UnchangedPayload }
   | { outcome: 'failed'; attempt: number; reason: string; providerStatus?: number | null };
 
-const line = int({ min: 0, max: 10_000_000 });
-const tokens = nullable(int({ min: 0, max: 100_000_000 }));
-const finding = obj({
-  path: str({ min: 1, max: 1000 }),
-  start_line: line,
-  line,
-  severity: oneOf(SEVERITIES),
-  category: oneOf(CATEGORIES),
-  confidence: num({ min: 0, max: 100 }),
-  title: text(1000),
-  scenario: text(20_000),
-  fix: text(20_000),
-  suggestion: text(20_000),
-  anchor: nullable(line),
-  blocking: bool,
-  suggestion_range: nullable(tuple2(line, line)),
-  rule_id: optional(uuid),
-  fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
-});
 const review = obj({
   level: oneOf(LEVELS),
   base: sha,
@@ -527,6 +584,7 @@ const review = obj({
   diffHash: optional(diffHash),
   reuseKey: optional(reuseKey),
   cachedTokens: optional(tokens),
+  delta: optional(obj({ since: sha, files: int({ min: 0, max: 100_000 }) })),
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),

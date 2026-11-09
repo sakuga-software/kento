@@ -105,7 +105,17 @@ export function descriptionBlock(
    * `reusedFrom`: REV-89, the head of the review that this block shows again, when no reviewed file
    * changed since it.
    */
-  context: { count: number; head: string; subject: string; commitUrl: string; level: Level; poster?: Poster; reusedFrom?: string },
+  context: {
+    count: number;
+    head: string;
+    subject: string;
+    commitUrl: string;
+    level: Level;
+    poster?: Poster;
+    reusedFrom?: string;
+    /** REV-88. The review read only the files that changed since this head. */
+    delta?: { since: string; files: number };
+  },
 ): string {
   const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
   const deeper = deeperReview(answer, context.level);
@@ -135,6 +145,14 @@ export function descriptionBlock(
   if (flow) out.push('<details><summary>Diagramme</summary>', '', '```mermaid', "%%{init: {'theme': 'neutral'}}%%", flow, '```', '</details>', '');
   const notReviewed = [...skipped, ...answer.not_reviewed.filter((n) => !skipped.includes(n))];
   if (notReviewed.length) out.push('<details><summary>Non relu</summary>', '', ...notReviewed.map((n) => `- ${n}`), '', '</details>', '');
+  if (context.delta) {
+    const files =
+      context.delta.files > 1 ? `les ${context.delta.files} fichiers de la PR modifiés depuis le commit \`${context.delta.since.slice(0, 9)}\` ont été relus` : `le fichier de la PR modifié depuis le commit \`${context.delta.since.slice(0, 9)}\` a été relu`;
+    out.push(
+      `<sub>Review incrémentale : ${files} ; les constats des autres fichiers viennent de la review de ce commit.</sub>`,
+      '',
+    );
+  }
   if (context.reusedFrom) {
     out.push(
       `<sub>Aucun fichier relu n'a changé depuis le commit \`${context.reusedFrom.slice(0, 9)}\` : sa review vaut pour ce commit, sans nouvel appel au modèle.</sub>`,

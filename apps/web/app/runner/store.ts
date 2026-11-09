@@ -5,7 +5,12 @@ import {
   MAX_ATTEMPTS,
   MAX_JOB_RULES,
   MAX_REJECTED_FINDINGS,
+  MAX_DELTA_FINDINGS,
+  MAX_SETTLED,
+  parseReviewFinding,
+  parseSettledFinding,
   REUSE_KEY,
+  type JobDelta,
   type JobKind,
   type JobReuse,
   type JobRule,
@@ -16,6 +21,8 @@ import {
   type ReviewPayload,
   type UnchangedPayload,
 } from '@sakuga-review/protocol'
+
+import { withoutSettled } from '@sakuga-review/engine/findings'
 
 import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'
@@ -205,6 +212,13 @@ export interface RunnerStore {
    * has the same key and the same findings, so the runner compares with the same input.
    */
   reusableReview(jobId: string): Promise<JobReuse | null>
+  /**
+   * REV-88. What the runner needs to review only the change since the review `reuse` names: its
+   * score, its findings still open, and the settled findings of the pull request. Null when that
+   * review is of another level than the job (a command at another level): the runner then reviews
+   * the whole pull request.
+   */
+  jobDelta(jobId: string, reuse: JobReuse): Promise<JobDelta | null>
   /**
    * Stores the result of an attempt. A finding of a review keeps its `rule_id` only when it names a
    * rule of the repository of the job or of its org, and then gets the title of that rule.
@@ -462,6 +476,41 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return { head: last.headSha, key: last.key }
     },
 
+    async jobDelta(jobId, reuse) {
+      let [row] = await sql<{ result: unknown; level: Level; repoId: string; prNumber: number }[]>`
+        select reviews.result, jobs.level, jobs.repo_id as "repoId", jobs.pr_number as "prNumber"
+        from jobs
+        join reviews on reviews.repo_id = jobs.repo_id and reviews.pr_number = jobs.pr_number
+          and reviews.head_sha = ${reuse.head} and reviews.github_review_id is not null
+          and reviews.result->>'reuseKey' = ${reuse.key}
+          -- Only a review of the level of the job: another level reads another pack.
+          and reviews.result->>'level' = jobs.level::text
+        where jobs.id = ${jobId}
+        order by reviews.published_at desc
+        limit 1`
+      if (!row) return null
+      let previous = jsonOf<StoredReview>(row.result)
+      if (previous.level !== row.level) return null
+      let settled = await sql<{ path: string; line: number; title: string; status: JobDelta['settled'][number]['status']; key: string; fingerprint: string }[]>`
+        select path, line, title, status, key, fingerprint from findings
+        where repo_id = ${row.repoId} and pr_number = ${row.prNumber} and status in ('fixed', 'dismissed', 'wontfix')
+        order by updated_at desc
+        limit ${MAX_SETTLED}`
+      // The findings of that review that a person or a later review has not settled since: by
+      // fingerprint, or by key (the path and the title) when no finding has that fingerprint.
+      let open = withoutSettled(previous.findings, settled, (f) => f.fingerprint)
+      // The job carries only what the runner accepts (the protocol): a stored finding has keys of the
+      // service (`rule_title`), and an older row can fail a check. One of them would fail the claim.
+      // At most MAX_DELTA_FINDINGS, the limit of the job: a longer list would fail the claim.
+      let valid = open.map(sendableFinding).filter((f) => parseReviewFinding(f).ok)
+      let findings = valid.slice(0, MAX_DELTA_FINDINGS)
+      let sent = settled.map((f) => ({ ...f, title: f.title.slice(0, 1000), line: Math.max(0, f.line) })).filter((f) => parseSettledFinding(f).ok)
+      let dropped = open.length - valid.length + settled.length - sent.length
+      if (valid.length > findings.length) log('warn', 'job.delta_findings_cut', { jobId, kept: findings.length, of: valid.length })
+      if (dropped) log('warn', 'job.delta_findings_dropped', { jobId, dropped })
+      return { score: previous.score, findings, settled: sent }
+    },
+
     async recordSentRules(jobId, runnerId, attempt, rules) {
       await sql`
         update jobs set sent_rules = ${JSON.stringify(rules)}::jsonb
@@ -633,6 +682,28 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       for (let { state, ...job } of rows) out[state === 'queued' ? 'requeued' : 'failed'].push({ ...job, attempts: Number(job.attempts) })
       return out
     },
+  }
+}
+
+/** REV-88. A stored finding with the keys of the protocol only. */
+function sendableFinding(f: ReviewPayload['findings'][number]): ReviewPayload['findings'][number] {
+  let { path, start_line, line, severity, category, confidence, title, scenario, fix, suggestion, anchor, blocking, suggestion_range, rule_id, fingerprint } = f
+  return {
+    path,
+    start_line,
+    line,
+    severity,
+    category,
+    confidence,
+    title,
+    scenario,
+    fix,
+    suggestion,
+    anchor,
+    blocking,
+    suggestion_range,
+    ...(rule_id ? { rule_id } : {}),
+    ...(fingerprint ? { fingerprint } : {}),
   }
 }
 

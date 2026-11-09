@@ -7,6 +7,33 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-88: The review of a push reads only what changed since the last reviewed head
+
+No migration, no new variable, no new permission. A runner of this release says `delta` in the
+features of its claim. When the service sends `reuse` (REV-89) and the last review on GitHub is of
+the level of the job, it adds `delta`: the score of that review, its findings still open (not
+fixed, dismissed or kept in the findings of the pull request), and the settled findings of the pull
+request (at most 200).
+
+When that head is in the history of the new head, the pack holds only the files of the pull
+request that changed since then, with a section that lists the earlier findings and the settled
+ones. The findings of the files that did not change come back as they were; a finding that a
+person dismissed or kept, raised again, is dropped; with no new finding, the score is at least the
+score of the last review. A force-push or a rebase takes that head out of the history: the review
+reads the whole pull request, as before. A merge of `main` that changes no file of the pull request
+calls no model and publishes the last review again (`unchanged`, REV-89). The review says
+`delta: { since, files }`, and the block of the description says « Review incrémentale ».
+
+Measured without a model, on the eval cases (the head of the case as the last reviewed head, the
+later head of the same pull request as the push): the pack of the push is 25 % (plai574), 39 %
+(plai565) and 32 % (plai549) smaller in input tokens, prompt included.
+
+Deploy `web` before the runners: a runner of this release sends the feature `delta`, and an
+earlier service refuses it. A runner of REV-89 gets no `delta` and reviews the whole pull request.
+
+Check: on a pull request with a review, a push that changes one file gives `job.review_incremental`
+with `files: 1` in the log of the runner, and « Review incrémentale » in the block.
+
 ## REV-95: The next review reads the rejected findings and their cause
 
 **The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this
@@ -74,6 +101,7 @@ Check: on a pull request whose review has one blocking finding, `@kento-review r
 thread. The thread is resolved, the reply quotes the cause, the review `CHANGES_REQUESTED` is
 dismissed, and the log `command.rejected` gives `dismissedReview`. The finding is `dismissed` with
 the cause on the Findings screen.
+
 ## REV-89: No new review of a push that changes no reviewed file
 
 No migration, no new variable, no new permission. A runner of this release says `reuse` in the

@@ -196,6 +196,26 @@ export function findingKey(finding: Finding): string {
 }
 
 /**
+ * REV-88. The findings without those that are settled. A settled finding is found by its fingerprint
+ * when one of the findings has it: only that one goes, and another finding with the same path and
+ * title stays. Otherwise (no fingerprint, or its lines moved) it is found by its key, the path and
+ * the title. `print` gives the fingerprint of a finding.
+ */
+export function withoutSettled<F extends Finding>(
+  findings: readonly F[],
+  settled: readonly { key: string; fingerprint: string }[],
+  print: (finding: F) => string | undefined,
+): F[] {
+  const printed = new Set(findings.map(print).filter((p): p is string => Boolean(p)));
+  const byPrint = new Set(settled.filter((s) => printed.has(s.fingerprint)).map((s) => s.fingerprint));
+  const byKey = new Set(settled.filter((s) => !printed.has(s.fingerprint)).map((s) => s.key));
+  return findings.filter((f) => {
+    const p = print(f);
+    return !(p && byPrint.has(p)) && !byKey.has(findingKey(f));
+  });
+}
+
+/**
  * The score that the reader sees. A blocking finding caps it at 2: a review that asks for changes
  * and calls the pull request safe would contradict itself.
  */

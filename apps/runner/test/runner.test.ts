@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -934,4 +934,32 @@ test('a head with the reuse key of the last review calls no model, and sends unc
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: { head: previous, key: 'f'.repeat(64) } }), deps(other.api, model.fetch));
   assert.equal(other.results[0]!.outcome, 'done');
   assert.equal(model.keys.length, 2);
+});
+
+// --- incremental review (REV-88) -----------------------------------------------------------------
+
+test('with a delta whose head is the base, the review reads only the change since, and sends delta (REV-88)', async () => {
+  const { api, results } = fakeApi();
+  const packs: string[] = [];
+  const stub = (async (url: string, init: RequestInit) => {
+    packs.push(JSON.parse(String(init.body)).messages[1].content);
+    return stubModel().fetch(url, init);
+  }) as typeof fetch;
+  // The last reviewed head is the merge base: the whole change of the pull request came since.
+  const since = git(source, 'merge-base', base, head);
+  const carried = { path: 'other.ts', start_line: 1, line: 1, severity: 'minor' as const, category: 'bug' as const, confidence: 80, title: 'Hors PR', scenario: 's', fix: 'f', suggestion: '', anchor: null, blocking: false, suggestion_range: null };
+  const reuse = { head: since, key: 'e'.repeat(64), delta: { score: 5, findings: [carried], settled: [] } };
+  assert.equal(await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse }), deps(api, stub)), 'done');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.deepEqual(result.review.delta, { since, files: 1 });
+  assert.match(packs[0]!, /This pull request was reviewed at commit/);
+  assert.ok(!result.review.findings.some((f) => f.title === 'Hors PR'), 'a finding on a file outside the pull request does not come back');
+  assert.ok(logs.some((l) => l.includes('"event":"job.review_incremental"')));
+
+  // Without `delta` in the job (a service of REV-89), no `delta` in the result.
+  const earlier = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: { head: since, key: 'e'.repeat(64) } }), deps(earlier.api, stub));
+  const old = earlier.results[0]!;
+  assert.ok(old.outcome === 'done' && !('delta' in old.review));
 });

@@ -366,6 +366,7 @@ export async function publishReview(
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level,
       poster: POSTER,
+      ...(review.delta ? { delta: review.delta } : {}),
     })
     await github.rest('PATCH', prPath, { body: withBlock(current, block) })
   })

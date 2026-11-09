@@ -1,4 +1,5 @@
-import { RUNNER_TOKEN_PREFIX, type Job, type ReviewPayload } from '@sakuga-review/protocol'
+import { parseJob, RUNNER_TOKEN_PREFIX, type Job, type ReviewPayload } from '@sakuga-review/protocol'
+import { findingKey } from '@sakuga-review/engine/findings'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
@@ -715,6 +716,97 @@ describe('runner API', () => {
       assert.equal((await call(`/api/runner/jobs/${jobId}/result`, { token: runner.token, body: { outcome: 'done', attempt: 2, review: review() } })).status, 204)
       let [done] = await database.sql<{ state: string }[]>`select state from jobs where id = ${jobId}`
       assert.equal(done!.state, 'done')
+    })
+
+    it('sends at most 100 open findings in the delta, so that the runner accepts the job', async () => {
+      let [j] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      // A row written outside the protocol (by hand, or by a release with another limit): 120 findings.
+      let many = Array.from({ length: 120 }, (_, i) => ({ ...finding, line: i + 1, title: `constat ${i}`, fingerprint: i.toString(16).padStart(16, '0') }))
+      let result = review({ head: PREVIOUS, score: 3, findings: many, reuseKey: KEY })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${j!.id}, ${repoId}, 28, ${PREVIOUS}, 3, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 555, now())`
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      let checked = parseJob(raw)
+      assert.ok(checked.ok, `the runner accepts the job: ${!checked.ok && checked.errors.join('; ')}`)
+      assert.equal(raw.reuse.delta.findings.length, 100)
+    })
+
+    it('takes the delta from the review of the level of the job, even when a review of another level is later', async () => {
+      for (let [level, score, at] of [['lite', 3, '1 second'], ['heavy', 5, '2 seconds']] as const) {
+        let [j] = await database.sql<{ id: string }[]>`
+          insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+          values (${repoId}, ${level}, 'done', 28, ${PREVIOUS}, 'main') returning id`
+        let result = review({ level, head: PREVIOUS, score, findings: [], reuseKey: KEY })
+        await database.sql`
+          insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+          values (${j!.id}, ${repoId}, 28, ${PREVIOUS}, ${score}, 'm', 0.01, ${JSON.stringify(result)}::jsonb, ${score === 3 ? 555 : 556}, now() + ${at}::interval)`
+      }
+      let runner = await register()
+      await queueJob()
+      let job: Job = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      assert.equal(job.kind === 'review' && job.reuse?.delta?.score, 3, 'the lite review, for a lite job')
+    })
+
+    it('sends the delta of the last review to a runner that reads it: score, open findings, settled ones (REV-88)', async () => {
+      let open = { ...finding, title: 'ouvert', fingerprint: '1111111111111111' }
+      let gone = { ...finding, title: 'rejeté', fingerprint: '2222222222222222' }
+      // A finding of a review stored before the fingerprint, settled since: found by its key.
+      let { fingerprint: _none, ...unprinted } = { ...finding, path: 'b.ts', title: 'corrigé', fingerprint: '' }
+      let [job0] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      // Two findings with the same path and title: the ledger settled one of them, by its fingerprint.
+      let twinSettled = { ...finding, path: 'c.ts', title: 'jumeau', fingerprint: '4444444444444444' }
+      let twinOpen = { ...finding, path: 'c.ts', line: 9, title: 'jumeau', fingerprint: '5555555555555555' }
+      // A finding stored with the title of its rule (a key of the service), and one that an older
+      // release stored with a fingerprint of another form: the runner would refuse the job with them.
+      let ruled = { ...finding, path: 'd.ts', title: 'règle', fingerprint: '6666666666666666', rule_title: 'Pas de SQL brut' }
+      let malformed = { ...finding, path: 'e.ts', title: 'ancien', fingerprint: 'not-hex' }
+      let result = review({ head: PREVIOUS, score: 3, findings: [open, gone, unprinted, twinSettled, twinOpen, ruled, malformed], reuseKey: KEY })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${job0!.id}, ${repoId}, 28, ${PREVIOUS}, 3, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 555, now())`
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '2222222222222222', 'aaaaaaaaaaaa', 'a.ts', 2, 'rejeté', 'major', 'bug', 90, 'dismissed', ${PREVIOUS}, ${PREVIOUS})`
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '3333333333333333', ${findingKey(unprinted)}, 'b.ts', 7, 'corrigé', 'major', 'bug', 90, 'fixed', ${PREVIOUS}, ${PREVIOUS})`
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '4444444444444444', ${findingKey(twinSettled)}, 'c.ts', 2, 'jumeau', 'major', 'bug', 90, 'wontfix', ${PREVIOUS}, ${PREVIOUS})`
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      let checked = parseJob(raw)
+      assert.ok(checked.ok, `the runner accepts the job: ${!checked.ok && checked.errors.join('; ')}`)
+      let job: Job = raw
+      assert.ok(job.kind === 'review' && job.reuse)
+      let delta = job.kind === 'review' ? job.reuse?.delta : undefined
+      assert.equal(delta?.score, 3)
+      assert.deepEqual(
+        delta?.findings.map((f) => f.fingerprint ?? f.title),
+        ['1111111111111111', '5555555555555555', '6666666666666666'],
+        'the settled ones are not carried, the open twin is, and a finding that the runner would refuse is not',
+      )
+      assert.ok(!('rule_title' in delta!.findings[2]!), 'a key of the service is not sent')
+      assert.deepEqual(delta?.settled.map((f) => f.title).sort(), ['corrigé', 'jumeau', 'rejeté'])
+
+      // A runner of REV-89 gets no delta.
+      await queueJob()
+      let old: Job = await (await claim(runner.token, reader)).json()
+      assert.ok(old.kind === 'review' && old.reuse && !('delta' in old.reuse))
+
+      // A job of another level reviews the whole pull request.
+      await database.sql`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'heavy', 28, ${HEAD}, 'main')`
+      let heavy: Job = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      assert.ok(heavy.kind === 'review' && heavy.reuse && !('delta' in heavy.reuse))
     })
 
     it('queues the job again when the review to publish again is not there, and fails it at the last attempt', async () => {

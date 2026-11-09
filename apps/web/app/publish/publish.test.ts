@@ -527,3 +527,17 @@ describe('publishUnchanged (REV-89)', () => {
     assert.equal(fake.state.checkRuns.filter((c) => c.head_sha === HEAD2).length, 1)
   })
 })
+
+describe('an incremental review (REV-88)', () => {
+  it('says in the block which head it read the change since', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    fake.state.pr.head = HEAD2
+    await publish(payload({ head: HEAD2, delta: { since: HEAD1, files: 2 } }))
+    assert.match(fake.state.pr.body, /Review incrémentale : les 2 fichiers de la PR modifiés depuis le commit `111111111` ont été relus/)
+    assert.match(fake.state.pr.body, /<!-- sakuga-review:count 2 -->/)
+    fake.state.pr.head = HEAD3
+    await publish(payload({ head: HEAD3, delta: { since: HEAD2, files: 1 } }))
+    assert.match(fake.state.pr.body, /Review incrémentale : le fichier de la PR modifié depuis le commit `222222222` a été relu ;/, 'the singular, for one file')
+  })
+})

@@ -274,12 +274,15 @@ export function buildPack(
   rules: readonly Rule[] = [],
   /** REV-71. The section of the answered threads (answered.ts), after the rules. */
   answered = '',
+  /** REV-88. The only files that the pack reads, of those that changed: an incremental review. */
+  only?: readonly string[],
 ): { pack: string; skipped: string[]; rules: PackedRule[]; body: string } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
   const renamedFrom = new Map<string, string>();
-  const changes = numstat(repo, base, head);
+  const keep = only ? new Set(only) : null;
+  const changes = numstat(repo, base, head).filter(({ path, from }) => !keep || keep.has(path) || (from !== undefined && keep.has(from)));
   // A rule covers a file of the change, even one that the pack leaves out, and the old path of a rename.
   const touched = changes.flatMap(({ path, from }) => (from ? [from, path] : [path]));
   const { section: rulesText, packed, skipped: rulesSkipped } = rulesSection(rulesForPaths(rules, touched));

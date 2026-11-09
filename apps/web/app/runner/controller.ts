@@ -186,6 +186,11 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       try {
         // A new attempt (the source moved, or a lease ended) gets a whole review: `reuse` null.
         reuse = job.attempt > 1 ? null : await deps.store.reusableReview(job.id)
+        // REV-88. To a runner that reads it, the last review to review only the change since.
+        if (reuse && (body.features?.includes('delta') ?? false)) {
+          let delta = await deps.store.jobDelta(job.id, reuse)
+          if (delta) reuse = { ...reuse, delta }
+        }
       } catch (cause) {
         reuse = null
         log('warn', 'job.reuse_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
@@ -265,7 +270,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       kind: job.kind,
       ...(resolve ? { threads: resolve.threads.length } : {}),
       ...(threads ? { answeredThreads: threads.length } : {}),
-      ...(reuse ? { reuseOf: reuse.head } : {}),
+      ...(reuse ? { reuseOf: reuse.head, ...(reuse.delta ? { deltaFindings: reuse.delta.findings.length, settled: reuse.delta.settled.length } : {}) } : {}),
       ...(rejected ? { rejectedFindings: rejected.length } : {}),
     })
     // REV-12. The models of the config, to a runner that reads them, and only when the job

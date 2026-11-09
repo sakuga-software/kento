@@ -11,6 +11,7 @@ import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
+import { earlierSection, mergeDelta, planDelta, type Delta, type DeltaPlan } from './delta.ts';
 import { diffHash, reuseKey } from './reuse.ts';
 import { RepoTools, type ToolUse } from './tools.ts';
 
@@ -40,6 +41,12 @@ export type ReviewInput = ModelClient & {
    * this head is the same, `reviewUnlessUnchanged` calls no model.
    */
   previousKey?: string | null;
+  /**
+   * REV-88. The last review of the pull request: when its head is in the history of this head, the
+   * pack holds only the files of the pull request that changed since, and the review keeps the
+   * findings of the others.
+   */
+  delta?: Delta | null;
 };
 
 /**
@@ -91,6 +98,12 @@ export type ReviewResult = {
   diffHash: string;
   /** REV-89. The key of the whole input of the model (reuse.ts). */
   reuseKey: string;
+  /** REV-88. The incremental review: the last reviewed head and the files read again; null for a whole review. */
+  delta: DeltaPlan | null;
+  /** REV-88. The findings that a person dismissed or kept, which the model raised again and the review dropped. */
+  settledAgain: Finding[];
+  /** REV-88. The score that the model gave and the one that the floor kept, when the floor lifted it. */
+  scoreFloor: { model: number; kept: number } | null;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -146,6 +159,7 @@ export type PreparedReview = {
   rejected: HeldRejection[];
   diffHash: string;
   reuseKey: string;
+  delta: DeltaPlan | null;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
@@ -154,8 +168,22 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // REV-95. The rejected findings follow the answered threads, in the same place of the pack (and so
   // in the body that the reuse key of REV-89 reads: a new rejection gives a new key).
   const rejected = rejectedSection(input.repoDir, input.head, input.rejected ?? []);
-  const { pack, skipped, rules, body } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section + rejected.section);
-  const key = reuseKey({ packBody: body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
+  const sections = answered.section + rejected.section;
+  // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
+  // same input gets the same key.
+  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections);
+  const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
+  // REV-88. With the last review, the pack reads only what changed since, when that head is still
+  // in the history of this one. A force-push or a rebase reads the whole pull request again.
+  // No file of the pull request changed since then, and yet the key differs (a rule, a reply, a doc
+  // or the context changed): the change is not in the diff, so the review reads the whole pull request.
+  const planned = input.delta ? planDelta(input.repoDir, base, input.head, input.delta.since) : null;
+  const delta = planned && planned.files.length > 0 ? planned : null;
+  const earlier = input.delta ? earlierSection(input.delta, delta) : '';
+  const { pack, skipped, rules } =
+    delta || earlier
+      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files)
+      : whole;
   return {
     base,
     pack,
@@ -166,6 +194,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     rejected: rejected.held,
     diffHash: diffHash(input.repoDir, base, input.head),
     reuseKey: key,
+    delta,
   };
 }
 
@@ -176,7 +205,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads, rejected, diffHash, reuseKey } = prepared;
+  const { base, pack, skipped, rules, lines, threads, rejected, diffHash, reuseKey, delta } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -187,6 +216,21 @@ export function finishReview<F extends Finding>(
   });
   const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   const fileAt = headFiles(input.repoDir, input.head, log);
+  // REV-88. The findings of the last review on the files not read again, the settled findings
+  // dropped, and the score kept without a new finding.
+  let settledAgain: F[] = [];
+  let scoreFloor: { model: number; kept: number } | null = null;
+  if (input.delta) {
+    const merged = mergeDelta(answer, input.delta, delta, fileAt);
+    answer = merged.answer;
+    settledAgain = merged.dropped;
+    for (const f of settledAgain) log(`finding dropped, a person settled it: ${f.path}: ${f.title}`);
+    // Every lift of the score by the floor is in the log, to check it against the reviews.
+    scoreFloor = merged.floored;
+    if (merged.floored) {
+      log(`score kept at ${merged.floored.kept} by the floor: the model said ${merged.floored.model} with no new finding on ${delta?.files.length ?? 0} files read again`);
+    }
+  }
   // REV-70. A finding that says a name is not imported or not defined is checked against its file.
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
@@ -225,6 +269,9 @@ export function finishReview<F extends Finding>(
     droppedAsRejected: rejectedAway,
     diffHash,
     reuseKey,
+    delta,
+    settledAgain,
+    scoreFloor,
   };
 }
 

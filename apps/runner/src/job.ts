@@ -277,6 +277,8 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       // REV-71. The answered threads come with the job, already cleaned by the service.
       threads: openThreads(job.threads ?? []),
       previousKey: reuse?.key ?? null,
+      // REV-88. The last review, to read only what changed since its head.
+      delta: reuse?.delta ? { since: reuse.head, ...reuse.delta } : null,
       // REV-95. The findings that a person set aside, with their cause, from the service.
       rejected: job.kind === 'review' ? (job.rejected ?? []) : [],
       fetch,
@@ -292,8 +294,13 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       log('info', 'job.rules', { jobId: job.id, received: job.rules.map((r) => r.id), packed: result.rules.map((r) => r.id) });
     }
     for (const f of result.refutedInThread) log('info', 'job.finding_refuted_in_thread', { jobId: job.id, path: f.path, title: f.title });
+    if (result.delta) log('info', 'job.review_incremental', { jobId: job.id, since: result.delta.since, files: result.delta.files.length });
+    // REV-88. The floor lifted the score of the model: a line to check it against the reviews.
+    if (result.scoreFloor) log('info', 'job.score_floored', { jobId: job.id, model: result.scoreFloor.model, kept: result.scoreFloor.kept });
     for (const f of result.droppedAsRejected) log('info', 'job.finding_dropped_as_rejected', { jobId: job.id, path: f.path, title: f.title });
-    return payload(result, job.providers !== undefined, readsReuse);
+    const sent = payload(result, job.providers !== undefined, readsReuse);
+    // A service that sends `delta` reads it in the result.
+    return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;
   });
 }
 
