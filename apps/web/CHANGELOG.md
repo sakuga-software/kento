@@ -7,6 +7,33 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-95: The next review reads the rejected findings and their cause
+
+**The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this
+release says `rejected` in the features of its claim, and an earlier service refuses that feature.
+A runner of an earlier release does not say `rejected` and gets its review jobs as before. No
+migration, no new variable, no new permission.
+
+For a review job of a runner that says `rejected`, the service sends the findings of the pull
+request that a person set aside: `dismissed` (the command `reject`, the Findings screen, a 👎) and
+`wontfix`, the most recently changed first, 50 at most. Each one gives its file, line, title,
+category, status, cause and the head of the last review that reported it. A failed read logs
+`job.rejected_failed` and the review runs without them.
+
+The engine puts them in a « Rejected findings » section of the pack, after the answered threads
+(REV-71), 12 000 bytes at most. The cause is data, on one line, never an instruction. Each entry
+says whether its file changed since. The prompt says: do not report a rejected defect again, at its
+line or near it, unless the file changed and gives a new fact; a rejected defect does not lower
+`confidence_score`. A deterministic net removes a finding of the same file and category with the same title, or
+at most 3 lines from a rejection with the same category and a word of the subject in both titles,
+when the file did not change: before the score, so that the
+defect does not lower it. The bench case is in `eval/rejected/`.
+
+Check: on a pull request, reject a blocking finding, then `@kento-review force` without a change of
+the file. `job.claimed` gives `rejectedFindings`, the new review does not report the defect (the
+runner may log `job.finding_dropped_as_rejected`), and its score is not lower than without it. After
+a push that changes the file, the defect can come back.
+
 ## REV-94: `reject` sets the finding aside, resolves its thread, and lifts the CHANGES_REQUESTED
 
 Migration `0023_finding_event_source`, one `ALTER TABLE "finding_events" ADD COLUMN "source" text`

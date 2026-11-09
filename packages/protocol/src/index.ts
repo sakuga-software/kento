@@ -86,8 +86,10 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `reuse`: a review job carries `reuse`, the reuse key of the last review of the pull request
  *   (REV-89). The runner then sends `diffHash`, `reuseKey` and `cachedTokens` with a review, and the
  *   outcome `unchanged` when the key of the head is the same: no model call.
+ * - `rejected`: a review job can carry `rejected`, the findings of the pull request that a person set
+ *   aside (REV-95). The review reads their causes as data.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -231,6 +233,25 @@ type JobBase = {
   rules?: JobRule[];
 };
 
+/** A review job holds at most this many rejected findings, the newest first. */
+export const MAX_REJECTED_FINDINGS = 50;
+
+/**
+ * REV-95. A finding of the pull request that a person set aside: `dismissed` (the command `reject`,
+ * the screens, a 👎) or `wontfix`. `reason`: the cause that the person wrote, or null. `commit`: the
+ * head of the last review that reported it, from which the review tells whether its file changed.
+ */
+export type RejectedFinding = {
+  path: string;
+  line: number;
+  title: string;
+  /** The category of the finding (`CATEGORIES`): a finding near it must share it to be the same. */
+  category: Category;
+  status: 'dismissed' | 'wontfix';
+  reason: string | null;
+  commit: string;
+};
+
 /**
  * REV-89. The last review of the pull request that the runner may reuse: its head and its reuse key.
  * Only a review job of a push carries one; a command or « Relancer » always gets a new review.
@@ -242,10 +263,10 @@ export type JobReuse = { head: string; key: string };
  * with the feature `threads` only (REV-71), the open threads of the bot that someone answered, the
  * first MAX_RESOLVE_THREADS of them, cleaned as for a resolve job. `reuse`: with the feature `reuse`
  * only (REV-89); null when no review can be reused. Its presence tells the runner that the service
- * reads the keys of REV-89 in the result.
+ * reads the keys of REV-89 in the result. `rejected`: with the feature `rejected` only (REV-95).
  */
 export type Job =
-  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null })
+  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null; rejected?: RejectedFinding[] })
   | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
 const claimRequest = obj({
@@ -320,6 +341,16 @@ const resolveThread = obj({
   line: nullable(int({ min: 0, max: 10_000_000 })),
   comments: arr(resolveComment, { max: 30 }),
 });
+const rejectedFinding = obj({
+  path: str({ min: 1, max: 1000 }),
+  line: int({ min: 0, max: 10_000_000 }),
+  title: str({ min: 1, max: 1000 }),
+  category: oneOf(CATEGORIES),
+  status: oneOf(['dismissed', 'wontfix'] as const),
+  // REASON_MAX of the service (apps/web/app/findings/store.ts).
+  reason: nullable(str({ max: 500 })),
+  commit: sha,
+});
 const count = int({ min: 0, max: 100_000 });
 const diffHash = str({ max: 16, pattern: DIFF_HASH });
 const reuseKey = str({ max: 64, pattern: REUSE_KEY });
@@ -329,6 +360,7 @@ const job = tagged('kind', {
     kind: oneOf(['review'] as const),
     threads: optional(arr(resolveThread, { max: MAX_RESOLVE_THREADS })),
     reuse: optional(nullable(obj({ head: sha, key: reuseKey }))),
+    rejected: optional(arr(rejectedFinding, { max: MAX_REJECTED_FINDINGS })),
   }),
   resolve: obj({
     ...jobBase,

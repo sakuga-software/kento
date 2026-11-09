@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -861,6 +861,32 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   assert.deepEqual(result.review.findings, []);
   assert.equal(result.review.score, 4);
   assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === 'job.finding_refuted_in_thread' && l.path === 'sum.ts'));
+});
+
+// --- rejected findings (REV-95) -----------------------------------------------------------------
+
+test('a review job with a rejected finding: the pack holds its cause, and the finding on an unchanged file is not sent', async () => {
+  const { api, results } = fakeApi();
+  const bodies: any[] = [];
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    bodies.push(body);
+    // The model words the defect again, one line off; it keeps the score of the pull request.
+    const reworded = { ...answer().findings[0]!, title: 'Soustraction au lieu d’une addition', line: 3, start_line: 3 };
+    const content = { ...answer(), confidence_score: 4, findings: [reworded] };
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  const rejected = [{ path: 'sum.ts', line: 2, title: 'Soustraction', category: 'bug' as const, status: 'dismissed' as const, reason: 'Voulu : ce module soustrait.', commit: head }];
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, rejected }), deps(api, model));
+
+  const pack = bodies[0].messages.at(-1).content as string;
+  assert.match(pack, /## Rejected findings[\s\S]*- Cause written by the person: « Voulu : ce module soustrait\. »/);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  assert.deepEqual(result.review.findings, []);
+  assert.equal(result.review.score, 4);
+  assert.ok(logs.map((l) => JSON.parse(l)).some((l) => l.event === 'job.finding_dropped_as_rejected' && l.path === 'sum.ts'));
 });
 
 // --- reuse of the last review (REV-89) -----------------------------------------------------------

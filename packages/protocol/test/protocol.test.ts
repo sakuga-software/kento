@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  FEATURES,
   isLevel,
   isOneOf,
   isProviderKind,
@@ -329,4 +330,16 @@ test('a provider id of a job is `service` or a uuid, and nothing around them', (
   assert.equal(withProvider('services'), false);
   assert.equal(withProvider('x0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11'), false);
   assert.equal(withProvider('0B9C4A52-3F1E-4C55-9A43-2F1A3F0F6B11'), false);
+});
+
+test('a review job carries the rejected findings with the feature rejected (REV-95)', () => {
+  const rejected = [{ path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', category: 'bug', status: 'dismissed', reason: 'validé par le schéma', commit: SHA }];
+  assert.deepEqual(parseJob({ ...job(), rejected }), { ok: true, value: { ...job(), rejected } });
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], reason: null, status: 'wontfix' }] }).ok, true);
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], status: 'open' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], category: 'style' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], reason: 'x'.repeat(501) }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], commit: 'abc' }] }).ok, false);
+  assert.equal(parseJob({ ...job(), rejected: Array.from({ length: 51 }, () => rejected[0]) }).ok, false);
+  assert.ok(FEATURES.includes('rejected'));
 });

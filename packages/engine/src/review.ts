@@ -4,11 +4,12 @@ import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
-import type { Level } from '../../protocol/src/index.ts';
+import type { Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
+import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
 import { diffHash, reuseKey } from './reuse.ts';
 import { RepoTools, type ToolUse } from './tools.ts';
@@ -32,6 +33,8 @@ export type ReviewInput = ModelClient & {
    * holds those that a bot opened and someone else answered (answered.ts).
    */
   threads?: readonly OpenThread[];
+  /** REV-95. The findings of the pull request that a person set aside, from the caller. */
+  rejected?: readonly RejectedFinding[];
   /**
    * REV-89. The reuse key of the last review of the pull request, from the caller. When the key of
    * this head is the same, `reviewUnlessUnchanged` calls no model.
@@ -78,6 +81,10 @@ export type ReviewResult = {
   threads: AnsweredThread[];
   /** REV-71. The findings that a refuted thread removed. */
   refutedInThread: Finding[];
+  /** REV-95. The rejected findings that the pack held. */
+  rejected: HeldRejection[];
+  /** REV-95. The findings that a rejection on an unchanged file removed. */
+  droppedAsRejected: Finding[];
   /** REV-68. What the tools used, when the level had tools. */
   toolUse?: ToolUse;
   /** REV-89. The hash of the reviewed files of the diff (reuse.ts). */
@@ -136,6 +143,7 @@ export type PreparedReview = {
   rules: PackedRule[];
   lines: ChangedLines;
   threads: AnsweredThread[];
+  rejected: HeldRejection[];
   diffHash: string;
   reuseKey: string;
 };
@@ -143,7 +151,10 @@ export type PreparedReview = {
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
   const base = mergeBase(input.repoDir, input.base, input.head);
   const answered = answeredSection(input.repoDir, input.head, input.threads ?? []);
-  const { pack, skipped, rules, body } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section);
+  // REV-95. The rejected findings follow the answered threads, in the same place of the pack (and so
+  // in the body that the reuse key of REV-89 reads: a new rejection gives a new key).
+  const rejected = rejectedSection(input.repoDir, input.head, input.rejected ?? []);
+  const { pack, skipped, rules, body } = buildPack(input.repoDir, base, input.head, config.context, input.rules, answered.section + rejected.section);
   const key = reuseKey({ packBody: body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   return {
     base,
@@ -152,6 +163,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     rules,
     lines: changedLines(input.repoDir, base, input.head),
     threads: answered.held,
+    rejected: rejected.held,
     diffHash: diffHash(input.repoDir, base, input.head),
     reuseKey: key,
   };
@@ -164,7 +176,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads, diffHash, reuseKey } = prepared;
+  const { base, pack, skipped, rules, lines, threads, rejected, diffHash, reuseKey } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -181,6 +193,10 @@ export function finishReview<F extends Finding>(
   // REV-71. A finding that a reply refuted in its thread, on a file that did not change since.
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
   for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
+  // REV-95. A finding near a rejected finding, on a file that did not change since the rejection. It
+  // goes before the score: a rejected defect does not lower it.
+  const rejectedAway = dropRejected(answer, rejected, (f) => anchor(f, lines));
+  for (const f of rejectedAway) log(`finding dropped, a person rejected it and its file did not change: ${f.path}: ${f.title}`);
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),
@@ -205,6 +221,8 @@ export function finishReview<F extends Finding>(
     lines,
     threads,
     refutedInThread: answeredAway,
+    rejected,
+    droppedAsRejected: rejectedAway,
     diffHash,
     reuseKey,
   };

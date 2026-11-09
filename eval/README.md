@@ -50,3 +50,28 @@ GPT-5.6 Sol ($0.13) cost the most. A run of MiMo on the seven cases costs about 
 
 [`results.md`](results.md) holds the results of that day. A run writes its answers to `runs/`,
 which git ignores.
+
+## A rejected false positive (REV-95)
+
+[`rejected/run.ts`](rejected/run.ts) builds a small pull request with a false P1 (« the port is not
+validated », while a zod schema bounds it), rejects it with its cause, and reviews the same head
+again. It measures whether the defect comes back and whether the score falls because of it.
+
+```bash
+node eval/rejected/run.ts                                                  # no model, no cost
+OPENROUTER_API_KEY=... node eval/rejected/run.ts --model z-ai/glm-5.3 --runs 3
+```
+
+Without a model, the engine gets scripted answers: the same finding, the same defect in other words
+one line off, the same title elsewhere in the file, and a real defect far from it. Measured on
+2026-11-08, without a model (the deterministic net of `rejected.ts` only):
+
+| answer of the model | findings without / with the rejection | blocking with | score without / with |
+|---|---|---|---|
+| the same finding | 1 / 0 | 0 | 2 / 4 |
+| in other words, one line off | 1 / 0 | 0 | 2 / 4 |
+| the same title, elsewhere in the file | 1 / 0 | 0 | 2 / 4 |
+| a real defect far from it, with the false P1 | 2 / 1 | 0 | 2 / 4 |
+
+With `--model`, the column « reported again by the model » counts the findings near the rejection
+before the net: it measures the instruction of the prompt alone. Not measured yet with a model.

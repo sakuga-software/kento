@@ -543,6 +543,73 @@ describe('commands in the comments of a pull request', () => {
         assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
       })
 
+      it('18r1. REV-95: a review job carries the findings of the pull request that a person set aside, for a runner that reads them', async () => {
+        let seed = async (key: string, status: string, reason: string | null, pr = PR) =>
+          database.sql`
+            insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+              first_seen_sha, last_seen_sha)
+            select id, ${pr}, ${`fp-${key}`}, ${key}, 'src/a.ts', 7, ${`Titre ${key}`}, 'major', 'bug', 90, ${status}, ${reason}, ${HEAD}, ${HEAD}
+            from repos where github_repo_id = ${REPO.id}`
+        await seed('aaaaaa000001', 'dismissed', 'faux positif, validé par le schéma')
+        await seed('aaaaaa000002', 'wontfix', null)
+        await seed('aaaaaa000003', 'open', null)
+        await seed('aaaaaa000004', 'fixed', null)
+        await seed('aaaaaa000005', 'dismissed', 'autre PR', PR + 1)
+        await database.sql`update findings set updated_at = now() + interval '1 minute' where key = 'aaaaaa000002'`
+
+        await say('@kento-review review balanced')
+        let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected'] })
+        assert.ok(job && job.kind === 'review')
+        assert.deepEqual(job.rejected, [
+          { path: 'src/a.ts', line: 7, title: 'Titre aaaaaa000002', category: 'bug', status: 'wontfix', reason: null, commit: HEAD },
+          { path: 'src/a.ts', line: 7, title: 'Titre aaaaaa000001', category: 'bug', status: 'dismissed', reason: 'faux positif, validé par le schéma', commit: HEAD },
+        ])
+      })
+
+      it('18r3. REV-95: a rejected finding that the protocol refuses stays out, and the log says why', async () => {
+        await database.sql`
+          insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+            first_seen_sha, last_seen_sha)
+          select id, ${PR}, 'fp', 'cccccc000001', 'src/a.ts', 7, 'T', 'major', 'style', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          from repos where github_repo_id = ${REPO.id}`
+        await say('@kento-review review balanced')
+        let lines: string[] = []
+        // A warning goes to stderr (app/log.ts).
+        let write = process.stderr.write.bind(process.stderr)
+        process.stderr.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+          lines.push(String(chunk))
+          return write(chunk, ...rest)
+        }) as typeof process.stderr.write
+        let claimed
+        try {
+          claimed = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected'] })
+        } finally {
+          process.stderr.write = write
+        }
+        assert.ok(claimed.job && claimed.job.kind === 'review')
+        assert.deepEqual(claimed.job.rejected, [])
+        let left = lines.map((l) => JSON.parse(l)).find((l) => l.event === 'job.rejected_left_out')
+        assert.deepEqual({ path: left?.path, line: left?.line, reason: left?.reason }, { path: 'src/a.ts', line: 7, reason: 'unknown category style' })
+        // A line beyond the limit of the protocol stays out too.
+        await database.sql`update findings set category = 'bug', line = 10000001 where key = 'cccccc000001'`
+        await say('@kento-review review heavy')
+        let second = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected'] })
+        assert.ok(second.job && second.job.kind === 'review')
+        assert.deepEqual(second.job.rejected, [])
+      })
+
+      it('18r2. REV-95: a runner that does not say `rejected` gets no rejected findings', async () => {
+        await database.sql`
+          insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+            first_seen_sha, last_seen_sha)
+          select id, ${PR}, 'fp', 'bbbbbb000001', 'src/a.ts', 7, 'T', 'major', 'bug', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          from repos where github_repo_id = ${REPO.id}`
+        await say('@kento-review review balanced')
+        let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['threads'] })
+        assert.ok(job && job.kind === 'review')
+        assert.equal('rejected' in job, false)
+      })
+
       describe('REV-92: the token that reads the threads', () => {
         const READS_THREADS = JSON.stringify({ pull_requests: 'read' })
         const threadTokens = () => fake.state.tokens.filter((t) => JSON.stringify(t.permissions) === READS_THREADS)

@@ -4,12 +4,14 @@ import {
   LEASE_SECONDS,
   MAX_ATTEMPTS,
   MAX_JOB_RULES,
+  MAX_REJECTED_FINDINGS,
   REUSE_KEY,
   type JobKind,
   type JobReuse,
   type JobRule,
   type Level,
   type ProviderKind,
+  type RejectedFinding,
   type ResolvePayload,
   type ReviewPayload,
   type UnchangedPayload,
@@ -19,6 +21,7 @@ import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'
 import { log } from '../log.ts'
 import { leftOutReason, sendablePaths } from '../rules/model.ts'
+import { sendableRejected, type RejectedRow } from './rejected.ts'
 import { refusalMessage } from '../providers/store.ts'
 
 /** A runner, as an authenticated call sees it. */
@@ -184,6 +187,11 @@ export interface RunnerStore {
    * to this job, as a rule disabled during its run.
    */
   jobRules(jobId: string): Promise<JobRule[]>
+  /**
+   * REV-95. The findings of the pull request of a review job that a person set aside (`dismissed`,
+   * `wontfix`), the most recently changed first, MAX_REJECTED_FINDINGS at most.
+   */
+  jobRejected(jobId: string): Promise<RejectedFinding[]>
   /**
    * REV-19. Keeps the rules that this claim sends to its runner, on the job: the result can cite
    * these only, with the title that they had then.
@@ -401,6 +409,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       if (!row.holds || row.state === 'queued' || row.state === 'running') return { kind: 'lease_lost' }
       if (row.state === 'cancelled') return { kind: 'cancelled', leaseExpiresAt: toDate(row.leaseExpiresAt ?? new Date()) }
       return { kind: 'finished' }
+    },
+
+    async jobRejected(jobId) {
+      let rows = await sql<RejectedRow[]>`
+        select findings.path, findings.line, findings.title, findings.category, findings.status::text as status,
+          findings.status_reason as reason, findings.last_seen_sha as commit
+        from jobs
+        join findings on findings.repo_id = jobs.repo_id and findings.pr_number = jobs.pr_number
+        where jobs.id = ${jobId} and findings.status in ('dismissed', 'wontfix')
+        order by findings.updated_at desc, findings.id
+        limit ${MAX_REJECTED_FINDINGS}`
+      return sendableRejected(rows, (fields) => log('warn', 'job.rejected_left_out', { jobId, ...fields }))
     },
 
     async jobRules(jobId) {

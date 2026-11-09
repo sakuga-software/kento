@@ -17,6 +17,7 @@ import {
   type ProviderKind,
   type RegisterResponse,
   type ResolveInput,
+  type RejectedFinding,
   type ResolveThread,
 } from '@sakuga-review/protocol'
 import { createController } from 'remix/router'
@@ -89,6 +90,8 @@ interface Prepared {
   threads: ResolveThread[] | null
   /** REV-89. The review that the runner may reuse; undefined for a runner that does not read it. */
   reuse: JobReuse | null | undefined
+  /** REV-95. The rejected findings of a review job, for a runner that reads them. */
+  rejected: RejectedFinding[] | null
 }
 
 /** The provider of a job and its key, in the shape of the release of the runner. */
@@ -168,6 +171,15 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         log('warn', 'job.threads_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
     }
+    // REV-95. The findings that a person set aside. A failure costs the review this section only.
+    let rejected: RejectedFinding[] | null = null
+    if (job.kind === 'review' && (body.features?.includes('rejected') ?? false)) {
+      try {
+        rejected = await deps.store.jobRejected(job.id)
+      } catch (cause) {
+        log('warn', 'job.rejected_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
+      }
+    }
     // REV-89. The last review that the runner may publish again. A failure costs only the reuse.
     let reuse: JobReuse | null | undefined
     if (job.kind === 'review' && (body.features?.includes('reuse') ?? false)) {
@@ -179,7 +191,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         log('warn', 'job.reuse_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
     }
-    return { rules, installationToken, resolve, wantsRules, threads, reuse }
+    return { rules, installationToken, resolve, wantsRules, threads, reuse, rejected }
   }
 
   /**
@@ -239,7 +251,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
-    let { rules, installationToken, resolve, wantsRules, threads, reuse } = prepared
+    let { rules, installationToken, resolve, wantsRules, threads, reuse, rejected } = prepared
     let { provider, providers, keyFromService } = keys
     log('info', 'job.claimed', {
       jobId: job.id,
@@ -254,6 +266,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       ...(resolve ? { threads: resolve.threads.length } : {}),
       ...(threads ? { answeredThreads: threads.length } : {}),
       ...(reuse ? { reuseOf: reuse.head } : {}),
+      ...(rejected ? { rejectedFindings: rejected.length } : {}),
     })
     // REV-12. The models of the config, to a runner that reads them, and only when the job
     // also carries their provider: `service`, or an entry of `providers`. Else the runner
@@ -294,7 +307,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       200,
       resolve
         ? { ...message, kind: 'resolve', resolve }
-        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}) },
+        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}), ...(rejected ? { rejected } : {}) },
     )
   }
 

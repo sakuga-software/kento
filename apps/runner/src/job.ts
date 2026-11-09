@@ -277,6 +277,8 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       // REV-71. The answered threads come with the job, already cleaned by the service.
       threads: openThreads(job.threads ?? []),
       previousKey: reuse?.key ?? null,
+      // REV-95. The findings that a person set aside, with their cause, from the service.
+      rejected: job.kind === 'review' ? (job.rejected ?? []) : [],
       fetch,
       log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
     });
@@ -290,6 +292,7 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       log('info', 'job.rules', { jobId: job.id, received: job.rules.map((r) => r.id), packed: result.rules.map((r) => r.id) });
     }
     for (const f of result.refutedInThread) log('info', 'job.finding_refuted_in_thread', { jobId: job.id, path: f.path, title: f.title });
+    for (const f of result.droppedAsRejected) log('info', 'job.finding_dropped_as_rejected', { jobId: job.id, path: f.path, title: f.title });
     return payload(result, job.providers !== undefined, readsReuse);
   });
 }
