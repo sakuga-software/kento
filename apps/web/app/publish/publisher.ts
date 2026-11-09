@@ -224,7 +224,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       log('warn', 'review.check_token_refused', { reviewId: row.id, error: errorMessage(error) })
     }
 
-    // REV-89. The review of an earlier head with the same input: only the block, the label and the check.
+    // REV-89. The review of an earlier head with the same input: the block, the label and the check.
+    // REV-101: and a review on the head, with the same score and verdict.
     let on = { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl }
     let source: 'stands' | 'replaced' | 'gone' = 'stands'
     if (review.reusedFrom) {
@@ -260,10 +261,15 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       let out = await publishUnchanged(github, on, review, from.head, {
         checks,
         findings: createFindingsLedger(deps.sql, { repoId: row.repoId, prNumber: row.prNumber, reviewId: row.id, head: row.headSha }),
+        headReview: { sourceId: from.githubReviewId, marker: row.id },
         warn: (event, fields) => log('warn', event, { reviewId: row.id, ...fields }),
       })
-      // The review on GitHub is the one of the earlier head.
-      await deps.sql`update reviews set published_at = now(), github_review_id = ${from.githubReviewId} where id = ${row.id}`
+      // The review with the findings is the one of the earlier head: the next copy reads it. The review
+      // on the head (REV-101) is kept beside it, for a `reject` on the head and for the command limit.
+      await deps.sql`
+        update reviews set published_at = now(), github_review_id = ${from.githubReviewId},
+          result = result || jsonb_build_object('headReviewId', ${out.headReviewId}::bigint)
+        where id = ${row.id}`
       log('info', 'review.republished', {
         reviewId: row.id,
         repo: row.fullName,
@@ -271,6 +277,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         head: row.headSha,
         of: from.head,
         githubReviewId: from.githubReviewId,
+        headReviewId: out.headReviewId,
         score: out.score,
         findings: out.shown,
         check: checks !== null,

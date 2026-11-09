@@ -245,10 +245,14 @@ async function dismissBlockingReview(input: RejectInput): Promise<number | null>
   // The blocking findings of that review, as the engine marked them when it asked for changes
   // (`blocking` of each finding of `reviews.result`): the same rule that produced the verdict. A
   // review that Kentō did not store, or that names no blocking finding, is left as it is.
-  let [stored] = await input.sql<{ findings: ReviewFinding[] | null }[]>`
-    select result->'findings' as findings from reviews
-    where github_review_id = ${last.id} and pr_number = ${prNumber}
-      and repo_id = (select repo_id from findings where id = ${input.finding.id})`
+  // REV-101. The review of a head that no reviewed file changed is a copy: its row names it in
+  // `headReviewId`, and `github_review_id` is its source, the review with the findings.
+  let [stored] = await input.sql<{ findings: ReviewFinding[] | null; source: string | null }[]>`
+    select result->'findings' as findings, result->'reusedFrom'->>'githubReviewId' as source from reviews
+    where (github_review_id = ${last.id} or result->>'headReviewId' = ${String(last.id)}) and pr_number = ${prNumber}
+      and repo_id = (select repo_id from findings where id = ${input.finding.id})
+    order by (github_review_id = ${last.id}) desc
+    limit 1`
   if (!stored) {
     input.warn('command.reject_review_not_stored', { review: last.id })
     return null
@@ -288,16 +292,25 @@ async function dismissBlockingReview(input: RejectInput): Promise<number | null>
     input.warn('command.reject_review_kept', { review: last.id, blocking: holding.map((key) => `#${key.slice(0, 6)}`) })
     return null
   }
-  try {
-    await github.rest('PUT', `/repos/${fullName}/pulls/${prNumber}/reviews/${last.id}/dismissals`, {
-      message: `Retirée par Kentō : @${input.login} a écarté le constat \`${shortIdOf(input.finding.key)}\` « ${input.finding.title} », et aucun constat bloquant ne reste ouvert.`,
-      event: 'DISMISS',
-    })
-  } catch (error) {
-    // 422: another reject, or a new review, dismissed it between the list and the dismissal. The
-    // review is no longer a CHANGES_REQUESTED: that is the aim, not a failure.
-    if (!(error instanceof GitHubError && error.status === 422)) throw error
-    input.warn('command.reject_review_already_dismissed', { review: last.id })
+  // REV-101. The source of a copy asks for changes too, on an earlier head: it goes with the copy, or
+  // it would keep the pull request blocked.
+  let source = stored.source === null ? undefined : reviews.find((r) => r.id === Number(stored.source) && r.user?.login === input.botLogin)
+  // A source that GitHub no longer lists (deleted, or of another login) cannot be dismissed: the log
+  // says so, since an earlier REQUEST_CHANGES of the bot could still hold the pull request.
+  if (stored.source !== null && !source) input.warn('command.reject_source_not_found', { review: last.id, source: Number(stored.source) })
+  let dismissed = [last, ...(source && source.id !== last.id && source.state === 'CHANGES_REQUESTED' ? [source] : [])]
+  for (let review of dismissed) {
+    try {
+      await github.rest('PUT', `/repos/${fullName}/pulls/${prNumber}/reviews/${review.id}/dismissals`, {
+        message: `Retirée par Kentō : @${input.login} a écarté le constat \`${shortIdOf(input.finding.key)}\` « ${input.finding.title} », et aucun constat bloquant ne reste ouvert.`,
+        event: 'DISMISS',
+      })
+    } catch (error) {
+      // 422: another reject, or a new review, dismissed it between the list and the dismissal. The
+      // review is no longer a CHANGES_REQUESTED: that is the aim, not a failure.
+      if (!(error instanceof GitHubError && error.status === 422)) throw error
+      input.warn('command.reject_review_already_dismissed', { review: review.id })
+    }
   }
   return last.id
 }

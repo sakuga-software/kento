@@ -7,6 +7,28 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-101: A head that no reviewed file changed gets its own review
+
+No migration, no new variable, no new permission, no change to the protocol of the runners: deploy
+`web` alone. Since REV-89, a push that changes no reviewed file (a merge of `main`, a rebase of
+GitHub after the squash of the pull request below) calls no model, and the service publishes the
+last review again: the block, the label and the check. The head had no review of its own, so a
+merge policy that reads the score on the head (boo, `merge-when-green.sh`) stayed blocked.
+
+- The publisher now also posts a review on the head: the score and the verdict of the block
+  (APPROVE, COMMENT or REQUEST_CHANGES), no inline comment, and the line « Même score que le commit
+  `<sha>` : aucun fichier relu n'a changé depuis. ». A hidden marker names its source: the copy does
+  not replace the source, so the next unchanged push is published again too. A second try finds the
+  review by its marker and posts nothing. `reviews.result.headReviewId` keeps its id.
+- A command `@kento-review <level>` on such a head is no longer refused when the copy was published
+  without a review on the head (a release before this one, or a copy that a later review replaced):
+  the head has no score, and the command is its only way to get one.
+- `@kento-review reject` on such a head dismisses the copy, and its source when the source asks for
+  changes too.
+
+Check: on a pull request whose last review is on GitHub, merge `main` with no change to its files:
+the new head gets a review of `kento-review[bot]` with the same score, and the line above.
+
 ## REV-95, follow-up: a more severe finding near a rejection stays; unchanged files first
 
 **The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this

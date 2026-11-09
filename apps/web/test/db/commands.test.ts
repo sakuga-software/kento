@@ -202,6 +202,24 @@ describe('commands in the comments of a pull request', () => {
     assert.equal((await jobs()).length, 1)
   })
 
+  it('6b. a copy published without a review on the head does not count; a copy with one does (REV-101)', async () => {
+    let push = pullRequestPayload({ action: 'synchronize', number: PR, head: HEAD })
+    assert.equal((await router().fetch(signedRequest(push, { deliveryId: nextDelivery() }))).status, 202)
+    let [job] = await database.sql<{ id: string; repoId: string }[]>`select id, repo_id as "repoId" from jobs`
+    await database.sql`update jobs set state = 'done', finished_at = now() where id = ${job!.id}`
+    // The copy of an earlier review, published by a release before REV-101: no review on the head.
+    let copy = { reusedFrom: { reviewId: '00000000-0000-0000-0000-000000000000', head: headSha(0x111), githubReviewId: 41 } }
+    await database.sql`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at, github_review_id)
+      values (${job!.id}, ${job!.repoId}, ${PR}, ${HEAD}, 4, 'm', 0, ${JSON.stringify(copy)}::jsonb, now(), 41)`
+    assert.equal((await say('@kento-review review')).body.outcome, 'queued', 'the head has no score: the command reviews it')
+
+    // A copy that has its review on the head counts, as any review of this level.
+    await database.sql`delete from jobs where id <> ${job!.id}`
+    await database.sql`update reviews set result = result || '{"headReviewId": 42}'::jsonb`
+    assert.equal((await say('@kento-review review')).body.outcome, 'refused')
+  })
+
   it('7. only a person who can write gives a command: no job, no reaction, no reply for the others', async () => {
     for (let login of ['reader', 'triager', 'stranger']) {
       let { body, payload } = await say('@kento-review review heavy', { user: { login, type: 'User' } })
@@ -948,6 +966,65 @@ describe('commands in the comments of a pull request', () => {
       ])
       // The review of an older head is not the last one on the head: publish.ts dismisses it at the next review.
       assert.equal(fake.state.reviews.find((r) => r.id === older)!.state, 'CHANGES_REQUESTED')
+    })
+
+    it('R8b. the review on the head is a copy (REV-101): a reject dismisses it and its source of the earlier head', async () => {
+      fake.state.canResolve = true
+      const EARLIER = headSha(0x123)
+      // The review that a model made, on the earlier head, then its copy on the head: the row of the
+      // head names the source in github_review_id, and the copy in headReviewId.
+      let source = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }], EARLIER)
+      let copy = fake.addReview({ state: 'CHANGES_REQUESTED', commitId: HEAD })
+      let [job] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+        select id, 'lite', ${PR}, ${HEAD}, 'delivery-copy' from repos where github_repo_id = ${REPO.id}
+        returning id`
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        select ${job!.id}, repo_id, pr_number, ${HEAD}, score, model, 0,
+          result || ${JSON.stringify({ reusedFrom: { reviewId: '00000000-0000-0000-0000-000000000000', head: EARLIER, githubReviewId: source }, headReviewId: copy })}::jsonb,
+          github_review_id, now()
+        from reviews where github_review_id = ${source}`
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: copy })
+      assert.deepEqual(fake.state.dismissals.map((d) => d.reviewId), [copy, source], 'the source would keep the pull request blocked')
+    })
+
+    it('R8c. the source of a copy that GitHub no longer lists: the copy is dismissed, and the log names the source (REV-101)', async () => {
+      fake.state.canResolve = true
+      const EARLIER = headSha(0x123)
+      let source = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }], EARLIER)
+      let copy = fake.addReview({ state: 'CHANGES_REQUESTED', commitId: HEAD })
+      let [job] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+        select id, 'lite', ${PR}, ${HEAD}, 'delivery-copy' from repos where github_repo_id = ${REPO.id}
+        returning id`
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        select ${job!.id}, repo_id, pr_number, ${HEAD}, score, model, 0,
+          result || ${JSON.stringify({ reusedFrom: { reviewId: '00000000-0000-0000-0000-000000000000', head: EARLIER, githubReviewId: source }, headReviewId: copy })}::jsonb,
+          github_review_id, now()
+        from reviews where github_review_id = ${source}`
+      // The source is gone from GitHub.
+      fake.state.reviews.splice(fake.state.reviews.findIndex((r) => r.id === source), 1)
+      let finding = await seedFinding(keyOf('Bug'), { thread: true })
+      let lines: string[] = []
+      let write = process.stderr.write.bind(process.stderr)
+      process.stderr.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
+        lines.push(String(chunk))
+        return write(chunk, ...rest)
+      }) as typeof process.stderr.write
+      let body
+      try {
+        body = (await reply('@kento-review reject the schema validates it', finding.commentId!)).body
+      } finally {
+        process.stderr.write = write
+      }
+      assert.equal(body.dismissedReview, copy)
+      assert.deepEqual(fake.state.dismissals.map((d) => d.reviewId), [copy])
+      let warned = lines.flatMap((l) => l.split('\n')).filter(Boolean).map((l) => JSON.parse(l)).find((l) => l.event === 'command.reject_source_not_found')
+      assert.equal(warned?.source, source)
     })
 
     it('R9. another blocking finding of that review still open, or a last review that does not ask for changes: no dismissal', async () => {

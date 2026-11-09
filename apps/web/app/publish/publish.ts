@@ -409,12 +409,24 @@ export async function publishReview(
  */
 export async function botReviewState(github: GitHub, target: PublishTarget, id: number): Promise<'stands' | 'replaced' | 'gone'> {
   let reviews = await listReviews(github, `/repos/${target.owner}/${target.name}/pulls/${target.pr}/reviews`)
-  // GitHub lists the reviews oldest first.
-  let ours = reviews.filter((r) => r.user?.login === target.botLogin)
+  // GitHub lists the reviews oldest first. REV-101: a copy of this review on a later head does not
+  // replace it.
+  let copy = sameAsMarker(id)
+  let ours = reviews.filter((r) => r.user?.login === target.botLogin && !r.body?.includes(copy))
   let source = ours.find((r) => r.id === id)
   if (!source) return 'gone'
   if (ours.at(-1) !== source) return 'replaced'
   return source.state === 'DISMISSED' ? 'gone' : 'stands'
+}
+
+/** REV-101. The hidden comment of a review that copies the review `id` of the bot on a later head. */
+function sameAsMarker(id: number): string {
+  return `<!-- kento:same-as ${id} -->`
+}
+
+/** REV-101. The line of a copied review that names the commit of its source. */
+export function sameScoreLine(reusedFrom: string): string {
+  return `Même score que le commit \`${reusedFrom.slice(0, 9)}\` : aucun fichier relu n'a changé depuis.`
 }
 
 /**
@@ -433,17 +445,28 @@ async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: st
 /**
  * REV-89. The review of an earlier head, published again on a head with the same input (a merge of
  * the base branch, a rebase with no conflict): the block of the description, the label and the
- * check. The findings, their threads and the review are already on GitHub: nothing else is written,
- * and the findings of the database do not change. The block keeps the count of the reviews. Every
- * step up to the block throws, so the caller can try again; the label and the check do not.
+ * check. REV-101: also a review on the head, with the same score and verdict and no inline comment.
+ * The findings and their threads are already on GitHub, and the findings of the database do not
+ * change. The block keeps the count of the reviews. Every step up to the review of the head throws,
+ * so the caller can try again; the label and the check do not.
  */
 export async function publishUnchanged(
   github: GitHub,
   target: PublishTarget,
   review: ReviewPayload,
   reusedFrom: string,
-  options: { checks?: GitHub | null; findings?: FindingsLedger; warn?: (event: string, fields: Record<string, unknown>) => void } = {},
-): Promise<{ score: number; shown: number }> {
+  options: {
+    checks?: GitHub | null
+    findings?: FindingsLedger
+    /**
+     * REV-101. The review on GitHub to copy on the head, and the id of the stored review (`marker`). A
+     * review of the bot that already carries the marker is not posted again. Without it, the head
+     * gets no review.
+     */
+    headReview?: { sourceId: number; marker: string }
+    warn?: (event: string, fields: Record<string, unknown>) => void
+  } = {},
+): Promise<{ score: number; shown: number; headReviewId: number | null }> {
   let { owner, name, pr } = target
   let warn = options.warn ?? (() => {})
   let repo = `/repos/${owner}/${name}`
@@ -495,12 +518,40 @@ export async function publishUnchanged(
     })
     await github.rest('PATCH', prPath, { body: withBlock(current, block) })
   }
+  // REV-101. The head gets a review of its own, with the score and the verdict of the block: a merge
+  // policy reads the score of the review on the head. A failure throws, as for the block.
+  let headReviewId = options.headReview ? await postHeadReview(github, target, review, reusedFrom, answer, options.headReview) : null
   await step('label', () => setScoreLabel(github, repo, pr, value))
   if (options.checks) {
     let checks = options.checks
     await step('check', () => postReusedCheck(checks, target, review, reusedFrom, answer))
   }
-  return { score: value, shown: shown.length }
+  return { score: value, shown: shown.length, headReviewId }
+}
+
+/**
+ * REV-101. The review of a reused head: the body of a review with the score of `answer`, a line that
+ * names the commit of the source, and no inline comment (the threads of the source stay). A second
+ * try finds it by its marker and posts nothing.
+ */
+async function postHeadReview(
+  github: GitHub,
+  target: PublishTarget,
+  review: ReviewPayload,
+  reusedFrom: string,
+  answer: Answer,
+  copy: { sourceId: number; marker: string },
+): Promise<number> {
+  let reviewsPath = `/repos/${target.owner}/${target.name}/pulls/${target.pr}/reviews`
+  let marker = `<!-- kento:review ${copy.marker} -->`
+  let posted = (await listReviews(github, reviewsPath)).find((r) => r.user?.login === target.botLogin && r.body?.includes(marker))
+  if (posted) return posted.id
+  let body =
+    reviewBody(answer, anchorOf, review.level, usageOf(review), POSTER) +
+    `\n\n${sameScoreLine(reusedFrom)}\n\n${sameAsMarker(copy.sourceId)}\n${marker}`
+  let event = verdict(answer, anchorOf, review.level)
+  let out: { id: number } = await github.rest('POST', reviewsPath, { commit_id: review.head, body, event, comments: [] })
+  return out.id
 }
 
 /**

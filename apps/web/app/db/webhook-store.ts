@@ -9,7 +9,7 @@ import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db, Tx } from './client.ts'
 import { orgCapHit, readRepoMonthCost } from './costs.ts'
-import { assignmentRules, jobs, orgs, pullAuthors, repos, resolutions, userPrefs, users } from './schema.ts'
+import { assignmentRules, jobs, orgs, pullAuthors, repos, resolutions, reviews, userPrefs, users } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -328,7 +328,8 @@ export type CommandJobResult =
  * review of the push runs beside it. A newer push cancels it, as any job of an older head.
  *
  * The cost limit: a head that already has a review at this level (queued, running or done) gets no
- * second one, unless the command says `force`. A failed or cancelled review does not count.
+ * second one, unless the command says `force`. A failed or cancelled review does not count, nor a
+ * copy published without a review on the head (REV-101).
  *
  * The upsert of the repository locks its row until the end of the transaction: two commands of the
  * same repository run one after the other, and the second one sees the job of the first.
@@ -386,7 +387,17 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
             eq(jobs.headSha, input.headSha),
             eq(jobs.kind, 'review'),
             eq(jobs.level, input.level),
-            inArray(jobs.state, ['queued', 'running', 'done']),
+            or(
+              inArray(jobs.state, ['queued', 'running']),
+              // REV-101. A copy of an earlier review (`unchanged`) that was published without a review
+              // on the head does not count: a release before REV-101, or a copy that a later review
+              // replaced. The head has no score on GitHub, and the command is its only way to get one.
+              and(
+                eq(jobs.state, 'done'),
+                sql`not exists (select 1 from ${reviews} where ${reviews.jobId} = ${jobs.id} and ${reviews.publishedAt} is not null
+                  and ${reviews.result} -> 'reusedFrom' is not null and ${reviews.result} -> 'headReviewId' is null)`,
+              ),
+            ),
           ),
         )
         .orderBy(desc(jobs.createdAt))

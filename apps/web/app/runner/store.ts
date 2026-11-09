@@ -115,10 +115,14 @@ export type StoredResult =
 /**
  * REV-89. A review as `reviews.result` keeps it. `reusedFrom`: the review was not made by a model,
  * it is the review of an earlier head with the same input (outcome `unchanged`). The publisher then
- * writes only the block of the description, the label and the check: the findings are already on
- * GitHub, in the review `githubReviewId`.
+ * writes the block of the description, the label, the check and a review on the head without
+ * comments (REV-101): the findings are already on GitHub, in the review `githubReviewId`.
  */
-export type StoredReview = ReviewPayload & { reusedFrom?: { reviewId: string; head: string; githubReviewId: number } }
+export type StoredReview = ReviewPayload & {
+  reusedFrom?: { reviewId: string; head: string; githubReviewId: number }
+  /** REV-101. The review that the publisher posted on the head of a copy: same score, no comment. */
+  headReviewId?: number
+}
 
 /** What one sweep of the expired leases did. */
 export interface ExpiredLeases {
@@ -613,7 +617,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             log('warn', 'job.reuse_source_moved', { jobId, of: unchanged.of })
             return 'stored' as const
           }
-          let previous = jsonOf<StoredReview>(source.result)
+          // The review on the head of the source is not the review of this head (REV-101).
+          let { headReviewId: _sourceHead, ...previous } = jsonOf<StoredReview>(source.result)
           let copy: StoredReview = {
             ...previous,
             base: unchanged.base,

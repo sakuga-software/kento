@@ -195,7 +195,7 @@ describe('publication of a review', () => {
     assert.equal(fake.state.reviews.length, 1)
   })
 
-  it('publishes again the review of the earlier head when the runner sends unchanged: block, label and check only (REV-89)', async () => {
+  it('publishes again the review of the earlier head when the runner sends unchanged: block, label, check, and a review on the head (REV-89, REV-101)', async () => {
     const KEY = 'e'.repeat(64)
     let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
     let { token } = await registered.json()
@@ -222,8 +222,14 @@ describe('publication of a review', () => {
     assert.equal((await call(`/api/runner/jobs/${second.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
     await publisher.stop()
 
-    assert.equal(fake.state.reviews.length, 1, 'no second review')
-    assert.equal(fake.state.reviews[0]!.state, 'CHANGES_REQUESTED')
+    // REV-101. The new head gets a review of its own, with the same verdict and score, and no comment.
+    assert.equal(fake.state.reviews.length, 2, 'a review on the new head')
+    let copy = fake.state.reviews[1]!
+    assert.equal(copy.commitId, HEAD2)
+    assert.equal(copy.state, 'CHANGES_REQUESTED', 'the verdict of the review of HEAD1')
+    assert.equal(copy.comments, 0)
+    assert.match(copy.body, /\*\*Score de confiance : 2\/5\*\*/)
+    assert.match(copy.body, /Même score que le commit `111111111` : aucun fichier relu n'a changé depuis\./)
     assert.equal(fake.botThreads().length, 1, 'no second thread')
     assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
     assert.match(fake.state.pr.body, /<!-- sakuga-review:count 1 -->/)
@@ -232,7 +238,60 @@ describe('publication of a review', () => {
     let [, row] = await rows()
     assert.equal(row!.headSha, HEAD2)
     assert.ok(row!.publishedAt)
-    assert.equal(Number(row!.githubReviewId), posted!.id, 'the review on GitHub is the one of HEAD1')
+    assert.equal(Number(row!.githubReviewId), posted!.id, 'the review with the findings is the one of HEAD1')
+    let [stored] = await database.sql<{ headReviewId: string }[]>`select result->>'headReviewId' as "headReviewId" from reviews where head_sha = ${HEAD2}`
+    assert.equal(Number(stored!.headReviewId), copy.id)
+  })
+
+  it('gives each head of a chain of unchanged pushes a review, and posts it once (REV-101)', async () => {
+    const KEY = 'e'.repeat(64)
+    const HEAD3 = '3'.repeat(40)
+    fake.state.commits[HEAD3] = 'merge main again'
+    let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'runner-1', labels: [], version: '0.1.0' })
+    let { token } = await registered.json()
+    let claimNext = async () => {
+      let claimed = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: ['reuse'] })
+      assert.equal(claimed.status, 200)
+      return (await claimed.json()) as Job
+    }
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
+    let first = await claimNext()
+    let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', score: 4, verdict: 'APPROVE', findings: [] }) }
+    assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
+    await publisher.stop()
+    let [posted] = fake.state.reviews
+    assert.equal(posted!.state, 'APPROVED')
+
+    for (let head of [HEAD2, HEAD3]) {
+      fake.state.pr.head = head
+      await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${head}, 'main')`
+      publisher = newPublisher()
+      let next = await claimNext()
+      assert.deepEqual(next.kind === 'review' && next.reuse, { head: head === HEAD2 ? HEAD1 : HEAD2, key: KEY })
+      let unchanged = { level: 'lite', base: BASE, head, of: head === HEAD2 ? HEAD1 : HEAD2, diffHash: '0123456789abcdef', reuseKey: KEY }
+      assert.equal((await call(`/api/runner/jobs/${next.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged })).status, 204)
+      await publisher.stop()
+    }
+
+    // The copy on HEAD2 does not replace the review of HEAD1: HEAD3 is published, with its review.
+    assert.deepEqual(
+      fake.state.reviews.map((r) => [r.commitId, r.state]),
+      [[HEAD1, 'APPROVED'], [HEAD2, 'APPROVED'], [HEAD3, 'APPROVED']],
+    )
+    for (let copy of fake.state.reviews.slice(1)) {
+      assert.match(copy.body, /\*\*Score de confiance : 4\/5\*\*/)
+      assert.match(copy.body, /Même score que le commit `111111111`/, 'a copy of a copy names the review that a model made')
+    }
+    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    let all = await rows()
+    assert.deepEqual(all.map((r) => Number(r.githubReviewId)), [posted!.id, posted!.id, posted!.id])
+
+    // A second publication of the same row (a try after a failure) posts no second review.
+    await database.sql`update reviews set published_at = null where head_sha = ${HEAD3}`
+    publisher = newPublisher()
+    await publisher.publishPending()
+    await publisher.stop()
+    assert.equal(fake.state.reviews.length, 3, 'found by its marker')
   })
 
   it('builds the block of a reused review from the threads and the findings as they are at publication (REV-89)', async () => {
@@ -274,7 +333,10 @@ describe('publication of a review', () => {
     assert.match(body, /La somme soustrait/)
     assert.doesNotMatch(body, new RegExp(`#discussion_r${sumThread.id}`), 'a resolved thread gives no link')
     assert.match(body, /sum\(1, 2\) rend -1\./, 'without a thread, the block shows the scenario')
-    assert.deepEqual(fake.state.reviews.map((r) => r.id), [posted!.id], 'no second review')
+    assert.equal(fake.state.reviews.length, 2, 'one review on the new head, without comments')
+    assert.equal(fake.state.reviews[1]!.comments, 0)
+    assert.match(fake.state.reviews[1]!.body, /Score de confiance : 2\/5/, 'the score of the block')
+    assert.equal(fake.state.reviews[0]!.id, posted!.id)
   })
 
   it('posts the copy as a review of its own when the review of the earlier head was dismissed (REV-89)', async () => {
@@ -313,6 +375,25 @@ describe('publication of a review', () => {
     assert.notEqual(Number(row!.githubReviewId), posted!.id)
     let [stored] = await database.sql<{ reused: boolean }[]>`select result ? 'reusedFrom' as reused from reviews where head_sha = ${HEAD2}`
     assert.equal(stored!.reused, false, 'the row is a review of its own: the next copy takes it as its source')
+
+    // REV-101. The next unchanged push copies that review: it stands (it carries no `same-as`
+    // marker), and HEAD3 gets a copy without comments, not a third full review.
+    const HEAD3 = '3'.repeat(40)
+    fake.state.commits[HEAD3] = 'merge main again'
+    fake.state.pr.head = HEAD3
+    await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD3}, 'main')`
+    publisher = newPublisher()
+    let third = await claimNext()
+    assert.deepEqual(third.kind === 'review' && third.reuse, { head: HEAD2, key: KEY })
+    let again = { level: 'lite', base: BASE, head: HEAD3, of: HEAD2, diffHash: '0123456789abcdef', reuseKey: KEY }
+    assert.equal((await call(`/api/runner/jobs/${third.id}/result`, token, { outcome: 'unchanged', attempt: 1, unchanged: again })).status, 204)
+    await publisher.stop()
+    assert.equal(fake.state.reviews.length, 3)
+    let copy = fake.state.reviews[2]!
+    assert.equal(copy.commitId, HEAD3)
+    assert.equal(copy.comments, 0, 'a copy, not a review of its own')
+    assert.match(copy.body, /Même score que le commit `222222222`/)
+    assert.match(copy.body, new RegExp(`<!-- kento:same-as ${fake.state.reviews[1]!.id} -->`))
   })
 
   it('does not publish a copy when a later review of the bot came after its source (REV-89)', async () => {
@@ -382,7 +463,7 @@ describe('publication of a review', () => {
     for (let i = 0; i < 4; i++) await publisher.publishPending()
 
     assert.equal(fake.state.failReviewLists, 0)
-    assert.equal(fake.state.reviews.length, 1, 'no second review')
+    assert.deepEqual(fake.state.reviews.map((r) => r.commitId), [HEAD1, HEAD2], 'one review on the new head')
     assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
     let [, row] = await rows()
     assert.ok(row!.publishedAt, 'published after the failures, its tries intact')
