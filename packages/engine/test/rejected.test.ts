@@ -98,6 +98,7 @@ const rejection = (commit: string, over: Partial<RejectedFinding> = {}): Rejecte
   line: PORT_LINE,
   title: finding().title,
   category: 'bug',
+  severity: 'major',
   status: 'dismissed',
   reason: CAUSE,
   commit,
@@ -174,6 +175,24 @@ test('the same title in another category is another defect: it stays', async () 
   const security = finding({ category: 'security', line: 1, start_line: 1 });
   const { result } = await review(answer([security], 4), [rejection(head)]);
   assert.equal(result.findings.length, 1);
+});
+
+test('a more severe finding near a rejection, even with a word in common, is another defect: it stays', async () => {
+  const worse = finding({ title: 'Le port est lu deux fois', severity: 'critical', line: PORT_LINE + 1, start_line: PORT_LINE + 1 });
+  const { result } = await review(answer([worse], 4), [rejection(head)]);
+  assert.deepEqual(result.findings.map((f) => f.title), [worse.title]);
+});
+
+test('without its severity (a service of REV-95), a rejection does not compare the severities', async () => {
+  const worse = finding({ title: 'Le port est lu deux fois', severity: 'critical', line: PORT_LINE + 1, start_line: PORT_LINE + 1 });
+  const { severity: _s, ...noSeverity } = rejection(head);
+  const { result } = await review(answer([worse], 4), [noSeverity]);
+  assert.deepEqual(result.findings, []);
+});
+
+test('the rejections of an unchanged file come first in the section, before those of a changed file', () => {
+  const { held } = rejectedSection(repo, head, [rejection(earlier, { line: 1 }), rejection(head, { line: 2 })]);
+  assert.deepEqual(held.map((r) => [r.ref, r.line, r.changed]), [['R1', 2, false], ['R2', 1, true]]);
 });
 
 test('a wontfix without a cause is in the pack, and its findings go too', async () => {

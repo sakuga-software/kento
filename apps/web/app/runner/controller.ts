@@ -175,7 +175,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     let rejected: RejectedFinding[] | null = null
     if (job.kind === 'review' && (body.features?.includes('rejected') ?? false)) {
       try {
-        rejected = await deps.store.jobRejected(job.id)
+        rejected = await deps.store.jobRejected(job.id, { severity: body.features?.includes('rejected-severity') ?? false })
       } catch (cause) {
         log('warn', 'job.rejected_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }

@@ -1,5 +1,5 @@
 // REV-95. The rejected findings of a review job, as the protocol accepts them. Pure: no database.
-import { CATEGORIES, isOneOf, SHA, type RejectedFinding } from '@sakuga-review/protocol'
+import { CATEGORIES, isOneOf, SEVERITIES, SHA, type RejectedFinding } from '@sakuga-review/protocol'
 
 /** A row of the database: the columns are NOT NULL in the schema, but a row is checked as it comes. */
 export type RejectedRow = { [K in keyof RejectedFinding]: RejectedFinding[K] | null }
@@ -10,6 +10,7 @@ export function leftOutReason(r: RejectedRow): string | null {
   if (!SHA.test(r.commit)) return 'last_seen_sha is not a commit'
   if (r.path.length > 1000 || r.title.length === 0 || r.line < 0 || r.line > 10_000_000) return 'path, title or line beyond the limits of the protocol'
   if (!isOneOf(CATEGORIES, r.category)) return `unknown category ${String(r.category).slice(0, 40)}`
+  if (r.severity !== null && r.severity !== undefined && !isOneOf(SEVERITIES, r.severity)) return `unknown severity ${String(r.severity).slice(0, 40)}`
   return null
 }
 

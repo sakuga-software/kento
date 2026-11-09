@@ -86,12 +86,14 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `reuse`: a review job carries `reuse`, the reuse key of the last review of the pull request
  *   (REV-89). The runner then sends `diffHash`, `reuseKey` and `cachedTokens` with a review, and the
  *   outcome `unchanged` when the key of the head is the same: no model call.
+ * - `rejected-severity`: each rejected finding of the job can carry its `severity`. A runner of REV-95
+ *   reads `rejected` strictly and would refuse the key: the service sends it only with this feature.
  * - `rejected`: a review job can carry `rejected`, the findings of the pull request that a person set
  *   aside (REV-95). The review reads their causes as data.
  * - `delta`: `reuse` can carry `delta` (REV-88), and the runner then reviews only the files that
  *   changed since that head, and sends `delta` with its review.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -249,6 +251,11 @@ export type RejectedFinding = {
   title: string;
   /** The category of the finding (`CATEGORIES`): a finding near it must share it to be the same. */
   category: Category;
+  /**
+   * The severity of the finding: a finding near it that is more severe is another defect. Only with
+   * the feature `rejected-severity`; without it, the engine does not compare the severities.
+   */
+  severity?: Severity;
   status: 'dismissed' | 'wontfix';
   reason: string | null;
   commit: string;
@@ -371,6 +378,7 @@ const rejectedFinding = obj({
   line: int({ min: 0, max: 10_000_000 }),
   title: str({ min: 1, max: 1000 }),
   category: oneOf(CATEGORIES),
+  severity: optional(oneOf(SEVERITIES)),
   status: oneOf(['dismissed', 'wontfix'] as const),
   // REASON_MAX of the service (apps/web/app/findings/store.ts).
   reason: nullable(str({ max: 500 })),

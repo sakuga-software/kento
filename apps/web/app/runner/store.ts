@@ -198,7 +198,7 @@ export interface RunnerStore {
    * REV-95. The findings of the pull request of a review job that a person set aside (`dismissed`,
    * `wontfix`), the most recently changed first, MAX_REJECTED_FINDINGS at most.
    */
-  jobRejected(jobId: string): Promise<RejectedFinding[]>
+  jobRejected(jobId: string, options?: { severity: boolean }): Promise<RejectedFinding[]>
   /**
    * REV-19. Keeps the rules that this claim sends to its runner, on the job: the result can cite
    * these only, with the title that they had then.
@@ -425,16 +425,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return { kind: 'finished' }
     },
 
-    async jobRejected(jobId) {
+    async jobRejected(jobId, options = { severity: false }) {
       let rows = await sql<RejectedRow[]>`
-        select findings.path, findings.line, findings.title, findings.category, findings.status::text as status,
+        select findings.path, findings.line, findings.title, findings.category, findings.severity, findings.status::text as status,
           findings.status_reason as reason, findings.last_seen_sha as commit
         from jobs
         join findings on findings.repo_id = jobs.repo_id and findings.pr_number = jobs.pr_number
         where jobs.id = ${jobId} and findings.status in ('dismissed', 'wontfix')
         order by findings.updated_at desc, findings.id
         limit ${MAX_REJECTED_FINDINGS}`
-      return sendableRejected(rows, (fields) => log('warn', 'job.rejected_left_out', { jobId, ...fields }))
+      let sent = sendableRejected(rows, (fields) => log('warn', 'job.rejected_left_out', { jobId, ...fields }))
+      // A runner without `rejected-severity` reads `rejected` strictly: no key that it does not know.
+      return options.severity ? sent : sent.map(({ severity: _severity, ...rest }) => rest)
     },
 
     async jobRules(jobId) {

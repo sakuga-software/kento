@@ -598,6 +598,22 @@ describe('commands in the comments of a pull request', () => {
         assert.deepEqual(second.job.rejected, [])
       })
 
+      it('18r4. the severity of a rejected finding goes only to a runner that says `rejected-severity`', async () => {
+        await database.sql`
+          insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+            first_seen_sha, last_seen_sha)
+          select id, ${PR}, 'fp', 'dddddd000001', 'src/a.ts', 7, 'T', 'critical', 'bug', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          from repos where github_repo_id = ${REPO.id}`
+        await say('@kento-review review balanced')
+        let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected', 'rejected-severity'] })
+        assert.ok(job && job.kind === 'review')
+        assert.equal(job.rejected?.[0]?.severity, 'critical')
+        await say('@kento-review review heavy')
+        let older = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected'] })
+        assert.ok(older.job && older.job.kind === 'review')
+        assert.equal('severity' in older.job.rejected![0]!, false)
+      })
+
       it('18r2. REV-95: a runner that does not say `rejected` gets no rejected findings', async () => {
         await database.sql`
           insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,

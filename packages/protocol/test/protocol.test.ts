@@ -333,7 +333,7 @@ test('a provider id of a job is `service` or a uuid, and nothing around them', (
 });
 
 test('a review job carries the rejected findings with the feature rejected (REV-95)', () => {
-  const rejected = [{ path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', category: 'bug', status: 'dismissed', reason: 'validé par le schéma', commit: SHA }];
+  const rejected = [{ path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', category: 'bug', severity: 'major', status: 'dismissed', reason: 'validé par le schéma', commit: SHA }];
   assert.deepEqual(parseJob({ ...job(), rejected }), { ok: true, value: { ...job(), rejected } });
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], reason: null, status: 'wontfix' }] }).ok, true);
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], status: 'open' }] }).ok, false);
@@ -342,4 +342,7 @@ test('a review job carries the rejected findings with the feature rejected (REV-
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], commit: 'abc' }] }).ok, false);
   assert.equal(parseJob({ ...job(), rejected: Array.from({ length: 51 }, () => rejected[0]) }).ok, false);
   assert.ok(FEATURES.includes('rejected'));
+  const { severity: _s, ...withoutSeverity } = rejected[0]!;
+  assert.equal(parseJob({ ...job(), rejected: [withoutSeverity] }).ok, true, 'a service of REV-95 sends no severity');
+  assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], severity: 'huge' }] }).ok, false);
 });

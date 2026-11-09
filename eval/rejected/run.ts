@@ -85,7 +85,7 @@ const scripted = (reply: Answer) =>
     return new Response(JSON.stringify({ model: body.model, provider: 'Scripted', choices: [{ message: { content: JSON.stringify(reply) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
   }) as typeof globalThis.fetch;
 
-const rejectionOf = (f: Finding): RejectedFinding => ({ path: f.path, line: f.line, title: f.title, category: f.category, status: 'dismissed', reason: CAUSE, commit: head });
+const rejectionOf = (f: Finding): RejectedFinding => ({ path: f.path, line: f.line, title: f.title, category: f.category, severity: f.severity, status: 'dismissed', reason: CAUSE, commit: head });
 const near = (f: Finding, r: RejectedFinding) => f.path === r.path && Math.abs(f.line - r.line) <= 3;
 
 const rows: string[] = [];

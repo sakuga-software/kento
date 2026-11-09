@@ -7,6 +7,20 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-95, follow-up: a more severe finding near a rejection stays; unchanged files first
+
+**The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this
+release says `rejected-severity` in the features of its claim, and an earlier service refuses it. The
+service then adds the `severity` of each rejected finding; a runner of REV-95 does not say it, reads
+`rejected` strictly, and gets no `severity`. No migration, no new variable, no new permission.
+
+- Near a rejection (at most 3 lines, same category, a word in common), a finding **more severe**
+  than the rejected one stays: it is another defect, not the rejected one reworded. Without the
+  severity (a service of REV-95), the engine does not compare the severities, as before.
+- In the « Rejected findings » section, the rejections whose file did not change come first: the
+  rejections of a changed file use the rest of the 12 000 bytes.
+
+Check: a review job of a runner of this release gives `severity` in each item of `rejected`.
 ## REV-88: The review of a push reads only what changed since the last reviewed head
 
 No migration, no new variable, no new permission. A runner of this release says `delta` in the

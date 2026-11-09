@@ -37,9 +37,12 @@ export function rejectedSection(repo: string, head: string, rejected: readonly R
   const held: HeldRejection[] = [];
   const parts: string[] = [];
   let size = 0;
-  for (const r of rejected) {
+  // The rejections whose file did not change come first: they are the ones that the net applies and
+  // that the model must not report again. Those of a changed file use the rest of the budget.
+  const read = rejected.map((r) => ({ r, changed: fileChangedSince(repo, r.commit, head, r.path.replace(/^\/+/, '')) }));
+  const ordered = [...read.filter((x) => x.changed === false), ...read.filter((x) => x.changed !== false)];
+  for (const { r, changed } of ordered) {
     const ref = `R${held.length + 1}`;
-    const changed = fileChangedSince(repo, r.commit, head, r.path.replace(/^\/+/, ''));
     const since = changed === false ? 'No' : changed ? 'Yes' : 'Unknown';
     const cause = r.reason ? `« ${oneLine(r.reason)} »` : '(none given)';
     const text =
@@ -64,6 +67,9 @@ export function rejectedSection(repo: string, head: string, rejected: readonly R
     'A rejected defect does not lower `confidence_score`.\n\n';
   return { section: intro + parts.join(''), held };
 }
+
+/** The order of the severities: a higher rank is more severe. */
+const SEVERITY_RANK = { minor: 0, major: 1, critical: 2 } as const;
 
 /** Short words that say nothing of the defect, in French and in English. */
 const COMMON = new Set(['dans', 'avec', 'sans', 'pour', 'mais', 'plus', 'tout', 'sont', 'with', 'from', 'that', 'this', 'when', 'into', 'without']);
@@ -101,7 +107,9 @@ export function dropRejected<F extends Finding>(
     // A finding of another category is another defect, even under the same title.
     if (clean(f.path) !== clean(r.path) || f.category !== r.category) return false;
     if (findingKey({ ...f, title: r.title }) === findingKey(f)) return true;
+    // A finding more severe than the rejected one is another defect near it, not the same one reworded.
     if (!shareAWord(f.title, r.title)) return false;
+    if (r.severity && SEVERITY_RANK[f.severity] > SEVERITY_RANK[r.severity]) return false;
     return [f.line, anchorOf(f)].some((line) => line !== null && Math.abs(line - r.line) <= NEAR_THREAD_LINES);
   };
   const findings: F[] = answer.findings;

@@ -9,6 +9,7 @@ const row = (over: Partial<RejectedRow> = {}): RejectedRow => ({
   line: 7,
   title: 'Le port n’est pas validé',
   category: 'bug',
+  severity: 'major',
   status: 'dismissed',
   reason: 'validé par le schéma',
   commit: SHA,
