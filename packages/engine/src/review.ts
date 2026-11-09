@@ -4,7 +4,9 @@ import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
-import type { Level, RejectedFinding } from '../../protocol/src/index.ts';
+import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
+import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
+import { inHistory } from './history.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
@@ -47,6 +49,12 @@ export type ReviewInput = ModelClient & {
    * findings of the others.
    */
   delta?: Delta | null;
+  /**
+   * REV-99. Every finding of the pull request, whatever its status, and the last review at this
+   * level, from the caller. A finding that continues one of them follows it, and does not count again
+   * in the score.
+   */
+  earlier?: JobEarlier | null;
 };
 
 /**
@@ -104,6 +112,12 @@ export type ReviewResult = {
   settledAgain: Finding[];
   /** REV-88. The score that the model gave and the one that the floor kept, when the floor lifted it. */
   scoreFloor: { model: number; kept: number } | null;
+  /** REV-99. The earlier findings that the pack held. */
+  earlier: HeldEarlier[];
+  /** REV-99. The findings that the model and the net linked to an earlier finding. */
+  followed: { byModel: number; byNet: number };
+  /** REV-99. The findings that continued a dismissed or kept finding whose file did not change. */
+  droppedAsSettled: Finding[];
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -125,7 +139,8 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
 
 async function askAndFinish(input: ReviewInput, config: LevelConfig, prepared: PreparedReview): Promise<ReviewResult> {
   const tools = reviewTools(input, config);
-  const { answer, usage } = await askModel(input, config, prepared.pack, answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref)), undefined, tools);
+  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref), prepared.earlier.map((e) => e.ref));
+  const { answer, usage } = await askModel(input, config, prepared.pack, schema, undefined, tools);
   return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
 }
 
@@ -157,6 +172,7 @@ export type PreparedReview = {
   lines: ChangedLines;
   threads: AnsweredThread[];
   rejected: HeldRejection[];
+  earlier: HeldEarlier[];
   diffHash: string;
   reuseKey: string;
   delta: DeltaPlan | null;
@@ -169,9 +185,11 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // in the body that the reuse key of REV-89 reads: a new rejection gives a new key).
   const rejected = rejectedSection(input.repoDir, input.head, input.rejected ?? []);
   const sections = answered.section + rejected.section;
+  // REV-99. The earlier findings follow, out of the reuse key: each review changes them.
+  const earlierFindings = earlierFindingsSection(input.repoDir, input.head, input.earlier?.findings ?? []);
   // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
   // same input gets the same key.
-  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections);
+  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, earlierFindings.section);
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   // REV-88. With the last review, the pack reads only what changed since, when that head is still
   // in the history of this one. A force-push or a rebase reads the whole pull request again.
@@ -179,10 +197,10 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // or the context changed): the change is not in the diff, so the review reads the whole pull request.
   const planned = input.delta ? planDelta(input.repoDir, base, input.head, input.delta.since) : null;
   const delta = planned && planned.files.length > 0 ? planned : null;
-  const earlier = input.delta ? earlierSection(input.delta, delta) : '';
+  const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
   const { pack, skipped, rules } =
     delta || earlier
-      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files)
+      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, earlierFindings.section)
       : whole;
   return {
     base,
@@ -192,6 +210,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     lines: changedLines(input.repoDir, base, input.head),
     threads: answered.held,
     rejected: rejected.held,
+    earlier: earlierFindings.held,
     diffHash: diffHash(input.repoDir, base, input.head),
     reuseKey: key,
     delta,
@@ -205,7 +224,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads, rejected, diffHash, reuseKey, delta } = prepared;
+  const { base, pack, skipped, rules, lines, threads, rejected, earlier, diffHash, reuseKey, delta } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -216,12 +235,17 @@ export function finishReview<F extends Finding>(
   });
   const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   const fileAt = headFiles(input.repoDir, input.head, log);
+  // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
+  // or kept finding whose file did not change goes.
+  const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
+  for (const f of linked.dropped) log(`finding dropped, it continues a finding that a person set aside and its file did not change: ${f.path}: ${f.title}`);
+  const isVariant = (f: F) => followedBy(f, earlier) !== null;
   // REV-88. The findings of the last review on the files not read again, the settled findings
   // dropped, and the score kept without a new finding.
   let settledAgain: F[] = [];
   let scoreFloor: { model: number; kept: number } | null = null;
   if (input.delta) {
-    const merged = mergeDelta(answer, input.delta, delta, fileAt);
+    const merged = mergeDelta(answer, input.delta, delta, fileAt, isVariant);
     answer = merged.answer;
     settledAgain = merged.dropped;
     for (const f of settledAgain) log(`finding dropped, a person settled it: ${f.path}: ${f.title}`);
@@ -241,6 +265,18 @@ export function finishReview<F extends Finding>(
   // goes before the score: a rejected defect does not lower it.
   const rejectedAway = dropRejected(answer, rejected, (f) => anchor(f, lines));
   for (const f of rejectedAway) log(`finding dropped, a person rejected it and its file did not change: ${f.path}: ${f.title}`);
+  // REV-99. A whole review (no incremental plan) whose findings all continue earlier findings keeps
+  // at least the score of the last review at this level, when that head is in the history of this
+  // one: the defect was counted then. A new defect, or a more severe one, lowers it as before.
+  const last = input.earlier?.last ?? null;
+  if (!delta && last && earlier.length && answer.findings.every((f) => !isNewDefect(f, earlier)) && inHistory(input.repoDir, last.head, input.head)) {
+    const said = Number(answer.confidence_score) || 0;
+    if (said < last.score) {
+      answer = { ...answer, confidence_score: last.score };
+      scoreFloor = { model: said, kept: last.score };
+      log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
+    }
+  }
   const findings = answer.findings.map((f) => ({
     ...f,
     anchor: anchor(f, lines),
@@ -272,6 +308,9 @@ export function finishReview<F extends Finding>(
     delta,
     settledAgain,
     scoreFloor,
+    earlier,
+    followed: { byModel: linked.byModel, byNet: linked.byNet },
+    droppedAsSettled: linked.dropped,
   };
 }
 

@@ -6,11 +6,15 @@ import {
   MAX_JOB_RULES,
   MAX_REJECTED_FINDINGS,
   MAX_DELTA_FINDINGS,
+  MAX_EARLIER_FINDINGS,
   MAX_SETTLED,
+  parseEarlierFinding,
   parseReviewFinding,
   parseSettledFinding,
   REUSE_KEY,
+  type EarlierFinding,
   type JobDelta,
+  type JobEarlier,
   type JobKind,
   type JobReuse,
   type JobRule,
@@ -223,6 +227,12 @@ export interface RunnerStore {
    * the whole pull request.
    */
   jobDelta(jobId: string, reuse: JobReuse): Promise<JobDelta | null>
+  /**
+   * REV-99. Every finding of the pull request of a review job, whatever its status, the open ones
+   * first, then the most recently changed, MAX_EARLIER_FINDINGS at most; and the head and the score
+   * of the last review of the pull request at the level of the job, or null.
+   */
+  jobEarlier(jobId: string): Promise<JobEarlier>
   /**
    * Stores the result of an attempt. A finding of a review keeps its `rule_id` only when it names a
    * rule of the repository of the job or of its org, and then gets the title of that rule.
@@ -515,6 +525,33 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       if (valid.length > findings.length) log('warn', 'job.delta_findings_cut', { jobId, kept: findings.length, of: valid.length })
       if (dropped) log('warn', 'job.delta_findings_dropped', { jobId, dropped })
       return { score: previous.score, findings, settled: sent }
+    },
+
+    async jobEarlier(jobId) {
+      let rows = await sql<(Omit<EarlierFinding, 'reason'> & { reason: string | null })[]>`
+        select findings.key, findings.path, findings.line, findings.title, findings.severity, findings.category,
+          findings.status::text as status, findings.status_reason as reason, findings.last_seen_sha as commit
+        from jobs
+        join findings on findings.repo_id = jobs.repo_id and findings.pr_number = jobs.pr_number
+        where jobs.id = ${jobId}
+        order by findings.status in ('open', 'stale') desc, findings.updated_at desc, findings.id
+        limit ${MAX_EARLIER_FINDINGS}`
+      // A row that the protocol would refuse would fail the claim: it stays out, and the log says so.
+      let findings = rows
+        .map((r) => ({ ...r, title: r.title.slice(0, 1000), line: Math.max(0, r.line), reason: r.reason === null ? null : r.reason.slice(0, 500) }))
+        .filter((r) => parseEarlierFinding(r).ok)
+      if (findings.length < rows.length) log('warn', 'job.earlier_findings_dropped', { jobId, dropped: rows.length - findings.length })
+      let [last] = await sql<{ head: string; result: unknown }[]>`
+        select reviews.head_sha as head, reviews.result
+        from jobs
+        join reviews on reviews.repo_id = jobs.repo_id and reviews.pr_number = jobs.pr_number
+          and reviews.github_review_id is not null
+          and reviews.result->>'level' = jobs.level::text
+        where jobs.id = ${jobId}
+        order by reviews.published_at desc nulls last
+        limit 1`
+      let score = last ? Number(jsonOf<StoredReview>(last.result).score) : NaN
+      return { findings, last: last && Number.isInteger(score) && score >= 1 && score <= 5 ? { head: last.head, score } : null }
     },
 
     async recordSentRules(jobId, runnerId, attempt, rules) {

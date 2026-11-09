@@ -92,8 +92,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  *   aside (REV-95). The review reads their causes as data.
  * - `delta`: `reuse` can carry `delta` (REV-88), and the runner then reviews only the files that
  *   changed since that head, and sends `delta` with its review.
+ * - `earlier`: a review job can carry `earlier`, every finding of the pull request whatever its
+ *   status (REV-99). A finding of the result can then name the finding that it continues with
+ *   `follows`.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -290,15 +293,54 @@ export type JobDelta = {
   settled: { path: string; line: number; title: string; status: (typeof SETTLED_STATUSES)[number]; key: string; fingerprint: string }[];
 };
 
+/** REV-99. A review job holds at most this many earlier findings. */
+export const MAX_EARLIER_FINDINGS = 100;
+/** REV-99. The statuses of an earlier finding. */
+export const EARLIER_STATUSES = ['open', 'fixed', 'dismissed', 'wontfix', 'stale'] as const;
+/** The key of a finding (`findingKey` of packages/engine): 12 hexadecimal characters. */
+export const FINDING_KEY_PATTERN = /^[0-9a-f]{12}$/;
+
+/**
+ * REV-99. A finding that an earlier review of the pull request reported, whatever its status.
+ *
+ * - `key`: its key, which a finding of the result names in `follows`.
+ * - `commit`: the head of the last review that reported it, from which the engine tells whether its
+ *   file changed since.
+ * - `reason`: the cause that a person wrote when it is `dismissed` or `wontfix`, else null.
+ */
+export type EarlierFinding = {
+  key: string;
+  path: string;
+  line: number;
+  title: string;
+  severity: Severity;
+  category: Category;
+  status: (typeof EARLIER_STATUSES)[number];
+  reason: string | null;
+  commit: string;
+};
+
+/**
+ * REV-99, with the feature `earlier`. What the pull request already knows:
+ *
+ * - `findings`: its findings, the open ones first, then the newest.
+ * - `last`: the head and the score of the last review of the pull request at the level of the job,
+ *   or null. When that head is in the history of the head of the job, a review whose findings all
+ *   continue earlier findings keeps at least this score: a defect counts once, not once per wording.
+ */
+export type JobEarlier = { findings: EarlierFinding[]; last: { head: string; score: number } | null };
+
 /**
  * A review job has no `resolve` key: a runner of an earlier release reads it as before. `threads`:
  * with the feature `threads` only (REV-71), the open threads of the bot that someone answered, the
  * first MAX_RESOLVE_THREADS of them, cleaned as for a resolve job. `reuse`: with the feature `reuse`
  * only (REV-89); null when no review can be reused. Its presence tells the runner that the service
  * reads the keys of REV-89 in the result. `rejected`: with the feature `rejected` only (REV-95).
+ * `earlier`: with the feature `earlier` only (REV-99). Its presence tells the runner that the service
+ * reads `follows` in the result.
  */
 export type Job =
-  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null; rejected?: RejectedFinding[] })
+  | (JobBase & { kind: 'review'; threads?: ResolveThread[]; reuse?: JobReuse | null; rejected?: RejectedFinding[]; earlier?: JobEarlier })
   | (JobBase & { kind: 'resolve'; resolve: ResolveInput });
 
 const claimRequest = obj({
@@ -403,7 +445,25 @@ const finding = obj({
   suggestion_range: nullable(tuple2(line, line)),
   rule_id: optional(uuid),
   fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
+  follows: optional(str({ max: 12, pattern: FINDING_KEY_PATTERN })),
 });
+const earlierFinding = obj({
+  key: str({ max: 12, pattern: FINDING_KEY_PATTERN }),
+  path: str({ min: 1, max: 1000 }),
+  line,
+  title: str({ min: 1, max: 1000 }),
+  severity: oneOf(SEVERITIES),
+  category: oneOf(CATEGORIES),
+  status: oneOf(EARLIER_STATUSES),
+  reason: nullable(str({ max: 500 })),
+  commit: sha,
+});
+const jobEarlier = obj({
+  findings: arr(earlierFinding, { max: MAX_EARLIER_FINDINGS }),
+  last: nullable(obj({ head: sha, score: int({ min: 1, max: 5 }) })),
+});
+/** REV-99. The check of the runner, for the service: an earlier finding that fails it would make the runner refuse the job. */
+export const parseEarlierFinding = (value: unknown): Checked<EarlierFinding> => run(earlierFinding, value) as Checked<EarlierFinding>;
 const settledFinding = obj({
   path: str({ min: 1, max: 1000 }),
   line,
@@ -440,6 +500,7 @@ const job = tagged('kind', {
       ),
     ),
     rejected: optional(arr(rejectedFinding, { max: MAX_REJECTED_FINDINGS })),
+    earlier: optional(jobEarlier),
   }),
   resolve: obj({
     ...jobBase,
@@ -494,6 +555,11 @@ export type ReviewFinding = {
    * service then computes one without the code.
    */
   fingerprint?: string;
+  /**
+   * REV-99. The key of the earlier finding (`EarlierFinding.key`) that this finding continues: the
+   * same defect, reworded, or what a fix left of it. Only when the job carried `earlier`.
+   */
+  follows?: string;
 };
 
 /** The review of a job: what `reviewPullRequest` of packages/engine returns, without the pack. */

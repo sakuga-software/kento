@@ -17,6 +17,7 @@ import {
   type ProviderKind,
   type RegisterResponse,
   type ResolveInput,
+  type JobEarlier,
   type RejectedFinding,
   type ResolveThread,
 } from '@sakuga-review/protocol'
@@ -92,6 +93,8 @@ interface Prepared {
   reuse: JobReuse | null | undefined
   /** REV-95. The rejected findings of a review job, for a runner that reads them. */
   rejected: RejectedFinding[] | null
+  /** REV-99. The findings of the pull request of a review job, for a runner that reads them. */
+  earlier: JobEarlier | null
 }
 
 /** The provider of a job and its key, in the shape of the release of the runner. */
@@ -196,7 +199,16 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         log('warn', 'job.reuse_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }
     }
-    return { rules, installationToken, resolve, wantsRules, threads, reuse, rejected }
+    // REV-99. Every finding of the pull request. A failure costs the review this section only.
+    let earlier: JobEarlier | null = null
+    if (job.kind === 'review' && (body.features?.includes('earlier') ?? false)) {
+      try {
+        earlier = await deps.store.jobEarlier(job.id)
+      } catch (cause) {
+        log('warn', 'job.earlier_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
+      }
+    }
+    return { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier }
   }
 
   /**
@@ -256,7 +268,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
-    let { rules, installationToken, resolve, wantsRules, threads, reuse, rejected } = prepared
+    let { rules, installationToken, resolve, wantsRules, threads, reuse, rejected, earlier } = prepared
     let { provider, providers, keyFromService } = keys
     log('info', 'job.claimed', {
       jobId: job.id,
@@ -272,6 +284,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       ...(threads ? { answeredThreads: threads.length } : {}),
       ...(reuse ? { reuseOf: reuse.head, ...(reuse.delta ? { deltaFindings: reuse.delta.findings.length, settled: reuse.delta.settled.length } : {}) } : {}),
       ...(rejected ? { rejectedFindings: rejected.length } : {}),
+      ...(earlier ? { earlierFindings: earlier.findings.length } : {}),
     })
     // REV-12. The models of the config, to a runner that reads them, and only when the job
     // also carries their provider: `service`, or an entry of `providers`. Else the runner
@@ -312,7 +325,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
       200,
       resolve
         ? { ...message, kind: 'resolve', resolve }
-        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}), ...(rejected ? { rejected } : {}) },
+        : { ...message, kind: 'review', ...(threads ? { threads } : {}), ...(reuse !== undefined ? { reuse } : {}), ...(rejected ? { rejected } : {}), ...(earlier ? { earlier } : {}) },
     )
   }
 

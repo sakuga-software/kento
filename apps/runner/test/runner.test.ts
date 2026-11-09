@@ -5,8 +5,8 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { after, afterEach, before, beforeEach, test } from 'node:test';
-import type { Answer } from '@sakuga-review/engine';
-import { parseResultRequest, type Job, type ResultRequest } from '@sakuga-review/protocol';
+import { findingKey, type Answer } from '@sakuga-review/engine';
+import { parseJob, parseResultRequest, type Job, type ResultRequest } from '@sakuga-review/protocol';
 import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment, isTransientGitError } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -962,4 +962,27 @@ test('with a delta whose head is the base, the review reads only the change sinc
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse: { head: since, key: 'e'.repeat(64) } }), deps(earlier.api, stub));
   const old = earlier.results[0]!;
   assert.ok(old.outcome === 'done' && !('delta' in old.review));
+});
+
+// --- earlier findings (REV-99) -------------------------------------------------------------------
+
+test('a service that sends earlier findings gets `follows` on a finding that continues one, and an earlier service gets none (REV-99)', async () => {
+  const earlier = {
+    // The same finding, with the key of its path and title, fixed since.
+    findings: [{ key: findingKey(answer().findings[0]!), path: 'sum.ts', line: 2, title: 'Soustraction', severity: 'major' as const, category: 'bug' as const, status: 'fixed' as const, reason: null, commit: head }],
+    last: null,
+  };
+  const sent = job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, earlier });
+  assert.ok(parseJob(JSON.parse(JSON.stringify(sent))).ok, 'the job is the protocol');
+  const { api, results } = fakeApi();
+  assert.equal(await runJob(sent, deps(api, stubModel().fetch)), 'done');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.equal(result.review.findings[0]!.follows, findingKey(answer().findings[0]!), '« Soustraction » is the fixed finding again: it follows it');
+  assert.ok(logs.some((l) => l.includes('job.earlier_findings') && l.includes('"byNet":1')));
+
+  // A service of an earlier release sends no `earlier`, and refuses a key that it does not know.
+  const old = fakeApi();
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, stubModel().fetch));
+  assert.ok(old.results[0]!.outcome === 'done' && !('follows' in old.results[0]!.review.findings[0]!));
 });

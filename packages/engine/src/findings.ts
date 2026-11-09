@@ -28,6 +28,11 @@ export type Finding = {
   rule_id?: string | null;
   /** The title of that rule, that the service adds when it stores the review. */
   rule_title?: string;
+  /**
+   * REV-99. The earlier finding that this one continues. The model gives the reference of the pack
+   * (`E1`) or null; the engine replaces it with the key of that finding, or removes it (earlier.ts).
+   */
+  follows?: string | null;
 };
 export type Answer = {
   confidence_score: number;
@@ -113,17 +118,17 @@ const FINDING_SCHEMA = {
 /**
  * The answer schema. With the references of the rules of the pack (REV-19), each finding also gives
  * `rule_id`: one of these references, or null. With the references of the answered threads of the
- * pack (REV-71), the answer also gives `threads`: a verdict on each. Without either, the schema stays
- * as before.
+ * pack (REV-71), the answer also gives `threads`: a verdict on each. With the references of the
+ * earlier findings of the pack (REV-99), each finding also gives `follows`: one of these references,
+ * or null. Without any, the schema stays as before.
  */
-export function answerSchema(ruleRefs: readonly string[] = [], threadRefs: readonly string[] = []) {
-  if (!ruleRefs.length && !threadRefs.length) return ANSWER_SCHEMA;
-  const finding = ruleRefs.length
-    ? {
-        ...FINDING_SCHEMA,
-        properties: { ...FINDING_SCHEMA.properties, rule_id: { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] } },
-        required: [...FINDING_SCHEMA.required, 'rule_id'],
-      }
+export function answerSchema(ruleRefs: readonly string[] = [], threadRefs: readonly string[] = [], earlierRefs: readonly string[] = []) {
+  if (!ruleRefs.length && !threadRefs.length && !earlierRefs.length) return ANSWER_SCHEMA;
+  const extra: Record<string, unknown> = {};
+  if (ruleRefs.length) extra.rule_id = { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] };
+  if (earlierRefs.length) extra.follows = { anyOf: [{ type: 'string', enum: [...earlierRefs] }, { type: 'null' }] };
+  const finding = Object.keys(extra).length
+    ? { ...FINDING_SCHEMA, properties: { ...FINDING_SCHEMA.properties, ...extra }, required: [...FINDING_SCHEMA.required, ...Object.keys(extra)] }
     : FINDING_SCHEMA;
   const properties: Record<string, unknown> = { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } };
   if (!threadRefs.length) return { ...ANSWER_SCHEMA, properties };

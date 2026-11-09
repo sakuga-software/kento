@@ -276,6 +276,13 @@ export function buildPack(
   answered = '',
   /** REV-88. The only files that the pack reads, of those that changed: an incremental review. */
   only?: readonly string[],
+  /**
+   * REV-99. A section after `answered` that the model reads but `body` leaves out: the earlier
+   * findings, which every review changes. In `body`, they would give each head a new reuse key. It
+   * stays out of the budget of the diff too, so that it never changes which hunks the body holds:
+   * the pack can then pass MAX_PACK_BYTES by its size, which its own cap bounds (MAX_EARLIER_BYTES).
+   */
+  unkeyed = '',
 ): { pack: string; skipped: string[]; rules: PackedRule[]; body: string } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
@@ -329,6 +336,7 @@ export function buildPack(
   parts.push(docs);
   parts.push(rulesText);
   parts.push(answered);
+  const unkeyedAt = parts.push(unkeyed) - 1;
   parts.push(
     '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
       'A test file shows three lines of context.\n\n```diff\n',
@@ -355,5 +363,5 @@ export function buildPack(
   }
   // REV-89. `body`: the pack without its heads and its commits, which a merge of the base branch
   // changes. The reuse key reads it (reuse.ts).
-  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed, body: parts.slice(1).join('') };
+  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed, body: parts.filter((_, i) => i > 0 && i !== unkeyedAt).join('') };
 }

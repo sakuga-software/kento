@@ -44,3 +44,8 @@ export async function* reviewThreadPages<TNode>(github: GitHub, target: PullTarg
 export async function resolveReviewThread(github: GitHub, threadId: string): Promise<void> {
   await github.graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: threadId })
 }
+
+/** REV-99. Opens a resolved review thread again. GitHub refuses it to an App that cannot write the contents. */
+export async function unresolveReviewThread(github: GitHub, threadId: string): Promise<void> {
+  await github.graphql('mutation($id: ID!) { unresolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: threadId })
+}

@@ -75,7 +75,7 @@ const SEVERITY_RANK = { minor: 0, major: 1, critical: 2 } as const;
 const COMMON = new Set(['dans', 'avec', 'sans', 'pour', 'mais', 'plus', 'tout', 'sont', 'with', 'from', 'that', 'this', 'when', 'into', 'without']);
 
 /** The words of a title that name its subject: 4 letters or more, without accents and case. */
-function wordsOf(title: string): Set<string> {
+export function wordsOf(title: string): Set<string> {
   const flat = title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   return new Set((flat.match(/[a-z0-9_]{4,}/g) ?? []).filter((w) => !COMMON.has(w)));
 }

@@ -93,7 +93,7 @@ export async function reviewInPasses(
 ): Promise<PassesResult> {
   const passes = options.passes ?? BASE_PASSES;
   const prepared = prepareReview(input, options.passConfig);
-  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref));
+  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref), prepared.earlier.map((e) => e.ref));
   // REV-68. One budget for the review: the passes share it.
   const tools = reviewTools(input, options.passConfig);
   const settled = await Promise.allSettled(passes.map((pass) => askModel(input, options.passConfig, prepared.pack, schema, pass.focus, tools)));

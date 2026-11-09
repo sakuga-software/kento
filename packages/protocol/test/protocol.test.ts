@@ -346,3 +346,19 @@ test('a review job carries the rejected findings with the feature rejected (REV-
   assert.equal(parseJob({ ...job(), rejected: [withoutSeverity] }).ok, true, 'a service of REV-95 sends no severity');
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], severity: 'huge' }] }).ok, false);
 });
+
+test('a review job carries the earlier findings with the feature earlier, and a finding may follow one by its key (REV-99)', () => {
+  const findings = [{ key: 'abcdef012345', path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', severity: 'major', category: 'bug', status: 'fixed', reason: null, commit: SHA }];
+  const earlier = { findings, last: { head: SHA, score: 4 } };
+  assert.deepEqual(parseJob({ ...job(), earlier }), { ok: true, value: { ...job(), earlier } });
+  for (const status of ['open', 'dismissed', 'wontfix', 'stale']) assert.equal(parseJob({ ...job(), earlier: { findings: [{ ...findings[0], status }], last: null } }).ok, true);
+  assert.equal(parseJob({ ...job(), earlier: { findings: [{ ...findings[0], key: 'ABCDEF012345' }], last: null } }).ok, false);
+  assert.equal(parseJob({ ...job(), earlier: { findings: [{ ...findings[0], status: 'gone' }], last: null } }).ok, false);
+  assert.equal(parseJob({ ...job(), earlier: { findings, last: { head: SHA, score: 6 } } }).ok, false);
+  assert.equal(parseJob({ ...job(), earlier: { findings: Array.from({ length: 101 }, () => findings[0]), last: null } }).ok, false);
+  assert.ok(FEATURES.includes('earlier'));
+  const f = review().findings[0]!;
+  const done = (follows: string) => ({ outcome: 'done', attempt: 1, review: { ...review(), findings: [{ ...f, follows }] } });
+  assert.equal(parseResultRequest(done('abcdef012345')).ok, true);
+  assert.equal(parseResultRequest(done('E1')).ok, false);
+});

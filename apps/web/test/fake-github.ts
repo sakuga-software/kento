@@ -159,6 +159,14 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
 
     if (path === '/graphql') {
       if (state.revokedTokens.has(token)) return json(401, { message: 'Bad credentials' })
+      if (body.query.includes('unresolveReviewThread')) {
+        let minted = state.tokens.find((t) => t.token === token)
+        if (!state.canResolve || (state.resolveNeedsWrite && minted?.permissions.contents !== 'write')) {
+          return json(200, { errors: [{ message: 'Resource not accessible by integration' }] })
+        }
+        state.resolved.delete(Number(String(body.variables.id).replace('PRRT_', '')))
+        return json(200, { data: { unresolveReviewThread: { thread: { id: body.variables.id } } } })
+      }
       if (body.query.includes('resolveReviewThread')) {
         let minted = state.tokens.find((t) => t.token === token)
         if (!state.canResolve || (state.resolveNeedsWrite && minted?.permissions.contents !== 'write')) {

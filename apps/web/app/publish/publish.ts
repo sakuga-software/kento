@@ -22,8 +22,10 @@ import {
   FINDING_KEY,
   inlineBody,
   MARKER_GONE,
+  MARKER_VARIANT,
   REVIEW_COUNT,
   reviewBody,
+  variantReplyBody,
   withBlock,
   type Link,
   type Poster,
@@ -45,7 +47,7 @@ import { assignmentLine, unreadPathsLine, type JobAssignment } from '../assignme
 import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
-import { resolveReviewThread, reviewThreadPages } from '../github/graphql.ts'
+import { resolveReviewThread, reviewThreadPages, unresolveReviewThread } from '../github/graphql.ts'
 import { GitHubError, type GitHub } from './github.ts'
 
 /** The name of the check run, as the job of review.yml names it. */
@@ -82,6 +84,8 @@ export interface PublishOutcome {
   fixed: number
   /** REV-16. The findings found again that a person dismissed or kept: the review leaves them out. */
   suppressed: number
+  /** REV-99. The replies in the thread of an earlier finding, instead of a new thread. */
+  followed: number
 }
 
 type InlineComment = {
@@ -190,6 +194,22 @@ export async function publishReview(
     }
   }
   let { matches, unmatched } = matchFindings(review.findings, stored, threads)
+  let changedSince = filesChangedSince(github, repo, head)
+  // REV-99. A follower of a finding that a person dismissed or kept comes back only when the file of
+  // that finding changed since its last review, as the runner checked: GitHub says it again, so that
+  // a `follows` alone never opens a decision of a person again. A failure keeps the decision.
+  for (let m of matches) {
+    let s = m.stored
+    if (!m.followed || !s || (s.status !== 'dismissed' && s.status !== 'wontfix')) continue
+    let changed: boolean | null = null
+    try {
+      changed = await changedSince(s.lastSeenSha || undefined, s.path)
+    } catch (error) {
+      warn('publish.follow_check_failed', { finding: s.id, error: String(error) })
+    }
+    if (changed === true) continue
+    Object.assign(m, { suppressed: true, reopened: false, carrier: null, followIn: null })
+  }
   // A finding that a person dismissed or kept gets no comment, and the review leaves it out.
   let shown = matches.filter((m) => !m.suppressed)
   let matchOf = new Map<Finding, Match>(shown.map((m) => [m.finding as Finding, m]))
@@ -220,7 +240,6 @@ export async function publishReview(
   // A finding whose commit a force-push removed stays open: nothing tells what changed since.
   // The threads to close are found before the review, for its note on a force-push; they are closed
   // only once the review is on GitHub, so that a review that fails to post closes nothing.
-  let changedSince = filesChangedSince(github, repo, head)
   let fixed: StoredFinding[] = []
   let toClose: BotThread[] = []
   let gone = 0
@@ -327,6 +346,30 @@ export async function publishReview(
     })
   }
 
+  // REV-99. A finding that follows an earlier one is answered in the thread of that one, opened again
+  // when it was resolved. A thread that already holds the reply of this head is not answered twice.
+  let followed = 0
+  for (let m of shown) {
+    let thread = m.followIn
+    if (!thread) continue
+    let key = findingKey(m.finding)
+    if (thread.variants?.includes(`${head} ${key}`)) continue
+    await step('follow', async () => {
+      if (thread.resolved) {
+        try {
+          await unresolveReviewThread(github, thread.id)
+        } catch (error) {
+          // The reply still says that the defect is back: a person can open the thread.
+          warn('publish.thread_not_unresolved', { thread: thread.id, error: String(error) })
+        }
+      }
+      await github.rest('POST', `${repo}/pulls/${pr}/comments/${thread.commentId}/replies`, {
+        body: variantReplyBody(m.finding, head, m.stored?.status ?? 'open'),
+      })
+      followed++
+    })
+  }
+
   // A COMMENT does not lift an earlier REQUEST_CHANGES, so the review of the previous head would keep
   // the pull request blocked after its findings are fixed. The dismissal clears it.
   await step('dismiss', async () => {
@@ -395,6 +438,7 @@ export async function publishReview(
     score: value,
     fixed: fixed.length,
     suppressed: matches.length - shown.length,
+    followed,
   }
 }
 
@@ -477,6 +521,11 @@ export async function publishUnchanged(
   let stored = [...known, ...adoptThreads(known, threads)]
   // The same matching as a review: a finding that a person dismissed or kept stays out of the block.
   let { matches } = matchFindings(review.findings, stored, threads)
+  // REV-99. The publication of the source opened again a follower that could come back: one still
+  // dismissed or kept here was set aside since, and stays out.
+  for (let m of matches) {
+    if (m.followed && (m.stored?.status === 'dismissed' || m.stored?.status === 'wontfix')) Object.assign(m, { suppressed: true, carrier: null, followIn: null })
+  }
   let shown = matches.filter((m) => !m.suppressed)
   let answer: Answer = { ...answerOf(review), findings: shown.map((m) => m.finding) }
   let ordered = [...answer.findings].sort(
@@ -599,6 +648,13 @@ export function ledgerEntries(
   for (let m of matches) {
     let f = m.finding
     let s = m.stored
+    if (m.followed && m.suppressed && s && s.id !== null) {
+      // REV-99. A follower that a decision of a person keeps out: the row keeps the words that the
+      // person set aside, and only the head of its last review moves.
+      let { id, ...values } = s
+      entries.push({ id, values: { ...values, lastSeenSha: head }, events: byReaction(s) })
+      continue
+    }
     let key = findingKey(f)
     let comment = newThreads.get(f) ?? null
     let ruleId = (f as { rule_id?: string }).rule_id ?? s?.ruleId ?? null
@@ -749,6 +805,10 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
       if (!first || !logins.has(first.author?.login ?? '')) continue
       let key = FINDING_KEY.exec(first.body)
       if (!key) continue
+      let later = node.comments.nodes.slice(1)
+      // The last word of the bot in the thread: its reply that the finding is gone, or (REV-99) its
+      // reply that a later review found the defect again, which makes the thread live again.
+      let lastWord = later.filter((c) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? '')).at(-1)
       threads.push({
         id: node.id,
         resolved: node.isResolved,
@@ -758,8 +818,13 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
         commit: first.commit?.oid,
         commentId: first.databaseId,
         body: first.body,
-        // A later comment of the bot in the thread is its reply that the finding is gone.
-        answered: node.comments.nodes.slice(1).some((c) => c.body.includes(MARKER_GONE) || logins.has(c.author?.login ?? '')),
+        // A later comment of the bot in the thread is its reply that the finding is gone, unless its
+        // last one says that the defect is back.
+        answered: lastWord !== undefined && !MARKER_VARIANT.test(lastWord.body),
+        variants: later.flatMap((c) => {
+          let mark = MARKER_VARIANT.exec(c.body)
+          return mark ? [`${mark[1]} ${mark[2]}`] : []
+        }),
       })
     }
   }

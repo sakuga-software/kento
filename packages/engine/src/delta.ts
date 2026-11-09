@@ -71,9 +71,10 @@ const where = (f: { path: string; line: number }) => `\`${f.path}:${f.line}\``;
 /**
  * The section of the pack that says what the last review found: its open findings (those on a file
  * read again are to be reported again only if the change leaves them), and the settled findings,
- * never to be raised again. Empty when there is nothing to say.
+ * never to be raised again, except those whose key is in `listed`: the section of the earlier findings
+ * lists them already (REV-99). Empty when there is nothing to say.
  */
-export function earlierSection(delta: Delta, plan: DeltaPlan | null): string {
+export function earlierSection(delta: Delta, plan: DeltaPlan | null, listed: ReadonlySet<string> = new Set()): string {
   const out: string[] = [];
   if (plan) {
     const reread = new Set(plan.files);
@@ -91,11 +92,14 @@ export function earlierSection(delta: Delta, plan: DeltaPlan | null): string {
       );
     }
   }
-  if (delta.settled.length) {
+  // REV-99. The section of the earlier findings lists some of the settled ones already, with their
+  // status: only the others are listed here.
+  const settled = delta.settled.filter((f) => !listed.has(f.key));
+  if (settled.length) {
     out.push(
       `${out.length ? '\n' : '## Earlier review\n\n'}Findings that are settled: a person dismissed them or said that they stay, or a later commit fixed them. ` +
         'Do not report them again, unless this change brings the defect back:\n\n',
-      ...delta.settled.map((f) => `- ${where(f)} (${f.status}) ${f.title.replace(/\s+/g, ' ')}\n`),
+      ...settled.map((f) => `- ${where(f)} (${f.status}) ${f.title.replace(/\s+/g, ' ')}\n`),
     );
   }
   return out.length ? `${out.join('')}\n` : '';
@@ -112,6 +116,8 @@ export function mergeDelta<F extends Finding>(
   delta: Delta,
   plan: DeltaPlan | null,
   fileAt: (path: string) => string[] | null,
+  /** REV-99. A finding that continues an earlier finding, no more severe: not a new finding. */
+  isVariant: (f: F) => boolean = () => false,
 ): { answer: Answer & { findings: F[] }; newFindings: number; dropped: F[]; floored: { model: number; kept: number } | null } {
   const print = (f: Finding) => fingerprint(f, fileAt(f.path));
   const refused = delta.settled.filter((s) => s.status !== 'fixed');
@@ -127,7 +133,7 @@ export function mergeDelta<F extends Finding>(
   const rank = (f: Finding) => SEVERITIES.indexOf(f.severity);
   const known = (f: Finding) =>
     delta.findings.some((c) => (findingKey(c) === findingKey(f) || (c.fingerprint ?? print(c)) === print(f)) && rank(f) >= rank(c));
-  const newFindings = findings.filter((f) => !known(f)).length;
+  const newFindings = findings.filter((f) => !known(f) && !isVariant(f)).length;
   // The findings of the last review on a file that did not change: the model did not read them again.
   // A finding settled since (fixed, dismissed or kept) does not come back (withoutSettled).
   const kept = withoutSettled(delta.findings, delta.settled, (c) => c.fingerprint ?? print(c))

@@ -809,6 +809,48 @@ describe('runner API', () => {
       assert.ok(heavy.kind === 'review' && heavy.reuse && !('delta' in heavy.reuse))
     })
 
+    it('sends every finding of the pull request and the last review of the level to a runner that reads them (REV-99)', async () => {
+      // The findings of the earlier tests of this file stay in the database: this test starts without them.
+      await database.sql`delete from findings where repo_id = ${repoId}`
+      await published()
+      let insert = (key: string, title: string, status: string, at: string, reason: string | null = null) => database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+          first_seen_sha, last_seen_sha, updated_at)
+        values (${repoId}, 28, '1111111111111111', ${key}, 'app/lib/billing.server.ts', 372, ${title}, 'major', 'bug', 90, ${status}, ${reason},
+          ${PREVIOUS}, ${PREVIOUS}, now() - ${at}::interval)`
+      await insert('c7f3ec000000', 'Ligne écrite avant Stripe puis rollback sur erreur Stripe', 'fixed', '1 minute')
+      await insert('4e989b000000', "Compte payant : l'erreur Stripe/config est masquée", 'dismissed', '2 minutes', 'Faux : le cas not-billed retombe sur la base.')
+      await insert('dbf9b7000000', '`start_date` de la phase courante', 'open', '1 hour')
+      // A row that the runner would refuse (a key of another form) stays out.
+      await insert('not-a-key', 'ancien', 'open', '2 hours')
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
+      let checked = parseJob(raw)
+      assert.ok(checked.ok, `the runner accepts the job: ${!checked.ok && checked.errors.join('; ')}`)
+      let job: Job = raw
+      assert.ok(job.kind === 'review' && job.earlier)
+      let earlier = job.kind === 'review' ? job.earlier! : null
+      assert.deepEqual(
+        earlier!.findings.map((f) => [f.key, f.status]),
+        [['dbf9b7000000', 'open'], ['c7f3ec000000', 'fixed'], ['4e989b000000', 'dismissed']],
+        'the open ones first, then the newest',
+      )
+      assert.equal(earlier!.findings[2]!.reason, 'Faux : le cas not-billed retombe sur la base.')
+      assert.equal(earlier!.findings[0]!.commit, PREVIOUS)
+      assert.deepEqual(earlier!.last, { head: PREVIOUS, score: 2 }, 'the last review of the level of the job')
+
+      // A runner of an earlier release gets no key that it does not know.
+      await queueJob()
+      let old: Job = await (await claim(runner.token, { hasProviderKey: true })).json()
+      assert.ok(!('earlier' in old))
+      // A job of another level gets the findings, and no last review.
+      await database.sql`
+        insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'heavy', 28, ${HEAD}, 'main')`
+      let heavy: Job = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
+      assert.ok(heavy.kind === 'review' && heavy.earlier?.findings.length === 3 && heavy.earlier.last === null)
+    })
+
     it('queues the job again when the review to publish again is not there, and fails it at the last attempt', async () => {
       await published()
       let runner = await register()

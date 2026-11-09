@@ -281,6 +281,8 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       delta: reuse?.delta ? { since: reuse.head, ...reuse.delta } : null,
       // REV-95. The findings that a person set aside, with their cause, from the service.
       rejected: job.kind === 'review' ? (job.rejected ?? []) : [],
+      // REV-99. Every finding of the pull request, and the last review at this level, from the service.
+      earlier: job.earlier ?? null,
       fetch,
       log: (message) => log('warn', 'job.model_attempt_failed', { jobId: job.id, error: message }),
     });
@@ -298,7 +300,10 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
     // REV-88. The floor lifted the score of the model: a line to check it against the reviews.
     if (result.scoreFloor) log('info', 'job.score_floored', { jobId: job.id, model: result.scoreFloor.model, kept: result.scoreFloor.kept });
     for (const f of result.droppedAsRejected) log('info', 'job.finding_dropped_as_rejected', { jobId: job.id, path: f.path, title: f.title });
-    const sent = payload(result, job.providers !== undefined, readsReuse);
+    // REV-99. The findings linked to an earlier finding, and those that continued a settled one.
+    if (job.earlier) log('info', 'job.earlier_findings', { jobId: job.id, held: result.earlier.length, byModel: result.followed.byModel, byNet: result.followed.byNet });
+    for (const f of result.droppedAsSettled) log('info', 'job.finding_dropped_as_settled', { jobId: job.id, path: f.path, title: f.title });
+    const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined);
     // A service that sends `delta` reads it in the result.
     return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;
   });
@@ -395,8 +400,9 @@ function costSourceOf(source: CostSource | undefined, cost: number | undefined):
  * The review as the protocol sends it: the result of the engine without the pack and the lines.
  * `withCostSource`: the service reads `costSource` (it sent `providers` with the job).
  * `withReuse`: the service reads `diffHash`, `reuseKey` and `cachedTokens` (it sent `reuse`, REV-89).
+ * `withFollows`: the service reads `follows` (it sent `earlier`, REV-99).
  */
-export function payload(result: ReviewResult, withCostSource = false, withReuse = false): ReviewPayload {
+export function payload(result: ReviewResult, withCostSource = false, withReuse = false, withFollows = false): ReviewPayload {
   const { answer, usage } = result;
   return {
     level: result.level,
@@ -431,6 +437,8 @@ export function payload(result: ReviewResult, withCostSource = false, withReuse 
       fingerprint: f.fingerprint,
       // A finding without a rule sends no key: a service of an earlier release refuses a key it does not know.
       ...(f.rule_id ? { rule_id: f.rule_id } : {}),
+      // REV-99. Only to a service that sent `earlier`: an earlier release refuses a key it does not know.
+      ...(withFollows && f.follows ? { follows: f.follows } : {}),
     })),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),

@@ -7,6 +7,8 @@ import { levelCost } from './levels.ts';
 export const MARKER_SUMMARY = '<!-- sakuga-review:summary -->';
 export const FINDING_KEY = /<!-- sakuga-review:finding ([0-9a-f]{12}) -->/;
 export const MARKER_GONE = '<!-- sakuga-review:gone -->';
+/** REV-99. A reply of Kentō in the thread of an earlier finding: the head, and the key of the finding that follows it. */
+export const MARKER_VARIANT = /<!-- kento:variant ([0-9a-f]{40}(?:[0-9a-f]{24})?) ([0-9a-f]{12}) -->/;
 export const BLOCK_START = '<!-- sakuga-review:start -->';
 export const BLOCK_END = '<!-- sakuga-review:end -->';
 export const REVIEW_COUNT = /<!-- sakuga-review:count (\d+) -->/;
@@ -39,6 +41,31 @@ export function inlineBody(finding: Finding, withSuggestion: boolean): string {
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');
+}
+
+/**
+ * REV-99. The reply of Kentō in the thread of an earlier finding, when a review finds that defect
+ * again: in other words, or what a fix left of it. `was`: the status of the earlier finding.
+ */
+export function variantReplyBody(finding: Finding, head: string, was: 'open' | 'fixed' | 'dismissed' | 'wontfix' | 'stale'): string {
+  const at = `\`${head.slice(0, 9)}\``;
+  const lead =
+    was === 'fixed'
+      ? `Ce constat revient au commit ${at}. Le correctif ne l'a pas réglé en entier.`
+      : was === 'dismissed' || was === 'wontfix'
+        ? `Le fichier a changé depuis la mise à l'écart de ce constat, et la review du commit ${at} le trouve encore.`
+        : `La review du commit ${at} trouve encore ce constat.`;
+  return [
+    lead,
+    '',
+    `${badges(finding)} **${finding.title}** \`${shortId(finding)}\``,
+    '',
+    finding.scenario,
+    '',
+    `**Correction :** ${finding.fix}`,
+    '',
+    `<!-- kento:variant ${head} ${findingKey(finding)} -->`,
+  ].join('\n');
 }
 
 const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' };

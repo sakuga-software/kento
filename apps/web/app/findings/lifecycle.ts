@@ -3,7 +3,9 @@
 // A finding of the review is the same finding as a stored one when, in this order:
 // 1. it has the same fingerprint (the path, the rule or the title, and the code around its line);
 // 2. it has the same key (the path and the title), when its code changed but its title did not;
-// 3. an open thread of the bot sits a few lines away on the same file: two models word one defect
+// 3. REV-99. it names the stored finding in `follows`: the runner linked it to an earlier finding
+//    (the model said so, or it sits near it on its file with a word of its title);
+// 4. an open thread of the bot sits a few lines away on the same file: two models word one defect
 //    differently.
 //
 // Then:
@@ -11,6 +13,10 @@
 // - a `dismissed` or `wontfix` finding found again gets no comment, and the review leaves it out;
 // - a `fixed` or `stale` finding found again is `open` again (`reopened`), on its open thread when
 //   it still has one;
+// - REV-99. a finding that follows a stored one goes in the thread of that one, whatever its state:
+//   Kentō answers in it (publish.ts) and opens no new thread. A `fixed` one is `open` again. A
+//   `dismissed` or `wontfix` one is `open` again too: the runner keeps such a finding only when its
+//   file changed since, or when it is more severe;
 // - an open or stale finding not found again is `fixed` when its file changed since the review that last
 //   found it (publish.ts asks GitHub).
 //
@@ -33,6 +39,8 @@ export type BotThread = {
   commentId: number
   /** The bot already answered in the thread that its finding is gone. */
   answered: boolean
+  /** REV-99. The markers of the replies of the bot to a finding that follows this one (`kento:variant`). */
+  variants?: string[]
   /** The first comment of the thread, for a thread that has no finding in the database yet. */
   body: string
 }
@@ -77,6 +85,14 @@ export type Match = {
   suppressed: boolean
   /** It was `fixed` or `stale`: it is `open` again. */
   reopened: boolean
+  /**
+   * REV-99. The finding names the stored one in `follows`: the thread of the stored one, open,
+   * resolved or answered as gone, where Kentō answers instead of opening a new thread. Null when the
+   * finding is not a follower, or when the stored one has no thread.
+   */
+  followIn?: BotThread | null
+  /** REV-99. The finding names the stored one in `follows`. */
+  followed?: boolean
 }
 
 /** An open thread of the bot a few lines away on the same file already carries a finding. */
@@ -153,6 +169,13 @@ export function matchFindings(
   }
   pass((f, s) => s.fingerprint !== '' && s.fingerprint === fingerprintOf(f))
   pass((f, s) => s.key === findingKey(f))
+  // REV-99. The runner linked the finding to this earlier one.
+  let followers = new Set<ReviewFinding>()
+  pass((f, s) => {
+    if (!f.follows || s.key !== f.follows) return false
+    followers.add(f)
+    return true
+  })
   pass((f, s) => {
     let thread = s.status === 'open' || s.status === 'stale' ? liveThread(s, threads) : null
     let line = f.anchor
@@ -161,6 +184,11 @@ export function matchFindings(
 
   let matches = findings.map((finding): Match => {
     let s = pairs.get(finding) ?? null
+    if (s && followers.has(finding)) {
+      // REV-99. A follower goes in the thread of the stored finding, whatever its state.
+      let thread = s.githubCommentId === null ? null : (threads.find((t) => t.commentId === s.githubCommentId) ?? null)
+      return { finding, stored: s, carrier: thread, suppressed: false, reopened: s.status !== 'open', followIn: thread, followed: true }
+    }
     let suppressed = s !== null && (s.status === 'dismissed' || s.status === 'wontfix')
     return {
       finding,
