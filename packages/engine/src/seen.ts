@@ -28,18 +28,20 @@ export type SeenCode = { since: string; changed: Map<string, Set<number>>; exist
 export function seenCode(repo: string, since: string | null | undefined, head: string): SeenCode | null {
   if (!since || !inHistory(repo, since, head)) return null;
   const changed = new Map<string, Set<number>>();
-  let path: string | null = null;
-  for (const row of git(repo, 'diff', '-U0', '--no-renames', `${since}..${head}`).split('\n')) {
-    if (row.startsWith('+++ ')) {
-      path = row.startsWith('+++ b/') ? row.slice(6) : null;
-      if (path && !changed.has(path)) changed.set(path, new Set());
-    } else if (row.startsWith('@@') && path) {
+  // The paths come from `-z`, one diff per path: git quotes a path that is not ASCII in the header of
+  // a patch (`+++ "b/caf\303\251.ts"`), and a parser of the headers would miss that file.
+  const paths = git(repo, 'diff', '--name-only', '-z', '--no-renames', `${since}..${head}`).split('\0').filter(Boolean);
+  for (const path of paths) {
+    const lines = new Set<number>();
+    changed.set(path, lines);
+    for (const row of git(repo, '--literal-pathspecs', 'diff', '-U0', '--no-renames', `${since}..${head}`, '--', path).split('\n')) {
+      if (!row.startsWith('@@')) continue;
       const match = /\+(\d+)(?:,(\d+))?/.exec(row)!;
       const start = Number(match[1]);
       const count = match[2] === undefined ? 1 : Number(match[2]);
       // A hunk that only removes lines sits between `start` and the next line.
-      if (count === 0) changed.get(path)!.add(start).add(start + 1);
-      for (let n = start; n < start + count; n++) changed.get(path)!.add(n);
+      if (count === 0) lines.add(start).add(start + 1);
+      for (let n = start; n < start + count; n++) lines.add(n);
     }
   }
   const atSince = new Set(git(repo, 'ls-tree', '-r', '-z', '--name-only', since).split('\0').filter(Boolean));
