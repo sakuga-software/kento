@@ -36,9 +36,10 @@ jobs:
       (github.event.pull_request.user.type != 'Bot' || contains(format(',{0},', inputs.trusted_bots), format(',{0},', github.event.pull_request.user.login)))
     runs-on: [self-hosted, sakuga-linux]
     timeout-minutes: 15
-    # A new push replaces the review of the previous one.
+    # A new push replaces the review of the previous one. REV-87: the group is the one of the pushes
+    # only. A command has its own group, so that a push never cancels it.
     concurrency:
-      group: sakuga-review-${{ github.repository }}-${{ github.event.pull_request.number }}
+      group: sakuga-review-push-${{ github.repository }}-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
       - name: Sakuga Review token
@@ -103,10 +104,13 @@ jobs:
     runs-on: [self-hosted, sakuga-linux]
     # A heavy review can think for 12 minutes.
     timeout-minutes: 20
-    # One run at a time on a pull request. A push still cancels a command in progress: the review of
-    # the push replaces it.
+    # One command at a time on a pull request. GitHub keeps one pending run per group: a third command
+    # that comes while one runs and one waits replaces the waiting one. REV-87: a push no longer
+    # cancels a command, which a heavy review can take 20 minutes to answer. The two can run at once:
+    # a command whose head a push replaced posts its review alone, and leaves the block of the
+    # description, the score label and the threads to the review of the push (review/sakuga-review.ts).
     concurrency:
-      group: sakuga-review-${{ github.repository }}-${{ github.event.issue.number }}
+      group: sakuga-review-command-${{ github.repository }}-${{ github.event.issue.number }}
       cancel-in-progress: false
     steps:
       - name: Sakuga Review token

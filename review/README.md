@@ -26,7 +26,13 @@ space:
       trusted_bots: sakuga-agent[bot],other-agent[bot]
 ```
 
-A new push cancels the review of the previous one.
+A new push cancels the review of the previous one. A push never cancels a command: the commands of
+a pull request run one at a time, in their own concurrency group (GitHub keeps one waiting run per
+group: a third command replaces the one that waits). When a push arrives while a command reviews,
+the command posts its review on the head it read, with a note and its findings, as a comment that
+neither approves nor asks for changes; the review of the push keeps the block of the description,
+the score label and the threads. A `resolve` whose head a push replaced still answers the threads,
+and resolves none.
 
 ## Commands
 

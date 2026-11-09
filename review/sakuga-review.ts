@@ -52,7 +52,8 @@ import {
   type Usage,
 } from '../packages/engine/src/index.ts';
 
-const GITHUB_API = 'https://api.github.com';
+// GitHub Actions sets GITHUB_API_URL; a test points it at a fake.
+const GITHUB_API = process.env.GITHUB_API_URL ?? 'https://api.github.com';
 
 const BOT_LOGIN = process.env.REVIEW_BOT_LOGIN ?? 'kento-review[bot]';
 
@@ -188,8 +189,53 @@ function goneNote(gone: number, base: string): string {
   );
 }
 
+/**
+ * REV-87. The head of the pull request now, when it is no longer the head that this run reviewed. A
+ * command runs in its own concurrency group: a push no longer cancels it, so its review can end after
+ * a newer push. The review of that push then owns the shared state of the pull request.
+ */
+async function newerHead(owner: string, name: string, pr: number, head: string): Promise<string | null> {
+  const now: string | undefined = (await github('GET', `/repos/${owner}/${name}/pulls/${pr}`))?.head?.sha;
+  return now && now !== head ? now : null;
+}
+
+/**
+ * The findings of a review whose head a push replaced, for its own body: the block of the description
+ * stays the one of the newer head. The block without its markers, so that nothing reads it as the
+ * block of the pull request.
+ */
+function staleFindings(args: Args, answer: Answer, ordered: Finding[], skipped: string[], usage: Usage, lines: ChangedLines): string {
+  const [owner, name] = args.repository.split('/');
+  const block = descriptionBlock(answer, ordered.map((finding) => ({ finding, url: null })), skipped, 0, usage, lines, {
+    count: 0,
+    head: args.head,
+    subject: '',
+    commitUrl: `https://github.com/${owner}/${name}/commit/${args.head}`,
+    level: args.level,
+  });
+  const body = block
+    .split('\n')
+    .filter((line) => !/^<!-- sakuga-review:/.test(line) && line !== '---' && !line.startsWith('<h2>') && !line.startsWith('<sub>Reviews ('))
+    .join('\n')
+    .trim();
+  return `\n\n${body}`;
+}
+
+/** The line of a review whose head a push replaced while it ran. */
+function staleNote(head: string, newer: string): string {
+  return (
+    `\n\n> [!NOTE]\n> Un push est arrivé pendant cette revue : elle porte sur le commit \`${head.slice(0, 9)}\`, et le dernier commit est \`${newer.slice(0, 9)}\`. ` +
+    'Le bloc de la description et le label du score restent ceux de la revue du dernier commit, et cette revue ne ferme aucun fil ni ne demande de changement.'
+  );
+}
+
 async function post(args: Args & { base: string }, answer: Answer, usage: Usage, skipped: string[], lines: ChangedLines) {
   const [owner, name] = args.repository.split('/');
+  // REV-87. A review of an earlier head posts itself, with its inline comments, and nothing else: no
+  // thread closed, no earlier review dismissed, no block, no label. They belong to the review of the
+  // newer head.
+  const newer = await newerHead(owner, name, args.pr, args.head);
+  if (newer) log(`the head moved to ${newer} during this review of ${args.head}: the review goes alone`);
   const threads = await botThreads(owner, name, args.pr);
   const openThreads = new Map(threads.filter((t) => !t.resolved).map((t) => [t.key, t]));
   const threadUrl = (commentId: number) => `https://github.com/${owner}/${name}/pull/${args.pr}#discussion_r${commentId}`;
@@ -231,7 +277,7 @@ async function post(args: Args & { base: string }, answer: Answer, usage: Usage,
   let resolved = 0;
   let gone = 0;
   for (const t of threads) {
-    if (t.resolved || t.answered || keysNow.has(t.key)) continue;
+    if (newer || t.resolved || t.answered || keysNow.has(t.key)) continue;
     const changed = fileChangedSince(args.repoDir, t.commit, args.head, t.path);
     if (changed === null) gone++;
     if (!changed) continue;
@@ -250,7 +296,18 @@ async function post(args: Args & { base: string }, answer: Answer, usage: Usage,
     resolved++;
   }
 
-  const review = { commit_id: args.head, body: reviewBody(answer, lines, args.level, usage) + goneNote(gone, args.base), event: verdict(answer, lines, args.level), comments };
+  // A review of an earlier head neither approves nor asks for changes: the review of the newer head
+  // decides. Its findings go in its body, since the description keeps the block of the newer head.
+  const event = newer ? 'COMMENT' : verdict(answer, lines, args.level);
+  const review = {
+    commit_id: args.head,
+    body:
+      reviewBody(answer, lines, args.level, usage) +
+      goneNote(gone, args.base) +
+      (newer ? staleNote(args.head, newer) + staleFindings(args, answer, ordered, skipped, usage, lines) : ''),
+    event,
+    comments,
+  };
   const path = `/repos/${owner}/${name}/pulls/${args.pr}/reviews`;
   let posted;
   try {
@@ -264,11 +321,21 @@ async function post(args: Args & { base: string }, answer: Answer, usage: Usage,
     posted = await github('POST', path, { ...review, comments: [] });
   }
 
+  if (newer) return { posted, inlineCount: comments.length, resolved, score: score(answer, lines) };
+  // A push can also land while the review posts: the head is read again before the shared state.
+  const late = await newerHead(owner, name, args.pr, args.head);
+  if (late) {
+    log(`the head moved to ${late} while this review of ${args.head} posted: the block and the label stay those of the newer head`);
+    return { posted, inlineCount: comments.length, resolved, score: score(answer, lines) };
+  }
+
   // A COMMENT does not lift an earlier REQUEST_CHANGES, so the review of the previous head would keep
   // the pull request blocked after its findings are fixed. An APPROVE lifts it, and the dismissal
   // also clears it from the list of reviews.
+  // Only the reviews posted before this one: a run on the same head that posted after it (a command
+  // and the review of a push, REV-87) keeps its own verdict. GitHub gives increasing ids.
   for (const previous of (await github('GET', `${path}?per_page=100`)) ?? []) {
-    if (previous.user.login === BOT_LOGIN && previous.state === 'CHANGES_REQUESTED' && previous.id !== posted.id) {
+    if (previous.user.login === BOT_LOGIN && previous.state === 'CHANGES_REQUESTED' && previous.id < posted.id) {
       await github('PUT', `${path}/${previous.id}/dismissals`, { message: 'Remplacée par la revue du dernier commit.', event: 'DISMISS' });
     }
   }
@@ -439,6 +506,10 @@ async function resolve(args: Args & { base: string }) {
 
   const byId = new Map(answer.threads.map((v) => [v.id, v]));
   const writeToken = process.env.GITHUB_TOKEN_RESOLVE || process.env.GITHUB_TOKEN;
+  // REV-87. A push no longer cancels a command: one that landed while the model read the threads can
+  // bring a defect back. The answers still go, and no thread closes on the code of an earlier head.
+  const newer = await newerHead(owner, name, args.pr, args.head);
+  if (newer) log(`the head moved to ${newer} during this resolve of ${args.head}: no thread is resolved`);
   const lines: string[] = [];
   let resolved = 0;
   for (const t of threads) {
@@ -449,11 +520,14 @@ async function resolve(args: Args & { base: string }) {
     // A finding of a bot that the file did not change since is not fixed.
     // A force-push that removed the commit of the thread gives null: the thread stays open.
     const changed = fileChangedSince(args.repoDir, opener.commit, args.head, t.path);
-    const close = v.verdict === 'fixed' ? changed === true : v.verdict === 'answered' && opener.isBot;
+    const closes = v.verdict === 'fixed' ? changed === true : v.verdict === 'answered' && opener.isBot;
+    const close = closes && !newer;
     let status =
       v.verdict === 'fixed' && changed === null
         ? `Un force-push a retiré de l'historique le commit de ce fil : le changement depuis ce commit est inconnu, et le fil reste ouvert.`
-        : '';
+        : closes && newer
+          ? `Un push est arrivé pendant cette commande (\`${newer.slice(0, 9)}\`) : le fil reste ouvert, et une prochaine résolution le relira sur le dernier commit.`
+          : '';
     if (close) {
       try {
         await graphql('mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { id } } }', { id: t.id }, writeToken);
