@@ -24,12 +24,14 @@ import {
   fileCommentBody,
   FINDING_KEY,
   inlineBody,
+  withIcon,
   MARKER_GONE,
   MARKER_VARIANT,
   REVIEW_COUNT,
   reviewBody,
   variantReplyBody,
   withBlock,
+  type Icons,
   type Link,
   type Poster,
 } from '@sakuga-review/engine/render'
@@ -58,8 +60,16 @@ import { GitHubError, type GitHub } from './github.ts'
 export const CHECK_NAME = 'Sakuga Review'
 /** The service that posts the review, in its footer. */
 export const BY = 'Kentō'
-/** Kentō, and the mention that asks it for another review. */
-const POSTER: Poster = { by: BY, handle: `@${COMMAND_NAMES[0]}` }
+/** REV-106. Where the service serves the icons of the texts on GitHub: public/assets/pr. */
+export const PR_ICONS_PATH = '/assets/pr/'
+/** Kentō, the mention that asks it for another review, and its icons on `target` (text without a public URL). */
+function posterOf(target: PublishTarget): Poster {
+  return { by: BY, handle: `@${COMMAND_NAMES[0]}`, icons: iconsOf(target) }
+}
+
+function iconsOf(target: PublishTarget): Icons {
+  return target.icons ?? 'text'
+}
 
 // Each inline comment is a thread that a person must resolve, so only the sure P2 findings get one.
 // REV-103: every P0 and P1 gets a thread, whatever its confidence, and MAX_INLINE does not count it.
@@ -84,6 +94,8 @@ export interface PublishTarget {
    * hint. Null or absent when the service does not know its public URL.
    */
   docsUrl?: string | null
+  /** REV-106. The icons of the texts: the files of the service, or `text` when it does not know its public URL. */
+  icons?: Icons
 }
 
 export interface PublishOutcome {
@@ -256,7 +268,7 @@ export async function publishReview(
       }
     } else if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null
-    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl) }
+    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl, iconsOf(target)) }
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' })
     inline.push(f)
     comments.push(comment)
@@ -289,7 +301,9 @@ export async function publishReview(
 
   let reviewsPath = `${repo}/pulls/${pr}/reviews`
   let marker = options.marker ? `\n\n<!-- kento:review ${options.marker} -->` : ''
-  let body = reviewBody(answer, anchorOf, level, usage, POSTER) + goneNote(gone, review.base) + assignmentNote(options.assignment ?? null, options.assignmentUnread ?? []) + marker
+  let body =
+    reviewBody(answer, anchorOf, level, usage, posterOf(target), raiseConsidered) +
+    goneNote(gone, review.base, iconsOf(target)) + assignmentNote(options.assignment ?? null, options.assignmentUnread ?? []) + marker
   let event = verdict(answer, anchorOf, level)
   // A review that an earlier try posted, and could not mark (a restart, a lost connection): it is
   // not posted again. The steps after it run once more.
@@ -361,7 +375,7 @@ export async function publishReview(
     let lineUrl = `${target.webUrl}/${owner}/${name}/blob/${head}/${path}#${lines}`
     try {
       let out: { id: number } = await github.rest('POST', `${repo}/pulls/${pr}/comments`, {
-        body: fileCommentBody(f, lineUrl, target.docsUrl),
+        body: fileCommentBody(f, lineUrl, target.docsUrl, iconsOf(target)),
         commit_id: head,
         path,
         subject_type: 'file',
@@ -420,7 +434,7 @@ export async function publishReview(
         }
       }
       await github.rest('POST', `${repo}/pulls/${pr}/comments/${thread.commentId}/replies`, {
-        body: variantReplyBody(m.finding, head, m.stored?.status ?? 'open'),
+        body: variantReplyBody(m.finding, head, m.stored?.status ?? 'open', iconsOf(target)),
       })
       followed++
     })
@@ -506,7 +520,7 @@ export async function publishReview(
       subject,
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level,
-      poster: POSTER,
+      poster: posterOf(target),
       docsUrl: target.docsUrl ?? null,
       ...(review.delta ? { delta: review.delta } : {}),
     })
@@ -551,6 +565,15 @@ export async function publishReview(
 export function raisesToConsider(findings: readonly Finding[], published: number, carried: (finding: Finding) => boolean): boolean {
   if (published >= CONSIDER_SCORE) return false
   return !findings.some((f) => BLOCKING_SEVERITIES.has(f.severity) && !toConsider(f) && !carried(f))
+}
+
+/**
+ * REV-106. `raisesToConsider` for a review shown again (REV-89), with the open threads (`carried`)
+ * as `publishReview` reads them. Without the threads, it counts every P0 and P1 as new: the count of
+ * points to check can then differ, but the head keeps its state.
+ */
+function raisedIn(answer: Answer, carried: (finding: Finding) => boolean = () => false): boolean {
+  return raisesToConsider(answer.findings, score(answer, anchorOf), carried)
 }
 
 /**
@@ -673,7 +696,7 @@ export async function publishUnchanged(
       subject,
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level: review.level,
-      poster: POSTER,
+      poster: posterOf(target),
       docsUrl: target.docsUrl ?? null,
       reusedFrom,
     })
@@ -681,11 +704,12 @@ export async function publishUnchanged(
   }
   // REV-101. The head gets a review of its own, with the score and the verdict of the block: a merge
   // policy reads the score of the review on the head. A failure throws, as for the block.
-  let headReviewId = options.headReview ? await postHeadReview(github, target, review, reusedFrom, answer, options.headReview) : null
+  let raised = raisedIn(answer, (f) => carrier.has(f))
+  let headReviewId = options.headReview ? await postHeadReview(github, target, review, reusedFrom, answer, raised, options.headReview) : null
   await step('label', () => setScoreLabel(github, repo, pr, value))
   if (options.checks) {
     let checks = options.checks
-    await step('check', () => postReusedCheck(checks, target, review, reusedFrom, answer))
+    await step('check', () => postReusedCheck(checks, target, review, reusedFrom, answer, raised))
   }
   return { score: value, shown: shown.length, headReviewId }
 }
@@ -701,6 +725,7 @@ async function postHeadReview(
   review: ReviewPayload,
   reusedFrom: string,
   answer: Answer,
+  raised: boolean,
   copy: { sourceId: number; marker: string },
 ): Promise<number> {
   let reviewsPath = `/repos/${target.owner}/${target.name}/pulls/${target.pr}/reviews`
@@ -708,7 +733,7 @@ async function postHeadReview(
   let posted = (await listReviews(github, reviewsPath)).find((r) => r.user?.login === target.botLogin && r.body?.includes(marker))
   if (posted) return posted.id
   let body =
-    reviewBody(answer, anchorOf, review.level, usageOf(review), POSTER) +
+    reviewBody(answer, anchorOf, review.level, usageOf(review), posterOf(target), raised) +
     `\n\n${sameScoreLine(reusedFrom)}\n\n${sameAsMarker(copy.sourceId)}\n${marker}`
   let event = verdict(answer, anchorOf, review.level)
   let out: { id: number } = await github.rest('POST', reviewsPath, { commit_id: review.head, body, event, comments: [] })
@@ -719,13 +744,20 @@ async function postHeadReview(
  * REV-89. The check « Sakuga Review » of a reused head, when the head has none of Kentō yet: a second
  * try posts no second one. `answer`: the findings that the block shows; all of them when not given.
  */
-export async function postReusedCheck(checks: GitHub, target: PublishTarget, review: ReviewPayload, reusedFrom: string, answer: Answer = answerOf(review)) {
+export async function postReusedCheck(
+  checks: GitHub,
+  target: PublishTarget,
+  review: ReviewPayload,
+  reusedFrom: string,
+  answer: Answer = answerOf(review),
+  raised = raisedIn(answer),
+) {
   let { owner, name, pr } = target
   let repo = `/repos/${owner}/${name}`
   if (await hasCheck(checks, repo, review.head, target.botLogin)) return
   let value = score(answer, anchorOf)
   let body =
-    reviewBody(answer, anchorOf, review.level, usageOf(review), POSTER) +
+    reviewBody(answer, anchorOf, review.level, usageOf(review), posterOf(target), raised) +
     `\n\nAucun fichier relu n'a changé depuis le commit \`${reusedFrom.slice(0, 9)}\` : sa review vaut pour ce commit.`
   await checks.rest('POST', `${repo}/check-runs`, {
     name: CHECK_NAME,
@@ -828,11 +860,11 @@ export function assignmentNote(assignment: JobAssignment | null, unread: readonl
  * The note of a review when a force-push removed the commit of open threads: their diff starts at
  * the merge base, and they stay open.
  */
-function goneNote(gone: number, base: string): string {
+function goneNote(gone: number, base: string, icons: Icons): string {
   if (!gone) return ''
   let threads = gone > 1 ? `${gone} fils ouverts` : 'un fil ouvert'
   return (
-    `\n\n> [!NOTE]\n> Un force-push a retiré de l'historique le commit relu par ${threads}. ` +
+    `\n\n> ${withIcon('avertissement', icons, `Un force-push a retiré de l'historique le commit relu par ${threads}.`)} ` +
     `Le diff depuis ce commit est impossible : cette review relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
     `et ${gone > 1 ? 'ces fils restent ouverts' : 'ce fil reste ouvert'}.`
   )

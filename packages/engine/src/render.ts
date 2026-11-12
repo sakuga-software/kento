@@ -26,25 +26,81 @@ export const MARKER_VARIANT = /<!-- kento:variant ([0-9a-f]{40}(?:[0-9a-f]{24})?
 export const BLOCK_START = '<!-- sakuga-review:start -->';
 export const BLOCK_END = '<!-- sakuga-review:end -->';
 export const REVIEW_COUNT = /<!-- sakuga-review:count (\d+) -->/;
-// The priority that a reader sees: P0 blocks hardest. The colours follow the score labels.
-const PRIORITY = { critical: ['P0', 'b60205'], major: ['P1', 'e67e22'], minor: ['P2', '6c757d'] } as const;
+/**
+ * REV-106. How a text shows an icon:
+ * - `{ base }`: the SVG files that the service serves under `base`, in a light and a dark variant;
+ * - `text`: the alt text, or nothing when the text next to the icon says the same (the service without
+ *   a public URL);
+ * - `emoji`: an emoji (the Action has no host for the files).
+ */
+export type Icons = { base: string } | 'text' | 'emoji';
 
-const badge = (label: string, colour: string) =>
-  `<img alt="${label}" src="https://img.shields.io/badge/${encodeURIComponent(label)}-${colour}?style=flat-square" align="top">`;
+/** The version in the names of the files. GitHub keeps an image in its cache under its URL. */
+export const ICON_VERSION = 1;
 
-function badges(finding: Finding): string {
-  const [priority, colour] = PRIORITY[finding.severity];
-  return badge(priority, colour) + (finding.category === 'security' ? ` ${badge('sécurité', '8e44ad')}` : '');
+// `emoji`: the icon of a state that the text next to it names. In `text`, it shows nothing.
+type IconSpec = { alt: string; emoji?: string };
+
+const ICON = {
+  p0: { alt: 'P0' },
+  p1: { alt: 'P1' },
+  p2: { alt: 'P2' },
+  securite: { alt: 'sécurité' },
+  'a-verifier': { alt: 'à vérifier' },
+  'a-considerer': { alt: 'à considérer' },
+  bloquant: { alt: 'Bloquant', emoji: '⛔' },
+  avertissement: { alt: 'À vérifier', emoji: '⚠️' },
+  ok: { alt: 'Rien de bloquant', emoji: '✅' },
+  fil: { alt: 'Fil' },
+  resolu: { alt: 'Résolu', emoji: '✅' },
+  'a-resoudre': { alt: 'À résoudre', emoji: '☑️' },
+  'reste-ouvert': { alt: 'Reste ouvert', emoji: '💬' },
+} satisfies Record<string, IconSpec>;
+
+export type IconName = keyof typeof ICON;
+
+/** The names of the files that the service serves under public/assets/pr, each in a light and a dark variant. */
+export const ICON_FILES = [...Object.keys(ICON), ...[1, 2, 3, 4, 5].map((n) => `jauge-${n}`)];
+
+function picture(base: string, file: string, alt: string): string {
+  const url = (suffix: string) => `${base}${file}${suffix}.v${ICON_VERSION}.svg`;
+  return `<picture><source media="(prefers-color-scheme: dark)" srcset="${url('-dark')}"><img alt="${alt}" src="${url('')}" height="20" align="top"></picture>`;
+}
+
+/** The icon `name` in the style of `icons`. A label icon (a priority, a mark) gives its alt as text. */
+export function icon(name: IconName, icons: Icons): string {
+  const spec: IconSpec = ICON[name];
+  if (typeof icons === 'object') return picture(icons.base, name, spec.alt);
+  if (spec.emoji) return icons === 'emoji' ? spec.emoji : '';
+  return `\`${spec.alt}\``;
+}
+
+/** The icon, a space, then `text`; `text` alone when the icon shows nothing. */
+export function withIcon(name: IconName, icons: Icons, text: string): string {
+  const mark = icon(name, icons);
+  return mark ? `${mark} ${text}` : text;
+}
+
+/** REV-106. The gauge of the score next to its text, which an agent reads. */
+function scoreTitle(value: number, icons: Icons): string {
+  const text = `Score de confiance : ${value}/5`;
+  return typeof icons === 'object' ? `${text} ${picture(icons.base, `jauge-${value}`, `${value}/5`)}` : text;
+}
+
+const PRIORITY = { critical: 'p0', major: 'p1', minor: 'p2' } as const;
+
+function badges(finding: Finding, icons: Icons): string {
+  return icon(PRIORITY[finding.severity], icons) + (finding.category === 'security' ? ` ${icon('securite', icons)}` : '');
 }
 
 /**
  * REV-103. The mark of a P0 or P1 that has a thread but does not block: « à considérer » for a
  * finding to consider (REV-100), « à vérifier » below the blocking confidence.
  */
-function threadMark(finding: Finding): string {
+function threadMark(finding: Finding, icons: Icons): string {
   if (!BLOCKING_SEVERITIES.has(finding.severity)) return '';
-  if (toConsider(finding)) return ` ${badge('à considérer', 'adb5bd')}`;
-  return finding.confidence < BLOCKING_CONFIDENCE ? ` ${badge('à vérifier', 'adb5bd')}` : '';
+  if (toConsider(finding)) return ` ${icon('a-considerer', icons)}`;
+  return finding.confidence < BLOCKING_CONFIDENCE ? ` ${icon('a-verifier', icons)}` : '';
 }
 
 /** The length of the short id of a finding that a reader sees, and gives to `@kento-review reject`. */
@@ -62,8 +118,8 @@ export function shortId(finding: Finding): string {
  * The comment of a finding. `docsUrl`: the page of the commands of the service (REV-96), linked in
  * the footer; the Action gives none.
  */
-export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: string | null): string {
-  const out = [`${badges(finding)}${threadMark(finding)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
+export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: string | null, icons: Icons = 'emoji'): string {
+  const out = [`${badges(finding, icons)}${threadMark(finding, icons)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
@@ -76,16 +132,21 @@ export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: 
  * REV-103. The comment at the level of the file of a P0 or P1 outside the diff: GitHub has no line
  * of the diff for it. `lineUrl` links the lines of the finding at the reviewed commit.
  */
-export function fileCommentBody(finding: Finding, lineUrl: string, docsUrl?: string | null): string {
+export function fileCommentBody(finding: Finding, lineUrl: string, docsUrl?: string | null, icons: Icons = 'emoji'): string {
   const lines = finding.start_line && finding.start_line < finding.line ? `${finding.start_line}-${finding.line}` : `${finding.line}`;
-  return `Hors du diff de la PR : [\`${finding.path.replace(/^\/+/, '')}:${lines}\`](${lineUrl})\n\n${inlineBody(finding, false, docsUrl)}`;
+  return `Hors du diff de la PR : [\`${finding.path.replace(/^\/+/, '')}:${lines}\`](${lineUrl})\n\n${inlineBody(finding, false, docsUrl, icons)}`;
 }
 
 /**
  * REV-99. The reply of Kentō in the thread of an earlier finding, when a review finds that defect
  * again: in other words, or what a fix left of it. `was`: the status of the earlier finding.
  */
-export function variantReplyBody(finding: Finding, head: string, was: 'open' | 'fixed' | 'dismissed' | 'wontfix' | 'stale'): string {
+export function variantReplyBody(
+  finding: Finding,
+  head: string,
+  was: 'open' | 'fixed' | 'dismissed' | 'wontfix' | 'stale',
+  icons: Icons = 'emoji',
+): string {
   const at = `\`${head.slice(0, 9)}\``;
   const lead =
     was === 'fixed'
@@ -96,7 +157,7 @@ export function variantReplyBody(finding: Finding, head: string, was: 'open' | '
   return [
     lead,
     '',
-    `${badges(finding)} **${finding.title}** \`${shortId(finding)}\``,
+    `${badges(finding, icons)} **${finding.title}** \`${shortId(finding)}\``,
     '',
     finding.scenario,
     '',
@@ -127,9 +188,9 @@ export function costLine(level: Level, usage: Usage, by?: string): string {
 
 /**
  * The service that posts a review: `by` names it, and `handle` is the mention that starts a command
- * (`Kentō`, `@kento-review`). Without it, the review is the one of the Action.
+ * (`Kentō`, `@kento-review`). Without it, the review is the one of the Action, with emojis.
  */
-export type Poster = { by: string; handle: string };
+export type Poster = { by: string; handle: string; icons: Icons };
 
 // The name and the command of the Action (review/sakuga-review.ts), which gives no poster.
 const ACTION = { name: 'Sakuga Review', command: '@sakuga-review review' };
@@ -137,18 +198,37 @@ const ACTION = { name: 'Sakuga Review', command: '@sakuga-review review' };
 function deeperReviewNote(reason: string, poster?: Poster): string {
   const command = poster?.handle ?? ACTION.command;
   return (
-    `**Une review plus poussée est conseillée :** ${reason}\n` +
+    `${withIcon('avertissement', poster?.icons ?? 'emoji', `**Une review plus poussée est conseillée :** ${reason}`)}\n` +
     `Commentez \`${command} balanced\` (${levelCost('balanced')}) ou \`${command} heavy\` (${levelCost('heavy')}).`
   );
 }
 
-export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, poster?: Poster): string {
+/**
+ * REV-106. The P0 and P1 that have a thread and do not block: « à vérifier » below the blocking
+ * confidence or outside the diff, and « à considérer » when `raised` (REV-103).
+ */
+export function toCheck(answer: Answer, lines: Anchors, raised: boolean): number {
+  return answer.findings.filter((f) => BLOCKING_SEVERITIES.has(f.severity) && !isBlocking(f, lines) && (raised || !toConsider(f))).length;
+}
+
+/**
+ * The head of a review, in this order:
+ * 1. a finding blocks: `N points bloquants`;
+ * 2. else a P0 or P1 asks a person to look (`toCheck`): `N points à vérifier`;
+ * 3. else `Rien de bloquant`, also with P2 findings.
+ */
+function reviewHead(answer: Answer, lines: Anchors, raised: boolean, icons: Icons): string {
+  const count = (n: number, what: string) => `${n} point${n > 1 ? 's' : ''} ${what}`;
   const blocking = answer.findings.filter((f) => isBlocking(f, lines)).length;
-  const head = blocking
-    ? `⛔ ${blocking} point${blocking > 1 ? 's' : ''} bloquant${blocking > 1 ? 's' : ''}`
-    : answer.findings.length
-      ? '⚠️ Rien de bloquant'
-      : '✅ Rien de bloquant';
+  if (blocking) return withIcon('bloquant', icons, count(blocking, `bloquant${blocking > 1 ? 's' : ''}`));
+  const checks = toCheck(answer, lines, raised);
+  if (checks) return withIcon('avertissement', icons, count(checks, 'à vérifier'));
+  return withIcon('ok', icons, 'Rien de bloquant');
+}
+
+/** `raised`: the P0 and P1 to consider of the review have a thread (REV-103). */
+export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, poster?: Poster, raised = false): string {
+  const head = reviewHead(answer, lines, raised, poster?.icons ?? 'emoji');
   const deeper = deeperReview(answer, level);
   return (
     `${MARKER_SUMMARY}\n**Score de confiance : ${score(answer, lines)}/5** · ${head} · ${answer.risk}\n\n` +
@@ -192,7 +272,8 @@ export function descriptionBlock(
     docsUrl?: string | null;
   },
 ): string {
-  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
+  const icons = context.poster?.icons ?? 'emoji';
+  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · ${scoreTitle(score(answer, lines), icons)}</h2>`, '', answer.risk, ''];
   const deeper = deeperReview(answer, context.level);
   if (deeper) out.push(deeperReviewNote(deeper, context.poster), '');
   const item = ({ finding: f, url }: Link, i: number) => {
@@ -203,7 +284,7 @@ export function descriptionBlock(
     if (line === null && context.commitUrl.startsWith('http')) {
       where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
     }
-    out.push(`${i + 1}. ${badges(f)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">▶</a>` : ''}`);
+    out.push(`${i + 1}. ${badges(f, icons)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">${icons === 'emoji' ? '▶' : icon('fil', icons)}</a>` : ''}`);
     // A finding with no thread shows its scenario here: this is the only place it appears.
     if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
   };

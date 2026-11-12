@@ -62,7 +62,7 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
 function setup(head = HEAD1) {
   let fake = createFakeGitHub({ head, commits: { [HEAD1]: 'feat', [HEAD2]: 'fix' } })
   let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
-  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', icons: { base: 'https://review.test/assets/pr/' } }
   let rows: StoredFinding[] = []
   let failSaves = 0
   let ledger: FindingsLedger = {
@@ -95,7 +95,7 @@ describe('a P0 or P1 below the blocking confidence (REV-103)', () => {
     assert.equal(outcome.inline, 1)
     let [thread] = fake.botThreads()
     assert.equal(thread!.line, 2)
-    assert.match(thread!.body, /<img alt="P1" [^>]+> <img alt="à vérifier" /)
+    assert.match(thread!.body, /<img alt="P1" [^>]+><\/picture> <picture><source [^>]+><img alt="à vérifier" /)
     assert.equal(fake.state.reviews.at(-1)!.state, 'COMMENTED')
   })
 
@@ -139,7 +139,7 @@ describe('a P0 or P1 outside the diff (REV-103)', () => {
     assert.equal(titleOf(comment!.body), outside.title)
     assert.equal(rows[0]!.githubCommentId, comment!.id)
     // The block links the thread, and the review does not block on a finding outside the diff.
-    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${comment!.id}">▶</a>`))
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${comment!.id}"><picture><source [^>]+fil-dark\\.v1\\.svg"><img alt="Fil" [^>]+></picture></a>`))
     assert.equal(fake.state.reviews.at(-1)!.state, 'COMMENTED')
   })
 
@@ -210,7 +210,7 @@ describe('a P1 to consider (REV-100, REV-103)', () => {
     let { fake, publish } = setup()
     let outcome = await publish(payload({ score: 3, findings: [considered] }))
     assert.equal(outcome.inline, 1)
-    assert.match(fake.botThreads()[0]!.body, /<img alt="P1" [^>]+> <img alt="à considérer" /)
+    assert.match(fake.botThreads()[0]!.body, /<img alt="P1" [^>]+><\/picture> <picture><source [^>]+><img alt="à considérer" /)
     assert.equal(fake.state.reviews.at(-1)!.state, 'COMMENTED')
     assert.match(fake.state.pr.body, /<h3>À considérer \(code déjà relu\)<\/h3>/)
   })

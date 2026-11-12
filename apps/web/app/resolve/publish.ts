@@ -5,7 +5,7 @@
 // The runner gave the verdict of each thread and whether its file changed since the thread. The
 // service reads the threads again here: a thread resolved meanwhile gets no reply, and the opener of
 // each thread (a bot or a person) comes from GitHub, not from the runner.
-import { costLine } from '@sakuga-review/engine/render'
+import { costLine, withIcon, type Icons } from '@sakuga-review/engine/render'
 import { markerResolve } from '@sakuga-review/engine/threads'
 import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS, type ResolvePayload } from '@sakuga-review/protocol'
 
@@ -22,6 +22,8 @@ export interface ResolveTarget {
   pr: number
   /** `https://github.com`, for the links of the summary. */
   webUrl: string
+  /** REV-106. The icons of the summary; `text` when absent. */
+  icons?: Icons
 }
 
 export interface ResolveOutcome {
@@ -97,7 +99,8 @@ export async function publishResolution(
       warn('resolve.reply_failed', { thread: thread.id, error: String(error).slice(0, 300) })
     }
     let url = `${target.webUrl}/${fullName}/pull/${pr}#discussion_r${opener.id}`
-    let label = close ? (resolved ? '✅ résolu' : '☑️ à résoudre') : '💬 reste ouvert'
+    let icons = target.icons ?? 'text'
+    let label = close ? (resolved ? withIcon('resolu', icons, 'résolu') : withIcon('a-resoudre', icons, 'à résoudre')) : withIcon('reste-ouvert', icons, 'reste ouvert')
     lines.push(`- ${label} · [\`${thread.path}:${thread.line ?? '?'}\`](${url}) · ${opener.author}`)
   }
 

@@ -8,6 +8,7 @@
 //
 // A job that failed for good gets one comment on its pull request: `jobs.failure_noticed_at`.
 // A pull request whose job waits in the queue for too long gets one comment too (REV-52, queued.ts).
+import type { Icons } from '@sakuga-review/engine/render'
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
@@ -25,7 +26,7 @@ import { pageRoutes } from '../routes.ts'
 import { ONLINE_SECONDS } from '../runner/admin.ts'
 import { failureComment } from './failure.ts'
 import { createGitHub, GitHubError, type GitHub } from './github.ts'
-import { botReviewState, postReusedCheck, publishReview, publishUnchanged } from './publish.ts'
+import { botReviewState, postReusedCheck, PR_ICONS_PATH, publishReview, publishUnchanged } from './publish.ts'
 import type { StoredReview } from '../runner/store.ts'
 import { QUEUE_NOTICE_MAX_AGE, QUEUE_STALL_MINUTES, queuedComment, queuedMarker } from './queued.ts'
 
@@ -189,6 +190,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   let webUrl = (deps.webUrl ?? 'https://github.com').replace(/\/+$/, '')
   // REV-96. The page of the commands, linked in the comment of each finding and in the hint of `reject`.
   let docsUrl = deps.publicUrl ? new URL(DOCS_PATH, deps.publicUrl).toString() : null
+  // REV-106. The icons of the texts on GitHub, served from public/assets/pr. Without a public URL, the alt text.
+  let icons: Icons = deps.publicUrl ? { base: new URL(PR_ICONS_PATH, deps.publicUrl).toString() } : 'text'
   let tries = new Map<string, number>()
   let exhausted = () => [...tries].filter(([, n]) => n >= MAX_TRIES).map(([id]) => id)
   let running: Promise<unknown> | null = null
@@ -229,7 +232,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
 
     // REV-89. The review of an earlier head with the same input: the block, the label and the check.
     // REV-101: and a review on the head, with the same score and verdict.
-    let on = { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl }
+    let on = { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl, icons }
     let source: 'stands' | 'replaced' | 'gone' = 'stands'
     if (review.reusedFrom) {
       try {
@@ -292,7 +295,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
     let githubReviewId = 0
     let outcome = await publishReview(
       github,
-      { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl, docsUrl },
+      { owner, name, pr: row.prNumber, botLogin: deps.botLogin, webUrl, docsUrl, icons },
       review,
       {
         checks,
@@ -409,7 +412,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         let outcome = await publishResolution(
           github,
           writer,
-          { fullName: row.fullName, pr: row.prNumber, webUrl },
+          { fullName: row.fullName, pr: row.prNumber, webUrl, icons },
           payload,
           (event, extra) => log('warn', event, { ...fields, ...extra }),
         )

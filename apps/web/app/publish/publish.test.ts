@@ -55,11 +55,11 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
   }
 }
 
-function setup(head = HEAD1, docsUrl?: string) {
+function setup(head = HEAD1, publicUrl = true, docsUrl?: string) {
   let fake = createFakeGitHub({ head, commits: { [HEAD1]: 'fix: sum', [HEAD2]: 'docs: readme', [HEAD3]: 'fix: sum again' } })
   let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
   let checks = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_checks_2', fetch: fake.fetch })
-  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', docsUrl }
+  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', docsUrl, ...(publicUrl ? { icons: { base: 'https://review.test/assets/pr/' } } : {}) }
   let warnings: { event: string; fields: Record<string, unknown> }[] = []
   let publish = (review: ReviewPayload, withChecks = true) =>
     publishReview(github, target, review, { checks: withChecks ? checks : null, warn: (event, fields) => warnings.push({ event, fields }) })
@@ -81,21 +81,21 @@ describe('publishReview', () => {
     assert.equal(review!.state, 'CHANGES_REQUESTED')
     assert.equal(review!.commitId, HEAD1)
     // The fields that boo and the scripts read.
-    assert.match(review!.body, /\*\*Score de confiance : 2\/5\*\* · ⛔ 1 point bloquant · Un calcul faux\./)
+    assert.match(review!.body, /\*\*Score de confiance : 2\/5\*\* · <picture>.*?<img alt="Bloquant" src="https:\/\/review\.test\/assets\/pr\/bloquant\.v1\.svg" [^>]+><\/picture> 1 point bloquant · Un calcul faux\./)
     assert.match(review!.body, /<sub>Kentō · Niveau `lite` · `anthropic\/claude-haiku-5\.5` · 0,012 \$ · /)
 
     let [comment] = fake.botThreads()
     assert.equal(comment!.path, 'src/sum.ts')
     assert.equal(comment!.line, 2)
     assert.equal(comment!.startLine, undefined, 'a one-line suggestion has no start line')
-    assert.match(comment!.body, /<img alt="P1" src="https:\/\/img\.shields\.io\/badge\/P1-e67e22/)
+    assert.match(comment!.body, /^<picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/p1-dark\.v1\.svg"><img alt="P1" src="https:\/\/review\.test\/assets\/pr\/p1\.v1\.svg" height="20" align="top"><\/picture> \*\*/)
     assert.match(comment!.body, /```suggestion\n {2}return a \+ b;\n```/)
     assert.match(comment!.body, /<!-- sakuga-review:finding [0-9a-f]{12} -->/)
 
     let body = fake.state.pr.body
     assert.ok(body.startsWith('Description de la PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
-    assert.match(body, /<h2>Kentō · Score de confiance : 2\/5<\/h2>/)
-    assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}">▶</a>`))
+    assert.match(body, /<h2>Kentō · Score de confiance : 2\/5 <picture>.*?<img alt="2\/5" src="https:\/\/review\.test\/assets\/pr\/jauge-2\.v1\.svg" [^>]+><\/picture><\/h2>/)
+    assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}"><picture><source [^>]+fil-dark\\.v1\\.svg"><img alt="Fil" [^>]+></picture></a>`))
     assert.match(body, /Reviews \(1\) · Dernier commit relu : \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Niveau `lite`/)
     assert.match(body, /<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->$/)
 
@@ -112,6 +112,22 @@ describe('publishReview', () => {
     assert.equal(check!.conclusion, 'success')
     assert.equal(check!.output.title, 'Score de confiance : 2/5')
     assert.equal(check!.token, 'ghs_fake_checks_2', 'the check goes with its own token')
+  })
+
+  it('posts no emoji, and no image when the service does not know its public URL (REV-106)', async () => {
+    let emoji = /\p{Extended_Pictographic}/u
+    for (let publicUrl of [true, false]) {
+      let { fake, publish } = setup(HEAD1, publicUrl)
+      await publish(payload())
+      let texts = [fake.state.reviews[0]!.body, fake.botThreads()[0]!.body, fake.state.pr.body, fake.state.checkRuns[0]!.output.summary]
+      for (let text of texts) {
+        assert.doesNotMatch(text, emoji)
+        assert.doesNotMatch(text, /shields\.io/)
+        if (!publicUrl) assert.doesNotMatch(text, /<img|<picture/)
+        for (let image of text.match(/<img [^>]*>/g) ?? []) assert.match(image, /^<img alt="[^"]+" src="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+\.v1\.svg"/)
+      }
+      if (!publicUrl) assert.match(fake.state.reviews[0]!.body, /\*\*Score de confiance : 2\/5\*\* · 1 point bloquant · /)
+    }
   })
 
   it('does not post again a finding that an open thread carries, and dismisses the previous REQUEST_CHANGES', async () => {
@@ -132,14 +148,14 @@ describe('publishReview', () => {
       ['DISMISSED', 'CHANGES_REQUESTED'],
     )
     // The block links the finding to its open thread, and counts the reviews.
-    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}">▶</a>`))
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}"><picture><source [^>]+fil-dark\\.v1\\.svg"><img alt="Fil" [^>]+></picture></a>`))
     assert.match(fake.state.pr.body, /<!-- sakuga-review:count 2 -->/)
     assert.equal((fake.state.pr.body.match(/sakuga-review:start/g) ?? []).length, 1, 'one block, replaced')
   })
 
   it('ends the block with one line of the commands and the link to their page, after each review (REV-105)', async () => {
     let docs = 'https://review.sakuga.dev/docs/commandes'
-    let { fake, publish, republish } = setup(HEAD1, docs)
+    let { fake, publish, republish } = setup(HEAD1, true, docs)
     let line =
       '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · ' +
       `\`@kento-review reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · [Les commandes de Kentō](${docs})</sub>`
@@ -215,7 +231,7 @@ describe('publishReview', () => {
     assert.equal(threads.length, 2)
     let fresh = threads.find((t) => t.id !== old!.id)!
     assert.equal(fresh.commit, HEAD3)
-    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${fresh.id}">▶</a>`))
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${fresh.id}"><picture><source [^>]+fil-dark\\.v1\\.svg"><img alt="Fil" [^>]+></picture></a>`))
     assert.doesNotMatch(fake.state.pr.body, new RegExp(`#discussion_r${old!.id}"`))
     assert.equal(fake.repliesTo(old!.id).length, 1, 'the old thread gets no second reply')
   })
@@ -475,7 +491,7 @@ describe('publishReview', () => {
     let answer = answerOf(review)
     let usage = usageOf(review)
     let action = reviewBody(answer, lines, 'lite', usage)
-    let poster = { by: 'Kentō', handle: '@kento-review' }
+    let poster = { by: 'Kentō', handle: '@kento-review', icons: 'emoji' as const }
     let asAction = (text: string) => text.replace('Kentō · Score', 'Sakuga Review · Score').replace('Kentō · Niveau', 'Niveau').replaceAll('@kento-review ', '@sakuga-review review ')
     let kento = reviewBody(answer, anchorOf, 'lite', usage, poster)
     assert.match(kento, /Commentez `@kento-review balanced` \(de 10 à 20 centimes\) ou `@kento-review heavy` \(de 30 à 50 centimes\)\./)
@@ -509,7 +525,7 @@ describe('publishUnchanged (REV-89)', () => {
     assert.equal(fake.botThreads().length, 1, 'no new thread')
     assert.deepEqual(fake.repliesTo(thread!.id), [])
     let body = fake.state.pr.body
-    assert.match(body, new RegExp(`#discussion_r${thread!.id}">▶</a>`), 'the finding links to its open thread')
+    assert.match(body, new RegExp(`#discussion_r${thread!.id}"><picture><source [^>]+fil-dark\\.v1\\.svg"><img alt="Fil" [^>]+></picture></a>`), 'the finding links to its open thread')
     assert.match(body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
     assert.match(body, /Dernier commit relu : \[docs: readme\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/2{40}\)/)
     assert.match(body, /<!-- sakuga-review:count 1 -->/, 'no new review: the count stays')
@@ -518,6 +534,38 @@ describe('publishUnchanged (REV-89)', () => {
     let check = fake.state.checkRuns.at(-1)!
     assert.equal(check.head_sha, HEAD2, 'the new head gets its check')
     assert.equal(check.output.title, 'Score de confiance : 2/5')
+  })
+
+  it('gives the head of the source review when its P1 to consider has a thread (REV-106)', async () => {
+    let { fake, publish, republish } = setup()
+    let unsure = finding({ confidence: 60, blocking: false })
+    let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté", line: 3, start_line: 3, anchor: 3, suggestion_range: null })
+    await publish(payload({ score: 2, verdict: 'COMMENT', findings: [unsure] }))
+    // HEAD2: the P1 at 60 is carried, so the P1 to consider is the only new one, and gets a thread.
+    fake.state.pr.head = HEAD2
+    await publish(payload({ head: HEAD2, score: 2, verdict: 'COMMENT', findings: [unsure, considered] }))
+    assert.equal(fake.botThreads().length, 2)
+    assert.match(fake.state.reviews.at(-1)!.body, / 2 points à vérifier · /)
+
+    fake.state.pr.head = HEAD3
+    await republish(payload({ head: HEAD3, score: 2, verdict: 'COMMENT', findings: [unsure, considered], costUsd: 0 }), HEAD2)
+    let check = fake.state.checkRuns.at(-1)!
+    assert.equal(check.head_sha, HEAD3)
+    assert.match(check.output.summary, / 2 points à vérifier · /, 'the same count as the review of HEAD2')
+  })
+
+  it('guard: a P1 to consider with a thread does not count when the source score is 4 (REV-106)', async () => {
+    let { fake, publish, republish } = setup()
+    let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté" })
+    await publish(payload({ score: 3, verdict: 'COMMENT', findings: [considered] }))
+    assert.equal(fake.botThreads().length, 1)
+    fake.state.pr.head = HEAD2
+    await publish(payload({ head: HEAD2, score: 4, verdict: 'APPROVE', findings: [considered] }))
+    assert.match(fake.state.reviews.at(-1)!.body, / Rien de bloquant · /)
+
+    fake.state.pr.head = HEAD3
+    await republish(payload({ head: HEAD3, score: 4, verdict: 'APPROVE', findings: [considered], costUsd: 0 }), HEAD2)
+    assert.match(fake.state.checkRuns.at(-1)!.output.summary, / Rien de bloquant · /, 'the head of the review of HEAD2')
   })
 
   it('throws when the block cannot be written, so that the publisher tries again', async () => {

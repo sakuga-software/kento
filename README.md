@@ -90,10 +90,10 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
 ## What a push gets
 
 - **A block at the end of the description of the pull request**, replaced on each push:
-  - `Sakuga Review · Score de confiance : N/5`, and one sentence on whether the pull request can be
-    merged;
+  - `Sakuga Review · Score de confiance : N/5` (Kentō adds a gauge), and one sentence on whether the
+    pull request can be merged;
   - the findings, numbered, each with its priority badge (`P0`, `P1`, `P2`, and `sécurité` for a
-    security finding) and a ▶ link to its thread. A finding with no thread shows its scenario and
+    security finding) and a link to its thread. A finding with no thread shows its scenario and
     its fix there. A finding on code outside the diff (a caller that the change breaks) links its
     line in the file;
   - a folded summary, a folded Mermaid diagram of the flow that the change touches (when there is
@@ -105,8 +105,8 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
 - **A label `review: N/5`**, coloured from red (1) to green (5), replaced on each push. Kentō
   creates the label in a repository the first time.
 - **A check « Sakuga Review »** with the score.
-- **One review** on the head commit: the score and the sentence, the level, the model and the cost
-  of the review, and one inline comment per P0 or P1 on a line that the pull request changes,
+- **One review** on the head commit: the score, its head and the sentence, the level, the model and
+  the cost of the review, and one inline comment per P0 or P1 on a line that the pull request changes,
   whatever its confidence (REV-103). Below 70 % confidence, the comment has the mark « à vérifier »
   and does not block. A P2 gets an inline comment from 70 % only, while the review has fewer than 5.
   An inline comment gives the priority badge, the title, the failure scenario and the fix, and a
@@ -117,6 +117,19 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
 
 The format is the one of the old workflow, so the scripts that read a review (score, level, badges)
 read both.
+
+The head of the review says, in this order (REV-106):
+
+1. `N points bloquants` when a finding blocks;
+2. else `N points à vérifier` when a P0 or P1 has a thread and does not block: below 70 %, outside
+   the diff, or a P1 to consider that gets a thread;
+3. else `Rien de bloquant`, also with P2 findings.
+
+Kentō shows its own icons, light and dark, served from `KENTO_PUBLIC_URL/assets/pr/`: the priority
+badges, the marks, the state of the head, the link to a thread, and the states of `resolve`. Each
+image has an alt text that gives its meaning (`P1`, `Bloquant`, `À vérifier`). The warning icon
+means « à vérifier » only: a point to check, the advice of a deeper review, a force-push. Without
+`KENTO_PUBLIC_URL`, Kentō writes the alt texts and no image. The Action shows emojis.
 
 | Priority | Severity | Meaning |
 | --- | --- | --- |

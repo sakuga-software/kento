@@ -6,6 +6,7 @@ import { SESSION_TTL_MS } from '../auth/session-storage.ts'
 import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
+import { ICON_FILES, ICON_VERSION } from '@sakuga-review/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 
@@ -554,6 +555,18 @@ describe('the assets', () => {
     let { request } = setup()
     for (let path of ['/assets/kento.css', '/assets/theme.js', '/assets/favicon.svg', '/assets/fonts/archivo-latin-wght-normal.woff2']) {
       assert.equal((await request(path)).status, 200, path)
+    }
+  })
+
+  it('serves each icon of the texts on GitHub as an SVG image, in its two themes (REV-106)', async () => {
+    let { request } = setup()
+    for (let name of ICON_FILES) {
+      for (let file of [`${name}.v${ICON_VERSION}.svg`, `${name}-dark.v${ICON_VERSION}.svg`]) {
+        let response = await request(`/assets/pr/${file}`)
+        assert.equal(response.status, 200, file)
+        assert.equal(response.headers.get('Content-Type'), 'image/svg+xml', file)
+        assert.match(await response.text(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="\d+" height="20" /, file)
+      }
     }
   })
 

@@ -7,6 +7,36 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-106: Kentō's icons replace the emojis and the shields.io badges on a pull request
+
+No migration, no new variable, no new permission, no change to the protocol of the runners: deploy
+`web` alone, after REV-103. `/healthz` still gives `"migrations":25`.
+
+- The service serves 36 SVG files under `/assets/pr/` (`p1.v1.svg`, `p1-dark.v1.svg`…), with
+  `Content-Type: image/svg+xml` and, in production, `Cache-Control: public, max-age=31536000,
+  immutable`. The version is in the name: GitHub's image proxy (camo) keeps an image in its cache.
+  `apps/web/scripts/pr-icons.py` writes them again from the tokens of `kento.css`; a change of an
+  icon increases `VERSION` there and `ICON_VERSION` in `packages/engine/src/render.ts`.
+- The texts that Kentō posts (review, comments, file comments, variant replies, the block of the
+  description, the summary of `resolve`) show these icons in a `<picture>`, light and dark, from the
+  origin of `KENTO_PUBLIC_URL`. Every image has an alt text that gives its meaning (`P1`,
+  `Bloquant`, `À vérifier`). Without `KENTO_PUBLIC_URL`, the texts give the alt texts and no image.
+  No text of the service holds an emoji now; the reactions (👀 🚀 😕 👎) do not change.
+- The head of the review: `N points bloquants` when a finding blocks; else `N points à vérifier`
+  (warning icon) when a P0 or P1 has a thread and does not block; else `Rien de bloquant`, also with
+  P2 findings only (it showed ⚠️ before). The warning icon also marks the advice of a deeper review
+  and the note of a force-push, which is no longer a GitHub `[!NOTE]`.
+- The title of the block keeps `Score de confiance : N/5` as text, and adds a gauge after it.
+- The markers that the next review reads (`sakuga-review:finding`, `summary`, `count`, `kento:variant`,
+  the short id) do not change. The Action (`review/sakuga-review.ts`) keeps its emojis: it has no host
+  for the files.
+
+Check: after the deploy, `curl -sI https://review.sakuga.dev/assets/pr/p1.v1.svg` gives 200,
+`image/svg+xml` and `immutable`. On a test pull request with a P1 that blocks, a P1 of confidence 60
+and a P2, the icons show in the light and the dark theme of github.com and of the mobile app, and the
+head says « 1 point bloquant »; without the P1 that blocks, « 1 point à vérifier » with the warning;
+with the P2 alone, « Rien de bloquant » with the OK icon.
+
 ## REV-103: Every P0 and P1 opens a conversation on GitHub
 
 No migration, no new variable, no new permission (the App writes the review comments already), no

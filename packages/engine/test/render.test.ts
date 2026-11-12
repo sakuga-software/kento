@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { descriptionBlock, findingKey, inlineBody, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
-import { fileCommentBody, shortId, withBlock } from '../src/render.ts';
+import type { Anchors } from '../src/findings.ts';
+import { fileCommentBody, icon, shortId, toCheck, variantReplyBody, withBlock, type Icons } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {
@@ -29,16 +30,20 @@ const answer = {
 } as unknown as Answer;
 const anchors = () => 12;
 const usage: Usage = { model: 'anthropic/claude-haiku-5.5', cost: 0.0112, cost_source: 'table' };
-const kento = { by: 'Kentō', handle: '@kento-review' };
+const BASE = 'https://review.test/assets/pr/';
+const images: Icons = { base: BASE };
+const kento = { by: 'Kentō', handle: '@kento-review', icons: images };
+const picture = (name: string, alt: string) =>
+  `<picture><source media="(prefers-color-scheme: dark)" srcset="${BASE}${name}-dark.v1.svg"><img alt="${alt}" src="${BASE}${name}.v1.svg" height="20" align="top"></picture>`;
 
 test('the body of a review by Kentō names its command and the cost of each level', () => {
   assert.equal(
     reviewBody(answer, anchors, 'lite', usage, kento),
     [
       '<!-- sakuga-review:summary -->',
-      '**Score de confiance : 2/5** · ⛔ 1 point bloquant · Un jeton expiré passe.',
+      `**Score de confiance : 2/5** · ${picture('bloquant', 'Bloquant')} 1 point bloquant · Un jeton expiré passe.`,
       '',
-      '**Une review plus poussée est conseillée :** le changement touche la vérification des jetons.',
+      `${picture('avertissement', 'À vérifier')} **Une review plus poussée est conseillée :** le changement touche la vérification des jetons.`,
       'Commentez `@kento-review balanced` (de 10 à 20 centimes) ou `@kento-review heavy` (de 30 à 50 centimes).',
       '',
       '<sub>Kentō · Niveau `lite` · `anthropic/claude-haiku-5.5` · 0,011 $ · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>',
@@ -56,7 +61,7 @@ test('the block of the description by Kentō carries its name, and the markers t
   const context = { count: 2, head: '1'.repeat(40), subject: 'fix(auth): check the expiry', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
   const block = descriptionBlock(answer, [{ finding, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 1, usage, anchors, { ...context, poster: kento });
   assert.match(block, /^<!-- sakuga-review:start -->\n/);
-  assert.match(block, /^<h2>Kentō · Score de confiance : 2\/5<\/h2>$/m);
+  assert.ok(block.includes(`\n<h2>Kentō · Score de confiance : 2/5 ${picture('jauge-2', '2/5')}</h2>\n`));
   assert.match(block, /^Commentez `@kento-review balanced` \(de 10 à 20 centimes\) ou `@kento-review heavy` \(de 30 à 50 centimes\)\.$/m);
   assert.match(block, /^1 constat d'une review précédente n'apparait plus : le fil peut être résolu\.$/m);
   assert.match(block, /^<sub>Reviews \(2\) · Dernier commit relu : \[fix\(auth\): check the expiry\]\(https:\/\/github\.com\/o\/n\/commit\/1{40}\) · Kentō · Niveau `lite`/m);
@@ -98,11 +103,11 @@ test('a finding shows its short id in its comment and in the list of the descrip
 });
 
 test('a P0 or P1 that does not block has a mark next to its priority (REV-103)', () => {
-  const first = (f: Finding) => inlineBody(f, false).split('\n')[0]!;
+  const first = (f: Finding) => inlineBody(f, false, null, images).split('\n')[0]!;
   assert.doesNotMatch(first(finding), /à vérifier|à considérer/);
-  assert.match(first({ ...finding, confidence: 69 }), /^<img alt="P1" [^>]+> <img alt="sécurité" [^>]+> <img alt="à vérifier" [^>]+> \*\*/);
-  assert.match(first({ ...finding, seen: true }), /<img alt="à considérer" [^>]+> \*\*/);
-  assert.match(first({ ...finding, seen: true, confidence: 50 }), /<img alt="à considérer" [^>]+> \*\*/);
+  assert.ok(first({ ...finding, confidence: 69 }).startsWith(`${picture('p1', 'P1')} ${picture('securite', 'sécurité')} ${picture('a-verifier', 'à vérifier')} **`));
+  assert.ok(first({ ...finding, seen: true }).includes(`${picture('a-considerer', 'à considérer')} **`));
+  assert.ok(first({ ...finding, seen: true, confidence: 50 }).includes(`${picture('a-considerer', 'à considérer')} **`));
   assert.doesNotMatch(first({ ...finding, severity: 'minor', confidence: 50 }), /à vérifier/);
 });
 
@@ -124,4 +129,86 @@ test('the prompt gives the model the same ratio of cost as LEVEL_COST_CENTS', ()
   const low = LEVEL_COST_CENTS.balanced[0] / lite;
   const high = LEVEL_COST_CENTS.heavy[1] / lite;
   assert.match(prompt.replace(/\s+/g, ' '), new RegExp(`for ${low} to ${high} times the cost of this review`));
+});
+
+// REV-106. Every text that a review posts, for each priority and each mark.
+function everyText(icons: Icons): string[] {
+  const findings: Finding[] = [
+    { ...finding, severity: 'critical' },
+    finding,
+    { ...finding, confidence: 60 },
+    { ...finding, seen: true },
+    { ...finding, severity: 'minor', category: 'bug' as const },
+  ];
+  const full = { ...answer, findings, not_reviewed: ['src/big.ts : plus de 400 lignes modifiées'] } as Answer;
+  const poster = icons === 'emoji' ? undefined : { ...kento, icons };
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const, poster };
+  const links = findings.map((f, i) => ({ finding: f, url: i % 2 ? null : `https://github.com/o/n/pull/1#discussion_r${i}` }));
+  return [
+    reviewBody(full, anchors, 'lite', usage, poster, true),
+    reviewBody({ ...full, findings: [{ ...finding, confidence: 60 }] }, anchors, 'lite', usage, poster),
+    reviewBody({ ...full, findings: [{ ...finding, severity: 'minor' }] }, anchors, 'lite', usage, poster),
+    descriptionBlock(full, links, ['dist/app.js : fichier généré ou binaire'], 1, usage, anchors, context),
+    ...findings.flatMap((f) => [
+      inlineBody(f, false, 'https://review.test/docs', icons),
+      fileCommentBody(f, 'https://github.com/o/n/blob/abc/a.ts#L1', null, icons),
+      variantReplyBody(f, '2'.repeat(40), 'fixed', icons),
+    ]),
+    ...(['resolu', 'a-resoudre', 'reste-ouvert'] as const).map((name) => icon(name, icons)),
+  ];
+}
+
+const EMOJI = /\p{Extended_Pictographic}/u;
+
+test('every image of a review has an alt, an absolute URL and a dark variant (REV-106)', () => {
+  const all = everyText(images).join('\n');
+  const pictures = all.match(/<picture>.*?<\/picture>/g) ?? [];
+  assert.ok(pictures.length > 20);
+  for (const p of pictures) {
+    assert.match(
+      p,
+      /^<picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+-dark\.v1\.svg"><img alt="[^"]+" src="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+\.v1\.svg" height="20" align="top"><\/picture>$/,
+    );
+  }
+  assert.equal(all.match(/<img /g)!.length, pictures.length, 'every image is in a picture');
+  assert.doesNotMatch(all, /shields\.io/);
+});
+
+test('a review of the service shows no emoji, with images or with text only (REV-106)', () => {
+  for (const icons of [images, 'text'] as const) {
+    for (const text of everyText(icons)) assert.doesNotMatch(text, EMOJI, text);
+  }
+  const text = everyText('text').join('\n');
+  assert.doesNotMatch(text, /<img|<picture/);
+  assert.match(text, /^`P1` `sécurité` `à vérifier` \*\*/m);
+  assert.match(text, /^<h2>Kentō · Score de confiance : 2\/5<\/h2>$/m);
+  assert.match(text, /<a href="https:\/\/github\.com\/o\/n\/pull\/1#discussion_r0">`Fil`<\/a>/);
+});
+
+test('the Action keeps its emojis, and shows no image (REV-106)', () => {
+  const text = everyText('emoji').join('\n');
+  assert.doesNotMatch(text, /<img|<picture|shields\.io/);
+  assert.match(text, /⛔ 2 points bloquants/);
+  assert.match(text, /<a href="[^"]+">▶<\/a>/);
+});
+
+test('the head of a review: blocking, else points to check, else nothing blocks (REV-106)', () => {
+  const head = (findings: Finding[], raised = false, lines: Anchors = anchors) =>
+    reviewBody({ ...answer, findings } as Answer, lines, 'lite', usage, kento, raised).split('\n')[1]!;
+  const p1At60 = { ...finding, confidence: 60 };
+  const p2 = { ...finding, severity: 'minor' as const, category: 'bug' as const };
+  assert.ok(head([finding, p1At60, p2]).includes(`· ${picture('bloquant', 'Bloquant')} 1 point bloquant ·`));
+  assert.ok(head([p1At60, p2]).includes(`· ${picture('avertissement', 'À vérifier')} 1 point à vérifier ·`));
+  assert.ok(head([p1At60, { ...p1At60, line: 40 }]).includes(' 2 points à vérifier ·'));
+  // A P1 outside the diff gets a comment on its file, and does not block.
+  assert.ok(head([finding], false, () => null).includes(' 1 point à vérifier ·'));
+  assert.ok(head([p2]).includes(`· ${picture('ok', 'Rien de bloquant')} Rien de bloquant ·`));
+  // A P1 to consider counts only when the review gives it a thread.
+  assert.ok(head([{ ...finding, seen: true }, p2]).includes(' Rien de bloquant ·'));
+  assert.ok(head([{ ...finding, seen: true }, p2], true).includes(' 1 point à vérifier ·'));
+  assert.equal(toCheck({ ...answer, findings: [finding, p1At60, p2] } as Answer, anchors, false), 1);
+  // The warning is for a point to check: a review with P2 findings only, and no advice, has none.
+  const quiet = reviewBody({ ...answer, findings: [p2], deeper_review: { recommended: false, reason: '' } } as Answer, anchors, 'lite', usage, kento);
+  assert.doesNotMatch(quiet, /avertissement/);
+  assert.equal(head([], false), `**Score de confiance : 2/5** · ${picture('ok', 'Rien de bloquant')} Rien de bloquant · Un jeton expiré passe.`);
 });

@@ -378,8 +378,8 @@ describe('commands in the comments of a pull request', () => {
       return { status: claimed.status, job: claimed.status === 200 ? await claimed.json() : null, token }
     }
 
-    function publisher() {
-      return createPublisher({ sql: database.sql, mintInstallationToken: mint(), apiUrl: fake.apiUrl, botLogin: BOT, fetch: fake.fetch })
+    function publisher(publicUrl?: URL) {
+      return createPublisher({ sql: database.sql, mintInstallationToken: mint(), apiUrl: fake.apiUrl, botLogin: BOT, fetch: fake.fetch, publicUrl })
     }
 
     it('15. the review of a command is published, then the comment gets 🚀 (end to end)', async () => {
@@ -525,8 +525,9 @@ describe('commands in the comments of a pull request', () => {
         assert.doesNotMatch(fake.repliesTo(personAnswered)[0]!.body, /Fil résolu/)
         let summary = fake.state.issueComments.at(-1)!.body
         assert.match(summary, /Kentō · résolution des fils\*\* au commit/)
-        assert.match(summary, /✅ résolu · \[`src\/sum.ts:2`\]/)
-        assert.match(summary, /💬 reste ouvert · \[`src\/a.ts:5`\].* · alex/)
+        assert.match(summary, /^- résolu · \[`src\/sum.ts:2`\]/m)
+        assert.match(summary, /^- reste ouvert · \[`src\/a.ts:5`\].* · alex/m)
+        assert.doesNotMatch(summary, /\p{Extended_Pictographic}/u)
         assert.match(summary, /Kentō · Niveau `lite` · `anthropic\/claude-haiku-5.5` · 0,004 \$/)
         assert.deepEqual(reactionsOf(payload.comment.id), ['eyes', 'rocket'])
         // Only the publication asked for `contents: write`, for this repository.
@@ -765,10 +766,14 @@ describe('commands in the comments of a pull request', () => {
         let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
         assert.ok(job)
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
-        await publisher().publishPending()
+        await publisher(new URL('https://review.test')).publishPending()
         assert.equal(fake.state.resolved.size, 0)
         assert.match(fake.repliesTo(botFixed)[0]!.body, /Le fil peut être résolu : l'App n'a pas encore le droit/)
-        assert.match(fake.state.issueComments.at(-1)!.body, /☑️ à résoudre · \[`src\/sum.ts:2`\]/)
+        // REV-106. A service that knows its public URL shows its icons.
+        assert.match(
+          fake.state.issueComments.at(-1)!.body,
+          /^- <picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/a-resoudre-dark\.v1\.svg"><img alt="À résoudre" src="https:\/\/review\.test\/assets\/pr\/a-resoudre\.v1\.svg" height="20" align="top"><\/picture> à résoudre · \[`src\/sum.ts:2`\]/m,
+        )
       })
 
       it('20. a review sent for a resolve job is refused; a resolution of an older head is not published', async () => {
