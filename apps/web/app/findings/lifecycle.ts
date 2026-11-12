@@ -137,7 +137,7 @@ export function adoptThreads(stored: readonly StoredFinding[], threads: readonly
       title: (/\*\*(.+?)\*\*/.exec(t.body)?.[1] ?? '').slice(0, 1000),
       severity: BADGE_SEVERITY[/alt="(P[012])"/.exec(t.body)?.[1] ?? ''] ?? 'minor',
       category: t.body.includes('alt="sécurité"') ? 'security' : 'bug',
-      // The bot comments only on a finding of this confidence or more.
+      // The comment does not give the confidence. 70 is the confidence of a sure finding.
       confidence: 70,
       status: 'open',
       statusReason: null,

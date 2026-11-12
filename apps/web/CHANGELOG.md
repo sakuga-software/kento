@@ -7,6 +7,39 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-103: Every P0 and P1 opens a conversation on GitHub
+
+No migration, no new variable, no new permission (the App writes the review comments already), no
+change to the protocol of the runners: deploy `web` alone. `/healthz` still gives `"migrations":25`.
+A review opens more threads than before; its verdict, its score and the rule that blocks do not
+change (`isBlocking`: a P0 or P1 of 70 or more, on a changed line, and not to consider).
+
+- A P0 or P1 on a changed line gets a thread, whatever its confidence. Below 70, its comment has the
+  mark « à vérifier » next to the priority, and it does not block: no REQUEST_CHANGES for it.
+  `@kento-review reject <cause>` sets it aside, as any finding.
+- A P0 or P1 outside the diff gets a comment at the level of its file (`subject_type: "file"`), posted
+  after the review, because GitHub takes no such comment in a review. Its first line links the lines
+  of the finding at the reviewed commit. The database keeps it as a line thread
+  (`findings.github_comment_id`): a push that fixes the finding resolves it, a variant (REV-99) and
+  `reject` answer in it. A retry does not post it twice: the comment of the earlier try carries the
+  finding by its key. GitHub refuses a comment on a file that the pull request does not change: the
+  finding then stays in the list of the block only (log `publish.file_comment_refused`).
+- MAX_INLINE (5) counts the P2 findings only after the P0 and P1: a P2 still gets a thread only from
+  70, and only while the review has fewer than 5 inline comments.
+- A P1 to consider (REV-100) gets a thread with the mark « à considérer », which does not block, when
+  both are true:
+  1. the published score is below 4;
+  2. no other P0 or P1 of the review is new, that is: not to consider and not carried by an open thread.
+
+  Otherwise it stays in the list « À considérer » of the block only, as before.
+- The Action (`review/sakuga-review.ts`) gives a thread to every P0 and P1 on a changed line too. It
+  posts no comment on a file, and it has no finding to consider: it never sends `reviewed`.
+
+Check: on a test pull request, a review with a P1 of confidence 60 on a changed line gets a thread
+with « à vérifier » and a review COMMENTED; a P1 outside the diff gets a comment on its file whose
+link opens its line, and a push that fixes it resolves that thread; a P1 to consider with a published
+score of 3 gets a thread « à considérer », and with a score of 4 none.
+
 ## REV-105: The block of the description lists the commands of Kentō
 
 No migration, no new variable, no new permission, no change to the protocol of the runners: deploy

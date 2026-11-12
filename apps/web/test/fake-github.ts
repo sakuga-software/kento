@@ -8,7 +8,8 @@ type Comment = {
   id: number
   reviewId: number | null
   path: string
-  line: number
+  /** REV-103. Null for a comment at the level of the file. */
+  line: number | null
   startLine?: number
   body: string
   commit: string
@@ -99,6 +100,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     failReviews: false,
     /** The review API refuses the inline comments (a line outside the diff). */
     refuseInline: false,
+    /** REV-103. The files that the pull request changes: GitHub refuses a comment on another file. Null: every file. */
+    prFiles: null as Set<string> | null,
     /** The comments whose replies answer 404, as for a comment deleted on GitHub meanwhile. */
     deletedComments: new Set<number>(),
     /** GitHub refuses `resolveReviewThread` to an App without `contents: write`. */
@@ -315,6 +318,14 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       let page = Number(url.searchParams.get('page') ?? 1)
       let list = state.comments.slice((page - 1) * perPage, page * perPage)
       return json(200, list.map((c) => ({ id: c.id, body: c.body, path: c.path, line: c.line, in_reply_to_id: c.inReplyTo ?? undefined, user: { login: c.author } })))
+    }
+    if (rest === `${prPath}/comments` && method === 'POST') {
+      // REV-103. Only a comment at the level of the file: the publisher posts a line in a review.
+      if (body.subject_type !== 'file' || !body.commit_id) return json(422, { message: 'fake GitHub: only a file comment' })
+      if (state.prFiles && !state.prFiles.has(body.path)) return json(422, { message: 'Path could not be resolved' })
+      let id = nextId++
+      state.comments.push({ id, reviewId: null, path: body.path, line: null, body: body.body, commit: body.commit_id, author: BOT, inReplyTo: null })
+      return json(201, { id })
     }
     if ((m = /^\/pulls\/\d+\/comments\/(\d+)\/replies$/.exec(rest)) && method === 'POST') {
       let parent = state.comments.find((c) => c.id === Number(m![1]))

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { descriptionBlock, findingKey, inlineBody, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
-import { shortId, withBlock } from '../src/render.ts';
+import { fileCommentBody, shortId, withBlock } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {
@@ -95,6 +95,21 @@ test('a finding shows its short id in its comment and in the list of the descrip
   assert.match(withThread, new RegExp(`^1\\. .*\\*\\*Le jeton expiré passe\\*\\* \`${id}\` \`src/auth\\.ts:12\``, 'm'));
   const withoutThread = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, () => null, context);
   assert.match(withoutThread, new RegExp(`^1\\. .*\`${id}\``, 'm'));
+});
+
+test('a P0 or P1 that does not block has a mark next to its priority (REV-103)', () => {
+  const first = (f: Finding) => inlineBody(f, false).split('\n')[0]!;
+  assert.doesNotMatch(first(finding), /à vérifier|à considérer/);
+  assert.match(first({ ...finding, confidence: 69 }), /^<img alt="P1" [^>]+> <img alt="sécurité" [^>]+> <img alt="à vérifier" [^>]+> \*\*/);
+  assert.match(first({ ...finding, seen: true }), /<img alt="à considérer" [^>]+> \*\*/);
+  assert.match(first({ ...finding, seen: true, confidence: 50 }), /<img alt="à considérer" [^>]+> \*\*/);
+  assert.doesNotMatch(first({ ...finding, severity: 'minor', confidence: 50 }), /à vérifier/);
+});
+
+test('the comment on a file links the lines of its finding, then gives the comment of the finding (REV-103)', () => {
+  const body = fileCommentBody({ ...finding, start_line: 10 }, 'https://github.com/o/n/blob/abc/src/auth.ts#L10-L12');
+  assert.ok(body.startsWith('Hors du diff de la PR : [`src/auth.ts:10-12`](https://github.com/o/n/blob/abc/src/auth.ts#L10-L12)\n\n'));
+  assert.ok(body.endsWith(inlineBody({ ...finding, start_line: 10 }, false)));
 });
 
 test('the cost of a level reads as a range of cents', () => {

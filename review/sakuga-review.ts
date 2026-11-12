@@ -16,6 +16,7 @@ import { parseArgs } from 'node:util';
 import {
   anchor,
   askJson,
+  BLOCKING_SEVERITIES,
   buildPack,
   costLine,
   descriptionBlock,
@@ -57,7 +58,9 @@ const GITHUB_API = process.env.GITHUB_API_URL ?? 'https://api.github.com';
 
 const BOT_LOGIN = process.env.REVIEW_BOT_LOGIN ?? 'kento-review[bot]';
 
-// Each inline comment is a thread that a person must resolve, so only the sure findings get one.
+// Each inline comment is a thread that a person must resolve, so only the sure P2 findings get one.
+// REV-103: every P0 and P1 on a changed line gets a thread, whatever its confidence, and MAX_INLINE
+// does not count it. The web service also comments on a P0 or P1 outside the diff; the Action does not.
 const INLINE_CONFIDENCE = 70;
 const MAX_INLINE = 5;
 
@@ -263,7 +266,8 @@ async function post(args: Args & { base: string }, answer: Answer, usage: Usage,
   for (const f of ordered) {
     if (openThreads.has(findingKey(f)) || nearThread(f)) continue;
     const line = anchor(f, lines);
-    if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue;
+    if (line === null) continue;
+    if (!BLOCKING_SEVERITIES.has(f.severity) && (f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE)) continue;
     const range = line === f.line ? suggestionRange(f, lines) : null;
     const comment: (typeof comments)[number] = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null) };
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' });

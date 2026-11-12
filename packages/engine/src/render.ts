@@ -1,5 +1,19 @@
 // The review as a reader sees it: the inline comments, the body of the review and the block of the description.
-import { anchor, deeperReview, diagram, findingKey, isBlocking, score, toConsider, type Anchors, type Answer, type Finding, type Usage } from './findings.ts';
+import {
+  anchor,
+  BLOCKING_CONFIDENCE,
+  BLOCKING_SEVERITIES,
+  deeperReview,
+  diagram,
+  findingKey,
+  isBlocking,
+  score,
+  toConsider,
+  type Anchors,
+  type Answer,
+  type Finding,
+  type Usage,
+} from './findings.ts';
 import type { Level } from '../../protocol/src/index.ts';
 import { levelCost } from './levels.ts';
 
@@ -23,6 +37,16 @@ function badges(finding: Finding): string {
   return badge(priority, colour) + (finding.category === 'security' ? ` ${badge('sécurité', '8e44ad')}` : '');
 }
 
+/**
+ * REV-103. The mark of a P0 or P1 that has a thread but does not block: « à considérer » for a
+ * finding to consider (REV-100), « à vérifier » below the blocking confidence.
+ */
+function threadMark(finding: Finding): string {
+  if (!BLOCKING_SEVERITIES.has(finding.severity)) return '';
+  if (toConsider(finding)) return ` ${badge('à considérer', 'adb5bd')}`;
+  return finding.confidence < BLOCKING_CONFIDENCE ? ` ${badge('à vérifier', 'adb5bd')}` : '';
+}
+
 /** The length of the short id of a finding that a reader sees, and gives to `@kento-review reject`. */
 export const SHORT_ID_LENGTH = 6;
 
@@ -39,13 +63,22 @@ export function shortId(finding: Finding): string {
  * the footer; the Action gives none.
  */
 export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: string | null): string {
-  const out = [`${badges(finding)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
+  const out = [`${badges(finding)}${threadMark(finding)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
   if (docsUrl) out.push('', `<sub>Constat faux : \`@kento-review reject <cause>\` en réponse dans ce fil. [Les commandes de Kentō](${docsUrl})</sub>`);
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');
+}
+
+/**
+ * REV-103. The comment at the level of the file of a P0 or P1 outside the diff: GitHub has no line
+ * of the diff for it. `lineUrl` links the lines of the finding at the reviewed commit.
+ */
+export function fileCommentBody(finding: Finding, lineUrl: string, docsUrl?: string | null): string {
+  const lines = finding.start_line && finding.start_line < finding.line ? `${finding.start_line}-${finding.line}` : `${finding.line}`;
+  return `Hors du diff de la PR : [\`${finding.path.replace(/^\/+/, '')}:${lines}\`](${lineUrl})\n\n${inlineBody(finding, false, docsUrl)}`;
 }
 
 /**
@@ -166,7 +199,7 @@ export function descriptionBlock(
     // The line of the thread: the nearest changed line when the model named one outside the diff.
     const line = anchor(f, lines);
     let where = `\`${f.path}:${line ?? f.line}\``;
-    // A finding outside the diff has no thread: link the line in the file at the reviewed commit.
+    // A finding outside the diff has no line in the diff: link the line in the file at the reviewed commit.
     if (line === null && context.commitUrl.startsWith('http')) {
       where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
     }

@@ -106,10 +106,14 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
   creates the label in a repository the first time.
 - **A check « Sakuga Review »** with the score.
 - **One review** on the head commit: the score and the sentence, the level, the model and the cost
-  of the review, and one inline comment per finding of 70 % confidence or more on a line that the
-  pull request changes, at most 5. An inline comment gives the priority badge, the title, the
-  failure scenario and the fix, and a GitHub suggestion when the fix is a few changed lines. Each
-  comment is a thread that a person resolves, so the unsure findings stay in the description.
+  of the review, and one inline comment per P0 or P1 on a line that the pull request changes,
+  whatever its confidence (REV-103). Below 70 % confidence, the comment has the mark « à vérifier »
+  and does not block. A P2 gets an inline comment from 70 % only, while the review has fewer than 5.
+  An inline comment gives the priority badge, the title, the failure scenario and the fix, and a
+  GitHub suggestion when the fix is a few changed lines. Each comment is a thread that a person
+  resolves, so the unsure P2 findings stay in the description.
+- **A comment on a file** (Kentō only) for each P0 or P1 outside the diff, with a link to its line at
+  the reviewed commit.
 
 The format is the one of the old workflow, so the scripts that read a review (score, level, badges)
 read both.
@@ -266,7 +270,8 @@ the callers:
   tell its callers apart.
 
 A finding can sit on that code when the change breaks it. It has no inline comment and does not
-block. It appears in the description, with a link to its line. The bench of 2026-10-04 measured no
+block. It appears in the description, with a link to its line. A P0 or P1 there also gets a comment
+on its file from Kentō (REV-103). The bench of 2026-10-04 measured no
 gain from the callers with GLM-5.3 or GPT-5.6 Luna, which did not use them, when Claude Sonnet 5.5
 found a defect of a caller with them. So `lite` sends only the definitions, which are small (0 to
 12 kB on the bench) and answer what the review otherwise lists as not reviewed.

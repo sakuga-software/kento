@@ -9,6 +9,7 @@
 // The web service imports the two modules that render a review, not the whole engine: it never
 // reads a checkout or calls a model.
 import {
+  BLOCKING_SEVERITIES,
   findingKey,
   isBlocking,
   score,
@@ -20,6 +21,7 @@ import {
 } from '@sakuga-review/engine/findings'
 import {
   descriptionBlock,
+  fileCommentBody,
   FINDING_KEY,
   inlineBody,
   MARKER_GONE,
@@ -59,9 +61,12 @@ export const BY = 'Kentō'
 /** Kentō, and the mention that asks it for another review. */
 const POSTER: Poster = { by: BY, handle: `@${COMMAND_NAMES[0]}` }
 
-// Each inline comment is a thread that a person must resolve, so only the sure findings get one.
+// Each inline comment is a thread that a person must resolve, so only the sure P2 findings get one.
+// REV-103: every P0 and P1 gets a thread, whatever its confidence, and MAX_INLINE does not count it.
 const INLINE_CONFIDENCE = 70
 const MAX_INLINE = 5
+// REV-103. A finding to consider gets a thread when the published score is below this one.
+const CONSIDER_SCORE = 4
 
 const SCORE_COLOUR = ['', 'b60205', 'd93f0b', 'fbca04', 'a2d9a5', '0e8a16']
 const LABEL_PREFIX = 'review: '
@@ -95,6 +100,8 @@ export interface PublishOutcome {
   followed: number
   /** REV-96. The threads that the model called refuted and that got the hint of `reject`. */
   hinted: number
+  /** REV-103. The comments at the level of the file, for a P0 or P1 outside the diff. */
+  fileComments: number
 }
 
 type InlineComment = {
@@ -230,15 +237,24 @@ export async function publishReview(
       SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity) ||
       b.confidence - a.confidence,
   )
+  let value = score(answer, anchorOf)
+  let raiseConsidered = raisesToConsider(ordered, value, (f) => matchOf.get(f)?.carrier != null)
   let inline: Finding[] = []
   let comments: InlineComment[] = []
+  let outsideDiff: Finding[] = []
   for (let f of ordered) {
     // A finding that an open thread already carries is not posted again.
     if (matchOf.get(f)?.carrier) continue
     // REV-100. A new finding on code already read, not critical, gets no thread: the block lists it.
-    if (toConsider(f)) continue
+    // REV-103: a P1 to consider gets one when raisesToConsider() says so.
+    if (toConsider(f) && !(raiseConsidered && BLOCKING_SEVERITIES.has(f.severity))) continue
     let line = anchorOf(f)
-    if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
+    if (BLOCKING_SEVERITIES.has(f.severity)) {
+      if (line === null) {
+        outsideDiff.push(f)
+        continue
+      }
+    } else if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null
     let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl) }
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' })
@@ -296,7 +312,6 @@ export async function publishReview(
     }
   }
   let found = posted!
-  let value = score(answer, anchorOf)
 
   // From here the review is on GitHub: a failure is logged, and the next step still runs.
   let step = async (stepName: string, run: () => Promise<void>) => {
@@ -327,6 +342,36 @@ export async function publishReview(
       if (!hit) continue
       newThreads.set(f, hit.id)
       free.splice(free.indexOf(hit), 1)
+    }
+  }
+  // REV-103. GitHub takes no comment on a file in the comments of a review: each one is a call of its
+  // own, after the review. A retry does not post it twice. The comment of the earlier try is an open
+  // thread of the bot with the key of the finding, so it carries the finding (adoptThreads). If that
+  // thread carries nothing (a person resolved it), the search by its key at this head finds it.
+  let fileComments = 0
+  for (let f of outsideDiff) {
+    let path = f.path.replace(/^\/+/, '')
+    let key = findingKey(f)
+    let earlier = threads.find((t) => t.key === key && t.path === path && t.line === null && t.commit === head)
+    if (earlier) {
+      newThreads.set(f, earlier.commentId)
+      continue
+    }
+    let lines = f.start_line && f.start_line < f.line ? `L${f.start_line}-L${f.line}` : `L${f.line}`
+    let lineUrl = `${target.webUrl}/${owner}/${name}/blob/${head}/${path}#${lines}`
+    try {
+      let out: { id: number } = await github.rest('POST', `${repo}/pulls/${pr}/comments`, {
+        body: fileCommentBody(f, lineUrl, target.docsUrl),
+        commit_id: head,
+        path,
+        subject_type: 'file',
+      })
+      newThreads.set(f, out.id)
+      fileComments++
+    } catch (error) {
+      // GitHub refuses a file that the pull request does not change: the block lists the finding.
+      if (!(error instanceof GitHubError && error.status === 422)) throw error
+      warn('publish.file_comment_refused', { path, error: String(error) })
     }
   }
   if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted))
@@ -494,7 +539,18 @@ export async function publishReview(
     suppressed: matches.length - shown.length,
     followed,
     hinted,
+    fileComments,
   }
+}
+
+/**
+ * REV-103. Whether the P1 findings to consider (REV-100) get a thread: only when the published score
+ * is below CONSIDER_SCORE, and when no other new P0 or P1 is in the review. A P0 or P1 that is not to
+ * consider explains a low score, and a finding that a thread already carries (`carried`) is not new.
+ */
+export function raisesToConsider(findings: readonly Finding[], published: number, carried: (finding: Finding) => boolean): boolean {
+  if (published >= CONSIDER_SCORE) return false
+  return !findings.some((f) => BLOCKING_SEVERITIES.has(f.severity) && !toConsider(f) && !carried(f))
 }
 
 /**

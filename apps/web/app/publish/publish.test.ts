@@ -327,7 +327,7 @@ describe('publishReview', () => {
     assert.match(fake.state.pr.body, /sum\(1, 2\) rend -1\. \*\*Correction :\*\* Remettre \+\./)
   })
 
-  it('keeps the inline comments to the sure findings, five at most', async () => {
+  it('keeps the inline comments to the sure P2 findings, five at most; a P1 outside the diff gets a comment on its file', async () => {
     let { fake, publish } = setup()
     let findings = [
       finding({ title: 'Peu sûr', confidence: 50, severity: 'minor', blocking: false, anchor: 10, line: 10, start_line: 10 }),
@@ -340,9 +340,10 @@ describe('publishReview', () => {
     let outcome = await publish(payload({ score: 3, verdict: 'COMMENT', findings }))
 
     assert.equal(outcome.inline, 5)
+    assert.equal(outcome.fileComments, 1)
     assert.deepEqual(
-      fake.botThreads().map((c) => c.body.match(/\*\*(.+?)\*\*/)![1]),
-      ['Constat 0', 'Constat 1', 'Constat 2', 'Constat 3', 'Constat 4'],
+      fake.botThreads().map((c) => [c.body.match(/\*\*(.+?)\*\*/)![1], c.line]),
+      [['Constat 0', 20], ['Constat 1', 30], ['Constat 2', 40], ['Constat 3', 50], ['Constat 4', 60], ['Hors diff', null]],
     )
     assert.equal(fake.state.reviews[0]!.state, 'COMMENTED')
     // A finding outside the diff links the line of the file at the reviewed commit.

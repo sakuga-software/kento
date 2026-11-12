@@ -14,6 +14,7 @@ export { levelConfig, providerLevelConfig, type LevelConfig } from './levels.ts'
 export { ProviderError } from './providers.ts';
 export {
   anchor,
+  BLOCKING_SEVERITIES,
   findingKey,
   isBlocking,
   score,
