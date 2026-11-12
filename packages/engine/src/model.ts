@@ -1,7 +1,7 @@
 // The model: one call through the provider, and the fallback to the next model of the level.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ANSWER_SCHEMA, type Answer, type Usage } from './findings.ts';
+import { ANSWER_SCHEMA, withPatch, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
 import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type Schema } from './providers.ts';
@@ -10,6 +10,7 @@ import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 export { OPENROUTER_BASE_URL, type Schema } from './providers.ts';
 
 const PROMPTS = join(import.meta.dirname, '..', 'prompts');
+const PATCH_NOTE = readFileSync(join(PROMPTS, 'patch.md'), 'utf8').trim();
 
 /**
  * What the engine needs to call a model. The caller gives the key: the engine reads no environment.
@@ -84,7 +85,8 @@ export async function askJson<T>(
 /**
  * The review call. `schema`: the answer schema, `ANSWER_SCHEMA` or the one with the rules of the pack.
  * `focus`: the angle of a pass (REV-20), added to the prompt; none for a review in one pass. `tools`:
- * the tools of REV-68, with their note at the end of the prompt; none for the pack alone.
+ * the tools of REV-68, with their note at the end of the prompt; none for the pack alone. A level with
+ * `patch` (REV-104) gets prompts/patch.md and a `patch` in each finding of the schema.
  */
 export async function askModel(
   client: ModelClient,
@@ -94,8 +96,10 @@ export async function askModel(
   focus?: string,
   tools?: RepoTools,
 ): Promise<Reply> {
-  const addition = [focus, tools ? TOOLS_NOTE : undefined].filter(Boolean).join('\n\n') || undefined;
-  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema }, addition, tools);
+  const patchNote = config.patch ? PATCH_NOTE : undefined;
+  const addition = [focus, patchNote, tools ? TOOLS_NOTE : undefined].filter(Boolean).join('\n\n') || undefined;
+  const asked = config.patch ? withPatch(schema) : schema;
+  const reply = await askJson<Answer>(client, config, 'review.md', pack, { name: 'review', schema: asked }, addition, tools);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;
 }

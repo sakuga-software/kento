@@ -193,7 +193,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         reuse = job.attempt > 1 ? null : await deps.store.reusableReview(job.id)
         // REV-88. To a runner that reads it, the last review to review only the change since.
         if (reuse && (body.features?.includes('delta') ?? false)) {
-          let delta = await deps.store.jobDelta(job.id, reuse)
+          let delta = await deps.store.jobDelta(job.id, reuse, { patch: body.features?.includes('patch') ?? false })
           if (delta) reuse = { ...reuse, delta }
         }
       } catch (cause) {

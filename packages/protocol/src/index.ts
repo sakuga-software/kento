@@ -101,8 +101,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `refuted`: a review can carry `refutedThreads`, the answered threads of the job that the model
  *   called refuted (REV-96). A service of an earlier release refuses the claim of this feature, and
  *   so never receives the field.
+ * - `patch`: a finding of the result can carry `patch`, a short diff of its fix (REV-104), and so can
+ *   a finding of `delta`. A service of an earlier release refuses the claim of this feature, and so
+ *   never receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -448,6 +451,7 @@ const finding = obj({
   scenario: text(20_000),
   fix: text(20_000),
   suggestion: text(20_000),
+  patch: optional(text(20_000)),
   anchor: nullable(line),
   blocking: bool,
   suggestion_range: nullable(tuple2(line, line)),
@@ -550,6 +554,12 @@ export type ReviewFinding = {
   scenario: string;
   fix: string;
   suggestion: string;
+  /**
+   * REV-104, with the feature `patch`. A short unified diff of the fix, when the fix does not fit a
+   * suggestion. Absent when the finding has an applicable suggestion, and always absent from a runner
+   * of an earlier release.
+   */
+  patch?: string;
   /** The changed line the finding anchors on, or null when it goes in the summary. */
   anchor: number | null;
   blocking: boolean;

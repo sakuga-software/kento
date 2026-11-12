@@ -1,7 +1,7 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, isBlocking, score, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type Usage } from './findings.ts';
+import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
@@ -96,8 +96,10 @@ export type ReviewResult = {
   pack: string;
   /** The rules that the pack held, with the reference that the model cites. */
   rules: PackedRule[];
-  /** The changed lines of each file at the head: a comment can go on these lines only. */
+  /** The changed lines of each file at the head: a finding anchors on these lines only. */
   lines: ChangedLines;
+  /** REV-104. The lines of the hunks of each file at the head: a suggestion can start on these lines. */
+  hunks: HunkLines;
   /** REV-71. The answered threads that the pack held. */
   threads: AnsweredThread[];
   /** REV-71. The findings that a refuted thread removed. */
@@ -180,6 +182,7 @@ export type PreparedReview = {
   skipped: string[];
   rules: PackedRule[];
   lines: ChangedLines;
+  hunks: HunkLines;
   threads: AnsweredThread[];
   rejected: HeldRejection[];
   earlier: HeldEarlier[];
@@ -225,6 +228,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     skipped,
     rules,
     lines,
+    hunks: hunkLines(input.repoDir, base, input.head),
     threads: answered.held,
     rejected: rejected.held,
     earlier: earlierFindings.held,
@@ -242,7 +246,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, threads, rejected, earlier, diffHash, reuseKey, delta, seen } = prepared;
+  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -305,13 +309,19 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
-  const findings = answer.findings.map((f) => ({
-    ...f,
-    anchor: anchor(f, lines),
-    blocking: isBlocking(f, lines),
-    suggestion_range: anchor(f, lines) === f.line ? suggestionRange(f, lines) : null,
-    fingerprint: fingerprint(f, fileAt(f.path)),
-  })) as (ReviewedFinding & F)[];
+  const findings = answer.findings.map(({ patch: given, ...f }) => {
+    const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
+    // REV-104. An applicable suggestion wins over the patch.
+    const patch = range ? null : shownPatch({ ...f, patch: given });
+    return {
+      ...f,
+      ...(patch ? { patch } : {}),
+      anchor: anchor(f, lines),
+      blocking: isBlocking(f, lines),
+      suggestion_range: range,
+      fingerprint: fingerprint(f, fileAt(f.path)),
+    };
+  }) as (ReviewedFinding & F)[];
   return {
     level: input.level,
     base,
@@ -327,6 +337,7 @@ export function finishReview<F extends Finding>(
     pack,
     rules,
     lines,
+    hunks,
     threads,
     refutedInThread: answeredAway,
     refutedThreads,

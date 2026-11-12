@@ -8,6 +8,7 @@ import {
   findingKey,
   isBlocking,
   score,
+  shownPatch,
   toConsider,
   type Anchors,
   type Answer,
@@ -122,7 +123,9 @@ export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: 
   const out = [`${badges(finding, icons)}${threadMark(finding, icons)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Correction :** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Règle : « ${finding.rule_title.replace(/\s+/g, ' ').trim()} »`);
+  const patch = shownPatch(finding);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
+  else if (patch) out.push('', '```diff', patch, '```');
   if (docsUrl) out.push('', `<sub>Constat faux : \`@kento-review reject <cause>\` en réponse dans ce fil. [Les commandes de Kentō](${docsUrl})</sub>`);
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');
@@ -288,6 +291,8 @@ export function descriptionBlock(
     out.push(`${i + 1}. ${badges(f, icons)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">${icons === 'emoji' ? '▶' : icon('fil', icons)}</a>` : ''}`);
     // A finding with no thread shows its scenario here: this is the only place it appears.
     if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
+    const patch = url ? null : shownPatch(f);
+    if (patch) out.push('', '   <details><summary>Correction</summary>', '', '   ```diff', ...patch.split('\n').map((row) => `   ${row}`), '   ```', '   </details>', '');
   };
   // REV-100. The new findings on code that an earlier review already read go in a list of their own.
   const main = links.filter((l) => !toConsider(l.finding));

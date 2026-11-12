@@ -23,6 +23,7 @@ export {
   type Answer,
   type ChangedLines,
   type Finding,
+  type HunkLines,
   type Usage,
 } from './findings.ts';
 export { buildPack } from './pack.ts';

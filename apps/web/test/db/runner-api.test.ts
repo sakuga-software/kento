@@ -736,6 +736,25 @@ describe('runner API', () => {
       assert.equal(raw.reuse.delta.findings.length, 100)
     })
 
+    it('sends the patch of a carried finding only to a runner that claims the feature patch (REV-104)', async () => {
+      let [j] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let patch = '--- a/a.ts\n+++ b/a.ts\n@@ -2 +2 @@\n-a\n+b'
+      let result = review({ head: PREVIOUS, score: 3, findings: [{ ...finding, fingerprint: '1111111111111111', patch }], reuseKey: KEY })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${j!.id}, ${repoId}, 28, ${PREVIOUS}, 3, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 555, now())`
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta', 'patch'] })).json()
+      assert.ok(parseJob(raw).ok)
+      assert.equal(raw.reuse.delta.findings[0].patch, patch)
+      await queueJob()
+      let old = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      assert.ok(!('patch' in old.reuse.delta.findings[0]), 'a runner of an earlier release refuses the key')
+    })
+
     it('takes the delta from the review of the level of the job, even when a review of another level is later', async () => {
       for (let [level, score, at] of [['lite', 3, '1 second'], ['heavy', 5, '2 seconds']] as const) {
         let [j] = await database.sql<{ id: string }[]>`

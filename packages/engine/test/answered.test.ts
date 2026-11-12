@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { refutedThreadIds, type AnsweredThread } from '../src/answered.ts';
-import { ANSWER_SCHEMA, type ThreadVerdict } from '../src/findings.ts';
+import { ANSWER_SCHEMA, withPatch, type ThreadVerdict } from '../src/findings.ts';
 import { levelConfig, reviewInPasses, reviewPullRequest, type Answer, type Finding, type OpenThread } from '../src/index.ts';
 import { BASE_PASSES } from '../src/passes.ts';
 import { inlineBody } from '../src/render.ts';
@@ -151,7 +151,7 @@ test('the same review without the threads posts the P1 again: what gallery-app#1
   assert.equal(result.findings[0]!.blocking, true);
   assert.equal(result.score, 2);
   assert.doesNotMatch(calls[0]!.pack, /Answered threads/);
-  assert.deepEqual(calls[0]!.schema, ANSWER_SCHEMA, 'no thread: the schema stays as before');
+  assert.deepEqual(calls[0]!.schema, withPatch(ANSWER_SCHEMA), 'no thread: the schema stays as before');
 });
 
 test('a thread that the model upholds keeps its finding', async () => {
@@ -193,7 +193,7 @@ test('a thread with no reply of someone else, or opened by a person, is not in t
   const byPerson: OpenThread = { ...thread(head), comments: thread(head).comments.map((c, i) => (i === 0 ? { ...c, author: 'alex-sakuga', isBot: false } : { ...c, author: 'kento-review', isBot: true })) };
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {}, threads: [alone, byPerson] });
   assert.doesNotMatch(calls[0]!.pack, /Answered threads/);
-  assert.deepEqual(calls[0]!.schema, ANSWER_SCHEMA);
+  assert.deepEqual(calls[0]!.schema, withPatch(ANSWER_SCHEMA));
   // A verdict on a thread that the pack does not hold removes nothing.
   assert.equal(result.findings.length, 1);
 });

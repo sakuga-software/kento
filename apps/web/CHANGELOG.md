@@ -7,6 +7,42 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-104: More code suggestions on the P0 and P1 findings, and a diff when a suggestion cannot apply
+
+**The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this
+release claims the feature `patch`; a web service of an earlier release refuses a claim with a
+feature that it does not know. No migration: the patch is in `reviews.result`, as the suggestion.
+`/healthz` gives the count of the release before it (`"migrations":26` after REV-107). No new
+variable, no new permission.
+
+- `prompts/review.md` does not change. A prompt that asked for a suggestion on each P0 and P1,
+  with a free `patch`, cut the recall of Haiku at `lite` on the bench, and a lighter version found no
+  more suggestions than the prompt of `main`. 4 % of the P1 of the last 30 days had a suggestion.
+- A suggestion can start on a context line of the hunk on GitHub (3 lines around a change), not only
+  on a changed line. The engine reads the hunks with `git diff -U3`, as GitHub shows them. Its last
+  line stays a changed line, the line of the thread, and the limit of 30 lines stays.
+- At `balanced` and `heavy`, a finding whose fix does not fit a suggestion (several places, lines
+  outside the hunks) can carry a `patch`: a short unified diff (`prompts/patch.md`). At `lite`, the
+  prompt and the answer schema hold no `patch`. The thread shows the patch under « Correction » in a
+  `diff` block. A finding with no thread shows it in the description, in a `<details>`. A patch of
+  more than 40 lines, or one that holds a code fence, is not shown. An applicable suggestion wins:
+  the runner then sends no patch.
+- The `delta` of a job (REV-88) carries the patch of each finding only to a runner that claims
+  `patch`. A runner of an earlier release reads the findings of `delta` strictly, and would refuse
+  the key. A runner that goes back to an earlier release after this deployment therefore gets no
+  patch, and nothing fails.
+- A service of an earlier release never receives `patch`: it refuses the claim. Roll back the
+  runners before the service.
+- The reuse key (REV-89) now reads `prompts/patch.md` too, so it changes: after the deployment, the
+  review of an unchanged diff calls the model once more instead of reusing the earlier review.
+- An answer of Anthropic that is not valid JSON gives its `stop_reason` and its output tokens in the
+  error, for example `(stop_reason max_tokens, 32000 output tokens)`.
+
+Check: a job claimed by a runner of this release has `patch` in the features of its claim. On a test
+pull request, a P1 whose fix covers a changed line and the context line above it gets a thread with
+the button « Commit suggestion », and its commit gives the expected code. A P1 whose fix touches two
+functions gets a thread with a `diff` block under « Correction », and no suggestion, at `balanced`.
+
 ## REV-107: After three reviews, Kentō asks the author for feedback, once per pull request
 
 Migration `0025_feedback`: two new tables, `feedback_requests` and `feedback` (no change to an

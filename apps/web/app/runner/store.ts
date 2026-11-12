@@ -225,9 +225,10 @@ export interface RunnerStore {
    * REV-88. What the runner needs to review only the change since the review `reuse` names: its
    * score, its findings still open, and the settled findings of the pull request. Null when that
    * review is of another level than the job (a command at another level): the runner then reviews
-   * the whole pull request.
+   * the whole pull request. `patch`: the runner claims the feature `patch` (REV-104) and reads the
+   * `patch` of a finding.
    */
-  jobDelta(jobId: string, reuse: JobReuse): Promise<JobDelta | null>
+  jobDelta(jobId: string, reuse: JobReuse, options?: { patch: boolean }): Promise<JobDelta | null>
   /**
    * REV-99. Every finding of the pull request of a review job, whatever its status, the open ones
    * first, then the most recently changed, MAX_EARLIER_FINDINGS at most; and the head and the score
@@ -498,7 +499,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return { head: last.headSha, key: last.key }
     },
 
-    async jobDelta(jobId, reuse) {
+    async jobDelta(jobId, reuse, options = { patch: false }) {
       let [row] = await sql<{ result: unknown; level: Level; repoId: string; prNumber: number }[]>`
         select reviews.result, jobs.level, jobs.repo_id as "repoId", jobs.pr_number as "prNumber"
         from jobs
@@ -524,7 +525,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       // The job carries only what the runner accepts (the protocol): a stored finding has keys of the
       // service (`rule_title`), and an older row can fail a check. One of them would fail the claim.
       // At most MAX_DELTA_FINDINGS, the limit of the job: a longer list would fail the claim.
-      let valid = open.map(sendableFinding).filter((f) => parseReviewFinding(f).ok)
+      let valid = open.map((f) => sendableFinding(f, options.patch)).filter((f) => parseReviewFinding(f).ok)
       let findings = valid.slice(0, MAX_DELTA_FINDINGS)
       let sent = settled.map((f) => ({ ...f, title: f.title.slice(0, 1000), line: Math.max(0, f.line) })).filter((f) => parseSettledFinding(f).ok)
       let dropped = open.length - valid.length + settled.length - sent.length
@@ -747,9 +748,12 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
   }
 }
 
-/** REV-88. A stored finding with the keys of the protocol only. */
-function sendableFinding(f: ReviewPayload['findings'][number]): ReviewPayload['findings'][number] {
-  let { path, start_line, line, severity, category, confidence, title, scenario, fix, suggestion, anchor, blocking, suggestion_range, rule_id, fingerprint } = f
+/**
+ * REV-88. A stored finding with the keys of the protocol only. `withPatch`: the runner reads `patch`
+ * (REV-104); a runner of an earlier release refuses the key.
+ */
+function sendableFinding(f: ReviewPayload['findings'][number], withPatch: boolean): ReviewPayload['findings'][number] {
+  let { path, start_line, line, severity, category, confidence, title, scenario, fix, suggestion, patch, anchor, blocking, suggestion_range, rule_id, fingerprint } = f
   return {
     path,
     start_line,
@@ -761,6 +765,7 @@ function sendableFinding(f: ReviewPayload['findings'][number]): ReviewPayload['f
     scenario,
     fix,
     suggestion,
+    ...(withPatch && patch ? { patch } : {}),
     anchor,
     blocking,
     suggestion_range,

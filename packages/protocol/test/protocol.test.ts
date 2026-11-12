@@ -373,6 +373,16 @@ test('a review job carries the last reviewed commit with the feature reviewed, a
   assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), findings: [{ ...f, seen: 'yes' }] } }).ok, false);
 });
 
+test('a finding may carry a patch, with the feature patch, and a finding without one stays valid (REV-104)', () => {
+  assert.ok(FEATURES.includes('patch'));
+  const f = review().findings[0]!;
+  const done = (patch: unknown) => ({ outcome: 'done', attempt: 1, review: { ...review(), findings: [{ ...f, patch }] } });
+  assert.equal(parseResultRequest(done('--- a/a.ts\n+++ b/a.ts\n@@ -2 +2 @@\n-a\n+b')).ok, true);
+  assert.equal(parseResultRequest(done(42)).ok, false);
+  assert.equal(parseResultRequest(done('x'.repeat(20_001))).ok, false);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: review() }).ok, true);
+});
+
 test('a review may carry the answered threads that the model called refuted, with the feature refuted (REV-96)', () => {
   assert.ok(FEATURES.includes('refuted'));
   const done = (refutedThreads: unknown) => ({ outcome: 'done', attempt: 1, review: { ...review(), refutedThreads } });

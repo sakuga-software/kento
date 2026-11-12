@@ -18,7 +18,7 @@ export { DIFF_HASH, REUSE_KEY } from '../../protocol/src/index.ts';
  */
 export const REUSE_VERSION = 1;
 
-const PROMPT = readFileSync(join(import.meta.dirname, '..', 'prompts', 'review.md'), 'utf8');
+const PROMPT = ['review.md', 'patch.md'].map((file) => readFileSync(join(import.meta.dirname, '..', 'prompts', file), 'utf8')).join('\n');
 
 /**
  * The hash of the changed files that a review reads, from `git diff --raw base...head`: for each

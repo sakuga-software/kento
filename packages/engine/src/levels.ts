@@ -18,6 +18,12 @@ export type LevelConfig = {
    */
   context: ContextKind;
   /**
+   * REV-104. The model can give a `patch` when a suggestion cannot hold the fix (prompts/patch.md).
+   * Not at `lite`: on the bench of REV-104, Haiku gave a patch to half of its P0 and P1, and found
+   * no more defects.
+   */
+  patch: boolean;
+  /**
    * REV-68. The budget of the tools `read_file` and `grep`, or none: the model reads the pack only.
    * No level has tools until the bench measures them; `REVIEW_TOOLS=1` gives them for a run.
    */
@@ -48,6 +54,7 @@ export const LEVELS: Record<Level, LevelConfig> = {
     maxTokens: 32_000,
     maxPrice: { prompt: 0.5, completion: 3.5 },
     context: 'definitions',
+    patch: false,
   },
   balanced: {
     models: ['anthropic/claude-sonnet-5.5'],
@@ -56,6 +63,7 @@ export const LEVELS: Record<Level, LevelConfig> = {
     maxTokens: 24_000,
     maxPrice: { prompt: 3, completion: 15 },
     context: 'full',
+    patch: true,
   },
   heavy: {
     models: ['anthropic/claude-opus-5.5'],
@@ -64,6 +72,7 @@ export const LEVELS: Record<Level, LevelConfig> = {
     maxTokens: 32_000,
     maxPrice: { prompt: 5, completion: 25 },
     context: 'full',
+    patch: true,
   },
 };
 

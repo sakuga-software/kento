@@ -131,6 +131,29 @@ test('the prompt gives the model the same ratio of cost as LEVEL_COST_CENTS', ()
   assert.match(prompt.replace(/\s+/g, ' '), new RegExp(`for ${low} to ${high} times the cost of this review`));
 });
 
+const patch = '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -12 +12 @@\n-  return true;\n+  return exp > Date.now();';
+
+test('a thread shows the patch of a finding under its fix, and an applicable suggestion wins over it (REV-104)', () => {
+  const withPatch = { ...finding, patch };
+  assert.match(inlineBody(withPatch, false), /\*\*Correction :\*\* Comparer exp à Date\.now\(\)\.\n\n```diff\n--- a\/src\/auth\.ts\n[\s\S]*\+  return exp > Date\.now\(\);\n```\n/);
+  const both = inlineBody({ ...withPatch, suggestion: '  return exp > Date.now();' }, true);
+  assert.match(both, /```suggestion\n  return exp > Date\.now\(\);\n```/);
+  assert.doesNotMatch(both, /```diff/);
+  assert.doesNotMatch(inlineBody({ ...finding, patch: Array.from({ length: 41 }, () => '+x').join('\n') }, false), /```diff/);
+});
+
+test('a finding without a thread shows its patch in the description, in a details block (REV-104)', () => {
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
+  const withPatch = { ...finding, patch };
+  const block = descriptionBlock({ ...answer, findings: [withPatch] }, [{ finding: withPatch, url: null }], [], 0, usage, () => null, context);
+  assert.match(
+    block,
+    /Comparer exp à Date\.now\(\)\.\n\n {3}<details><summary>Correction<\/summary>\n\n {3}```diff\n {3}--- a\/src\/auth\.ts\n {3}\+\+\+ b\/src\/auth\.ts\n {3}@@ -12 \+12 @@\n {3}- {2}return true;\n {3}\+ {2}return exp > Date\.now\(\);\n {3}```\n {3}<\/details>\n/,
+  );
+  const threaded = descriptionBlock({ ...answer, findings: [withPatch] }, [{ finding: withPatch, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 0, usage, anchors, context);
+  assert.doesNotMatch(threaded, /```diff/);
+});
+
 // REV-106. Every text that a review posts, for each priority and each mark.
 function everyText(icons: Icons): string[] {
   const findings: Finding[] = [

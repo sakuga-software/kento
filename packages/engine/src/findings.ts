@@ -22,6 +22,11 @@ export type Finding = {
   fix: string;
   suggestion: string;
   /**
+   * REV-104. A short unified diff of the fix, when the fix does not fit a suggestion: several places,
+   * or lines outside the hunks. Absent from a finding of an earlier release.
+   */
+  patch?: string;
+  /**
    * REV-19. The rule that the finding applies. The model gives the reference of a rule of the pack
    * (`R1`) or null; the engine replaces it with the id of the rule, or removes it (rules.ts).
    */
@@ -98,6 +103,11 @@ export type Usage = {
 };
 export type ChangedLines = Map<string, Set<number>>;
 /**
+ * REV-104. The lines of each file at the head that a hunk of the diff shows: the changed lines and
+ * the context lines around them. GitHub accepts a comment on each of these lines.
+ */
+export type HunkLines = Map<string, Set<number>>;
+/**
  * Where each finding anchors: the changed lines of the checkout, or the anchor that a runner already
  * computed. The web service has no checkout: it reads the anchor of each finding in the result.
  */
@@ -140,6 +150,16 @@ export function answerSchema(ruleRefs: readonly string[] = [], threadRefs: reado
   return { ...ANSWER_SCHEMA, properties: { ...properties, threads: threadsSchema(threadRefs) }, required: [...ANSWER_SCHEMA.required, 'threads'] };
 }
 
+type ObjectSchema = { properties: Record<string, unknown>; required: string[] };
+
+/** REV-104. The answer schema of a level with `patch` (levels.ts): each finding then gives a `patch`. */
+export function withPatch(schema: object): object {
+  const answer = schema as ObjectSchema & { properties: { findings: { items: ObjectSchema } } };
+  const items = answer.properties.findings.items;
+  const finding = { ...items, properties: { ...items.properties, patch: { type: 'string' } }, required: [...items.required, 'patch'] };
+  return { ...answer, properties: { ...answer.properties, findings: { ...answer.properties.findings, items: finding } } };
+}
+
 export const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
@@ -162,9 +182,24 @@ export const ANSWER_SCHEMA = {
 
 /** The line numbers, in the new version of each file, that the pull request adds or changes. */
 export function changedLines(repo: string, base: string, head: string): ChangedLines {
-  const lines: ChangedLines = new Map();
+  return diffLines(repo, base, head, 0);
+}
+
+// The context lines of a hunk in the diff of a pull request on GitHub.
+const GITHUB_CONTEXT = 3;
+
+/**
+ * REV-104. The lines of the hunks of the diff of the pull request on GitHub, at the head. Git joins
+ * two hunks when the gap between them is small, as GitHub does.
+ */
+export function hunkLines(repo: string, base: string, head: string): HunkLines {
+  return diffLines(repo, base, head, GITHUB_CONTEXT);
+}
+
+function diffLines(repo: string, base: string, head: string, context: number): Map<string, Set<number>> {
+  const lines = new Map<string, Set<number>>();
   let path: string | null = null;
-  for (const row of git(repo, 'diff', '-U0', `${base}...${head}`).split('\n')) {
+  for (const row of git(repo, 'diff', `-U${context}`, `${base}...${head}`).split('\n')) {
     if (row.startsWith('+++ ')) {
       path = row.startsWith('+++ b/') ? row.slice(6) : null;
       if (path && !lines.has(path)) lines.set(path, new Set());
@@ -258,14 +293,29 @@ export function diagram(answer: Answer): string | null {
   return text.replace(/"([^"]*)"/g, (_, label: string) => `"${label.replace(/</g, '‹').replace(/>/g, '›')}"`);
 }
 
-/** A suggestion goes on the exact lines the model named, when all of them are changed lines. */
-export function suggestionRange(finding: Finding, lines: ChangedLines): [number, number] | null {
+/**
+ * A suggestion goes on the exact lines the model named, when all of them are lines of one hunk. REV-104:
+ * a context line counts. The caller gives a range only to a finding that anchors on its `line`, so
+ * `line` stays a changed line, and only the lines before it can be context lines.
+ */
+export function suggestionRange(finding: Finding, hunks: HunkLines): [number, number] | null {
   if (!finding.suggestion.trim()) return null;
-  const changed = lines.get(finding.path.replace(/^\/+/, '')) ?? new Set<number>();
+  const shown = hunks.get(finding.path.replace(/^\/+/, '')) ?? new Set<number>();
   const start = Math.min(finding.start_line || finding.line, finding.line);
   if (finding.line - start > 30) return null;
-  for (let n = start; n <= finding.line; n++) if (!changed.has(n)) return null;
+  for (let n = start; n <= finding.line; n++) if (!shown.has(n)) return null;
   return [start, finding.line];
+}
+
+/** REV-104. The longest patch that a reader sees: a reader does not check a longer one. */
+export const MAX_PATCH_LINES = 40;
+
+/** REV-104. The patch of a finding as a reader sees it, or null when it has none or it is too long. */
+export function shownPatch(finding: Finding): string | null {
+  const patch = (finding.patch ?? '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
+  // A fence in the patch would close the code block of the comment.
+  if (!patch.trim() || patch.includes('```') || patch.split('\n').length > MAX_PATCH_LINES) return null;
+  return patch;
 }
 
 
@@ -289,3 +339,4 @@ export function verdict(answer: Answer, lines: Anchors, level: Level): 'REQUEST_
   if (deeperReview(answer, level)) return 'COMMENT';
   return score(answer, lines) >= APPROVE_SCORE ? 'APPROVE' : 'COMMENT';
 }
+

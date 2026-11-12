@@ -78,7 +78,15 @@ type Review = {
   verificationCost?: number;
   /** REV-67, with --samples: the findings that the merge dropped as duplicates of another sample. */
   merged?: number;
+  /** REV-104, in one pass: the P0 and P1 findings, those with a suggestion that GitHub shows, and those with a patch. */
+  fixes?: Fixes;
 };
+type Fixes = { p01: number; suggestions: number; patches: number };
+
+function fixesOf(findings: { severity: string; suggestion_range: [number, number] | null; patch?: string }[]): Fixes {
+  const p01 = findings.filter((f) => f.severity !== 'minor');
+  return { p01: p01.length, suggestions: p01.filter((f) => f.suggestion_range).length, patches: p01.filter((f) => f.patch).length };
+}
 type Mode = { level: Level; passes: boolean; samples: number };
 
 
@@ -150,6 +158,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       model: out.usage.model,
       error: failures[0],
       tokens: { prompt: out.usage.prompt_tokens ?? 0, completion: out.usage.completion_tokens ?? 0, cacheRead: out.usage.cache_read_tokens ?? 0 },
+      fixes: fixesOf(out.findings),
       ...(out.toolUse ? { tools: out.toolUse } : {}),
     };
   } catch (error) {
@@ -345,6 +354,11 @@ async function main() {
       verification_cost: rows.reduce((total, row) => total + (row.verificationCost ?? 0), 0),
       failed_passes: rows.reduce((total, row) => total + (row.passes?.filter((p) => p.error).length ?? 0), 0),
       merged: rows.reduce((total, row) => total + (row.merged ?? 0), 0),
+      fixes: {
+        p01: rows.reduce((total, row) => total + (row.fixes?.p01 ?? 0), 0),
+        suggestions: rows.reduce((total, row) => total + (row.fixes?.suggestions ?? 0), 0),
+        patches: rows.reduce((total, row) => total + (row.fixes?.patches ?? 0), 0),
+      },
       martian,
       internal,
       profiles,
@@ -364,6 +378,7 @@ async function main() {
           ? ` · ${result.dropped} dropped by the check (${result.dropped_true} true) · check $${result.verification_cost.toFixed(3)} · ${result.failed_passes} failed passes`
           : '') +
         (mode.samples > 1 ? ` · ${result.merged} duplicates merged` : '') +
+        (mode.passes || mode.samples > 1 ? '' : ` · P0/P1 ${result.fixes.p01}, with a suggestion ${result.fixes.suggestions}, with a patch ${result.fixes.patches}`) +
         ` · F1 core medium+ ${coreMediumUp.f1.toFixed(2)} · independent recall ${percent(independentRecall.recall)} · ${result.known_false} findings repeat one of ${result.known_false_total} known false positives`,
     );
   }

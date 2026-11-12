@@ -446,6 +446,8 @@ export function payload(
       scenario: cut(f.scenario, 20_000),
       fix: cut(f.fix, 20_000),
       suggestion: cut(f.suggestion, 20_000),
+      // REV-104. The service of this job accepted the claim of the feature `patch`, so it reads the key.
+      ...(f.patch ? { patch: cut(f.patch, 20_000) } : {}),
       anchor: f.anchor,
       blocking: f.blocking,
       suggestion_range: f.suggestion_range,

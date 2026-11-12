@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { ANSWER_SCHEMA } from '../src/findings.ts';
+import { ANSWER_SCHEMA, withPatch } from '../src/findings.ts';
 import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
 import { MAX_REJECTED_BYTES, rejectedSection } from '../src/rejected.ts';
 import type { RejectedFinding } from '../../protocol/src/index.ts';
@@ -128,7 +128,7 @@ test('a forced review on the same head does not report a rejected P1 again, even
   assert.match(pack, /- The file changed since the rejection: No\./);
   assert.ok(pack.indexOf('## Rejected findings') < pack.indexOf('## Diff'));
   // No verdict to give: the schema stays as before.
-  assert.deepEqual(calls[0]!.schema, ANSWER_SCHEMA);
+  assert.deepEqual(calls[0]!.schema, withPatch(ANSWER_SCHEMA));
 });
 
 test('the same review without the rejection posts the P1, and the score falls to 2', async () => {

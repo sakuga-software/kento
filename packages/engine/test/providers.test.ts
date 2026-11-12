@@ -84,6 +84,15 @@ test('Anthropic: a refusal of the model is an error, and the next model answers'
   assert.match(logs[0]!, /declined the request \(cyber\)/);
 });
 
+test('Anthropic: an answer cut by max_tokens names the stop_reason in the error (REV-104)', async () => {
+  const { fetch } = fakeFetch([
+    () => json({ model: 'claude-haiku-5-5', stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"ok":' }], usage: { input_tokens: 10, output_tokens: 32000 } }),
+  ]);
+  const config = providerLevelConfig('lite', 'anthropic', ['claude-haiku-5-5']);
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.match(error.message, /Anthropic gave no JSON object \(stop_reason max_tokens, 32000 output tokens\)/);
+});
+
 test('OpenAI-compatible: a server that refuses response_format gets the call again with the schema in the prompt', async () => {
   const { fetch, calls } = fakeFetch([
     () => json({ error: { message: 'response_format is not supported' } }, 400),

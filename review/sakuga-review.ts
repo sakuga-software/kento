@@ -46,6 +46,7 @@ import {
   type Answer,
   type ChangedLines,
   type Finding,
+  type HunkLines,
   type Level,
   type Link,
   type OpenThread,
@@ -232,7 +233,7 @@ function staleNote(head: string, newer: string): string {
   );
 }
 
-async function post(args: Args & { base: string }, answer: Answer, usage: Usage, skipped: string[], lines: ChangedLines) {
+async function post(args: Args & { base: string }, answer: Answer, usage: Usage, skipped: string[], lines: ChangedLines, hunks: HunkLines) {
   const [owner, name] = args.repository.split('/');
   // REV-87. A review of an earlier head posts itself, with its inline comments, and nothing else: no
   // thread closed, no earlier review dismissed, no block, no label. They belong to the review of the
@@ -268,7 +269,7 @@ async function post(args: Args & { base: string }, answer: Answer, usage: Usage,
     const line = anchor(f, lines);
     if (line === null) continue;
     if (!BLOCKING_SEVERITIES.has(f.severity) && (f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE)) continue;
-    const range = line === f.line ? suggestionRange(f, lines) : null;
+    const range = line === f.line ? suggestionRange(f, hunks) : null;
     const comment: (typeof comments)[number] = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null) };
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' });
     inline.push(f);
@@ -581,7 +582,7 @@ async function review(args: Args & { base: string }, dryRun: boolean, packOnly: 
     return;
   }
   const result = await reviewPullRequest({ ...model, repoDir: args.repoDir, base: args.base, head: args.head, level: args.level, config });
-  const { answer, usage, skipped, lines, pack } = result;
+  const { answer, usage, skipped, lines, hunks, pack } = result;
   log(
     `level=${args.level} model=${usage.model} provider=${usage.provider} tokens=${usage.prompt_tokens}+${usage.completion_tokens} ` +
       `cached=${usage.cache_read_tokens ?? '?'} diff=${result.diffHash} cost=${usage.cost} score=${result.score}/5 verdict=${result.verdict} findings=${answer.findings.length} ` +
@@ -602,7 +603,7 @@ async function review(args: Args & { base: string }, dryRun: boolean, packOnly: 
     console.log(JSON.stringify({ answer: { ...answer, findings: result.findings }, usage, skipped, pack_bytes: pack.length, body, block }, null, 2));
     return;
   }
-  const { posted, inlineCount, resolved, score: value } = await post(args, answer, usage, skipped, lines);
+  const { posted, inlineCount, resolved, score: value } = await post(args, answer, usage, skipped, lines, hunks);
   log(`posted review ${posted.id} (${posted.state}) with ${inlineCount} inline comments, ${resolved} threads resolved, score ${value}/5`);
 }
 

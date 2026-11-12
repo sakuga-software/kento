@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -726,7 +726,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -869,6 +869,21 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   const old = fakeApi();
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, model));
   assert.ok(old.results[0]!.outcome === 'done' && !('refutedThreads' in old.results[0]!.review));
+});
+
+test('the patch of a finding without a suggestion goes to the service (REV-104)', async () => {
+  const { api, results } = fakeApi();
+  const patch = '--- a/sum.ts\n+++ b/sum.ts\n@@ -2 +2 @@\n-  return a - b;\n+  return a + b;';
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    const content = { ...answer(), findings: [{ ...answer().findings[0]!, suggestion: '', patch }] };
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model));
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.equal(result.review.findings[0]!.patch, patch);
+  assert.equal(result.review.findings[0]!.suggestion_range, null);
 });
 
 // --- rejected findings (REV-95) -----------------------------------------------------------------

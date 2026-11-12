@@ -108,6 +108,19 @@ export function parseObject<T>(content: string, name: string): T {
   }
 }
 
+/**
+ * REV-104. The reasoning counts in `max_tokens`, and a long reasoning cuts the JSON. The error then
+ * gives the `stop_reason` and the output tokens after the message of parseObject.
+ */
+function parseAnthropic<T>(text: string, stopReason: unknown, outputTokens: number): T {
+  try {
+    return parseObject<T>(text, 'Anthropic');
+  } catch (error) {
+    if (!(error instanceof ProviderError) || stopReason === 'end_turn') throw error;
+    throw new ProviderError(`${error.message} (stop_reason ${String(stopReason)}, ${outputTokens} output tokens)`);
+  }
+}
+
 function count(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -283,7 +296,7 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
       .filter((block) => block?.type === 'text')
       .map((block) => String(block.text ?? ''))
       .join('');
-    const answer = parseObject<T>(text, 'Anthropic');
+    const answer = parseAnthropic<T>(text, out.stop_reason, total.output);
     const { input, cacheRead, cacheWrite, output } = total;
     return {
       answer,
