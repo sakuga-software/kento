@@ -25,8 +25,10 @@ OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.
   --repos ../repos --out ../results --label run1 --models z-ai/glm-5.3,openai/gpt-5.6-luna
 ```
 
-`run.ts` writes one JSON file for each model and label, and skips a file that exists. If the judge
-does not answer for a pair, the summary line counts it in `judge errors`: run that model again.
+`run.ts` writes one JSON file for each model and label (and repeat, with `--repeats`), and skips a
+file that exists. If the judge does not answer for a pair, the summary line counts it in
+`unjudged pairs`: delete the file and run the same command again. The reviews and the verdicts
+stay in `--out`, so only the missing verdicts cost (see REV-109 below).
 
 - `REVIEW_TIMEOUT_MS` sets the time limit of one model call (480 s by default here).
 - `REVIEW_MAX_PRICE` (`prompt,completion`, in dollars a million tokens) sets the price cap. The cap of
@@ -127,6 +129,133 @@ Haiku:
   comments. pantry (2/43) and atlas (2/38) lose most: their large pull requests hold many
   golden comments. client-a finds 8 of 50.
 - Cost: review $0.62, judge $1.47. 1 failure (network), 5 judge errors.
+
+## Compare two variants: a progress or noise (REV-109)
+
+One run of each variant does not tell a progress from noise. On 2026-11-12, four prompts of
+REV-104, all near the prompt of `main`, gave a Core F1 from 0.11 to 0.18 on the 80 pull requests.
+The protocol below measures a difference with an interval, on the same pull requests, and says
+when the interval is too wide to decide.
+
+### The protocol
+
+1. **The hard subset.** [`subset-ts-hard.json`](subset-ts-hard.json) holds 57 pull requests of
+   v2: the 44 with 2 golden comments or more of the Core profile above `Low` (147 such comments:
+   martian 10, internal 3, feedback 31), and the 13 with no golden comment, for precision.
+   [`hard.ts`](hard.ts) builds it from the labels only, never from past scores, and a test
+   checks that the file follows the rule. These pull requests are the dense ones: recall moves
+   on them. Confirm a winner once on the 80 pull requests.
+2. **Each variant gets its own label**, the same model, level and subset, and `--repeats 3`
+   (2 if the budget is short). Give a variant of the prompt with `--prompt <file>`: the engine
+   reads that file in place of `prompts/review.md` (`prompts` of `ModelClient`), and nothing
+   changes in the engine.
+3. **The judge**: Claude Sonnet 5.5, with the effort set to `low` in `run.ts`, so that a change
+   of the default of the model does not change the verdicts. `--judge-batch` sends the pairs
+   through the Message Batches API (`--provider anthropic` only), at half the price; it takes
+   minutes, and at most 24 hours.
+4. **The comparison**: [`compare.ts`](compare.ts), with the files of each arm.
+
+```bash
+ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset eval/martian/subset-ts-hard.json \
+  --repos ../repos --out ../results --label base --models claude-haiku-5-5 --repeats 3 --judge-batch --concurrency 3
+ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset eval/martian/subset-ts-hard.json \
+  --repos ../repos --out ../results --label variant --prompt variant.md --models claude-haiku-5-5 --repeats 3 --judge-batch --concurrency 3
+node eval/martian/compare.ts --a ../results/base-r1-claude-haiku-5-5.json,../results/base-r2-claude-haiku-5-5.json,../results/base-r3-claude-haiku-5-5.json \
+  --b ../results/variant-r1-claude-haiku-5-5.json,../results/variant-r2-claude-haiku-5-5.json,../results/variant-r3-claude-haiku-5-5.json
+```
+
+What `run.ts` keeps in `--out`:
+
+- `reviews/<label>-<prompt hash>/<model>/`: each review, by pull request and repeat. A run that
+  stops reads them again and pays only for the reviews that it did not finish. A review that
+  failed for another cause than a truncation is not kept.
+- `judge-cache.jsonl`: each verdict, by judge model, judge prompt, effort, golden comment and
+  finding, with its confidence, its reasoning and its cost. A second run on the same findings
+  costs nothing. The verdicts of two variants rarely meet, because their findings differ.
+- `judge-batch.json`: the batch of the judge that is not finished. A run that stops reads its
+  results, and does not send it again.
+
+`--estimate` stops after the reviews, and gives the number of pairs that the judge must read and
+their cost. Use it before the judge, then run the same command without it.
+
+### What counts
+
+- **Failures**: `errors` (no answer), `truncated` (the model reached its output cap and its
+  JSON is cut) and `fallbacks` (another model of the level answered). On the hard subset, Haiku
+  5.5 at `lite` cuts 2 to 8 reviews of 57 a run: the dense pull requests are the ones that cut.
+  compare.ts keeps a pull request if each arm has one review of it or more that did not fail;
+  else it leaves the pull request out of both arms, and counts it. A cut review is not a review
+  with no finding.
+- **Unjudged pairs**: a pair that the judge does not answer after three tries stays out of the
+  cache. Its golden comment, if no finding matches it, leaves both arms (`unjudged` in the row),
+  and so does its finding for precision (`unjudged_findings`). Run the same command again: the
+  judge reads only the pairs that have no verdict.
+- **Core and Core medium+**, recall and precision apart. F1 hides two metrics that move in
+  opposite directions.
+
+### compare.ts
+
+- It aligns the rows of the two arms by pull request. For each arm, a golden comment counts as
+  found by the share of the repeats that find it, and the findings by their mean over the
+  repeats.
+- The paired bootstrap draws pull requests (10,000 draws, `--seed`), not golden comments: the
+  golden comments of one pull request depend on one review. It gives Δ = B − A and its 95 %
+  interval for recall, precision and F1, on Core and Core medium+.
+- McNemar on the majority verdict of each golden comment (a tie is "not found"), with the
+  discordance `d`: the share of golden comments that one arm finds and the other does not.
+- The decision, on Core medium+: **B wins if the interval of Δrecall is above 0 and the low end
+  of Δprecision is above −0.05, or if the interval of Δprecision is above 0 and the low end of
+  Δrecall is above −0.05.** The same rule, the other way, makes A win. Else: "No detectable
+  difference", or "a trade-off" when one metric moves and the other can fall by more than 0.05.
+- For a change of cost or speed, it says also when the interval of Δrecall is inside ±0.05.
+
+`--subset` limits the comparison to the pull requests of a subset: run it with
+`subset-ts-hard.json` on files of the 80 pull requests.
+
+### The noise, measured on 2026-11-12
+
+With no API call, on the four runs of REV-104 (Haiku 5.5, `lite`, one run each, 80 pull
+requests), limited to the hard subset:
+
+| A | B | PRs kept | d (Core medium+) | Δrecall Core medium+ [95 %] | Δprecision [95 %] | MDE |
+|---|---|---|---|---|---|---|
+| main | rev104b | 50 | 0.117 | +0.008 [−0.047, +0.065] | +0.079 [−0.050, +0.218] | 0.080 |
+| rev104 | rev104b | 46 | 0.136 | +0.017 [−0.068, +0.101] | +0.059 [−0.094, +0.205] | 0.121 |
+| main | rev104c | 50 | 0.116 | −0.029 [−0.076, +0.020] | −0.077 [−0.198, +0.038] | 0.068 |
+| rev104b | rev104c | 45 | 0.124 | −0.041 [−0.101, +0.017] | −0.171 [−0.324, −0.028] | 0.083 |
+
+- **The discordance d is about 0.12**: of 100 golden comments of Core medium+, two runs disagree on
+  12. These runs differ by their prompt too, so 0.12 is the upper limit of the noise of one run.
+- **The minimum detectable effect (MDE)** is 2.8 times the bootstrap standard error of Δrecall:
+  the difference that the comparison finds 8 times of 10, at a risk of 5 %. With one run an arm,
+  it is 7 to 12 points of recall. Three repeats an arm take off about a quarter (Miller 2024: two
+  repeats remove a third of the variance of the review, at most two thirds); more pull requests
+  take off the rest. Plan about 6 to 9 points with 3 repeats.
+- A change of the prompt that moves recall by 2 or 3 points stays under this limit. Spend runs on
+  changes large enough to pass it.
+- Only rev104b against rev104c gives a verdict: rev104c is less precise. The other three pairs,
+  among them `main` against rev104b, give no detectable difference.
+
+### The prefilter of the judge
+
+`--prefilter` sends a golden comment that starts with a file name (180 of 180 golden comments of
+`feedback`, 9 of 10 of `internal`, none of Martian) to the judge only with the findings on that
+file, or whose text names it ([`prefilter.ts`](prefilter.ts)). On the four runs above, it keeps
+58 to 76 % of the pairs, but it loses 9 of 108 matches (8 %): a finding on the caller can match
+a golden comment on the function, and the judge accepts it. The loss is not the same in each arm
+(0 to 4 matches a run), so use it only to save money, the same in both arms, and say so with the
+result. Measure it on scored files with no API call:
+
+```bash
+node eval/martian/prefilter.ts --subset eval/martian/subset-ts-v2.json ../results/*.json
+```
+
+### Cost
+
+On the hard subset, Haiku 5.5 at `lite`: about $0.30–0.40 of review a run. The judge reads
+about 250 to 370 pairs a run, about $0.0025 a pair at the default effort and price, and half
+of that, or less, with `--judge-batch` and the effort `low`. One run costs about $0.55–0.75 with
+the batch, so two arms with 3 repeats each cost about $3.5–4.5.
 
 ## Results, 2026-11-02: the prompt and two samples (REV-67)
 

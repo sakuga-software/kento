@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "pnpm --recursive --if-present test"
+    "test": "pnpm --recursive --if-present test && node --test 'eval/martian/*.test.ts'"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

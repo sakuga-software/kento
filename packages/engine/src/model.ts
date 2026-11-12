@@ -16,7 +16,8 @@ const PATCH_NOTE = readFileSync(join(PROMPTS, 'patch.md'), 'utf8').trim();
  * What the engine needs to call a model. The caller gives the key: the engine reads no environment.
  * `kind` is the provider (OpenRouter when not given); `baseUrl` replaces its default URL, and a
  * server of the OpenAI API needs one. `fetch` replaces the network in a test; `log` gets the failed
- * attempts.
+ * attempts. `prompts` replaces the text of a file of `prompts/`, by its name: the bench compares a
+ * prompt with another one on the same engine (REV-109).
  */
 export type ModelClient = {
   apiKey: string | undefined;
@@ -24,6 +25,7 @@ export type ModelClient = {
   baseUrl?: string;
   fetch?: typeof fetch;
   log?: (message: string) => void;
+  prompts?: Partial<Record<string, string>>;
 };
 
 export type Reply = { answer: Answer; usage: Usage };
@@ -44,7 +46,7 @@ export async function askJson<T>(
   promptAddition?: string,
   tools?: RepoTools,
 ): Promise<{ answer: T; usage: Usage }> {
-  const file = readFileSync(join(PROMPTS, promptFile), 'utf8');
+  const file = client.prompts?.[promptFile] ?? readFileSync(join(PROMPTS, promptFile), 'utf8');
   const prompt = promptAddition ? `${file.trimEnd()}\n\n${promptAddition}\n` : file;
   const kind = client.kind ?? 'openrouter';
   const baseUrl = client.baseUrl ?? defaultBaseUrl(kind);

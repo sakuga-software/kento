@@ -197,3 +197,14 @@ test('the cost line says when the cost is not known', () => {
   assert.match(costLine('lite', { model: 'm', cost: 0.0123, cost_source: 'table' }), /· 0,012 \$$/);
   assert.match(costLine('lite', { model: 'm', cost: 0.0123 }), /· 0,012 \$$/);
 });
+
+test('a prompt that the client gives replaces the file of prompts/ with that name only', async () => {
+  const answer = () => json({ model: 'claude-haiku-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: '{"ok":true}' }], usage: {} });
+  const { fetch, calls } = fakeFetch([answer]);
+  const client = { apiKey: 'k', kind: 'anthropic' as const, fetch, log: quiet, prompts: { 'review.md': 'the old prompt' } };
+  const config = providerLevelConfig('lite', 'anthropic');
+  await askJson(client, config, 'review.md', 'p', SCHEMA);
+  await askJson(client, config, 'verify.md', 'p', SCHEMA);
+  assert.equal(calls[0]!.body.system[0].text, 'the old prompt');
+  assert.notEqual(calls[1]!.body.system[0].text, 'the old prompt');
+});
