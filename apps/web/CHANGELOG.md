@@ -7,6 +7,28 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-105: The block of the description lists the commands of Kentō
+
+No migration, no new variable, no new permission, no change to the protocol of the runners: deploy
+`web` alone. `/healthz` still gives `"migrations":25`.
+
+- The block of the review at the end of the description of the pull request ends with one `<sub>`
+  line: `Commandes de Kentō : @kento-review [lite|balanced|heavy] · @kento-review resolve ·
+  @kento-review reject <cause> (dans un fil) ou reject #<id> <cause> · Les commandes de Kentō`, the
+  last part a link to `/docs/commandes`. The line says what exists, not when to use it: an agent that
+  reads the pull request learns the commands. Each review writes its block in place of the earlier
+  one, so the line stays unique. As for the footer of the comment of a finding, the line comes only
+  under `KENTO_PUBLIC_URL`: without that variable, no line. The Action (`@sakuga-review`) has no page
+  of its commands and shows no line. The body of the review and the footer of the threads do not
+  change.
+- `/docs/commandes` gives the cost of each command (`review` and `force` at the price of their level,
+  `resolve` at the price of the tokens that it reads, `reject` free), and says that a command written
+  by an agent has the same effect and the same cost as one written by a person.
+
+Check: on a test pull request, after a review, the line of the commands ends the block of the
+description, with the link to the page of the commands; after a second review, the description has
+the line once.
+
 ## REV-96: Kentō suggests `reject` on a reply that sets a finding aside; the page of the commands
 
 **Deploy `web` first, then the runners.** A runner of this release claims the feature `refuted`; a

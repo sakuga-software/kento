@@ -462,6 +462,7 @@ export async function publishReview(
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level,
       poster: POSTER,
+      docsUrl: target.docsUrl ?? null,
       ...(review.delta ? { delta: review.delta } : {}),
     })
     await github.rest('PATCH', prPath, { body: withBlock(current, block) })
@@ -617,6 +618,7 @@ export async function publishUnchanged(
       commitUrl: `${target.webUrl}/${owner}/${name}/commit/${head}`,
       level: review.level,
       poster: POSTER,
+      docsUrl: target.docsUrl ?? null,
       reusedFrom,
     })
     await github.rest('PATCH', prPath, { body: withBlock(current, block) })

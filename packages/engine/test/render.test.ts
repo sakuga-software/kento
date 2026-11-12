@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { descriptionBlock, findingKey, inlineBody, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
-import { shortId } from '../src/render.ts';
+import { shortId, withBlock } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {
@@ -63,6 +63,23 @@ test('the block of the description by Kentō carries its name, and the markers t
   assert.match(block, /<!-- sakuga-review:count 2 -->\n<!-- sakuga-review:end -->$/);
   assert.doesNotMatch(block, /Sakuga Review|revue|🔍/);
   assert.match(descriptionBlock(answer, [], [], 0, usage, anchors, context), /^<h2>Sakuga Review · Score de confiance : 2\/5<\/h2>$/m);
+});
+
+test('the block of Kentō ends with one line that lists its commands and links their page (REV-105)', () => {
+  const docsUrl = 'https://review.sakuga.dev/docs/commandes';
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const, poster: kento, docsUrl };
+  const line =
+    '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · `@kento-review reject <cause>` (dans un fil) ou `reject #<id> <cause>` · [Les commandes de Kentō](https://review.sakuga.dev/docs/commandes)</sub>';
+  const first = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, anchors, context);
+  assert.ok(first.endsWith(`${line}\n\n<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->`));
+  // A later review writes its block in place of the earlier one: the line stays unique.
+  const body = withBlock(withBlock('Le texte de l\'auteur.', first), descriptionBlock(answer, [], [], 1, usage, anchors, { ...context, count: 2 }));
+  assert.equal(body.split(line).length - 1, 1);
+  assert.ok(body.startsWith('Le texte de l\'auteur.\n\n<!-- sakuga-review:start -->'));
+  // Without the page, or for the Action, the block lists no command.
+  for (const other of [{ ...context, docsUrl: null }, { ...context, poster: undefined }]) {
+    assert.doesNotMatch(descriptionBlock(answer, [], [], 0, usage, anchors, other), /Commandes de/);
+  }
 });
 
 test('a finding shows its short id in its comment and in the list of the description (REV-93)', () => {

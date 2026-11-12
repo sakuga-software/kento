@@ -126,6 +126,14 @@ export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: 
 
 export type Link = { finding: Finding; url: string | null };
 
+/** REV-105. The commands of the service, as facts: the line says what exists, not when to use it. */
+function commandsLine({ by, handle }: Poster, docsUrl: string): string {
+  return (
+    `<sub>Commandes de ${by} : \`${handle} [lite|balanced|heavy]\` · \`${handle} resolve\` · ` +
+    `\`${handle} reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · [Les commandes de ${by}](${docsUrl})</sub>`
+  );
+}
+
 export function descriptionBlock(
   answer: Answer,
   links: Link[],
@@ -147,6 +155,8 @@ export function descriptionBlock(
     reusedFrom?: string;
     /** REV-88. The review read only the files that changed since this head. */
     delta?: { since: string; files: number };
+    /** REV-105. The page of the commands. Without it, or without a poster, the block lists no command. */
+    docsUrl?: string | null;
   },
 ): string {
   const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · Score de confiance : ${score(answer, lines)}/5</h2>`, '', answer.risk, ''];
@@ -209,9 +219,9 @@ export function descriptionBlock(
   out.push(
     `<sub>Reviews (${context.count}) · Dernier commit relu : [${subject.replace(/[[\]]/g, '')}](${context.commitUrl}) · ${costLine(context.level, usage, context.poster?.by)}</sub>`,
     '',
-    `<!-- sakuga-review:count ${context.count} -->`,
-    BLOCK_END,
   );
+  if (context.poster && context.docsUrl) out.push(commandsLine(context.poster, context.docsUrl), '');
+  out.push(`<!-- sakuga-review:count ${context.count} -->`, BLOCK_END);
   return out.join('\n');
 }
 

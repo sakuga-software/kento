@@ -1,7 +1,8 @@
 // REV-96. « Les commandes de Kentō »: a public page, open without a sign-in, so that the link of a
 // comment of Kentō on GitHub works for every reader of the pull request. It describes `review`,
-// `force`, `resolve` and `reject`: where to write them, who can run them, what they do at once and
-// what the next review does with them.
+// `force`, `resolve` and `reject`: where to write them, who can run them, what they cost, what they do
+// at once and what the next review does with them.
+import { levelCost } from '@sakuga-review/engine/levels'
 import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS } from '@sakuga-review/protocol'
 import type { Handle, RemixNode } from 'remix/component'
 
@@ -23,12 +24,19 @@ interface Command {
   lead: string
   syntax: { where: string; code: string }[]
   who: string
+  cost: RemixNode
   now: RemixNode
   next: RemixNode
   examples?: { code: string; why: string }[]
 }
 
 const WRITERS = 'Une personne qui peut écrire dans le repo (write, maintain ou admin), ou un bot que l’org a déclaré de confiance.'
+
+const LEVEL_COSTS = (
+  <>
+    <code>lite</code> {levelCost('lite')}, <code>balanced</code> {levelCost('balanced')}, <code>heavy</code> {levelCost('heavy')}
+  </>
+)
 
 const COMMANDS: Command[] = [
   {
@@ -40,6 +48,7 @@ const COMMANDS: Command[] = [
       { where: 'Forme longue', code: '@kento-review review balanced' },
     ],
     who: WRITERS,
+    cost: <>Une review au niveau choisi : {LEVEL_COSTS}.</>,
     now: (
       <>
         Kentō met la review en file et réagit 👀 sur le commentaire, puis 🚀 quand la review est publiée, ou 😕 si elle échoue.
@@ -59,6 +68,7 @@ const COMMANDS: Command[] = [
     lead: 'Payer une nouvelle review à un niveau que ce commit a déjà reçu.',
     syntax: [{ where: 'Dans la conversation de la PR', code: '@kento-review heavy force' }],
     who: WRITERS,
+    cost: <>Le prix d’une review au niveau choisi ({LEVEL_COSTS}), payé une deuxième fois pour ce commit.</>,
     now: <>Comme <code>review</code> : la review part même si le commit a déjà une review à ce niveau.</>,
     next: <>La review est payée une deuxième fois. Elle est publiée comme les autres : son bloc remplace le précédent dans la description de la PR.</>,
   },
@@ -68,6 +78,12 @@ const COMMANDS: Command[] = [
     lead: 'Répondre aux fils ouverts de Kentō, et résoudre ceux que le code règle.',
     syntax: [{ where: 'Dans la conversation de la PR', code: '@kento-review resolve [lite|balanced|heavy]' }],
     who: WRITERS,
+    cost: (
+      <>
+        Un appel au modèle du niveau choisi (<code>lite</code> par défaut), payé aux tokens comme une review : le prix dépend du nombre de
+        fils et du code lus. Sans fil ouvert à lire, aucun appel au modèle.
+      </>
+    ),
     now: (
       <>
         Kentō lit jusqu’à {MAX_RESOLVE_THREADS} fils ouverts, dans une limite de {MAX_RESOLVE_PACK_BYTES / 1000} ko, avec le code du
@@ -86,6 +102,7 @@ const COMMANDS: Command[] = [
       { where: 'Dans la conversation, pour un constat sans fil', code: '@kento-review reject #3cf454 <cause>' },
     ],
     who: WRITERS,
+    cost: <>Aucun appel au modèle : la commande ne coûte rien.</>,
     now: (
       <>
         Le constat passe en <code>dismissed</code> avec sa cause. Quand le constat a un fil, Kentō y répond et le résout ; s’il ne peut pas
@@ -126,6 +143,10 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
               Kentō lit une commande dans un commentaire d’une pull request, sur une ligne qui commence par <code>@kento-review</code>{' '}
               (<code>@sakuga-review</code> marche aussi), hors d’une citation et d’un bloc de code. Le reste du commentaire est du texte libre.
             </p>
+            <p class="docs-lead">
+              Une commande écrite par un agent (Claude Code, Copilot…) a le même effet et le même coût que celle d’une personne. Kentō
+              vérifie seulement que le compte qui l’écrit peut la lancer.
+            </p>
             <nav class="docs-toc" aria-label="Commandes">
               <ul>
                 {COMMANDS.map((c) => (
@@ -160,6 +181,10 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
                   <div>
                     <dt>Qui peut la lancer</dt>
                     <dd>{c.who}</dd>
+                  </div>
+                  <div>
+                    <dt>Coût</dt>
+                    <dd>{c.cost}</dd>
                   </div>
                   <div>
                     <dt>Effet immédiat</dt>

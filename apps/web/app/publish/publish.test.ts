@@ -55,11 +55,11 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
   }
 }
 
-function setup(head = HEAD1) {
+function setup(head = HEAD1, docsUrl?: string) {
   let fake = createFakeGitHub({ head, commits: { [HEAD1]: 'fix: sum', [HEAD2]: 'docs: readme', [HEAD3]: 'fix: sum again' } })
   let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
   let checks = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_checks_2', fetch: fake.fetch })
-  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+  let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', docsUrl }
   let warnings: { event: string; fields: Record<string, unknown> }[] = []
   let publish = (review: ReviewPayload, withChecks = true) =>
     publishReview(github, target, review, { checks: withChecks ? checks : null, warn: (event, fields) => warnings.push({ event, fields }) })
@@ -135,6 +135,31 @@ describe('publishReview', () => {
     assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}">▶</a>`))
     assert.match(fake.state.pr.body, /<!-- sakuga-review:count 2 -->/)
     assert.equal((fake.state.pr.body.match(/sakuga-review:start/g) ?? []).length, 1, 'one block, replaced')
+  })
+
+  it('ends the block with one line of the commands and the link to their page, after each review (REV-105)', async () => {
+    let docs = 'https://review.sakuga.dev/docs/commandes'
+    let { fake, publish, republish } = setup(HEAD1, docs)
+    let line =
+      '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · ' +
+      `\`@kento-review reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · [Les commandes de Kentō](${docs})</sub>`
+    await publish(payload())
+    assert.ok(fake.state.pr.body.includes(`${line}\n\n<!-- sakuga-review:count 1 -->`))
+
+    fake.state.pr.head = HEAD2
+    fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['README.md'] })
+    await publish(payload({ head: HEAD2 }))
+    fake.state.pr.head = HEAD3
+    await republish(payload({ head: HEAD3, costUsd: 0 }), HEAD2)
+
+    assert.equal(fake.state.pr.body.split('Commandes de Kentō').length - 1, 1)
+    assert.ok(fake.state.pr.body.includes(`${line}\n\n<!-- sakuga-review:count 2 -->`))
+  })
+
+  it('lists no command in the block when the service does not know its public URL (REV-105)', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    assert.doesNotMatch(fake.state.pr.body, /Commandes de Kentō/)
   })
 
   it('also finds the thread of a finding worded differently a few lines away', async () => {

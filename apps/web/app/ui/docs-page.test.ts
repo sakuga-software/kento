@@ -32,6 +32,11 @@ describe('the page of the commands (REV-96)', () => {
       for (let id of ['review', 'force', 'resolve', 'reject']) assert.match(html, new RegExp(`<section id="${id}"[^>]*class="docs-command"`))
       assert.match(html, /@kento-review reject &lt;cause&gt;|@kento-review reject <cause>/)
       assert.match(html, /@kento-review reject #3cf454 &lt;cause&gt;|@kento-review reject #3cf454 <cause>/)
+      // REV-105. The cost of each command, and the same cost for an agent and for a person.
+      assert.equal(html.split('<dt>Coût</dt>').length - 1, 4)
+      assert.match(html, /<code>heavy<\/code> de 30 à 50 centimes/)
+      assert.match(html, /la commande ne coûte rien/)
+      assert.match(html, /Une commande écrite par un agent \(Claude Code, Copilot…\) a le même effet et le même coût que celle d’une personne\./)
       // No redirect to the sign-in, no cookie of a session.
       assert.equal(response.headers.get('Set-Cookie'), null)
     }
