@@ -74,7 +74,10 @@ const interval = (low: number, high: number): Interval => ({ delta: (low + high)
 
 test('verdict: the decision rule of REV-109', () => {
   assert.equal(verdict(interval(0.01, 0.1), interval(-0.04, 0.05)).winner, 'B');
-  assert.equal(verdict(interval(0.01, 0.1), interval(-0.08, 0.05)).winner, null, 'precision can fall by more than the margin');
+  const tradeOff = verdict(interval(0.01, 0.1), interval(-0.08, 0.05));
+  assert.equal(tradeOff.winner, null, 'precision can fall by more than the margin');
+  assert.match(tradeOff.text, /^B has the higher recall .* its precision can be lower by up to 8\.0 points/);
+  assert.match(verdict(interval(-0.12, -0.01), interval(-0.08, 0.11)).text, /^A has the higher recall .* its precision can be lower by up to 11\.0 points/);
   assert.equal(verdict(interval(-0.03, 0.06), interval(0.02, 0.2)).winner, 'B', 'more precise, and recall holds');
   assert.equal(verdict(interval(-0.1, -0.01), interval(-0.05, 0.04)).winner, 'A');
   assert.equal(verdict(interval(-0.06, 0.06), interval(0.02, 0.2)).winner, null);

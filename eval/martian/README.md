@@ -250,12 +250,50 @@ result. Measure it on scored files with no API call:
 node eval/martian/prefilter.ts --subset eval/martian/subset-ts-v2.json ../results/*.json
 ```
 
+### First use, 2026-11-12: the prompt of 2026-11-03 against the prompt of `main`
+
+The Core F1 went from 0.25 on 2026-11-03 to 0.16 on 2026-11-12 with the prompt of `main`, and
+the prompt grew by 37 % in between (REV-70 to REV-100). A: `prompts/review.md` of `0728627`
+(`--prompt`), B: the prompt of `main`. Both on the engine of today, Haiku 5.5, `--provider
+anthropic`, `lite`, the hard subset, one run each, the judge in a batch with `--prefilter`.
+
+| | A: `0728627` | B: `main` |
+|---|---|---|
+| Findings | 103 | 66 |
+| Truncated reviews | 0 of 57 | 5 of 57 |
+| Core medium+ recall / precision (52 pull requests) | 0.196 / 0.264 | 0.130 / 0.283 |
+| Review cost / judge cost | $0.423 / $0.352 | $0.383 / $0.234 |
+
+compare.ts on the 52 pull requests that both arms reviewed:
+
+- Δrecall Core medium+ −0.065 [−0.121, −0.013], Δprecision +0.020 [−0.079, +0.114]. On Core:
+  Δrecall −0.038 [−0.089, +0.011], Δprecision +0.051 [−0.056, +0.159].
+- McNemar, Core medium+: 138 golden comments, A only 13, B only 4, d 0.123, p 0.049. MDE 0.077.
+- Verdict: "A has the higher recall (+6.5 points), but its precision can be lower by up to 11.4
+  points, more than the margin of 5.0 points. No arm wins."
+
+What it says:
+
+- **The prompt of `main` finds less on this subset**, and the interval of recall excludes 0. The
+  precision interval is too wide to exclude a loss of more than 5 points in A, so the rule does
+  not adopt A.
+- **The prompt of `main` cuts 5 reviews of 57, the prompt of `0728627` none.** compare.ts leaves
+  these 5 dense pull requests out of both arms, so the gap above understates the loss of `main`.
+  If the 5 cut reviews count as reviews with no finding, Δrecall is −0.068 [−0.122, −0.016] on
+  the 57 pull requests.
+- These numbers have one run each and the prefilter (8 % of matches lost, see above). The judge
+  effort is now `low`: compare the arms of one date, not these values with the results of
+  2026-11-03. Confirm with `--repeats 3` before a change of the prompt.
+
+Cost: $1.40 (review $0.81, judge $0.59 for 522 pairs in two batches, and a test batch of 8 pairs).
+
 ### Cost
 
 On the hard subset, Haiku 5.5 at `lite`: about $0.30–0.40 of review a run. The judge reads
-about 250 to 370 pairs a run, about $0.0025 a pair at the default effort and price, and half
-of that, or less, with `--judge-batch` and the effort `low`. One run costs about $0.55–0.75 with
-the batch, so two arms with 3 repeats each cost about $3.5–4.5.
+about 200 to 370 pairs a run: $0.0025 a pair at the default effort and price, $0.0011 to
+$0.0012 with `--judge-batch` and the effort `low` (measured). One run costs about $0.6–0.8 with
+the batch, so two arms with 3 repeats each cost about $3.5–5. The batches of the first use
+ended in less than 5 minutes.
 
 ## Results, 2026-11-02: the prompt and two samples (REV-67)
 

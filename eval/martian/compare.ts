@@ -216,8 +216,13 @@ export function verdict(recall: Interval, precision: Interval): Verdict {
   if (recall.high < 0 && precision.high < MARGIN) return { winner: 'A', text: `A finds more (recall +${pct(-recall.delta)}), and its precision holds.` };
   if (precision.low > 0 && recall.low > -MARGIN) return { winner: 'B', text: `B is more precise (precision +${pct(precision.delta)}), and its recall holds.` };
   if (precision.high < 0 && recall.high < MARGIN) return { winner: 'A', text: `A is more precise (precision +${pct(-precision.delta)}), and its recall holds.` };
-  const moved = [recall, precision].some((i) => i.low > 0 || i.high < 0);
-  if (moved) return { winner: null, text: 'A trade-off: one metric goes up and the other can go down by more than the margin. No arm wins.' };
+  const moves = (name: string, i: Interval, other: string, o: Interval) => {
+    const arm = i.low > 0 ? 'B' : 'A';
+    const loss = arm === 'B' ? -o.low : o.high;
+    return `${arm} has the higher ${name} (+${pct(Math.abs(i.delta))}), but its ${other} can be lower by up to ${pct(loss)}, more than the margin of ${pct(MARGIN)}. No arm wins.`;
+  };
+  if (recall.low > 0 || recall.high < 0) return { winner: null, text: moves('recall', recall, 'precision', precision) };
+  if (precision.low > 0 || precision.high < 0) return { winner: null, text: moves('precision', precision, 'recall', recall) };
   return { winner: null, text: 'No detectable difference.' };
 }
 
