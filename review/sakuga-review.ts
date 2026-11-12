@@ -586,7 +586,10 @@ async function review(args: Args & { base: string }, dryRun: boolean, packOnly: 
   log(
     `level=${args.level} model=${usage.model} provider=${usage.provider} tokens=${usage.prompt_tokens}+${usage.completion_tokens} ` +
       `cached=${usage.cache_read_tokens ?? '?'} diff=${result.diffHash} cost=${usage.cost} score=${result.score}/5 verdict=${result.verdict} findings=${answer.findings.length} ` +
-      `diagram=${result.diagram ? 'yes' : 'no'} deeper=${result.deeperReview ? 'yes' : 'no'}`,
+      `diagram=${result.diagram ? 'yes' : 'no'} deeper=${result.deeperReview ? 'yes' : 'no'}` +
+      (usage.stop_reason
+        ? ` stop=${usage.stop_reason} thinking=${usage.thinking_tokens ?? '?'} first_text_ms=${usage.first_text_ms ?? '?'} retried=${usage.retried_without_thinking ?? 'no'}`
+        : ''),
   );
 
   if (dryRun) {

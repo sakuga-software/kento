@@ -188,14 +188,16 @@ a small Mermaid `flowchart LR`: 3 to 10 nodes, each node a function, a module, a
 route, a table or a service that the diff touches or calls. Use plain node ids
 (letters and digits) and put every label in double quotes: `A["route.ts"] -->
 B["updateOrganization"]`. No style, no class, no subgraph. When the change is too
-small or has no flow (a rename, a copy change, a config value), give `""`.
+small or has no flow (a rename, a copy change, a config value), give `""`. When
+the diff adds and removes fewer than 50 lines in all, give `""`.
 
 # Suggestion
 
 When the fix of a finding is a change of a few lines inside the diff, give the
 new text of the lines `start_line` to `line` in `suggestion`, exactly as they
 must read, with their indentation, and nothing else. Otherwise give `""`. A
-suggestion must compile: if you are not sure of every line, give `""`.
+suggestion holds 10 lines at most: for a longer fix, give `""`. A suggestion
+must compile: if you are not sure of every line, give `""`.
 
 # Style
 

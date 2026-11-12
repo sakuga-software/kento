@@ -30,3 +30,10 @@ test('the style of review.md covers each published text field', () => {
     assert.ok(style.includes(`\`${field}\``), `the style names \`${field}\``);
   }
 });
+
+// REV-108. Two answers of the bench of REV-104 passed 25 kB of JSON and reached `max_tokens`.
+test('review.md limits a suggestion to 10 lines and gives no diagram under 50 changed lines', () => {
+  const text = prompt('review.md');
+  assert.match(text, /A suggestion holds 10 lines at most: for a longer fix, give `""`\./);
+  assert.match(text, /When the diff adds and removes fewer than 50 lines in all, give `""`\./);
+});

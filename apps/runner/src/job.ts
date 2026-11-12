@@ -308,6 +308,19 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
     for (const f of result.droppedAsSettled) log('info', 'job.finding_dropped_as_settled', { jobId: job.id, path: f.path, title: f.title });
     // REV-100. The findings on code that the last reviewed commit already held.
     if (job.reviewed !== undefined) log('info', 'job.seen_code', { jobId: job.id, since: result.seenSince, seen: result.findings.filter((f) => f.seen).length });
+    // REV-108. The thinking of an Anthropic model goes to the logs only: the protocol has no key for it.
+    if (result.usage.stop_reason) {
+      const { model, stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking } = result.usage;
+      log('info', 'job.model_usage', {
+        jobId: job.id,
+        model,
+        stopReason: stop_reason,
+        thinkingTokens: thinking_tokens ?? null,
+        firstTokenMs: first_token_ms ?? null,
+        firstTextMs: first_text_ms ?? null,
+        retriedWithoutThinking: retried_without_thinking ?? null,
+      });
+    }
     const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined);
     // A service that sends `delta` reads it in the result.
     return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;

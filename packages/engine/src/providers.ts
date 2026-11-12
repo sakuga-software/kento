@@ -110,14 +110,17 @@ export function parseObject<T>(content: string, name: string): T {
 
 /**
  * REV-104. The reasoning counts in `max_tokens`, and a long reasoning cuts the JSON. The error then
- * gives the `stop_reason` and the output tokens after the message of parseObject.
+ * gives the `stop_reason` and the output tokens after the message of parseObject. REV-108 adds the
+ * length of the text, which shows where the tokens went, and whether the request without thinking
+ * gave this text.
  */
-function parseAnthropic<T>(text: string, stopReason: unknown, outputTokens: number): T {
+function parseAnthropic<T>(text: string, stopReason: unknown, outputTokens: number, withoutThinking: boolean): T {
   try {
     return parseObject<T>(text, 'Anthropic');
   } catch (error) {
     if (!(error instanceof ProviderError) || stopReason === 'end_turn') throw error;
-    throw new ProviderError(`${error.message} (stop_reason ${String(stopReason)}, ${outputTokens} output tokens)`);
+    const retry = withoutThinking ? ', after a request without thinking' : '';
+    throw new ProviderError(`${error.message} (stop_reason ${String(stopReason)}, ${outputTokens} output tokens, ${text.length} characters of text${retry})`);
   }
 }
 
@@ -231,57 +234,179 @@ async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
 // --- Anthropic ---------------------------------------------------------------------------------
 
 /**
- * The Messages API of Anthropic. The answer schema goes in `output_config.format`: Claude Opus 5.5
- * and Sonnet 5.5 refuse a forced tool (`tool_choice` `tool` answers 400), and the structured output
- * holds the answer to the schema in the same way. The system prompt is the same for every review of
- * a level: it carries the cache mark, so the next review with the same model within 5 minutes reads
- * it from the cache. Without tools, the pack changes with each review and is sent once: it carries no
- * mark, since a cache write costs 1.25 times the input and would never be read. With tools (REV-68),
- * each round sends it again, so the last block of each request carries the mark (markLastBlock).
+ * REV-108. On the benches of REV-104 and REV-108, about 1 review of Haiku 5.5 in 6 to 10 stopped at
+ * `max_tokens` (32,000 tokens) with no JSON that parses. Such a call asks the same model once more
+ * with this `thinking`. On the bench of REV-108, the cut requests had 1,700 to 7,800 thinking
+ * tokens: the answer text took the rest. The second request gave an answer 5 times in 7.
+ * Opus 5.5 and Sonnet 5.5 refuse `disabled` (400): they get no second request.
+ */
+export function thinkingOff(model: string): { type: 'disabled' } | null {
+  return model.startsWith('claude-haiku-5-5') ? { type: 'disabled' } : null;
+}
+
+/**
+ * REV-108. The longest thinking before the call stops the request and asks again without thinking.
+ * On the bench of REV-108, Haiku 5.5 thought at about 230 tokens a second, and its longest thinking
+ * in an answer was 12,700 tokens: 60 s is about 14,000 tokens.
+ */
+export const MAX_THINKING_MS = 60_000;
+
+/** REV-108. The time that the request without thinking keeps at the end of the time limit of a call. */
+export const RETRY_ROOM_MS = 60_000;
+
+/**
+ * REV-108. How long the call waits for the answer after the thinking starts, at `thinkingAt` ms of a
+ * call of `timeoutMs`: MAX_THINKING_MS, or less to keep the time of the request without thinking.
+ * Null: the thinking started too late, and the call waits until its time limit.
+ *
+ * The clock starts at the first thinking block, not at the request: on the bench, the API held
+ * some requests 50 to 99 s before their first block, and the request without thinking waits as long.
+ */
+export function thinkingWaitMs(timeoutMs: number, thinkingAt: number): number | null {
+  const room = Math.min(RETRY_ROOM_MS, timeoutMs / 3);
+  const wait = Math.min(MAX_THINKING_MS, timeoutMs - room - thinkingAt);
+  return wait > 0 ? wait : null;
+}
+
+type Block = { type: string; cache_control?: object; [key: string]: unknown };
+type Message = { model?: unknown; stop_reason?: unknown; stop_details?: { category?: string }; content: Block[]; usage: Record<string, any> };
+
+/** One request with the conversation of a call, and the request without thinking when it comes. */
+type Run = {
+  text: string;
+  stopReason: unknown;
+  model: string;
+  tokens: { input: number; cacheRead: number; cacheWrite: number; output: number; thinking?: number };
+  /** From the start of the call: the first content block of any type, and the first text block. */
+  firstTokenMs?: number;
+  firstTextMs?: number;
+  /** The model thought for thinkingWaitMs with no answer block, and the call stopped the request. */
+  late: boolean;
+};
+
+/**
+ * The Messages API of Anthropic, with `stream`. The answer schema goes in `output_config.format`:
+ * Claude Opus 5.5 and Sonnet 5.5 refuse a forced tool (`tool_choice` `tool` answers 400), and the
+ * structured output holds the answer to the schema in the same way. The system prompt is the same
+ * for every review of a level: it carries the cache mark, so the next review with the same model
+ * within 5 minutes reads it from the cache. Without tools, the pack changes with each review and is
+ * sent once: it carries no mark, since a cache write costs 1.25 times the input and would never be
+ * read. With tools (REV-68), each round sends it again, so the last block of each request carries
+ * the mark (markLastBlock).
+ *
+ * REV-108. An answer cut at `max_tokens`, or a thinking longer than thinkingWaitMs, gets one more
+ * request without thinking (thinkingOff), in the time that is left. The request without thinking
+ * has no cache mark on the pack: at a rate of 8 %, a cache write on each review costs more than it
+ * saves.
  */
 async function callAnthropic<T>(call: Call): Promise<Called<T>> {
   const signal = AbortSignal.timeout(call.timeoutMs);
   const started = Date.now();
-  type Block = { type: string; cache_control?: object; [key: string]: unknown };
+  const off = thinkingOff(call.model);
+  const first = await runAnthropic(call, signal, started, !!off);
+  const cause = first.late ? 'no_answer_in_time' : first.stopReason === 'max_tokens' ? 'max_tokens' : null;
+  const runs = off && cause ? [first, await runAgain(call, signal, started, off, cause)] : [first];
+  const last = runs.at(-1)!;
+  const sum = (key: 'input' | 'cacheRead' | 'cacheWrite' | 'output') => runs.reduce((total, run) => total + run.tokens[key], 0);
+  const thinking = runs.flatMap((run) => (run.tokens.thinking === undefined ? [] : [run.tokens.thinking]));
+  const tokens = { input: sum('input'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite'), output: sum('output') };
+  const answer = parseAnthropic<T>(last.text, last.stopReason, last.tokens.output, runs.length > 1);
+  return {
+    answer,
+    usage: {
+      model: last.model,
+      provider: 'Anthropic',
+      // `input_tokens` is the part that the cache did not hold: the prompt is the sum.
+      prompt_tokens: tokens.input + tokens.cacheRead + tokens.cacheWrite,
+      completion_tokens: tokens.output,
+      cache_read_tokens: tokens.cacheRead,
+      cache_write_tokens: tokens.cacheWrite,
+      ...priced('anthropic', last.model, tokens),
+      ...(typeof last.stopReason === 'string' ? { stop_reason: last.stopReason } : {}),
+      ...(thinking.length ? { thinking_tokens: thinking.reduce((a, b) => a + b, 0) } : {}),
+      ...(first.firstTokenMs !== undefined ? { first_token_ms: first.firstTokenMs } : {}),
+      ...(last.firstTextMs !== undefined ? { first_text_ms: last.firstTextMs } : {}),
+      ...(runs.length > 1 && cause ? { retried_without_thinking: cause } : {}),
+    },
+  };
+}
+
+/** The request without thinking. Its failure names the cause of the second request. */
+async function runAgain(call: Call, signal: AbortSignal, started: number, thinking: object, cause: string): Promise<Run> {
+  try {
+    return await runAnthropic(call, signal, started, false, thinking);
+  } catch (error) {
+    if (!(error instanceof ProviderError)) throw error;
+    throw new ProviderError(`${error.message} (in the request without thinking, after ${cause})`, error.status);
+  }
+}
+
+/** `stopLongThinking`: the call stops a thinking longer than thinkingWaitMs. */
+async function runAnthropic(call: Call, signal: AbortSignal, started: number, stopLongThinking: boolean, thinking?: object): Promise<Run> {
   const messages: { role: string; content: string | Block[] }[] = [
     { role: 'user', content: call.tools ? [{ type: 'text', text: call.message }] : call.message },
   ];
-  const total = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
-  let model = call.model;
+  const run: Run = { text: '', stopReason: undefined, model: call.model, tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, late: false };
   for (let round = 0; ; round++) {
     const offer = offerTools(call, started, round);
     if (call.tools) markLastBlock(messages);
-    const response = await call.fetch(endpoint(call.baseUrl, '/v1/messages'), {
-      method: 'POST',
-      headers: {
-        'x-api-key': call.apiKey ?? '',
-        'anthropic-version': ANTHROPIC_VERSION,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: call.model,
-        max_tokens: call.config.maxTokens,
-        system: [{ type: 'text', text: call.prompt, cache_control: { type: 'ephemeral' } }],
-        messages,
-        // `none` on the last request: the conversation holds tool calls, so the tools stay declared.
-        ...(call.tools ? { tools: anthropicTools(), tool_choice: { type: offer ? 'auto' : 'none' } } : {}),
-        output_config: { effort: call.config.effort, format: { type: 'json_schema', schema: call.schema.schema } },
-      }),
-      signal,
-    });
-    if (!response.ok) throw await refused(response, 'Anthropic');
-    const out = await response.json();
-    if (out.stop_reason === 'refusal') {
-      throw new ProviderError(`Anthropic declined the request (${out.stop_details?.category ?? 'no category'})`);
+    const late = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const message: Message = { content: [], usage: {} };
+    try {
+      const response = await call.fetch(endpoint(call.baseUrl, '/v1/messages'), {
+        method: 'POST',
+        headers: {
+          'x-api-key': call.apiKey ?? '',
+          'anthropic-version': ANTHROPIC_VERSION,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: call.model,
+          max_tokens: call.config.maxTokens,
+          stream: true,
+          system: [{ type: 'text', text: call.prompt, cache_control: { type: 'ephemeral' } }],
+          messages,
+          ...(thinking ? { thinking } : {}),
+          // `none` on the last request: the conversation holds tool calls, so the tools stay declared.
+          ...(call.tools ? { tools: anthropicTools(), tool_choice: { type: offer ? 'auto' : 'none' } } : {}),
+          output_config: { effort: call.config.effort, format: { type: 'json_schema', schema: call.schema.schema } },
+        }),
+        signal: AbortSignal.any([signal, late.signal]),
+      });
+      if (!response.ok) throw await refused(response, 'Anthropic');
+      await readMessage(response, message, (type) => {
+        const now = Date.now() - started;
+        run.firstTokenMs ??= now;
+        if (type === 'thinking' || type === 'redacted_thinking') {
+          const wait = stopLongThinking && timer === undefined ? thinkingWaitMs(call.timeoutMs, now) : null;
+          if (wait !== null) timer = setTimeout(() => late.abort(), wait);
+          return;
+        }
+        clearTimeout(timer);
+        if (type === 'text') run.firstTextMs ??= now;
+      });
+    } catch (error) {
+      if (!late.signal.aborted || signal.aborted) throw error;
+      run.late = true;
+    } finally {
+      clearTimeout(timer);
     }
-    if (typeof out.model === 'string') model = out.model;
-    total.input += count(out.usage?.input_tokens) ?? 0;
-    total.cacheRead += count(out.usage?.cache_read_input_tokens) ?? 0;
-    total.cacheWrite += count(out.usage?.cache_creation_input_tokens) ?? 0;
-    total.output += count(out.usage?.output_tokens) ?? 0;
-    const content: Block[] = Array.isArray(out.content) ? out.content : [];
-    const uses = content.filter((block) => block?.type === 'tool_use');
-    if (call.tools && offer && out.stop_reason === 'tool_use' && uses.length > 0) {
+    if (typeof message.model === 'string') run.model = message.model;
+    // The output tokens of a stopped request come only at its end: the cost does not count them.
+    run.tokens.input += count(message.usage.input_tokens) ?? 0;
+    run.tokens.cacheRead += count(message.usage.cache_read_input_tokens) ?? 0;
+    run.tokens.cacheWrite += count(message.usage.cache_creation_input_tokens) ?? 0;
+    run.tokens.output += count(message.usage.output_tokens) ?? 0;
+    const thought = count(message.usage.output_tokens_details?.thinking_tokens);
+    if (thought !== undefined) run.tokens.thinking = (run.tokens.thinking ?? 0) + thought;
+    if (run.late) return run;
+    if (message.stop_reason === 'refusal') {
+      throw new ProviderError(`Anthropic declined the request (${message.stop_details?.category ?? 'no category'})`);
+    }
+    const content = message.content.filter(Boolean);
+    const uses = content.filter((block) => block.type === 'tool_use');
+    if (call.tools && offer && message.stop_reason === 'tool_use' && uses.length > 0) {
       call.tools.ranRound();
       // The answer goes back whole, thinking blocks included, as the API asks.
       messages.push({ role: 'assistant', content });
@@ -291,26 +416,95 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
       });
       continue;
     }
-    if (out.stop_reason === 'tool_use') throw toolAfterLastRound('Anthropic');
-    const text = content
-      .filter((block) => block?.type === 'text')
+    if (message.stop_reason === 'tool_use') throw toolAfterLastRound('Anthropic');
+    run.stopReason = message.stop_reason;
+    run.text = content
+      .filter((block) => block.type === 'text')
       .map((block) => String(block.text ?? ''))
       .join('');
-    const answer = parseAnthropic<T>(text, out.stop_reason, total.output);
-    const { input, cacheRead, cacheWrite, output } = total;
-    return {
-      answer,
-      usage: {
-        model,
-        provider: 'Anthropic',
-        // `input_tokens` is the part that the cache did not hold: the prompt is the sum.
-        prompt_tokens: input + cacheRead + cacheWrite,
-        completion_tokens: output,
-        cache_read_tokens: cacheRead,
-        cache_write_tokens: cacheWrite,
-        ...priced('anthropic', model, { input, output, cacheRead, cacheWrite }),
-      },
-    };
+    return run;
+  }
+}
+
+/**
+ * Fills `message` from the answer: the events of the stream, or one JSON body from a server that
+ * does not stream. `message` keeps what came before an error. `onBlock` gets the type of each
+ * content block when it starts.
+ */
+async function readMessage(response: Response, message: Message, onBlock: (type: string) => void): Promise<void> {
+  if (!response.headers.get('content-type')?.includes('text/event-stream')) {
+    const out = await response.json();
+    Object.assign(message, out, { content: Array.isArray(out.content) ? out.content : [], usage: out.usage ?? {} });
+    return;
+  }
+  const toolInput = new Map<number, string>();
+  for await (const event of serverEvents(response.body)) {
+    switch (event?.type) {
+      case 'message_start':
+        message.model = event.message?.model;
+        addUsage(message.usage, event.message?.usage);
+        break;
+      case 'content_block_start':
+        message.content[event.index] = { ...event.content_block };
+        onBlock(String(event.content_block?.type));
+        break;
+      case 'content_block_delta': {
+        const block = message.content[event.index];
+        const delta = event.delta ?? {};
+        if (!block) break;
+        if (delta.type === 'text_delta') block.text = String(block.text ?? '') + delta.text;
+        else if (delta.type === 'thinking_delta') block.thinking = String(block.thinking ?? '') + delta.thinking;
+        else if (delta.type === 'signature_delta') block.signature = delta.signature;
+        else if (delta.type === 'input_json_delta') toolInput.set(event.index, (toolInput.get(event.index) ?? '') + delta.partial_json);
+        break;
+      }
+      case 'content_block_stop': {
+        const block = message.content[event.index];
+        const input = toolInput.get(event.index);
+        if (block?.type === 'tool_use' && input !== undefined) {
+          try {
+            block.input = JSON.parse(input || '{}');
+          } catch {
+            // The tool answers that its input is missing, and the model can call again.
+            block.input = {};
+          }
+        }
+        break;
+      }
+      case 'message_delta':
+        message.stop_reason = event.delta?.stop_reason;
+        if (event.delta?.stop_details) message.stop_details = event.delta.stop_details;
+        addUsage(message.usage, event.usage);
+        break;
+      case 'error':
+        throw new ProviderError(`Anthropic stopped the stream: ${event.error?.type ?? 'error'}: ${String(event.error?.message ?? '').slice(0, 300)}`);
+    }
+  }
+}
+
+/** The counts of `message_delta` add up from the start of the message: each one replaces the last. */
+function addUsage(usage: Record<string, unknown>, more: Record<string, unknown> | undefined): void {
+  for (const [key, value] of Object.entries(more ?? {})) if (value !== null && value !== undefined) usage[key] = value;
+}
+
+/** The JSON data of each event of a stream of server-sent events. */
+async function* serverEvents(body: ReadableStream<Uint8Array> | null): AsyncGenerator<any> {
+  if (!body) return;
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of body) {
+    buffer = (buffer + decoder.decode(chunk, { stream: true })).replaceAll('\r\n', '\n');
+    let end: number;
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const data = buffer
+        .slice(0, end)
+        .split('\n')
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n');
+      buffer = buffer.slice(end + 2);
+      if (data) yield JSON.parse(data);
+    }
   }
 }
 

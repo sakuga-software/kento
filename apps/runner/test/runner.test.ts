@@ -639,6 +639,9 @@ test('a job with an Anthropic provider of the service: the key of the job, the c
   // 10,000 × 0.10 + 1,000 × 0.50 millionths of a dollar.
   assert.equal(result.review.costUsd, 0.0015);
   assert.equal(result.review.costSource, 'table');
+  // REV-108. The stop_reason of the model goes to the logs, and no key of the protocol carries it.
+  assert.ok(logs.some((l) => l.includes('job.model_usage') && l.includes('"stopReason":"end_turn"') && l.includes('"retriedWithoutThinking":null')));
+  assert.ok(!('stopReason' in result.review));
   assert.ok(!logs.join('\n').includes(ANTHROPIC_KEY), 'no log line holds the key of the provider');
   assertNoSecretInLogs();
 });

@@ -21,6 +21,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
+import type { Usage } from '../../packages/engine/src/findings.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
 import { failureCounts, failureKind } from './failures.ts';
 import { mergeSamples } from './merge.ts';
@@ -107,6 +108,8 @@ type Review = {
   merged?: number;
   /** REV-104, in one pass: the P0 and P1 findings, those with a suggestion that GitHub shows, and those with a patch. */
   fixes?: Fixes;
+  /** REV-108, in one pass at Anthropic: how the model stopped, its thinking, and a request without thinking. */
+  stop?: Pick<Usage, 'stop_reason' | 'thinking_tokens' | 'first_token_ms' | 'first_text_ms' | 'retried_without_thinking'>;
 };
 type Fixes = { p01: number; suggestions: number; patches: number };
 
@@ -115,6 +118,10 @@ function fixesOf(findings: { severity: string; suggestion_range: [number, number
   return { p01: p01.length, suggestions: p01.filter((f) => f.suggestion_range).length, patches: p01.filter((f) => f.patch).length };
 }
 type Mode = { level: Level; passes: boolean; samples: number };
+
+function pickStop({ stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking }: Usage): Review['stop'] {
+  return { stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking };
+}
 
 async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -186,6 +193,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       error: failures[0],
       tokens: { prompt: out.usage.prompt_tokens ?? 0, completion: out.usage.completion_tokens ?? 0, cacheRead: out.usage.cache_read_tokens ?? 0 },
       fixes: fixesOf(out.findings),
+      ...(out.usage.stop_reason ? { stop: pickStop(out.usage) } : {}),
       ...(out.toolUse ? { tools: out.toolUse } : {}),
     };
   } catch (error) {

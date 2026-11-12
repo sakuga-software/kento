@@ -3,20 +3,21 @@ import { test } from 'node:test';
 import { askJson, costLine, levelConfig, ProviderError, providerLevelConfig } from '../src/index.ts';
 import { defaultModels } from '../src/levels.ts';
 import { costFromTable, costKnown } from '../src/prices.ts';
-import { refusedKey } from '../src/providers.ts';
+import { MAX_THINKING_MS, refusedKey, thinkingOff, thinkingWaitMs } from '../src/providers.ts';
+import { messageResponse, sseResponse, startEvents } from './sse.ts';
 
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
 
 type Recorded = { url: string; headers: Record<string, string>; body: any };
 
 /** A fetch that records each call and answers with the next function of `answers`. */
-function fakeFetch(answers: ((body: any) => Response)[]) {
+function fakeFetch(answers: ((body: any, init: RequestInit) => Response)[]) {
   const calls: Recorded[] = [];
   const fetch = (async (url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     calls.push({ url: String(url), headers: init.headers as Record<string, string>, body });
     const answer = answers[Math.min(calls.length - 1, answers.length - 1)]!;
-    return answer(body);
+    return answer(body, init);
   }) as typeof globalThis.fetch;
   return { fetch, calls };
 }
@@ -85,12 +86,134 @@ test('Anthropic: a refusal of the model is an error, and the next model answers'
 });
 
 test('Anthropic: an answer cut by max_tokens names the stop_reason in the error (REV-104)', async () => {
-  const { fetch } = fakeFetch([
-    () => json({ model: 'claude-haiku-5-5', stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"ok":' }], usage: { input_tokens: 10, output_tokens: 32000 } }),
+  const { fetch, calls } = fakeFetch([
+    () => json({ model: 'claude-sonnet-5-5', stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"ok":' }], usage: { input_tokens: 10, output_tokens: 32000 } }),
   ]);
-  const config = providerLevelConfig('lite', 'anthropic', ['claude-haiku-5-5']);
+  const config = providerLevelConfig('balanced', 'anthropic');
   const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
-  assert.match(error.message, /Anthropic gave no JSON object \(stop_reason max_tokens, 32000 output tokens\)/);
+  assert.match(error.message, /Anthropic gave no JSON object \(stop_reason max_tokens, 32000 output tokens, 6 characters of text\)/);
+  // REV-108. Sonnet 5.5 refuses `thinking: disabled`: no second request.
+  assert.equal(calls.length, 1);
+});
+
+test('Anthropic: the request streams, and the usage gives the stop_reason, the thinking tokens and the times (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([
+    () => messageResponse('claude-haiku-5-5', [{ type: 'thinking', thinking: 'the diff', signature: 'sig' }, { type: 'text', text: '{"ok":true}' }], 'end_turn', { input: 1000, cacheRead: 5000, output: 900, thinking: 700 }),
+  ]);
+  const config = providerLevelConfig('lite', 'anthropic');
+  const { answer, usage } = await askJson<{ ok: boolean }>({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'the pack', SCHEMA);
+
+  assert.deepEqual(answer, { ok: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.body.stream, true);
+  assert.equal(calls[0]!.body.thinking, undefined, 'the first request keeps the adaptive thinking of the model');
+  assert.equal(usage.prompt_tokens, 6000);
+  assert.equal(usage.completion_tokens, 900);
+  assert.equal(usage.stop_reason, 'end_turn');
+  assert.equal(usage.thinking_tokens, 700);
+  assert.equal(typeof usage.first_token_ms, 'number');
+  assert.equal(typeof usage.first_text_ms, 'number');
+  assert.equal(usage.retried_without_thinking, undefined);
+});
+
+test('Anthropic: Haiku cut at max_tokens asks once more without thinking, and the tokens of both requests count (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([
+    () => messageResponse('claude-haiku-5-5', [{ type: 'thinking', thinking: '', signature: 'sig' }], 'max_tokens', { input: 1000, output: 32000, thinking: 32000 }),
+    () => messageResponse('claude-haiku-5-5', [{ type: 'text', text: '{"ok":false}' }], 'end_turn', { input: 1000, output: 300 }),
+  ]);
+  const config = providerLevelConfig('lite', 'anthropic');
+  const { answer, usage } = await askJson<{ ok: boolean }>({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'the pack', SCHEMA);
+
+  assert.deepEqual(answer, { ok: false });
+  assert.equal(calls.length, 2);
+  const [first, second] = calls;
+  assert.deepEqual(second!.body.thinking, { type: 'disabled' });
+  assert.equal(second!.body.output_config.effort, 'medium', 'Haiku 5.5 accepts `disabled` at low, medium and high');
+  assert.equal(second!.body.model, first!.body.model);
+  // No cache write for the second request: the pack carries no mark.
+  assert.equal(second!.body.messages[0].content, 'the pack');
+  assert.equal(usage.completion_tokens, 32300);
+  assert.equal(usage.prompt_tokens, 2000);
+  assert.equal(usage.thinking_tokens, 32000);
+  assert.equal(usage.stop_reason, 'end_turn');
+  assert.equal(usage.retried_without_thinking, 'max_tokens');
+});
+
+test('Anthropic: when the request without thinking is cut too, the error says so (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([() => messageResponse('claude-haiku-5-5', [{ type: 'text', text: '{"ok":' }], 'max_tokens', { output: 32000 })]);
+  const config = providerLevelConfig('lite', 'anthropic');
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.equal(calls.length, 2);
+  assert.match(error.message, /Anthropic gave no JSON object \(stop_reason max_tokens, 32000 output tokens, 6 characters of text, after a request without thinking\)/);
+});
+
+test('Anthropic: a thinking with no answer block in time stops the request, and the call asks without thinking (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([
+    (_body, init) => sseResponse([...startEvents('claude-haiku-5-5', { input: 1000 }), { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }], init.signal, true),
+    () => messageResponse('claude-haiku-5-5', [{ type: 'text', text: '{"ok":true}' }], 'end_turn', { input: 1000, output: 200 }),
+  ]);
+  // 400 ms for the call: a third is for the second request, so the thinking gets about 266 ms.
+  const config = providerLevelConfig('lite', 'anthropic', undefined, { REVIEW_TIMEOUT_MS: '400' });
+  const { answer, usage } = await askJson<{ ok: boolean }>({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA);
+
+  assert.deepEqual(answer, { ok: true });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1]!.body.thinking, { type: 'disabled' });
+  assert.equal(usage.retried_without_thinking, 'no_answer_in_time');
+  // The input of the stopped request counts. Of its output, only the 1 token of message_start came.
+  assert.equal(usage.prompt_tokens, 2000);
+  assert.equal(usage.completion_tokens, 201);
+  assert.ok(usage.first_text_ms! >= 250);
+});
+
+test('Anthropic: a request that the API holds before its first block is not stopped: the clock starts at the thinking (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([(_body, init) => sseResponse(startEvents('claude-haiku-5-5'), init.signal, true)]);
+  const config = providerLevelConfig('lite', 'anthropic', undefined, { REVIEW_TIMEOUT_MS: '300' });
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.equal(calls.length, 1);
+  assert.match(error.message, /TimeoutError|timeout/i);
+});
+
+test('Anthropic: a failed request without thinking names its cause (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([
+    () => messageResponse('claude-haiku-5-5', [{ type: 'thinking', thinking: '', signature: 's' }], 'max_tokens', { output: 32000 }),
+    () => json({ type: 'error', error: { type: 'api_error', message: 'Internal' } }, 500),
+  ]);
+  const config = providerLevelConfig('lite', 'anthropic');
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.equal(calls.length, 2);
+  assert.equal(error.status, 500);
+  assert.match(error.message, /Anthropic answered 500: .* \(in the request without thinking, after max_tokens\)/);
+});
+
+test('Anthropic: a model that cannot turn its thinking off gets no deadline (REV-108)', async () => {
+  const { fetch, calls } = fakeFetch([
+    (_body, init) =>
+      sseResponse([...startEvents('claude-sonnet-5-5'), { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }], init.signal, true),
+  ]);
+  const config = providerLevelConfig('balanced', 'anthropic', undefined, { REVIEW_TIMEOUT_MS: '300' });
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.equal(calls.length, 1);
+  assert.match(error.message, /TimeoutError|timeout/i);
+});
+
+test('Anthropic: an error event in the stream fails the model (REV-108)', async () => {
+  const { fetch } = fakeFetch([
+    () => sseResponse([...startEvents('claude-haiku-5-5'), { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }]),
+  ]);
+  const config = providerLevelConfig('lite', 'anthropic');
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.match(error.message, /Anthropic stopped the stream: overloaded_error: Overloaded/);
+});
+
+test('thinkingOff: only Haiku 5.5 accepts `disabled` (REV-108)', () => {
+  assert.deepEqual(thinkingOff('claude-haiku-5-5'), { type: 'disabled' });
+  assert.equal(thinkingOff('claude-sonnet-5-5'), null);
+  assert.equal(thinkingOff('claude-opus-5-5'), null);
+  // At `lite`: 60 s of thinking, but never past 120 s of the 180 s, the 60 s left for the second request.
+  assert.equal(thinkingWaitMs(180_000, 5_000), MAX_THINKING_MS);
+  assert.equal(thinkingWaitMs(180_000, 90_000), 30_000);
+  assert.equal(thinkingWaitMs(180_000, 130_000), null);
 });
 
 test('OpenAI-compatible: a server that refuses response_format gets the call again with the schema in the prompt', async () => {

@@ -100,6 +100,16 @@ export type Usage = {
   cost_source?: CostSource;
   cache_read_tokens?: number;
   cache_write_tokens?: number;
+  /** REV-108, Anthropic only. The `stop_reason` of the request that gave the answer. */
+  stop_reason?: string;
+  /** REV-108, Anthropic only, when the API gives them: the output tokens of the thinking. */
+  thinking_tokens?: number;
+  /** REV-108, Anthropic only, from the start of the call: the first content block of any type. */
+  first_token_ms?: number;
+  /** REV-108, Anthropic only, from the start of the call: the first text block of the answer. */
+  first_text_ms?: number;
+  /** REV-108. Why the call asked the model again without thinking (thinkingOff in providers.ts). */
+  retried_without_thinking?: 'max_tokens' | 'no_answer_in_time';
 };
 export type ChangedLines = Map<string, Set<number>>;
 /**

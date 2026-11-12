@@ -7,6 +7,46 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-108: A Haiku answer cut at `max_tokens`, or late, gets one request without thinking
+
+**The runners carry the change; deploy them in any order with `web`.** No change to the protocol:
+the new fields go to the logs of the runner only. No migration (`/healthz` still gives
+`"migrations":27`), no new variable, no new permission. `web` needs no deployment for this entry.
+
+- The engine streams the Messages API of Anthropic (`stream: true`). OpenRouter, a server of the
+  OpenAI API and Ollama do not change, and still do not stream.
+- At Anthropic, with Claude Haiku 5.5, two cases get one more request to the same model with
+  `thinking: {type: "disabled"}`, at the same effort, in the time left to the call:
+  - the answer stopped at `max_tokens`. On the bench, the cut requests had 1,700 to 7,800 thinking
+    tokens: the answer text took the rest of the 32,000, and not the thinking as REV-108 supposed.
+    The second request gave an answer 5 times in 7;
+  - the model thought for `MAX_THINKING_MS` (60 s, about 14,000 tokens) with no answer block, or
+    until 60 s before the time limit (`RETRY_ROOM_MS`, 120 s of the 180 s at `lite`). The call
+    stops the first request. The clock starts at the first thinking block: on the bench, the API
+    held some requests 50 to 99 s before it, and stopping them would only queue the second request.
+
+  Sonnet 5.5 and Opus 5.5 refuse `disabled` (400): they get no second request, as before. The second
+  request puts no cache mark on the pack. Of a stopped request, only the input tokens and the first
+  output token count in the cost: the API gives the rest at the end of the stream only.
+- The runner logs `job.model_usage` after each review at Anthropic: `stopReason`, `thinkingTokens`,
+  `firstTokenMs` (the first content block), `firstTextMs` (the first text of the answer) and
+  `retriedWithoutThinking` (`max_tokens`, `no_answer_in_time` or null). The Action adds `stop=`,
+  `thinking=`, `first_text_ms=` and `retried=` to its log line. `eval/martian/run.ts` writes them in
+  `stop` on each row.
+- `prompts/review.md`: a suggestion holds 10 lines at most, and a diff of fewer than 50 changed
+  lines gets no diagram. Two answers of the bench passed 25 kB of JSON. The reuse key (REV-89)
+  reads the prompt, so after the deployment the review of an unchanged diff calls the model once
+  more.
+- The error of an answer that does not parse now gives the length of its text, for example
+  `(stop_reason max_tokens, 32000 output tokens, 1600 characters of text)`.
+- An error of the model that the stream sends (`overloaded_error`) fails the attempt with
+  `Anthropic stopped the stream: …`, and the next model of the level takes over. The screen of the
+  jobs shows it as an error that Kentō does not know.
+
+Check: in the logs of a runner (the lines `job.model_usage`), a review at `lite`
+with an Anthropic provider gives a `stopReason`. Over a day, `retriedWithoutThinking` is not null on
+a few percent of them, and the failures `stop_reason max_tokens` of the jobs go away.
+
 ## REV-107, follow-up: no request on a pull request reviewed three times before the deployment
 
 Migration `0026_feedback_skipped`: one column, `feedback_requests.skipped` (a default, no rewrite of

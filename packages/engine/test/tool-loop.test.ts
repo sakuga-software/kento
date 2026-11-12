@@ -11,6 +11,7 @@ import { askJson, levelConfig, providerLevelConfig } from '../src/index.ts';
 import { askModel } from '../src/model.ts';
 import { LEVELS } from '../src/levels.ts';
 import { RepoTools, TOOL_BUDGETS, TOOLS_NOTE } from '../src/tools.ts';
+import { messageResponse } from './sse.ts';
 
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
@@ -88,6 +89,31 @@ describe('a review call with tools', () => {
     assert.equal(usage.cache_read_tokens, 5000);
     assert.equal(usage.cache_write_tokens, 5060);
     assert.equal(usage.cost_source, 'table');
+  });
+
+  test('Anthropic, streamed: the tool input and the signed thinking come back from their deltas (REV-108)', async () => {
+    const { fetch, calls } = fakeFetch([
+      () =>
+        messageResponse(
+          'claude-haiku-5-5',
+          [
+            { type: 'thinking', thinking: 'need mail.ts', signature: 'sig-1' },
+            { type: 'tool_use', id: 'tu_1', name: 'read_file', input: { path: 'mail.ts' } },
+          ],
+          'tool_use',
+          { input: 100, output: 50 },
+        ),
+      () => messageResponse('claude-haiku-5-5', [{ type: 'text', text: '{"ok":true}' }], 'end_turn', { input: 80, output: 20 }),
+    ]);
+    const tools = new RepoTools(root, head, TOOL_BUDGETS.lite);
+    const config = providerLevelConfig('lite', 'anthropic');
+    const { answer } = await askJson<{ ok: boolean }>({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'the pack', SCHEMA, undefined, tools);
+
+    assert.deepEqual(answer, { ok: true });
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1].messages[1].content[0], { type: 'thinking', thinking: 'need mail.ts', signature: 'sig-1' });
+    assert.deepEqual(calls[1].messages[1].content[1], { type: 'tool_use', id: 'tu_1', name: 'read_file', input: { path: 'mail.ts' } });
+    assert.equal(calls[1].messages[2].content[0].content, 'mail.ts\n1| export const disableStandardEmails = true;');
   });
 
   test('Anthropic: once the rounds are used, the request offers no tool and the model must answer', async () => {
