@@ -31,7 +31,9 @@ export interface FeedbackInput {
 
 /**
  * Writes the row of the request when the pull request has at least FEEDBACK_AFTER_REVIEWS published
- * reviews and no request yet. Returns the number of these reviews when the row is new, else null.
+ * reviews and no request yet. A pull request with a skipped row (its third review came before the
+ * migration 0025) has a row already, so it is never asked. A count above FEEDBACK_AFTER_REVIEWS
+ * occurs after GitHub refused an earlier request. Returns the number of these reviews when the row is new, else null.
  * The row comes before the comment: of two publications, or of two tries, one only gets it.
  */
 export async function claimRequest(sql: postgres.Sql, repoId: string, prNumber: number, authorLogin: string): Promise<number | null> {
@@ -57,7 +59,7 @@ export async function setRequestComment(sql: postgres.Sql, repoId: string, prNum
 
 /** Gives the claim back after GitHub refused the comment: the next review tries again. */
 export async function releaseRequest(sql: postgres.Sql, repoId: string, prNumber: number): Promise<void> {
-  await sql`delete from feedback_requests where repo_id = ${repoId} and pr_number = ${prNumber} and github_comment_id is null`
+  await sql`delete from feedback_requests where repo_id = ${repoId} and pr_number = ${prNumber} and github_comment_id is null and not skipped`
 }
 
 export interface RequestRow {
@@ -72,7 +74,7 @@ export async function findRequest(sql: postgres.Sql, githubRepoId: number, prNum
     select feedback_requests.repo_id as "repoId", repos.full_name as "fullName", feedback_requests.github_comment_id as "githubCommentId"
     from feedback_requests
     join repos on repos.id = feedback_requests.repo_id
-    where repos.github_repo_id = ${githubRepoId} and feedback_requests.pr_number = ${prNumber}`
+    where repos.github_repo_id = ${githubRepoId} and feedback_requests.pr_number = ${prNumber} and not feedback_requests.skipped`
   if (!row) return null
   return { ...row, githubCommentId: row.githubCommentId === null ? null : Number(row.githubCommentId) }
 }

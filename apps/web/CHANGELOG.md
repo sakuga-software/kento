@@ -7,6 +7,28 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-107, follow-up: no request on a pull request reviewed three times before the deployment
+
+Migration `0026_feedback_skipped`: one column, `feedback_requests.skipped` (a default, no rewrite of
+the table), then one skipped row for each pull request that has 3 published reviews and no request
+yet. `/healthz` gives `"migrations":27`. No new variable, no new permission: deploy `web` alone.
+
+- The first release asked every pull request that had 3 or more published reviews at its next
+  review: a wave of requests at the deployment. Now a pull request whose third published review
+  came before this migration is never asked. The rule is the state of the database when the
+  migration runs, not a date: a skipped row takes the place of the request, so `on conflict do
+  nothing` of the claim never posts. A pull request already asked since the first release keeps its
+  row and its answers.
+- A pull request with 2 reviews at the migration is asked at its third. A request that GitHub
+  refuses still gives its row back (a skipped row never goes), and the next review asks with its
+  real count (« 4 fois »). During the deployment, the container of the earlier release can publish a
+  review after the migration: such a pull request is asked at its next review, once.
+- A skipped row has no comment: a quote and the reactions of that pull request are not read.
+
+Check: after the deploy, `select count(*) from feedback_requests where skipped` gives the open and
+closed pull requests that had 3 reviews; on such a pull request, a new review posts no request; on a
+pull request with 2 reviews, the third posts one.
+
 ## REV-104: More code suggestions on the P0 and P1 findings, and a diff when a suggestion cannot apply
 
 **The protocol of the runners changes: deploy `web` first, then the runners.** A runner of this

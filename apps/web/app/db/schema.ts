@@ -815,6 +815,11 @@ export const feedbackRequests = pgTable(
     /** The author of the pull request, whom the comment mentions. */
     authorLogin: text('author_login').notNull(),
     githubCommentId: bigint('github_comment_id', { mode: 'number' }),
+    /**
+     * The pull request had its third published review before the migration of REV-107: Kentō never
+     * asks there. The migration writes these rows.
+     */
+    skipped: boolean('skipped').notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],

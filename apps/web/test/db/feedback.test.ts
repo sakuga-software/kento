@@ -2,13 +2,16 @@
 // `feedback`, a quote of the request, the reactions at the close. Postgres is real; GitHub is the fake
 // of test/fake-github.ts.
 import { generateKeyPairSync } from 'node:crypto'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 import type { ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
-import { runMigrations } from '../../app/db/migrate.ts'
+import { migrationsFolder, runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
 import { createFeedbackHandler } from '../../app/feedback/handler.ts'
 import { requestText } from '../../app/feedback/request.ts'
@@ -294,5 +297,56 @@ describe('feedback on the reviews (REV-107)', () => {
     let [other] = await database.sql<{ id: string }[]>`
       insert into orgs (github_installation_id, github_account_id, login) values (9999, 9998, 'other') returning id`
     assert.equal((await listFeedback(database.sql, other!.id)).total, 0, 'another org sees nothing')
+  })
+})
+
+describe('feedback on a pull request reviewed before the deploy (REV-107)', () => {
+  it('never asks a pull request with three published reviews before the migration 0026, and asks one whose third comes after', async () => {
+    let test = await createTestDatabase()
+    let earlier = await mkdtemp(path.join(tmpdir(), 'kento-feedback-'))
+    let database = createDatabase(test.url, { max: 4 })
+    try {
+      // The first release of REV-107: every migration up to 0025.
+      await cp(migrationsFolder, earlier, { recursive: true })
+      let journalPath = path.join(earlier, 'meta', '_journal.json')
+      let journal = JSON.parse(await readFile(journalPath, 'utf8'))
+      journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0026')
+      await writeFile(journalPath, JSON.stringify(journal))
+      await runMigrations(test.url, earlier)
+      let { repoId } = await seedEnabledRepo(database.sql)
+
+      let n = 0
+      async function storeReview(pr: number, published: boolean) {
+        let sha = (++n).toString(16).padStart(40, '0')
+        let [job] = await database.sql<{ id: string }[]>`
+          insert into jobs (repo_id, level, pr_number, head_sha, base_ref, state)
+          values (${repoId}, 'lite', ${pr}, ${sha}, 'main', 'done') returning id`
+        await database.sql`
+          insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, result, published_at, github_review_id)
+          values (${job!.id}, ${repoId}, ${pr}, ${sha}, 4, 'm', ${JSON.stringify(review(sha))}::jsonb,
+            ${published ? new Date().toISOString() : null}, ${published ? 500 + n : null})`
+        return sha
+      }
+      // Before the deploy: PR 41 has its three reviews, PR 42 two.
+      for (let i = 0; i < 3; i++) await storeReview(41, true)
+      for (let i = 0; i < 2; i++) await storeReview(42, true)
+
+      await runMigrations(test.url)
+
+      for (let pr of [41, 42]) {
+        let fake = createFakeGitHub({ head: 'f'.repeat(40), pr })
+        fake.state.pr.head = await storeReview(pr, false)
+        let mint = createInstallationTokenMinter({ appId: '12345', privateKey: readPrivateKey(pem), apiUrl: fake.apiUrl, fetch: fake.fetch })
+        let results = await createPublisher({ sql: database.sql, mintInstallationToken: mint, apiUrl: fake.apiUrl, botLogin: BOT, fetch: fake.fetch }).publishPending()
+        assert.equal(results[0]?.kind, 'published')
+        let requests = fake.state.issueComments.filter((c) => c.body.includes('Kentō a relu cette PR'))
+        if (pr === 41) assert.equal(requests.length, 0, 'PR 41: its fourth review asks nothing')
+        else assert.ok(requests[0]?.body.startsWith('@camille Kentō a relu cette PR 3 fois.'), 'PR 42: its third review asks')
+      }
+    } finally {
+      await database.close()
+      await rm(earlier, { recursive: true, force: true })
+      await test.drop()
+    }
   })
 })
