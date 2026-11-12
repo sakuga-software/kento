@@ -93,12 +93,12 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | ----- | ------ | ------ |
 | `ping` | | 200 `pong` |
 | `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the level that the config of the repository resolves (repository, then org, then `lite`). The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside the trusted bots of the org (settings, REV-13), a pull request from a fork. No job (202 `capped`): the org reached its cost limit of the day or of the month; the head gets the neutral check « Kentō · plafond ». |
-| `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. |
+| `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. REV-107: then the 👍 and 👎 on the request for feedback of the pull request are read and kept. |
 | `pull_request` | `edited` with a new base | 202 `retargeted`: the queued and failed jobs of the pull request take the new base branch (a stacked pull request moves to the base of its parent when the branch of the parent is deleted). Other edits: 202 `ignored`. |
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
 | `installation` | `suspend`, `deleted` | Sets `suspended_at` and cancels the jobs of the org. The rows stay. |
 | `installation_repositories` | `added` / `removed` | Upserts / deletes the repositories (a deleted repository takes its jobs and reviews with it). |
-| `issue_comment` | `created` | A `@kento-review` command (REV-7): a review or a resolve job, with a reaction and, when refused, a reply. The checks and the answers are in [CHANGELOG.md](CHANGELOG.md#rev-7-commands-in-the-comments). REV-93: `reject #<id> <cause>` names a finding of the pull request by its short id. |
+| `issue_comment` | `created` | A `@kento-review` command (REV-7): a review or a resolve job, with a reaction and, when refused, a reply. The checks and the answers are in [CHANGELOG.md](CHANGELOG.md#rev-7-commands-in-the-comments). REV-93: `reject #<id> <cause>` names a finding of the pull request by its short id. REV-107: `feedback <text>`, or a comment that quotes the request for feedback, is an answer about the reviews: kept with ❤️, no job, also on a closed pull request. |
 | `pull_request_review_comment` | `created`, a reply in a thread | REV-93: `@kento-review reject <cause>` in the thread of a finding of Kentō names that finding. Another command in a thread gets 😕 and a reply: the commands go in the conversation. The first comment of a thread, an edit, a closed pull request: 202 `ignored`. |
 
 A `pull_request` event also upserts its org and repository, so the App needs no new `installation`

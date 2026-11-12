@@ -7,6 +7,44 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-107: After three reviews, Kentō asks the author for feedback, once per pull request
+
+Migration `0025_feedback`: two new tables, `feedback_requests` and `feedback` (no change to an
+existing table). `/healthz` gives `"migrations":26`. No new variable, no new permission (the App
+already writes the comments of the conversation and reads their reactions with `issues` and
+`pull_requests`), no change to the protocol of the runners: deploy `web` alone. The Action
+(`@sakuga-review`) does not change.
+
+- After a review is on GitHub, when the pull request has 3 or more published reviews
+  (`reviews.github_review_id` set) and no request yet, the publisher posts one comment in the
+  conversation that mentions the author of the pull request only, a bot too:
+  « @auteur Kentō a relu cette PR 3 fois. Ton avis sur ces reviews nous aide à l'améliorer… ». The
+  row of `feedback_requests` (one per pull request) is written before the comment: two publications
+  or two tries never post it twice. A comment that GitHub refuses gives the row back, and the next
+  review asks. Nothing on a closed pull request. A pull request that already had more than 3 reviews
+  before the deployment is asked at its next review, with its real count.
+- The answers go to `feedback`, unique by the id of the comment or of the reaction on GitHub:
+  - `@kento-review feedback <avis>` (the lines under the command count too): no job, no cost, ❤️ on
+    the comment. Without a text: 😕 and the form of the command. Any person can give it, a trusted
+    bot, or the bot that opened the pull request; also in a review thread, and on a closed pull
+    request. Before this release, `feedback` got the list of the commands as an unknown command.
+  - A comment of the conversation that quotes the request (`> …`) with a text of its own, on a pull
+    request where Kentō asked: the text out of the quote, with ❤️ too.
+  - 👍 and 👎 on the request: GitHub sends no event for a reaction, so the service reads them at
+    `pull_request.closed` and at each new answer. A 👍 removed later stays.
+- « Retours » (`/feedback`, in the navigation after Findings): the answers of the org, the newest
+  first (200 at most), with the repository, the pull request, the author, person or agent, the source
+  and the score of the last published review of the pull request. Filters: repository, source,
+  person or agent. Every member of the org reads it.
+- `feedback` is in `/docs/commandes`, in the list of the commands of a refused command, and in the
+  line of the commands at the end of the block of the description.
+
+Check: on a test pull request, after the second review, no request; after the third, one comment
+that mentions the author; after a fourth review and after `@kento-review heavy force`, no second
+request. `@kento-review feedback ça a trouvé le bug` gets ❤️, queues no job, and shows on
+« Retours ». A reply that quotes the request shows there too. A 👍 on the request shows after the
+close of the pull request.
+
 ## REV-106: Kentō's icons replace the emojis and the shields.io badges on a pull request
 
 No migration, no new variable, no new permission, no change to the protocol of the runners: deploy

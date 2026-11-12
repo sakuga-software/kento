@@ -11,7 +11,8 @@ import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, docsRoutes, fallbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { createFeedbackControllers, type FeedbackDependencies } from './feedback/controller.tsx'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
@@ -62,6 +63,8 @@ export interface AppDependencies {
   pulls?: PullsDependencies | null
   /** The screen of a user (REV-22). Without it, the screen answers 404. */
   users?: UsersDependencies | null
+  /** The answers about the reviews (REV-107). Without them, the screen answers 404. */
+  feedback?: FeedbackDependencies | null
 }
 
 /**
@@ -117,6 +120,7 @@ export function createAppRouter(deps: AppDependencies) {
   router.map(pageRoutes, ui.pages)
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))
   router.map(userRoutes, createUserControllers(ui.screens, deps.users ?? null))
+  router.map(feedbackRoutes, createFeedbackControllers(ui.screens, deps.feedback ?? null))
   router.map(authRoutes, ui.signIn)
   router.map(docsRoutes, ui.docs)
   fallback.map(fallbackRoutes, ui.notFound)

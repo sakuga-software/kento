@@ -16,6 +16,7 @@ import { DOCS_PATH } from '../commands/refutation.ts'
 import { readJobAssignment, readUnreadPathRules } from '../assignment/model.ts'
 import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
+import { askForFeedback } from '../feedback/github.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
 import { createFindingsLedger } from '../findings/ledger.ts'
 import { sweepReactions } from '../findings/reactions.ts'
@@ -218,7 +219,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
 
     // A newer push cancels the job of the previous head; a review that came back before the cancel
     // is not published either. The workflow did the same: a push cancelled the run in progress.
-    let pr: { state: string; head: { sha: string } } = await github.rest('GET', `/repos/${owner}/${name}/pulls/${row.prNumber}`)
+    let pr: { state: string; head: { sha: string }; user?: { login?: string } | null } = await github.rest('GET', `/repos/${owner}/${name}/pulls/${row.prNumber}`)
     if (pr.state !== 'open') return skip('closed')
     if (pr.head.sha !== row.headSha) return skip('superseded')
 
@@ -289,6 +290,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         check: checks !== null,
       })
       await answerCommand(github, row, 'rocket')
+      await askFeedback(github, row, pr.user?.login ?? null)
       return { kind: 'published', reviewId: row.id, githubReviewId: from.githubReviewId }
     }
 
@@ -327,7 +329,21 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       check: checks !== null,
     })
     await answerCommand(github, row, 'rocket')
+    await askFeedback(github, row, pr.user?.login ?? null)
     return { kind: 'published', reviewId: row.id, githubReviewId }
+  }
+
+  /**
+   * REV-107. The request for feedback, once per pull request, after its third published review. A
+   * failure is logged and never throws: the review is already on GitHub.
+   */
+  async function askFeedback(github: GitHub, row: Pending, author: string | null) {
+    try {
+      let commentId = await askForFeedback(deps.sql, github, { repoId: row.repoId, fullName: row.fullName, prNumber: row.prNumber, author })
+      if (commentId !== null) log('info', 'feedback.requested', { reviewId: row.id, repo: row.fullName, pr: row.prNumber, author, commentId })
+    } catch (error) {
+      log('warn', 'feedback.request_failed', { reviewId: row.id, repo: row.fullName, pr: row.prNumber, error: errorMessage(error).slice(0, 500) })
+    }
   }
 
   /**

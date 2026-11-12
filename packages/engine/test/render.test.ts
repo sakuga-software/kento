@@ -74,7 +74,7 @@ test('the block of Kentō ends with one line that lists its commands and links t
   const docsUrl = 'https://review.sakuga.dev/docs/commandes';
   const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const, poster: kento, docsUrl };
   const line =
-    '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · `@kento-review reject <cause>` (dans un fil) ou `reject #<id> <cause>` · [Les commandes de Kentō](https://review.sakuga.dev/docs/commandes)</sub>';
+    '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · `@kento-review reject <cause>` (dans un fil) ou `reject #<id> <cause>` · `@kento-review feedback <avis>` · [Les commandes de Kentō](https://review.sakuga.dev/docs/commandes)</sub>';
   const first = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, anchors, context);
   assert.ok(first.endsWith(`${line}\n\n<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->`));
   // A later review writes its block in place of the earlier one: the line stays unique.

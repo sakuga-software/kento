@@ -4597,3 +4597,30 @@ a.sheet-title {
     gap: var(--space-1);
   }
 }
+
+/* REV-107. « Retours »: three filters and their actions, then the answers. */
+.feedback-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px)) auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+.feedback-text {
+  max-width: 48ch;
+  font-weight: 400;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feedback-link {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .feedback-filters {
+    grid-template-columns: 1fr;
+  }
+  .feedback-text {
+    max-width: none;
+  }
+}

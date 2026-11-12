@@ -1,6 +1,7 @@
 import { SHA } from '@sakuga-review/protocol'
 
 import { looksRefuted } from '../commands/refutation.ts'
+import { quotesRequest, replyText } from '../feedback/request.ts'
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
 
 export type CommandPlace = { kind: 'conversation' } | { kind: 'thread'; rootCommentId: number }
@@ -56,7 +57,7 @@ export type WebhookCommand =
       prNumber: number
       commentId: number
       commenter: { login: string; isBot: boolean }
-      command: CommentCommand
+      command: Exclude<CommentCommand, { verb: 'feedback' }>
       /** REV-22. The author of the pull request, for the screen of a user. */
       author: PullAuthor | null
       /**
@@ -80,6 +81,25 @@ export type WebhookCommand =
       rootCommentId: number
       commenter: { login: string; isBot: boolean }
       author: PullAuthor | null
+    }
+  | {
+      /**
+       * REV-107. An answer about the reviews of Kentō: the command `feedback` (`command`), or a comment
+       * of the conversation that quotes the request for feedback (`quote`). It costs nothing and runs
+       * no job: it is read on a closed pull request too, and from any account but the App.
+       */
+      type: 'feedback_reply'
+      installation: Installation
+      repository: Repository
+      prNumber: number
+      commentId: number
+      commenter: { login: string; isBot: boolean }
+      source: 'command' | 'quote'
+      text: string
+      /** `html_url` and `created_at` of the comment, or null when the payload lacks them. */
+      url: string | null
+      createdAt: string | null
+      place: CommandPlace
     }
   | { type: 'cancel_pull_request'; installation: Installation; repository: Repository; prNumber: number }
   /**
@@ -189,7 +209,8 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
   if (!obj(issue?.pull_request)) return { type: 'ignore', reason: 'comment is not on a pull request' }
   let body = typeof comment?.body === 'string' ? comment.body : ''
   let command = parseCommentCommand(body)
-  if (command === null) return { type: 'ignore', reason: 'comment is not a command' }
+  let quote = command === null && quotesRequest(body)
+  if (command === null && !quote) return { type: 'ignore', reason: 'comment is not a command' }
 
   let installation = installationFromRepository(payload)
   let repository = repositoryOf(obj(payload.repository))
@@ -199,6 +220,13 @@ function issueCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand 
   let login = str(user?.login)
   if (!installation || !repository || prNumber === null || commentId === null || login === null) {
     return { type: 'invalid', reason: 'issue_comment payload lacks installation, repository, number or comment' }
+  }
+
+  if (command === null || command.verb === 'feedback') {
+    let text = replyText(command === null ? body : command.text)
+    if (command === null && text === '') return { type: 'ignore', reason: 'quote of the feedback request without a text' }
+    let reply = { installation, repository, prNumber, commentId, comment, user, login, text, place: { kind: 'conversation' } as const }
+    return feedbackReply(reply, command === null ? 'quote' : 'command', payload, policy)
   }
 
   let refused = commenterRefusal(login, user, payload, policy)
@@ -247,6 +275,10 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (!installation || !repository || prNumber === null || commentId === null || login === null) {
     return { type: 'invalid', reason: 'pull_request_review_comment payload lacks installation, repository, number or comment' }
   }
+  if (command?.verb === 'feedback') {
+    let reply = { installation, repository, prNumber, commentId, comment, user, login, text: replyText(command.text), place: { kind: 'thread', rootCommentId } as const }
+    return feedbackReply(reply, 'command', payload, policy, obj(pr?.user))
+  }
   let refused = commenterRefusal(login, user, payload, policy)
   if (refused) return refused
   if (pr?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
@@ -265,6 +297,48 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
     command,
     author: authorOf(obj(pr?.user)),
     place: { kind: 'thread', rootCommentId },
+  }
+}
+
+/**
+ * REV-107. An answer about the reviews. The App never answers itself. An untrusted bot can answer
+ * only on its own pull request: the request for feedback mentions it there.
+ */
+function feedbackReply(
+  reply: {
+    installation: Installation
+    repository: Repository
+    prNumber: number
+    commentId: number
+    comment: Obj | null
+    user: Obj | null
+    login: string
+    text: string
+    place: CommandPlace
+  },
+  source: 'command' | 'quote',
+  payload: Obj,
+  policy: EventPolicy,
+  prUser: Obj | null = obj(obj(payload.issue)?.user),
+): WebhookCommand {
+  let botLogin = (policy.botLogin ?? 'kento-review[bot]').toLowerCase()
+  if (reply.login.toLowerCase() === botLogin || str(obj(payload.sender)?.login)?.toLowerCase() === botLogin) {
+    return { type: 'ignore', reason: 'comment of the App itself' }
+  }
+  let ownPull = str(prUser?.login)?.toLowerCase() === reply.login.toLowerCase()
+  if (isUntrustedBot(reply.user, policy) && !ownPull) return { type: 'ignore', reason: 'feedback of an untrusted bot' }
+  return {
+    type: 'feedback_reply',
+    installation: reply.installation,
+    repository: reply.repository,
+    prNumber: reply.prNumber,
+    commentId: reply.commentId,
+    commenter: { login: reply.login, isBot: reply.user?.type === 'Bot' },
+    source,
+    text: reply.text,
+    url: str(reply.comment?.html_url),
+    createdAt: str(reply.comment?.created_at),
+    place: reply.place,
   }
 }
 

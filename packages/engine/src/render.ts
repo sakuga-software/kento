@@ -243,7 +243,8 @@ export type Link = { finding: Finding; url: string | null };
 function commandsLine({ by, handle }: Poster, docsUrl: string): string {
   return (
     `<sub>Commandes de ${by} : \`${handle} [lite|balanced|heavy]\` · \`${handle} resolve\` · ` +
-    `\`${handle} reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · [Les commandes de ${by}](${docsUrl})</sub>`
+    `\`${handle} reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · \`${handle} feedback <avis>\` · ` +
+    `[Les commandes de ${by}](${docsUrl})</sub>`
   );
 }
 

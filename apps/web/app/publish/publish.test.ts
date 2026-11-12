@@ -158,7 +158,7 @@ describe('publishReview', () => {
     let { fake, publish, republish } = setup(HEAD1, true, docs)
     let line =
       '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · ' +
-      `\`@kento-review reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · [Les commandes de Kentō](${docs})</sub>`
+      `\`@kento-review reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · \`@kento-review feedback <avis>\` · [Les commandes de Kentō](${docs})</sub>`
     await publish(payload())
     assert.ok(fake.state.pr.body.includes(`${line}\n\n<!-- sakuga-review:count 1 -->`))
 

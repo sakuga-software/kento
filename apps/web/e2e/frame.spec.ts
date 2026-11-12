@@ -6,6 +6,7 @@ const SCREENS = [
   { path: '/', title: 'Tableau de bord' },
   { path: '/repos', title: 'Repos' },
   { path: '/findings', title: 'Findings' },
+  { path: '/feedback', title: 'Retours' },
   { path: '/runners', title: 'Runners' },
   { path: '/settings', title: 'Réglages' },
 ]

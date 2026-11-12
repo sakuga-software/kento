@@ -29,6 +29,8 @@ export type WebhookResult =
   | { outcome: 'dismissed' | 'unchanged'; findingId: string; dismissedReview: number | null }
   /** REV-96. Kentō answered a reply that sets a finding aside in words with the command `reject`. */
   | { outcome: 'hinted'; findingId: string }
+  /** REV-107. An answer about the reviews: `created` is false when an earlier delivery recorded it. */
+  | { outcome: 'recorded'; created: boolean; reactions: number }
   /** REV-13. The org reached its cost limit of the day or of the month: no job. */
   | { outcome: 'capped'; reason: string; period: CapHit['period']; spentUsd: number; capUsd: number; resetsAt: string }
 
@@ -67,6 +69,14 @@ export interface StoreOptions {
   handleCommentCommand?: HandleCommentCommand
   /** REV-96. The hint on a reply that sets a finding aside in words. Without it, the reply is skipped. */
   handleRefutationReply?: (reply: Extract<StoreCommand, { type: 'refutation_reply' }>, deliveryId: string) => Promise<WebhookResult>
+  /** REV-107. An answer about the reviews. Without it, the answer is skipped. */
+  handleFeedbackReply?: (reply: Extract<StoreCommand, { type: 'feedback_reply' }>, deliveryId: string) => Promise<WebhookResult>
+  /**
+   * REV-107. Runs after the close of a pull request is written: GitHub sends no event for a
+   * reaction, so the reactions on the request for feedback are read then. Its failure is logged and
+   * never fails the delivery.
+   */
+  onPullClosed?: (command: Extract<StoreCommand, { type: 'cancel_pull_request' }>) => Promise<void>
   /**
    * REV-12. Reads the changed files of a pull request, for a repository whose config has paths.
    * Without it, or when GitHub does not answer, the paths filter nothing: a review too many costs
@@ -102,6 +112,17 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       if (!options.handleRefutationReply) return { outcome: 'skipped', reason: 'hints are not configured' }
       return options.handleRefutationReply(command, deliveryId)
     }
+    if (command.type === 'feedback_reply') {
+      if (!options.handleFeedbackReply) return { outcome: 'skipped', reason: 'feedback is not configured' }
+      return options.handleFeedbackReply(command, deliveryId)
+    }
+    if (command.type === 'cancel_pull_request' && options.onPullClosed) {
+      let result = await apply(command)
+      await options.onPullClosed(command).catch((error) =>
+        log('warn', 'webhook.pull_closed_hook_failed', { deliveryId, repo: command.repository.fullName, pr: command.prNumber, error: errorMessage(error) }),
+      )
+      return result
+    }
     if (command.type === 'enqueue_review') {
       let before = await beforeEnqueue(db, command, options.listChangedFiles, deliveryId)
       if ('outcome' in before) return before
@@ -114,7 +135,11 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       }
       return result
     }
-    return db.transaction(async (tx) => {
+    return apply(command)
+  }
+
+  function apply(command: Exclude<StoreCommand, { type: 'comment_command' | 'refutation_reply' | 'feedback_reply' | 'enqueue_review' }>): Promise<WebhookResult> {
+    return db.transaction(async (tx): Promise<WebhookResult> => {
       switch (command.type) {
         case 'cancel_pull_request': {
           // The lock waits for an enqueue of the same repository that has not committed yet, so the

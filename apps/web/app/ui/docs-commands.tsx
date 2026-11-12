@@ -1,6 +1,6 @@
 // REV-96. « Les commandes de Kentō »: a public page, open without a sign-in, so that the link of a
 // comment of Kentō on GitHub works for every reader of the pull request. It describes `review`,
-// `force`, `resolve` and `reject`: where to write them, who can run them, what they cost, what they do
+// `force`, `resolve`, `reject` and `feedback` (REV-107): where to write them, who can run them, what they cost, what they do
 // at once and what the next review does with them.
 import { levelCost } from '@sakuga-review/engine/levels'
 import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS } from '@sakuga-review/protocol'
@@ -122,6 +122,24 @@ const COMMANDS: Command[] = [
       { code: '@kento-review reject risque accepté : le cache est par processus, voulu (doc dans cache.ts)', why: 'Un choix voulu et déjà écrit.' },
       { code: '@kento-review reject #3cf454 même constat que le fil du dessus, déjà réfuté', why: 'Un constat qui revient avec d’autres mots.' },
     ],
+  },
+  {
+    id: 'feedback',
+    name: 'feedback',
+    lead: 'Donner un avis sur les reviews de Kentō : ce qui a servi, un faux positif, un fil inutile, un défaut manqué.',
+    syntax: [
+      { where: 'Dans la conversation de la PR', code: '@kento-review feedback <avis>' },
+      { where: 'En réponse, dans le fil d’un constat', code: '@kento-review feedback ce constat a trouvé le bug' },
+    ],
+    who: 'Toute personne, un bot que l’org a déclaré de confiance, ou le bot qui a ouvert la PR.',
+    cost: <>Aucun appel au modèle et aucun job : la commande ne coûte rien.</>,
+    now: (
+      <>
+        Kentō garde l’avis, et les lignes sous la commande avec lui, puis réagit ❤️ sur le commentaire. Les avis se lisent dans l’app, sur la page Retours. Après sa troisième review
+        sur une PR, Kentō demande une fois un avis à son auteur : citer ce message, ou réagir 👍 ou 👎 dessus, compte aussi.
+      </>
+    ),
+    next: <>Rien ne change dans les reviews de la PR : les avis servent à améliorer Kentō.</>,
   },
 ]
 

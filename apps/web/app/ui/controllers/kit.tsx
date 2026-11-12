@@ -187,6 +187,11 @@ const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string
     lead: 'Chaque finding, et la précision des reviews.',
     empty: 'Les findings filtrables et la précision par repo s’afficheront ici.',
   },
+  feedback: {
+    title: 'Retours',
+    lead: 'Ce que les auteurs des PR disent des reviews de Kentō.',
+    empty: 'Les retours sur les reviews s’afficheront ici.',
+  },
   runners: {
     title: 'Runners',
     lead: 'Les machines qui font les reviews.',

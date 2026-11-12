@@ -1,11 +1,13 @@
 // The text of a command in a comment of a pull request: `@kento-review [review] [lite|balanced|heavy] [force]`,
-// `@kento-review resolve [lite|balanced|heavy]` or `@kento-review reject [<id>] <reason>` (REV-93).
+// `@kento-review resolve [lite|balanced|heavy]`, `@kento-review reject [<id>] <reason>` (REV-93) or
+// `@kento-review feedback <text>` (REV-107).
 // `@sakuga-review` is the old name of the bot, and stays an alias. Pure functions: no database, no
 // network.
 import { levelCost } from '@sakuga-review/engine/levels'
 import { SHORT_ID_LENGTH } from '@sakuga-review/engine/render'
 import { isLevel, type Level } from '@sakuga-review/protocol'
 
+import { FEEDBACK_TEXT_MAX } from '../feedback/request.ts'
 import { REASON_MAX } from '../findings/store.ts'
 
 export type CommentCommand =
@@ -24,6 +26,14 @@ export type CommentCommand =
       verb: 'reject'
       id: string | null
       reason: string
+    }
+  | {
+      /**
+       * REV-107. An opinion about the reviews of Kentō. `text` is the rest of the line and the lines
+       * after it, trimmed. It can be empty. The command runs no job.
+       */
+      verb: 'feedback'
+      text: string
     }
   | { verb: 'unknown'; text: string }
 
@@ -56,10 +66,11 @@ const QUOTE = /^ {0,3}>/
  * - A quote runs from a line that starts with `>` to the next blank line: Markdown puts in the
  *   quote the lines that follow it without `>`.
  */
-function commandLine(body: string): { name: string; rest: string } | null {
+function commandLine(body: string): { name: string; rest: string; after: string } | null {
   let fence: { char: string; length: number } | null = null
   let inQuote = false
-  for (let line of body.split(/\r?\n/)) {
+  let lines = body.split(/\r?\n/)
+  for (let [index, line] of lines.entries()) {
     let open = FENCE.exec(line)
     if (fence) {
       let mark = open?.[1]
@@ -78,7 +89,7 @@ function commandLine(body: string): { name: string; rest: string } | null {
     if (QUOTE.test(line)) inQuote = true
     if (inQuote) continue
     let mention = MENTION.exec(line)
-    if (mention) return { name: mention[1]!, rest: line.slice(mention[0].length) }
+    if (mention) return { name: mention[1]!, rest: line.slice(mention[0].length), after: lines.slice(index + 1).join('\n') }
   }
   return null
 }
@@ -98,6 +109,8 @@ export function parseCommentCommand(body: string): CommentCommand | null {
   let line = found.rest
   let reject = /^[ \t]+reject(?=[ \t]|$)/i.exec(line)
   if (reject) return rejectCommand(line.slice(reject[0].length))
+  let feedback = /^[ \t]+feedback(?=[ \t]|$)/i.exec(line)
+  if (feedback) return { verb: 'feedback', text: `${line.slice(feedback[0].length)}\n${found.after}`.trim().slice(0, FEEDBACK_TEXT_MAX) }
   let words = line.trim().split(/[ \t]+/).filter(Boolean).slice(0, 3).map((word) => word.toLowerCase())
   let text = `@${found.name.toLowerCase()}${line.trimEnd()}`.slice(0, 200)
 
@@ -168,6 +181,7 @@ export const USAGE = [
   '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
   "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
   "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
+  '- `@kento-review feedback <avis>` : donner un avis sur les reviews de Kentō (gratuit).',
   '',
   `\`lite\` : le diff et les définitions qu'il utilise, ${levelCost('lite')}. ` +
     `\`balanced\` : en plus, le code qui appelle le changement, ${levelCost('balanced')}. ` +
@@ -175,7 +189,7 @@ export const USAGE = [
     'Le modèle de chaque niveau se règle dans la config du repo.',
   '',
   `La cause tient sur la ligne de la commande, en ${REASON_MAX} caractères au plus. ` +
-    'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
+    'Seule une personne qui peut écrire dans le repo peut lancer une commande, sauf `feedback`.',
 ].join('\n')
 
 /**

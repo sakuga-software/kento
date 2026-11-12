@@ -158,6 +158,7 @@ describe('USAGE', () => {
         '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
         "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
         "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
+        '- `@kento-review feedback <avis>` : donner un avis sur les reviews de Kentō (gratuit).',
         '',
         "`lite` : le diff et les définitions qu'il utilise, environ 1 centime. " +
           '`balanced` : en plus, le code qui appelle le changement, de 10 à 20 centimes. ' +
@@ -165,9 +166,25 @@ describe('USAGE', () => {
           'Le modèle de chaque niveau se règle dans la config du repo.',
         '',
         'La cause tient sur la ligne de la commande, en 500 caractères au plus. ' +
-          'Seule une personne qui peut écrire dans le repo peut lancer une commande.',
+          'Seule une personne qui peut écrire dans le repo peut lancer une commande, sauf `feedback`.',
       ].join('\n'),
     )
+  })
+})
+
+describe('feedback (REV-107)', () => {
+  it('reads `feedback` with its text, and never as a review or an unknown command', () => {
+    assert.deepEqual(parseCommentCommand('@kento-review feedback ça a trouvé le bug'), { verb: 'feedback', text: 'ça a trouvé le bug' })
+    assert.deepEqual(parseCommentCommand('@Kento-Review FEEDBACK  heavy force'), { verb: 'feedback', text: 'heavy force' })
+    assert.deepEqual(parseCommentCommand('@sakuga-review feedback'), { verb: 'feedback', text: '' })
+    assert.equal(parseCommentCommand('@kento-review feedbacks')?.verb, 'unknown')
+  })
+
+  it('keeps the lines under the command as the text', () => {
+    assert.deepEqual(parseCommentCommand('Merci.\n@kento-review feedback un faux positif :\n\nle fil sur le cache.'), {
+      verb: 'feedback',
+      text: 'un faux positif :\n\nle fil sur le cache.',
+    })
   })
 })
 

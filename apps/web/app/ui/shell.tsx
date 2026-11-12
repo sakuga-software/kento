@@ -1,12 +1,12 @@
 import type { Handle, RemixNode } from 'remix/component'
 
-import { pageRoutes as routes, userRoutes } from '../routes.ts'
+import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
 import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
 
 /** The screens of the navigation, in its order. */
-export type Section = 'dashboard' | 'repos' | 'findings' | 'runners' | 'settings'
+export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
 
 /**
  * `soon`: the screen is not there yet (REV-32). The bar names it, with « Bientôt » and no link. No link
@@ -16,6 +16,7 @@ const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
   { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href() },
   { key: 'repos', label: 'Repos', href: routes.repos.href() },
   { key: 'findings', label: 'Findings', href: routes.findings.href() },
+  { key: 'feedback', label: 'Retours', href: feedbackRoutes.feedback.href() },
   { key: 'runners', label: 'Runners', href: routes.runners.href() },
   { key: 'settings', label: 'Réglages', href: routes.settings.href() },
 ]
@@ -64,7 +65,7 @@ export interface ShellProps {
 }
 
 /**
- * The frame of every screen (REV-91): the bar with the mark, the five screens, the org and the avatar;
+ * The frame of every screen (REV-91): the bar with the mark, the screens, the org and the avatar;
  * under 760 px, « Menu » opens the list (public/assets/frame.js). Then the page header, the « Lecture
  * seule » notice for a member, and the foot: « Kentō x.y.z · par Sakuga », the theme and the sign-out.
  */

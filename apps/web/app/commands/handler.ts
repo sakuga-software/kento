@@ -41,7 +41,8 @@ import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
  */
 export const COMMAND_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
 
-export type Reaction = 'eyes' | 'rocket' | 'confused'
+/** REV-107. `heart`: the receipt of an answer about the reviews. */
+export type Reaction = 'eyes' | 'rocket' | 'confused' | 'heart'
 
 export interface CommandHandlerDependencies {
   db: Db
@@ -72,7 +73,8 @@ function commentPath(fullName: string, commentId: number, place: CommandPlace): 
   return `/repos/${fullName}/${place.kind === 'thread' ? 'pulls' : 'issues'}/comments/${commentId}`
 }
 
-async function reactWithId(github: GitHub, fullName: string, commentId: number, content: Reaction, place: CommandPlace = CONVERSATION) {
+/** Adds a reaction of the App to a comment of the conversation or of a thread, and gives its id. */
+export async function reactWithId(github: GitHub, fullName: string, commentId: number, content: Reaction, place: CommandPlace = CONVERSATION) {
   let { status, body } = await github.send<{ id?: number }>('POST', `${commentPath(fullName, commentId, place)}/reactions`, { content })
   return { created: status === 201, id: typeof body?.id === 'number' ? body.id : null }
 }

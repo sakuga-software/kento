@@ -298,3 +298,60 @@ describe('a reply that sets a finding aside in words (REV-96)', () => {
     assert.equal(reply('Not applied.\n\n@kento-review reject the schema validates it').type, 'comment_command')
   })
 })
+
+describe('an answer about the reviews (REV-107)', () => {
+  const QUOTE = "> @camille Kentō a relu cette PR 3 fois. Ton avis sur ces reviews nous aide à l'améliorer : ce qui t'a servi."
+
+  it('gives `feedback_reply` for the command, with its text and its link', () => {
+    let payload = issueCommentPayload({ body: '@kento-review feedback ça a trouvé le bug' })
+    Object.assign(payload.comment, { html_url: 'https://github.com/x/y/pull/28#issuecomment-9001', created_at: '2026-11-12T10:00:00Z' })
+    assert.deepEqual(commandFor('issue_comment', payload, policy), {
+      type: 'feedback_reply',
+      installation,
+      repository,
+      prNumber: 28,
+      commentId: 9001,
+      commenter: { login: 'alex', isBot: false },
+      source: 'command',
+      text: 'ça a trouvé le bug',
+      url: 'https://github.com/x/y/pull/28#issuecomment-9001',
+      createdAt: '2026-11-12T10:00:00Z',
+      place: { kind: 'conversation' },
+    })
+  })
+
+  it('gives `feedback_reply` for a comment that quotes the request, with the text out of the quote', () => {
+    let command = commandFor('issue_comment', issueCommentPayload({ body: `${QUOTE}\n\nLe fil sur le cache était inutile.` }), policy)
+    assert.ok(command.type === 'feedback_reply')
+    assert.equal(command.source, 'quote')
+    assert.equal(command.text, 'Le fil sur le cache était inutile.')
+    // The command keeps its own text, without a quote under it.
+    let under = commandFor('issue_comment', issueCommentPayload({ body: `@kento-review feedback utile\n\n${QUOTE}` }), policy)
+    assert.ok(under.type === 'feedback_reply')
+    assert.equal(under.text, 'utile')
+    // A quote with a command stays a command.
+    assert.equal(commandFor('issue_comment', issueCommentPayload({ body: `${QUOTE}\n\n@kento-review heavy` }), policy).type, 'comment_command')
+  })
+
+  it('ignores a quote of another comment, and a quote of the request without a text', () => {
+    assert.equal(reasonOf(issueCommentPayload({ body: '> Looks good\n\nThanks' }), 'issue_comment'), 'comment is not a command')
+    assert.equal(reasonOf(issueCommentPayload({ body: QUOTE }), 'issue_comment'), 'quote of the feedback request without a text')
+  })
+
+  it('reads an answer on a closed pull request, and from the untrusted bot that opened it', () => {
+    assert.equal(commandFor('issue_comment', issueCommentPayload({ body: '@kento-review feedback ok', state: 'closed' }), policy).type, 'feedback_reply')
+    let copilot = { login: 'Copilot[bot]', id: 55, type: 'Bot' }
+    let own = commandFor('issue_comment', issueCommentPayload({ body: '@kento-review feedback ok', user: copilot, author: copilot }), policy)
+    assert.ok(own.type === 'feedback_reply')
+    assert.deepEqual(own.commenter, { login: 'Copilot[bot]', isBot: true })
+    assert.equal(reasonOf(issueCommentPayload({ body: '@kento-review feedback ok', user: copilot }), 'issue_comment'), 'feedback of an untrusted bot')
+    let app = { login: 'kento-review[bot]', type: 'Bot' }
+    assert.equal(reasonOf(issueCommentPayload({ body: `${QUOTE}\n\nmerci`, user: app }), 'issue_comment'), 'comment of the App itself')
+  })
+
+  it('reads `feedback` in a review thread, with the place of the thread', () => {
+    let command = commandFor('pull_request_review_comment', reviewCommentPayload({ body: '@kento-review feedback ce fil est juste' }), policy)
+    assert.ok(command.type === 'feedback_reply')
+    assert.deepEqual(command.place, { kind: 'thread', rootCommentId: 7001 })
+  })
+})

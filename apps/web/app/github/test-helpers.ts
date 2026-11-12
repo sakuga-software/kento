@@ -108,6 +108,8 @@ export function issueCommentPayload(
     state?: string
     onPullRequest?: boolean
     repo?: typeof REPO
+    /** REV-107. The author of the pull request. */
+    author?: { login: string; id: number; type: string }
   } = {},
 ) {
   let user = options.user ?? { login: 'alex', type: 'User' }
@@ -117,7 +119,7 @@ export function issueCommentPayload(
       number: options.number ?? 28,
       state: options.state ?? 'open',
       // REV-22. The author of the pull request, not the person who comments.
-      user: { login: 'camille', id: 102, type: 'User' },
+      user: options.author ?? { login: 'camille', id: 102, type: 'User' },
       ...(options.onPullRequest === false ? {} : { pull_request: { url: 'https://api.github.com/repos/x/y/pulls/28' } }),
     },
     comment: { id: options.commentId ?? 9001, body: options.body ?? '@kento-review review heavy', user },

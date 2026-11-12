@@ -46,6 +46,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       /** The repository of the head: another id for a fork, null for a deleted fork. */
       headRepoId: (options.repoId ?? 3001) as number | null,
       baseRef: 'main',
+      /** REV-107. The author of the pull request. */
+      author: { login: 'camille', type: 'User' },
     },
     /** The permission of each login on the repository, as `collaborators/:login/permission` gives it. Missing: 404. */
     permissions: new Map<string, string>(),
@@ -53,6 +55,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     commentAuthors: new Map<number, string>(),
     /** REV-16. The reactions of people on the review comments: comment id → `{ content, login }`. */
     reviewReactions: new Map<number, { content: string; login: string }[]>(),
+    /** REV-107. The reactions of people on the comments of the pull request: comment id → reactions. */
+    issueReactions: new Map<number, { id: number; content: string; login: string; type: string; created_at: string }[]>(),
     /** The reactions of the App on the comments of the pull request: `commentId:content`. */
     reactions: new Set<string>(),
     /** REV-93. The reactions of the App on the review comments (the replies of a thread): `commentId:content`. */
@@ -210,6 +214,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
         head: { sha: state.pr.head, repo: state.pr.headRepoId === null ? null : { id: state.pr.headRepoId } },
         base: { ref: state.pr.baseRef },
         body: state.pr.body,
+        user: state.pr.author,
       })
     }
     if ((m = /^\/collaborators\/([^/]+)\/permission$/.exec(rest)) && method === 'GET') {
@@ -221,6 +226,12 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if ((m = /^\/issues\/comments\/(\d+)$/.exec(rest)) && method === 'GET') {
       let author = state.commentAuthors.get(Number(m[1]))
       return author === undefined ? json(404, { message: 'Not Found' }) : json(200, { id: Number(m[1]), user: { login: author } })
+    }
+    if ((m = /^\/issues\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'GET') {
+      let perPage = Number(url.searchParams.get('per_page') ?? 30)
+      let page = Number(url.searchParams.get('page') ?? 1)
+      let list = (state.issueReactions.get(Number(m[1])) ?? []).slice((page - 1) * perPage, page * perPage)
+      return json(200, list.map((r) => ({ id: r.id, content: r.content, created_at: r.created_at, user: { login: r.login, type: r.type } })))
     }
     if ((m = /^\/issues\/comments\/(\d+)\/reactions$/.exec(rest)) && method === 'POST') {
       if (!token.includes('issues')) return json(403, { message: 'Resource not accessible by integration' })

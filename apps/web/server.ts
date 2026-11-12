@@ -4,6 +4,8 @@ import { createRequestListener } from 'remix/node-fetch-server'
 
 import { createCommandHandler } from './app/commands/handler.ts'
 import { createHintHandler } from './app/commands/hint.ts'
+import { createFeedbackHandler } from './app/feedback/handler.ts'
+import { createFeedbackStore } from './app/feedback/store.ts'
 import { DOCS_PATH } from './app/commands/refutation.ts'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
@@ -151,6 +153,16 @@ let publicUrl = config.signIn?.publicUrl ?? null
 // REV-96. The public page of the commands, linked in the answers of Kentō.
 let docsUrl = publicUrl ? new URL(DOCS_PATH, publicUrl).toString() : null
 
+// REV-107. The answers about the reviews: the command `feedback`, a quote of the request, the reactions.
+let feedbackHandler = createFeedbackHandler({
+  db: database.db,
+  sql: database.sql,
+  botLogin: config.botLogin,
+  mintInstallationToken,
+  apiUrl: config.githubApp?.apiUrl ?? GITHUB_API_URL,
+  webUrl: config.githubUrl,
+})
+
 let router = createAppRouter({
   auth,
   repos,
@@ -209,6 +221,8 @@ let router = createAppRouter({
     readPullRequest: mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
   },
   users: { store: createUsersStore(database.sql) },
+  // REV-107. The answers about the reviews of the org.
+  feedback: { store: createFeedbackStore(database.sql) },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,
@@ -252,6 +266,8 @@ let router = createAppRouter({
         apiUrl: config.githubApp?.apiUrl ?? GITHUB_API_URL,
         docsUrl,
       }),
+      handleFeedbackReply: feedbackHandler.handleReply,
+      onPullClosed: feedbackHandler.onPullClosed,
     }),
   },
   runner: {

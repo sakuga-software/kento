@@ -90,6 +90,11 @@ export const userRoutes = route({
   userPrefRemove: post('/users/:login/prefs/:repoId/remove'),
 })
 
+/** REV-107. The answers about the reviews of Kentō. Every member of the org reads them. */
+export const feedbackRoutes = route({
+  feedback: get('/feedback'),
+})
+
 /**
  * REV-40. A page that no route matches, for a browser. The router dispatches to it only from its
  * default handler: the routes of machines keep their own answers.

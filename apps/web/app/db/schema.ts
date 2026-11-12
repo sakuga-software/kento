@@ -799,3 +799,58 @@ export const pullClosures = pgTable(
   },
   (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],
 )
+
+/**
+ * REV-107. The request for feedback that Kentō posts once on a pull request, after its third
+ * published review. The service writes the row before it posts the comment: the primary key stops a
+ * second post. `github_comment_id` is null until GitHub gives the id of the comment.
+ */
+export const feedbackRequests = pgTable(
+  'feedback_requests',
+  {
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    /** The author of the pull request, whom the comment mentions. */
+    authorLogin: text('author_login').notNull(),
+    githubCommentId: bigint('github_comment_id', { mode: 'number' }),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.repoId, table.prNumber] })],
+)
+
+/**
+ * REV-107. One answer about the reviews of Kentō on a pull request: a command `feedback`, a comment
+ * that quotes the request, or a 👍 or 👎 on the request. The id of the comment or of the reaction on
+ * GitHub makes the row unique: a redelivery adds nothing.
+ */
+export const feedback = pgTable(
+  'feedback',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    repoId: uuid('repo_id')
+      .notNull()
+      .references(() => repos.id, { onDelete: 'cascade' }),
+    prNumber: integer('pr_number').notNull(),
+    authorLogin: text('author_login').notNull(),
+    /** The account is a bot: an agent that reads the pull request. */
+    authorIsBot: boolean('author_is_bot').notNull(),
+    source: text('source').notNull(),
+    text: text('text').notNull(),
+    /** The comment of the answer on GitHub; for a reaction, the comment of the request. */
+    url: text('url'),
+    githubCommentId: bigint('github_comment_id', { mode: 'number' }),
+    githubReactionId: bigint('github_reaction_id', { mode: 'number' }),
+    /** When the answer was written on GitHub. */
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('feedback_github_comment_idx').on(table.githubCommentId).where(sql`${table.githubCommentId} is not null`),
+    uniqueIndex('feedback_github_reaction_idx').on(table.githubReactionId).where(sql`${table.githubReactionId} is not null`),
+    index('feedback_repo_created_at_idx').on(table.repoId, table.createdAt),
+    check('feedback_source', sql`${table.source} in ('command', 'quote', 'reaction')`),
+    check('feedback_github_id', sql`(${table.githubCommentId} is null) <> (${table.githubReactionId} is null)`),
+  ],
+)
