@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { buildPack, reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
+import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
+import { buildPack } from '../src/pack.ts';
 import { checkMissingNames, importStatements } from '../src/imports.ts';
 
 // REV-70. The replay of gallery-app#13 at c85aa470: `app/routes/regie/account.tsx` imports `data` on

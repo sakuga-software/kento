@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { descriptionBlock, findingKey, inlineBody, reviewBody, type Answer, type Finding, type Usage } from '../src/index.ts';
+import { findingKey, type Answer, type Finding, type Usage } from '../src/index.ts';
 import type { Anchors } from '../src/findings.ts';
-import { fileCommentBody, icon, shortId, toCheck, variantReplyBody, withBlock, type Icons } from '../src/render.ts';
+import { descriptionBlock, fileCommentBody, icon, inlineBody, reviewBody, shortId, toCheck, variantReplyBody, withBlock, type Icons } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
 const finding: Finding = {

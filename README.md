@@ -39,7 +39,6 @@ flowchart LR
 | [`packages/protocol/`](packages/protocol/) | The messages between the runner and the service, and their checks. |
 | [`eval/`](eval/) | The bench that chose the models, and its results. |
 | [`design/`](design/README.md) | The design of the screens. |
-| [`review/`](review/README.md), [`.github/workflows/review.yml`](.github/workflows/review.yml), [`examples/`](examples/) | The old GitHub Actions workflow. It still serves the repositories that have not moved to Kentō, and goes away one month after the last one moves. |
 | [`SECURITY.md`](SECURITY.md) | The threat model of the provider keys. |
 
 ## The GitHub App
@@ -115,8 +114,8 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
 - **A comment on a file** (Kentō only) for each P0 or P1 outside the diff, with a link to its line at
   the reviewed commit.
 
-The format is the one of the old workflow, so the scripts that read a review (score, level, badges)
-read both.
+The format is the one of the old GitHub Actions workflow (removed on 2026-11-15), so the scripts that
+read a review (score, level, badges) read the reviews of both.
 
 The head of the review says, in this order (REV-106):
 
@@ -129,7 +128,7 @@ Kentō shows its own icons, light and dark, served from `KENTO_PUBLIC_URL/assets
 badges, the marks, the state of the head, the link to a thread, and the states of `resolve`. Each
 image has an alt text that gives its meaning (`P1`, `Bloquant`, `À vérifier`). The warning icon
 means « à vérifier » only: a point to check, the advice of a deeper review, a force-push. Without
-`KENTO_PUBLIC_URL`, Kentō writes the alt texts and no image. The Action shows emojis.
+`KENTO_PUBLIC_URL`, Kentō writes the alt texts and no image.
 
 | Priority | Severity | Meaning |
 | --- | --- | --- |

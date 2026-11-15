@@ -1,28 +1,47 @@
-import { readFileSync } from 'node:fs'
-
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { detectWorkflow, isWorkflowFile } from './workflow.ts'
 
-const read = (path: string) => readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8')
+const CALLER = `name: Sakuga Review
+on:
+  pull_request:
+  issue_comment:
+permissions: {}
+jobs:
+  review:
+    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@stable
+    secrets:
+      PR_AGENT_APP_PRIVATE_KEY: \${{ secrets.PR_AGENT_APP_PRIVATE_KEY }}
+`
+
+const REUSABLE = `name: Sakuga Review
+on:
+  workflow_call:
+    inputs:
+      trusted_bots:
+        type: string
+permissions: {}
+jobs:
+  sakuga_review:
+    steps:
+      - run: node settings/review/sakuga-review.ts --repo-dir repo
+`
 
 describe('the review workflow of a repository', () => {
   it('a caller of review.yml is `reusable`, with its ref', () => {
-    let caller = read('examples/sakuga-review.yml')
-    assert.deepEqual(detectWorkflow([{ path: '.github/workflows/sakuga-review.yml', text: caller }]), {
+    assert.deepEqual(detectWorkflow([{ path: '.github/workflows/sakuga-review.yml', text: CALLER }]), {
       mode: 'reusable',
       path: '.github/workflows/sakuga-review.yml',
       ref: 'stable',
     })
-    let pinned = caller.replace('review.yml@stable', "review.yml@0123456789abcdef0123456789abcdef01234567' # v5")
+    let pinned = CALLER.replace('review.yml@stable', "review.yml@0123456789abcdef0123456789abcdef01234567' # v5")
     assert.equal(detectWorkflow([{ path: '.github/workflows/x.yaml', text: pinned }]).ref, '0123456789abcdef0123456789abcdef01234567')
   })
 
   it('a copy of the job of review.yml is `copy`; review.yml itself (workflow_call) is neither', () => {
-    let reusable = read('.github/workflows/review.yml')
-    assert.deepEqual(detectWorkflow([{ path: '.github/workflows/review.yml', text: reusable }]), { mode: 'none', path: null, ref: null })
-    let copy = reusable.replace(/on:\n  workflow_call:[\s\S]*?\n(?=\S)/, 'on:\n  pull_request:\n')
+    assert.deepEqual(detectWorkflow([{ path: '.github/workflows/review.yml', text: REUSABLE }]), { mode: 'none', path: null, ref: null })
+    let copy = REUSABLE.replace(/on:\n  workflow_call:[\s\S]*?\n(?=\S)/, 'on:\n  pull_request:\n')
     assert.doesNotMatch(copy, /workflow_call:/)
     assert.deepEqual(detectWorkflow([{ path: '.github/workflows/sakuga-review.yml', text: copy }]), {
       mode: 'copy',

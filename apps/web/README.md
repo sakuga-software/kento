@@ -107,13 +107,14 @@ event after the webhook is added.
 `repos.enabled` belongs to the Repos screen (REV-9): an admin of the org enables or disables a
 repository there, and an event never changes it. A repository comes in disabled. A job needs it, and
 so does a command in a comment: the command of a repository that is not enabled gets no token, no
-reaction and no reply, so `review.yml` keeps it. Disabling a repository cancels its queued jobs; a
-running job ends, and the published reviews stay.
+reaction and no reply. Disabling a repository cancels its queued jobs; a running job ends, and the
+published reviews stay.
 
 The Repos screen reads the repositories of the installation on GitHub (`GET
 /installation/repositories`, then the files of `.github/workflows`) with an installation token
 `contents: read`: at the first visit, then when the last check is older than 10 minutes, in the
-background; « Actualiser » runs it at once. A workflow that calls `review.yml@<ref>` is
+background; « Actualiser » runs it at once. The screen still finds a workflow of the old GitHub
+Action, removed from this repository on 2026-11-15: one that calls `review.yml@<ref>` is
 `reusable`, one that runs `review/sakuga-review.ts` without `workflow_call` is a `copy`. The switch
 counter is the number of reviews that Kentō published on GitHub since the last failed job of the
 repository, or since its last double publication (two reviews of a push at the same head and

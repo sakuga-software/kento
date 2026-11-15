@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { askJson, costLine, levelConfig, ProviderError, providerLevelConfig } from '../src/index.ts';
+import { askJson, levelConfig, ProviderError, providerLevelConfig } from '../src/index.ts';
+import { costLine } from '../src/render.ts';
 import { defaultModels } from '../src/levels.ts';
 import { costFromTable, costKnown } from '../src/prices.ts';
 import { MAX_THINKING_MS, refusedKey, thinkingOff, thinkingWaitMs } from '../src/providers.ts';

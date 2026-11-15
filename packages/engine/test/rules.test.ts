@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { ANSWER_SCHEMA, answerSchema } from '../src/findings.ts';
-import { inlineBody, reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
+import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
+import { inlineBody } from '../src/render.ts';
 import { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type Rule } from '../src/rules.ts';
 
 const MIGRATION_RULE: Rule = {

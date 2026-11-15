@@ -1,6 +1,6 @@
-// The index of the engine exports what its consumers import, and nothing more (REV-46). The Action
-// runs with no install and no type check: a name that it imports and that the index lost would
-// fail only when review.yml starts. This test reads the imports of each consumer.
+// The index of the engine exports what its consumers import, and nothing more (REV-46). The bench
+// runs with no type check: a name that it imports and that the index lost would fail only when it
+// starts. This test reads the imports of each consumer.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -23,9 +23,9 @@ function importedValues(file: string): string[] {
   return names;
 }
 
-const CONSUMERS = ['review/sakuga-review.ts', 'eval/martian/run.ts', 'apps/runner/src/job.ts'];
+const CONSUMERS = ['eval/martian/run.ts', 'eval/rejected/run.ts', 'apps/runner/src/job.ts', 'apps/runner/test/runner.test.ts'];
 
-test('the index exports every value that the Action, the bench and the runner import from it', () => {
+test('the index exports every value that the bench and the runner import from it', () => {
   for (const file of CONSUMERS) {
     const names = importedValues(file);
     assert.ok(names.length > 0, `${file} imports nothing from the engine: the pattern of this test is out of date`);

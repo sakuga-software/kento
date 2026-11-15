@@ -157,12 +157,3 @@ test('the engine never calls GitHub and reads no environment', () => {
     assert.doesNotMatch(text, /process\.env/, file);
   }
 });
-
-test('the Action script runs from a checkout with no install, as review.yml runs it', () => {
-  const out = execFileSync('node', [join(ROOT, 'review', 'sakuga-review.ts'), '--repo-dir', repo, '--base', base, '--head', head, '--pack-only'], {
-    encoding: 'utf8',
-    cwd: tmpdir(),
-  });
-  assert.match(out, /^# Pull request /);
-  assert.match(out, /\+  return a - b;/);
-});
