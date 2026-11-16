@@ -27,8 +27,6 @@ export type WebhookResult =
    * (`unchanged`). `dismissedReview`: the review of Kentō that it dismissed, or null.
    */
   | { outcome: 'dismissed' | 'unchanged'; findingId: string; dismissedReview: number | null }
-  /** REV-96. Kentō answered a reply that sets a finding aside in words with the command `reject`. */
-  | { outcome: 'hinted'; findingId: string }
   /** REV-107. An answer about the reviews: `created` is false when an earlier delivery recorded it. */
   | { outcome: 'recorded'; created: boolean; reactions: number }
   /** REV-13. The org reached its cost limit of the day or of the month: no job. */
@@ -67,8 +65,6 @@ export type ListChangedFiles = (command: Extract<StoreCommand, { type: 'enqueue_
 export interface StoreOptions {
   /** The commands of the comments (REV-7). Without it, a command is skipped. */
   handleCommentCommand?: HandleCommentCommand
-  /** REV-96. The hint on a reply that sets a finding aside in words. Without it, the reply is skipped. */
-  handleRefutationReply?: (reply: Extract<StoreCommand, { type: 'refutation_reply' }>, deliveryId: string) => Promise<WebhookResult>
   /** REV-107. An answer about the reviews. Without it, the answer is skipped. */
   handleFeedbackReply?: (reply: Extract<StoreCommand, { type: 'feedback_reply' }>, deliveryId: string) => Promise<WebhookResult>
   /**
@@ -108,10 +104,6 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
       return options.handleCommentCommand(command, deliveryId)
     }
-    if (command.type === 'refutation_reply') {
-      if (!options.handleRefutationReply) return { outcome: 'skipped', reason: 'hints are not configured' }
-      return options.handleRefutationReply(command, deliveryId)
-    }
     if (command.type === 'feedback_reply') {
       if (!options.handleFeedbackReply) return { outcome: 'skipped', reason: 'feedback is not configured' }
       return options.handleFeedbackReply(command, deliveryId)
@@ -138,7 +130,7 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
     return apply(command)
   }
 
-  function apply(command: Exclude<StoreCommand, { type: 'comment_command' | 'refutation_reply' | 'feedback_reply' | 'enqueue_review' }>): Promise<WebhookResult> {
+  function apply(command: Exclude<StoreCommand, { type: 'comment_command' | 'feedback_reply' | 'enqueue_review' }>): Promise<WebhookResult> {
     return db.transaction(async (tx): Promise<WebhookResult> => {
       switch (command.type) {
         case 'cancel_pull_request': {

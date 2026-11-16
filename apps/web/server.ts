@@ -3,10 +3,9 @@ import * as http from 'node:http'
 import { createRequestListener } from 'remix/node-fetch-server'
 
 import { createCommandHandler } from './app/commands/handler.ts'
-import { createHintHandler } from './app/commands/hint.ts'
 import { createFeedbackHandler } from './app/feedback/handler.ts'
 import { createFeedbackStore } from './app/feedback/store.ts'
-import { DOCS_PATH } from './app/commands/refutation.ts'
+import { DOCS_PATH } from './app/commands/hint.ts'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
 import { createDatabaseCheck } from './app/db/health.ts'
@@ -250,15 +249,6 @@ let router = createAppRouter({
           : undefined,
       // The commands of the comments (REV-7): `@kento-review heavy`, `@sakuga-review review balanced`.
       handleCommentCommand: createCommandHandler({
-        db: database.db,
-        sql: database.sql,
-        botLogin: config.botLogin,
-        mintInstallationToken,
-        apiUrl: config.githubApp?.apiUrl ?? GITHUB_API_URL,
-        docsUrl,
-      }),
-      // REV-96. A reply that sets a finding aside in words gets the command `reject`, once.
-      handleRefutationReply: createHintHandler({
         db: database.db,
         sql: database.sql,
         botLogin: config.botLogin,

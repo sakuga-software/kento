@@ -563,7 +563,7 @@ export const findings = pgTable(
     reactionsCheckedAt: timestamp('reactions_checked_at', { withTimezone: true }),
     /**
      * REV-96. When Kentō suggested `reject` in its thread, or null. The hint is claimed here before it
-     * is posted: one hint per finding, whatever the deliveries and the reviews that race for it.
+     * is posted: one hint per finding, whatever the reviews and the `resolve` commands that race for it.
      */
     rejectHintAt: timestamp('reject_hint_at', { withTimezone: true }),
     createdAt: createdAt(),

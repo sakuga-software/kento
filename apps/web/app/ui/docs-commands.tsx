@@ -233,9 +233,10 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
             <section class="docs-command" id="hint" aria-labelledby="hint-title">
               <h2 id="hint-title">When Kentō suggests <code>reject</code></h2>
               <p>
-                A reply in the thread of a finding that seems to set it aside without the command ("Not applied", "Won't fix", "Accepted
-                risk"...) gets one reply from Kentō that gives the command. That reply does not change the finding: only <code>reject</code>{' '}
-                dismisses it. It never comes in a resolved thread, or for a finding that is already dismissed.
+                When the replies in the thread of a finding show that the finding is wrong, Kentō gives the command once in that thread.
+                The model decides, in the language of the replies, at the next review or at a <code>resolve</code> command. Kentō does not
+                look for words in the replies. That reply does not change the finding: only <code>reject</code> dismisses it. It never
+                comes for a finding that is already dismissed.
               </p>
             </section>
             <p class="docs-note">

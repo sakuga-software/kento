@@ -22,7 +22,7 @@ export interface FindingsLedger {
 }
 
 /**
- * REV-96. Claims the one hint of `reject` of a finding, in one statement: of two deliveries or reviews
+ * REV-96. Claims the one hint of `reject` of a finding, in one statement: of a review and a `resolve`
  * that race for it, one only gets it. Only an open finding can be claimed.
  */
 export async function claimRejectHint(sql: postgres.Sql, findingId: string): Promise<boolean> {
@@ -33,7 +33,7 @@ export async function claimRejectHint(sql: postgres.Sql, findingId: string): Pro
   return rows.length === 1
 }
 
-/** REV-96. Gives a claim back: the hint did not reach GitHub, and the next refutation tries again. */
+/** REV-96. Gives a claim back: the hint did not reach GitHub, and the next verdict `refuted` tries again. */
 export async function releaseRejectHint(sql: postgres.Sql, findingId: string): Promise<void> {
   await sql`update findings set reject_hint_at = null where id = ${findingId}`
 }

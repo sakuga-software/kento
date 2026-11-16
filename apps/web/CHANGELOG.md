@@ -7,6 +7,40 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-116: The model's verdict suggests `reject`, not keywords
+
+No migration: `/healthz` still gives `"migrations":29`. No new variable, no new permission, no change
+to the protocol of the runners.
+
+**Deploy `web` alone.** The runners do not change. The review path reads `refutedThreads`, which the
+runners send since REV-96 (feature `refuted`). The `resolve` path reads the verdict `answered`, which
+every runner sends.
+
+- The webhook no longer reads the words of a reply. A reply in the thread of a finding without a
+  command gets `202 ignored` (`comment is not a command`), in any language. The pattern of
+  `refutation.ts`, its 174 cases and the hint handler of the webhook are gone.
+- The hint of `reject` comes from the model, in the language of the replies:
+  - at a review, when the model calls a thread of its `Answered threads` section `refuted` (as
+    before, REV-96);
+  - at a `resolve` command, when the model calls the thread of a finding of Kentō `answered`. The
+    resolve prompt has no verdict `refuted`. Its `answered` means "a reply shows that the report is
+    wrong", or "a reply answers a question". A finding of Kentō asks no question, so on its thread
+    `answered` means refuted. The hint is its own reply, posted before the reply of the verdict
+    and before the resolve closes the thread. If GitHub refuses the hint, the thread stays open, so
+    that a later resolve can post it, and the reply of the verdict says why.
+- The rules do not change: one hint per finding (`findings.reject_hint_at`, claimed before the
+  post, given back when GitHub refuses it), only for an open finding, only when a person who can
+  write to the repository replied, and never when a reply names `reject`. A refuted finding still
+  does not come back, and the score does not drop.
+- The page `/docs/commands` describes the new trigger.
+
+Checks after the deployment:
+
+- On a test pull request, reply "c'est un faux positif, la fonction vérifie déjà le null" in the
+  thread of a finding. The webhook answers `202 ignored`, and no hint comes.
+- Push, or run `@kento-review resolve`: Kentō suggests `reject` in that thread, once. A second
+  `resolve` posts no second hint.
+
 ## REV-115: No French left in the code
 
 One migration (`0028_failure_reasons_straight_quotes`): `/healthz` gives `"migrations":29`. No new
@@ -365,7 +399,7 @@ web service of an earlier release refuses a claim with a feature that it does no
 - A reply in the thread of an open finding whose start sets it aside in words (« Not applied »,
   « Non retenu », « Risque accepté », « Kept as is »…) gets one reply of Kentō with the command
   `@kento-review reject <cause>` and a link to the page of the commands. The pattern reads the start
-  of the reply only, with no call to a model (`app/commands/refutation.ts`: precision 98.9 %, recall
+  of the reply only, with no call to a model (`app/commands/hint.ts`: precision 98.9 %, recall
   82.5 % on 1,051 replies of the org labelled by hand). No hint in a resolved thread, for a finding
   that is no longer open, on a reply that names `reject` already, or on a reply of a person who cannot
   write to the repository or of an untrusted bot. One hint per finding: `findings.reject_hint_at` is

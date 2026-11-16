@@ -1,6 +1,5 @@
 import { SHA } from '@sakuga-review/protocol'
 
-import { looksRefuted } from '../commands/refutation.ts'
 import { quotesRequest, replyText } from '../feedback/request.ts'
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'
 
@@ -66,21 +65,6 @@ export type WebhookCommand =
        * first comment is `rootCommentId`. The reactions and the replies of the two use other routes.
        */
       place: CommandPlace
-    }
-  | {
-      /**
-       * REV-96. A reply in a review thread that reads as a refutation of the finding of the thread,
-       * without `reject` (commands/refutation.ts). The hint handler answers it once with the command.
-       */
-      type: 'refutation_reply'
-      installation: Installation
-      repository: Repository
-      prNumber: number
-      commentId: number
-      /** The first comment of the thread. */
-      rootCommentId: number
-      commenter: { login: string; isBot: boolean }
-      author: PullAuthor | null
     }
   | {
       /**
@@ -261,9 +245,7 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (rootCommentId === null) return { type: 'ignore', reason: 'review comment starts a thread' }
   let body = typeof comment?.body === 'string' ? comment.body : ''
   let command = parseCommentCommand(body)
-  // REV-96. A reply that sets the finding aside in words, without the command, gets a hint.
-  let refutes = command === null && looksRefuted(body)
-  if (command === null && !refutes) return { type: 'ignore', reason: 'comment is not a command' }
+  if (command === null) return { type: 'ignore', reason: 'comment is not a command' }
 
   let pr = obj(payload.pull_request)
   let installation = installationFromRepository(payload)
@@ -275,7 +257,7 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (!installation || !repository || prNumber === null || commentId === null || login === null) {
     return { type: 'invalid', reason: 'pull_request_review_comment payload lacks installation, repository, number or comment' }
   }
-  if (command?.verb === 'feedback') {
+  if (command.verb === 'feedback') {
     let reply = { installation, repository, prNumber, commentId, comment, user, login, text: replyText(command.text), place: { kind: 'thread', rootCommentId } as const }
     return feedbackReply(reply, 'command', payload, policy, obj(pr?.user))
   }
@@ -283,17 +265,13 @@ function reviewCommentCommand(payload: Obj, policy: EventPolicy): WebhookCommand
   if (refused) return refused
   if (pr?.state !== 'open') return { type: 'ignore', reason: 'pull request is closed' }
 
-  let commenter = { login, isBot: user?.type === 'Bot' }
-  if (command === null) {
-    return { type: 'refutation_reply', installation, repository, prNumber, commentId, rootCommentId, commenter, author: authorOf(obj(pr?.user)) }
-  }
   return {
     type: 'comment_command',
     installation,
     repository,
     prNumber,
     commentId,
-    commenter,
+    commenter: { login, isBot: user?.type === 'Bot' },
     command,
     author: authorOf(obj(pr?.user)),
     place: { kind: 'thread', rootCommentId },

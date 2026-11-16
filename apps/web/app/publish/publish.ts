@@ -49,9 +49,9 @@ import {
   type StoredFinding,
 } from '../findings/lifecycle.ts'
 import { assignmentLine, unreadPathsLine, type JobAssignment } from '../assignment/model.ts'
-import { canWrite, REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
+import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
-import { HINT_MARKER, hintText, namesReject } from '../commands/refutation.ts'
+import { HINT_MARKER, namesReject, postRejectHint } from '../commands/hint.ts'
 import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { resolveReviewThread, reviewThreadPages, unresolveReviewThread } from '../github/graphql.ts'
 import { GitHubError, type GitHub } from './github.ts'
@@ -440,10 +440,8 @@ export async function publishReview(
     })
   }
 
-  // REV-96. A thread that the model called refuted (REV-71) gets the hint of `reject` once, as a reply
-  // that the pattern of the webhook reads as a refutation. Only an open thread of an open finding, in
-  // which a person who can write to the repository replied: the hint names a command that only such
-  // a person can run.
+  // REV-96, REV-116. A thread that the model called refuted (REV-71) gets the hint of `reject` once.
+  // Only an open thread of an open finding, in which a person who can write to the repository replied.
   let hinted = 0
   for (let id of new Set(review.refutedThreads ?? [])) {
     let thread = threads.find((t) => t.id === id)
@@ -458,27 +456,14 @@ export async function publishReview(
     // A finding that a 👎 dismissed, or that this review shows fixed (its thread is closed above).
     if (finding && (finding.status !== 'open' || fixed.includes(finding))) continue
     if (toClose.includes(thread)) continue
+    // A finding with no row (a thread of an earlier release) cannot be claimed: it gets no hint.
+    let findingId = finding?.id
+    let { claimHint, releaseHint } = ledger ?? {}
+    if (!findingId || !claimHint || !releaseHint) continue
+    let claims = { claim: (id: string) => claimHint.call(ledger, id), release: (id: string) => releaseHint.call(ledger, id) }
     await step('hint', async () => {
-      let replier = false
-      for (let login of thread.repliers ?? []) {
-        if (await canWrite(github, `${owner}/${name}`, login, writers)) {
-          replier = true
-          break
-        }
-      }
-      if (!replier) return
-      // One hint per finding: the claim in the database before the post (REV-96), as the webhook does.
-      // A finding with no row (a thread of an earlier release) cannot be claimed: it gets no hint.
-      let claimed = finding?.id && ledger?.claimHint ? finding.id : null
-      if (!claimed || !(await ledger!.claimHint!(claimed))) return
-      try {
-        await github.rest('POST', `${repo}/pulls/${pr}/comments/${thread.commentId}/replies`, { body: hintText(null, target.docsUrl ?? null) })
-      } catch (error) {
-        // As in the webhook: only an answer of GitHub proves that the hint did not go.
-        if (error instanceof GitHubError) await ledger!.releaseHint?.(claimed)
-        throw error
-      }
-      hinted++
+      let hint = { fullName: `${owner}/${name}`, pr, commentId: thread.commentId, findingId, repliers: thread.repliers ?? [], docsUrl: target.docsUrl ?? null, writers }
+      if (await postRejectHint(github, hint, claims)) hinted++
     })
   }
 

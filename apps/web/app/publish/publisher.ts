@@ -12,17 +12,17 @@ import type { Icons } from '@sakuga-review/engine/render'
 import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
 import type postgres from 'postgres'
 
-import { DOCS_PATH } from '../commands/refutation.ts'
+import { DOCS_PATH } from '../commands/hint.ts'
 import { readJobAssignment, readUnreadPathRules } from '../assignment/model.ts'
 import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
 import { askForFeedback } from '../feedback/github.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
-import { createFindingsLedger } from '../findings/ledger.ts'
+import { claimRejectHint, createFindingsLedger, releaseRejectHint } from '../findings/ledger.ts'
 import { sweepReactions } from '../findings/reactions.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
-import { publishResolution } from '../resolve/publish.ts'
+import { publishResolution, type ResolveHints } from '../resolve/publish.ts'
 import { pageRoutes } from '../routes.ts'
 import { ONLINE_SECONDS } from '../runner/admin.ts'
 import { failureComment } from './failure.ts'
@@ -431,6 +431,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           { fullName: row.fullName, pr: row.prNumber, webUrl, icons },
           payload,
           (event, extra) => log('warn', event, { ...fields, ...extra }),
+          resolveHints(connection, row, docsUrl),
         )
         log('info', 'resolve.published', { ...fields, ...outcome, costUsd: payload.costUsd })
         await answer('rocket')
@@ -807,5 +808,23 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       again = false
       await running
     },
+  }
+}
+
+/** REV-116. The hints of a resolution: the findings of its pull request, and their claims. */
+function resolveHints(sql: postgres.Sql, row: { githubRepoId: number | string; prNumber: number }, docsUrl: string | null): ResolveHints {
+  return {
+    docsUrl,
+    async findingOf(commentId) {
+      let [finding] = await sql<{ id: string }[]>`
+        select findings.id from findings
+        join repos on repos.id = findings.repo_id
+        where repos.github_repo_id = ${Number(row.githubRepoId)} and findings.pr_number = ${row.prNumber}
+          and findings.github_comment_id = ${commentId}
+        limit 1`
+      return finding?.id ?? null
+    },
+    claim: (findingId) => claimRejectHint(sql, findingId),
+    release: (findingId) => releaseRejectHint(sql, findingId),
   }
 }

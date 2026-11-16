@@ -1,123 +1,83 @@
-// REV-96. A reply in the thread of a finding that seems to set the finding aside, without
-// `@kento-review reject`: Kentō answers once in that thread with the command and a link to its page
-// of documentation. The hint changes no status: only `reject` sets the finding aside.
+// REV-96, REV-116. The hint of `reject`: one reply in the thread of a finding that the model called
+// refuted, with the command and a link to the page of the commands. The hint changes no status: only
+// `reject` sets the finding aside.
 //
-// Two ways lead to the hint:
-// - at once, from the webhook of the reply (`pull_request_review_comment`): the pattern of
-//   refutation.ts on the start of the reply, with no call to a model;
-// - at the next review, from the verdict `refuted` that the model gives on each answered thread
-//   (REV-71): the publisher posts the same hint when the thread has none (publish.ts).
+// The model gives the verdict, in any language of the replies, and Kentō reads no keyword:
+// - at a review, the verdict `refuted` on a thread of its `Answered threads` section (REV-71,
+//   publish/publish.ts);
+// - at a `resolve` command, the verdict `answered` on the thread of a finding (resolve/publish.ts).
 //
-// The rules: one hint per finding (claimed in `findings.reject_hint_at` before the post, so that two
-// deliveries or a delivery and a review never both post it), never in a resolved thread or in the
-// thread of a finding that is no longer open, never on a reply that already holds `reject`, never on
-// a reply of a person who cannot write to the repository or of a bot that Kentō does not trust: they
-// could not run the command.
-import { and, eq } from 'drizzle-orm'
-import type postgres from 'postgres'
+// One hint per finding: `findings.reject_hint_at` holds the claim before the post.
 
-import type { Db } from '../db/client.ts'
-import { findings, repos } from '../db/schema.ts'
-import { isRepoEnabled, type StoreCommand, type WebhookResult } from '../db/webhook-store.ts'
-import { claimRejectHint, releaseRejectHint } from '../findings/ledger.ts'
-import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
-import { errorMessage, log } from '../log.ts'
 import { canWrite } from '../findings/reactions.ts'
-import { createGitHub, GitHubError } from '../publish/github.ts'
-import { readOpenThreads } from '../resolve/threads.ts'
-import { hintText } from './refutation.ts'
+import { COMMAND_NAMES } from '../github/comment-command.ts'
+import { GitHubError, type GitHub } from '../publish/github.ts'
+import { docsRoutes } from '../routes.ts'
 
-/** Reply in a review thread, read its comments: what the hint needs. */
-export const HINT_PERMISSIONS: TokenPermissions = { pull_requests: 'write' }
+/** The command `reject`, anywhere in a reply: in a quote or a block of code too. */
+const REJECT_WRITTEN = new RegExp(`@(?:${COMMAND_NAMES.join('|')})\\s+reject\\b`, 'i')
 
-/** The reply of the webhook that the pattern read as a refutation (events.ts). */
-export type RefutationReply = Extract<StoreCommand, { type: 'refutation_reply' }>
-
-export type HandleRefutationReply = (reply: RefutationReply, deliveryId: string) => Promise<WebhookResult>
-
-export interface HintHandlerDependencies {
-  db: Db
-  /** The same database: the claim of the hint (`findings.reject_hint_at`). */
-  sql: postgres.Sql
-  /** The login of the App, `kento-review[bot]`. */
-  botLogin: string
-  /** Null without the GitHub App: the reply is skipped. */
-  mintInstallationToken: MintInstallationToken | null
-  apiUrl: string
-  /** The page of the commands, or null. */
-  docsUrl: string | null
-  fetch?: typeof globalThis.fetch
+/** Whether a reply names the command `reject`, anywhere: its author knows the command. */
+export function namesReject(body: string): boolean {
+  return REJECT_WRITTEN.test(body)
 }
 
-/** The hint at once, for a reply that the pattern reads as a refutation. */
-export function createHintHandler(deps: HintHandlerDependencies): HandleRefutationReply {
-  return async (reply, deliveryId) => {
-    let fields = { deliveryId, repo: reply.repository.fullName, pr: reply.prNumber, commentId: reply.commentId, commenter: reply.commenter.login }
-    let skip = (reason: string): WebhookResult => {
-      log('info', 'hint.skipped', { ...fields, reason })
-      return { outcome: 'skipped', reason }
+/** The hidden marker of a hint. A thread that holds it gets no second hint. */
+export const HINT_MARKER = '<!-- kento:reject-hint -->'
+
+/** The path of the page of the commands, under the public URL of the service. */
+export const DOCS_PATH = docsRoutes.commands.href()
+
+/** The text of the hint. `docsUrl`: the page of the commands, or null when the service does not know its public URL. */
+export function hintText(docsUrl: string | null): string {
+  let link = docsUrl ? ` [Kentō commands](${docsUrl})` : ''
+  return (
+    `This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ` +
+    `\`@${COMMAND_NAMES[0]} reject <cause>\`.${link}\n\n${HINT_MARKER}`
+  )
+}
+
+/** The claim of the one hint of a finding in `findings.reject_hint_at` (findings/ledger.ts). */
+export interface HintClaims {
+  claim(findingId: string): Promise<boolean>
+  release(findingId: string): Promise<void>
+}
+
+export interface HintTarget {
+  fullName: string
+  pr: number
+  /** The first comment of the thread. */
+  commentId: number
+  findingId: string
+  /** The people who replied in the thread. Bots are not in this list: a bot does not run the command. */
+  repliers: string[]
+  docsUrl: string | null
+  /** The permissions that the run already read, by login. */
+  writers?: Map<string, boolean>
+}
+
+/**
+ * Posts the hint in the thread of a finding, and returns whether it posted it. It posts nothing when
+ * no replier can write to the repository: only such a person can run the command. It posts nothing
+ * when the finding is not open or already has its hint: the claim decides.
+ */
+export async function postRejectHint(github: GitHub, target: HintTarget, claims: HintClaims): Promise<boolean> {
+  let replier = false
+  for (let login of target.repliers) {
+    if (await canWrite(github, target.fullName, login, target.writers)) {
+      replier = true
+      break
     }
-    // A repository that Kentō does not serve: the bot says nothing there.
-    if (!(await isRepoEnabled(deps.db, reply.repository.githubRepoId))) return skip('repository is not enabled')
-    let mint = deps.mintInstallationToken
-    if (!mint) return skip('GitHub App is not configured')
-
-    // The finding of the thread, by the first comment of the thread. A thread of a person, or of a
-    // finding of another pull request, has none.
-    let [finding] = await deps.db
-      .select({ id: findings.id, status: findings.status })
-      .from(findings)
-      .innerJoin(repos, eq(repos.id, findings.repoId))
-      .where(
-        and(
-          eq(repos.githubRepoId, reply.repository.githubRepoId),
-          eq(findings.prNumber, reply.prNumber),
-          eq(findings.githubCommentId, reply.rootCommentId),
-        ),
-      )
-      .limit(1)
-    if (!finding) return skip('thread is not the thread of a finding')
-    // A finding set aside, kept, fixed or stale: there is nothing left to reject.
-    if (finding.status !== 'open') return skip(`finding is ${finding.status}`)
-
-    let token = await mint({
-      installationId: reply.installation.githubInstallationId,
-      githubRepoId: reply.repository.githubRepoId,
-      permissions: HINT_PERMISSIONS,
-    })
-    let github = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
-    let fullName = reply.repository.fullName
-
-    // A bot of KENTO_TRUSTED_BOTS can run a command; the webhook has already dropped the others.
-    if (!reply.commenter.isBot && !(await canWrite(github, fullName, reply.commenter.login))) {
-      return skip('commenter cannot write to the repository')
-    }
-
-    // The open threads only: a resolved thread gets no hint.
-    let threads = await readOpenThreads(github, fullName, reply.prNumber)
-    if (!threads.some((t) => t.comments[0]?.id === reply.rootCommentId)) return skip('thread is resolved')
-    // One hint per finding: the claim in the database, before the post. Of two deliveries, or of a
-    // delivery and a review, that race for it, one only posts. A hint of an earlier try that GitHub
-    // took holds the claim too.
-    if (!(await claimRejectHint(deps.sql, finding.id))) return skip('thread already has a hint')
-
-    try {
-      await github.rest('POST', `/repos/${fullName}/pulls/${reply.prNumber}/comments/${reply.rootCommentId}/replies`, {
-        body: hintText(reply.commenter.login, deps.docsUrl),
-      })
-    } catch (error) {
-      // GitHub answered with an error: the hint did not go, and the claim goes back, so that the next
-      // refutation, or a redelivery, tries again. Without an answer (a timeout, a lost connection) the
-      // hint may be on GitHub: the claim stays, and a missed hint costs less than a second one.
-      if (error instanceof GitHubError) {
-        await releaseRejectHint(deps.sql, finding.id).catch((cause) => log('warn', 'hint.release_failed', { ...fields, error: errorMessage(cause) }))
-      }
-      // 404: the first comment of the thread was deleted meanwhile. Nothing to answer.
-      if (error instanceof GitHubError && error.status === 404) return skip('thread is gone')
-      log('warn', 'hint.failed', { ...fields, error: errorMessage(error) })
-      throw error
-    }
-    log('info', 'hint.posted', { ...fields, findingId: finding.id, source: 'pattern' })
-    return { outcome: 'hinted', findingId: finding.id }
   }
+  if (!replier) return false
+  if (!(await claims.claim(target.findingId))) return false
+  try {
+    await github.rest('POST', `/repos/${target.fullName}/pulls/${target.pr}/comments/${target.commentId}/replies`, { body: hintText(target.docsUrl) })
+  } catch (error) {
+    // Only an answer of GitHub proves that the hint did not go. After a timeout the hint can be on
+    // GitHub: the claim stays, because a missed hint costs less than a second one.
+    if (error instanceof GitHubError) await claims.release(target.findingId)
+    throw error
+  }
+  return true
 }

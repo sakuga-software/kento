@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { fakeAuth } from '../auth/test-helpers.ts'
-import { DOCS_PATH } from '../commands/refutation.ts'
+import { DOCS_PATH } from '../commands/hint.ts'
 import { spyStore, webhookDeps } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 

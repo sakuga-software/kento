@@ -1,14 +1,15 @@
-// REV-96. The second way to the hint of `reject`: the model of the next review calls a thread
-// refuted (REV-71), and the publisher answers that thread once with the command and the page of the
+// REV-96, REV-116. The hint of `reject`: the model calls a thread refuted, at the next review (REV-71)
+// or at a `resolve` command, and Kentō answers that thread once with the command and the page of the
 // commands. The hint changes no status, and it keeps the thread live for the next review.
-import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import type { ResolvePayload, ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
-import { HINT_MARKER } from '../commands/refutation.ts'
+import { HINT_MARKER } from '../commands/hint.ts'
 import type { FindingsLedger, LedgerEntry } from '../findings/ledger.ts'
 import type { StoredFinding } from '../findings/lifecycle.ts'
+import { publishResolution, type ResolveHints } from '../resolve/publish.ts'
 import { createGitHub } from './github.ts'
 import { publishReview } from './publish.ts'
 
@@ -18,6 +19,8 @@ const HEAD2 = '2'.repeat(40)
 const HEAD3 = '3'.repeat(40)
 const FILE = 'app/schema.ts'
 const DOCS = 'https://review.sakuga.dev/docs/commands'
+const FRENCH = "C'est un faux positif, la fonction vérifie déjà le null."
+const ENGLISH = 'I would not keep this finding: the schema already validates the value.'
 
 const bug: ReviewFinding = {
   path: FILE,
@@ -62,7 +65,7 @@ function setup() {
   let fake = createFakeGitHub({ head: HEAD1, commits: { [HEAD1]: 'feat: form', [HEAD2]: 'docs: form', [HEAD3]: 'docs: form again' } })
   fake.state.permissions.set('alex', 'write')
   fake.state.permissions.set('visitor', 'read')
-  let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+  let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: (input, init) => fake.fetch(input, init) })
   let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', docsUrl: DOCS }
   let rows: StoredFinding[] = []
   /** The findings whose hint is claimed, as `findings.reject_hint_at` holds them. */
@@ -95,10 +98,53 @@ function setup() {
   let reply = (root: number, author: string, body: string) =>
     fake.state.comments.push({ id: 90_000 + fake.state.comments.length, reviewId: null, path: FILE, line: 12, body, commit: HEAD1, author, inReplyTo: root })
   let hints = (root: number) => fake.repliesTo(root).filter((c) => c.body.includes(HINT_MARKER))
-  return { fake, publish, reply, hints, rows, claimed }
+  let resolveHints: ResolveHints = {
+    docsUrl: DOCS,
+    findingOf: async (commentId) => rows.find((r) => r.githubCommentId === commentId)?.id ?? null,
+    claim: (id) => ledger.claimHint!(id),
+    release: (id) => ledger.releaseHint!(id),
+  }
+  /** A `resolve` command at `head`, with the verdict of the model on each thread. */
+  let resolve = (head: string, verdicts: [number, ResolvePayload['threads'][number]['verdict']][], warn = (_event: string) => {}, writer: typeof github | null = null) => {
+    fake.state.pr.head = head
+    let resolution: ResolvePayload = {
+      level: 'lite',
+      head,
+      model: 'claude-haiku-5-5',
+      provider: 'Anthropic',
+      costUsd: 0.001,
+      promptTokens: 100,
+      completionTokens: 20,
+      open: verdicts.length,
+      waiting: verdicts.length,
+      held: verdicts.length,
+      threads: verdicts.map(([id, verdict]) => ({ id: `PRRT_${id}`, verdict, reply: 'The model read the thread and the code.', changed: false })),
+    }
+    return publishResolution(github, writer, { fullName: `${target.owner}/${target.name}`, pr: target.pr, webUrl: target.webUrl }, resolution, warn, resolveHints)
+  }
+  return { fake, github, publish, resolve, reply, hints, rows, claimed }
 }
 
-describe('the hint of `reject` at the next review (REV-96)', () => {
+const other: ReviewFinding = { ...bug, path: 'app/form.ts', title: 'The form sends twice', scenario: 'A double click sends twice.' }
+const third: ReviewFinding = { ...bug, path: 'app/list.ts', title: 'The list skips its last item', scenario: 'The loop stops one item early.' }
+
+describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
+  it('answers a thread refuted in French and one refuted in English, and not a thread that the model upheld', async () => {
+    let { fake, publish, reply, hints } = setup()
+    await publish(payload({ findings: [bug, other, third] }))
+    let [french, english, upheld] = fake.botThreads()
+    reply(french!.id, 'alex', FRENCH)
+    reply(english!.id, 'alex', ENGLISH)
+    reply(upheld!.id, 'alex', 'Not applied: the loop is right.')
+
+    let outcome = await publish(payload({ head: HEAD2, findings: [bug, other, third], refutedThreads: [`PRRT_${french!.id}`, `PRRT_${english!.id}`] }))
+
+    assert.equal(outcome.hinted, 2)
+    assert.equal(hints(french!.id).length, 1)
+    assert.equal(hints(english!.id).length, 1)
+    assert.deepEqual(hints(upheld!.id), [], 'the words of a reply give no hint: only the verdict of the model')
+  })
+
   it('links the page of the commands in the comment of each finding', async () => {
     let { fake, publish } = setup()
     await publish(payload())
@@ -158,7 +204,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     assert.deepEqual(hints(thread!.id), [])
   })
 
-  it('guard: no hint when a reply names `reject` already, or when the webhook claimed the hint of the finding', async () => {
+  it('guard: no hint when a reply names `reject` already, or when a `resolve` claimed the hint of the finding', async () => {
     let { fake, publish, reply, hints, rows, claimed } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
@@ -172,7 +218,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     replyOther(second!.id, 'alex', 'I would not keep this finding.')
     claimedOther.add(rowsOther[0]!.id!)
     let taken = await publishOther(payload({ head: HEAD2, refutedThreads: [`PRRT_${second!.id}`] }))
-    assert.equal(taken.hinted, 0, 'the webhook posted it, or is posting it')
+    assert.equal(taken.hinted, 0, 'a `resolve` posted it, or is posting it')
     assert.deepEqual([...hints(thread!.id), ...hintsOther(second!.id)], [])
     assert.equal(rows[0]!.status, 'open')
     assert.equal(claimed.size, 0)
@@ -198,5 +244,97 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     let outcome = await publish(payload({ head: HEAD2 }))
     assert.equal(outcome.hinted, 0)
     assert.deepEqual(hints(thread!.id), [])
+  })
+})
+
+describe('the hint of `reject` at a `resolve` command (REV-116)', () => {
+  it('answers a thread answered in French and one answered in English, and not a thread that stays open or is fixed', async () => {
+    let { fake, publish, resolve, reply, hints, rows } = setup()
+    await publish(payload({ findings: [bug, other, third] }))
+    let [french, english, open] = fake.botThreads()
+    reply(french!.id, 'alex', FRENCH)
+    reply(english!.id, 'alex', ENGLISH)
+    reply(open!.id, 'alex', 'Not applied: the loop is right.')
+
+    let outcome = await resolve(HEAD2, [[french!.id, 'answered'], [english!.id, 'answered'], [open!.id, 'open']])
+
+    assert.equal(outcome.hinted, 2)
+    let [hint] = hints(french!.id)
+    assert.equal(
+      hint!.body,
+      'This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ' +
+        `\`@kento-review reject <cause>\`. [Kentō commands](${DOCS})\n\n${HINT_MARKER}`,
+    )
+    assert.equal(hints(english!.id).length, 1)
+    assert.deepEqual(hints(open!.id), [])
+    // The hint comes in its own comment, before the reply of the verdict and before the thread closes.
+    assert.doesNotMatch(fake.repliesTo(french!.id).at(-1)!.body, /kento:reject-hint/)
+    assert.ok(rows.every((r) => r.status === 'open'), 'the hint changes no status')
+
+    let fixed = await resolve(HEAD3, [[open!.id, 'fixed']])
+    assert.equal(fixed.hinted, 0)
+    assert.deepEqual(hints(open!.id), [])
+  })
+
+  it('guard: no hint in the thread of a person, when nobody who can write replied, or when a reply names `reject`', async () => {
+    let { fake, publish, resolve, reply, hints } = setup()
+    await publish(payload({ findings: [bug, other] }))
+    let [byReader, named] = fake.botThreads()
+    reply(byReader!.id, 'visitor', FRENCH)
+    reply(named!.id, 'alex', 'Not applied. To set it aside:\n\n```\n@kento-review reject the schema validates it\n```')
+    let personal = fake.addThread({ path: FILE, line: 3, body: 'Why this name?', commit: HEAD1, author: 'camille' })
+    reply(personal, 'alex', 'It follows the module.')
+
+    let outcome = await resolve(HEAD2, [[byReader!.id, 'answered'], [named!.id, 'answered'], [personal, 'answered']])
+
+    assert.equal(outcome.hinted, 0)
+    assert.deepEqual([...hints(byReader!.id), ...hints(named!.id), ...hints(personal)], [])
+  })
+
+  it('posts one hint per finding: a review then a `resolve`, a `resolve` then a review, and two `resolve` commands', async () => {
+    let { fake, publish, resolve, reply, hints } = setup()
+    await publish(payload({ findings: [bug, other] }))
+    let [first, second] = fake.botThreads()
+    reply(first!.id, 'alex', FRENCH)
+    reply(second!.id, 'alex', ENGLISH)
+
+    let review = await publish(payload({ head: HEAD2, findings: [bug, other], refutedThreads: [`PRRT_${first!.id}`] }))
+    assert.equal(review.hinted, 1)
+    let resolution = await resolve(HEAD3, [[first!.id, 'answered'], [second!.id, 'answered']])
+    assert.equal(resolution.hinted, 1, 'only the thread that the review did not answer')
+    let again = await resolve('4'.repeat(40), [[first!.id, 'answered'], [second!.id, 'answered']])
+    assert.equal(again.hinted, 0)
+    let later = await publish(payload({ head: '5'.repeat(40), findings: [bug, other], refutedThreads: [`PRRT_${first!.id}`, `PRRT_${second!.id}`] }))
+    assert.equal(later.hinted, 0)
+    assert.equal(hints(first!.id).length, 1)
+    assert.equal(hints(second!.id).length, 1)
+  })
+
+  it('a hint that GitHub refuses gives its claim back and keeps the thread open: the next `resolve` posts it, once', async () => {
+    let { fake, publish, resolve, reply, hints, claimed, github } = setup()
+    fake.state.canResolve = true
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    reply(thread!.id, 'alex', FRENCH)
+
+    let warnings: string[] = []
+    let real = fake.fetch
+    // GitHub refuses the hint only: the reply of the verdict goes.
+    fake.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      typeof init?.body === 'string' && init.body.includes('kento:reject-hint')
+        ? new Response(JSON.stringify({ message: 'Bad Gateway' }), { status: 502 })
+        : real(input, init)) as typeof globalThis.fetch
+    let refused = await resolve(HEAD2, [[thread!.id, 'answered']], (event) => warnings.push(event), github)
+    fake.fetch = real
+    assert.equal(refused.hinted, 0)
+    assert.ok(warnings.includes('resolve.hint_failed'))
+    assert.equal(claimed.size, 0)
+    assert.equal(fake.state.resolved.has(thread!.id), false, 'the thread stays open for the next resolve')
+    assert.match(fake.repliesTo(thread!.id).at(-1)!.body, /could not post the `reject` command in this thread\. The thread stays open/)
+
+    let retried = await resolve(HEAD3, [[thread!.id, 'answered']], undefined, github)
+    assert.equal(retried.hinted, 1)
+    assert.equal(retried.resolved, 1)
+    assert.equal(hints(thread!.id).length, 1)
   })
 })
