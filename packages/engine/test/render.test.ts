@@ -33,17 +33,17 @@ const usage: Usage = { model: 'anthropic/claude-haiku-5.5', cost: 0.0112, cost_s
 const BASE = 'https://review.test/assets/pr/';
 const images: Icons = { base: BASE };
 const kento = { by: 'Kentō', handle: '@kento-review', icons: images };
-const picture = (name: string, alt: string) =>
-  `<picture><source media="(prefers-color-scheme: dark)" srcset="${BASE}${name}-dark.v1.svg"><img alt="${alt}" src="${BASE}${name}.v1.svg" height="20" align="top"></picture>`;
+const picture = (name: string, alt: string, height = 20) =>
+  `<picture><source media="(prefers-color-scheme: dark)" srcset="${BASE}${name}-dark.v2.svg"><img alt="${alt}" src="${BASE}${name}.v2.svg" height="${height}" align="top"></picture>`;
 
 test('the body of a review by Kentō names its command and the cost of each level', () => {
   assert.equal(
     reviewBody(answer, anchors, 'lite', usage, kento),
     [
       '<!-- sakuga-review:summary -->',
-      `**Score de confiance : 2/5** · ${picture('bloquant', 'Bloquant')} 1 point bloquant · Un jeton expiré passe.`,
+      `**Score de confiance : 2/5** · ${picture('blocking', 'Blocking')} 1 point bloquant · Un jeton expiré passe.`,
       '',
-      `${picture('avertissement', 'À vérifier')} **Une review plus poussée est conseillée :** le changement touche la vérification des jetons.`,
+      `${picture('warning', 'To check')} **Une review plus poussée est conseillée :** le changement touche la vérification des jetons.`,
       'Commentez `@kento-review balanced` (de 10 à 20 centimes) ou `@kento-review heavy` (de 30 à 50 centimes).',
       '',
       '<sub>Kentō · Niveau `lite` · `anthropic/claude-haiku-5.5` · 0,011 $ · Le résumé, le diagramme et la liste des constats sont à la fin de la description de la PR.</sub>',
@@ -61,7 +61,7 @@ test('the block of the description by Kentō carries its name, and the markers t
   const context = { count: 2, head: '1'.repeat(40), subject: 'fix(auth): check the expiry', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
   const block = descriptionBlock(answer, [{ finding, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 1, usage, anchors, { ...context, poster: kento });
   assert.match(block, /^<!-- sakuga-review:start -->\n/);
-  assert.ok(block.includes(`\n<h2>Kentō · Score de confiance : 2/5 ${picture('jauge-2', '2/5')}</h2>\n`));
+  assert.ok(block.includes(`\n<h2>Kentō · Score de confiance : 2/5 ${picture('gauge-2', '2/5', 26)}</h2>\n`));
   assert.match(block, /^Commentez `@kento-review balanced` \(de 10 à 20 centimes\) ou `@kento-review heavy` \(de 30 à 50 centimes\)\.$/m);
   assert.match(block, /^1 constat d'une review précédente n'apparait plus : le fil peut être résolu\.$/m);
   assert.match(block, /^<sub>Reviews \(2\) · Dernier commit relu : \[fix\(auth\): check the expiry\]\(https:\/\/github\.com\/o\/n\/commit\/1{40}\) · Kentō · Niveau `lite`/m);
@@ -105,9 +105,9 @@ test('a finding shows its short id in its comment and in the list of the descrip
 test('a P0 or P1 that does not block has a mark next to its priority (REV-103)', () => {
   const first = (f: Finding) => inlineBody(f, false, null, images).split('\n')[0]!;
   assert.doesNotMatch(first(finding), /à vérifier|à considérer/);
-  assert.ok(first({ ...finding, confidence: 69 }).startsWith(`${picture('p1', 'P1')} ${picture('securite', 'sécurité')} ${picture('a-verifier', 'à vérifier')} **`));
-  assert.ok(first({ ...finding, seen: true }).includes(`${picture('a-considerer', 'à considérer')} **`));
-  assert.ok(first({ ...finding, seen: true, confidence: 50 }).includes(`${picture('a-considerer', 'à considérer')} **`));
+  assert.ok(first({ ...finding, confidence: 69 }).startsWith(`${picture('p1', 'P1')} ${picture('security', 'security')} ${picture('to-check', 'to check')} **`));
+  assert.ok(first({ ...finding, seen: true }).includes(`${picture('to-consider', 'to consider')} **`));
+  assert.ok(first({ ...finding, seen: true, confidence: 50 }).includes(`${picture('to-consider', 'to consider')} **`));
   assert.doesNotMatch(first({ ...finding, severity: 'minor', confidence: 50 }), /à vérifier/);
 });
 
@@ -177,7 +177,7 @@ function everyText(icons: Icons): string[] {
       fileCommentBody(f, 'https://github.com/o/n/blob/abc/a.ts#L1', null, icons),
       variantReplyBody(f, '2'.repeat(40), 'fixed', icons),
     ]),
-    ...(['resolu', 'a-resoudre', 'reste-ouvert'] as const).map((name) => icon(name, icons)),
+    ...(['resolved', 'to-resolve', 'stays-open'] as const).map((name) => icon(name, icons)),
   ];
 }
 
@@ -190,7 +190,7 @@ test('every image of a review has an alt, an absolute URL and a dark variant (RE
   for (const p of pictures) {
     assert.match(
       p,
-      /^<picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+-dark\.v1\.svg"><img alt="[^"]+" src="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+\.v1\.svg" height="20" align="top"><\/picture>$/,
+      /^<picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+-dark\.v2\.svg"><img alt="[^"]+" src="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+\.v2\.svg" height="(20|26)" align="top"><\/picture>$/,
     );
   }
   assert.equal(all.match(/<img /g)!.length, pictures.length, 'every image is in a picture');
@@ -203,9 +203,9 @@ test('a review of the service shows no emoji, with images or with text only (REV
   }
   const text = everyText('text').join('\n');
   assert.doesNotMatch(text, /<img|<picture/);
-  assert.match(text, /^`P1` `sécurité` `à vérifier` \*\*/m);
+  assert.match(text, /^`P1` `security` `to check` \*\*/m);
   assert.match(text, /^<h2>Kentō · Score de confiance : 2\/5<\/h2>$/m);
-  assert.match(text, /<a href="https:\/\/github\.com\/o\/n\/pull\/1#discussion_r0">`Fil`<\/a>/);
+  assert.match(text, /<a href="https:\/\/github\.com\/o\/n\/pull\/1#discussion_r0">`Thread`<\/a>/);
 });
 
 test('the Action keeps its emojis, and shows no image (REV-106)', () => {
@@ -220,12 +220,12 @@ test('the head of a review: blocking, else points to check, else nothing blocks 
     reviewBody({ ...answer, findings } as Answer, lines, 'lite', usage, kento, raised).split('\n')[1]!;
   const p1At60 = { ...finding, confidence: 60 };
   const p2 = { ...finding, severity: 'minor' as const, category: 'bug' as const };
-  assert.ok(head([finding, p1At60, p2]).includes(`· ${picture('bloquant', 'Bloquant')} 1 point bloquant ·`));
-  assert.ok(head([p1At60, p2]).includes(`· ${picture('avertissement', 'À vérifier')} 1 point à vérifier ·`));
+  assert.ok(head([finding, p1At60, p2]).includes(`· ${picture('blocking', 'Blocking')} 1 point bloquant ·`));
+  assert.ok(head([p1At60, p2]).includes(`· ${picture('warning', 'To check')} 1 point à vérifier ·`));
   assert.ok(head([p1At60, { ...p1At60, line: 40 }]).includes(' 2 points à vérifier ·'));
   // A P1 outside the diff gets a comment on its file, and does not block.
   assert.ok(head([finding], false, () => null).includes(' 1 point à vérifier ·'));
-  assert.ok(head([p2]).includes(`· ${picture('ok', 'Rien de bloquant')} Rien de bloquant ·`));
+  assert.ok(head([p2]).includes(`· ${picture('ok', 'Nothing blocking')} Rien de bloquant ·`));
   // A P1 to consider counts only when the review gives it a thread.
   assert.ok(head([{ ...finding, seen: true }, p2]).includes(' Rien de bloquant ·'));
   assert.ok(head([{ ...finding, seen: true }, p2], true).includes(' 1 point à vérifier ·'));
@@ -233,5 +233,5 @@ test('the head of a review: blocking, else points to check, else nothing blocks 
   // The warning is for a point to check: a review with P2 findings only, and no advice, has none.
   const quiet = reviewBody({ ...answer, findings: [p2], deeper_review: { recommended: false, reason: '' } } as Answer, anchors, 'lite', usage, kento);
   assert.doesNotMatch(quiet, /avertissement/);
-  assert.equal(head([], false), `**Score de confiance : 2/5** · ${picture('ok', 'Rien de bloquant')} Rien de bloquant · Un jeton expiré passe.`);
+  assert.equal(head([], false), `**Score de confiance : 2/5** · ${picture('ok', 'Nothing blocking')} Rien de bloquant · Un jeton expiré passe.`);
 });

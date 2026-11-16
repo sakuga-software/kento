@@ -864,7 +864,7 @@ function goneNote(gone: number, base: string, icons: Icons): string {
   if (!gone) return ''
   let threads = gone > 1 ? `${gone} fils ouverts` : 'un fil ouvert'
   return (
-    `\n\n> ${withIcon('avertissement', icons, `Un force-push a retiré de l'historique le commit relu par ${threads}.`)} ` +
+    `\n\n> ${withIcon('warning', icons, `Un force-push a retiré de l'historique le commit relu par ${threads}.`)} ` +
     `Le diff depuis ce commit est impossible : cette review relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
     `et ${gone > 1 ? 'ces fils restent ouverts' : 'ce fil reste ouvert'}.`
   )

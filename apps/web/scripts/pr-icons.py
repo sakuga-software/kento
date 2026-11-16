@@ -20,7 +20,7 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from fontTools.varLib.instancer import instantiateVariableFont
 
-VERSION = 1
+VERSION = 2
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'public/assets/pr'
 FONT = ROOT / 'public/assets/fonts/archivo-latin-wght-normal.woff2'
@@ -49,6 +49,8 @@ TOKENS = {
 }
 
 HEIGHT = 20
+# The gauge sits next to the h2 of the block: its image takes the height of a line of that title.
+GAUGE_HEIGHT = 26
 RADIUS = 4
 FONT_SIZE = 12
 PAD = 7
@@ -86,7 +88,7 @@ def svg(width: float, height: int, body: str, title: str) -> str:
     )
 
 
-# A small warning triangle, 10 px wide, for the badge « à vérifier ».
+# A small warning triangle, 10 px wide, for the badge « to check ».
 def triangle(x: float, fill: str, mark: str) -> str:
     return (
         f'<path d="M{x + 5} 5.2 L{x + 10} 14.6 H{x} Z" fill="{fill}" stroke="{fill}" stroke-width="1.2" stroke-linejoin="round"/>'
@@ -111,39 +113,39 @@ BADGES = {
     'p0': lambda t: badge('P0', t, t['shu'], t['on-shu']),
     'p1': lambda t: badge('P1', t, t['shu-wash'], t['shu'], border=t['shu']),
     'p2': lambda t: badge('P2', t, t['paper-sunken'], t['ink-muted'], border=t['line-strong']),
-    'securite': lambda t: badge('sécurité', t, t['ai-wash'], t['ai'], border=t['ai']),
-    'a-verifier': lambda t: badge('à vérifier', t, t['kuchiba-wash'], t['kuchiba'], border=t['kuchiba-mark'], warn=True),
-    'a-considerer': lambda t: badge('à considérer', t, t['paper-raised'], t['nezumi'], border=t['nezumi'], dashed=True),
+    'security': lambda t: badge('security', t, t['ai-wash'], t['ai'], border=t['ai']),
+    'to-check': lambda t: badge('to check', t, t['kuchiba-wash'], t['kuchiba'], border=t['kuchiba-mark'], warn=True),
+    'to-consider': lambda t: badge('to consider', t, t['paper-raised'], t['nezumi'], border=t['nezumi'], dashed=True),
 }
 
 SYMBOLS = {
-    'bloquant': (
-        'Bloquant',
+    'blocking': (
+        'Blocking',
         lambda t: f'<circle cx="10" cy="10" r="8" fill="{t["shu"]}"/><path d="M5.5 10 H14.5" stroke="{t["on-shu"]}" stroke-width="2.4" stroke-linecap="round"/>',
     ),
-    'avertissement': (
-        'À vérifier',
+    'warning': (
+        'To check',
         lambda t: f'<path d="M10 2.6 L18 16.8 H2 Z" fill="{t["kuchiba-mark"]}" stroke="{t["kuchiba-mark"]}" stroke-width="1.6" stroke-linejoin="round"/>'
         f'<path d="M10 7.4 V11.6" stroke="{t["kuchiba-wash"]}" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14.2" r="1.1" fill="{t["kuchiba-wash"]}"/>',
     ),
     'ok': (
-        'Rien de bloquant',
+        'Nothing blocking',
         lambda t: f'<circle cx="10" cy="10" r="8" fill="{t["matsu"]}"/><path d="M6 10.2 L8.8 13 L14 7.4" fill="none" stroke="{t["matsu-wash"]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     ),
-    'fil': (
-        'Fil',
+    'thread': (
+        'Thread',
         lambda t: f'<rect x="2.5" y="2.5" width="15" height="15" rx="{RADIUS}" fill="{t["ai-wash"]}" stroke="{t["ai"]}"/><path d="M7.4 6.6 L12.6 10 L7.4 13.4 Z" fill="{t["ai"]}" stroke="{t["ai"]}" stroke-linejoin="round"/>',
     ),
-    'resolu': (
-        'Résolu',
+    'resolved': (
+        'Resolved',
         lambda t: f'<rect x="2" y="2" width="16" height="16" rx="{RADIUS}" fill="{t["matsu"]}"/><path d="M6 10.2 L8.8 13 L14 7.4" fill="none" stroke="{t["matsu-wash"]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     ),
-    'a-resoudre': (
-        'À résoudre',
+    'to-resolve': (
+        'To resolve',
         lambda t: f'<rect x="2.5" y="2.5" width="15" height="15" rx="{RADIUS}" fill="{t["matsu-wash"]}" stroke="{t["matsu"]}"/><path d="M6 10.2 L8.8 13 L14 7.4" fill="none" stroke="{t["matsu"]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
     ),
-    'reste-ouvert': (
-        'Reste ouvert',
+    'stays-open': (
+        'Stays open',
         lambda t: f'<path d="M4.5 3.5 H15.5 A2 2 0 0 1 17.5 5.5 V12 A2 2 0 0 1 15.5 14 H9 L5.5 17 V14 H4.5 A2 2 0 0 1 2.5 12 V5.5 A2 2 0 0 1 4.5 3.5 Z" fill="{t["ai-wash"]}" stroke="{t["ai"]}" stroke-linejoin="round"/>'
         f'<path d="M6 8.75 H14" stroke="{t["ai"]}" stroke-width="1.4" stroke-linecap="round"/>',
     ),
@@ -152,12 +154,11 @@ SYMBOLS = {
 
 def gauge(score: int, t: dict) -> str:
     colour = t['shu'] if score <= 2 else t['kuchiba-mark'] if score == 3 else t['matsu']
-    bars = ''
+    segments = ''
     for i in range(5):
-        height = 6 + 2 * i
         fill = colour if i < score else t['gauge-empty']
-        bars += f'<rect x="{1 + i * 8}" y="{17 - height}" width="6" height="{height}" rx="1.5" fill="{fill}"/>'
-    return svg(40, HEIGHT, bars, f'{score}/5')
+        segments += f'<rect x="{1 + i * 12}" y="6" width="10" height="14" rx="2" fill="{fill}"/>'
+    return svg(60, GAUGE_HEIGHT, segments, f'{score}/5')
 
 
 def write(name: str, theme: str, content: str) -> None:
@@ -172,4 +173,4 @@ for theme, t in TOKENS.items():
     for name, (title, draw) in SYMBOLS.items():
         write(name, theme, svg(20, HEIGHT, draw(t), title))
     for score in range(1, 6):
-        write(f'jauge-{score}', theme, gauge(score, t))
+        write(f'gauge-{score}', theme, gauge(score, t))

@@ -100,7 +100,7 @@ export async function publishResolution(
     }
     let url = `${target.webUrl}/${fullName}/pull/${pr}#discussion_r${opener.id}`
     let icons = target.icons ?? 'text'
-    let label = close ? (resolved ? withIcon('resolu', icons, 'résolu') : withIcon('a-resoudre', icons, 'à résoudre')) : withIcon('reste-ouvert', icons, 'reste ouvert')
+    let label = close ? (resolved ? withIcon('resolved', icons, 'résolu') : withIcon('to-resolve', icons, 'à résoudre')) : withIcon('stays-open', icons, 'reste ouvert')
     lines.push(`- ${label} · [\`${thread.path}:${thread.line ?? '?'}\`](${url}) · ${opener.author}`)
   }
 

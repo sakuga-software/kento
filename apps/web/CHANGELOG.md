@@ -7,6 +7,26 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-106, follow-up: the gauge of the score is a bar of five segments; the icons have English names
+
+No migration, no new variable, no new permission, no change to the protocol of the runners: deploy
+`web` alone. `/healthz` still gives `"migrations":27`.
+
+- The gauge next to the score was five bars of growing height, like a network signal. It is now a
+  progress bar of five rectangles of the same height (10 × 14 px), filled up to the score. Its colour
+  does not change: red up to 2, amber at 3, green from 4. The gauge sits next to the `h2` of the block
+  (21 px text, 26 px line): its image is 60 × 26 and the `<img>` has `height="26"`; the other icons
+  keep 20.
+- The icons go to version 2 (`ICON_VERSION`, `VERSION` of `scripts/pr-icons.py`), with English names:
+  `security`, `to-check`, `to-consider`, `blocking`, `warning`, `thread`, `resolved`, `to-resolve`,
+  `stays-open` and `gauge-1` to `gauge-5` (`p0`, `p1`, `p2` and `ok` keep theirs). The text drawn in
+  the badges and the `alt` of each image are in English (`security`, `to check`, `to consider`,
+  `Blocking`…). The rest of the texts of a review does not change in this entry.
+- The files of version 1 stay in `public/assets/pr`: the comments already posted still link them.
+
+Check: after the next review of a pull request, the title of the block shows the bar of five
+segments, and the badges read in English, in the light and the dark theme of GitHub.
+
 ## REV-108: A Haiku answer cut at `max_tokens`, or late, gets one request without thinking
 
 **The runners carry the change; deploy them in any order with `web`.** No change to the protocol:

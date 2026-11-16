@@ -772,7 +772,7 @@ describe('commands in the comments of a pull request', () => {
         // REV-106. A service that knows its public URL shows its icons.
         assert.match(
           fake.state.issueComments.at(-1)!.body,
-          /^- <picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/a-resoudre-dark\.v1\.svg"><img alt="À résoudre" src="https:\/\/review\.test\/assets\/pr\/a-resoudre\.v1\.svg" height="20" align="top"><\/picture> à résoudre · \[`src\/sum.ts:2`\]/m,
+          /^- <picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/to-resolve-dark\.v2\.svg"><img alt="To resolve" src="https:\/\/review\.test\/assets\/pr\/to-resolve\.v2\.svg" height="20" align="top"><\/picture> à résoudre · \[`src\/sum.ts:2`\]/m,
         )
       })
 

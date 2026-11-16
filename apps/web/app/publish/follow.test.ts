@@ -126,7 +126,7 @@ describe('a finding that follows an earlier finding (REV-99)', () => {
     assert.match(replies[0]!.body, new RegExp(`<!-- kento:variant ${HEAD2} ${findingKey(rowNotUndone)} -->`))
     assert.equal(memory.rows.length, 1, 'one defect, one finding')
     assert.equal(memory.rows[0]!.githubCommentId, thread!.id)
-    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}">\`Fil\`</a>`), 'the block links to the thread of the earlier finding')
+    assert.match(fake.state.pr.body, new RegExp(`#discussion_r${thread!.id}">\`Thread\`</a>`), 'the block links to the thread of the earlier finding')
 
     // A second publication of the same head does not answer twice.
     await publish(payload({ head: HEAD2, findings: [rowNotUndone] }))

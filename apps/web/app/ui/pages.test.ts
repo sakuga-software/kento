@@ -565,7 +565,7 @@ describe('the assets', () => {
         let response = await request(`/assets/pr/${file}`)
         assert.equal(response.status, 200, file)
         assert.equal(response.headers.get('Content-Type'), 'image/svg+xml', file)
-        assert.match(await response.text(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="\d+" height="20" /, file)
+        assert.match(await response.text(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" width="\d+" height="(20|26)" /, file)
       }
     }
   })

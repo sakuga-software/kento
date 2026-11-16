@@ -37,7 +37,7 @@ export const REVIEW_COUNT = /<!-- sakuga-review:count (\d+) -->/;
 export type Icons = { base: string } | 'text' | 'emoji';
 
 /** The version in the names of the files. GitHub keeps an image in its cache under its URL. */
-export const ICON_VERSION = 1;
+export const ICON_VERSION = 2;
 
 // `emoji`: the icon of a state that the text next to it names. In `text`, it shows nothing.
 type IconSpec = { alt: string; emoji?: string };
@@ -46,26 +46,26 @@ const ICON = {
   p0: { alt: 'P0' },
   p1: { alt: 'P1' },
   p2: { alt: 'P2' },
-  securite: { alt: 'sécurité' },
-  'a-verifier': { alt: 'à vérifier' },
-  'a-considerer': { alt: 'à considérer' },
-  bloquant: { alt: 'Bloquant', emoji: '⛔' },
-  avertissement: { alt: 'À vérifier', emoji: '⚠️' },
-  ok: { alt: 'Rien de bloquant', emoji: '✅' },
-  fil: { alt: 'Fil' },
-  resolu: { alt: 'Résolu', emoji: '✅' },
-  'a-resoudre': { alt: 'À résoudre', emoji: '☑️' },
-  'reste-ouvert': { alt: 'Reste ouvert', emoji: '💬' },
+  security: { alt: 'security' },
+  'to-check': { alt: 'to check' },
+  'to-consider': { alt: 'to consider' },
+  blocking: { alt: 'Blocking', emoji: '⛔' },
+  warning: { alt: 'To check', emoji: '⚠️' },
+  ok: { alt: 'Nothing blocking', emoji: '✅' },
+  thread: { alt: 'Thread' },
+  resolved: { alt: 'Resolved', emoji: '✅' },
+  'to-resolve': { alt: 'To resolve', emoji: '☑️' },
+  'stays-open': { alt: 'Stays open', emoji: '💬' },
 } satisfies Record<string, IconSpec>;
 
 export type IconName = keyof typeof ICON;
 
 /** The names of the files that the service serves under public/assets/pr, each in a light and a dark variant. */
-export const ICON_FILES = [...Object.keys(ICON), ...[1, 2, 3, 4, 5].map((n) => `jauge-${n}`)];
+export const ICON_FILES = [...Object.keys(ICON), ...[1, 2, 3, 4, 5].map((n) => `gauge-${n}`)];
 
-function picture(base: string, file: string, alt: string): string {
+function picture(base: string, file: string, alt: string, height = 20): string {
   const url = (suffix: string) => `${base}${file}${suffix}.v${ICON_VERSION}.svg`;
-  return `<picture><source media="(prefers-color-scheme: dark)" srcset="${url('-dark')}"><img alt="${alt}" src="${url('')}" height="20" align="top"></picture>`;
+  return `<picture><source media="(prefers-color-scheme: dark)" srcset="${url('-dark')}"><img alt="${alt}" src="${url('')}" height="${height}" align="top"></picture>`;
 }
 
 /** The icon `name` in the style of `icons`. A label icon (a priority, a mark) gives its alt as text. */
@@ -82,16 +82,19 @@ export function withIcon(name: IconName, icons: Icons, text: string): string {
   return mark ? `${mark} ${text}` : text;
 }
 
+/** The height of the gauge image: one line of the h2 of the block. */
+const GAUGE_HEIGHT = 26;
+
 /** REV-106. The gauge of the score next to its text, which an agent reads. */
 function scoreTitle(value: number, icons: Icons): string {
   const text = `Score de confiance : ${value}/5`;
-  return typeof icons === 'object' ? `${text} ${picture(icons.base, `jauge-${value}`, `${value}/5`)}` : text;
+  return typeof icons === 'object' ? `${text} ${picture(icons.base, `gauge-${value}`, `${value}/5`, GAUGE_HEIGHT)}` : text;
 }
 
 const PRIORITY = { critical: 'p0', major: 'p1', minor: 'p2' } as const;
 
 function badges(finding: Finding, icons: Icons): string {
-  return icon(PRIORITY[finding.severity], icons) + (finding.category === 'security' ? ` ${icon('securite', icons)}` : '');
+  return icon(PRIORITY[finding.severity], icons) + (finding.category === 'security' ? ` ${icon('security', icons)}` : '');
 }
 
 /**
@@ -100,8 +103,8 @@ function badges(finding: Finding, icons: Icons): string {
  */
 function threadMark(finding: Finding, icons: Icons): string {
   if (!BLOCKING_SEVERITIES.has(finding.severity)) return '';
-  if (toConsider(finding)) return ` ${icon('a-considerer', icons)}`;
-  return finding.confidence < BLOCKING_CONFIDENCE ? ` ${icon('a-verifier', icons)}` : '';
+  if (toConsider(finding)) return ` ${icon('to-consider', icons)}`;
+  return finding.confidence < BLOCKING_CONFIDENCE ? ` ${icon('to-check', icons)}` : '';
 }
 
 /** The length of the short id of a finding that a reader sees, and gives to `@kento-review reject`. */
@@ -201,7 +204,7 @@ const ACTION = { name: 'Sakuga Review', command: '@sakuga-review review' };
 function deeperReviewNote(reason: string, poster?: Poster): string {
   const command = poster?.handle ?? ACTION.command;
   return (
-    `${withIcon('avertissement', poster?.icons ?? 'emoji', `**Une review plus poussée est conseillée :** ${reason}`)}\n` +
+    `${withIcon('warning', poster?.icons ?? 'emoji', `**Une review plus poussée est conseillée :** ${reason}`)}\n` +
     `Commentez \`${command} balanced\` (${levelCost('balanced')}) ou \`${command} heavy\` (${levelCost('heavy')}).`
   );
 }
@@ -223,9 +226,9 @@ export function toCheck(answer: Answer, lines: Anchors, raised: boolean): number
 function reviewHead(answer: Answer, lines: Anchors, raised: boolean, icons: Icons): string {
   const count = (n: number, what: string) => `${n} point${n > 1 ? 's' : ''} ${what}`;
   const blocking = answer.findings.filter((f) => isBlocking(f, lines)).length;
-  if (blocking) return withIcon('bloquant', icons, count(blocking, `bloquant${blocking > 1 ? 's' : ''}`));
+  if (blocking) return withIcon('blocking', icons, count(blocking, `bloquant${blocking > 1 ? 's' : ''}`));
   const checks = toCheck(answer, lines, raised);
-  if (checks) return withIcon('avertissement', icons, count(checks, 'à vérifier'));
+  if (checks) return withIcon('warning', icons, count(checks, 'à vérifier'));
   return withIcon('ok', icons, 'Rien de bloquant');
 }
 
@@ -288,7 +291,7 @@ export function descriptionBlock(
     if (line === null && context.commitUrl.startsWith('http')) {
       where = `[${where}](${context.commitUrl.replace('/commit/', '/blob/')}/${f.path.replace(/^\/+/, '')}#L${f.line})`;
     }
-    out.push(`${i + 1}. ${badges(f, icons)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">${icons === 'emoji' ? '▶' : icon('fil', icons)}</a>` : ''}`);
+    out.push(`${i + 1}. ${badges(f, icons)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">${icons === 'emoji' ? '▶' : icon('thread', icons)}</a>` : ''}`);
     // A finding with no thread shows its scenario here: this is the only place it appears.
     if (!url) out.push(`   ${f.scenario} **Correction :** ${f.fix}`);
     const patch = url ? null : shownPatch(f);
