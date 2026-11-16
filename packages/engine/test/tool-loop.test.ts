@@ -228,11 +228,12 @@ describe('a review call with tools', () => {
     assert.equal(calls[0].messages[1].content, 'the pack');
   });
 
-  test('askModel with tools adds their note to the prompt, after the focus of a pass', async () => {
+  test('askModel with tools adds their note at the end of the user message, after the focus of a pass (REV-113)', async () => {
     const { fetch, calls } = fakeFetch([() => json({ choices: [{ message: { content: '{"summary":"s","findings":[]}' } }], usage: { cost: 0 } })]);
-    await askModel({ apiKey: 'k', fetch, log: quiet }, levelConfig('lite'), 'the pack', undefined, 'FOCUS', new RepoTools(root, head, TOOL_BUDGETS.lite));
+    await askModel({ apiKey: 'k', fetch, log: quiet }, levelConfig('lite'), 'the pack', 'FOCUS', new RepoTools(root, head, TOOL_BUDGETS.lite));
     const system: string = calls[0].messages[0].content;
-    assert.ok(system.endsWith(`FOCUS\n\n${TOOLS_NOTE}\n`));
+    assert.ok(!system.includes('FOCUS') && !system.includes(TOOLS_NOTE), 'the system prompt stays the same for every pass');
+    assert.equal(calls[0].messages[1].content[0].text, `the pack\n\nFOCUS\n\n${TOOLS_NOTE}\n`);
   });
 });
 

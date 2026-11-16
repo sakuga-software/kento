@@ -51,11 +51,11 @@ test('Anthropic: the schema goes in output_config, the system prompt carries the
   assert.equal(call!.body.output_config.effort, 'medium');
   // No forced tool: Opus 5.5 and Sonnet 5.5 answer 400 to it.
   assert.equal(call!.body.tool_choice, undefined);
-  assert.deepEqual(call!.body.system[0].cache_control, { type: 'ephemeral' });
-  assert.equal(call!.body.messages[0].content, 'the pack');
+  assert.deepEqual(call!.body.system[0].cache_control, { type: 'ephemeral', ttl: '1h' });
+  assert.deepEqual(call!.body.messages[0].content, [{ type: 'text', text: 'the pack' }]);
 
-  // 1000 × 2 + 2000 × 0.2 + 500 × 10 = 7400 millionths of a dollar.
-  assert.equal(usage.cost, 0.0074);
+  // 1000 × 2 + 2000 × 0.1 + 500 × 10 = 7200 millionths of a dollar: a read costs 0.05 times the input on Sonnet 5.5.
+  assert.equal(usage.cost, 0.0072);
   assert.equal(usage.cost_source, 'table');
   assert.equal(usage.prompt_tokens, 3000);
   assert.equal(usage.completion_tokens, 500);
@@ -132,7 +132,7 @@ test('Anthropic: Haiku cut at max_tokens asks once more without thinking, and th
   assert.equal(second!.body.output_config.effort, 'medium', 'Haiku 5.5 accepts `disabled` at low, medium and high');
   assert.equal(second!.body.model, first!.body.model);
   // No cache write for the second request: the pack carries no mark.
-  assert.equal(second!.body.messages[0].content, 'the pack');
+  assert.deepEqual(second!.body.messages[0].content, [{ type: 'text', text: 'the pack' }]);
   assert.equal(usage.completion_tokens, 32300);
   assert.equal(usage.prompt_tokens, 2000);
   assert.equal(usage.thinking_tokens, 32000);

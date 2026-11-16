@@ -646,6 +646,31 @@ test('a job with an Anthropic provider of the service: the key of the job, the c
   assertNoSecretInLogs();
 });
 
+test('REV-113. job.model_usage gives the cache read, the cache writes by TTL, the hashes of the prefix, the effort and the thinking', async () => {
+  const { api } = fakeApi();
+  const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    return new Response(
+      JSON.stringify({
+        model: body.model,
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(answer()) }],
+        usage: { input_tokens: 2_000, output_tokens: 500, cache_read_input_tokens: 5_000, cache_creation_input_tokens: 9_000, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 9_000 } },
+      }),
+    );
+  }) as typeof globalThis.fetch;
+  await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY)] }), deps(api, stub));
+  const line = logs.find((l) => l.includes('job.model_usage'))!;
+  assert.ok(line, 'the runner logs job.model_usage');
+  for (const part of ['"cacheRead":5000', '"cacheWrite5m":0', '"cacheWrite1h":9000', '"promptTokens":16000', '"effort":"medium"', '"thinking":"adaptive"']) {
+    assert.ok(line.includes(part), `job.model_usage holds ${part}`);
+  }
+  assert.match(line, /"systemHash":"[0-9a-f]{12}","schemaHash":"[0-9a-f]{12}"/);
+  assert.match(line, /"incremental":false,"contextHash":"[0-9a-f]{12}"/);
+  assert.match(line, /"pr":\d+,"reviewLevel":"lite"/);
+  assertNoSecretInLogs();
+});
+
 test('the models that the job names replace the defaults of the provider', async () => {
   const { api } = fakeApi();
   const model = stubAnthropic();
@@ -828,7 +853,8 @@ test('a job of a service of an earlier release has no rules: the result has no r
   assert.equal(result.outcome, 'done');
   if (result.outcome !== 'done') return;
   assert.ok(!('rule_id' in result.review.findings[0]!), 'a finding without a rule sends no rule_id');
-  assert.ok(!JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema has no rule_id without rules');
+  // REV-113. The schema is the same with or without rules: the engine drops the reference R1.
+  assert.ok(JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema keeps rule_id without rules');
 });
 
 // --- answered threads (REV-71) ------------------------------------------------------------------

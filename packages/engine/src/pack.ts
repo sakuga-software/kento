@@ -1,7 +1,9 @@
 // The pack: the first message of the review, with the diff, the docs of the repository and the context.
+import { createHash } from 'node:crypto';
 import { git } from './git.ts';
 import { importsSection } from './imports.ts';
 import type { ContextKind } from './levels.ts';
+import type { MessagePart } from './providers.ts';
 import { rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
 
 // The pack that the model reads, at most. A larger pull request loses its largest files first.
@@ -263,8 +265,8 @@ function numstat(repo: string, base: string, head: string): { added: string; rem
 
 /**
  * The first message of the review, the files left out with their reason, and the rules that it holds
- * (REV-19): the rules of the caller whose paths a changed file matches. `body` is the pack after its
- * first part (the heads and the commits).
+ * (REV-19): the rules of the caller whose paths a changed file matches. `parts` is the pack in the
+ * parts that a prompt cache can mark (REV-113). `body` is the pack without the heads and the commits.
  */
 export function buildPack(
   repo: string,
@@ -284,7 +286,7 @@ export function buildPack(
    * (MAX_EARLIER_BYTES, and MAX_CHANGED_ZONES_BYTES of REV-100).
    */
   unkeyed = '',
-): { pack: string; skipped: string[]; rules: PackedRule[]; body: string } {
+): { pack: string; parts: MessagePart[]; skipped: string[]; rules: PackedRule[]; body: string; contextHash: string } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
@@ -332,37 +334,41 @@ export function buildPack(
     hunks.delete(path);
   }
 
-  const parts = [`# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`];
-  if (skipped.length) parts.push(`## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n`);
-  parts.push(docs);
-  parts.push(rulesText);
-  parts.push(answered);
-  const unkeyedAt = parts.push(unkeyed) - 1;
-  parts.push(
+  const header = `# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`;
+  const notReviewed = skipped.length ? `## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n` : '';
+  const diff =
     '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
-      'A test file shows three lines of context.\n\n```diff\n',
-  );
-  for (const path of reviewed) if (hunks.has(path)) parts.push(hunks.get(path)!);
-  parts.push('```\n');
+    'A test file shows three lines of context.\n\n```diff\n' +
+    reviewed.map((path) => hunks.get(path) ?? '').join('') +
+    '```\n';
   const imports = [...hunks.keys()].map((path) => importsOf.get(path) ?? '').join('');
-  if (imports) {
-    parts.push(
-      '\n## Imports\n\nThe import statements of each changed file at the head of the pull request, whole, ' +
-        'with their line numbers. The diff can show only part of them.\n\n',
-      imports,
-    );
-  }
+  const importsPart = imports
+    ? '\n## Imports\n\nThe import statements of each changed file at the head of the pull request, whole, ' +
+      'with their line numbers. The diff can show only part of them.\n\n' +
+      imports
+    : '';
   const room = Math.min(MAX_CONTEXT_BYTES, budget - size());
   const context = room > 0 ? buildContext(repo, base, head, [...hunks.keys()], room, contextKind) : '';
-  if (context) {
-    parts.push(
-      '\n## Context\n\nUnchanged code at the head of the pull request, from other files: definitions that the ' +
-        (contextKind === 'full' ? 'change uses, and callers of the code that it changes. ' : 'change uses. ') +
-        'Each line starts with its line number. The repository holds more code than this.\n\n',
-      context,
-    );
-  }
+  const contextPart = context
+    ? '\n## Context\n\nUnchanged code at the head of the pull request, from other files: definitions that the ' +
+      (contextKind === 'full' ? 'change uses, and callers of the code that it changes. ' : 'change uses. ') +
+      'Each line starts with its line number. The repository holds more code than this.\n\n' +
+      context
+    : '';
+  // REV-113. The docs come first: they are the same for every pull request of the repository, so
+  // their end is a cache mark of 1 hour. The rest keeps its order. An incremental review (REV-88)
+  // builds the rules, the imports and the context from the files that changed since the last
+  // review: on the pushes of 13 pull requests of this repository, they were the same as in the last
+  // review 3 times in 49. A cache mark after them would cost more than it saves.
+  const parts: MessagePart[] = [
+    { text: docs, cache: '1h' },
+    { text: header + notReviewed + rulesText + answered + unkeyed + diff + importsPart + contextPart },
+  ];
   // REV-89. `body`: the pack without its heads and its commits, which a merge of the base branch
-  // changes. The reuse key reads it (reuse.ts).
-  return { pack: parts.join(''), skipped: [...skipped, ...rulesSkipped], rules: packed, body: parts.filter((_, i) => i > 0 && i !== unkeyedAt).join('') };
+  // changes, and without `unkeyed`. The reuse key reads it (reuse.ts), in the order of REV-89.
+  const body = notReviewed + docs + rulesText + answered + diff + importsPart + contextPart;
+  // REV-113. A short hash of the rules, the imports and the context: the logs of the runner tell how
+  // often a review of a pull request holds the same ones as the last review.
+  const contextHash = createHash('sha256').update(rulesText + importsPart + contextPart).digest('hex').slice(0, 12);
+  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash };
 }

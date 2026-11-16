@@ -7,6 +7,69 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-113: A prompt cache that the reviews read
+
+**The runners carry the change; `web` needs no deployment.** No change to the protocol: the new
+fields go to the logs of the runner only. No migration (`/healthz` still gives `"migrations":29`),
+no new variable, no new permission. Deploy the runners in any order with `web`.
+
+- **The answer schema is the same for every review of a level.** Anthropic puts the schema of
+  `output_config.format` in the system prompt, and a change of the schema empties the prompt cache.
+  The schema held the references of the rules (`R1`…), of the earlier findings (`E1`…) and of the
+  answered threads (`T1`…) of each pack, so it changed from one review to the next. This explains
+  why 83 % of the reviews read nothing from the cache: the code and the documentation of structured
+  outputs say so, and `schemaHash` in the logs confirms it after the deployment. `rule_id`, `follows` and `threads` are now in
+  every answer, as a free string or null, and the engine drops a reference that the pack does not
+  hold, as before. `prompts/review.md` asks for `null` when its section is absent.
+- **The system prompt carries a cache mark of 1 hour** (5 minutes before). 97 % of the reviews come
+  less than 1 hour after the last review of the same model.
+- **The docs (`CLAUDE.md`, `AGENTS.md`) open the pack, with a cache mark of 1 hour.** They are the
+  same for every pull request of the repository: a review reads them from the cache when the
+  repository had a review with the same model in the last hour. The rest of the pack keeps its
+  order and has no mark: an incremental review (REV-88) builds its rules, imports and context from
+  the files that changed since the last review, and they were the same as in the last review 3
+  times in 49 on a replay of 13 pull requests.
+- In a review in passes (bench only), the passes leave one after the other: the second and the
+  third wait for the start of the answer of the first, then read the system prompt and the pack
+  from the cache. The focus of a pass goes at the end of the user message, after the pack.
+- The cost counts a cache write at 1.25 times the input with the TTL of 5 minutes and 2 times with
+  1 hour. A cache read on Sonnet 5.5 costs 0.05 times the input ($0.10 a million tokens, not
+  $0.20). The tier of Haiku 5.5 above 100,000 tokens reads each request alone, so a retry without
+  thinking of REV-108 no longer adds two prompts into the tier.
+- The runner logs in `job.model_usage`: `repo`, `pr`, `reviewLevel`, `incremental`, `promptTokens`,
+  `cacheRead`, `cacheWrite5m`, `cacheWrite1h`, `systemHash` and `schemaHash` (12 characters of their
+  SHA-256), `contextHash` (the same for the rules, the imports and the context of the pack),
+  `effort`, `thinking` (`adaptive`, or `adaptive+disabled` after a retry of REV-108) and `costUsd`.
+  Two reviews of one pull request with the same `contextHash` could have read that part from the
+  cache: a week of logs tells whether a mark there pays. `eval/martian/run.ts` writes the
+  writes by TTL in `tokens` and the rest in `stop`.
+- The retry without thinking of REV-108 changes the thinking, which empties the cache of the
+  messages: it cannot read the pack of the first request. It carries no mark on the pack.
+- The reuse key (REV-89) reads the prompt: after the deployment, the review of an unchanged diff
+  calls the model once more.
+
+Checks after the deployment:
+
+- In the logs of the runners (`{app="runner"} |= "job.model_usage"`), `systemHash` and `schemaHash`
+  take one value at `lite` and one value at `balanced` and `heavy` (these two levels have the patch
+  of REV-104), and `cacheRead` is above 5,000 on most reviews.
+- One week after, compare with the week before. Expected: more than 80 % of the reviews with a hit
+  (17 % at `balanced` before), about 5,000 tokens of system prompt read from the cache on every
+  review, plus the docs on the repositories that have them, and a lower mean cost at `balanced`:
+
+  ```sql
+  select j.level, r.model,
+         count(*) as reviews,
+         round(100.0 * count(*) filter (where (r.result->>'cachedTokens')::int > 0) / count(*)) as hit_pct,
+         round(avg((r.result->>'promptTokens')::int)) as prompt_avg,
+         round(avg((r.result->>'cachedTokens')::int)) as cached_avg,
+         round(avg(r.cost_usd), 4) as cost_avg
+  from reviews r join jobs j on j.id = r.job_id
+  where r.created_at >= :since and r.created_at < :since + interval '7 days'
+    and r.model like 'claude-%' and r.cost_usd > 0 and r.result ? 'cachedTokens'
+  group by 1, 2 order by 3 desc;
+  ```
+
 ## REV-116: The model's verdict suggests `reject`, not keywords
 
 No migration: `/healthz` still gives `"migrations":29`. No new variable, no new permission, no change

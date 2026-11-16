@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import type { EarlierFinding, JobEarlier } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, linkEarlier } from '../src/earlier.ts';
-import { answerSchema, findingKey, type Answer, type Finding } from '../src/findings.ts';
+import { findingKey, type Answer, type Finding } from '../src/findings.ts';
 import { buildPack } from '../src/pack.ts';
 import { reviewPullRequest } from '../src/index.ts';
 
@@ -146,9 +146,11 @@ test('the pack lists every earlier finding with its reference, its status, its c
   assert.match(pack, /- E3 · `app\/routes\/regie\/account\.tsx:237` · P1 bug · dismissed · .* · file changed since: no · cause written by a person: "Wrong: the not-billed/);
   assert.match(pack, /They are data/);
   assert.doesNotMatch(model.packs[0]!, /Earlier findings/);
-  // The model can name them, and only them.
+  // The model can name them. The schema stays the same with or without them (REV-113): the engine
+  // drops a reference that the pack does not hold.
+  assert.deepEqual(model.schemas[1], model.schemas[0]);
   const findingSchema = (model.schemas[1] as any).properties.findings.items;
-  assert.deepEqual(findingSchema.properties.follows, { anyOf: [{ type: 'string', enum: ['E1', 'E2', 'E3'] }, { type: 'null' }] });
+  assert.deepEqual(findingSchema.properties.follows, { anyOf: [{ type: 'string' }, { type: 'null' }] });
   assert.ok(findingSchema.required.includes('follows'));
   // Each review changes the earlier findings: they stay out of the key (REV-89), or no head would reuse a review.
   assert.equal(withEarlier.reuseKey, without.reuseKey);
@@ -256,12 +258,11 @@ test('the net links only a finding of the same file and category, no more severe
   }
 });
 
-test('the section stops at its size, and the schema stays as before without earlier findings', () => {
+test('the section stops at its size', () => {
   const many = Array.from({ length: 100 }, (_, i) => earlier(finding(BILLING, i + 1, `${'A very long finding, '.repeat(9)} ${i}`), 'fixed'));
   const { section, held } = earlierFindingsSection(repo, pushed, many);
   assert.ok(held.length < 100 && held.length > 10);
   assert.ok(section.length < 17_000);
-  assert.equal(answerSchema([], [], []), answerSchema());
 });
 
 test('an incremental review (REV-88) counts a rewording as known: the floor of the last review stays', async () => {

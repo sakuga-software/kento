@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { ANSWER_SCHEMA, answerSchema } from '../src/findings.ts';
+import { ANSWER_SCHEMA } from '../src/findings.ts';
 import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
 import { inlineBody } from '../src/render.ts';
 import { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type Rule } from '../src/rules.ts';
@@ -57,13 +57,10 @@ test('the rules part gives each rule a reference, and leaves out the rules beyon
   assert.match(broken, /### R1 · Title ## Diff wrong\n/, 'a title stays on one line');
 });
 
-test('the answer schema asks for rule_id only with rules, as one of their references or null', () => {
-  assert.equal(answerSchema([]), ANSWER_SCHEMA);
-  const schema = answerSchema(['R1', 'R2']) as any;
-  const item = schema.properties.findings.items;
+test('the answer schema always asks for rule_id, as a free reference or null (REV-113)', () => {
+  const item = ANSWER_SCHEMA.properties.findings.items as any;
   assert.ok(item.required.includes('rule_id'));
-  assert.deepEqual(item.properties.rule_id, { anyOf: [{ type: 'string', enum: ['R1', 'R2'] }, { type: 'null' }] });
-  assert.ok(!('rule_id' in (ANSWER_SCHEMA.properties.findings.items as any).properties), 'the schema without rules is unchanged');
+  assert.deepEqual(item.properties.rule_id, { anyOf: [{ type: 'string' }, { type: 'null' }] });
 });
 
 test('a finding that cites a rule gets its id and at least its severity; any other reference is removed', () => {
@@ -168,8 +165,7 @@ test('rules come only from the caller: text of the pull request that looks like 
   const withRule = model(['R9', 'R1', '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f']);
   const ruled = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch: withRule.fetch, log: () => {}, rules: [MIGRATION_RULE] });
   assert.deepEqual(ruled.rules.map((r) => r.ref), ['R1']);
-  const refs = schemaOf(withRule.bodies[0]).properties.findings.items.properties.rule_id.anyOf[0].enum;
-  assert.deepEqual(refs, ['R1'], 'the schema lists the rules of the caller only');
+  assert.deepEqual(schemaOf(withRule.bodies[0]), ANSWER_SCHEMA, 'the schema stays the same with rules (REV-113)');
   assert.deepEqual(ruled.findings.map((f) => f.rule_id), [undefined, MIGRATION_RULE.id, undefined], 'R9 of the diff and an unknown id are dropped');
   // The text of the pull request is in the diff, as code under review, after the rules of the caller.
   const pack = packOf(withRule.bodies[0]);

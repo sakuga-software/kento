@@ -23,6 +23,7 @@ import { parseArgs } from 'node:util';
 import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
 import type { Usage } from '../../packages/engine/src/findings.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
+import { requestTokens } from '../../packages/engine/src/providers.ts';
 import { failureCounts, failureKind } from './failures.ts';
 import { mergeSamples } from './merge.ts';
 import { prefilterKeeps } from './prefilter.ts';
@@ -94,8 +95,11 @@ type Review = {
   seconds: number;
   model?: string;
   error?: string;
-  /** REV-68: the tokens of the review, and what its tools used (REVIEW_TOOLS=1). */
-  tokens?: { prompt: number; completion: number; cacheRead: number };
+  /**
+   * REV-68: the tokens of the review, and what its tools used (REVIEW_TOOLS=1). REV-113: the cache
+   * writes by TTL, at Anthropic.
+   */
+  tokens?: { prompt: number; completion: number; cacheRead: number; cacheWrite5m?: number; cacheWrite1h?: number };
   tools?: { rounds: number; calls: number; bytes: number };
   /** REV-20, in passes: the findings of each pass, the passes that failed, and the findings that the check dropped. */
   passes?: { id: string; findings: number; cost: number; error?: string }[];
@@ -108,8 +112,11 @@ type Review = {
   merged?: number;
   /** REV-104, in one pass: the P0 and P1 findings, those with a suggestion that GitHub shows, and those with a patch. */
   fixes?: Fixes;
-  /** REV-108, in one pass at Anthropic: how the model stopped, its thinking, and a request without thinking. */
-  stop?: Pick<Usage, 'stop_reason' | 'thinking_tokens' | 'first_token_ms' | 'first_text_ms' | 'retried_without_thinking'>;
+  /**
+   * REV-108, in one pass at Anthropic: how the model stopped, its thinking, and a request without
+   * thinking. REV-113: the hashes of the system prompt and of the schema, the effort and the thinking.
+   */
+  stop?: Pick<Usage, 'stop_reason' | 'thinking_tokens' | 'first_token_ms' | 'first_text_ms' | 'retried_without_thinking' | 'system_hash' | 'schema_hash' | 'effort' | 'thinking'>;
 };
 type Fixes = { p01: number; suggestions: number; patches: number };
 
@@ -119,8 +126,19 @@ function fixesOf(findings: { severity: string; suggestion_range: [number, number
 }
 type Mode = { level: Level; passes: boolean; samples: number };
 
-function pickStop({ stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking }: Usage): Review['stop'] {
-  return { stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking };
+function pickStop({ stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking, system_hash, schema_hash, effort, thinking }: Usage): Review['stop'] {
+  return { stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking, system_hash, schema_hash, effort, thinking };
+}
+
+/** The tokens of a review. REV-113: the cache writes by TTL, when the provider gives them. */
+function tokensOf(usage: Usage): NonNullable<Review['tokens']> {
+  return {
+    prompt: usage.prompt_tokens ?? 0,
+    completion: usage.completion_tokens ?? 0,
+    cacheRead: usage.cache_read_tokens ?? 0,
+    ...(usage.cache_write_5m_tokens !== undefined ? { cacheWrite5m: usage.cache_write_5m_tokens } : {}),
+    ...(usage.cache_write_1h_tokens !== undefined ? { cacheWrite1h: usage.cache_write_1h_tokens } : {}),
+  };
 }
 
 async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>): Promise<R[]> {
@@ -191,7 +209,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       seconds: Math.round((Date.now() - start) / 1000),
       model: out.usage.model,
       error: failures[0],
-      tokens: { prompt: out.usage.prompt_tokens ?? 0, completion: out.usage.completion_tokens ?? 0, cacheRead: out.usage.cache_read_tokens ?? 0 },
+      tokens: tokensOf(out.usage),
       fixes: fixesOf(out.findings),
       ...(out.usage.stop_reason ? { stop: pickStop(out.usage) } : {}),
       ...(out.toolUse ? { tools: out.toolUse } : {}),
@@ -271,14 +289,8 @@ function parseVerdict(text: string): Verdict {
   return { match: verdict.match === true, confidence: Number(verdict.confidence) || 0, ...(typeof verdict.reasoning === 'string' ? { reasoning: verdict.reasoning } : {}) };
 }
 
-function anthropicCost(usage: Record<string, number | undefined> = {}, factor = 1): number {
-  const cost = costFromTable('anthropic', JUDGE_MODEL, {
-    input: usage.input_tokens ?? 0,
-    output: usage.output_tokens ?? 0,
-    cacheRead: usage.cache_read_input_tokens ?? 0,
-    cacheWrite: usage.cache_creation_input_tokens ?? 0,
-  });
-  return (cost ?? 0) * factor;
+function anthropicCost(usage: Record<string, unknown> = {}, factor = 1): number {
+  return (costFromTable('anthropic', JUDGE_MODEL, requestTokens(usage)) ?? 0) * factor;
 }
 
 const anthropicHeaders = () => ({ 'x-api-key': process.env.ANTHROPIC_API_KEY ?? '', 'anthropic-version': ANTHROPIC_VERSION, 'content-type': 'application/json' });

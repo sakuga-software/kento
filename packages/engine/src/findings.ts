@@ -63,31 +63,6 @@ export const THREAD_VERDICTS = ['refuted', 'upheld'] as const;
 export type ThreadVerdict = { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reason: string; pass?: string };
 
 /**
- * The schema of the verdicts on the answered threads of the pack. The model can give null: a strict
- * schema needs every key in `required`, and a section of the pack must never fail the whole review.
- * The id is a free string: an id that names no thread is ignored (answered.ts).
- */
-export function threadsSchema(refs: readonly string[]) {
-  return {
-    anyOf: [
-      {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', description: `One of ${refs.join(', ')}.` },
-            verdict: { type: 'string', enum: [...THREAD_VERDICTS] },
-            reason: { type: 'string' },
-          },
-          required: ['id', 'verdict', 'reason'],
-          additionalProperties: false,
-        },
-      },
-      { type: 'null' },
-    ],
-  };
-}
-/**
  * The model that answered, its tokens and its cost in dollars. `cost_source` says where the cost
  * comes from (see prices.ts); with `unknown`, the cost is 0 and the review says that it is not known.
  */
@@ -100,6 +75,19 @@ export type Usage = {
   cost_source?: CostSource;
   cache_read_tokens?: number;
   cache_write_tokens?: number;
+  /** REV-113, Anthropic only. The part of `cache_write_tokens` written with the TTL of 5 minutes. */
+  cache_write_5m_tokens?: number;
+  /** REV-113, Anthropic only. The part of `cache_write_tokens` written with the TTL of 1 hour. */
+  cache_write_1h_tokens?: number;
+  /**
+   * REV-113, Anthropic only. Short hashes of the system prompt and of the answer schema: the two
+   * must be the same for every review of a level, or the review misses the prompt cache.
+   */
+  system_hash?: string;
+  schema_hash?: string;
+  /** REV-113, Anthropic only. The effort, and the thinking of each request (`adaptive+disabled`). */
+  effort?: string;
+  thinking?: string;
   /** REV-108, Anthropic only. The `stop_reason` of the request that gave the answer. */
   stop_reason?: string;
   /** REV-108, Anthropic only, when the API gives them: the output tokens of the thinking. */
@@ -123,6 +111,9 @@ export type HunkLines = Map<string, Set<number>>;
  */
 export type Anchors = ChangedLines | ((finding: Finding) => number | null);
 
+/** A reference of the pack (`R1`, `E1`) or null. The engine drops a reference that the pack does not hold. */
+const REFERENCE = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+
 const FINDING_SCHEMA = {
   type: 'object',
   properties: {
@@ -136,29 +127,35 @@ const FINDING_SCHEMA = {
     scenario: { type: 'string' },
     fix: { type: 'string' },
     suggestion: { type: 'string' },
+    rule_id: REFERENCE,
+    follows: REFERENCE,
   },
-  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion'],
+  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion', 'rule_id', 'follows'],
   additionalProperties: false,
 };
+
 /**
- * The answer schema. With the references of the rules of the pack (REV-19), each finding also gives
- * `rule_id`: one of these references, or null. With the references of the answered threads of the
- * pack (REV-71), the answer also gives `threads`: a verdict on each. With the references of the
- * earlier findings of the pack (REV-99), each finding also gives `follows`: one of these references,
- * or null. Without any, the schema stays as before.
+ * REV-71. The verdicts on the answered threads of the pack, or null. The id is a free string: an id
+ * that names no thread is ignored (answered.ts).
  */
-export function answerSchema(ruleRefs: readonly string[] = [], threadRefs: readonly string[] = [], earlierRefs: readonly string[] = []) {
-  if (!ruleRefs.length && !threadRefs.length && !earlierRefs.length) return ANSWER_SCHEMA;
-  const extra: Record<string, unknown> = {};
-  if (ruleRefs.length) extra.rule_id = { anyOf: [{ type: 'string', enum: [...ruleRefs] }, { type: 'null' }] };
-  if (earlierRefs.length) extra.follows = { anyOf: [{ type: 'string', enum: [...earlierRefs] }, { type: 'null' }] };
-  const finding = Object.keys(extra).length
-    ? { ...FINDING_SCHEMA, properties: { ...FINDING_SCHEMA.properties, ...extra }, required: [...FINDING_SCHEMA.required, ...Object.keys(extra)] }
-    : FINDING_SCHEMA;
-  const properties: Record<string, unknown> = { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } };
-  if (!threadRefs.length) return { ...ANSWER_SCHEMA, properties };
-  return { ...ANSWER_SCHEMA, properties: { ...properties, threads: threadsSchema(threadRefs) }, required: [...ANSWER_SCHEMA.required, 'threads'] };
-}
+const THREADS_SCHEMA = {
+  anyOf: [
+    {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          verdict: { type: 'string', enum: [...THREAD_VERDICTS] },
+          reason: { type: 'string' },
+        },
+        required: ['id', 'verdict', 'reason'],
+        additionalProperties: false,
+      },
+    },
+    { type: 'null' },
+  ],
+};
 
 type ObjectSchema = { properties: Record<string, unknown>; required: string[] };
 
@@ -170,6 +167,12 @@ export function withPatch(schema: object): object {
   return { ...answer, properties: { ...answer.properties, findings: { ...answer.properties.findings, items: finding } } };
 }
 
+/**
+ * The answer schema. It is the same for every review of a level (REV-113): Anthropic puts the schema
+ * in the prompt, so a schema that changes from one review to the next misses the prompt cache. The
+ * references of the rules (REV-19), of the earlier findings (REV-99) and of the answered threads
+ * (REV-71) are free strings or null, and the engine drops those that the pack does not hold.
+ */
 export const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
@@ -185,8 +188,9 @@ export const ANSWER_SCHEMA = {
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
+    threads: THREADS_SCHEMA,
   },
-  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review'],
+  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'threads'],
   additionalProperties: false,
 };
 

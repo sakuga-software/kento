@@ -1,7 +1,7 @@
 // REV-20. A review in several passes: each pass reads the same pack from one angle, then a stronger
 // model keeps or drops each finding with its code. The bench (eval/martian) compares it with the
 // review in one pass; no level of production uses it yet.
-import { answerSchema, type Answer, type Finding, type Usage } from './findings.ts';
+import type { Answer, Finding, Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import { askJson, askModel } from './model.ts';
 import { finishReview, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
@@ -93,10 +93,12 @@ export async function reviewInPasses(
 ): Promise<PassesResult> {
   const passes = options.passes ?? BASE_PASSES;
   const prepared = prepareReview(input, options.passConfig);
-  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref), prepared.earlier.map((e) => e.ref));
   // REV-68. One budget for the review: the passes share it.
   const tools = reviewTools(input, options.passConfig);
-  const settled = await Promise.allSettled(passes.map((pass) => askModel(input, options.passConfig, prepared.pack, schema, pass.focus, tools)));
+  // REV-113. The passes send the same pack within seconds: its end carries a cache mark of 5 minutes,
+  // and the focus of each pass follows it.
+  const pack = prepared.parts.map((part, i, all) => (i === all.length - 1 ? { ...part, cache: '5m' as const } : part));
+  const settled = await afterFirstStart(passes, (pass, onStart) => askModel(input, options.passConfig, pack, pass.focus, tools, onStart));
 
   const reports: PassReport[] = [];
   const answers: { pass: Pass; answer: Answer }[] = [];
@@ -144,6 +146,20 @@ export async function reviewInPasses(
     verificationUsage: checked.usage,
     ...(tools ? { toolUse: tools.used } : {}),
   };
+}
+
+/**
+ * REV-113. Sends the first call, then the others when the answer of the first starts, or when it
+ * fails. A cache entry exists only after the answer of its request starts: calls sent at once all
+ * write the system prompt and the pack, and none reads them.
+ */
+export async function afterFirstStart<T, R>(items: readonly T[], call: (item: T, onStart?: () => void) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  if (items.length === 0) return [];
+  const { promise: started, resolve: start } = Promise.withResolvers<void>();
+  const first = call(items[0]!, start);
+  first.then(() => start(), () => start());
+  await started;
+  return Promise.allSettled([first, ...items.slice(1).map((item) => call(item))]);
 }
 
 /**

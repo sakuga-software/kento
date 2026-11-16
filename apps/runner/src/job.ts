@@ -309,16 +309,31 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
     // REV-100. The findings on code that the last reviewed commit already held.
     if (job.reviewed !== undefined) log('info', 'job.seen_code', { jobId: job.id, since: result.seenSince, seen: result.findings.filter((f) => f.seen).length });
     // REV-108. The thinking of an Anthropic model goes to the logs only: the protocol has no key for it.
+    // REV-113. So does the prompt cache: what the review read and wrote, and what keeps a cache hit.
     if (result.usage.stop_reason) {
-      const { model, stop_reason, thinking_tokens, first_token_ms, first_text_ms, retried_without_thinking } = result.usage;
+      const u = result.usage;
       log('info', 'job.model_usage', {
         jobId: job.id,
-        model,
-        stopReason: stop_reason,
-        thinkingTokens: thinking_tokens ?? null,
-        firstTokenMs: first_token_ms ?? null,
-        firstTextMs: first_text_ms ?? null,
-        retriedWithoutThinking: retried_without_thinking ?? null,
+        repo: job.repo.fullName,
+        pr: job.pullRequest.number,
+        reviewLevel: job.level,
+        incremental: result.delta !== null,
+        contextHash: result.contextHash,
+        model: u.model,
+        stopReason: u.stop_reason,
+        thinkingTokens: u.thinking_tokens ?? null,
+        firstTokenMs: u.first_token_ms ?? null,
+        firstTextMs: u.first_text_ms ?? null,
+        retriedWithoutThinking: u.retried_without_thinking ?? null,
+        promptTokens: u.prompt_tokens ?? null,
+        cacheRead: u.cache_read_tokens ?? null,
+        cacheWrite5m: u.cache_write_5m_tokens ?? null,
+        cacheWrite1h: u.cache_write_1h_tokens ?? null,
+        systemHash: u.system_hash ?? null,
+        schemaHash: u.schema_hash ?? null,
+        effort: u.effort ?? null,
+        thinking: u.thinking ?? null,
+        costUsd: u.cost ?? null,
       });
     }
     const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined);

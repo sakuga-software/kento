@@ -214,8 +214,8 @@ const [SECURITY, CONTRACTS] = [BASE_PASSES.find((p) => p.id === 'security')!, BA
 function passesModel(byPass: Record<string, Answer>) {
   const fetch = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
-    const system: string = body.messages[0].content;
-    const pass = [SECURITY, CONTRACTS].find((p) => system.endsWith(`${p.focus}\n`));
+    const user: string = body.messages[1].content;
+    const pass = [SECURITY, CONTRACTS].find((p) => user.endsWith(`${p.focus}\n`));
     const content = JSON.stringify(pass ? byPass[pass.id] : { verdicts: [] });
     return new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.001 } }));
   }) as typeof globalThis.fetch;

@@ -70,7 +70,7 @@ function fakeModel(byPass: Record<string, Answer>, verdicts: { index: number; ke
     const system: string = body.messages[0].content;
     const user: string = body.messages[1].content;
     calls.push({ model: body.model, system, user });
-    const pass = BASE_PASSES.find((p) => system.endsWith(`${p.focus}\n`));
+    const pass = BASE_PASSES.find((p) => user.endsWith(`${p.focus}\n`));
     const id = pass?.id ?? 'check';
     if (failing.includes(id)) return new Response('down', { status: 503 });
     const content = JSON.stringify(pass ? byPass[pass.id] : { verdicts });
@@ -93,14 +93,15 @@ test('runs the three passes of base at once on one pack, then one check that kee
   );
   const result = await reviewInPasses({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {} }, { passConfig, verifyConfig });
 
-  // Three passes with the prompt of the review and their focus at its end, one check with its prompt.
-  const review = readFileSync(join(PROMPTS, 'review.md'), 'utf8').trimEnd();
+  // Three passes with the prompt of the review and the pack, then their focus at the end of the
+  // pack (REV-113): the passes share the prefix of the prompt cache. One check with its prompt.
+  const review = readFileSync(join(PROMPTS, 'review.md'), 'utf8');
   const passCalls = calls.filter((c) => c.model === PASS_MODEL);
   assert.equal(passCalls.length, 3);
+  assert.ok(passCalls.every((c) => c.system === review), 'every pass has the same system prompt');
   for (const pass of BASE_PASSES) {
-    assert.ok(passCalls.some((c) => c.system === `${review}\n\n${pass.focus}\n`), `the pass ${pass.id} has its focus`);
+    assert.ok(passCalls.some((c) => c.user === `${result.pack}\n\n${pass.focus}\n`), `the pass ${pass.id} has its focus after the pack`);
   }
-  assert.ok(passCalls.every((c) => c.user === result.pack), 'every pass reads the same pack');
   const check = calls.filter((c) => c.model === CHECK_MODEL);
   assert.equal(check.length, 1);
   assert.equal(check[0]!.system, readFileSync(join(PROMPTS, 'verify.md'), 'utf8'));

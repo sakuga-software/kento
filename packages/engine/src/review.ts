@@ -1,7 +1,7 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
+import { anchor, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
@@ -9,7 +9,7 @@ import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type Held
 import { inHistory } from './history.ts';
 import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
-import { askModel, type ModelClient } from './model.ts';
+import { askModel, type MessagePart, type ModelClient } from './model.ts';
 import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
@@ -130,6 +130,8 @@ export type ReviewResult = {
   droppedAsSettled: Finding[];
   /** REV-100. The last reviewed commit that the review compared with, or null (first review, force-push). */
   seenSince: string | null;
+  /** REV-113. A short hash of the rules, the imports and the context of the pack (pack.ts). */
+  contextHash: string;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -151,8 +153,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
 
 async function askAndFinish(input: ReviewInput, config: LevelConfig, prepared: PreparedReview): Promise<ReviewResult> {
   const tools = reviewTools(input, config);
-  const schema = answerSchema(prepared.rules.map((r) => r.ref), prepared.threads.map((t) => t.ref), prepared.earlier.map((e) => e.ref));
-  const { answer, usage } = await askModel(input, config, prepared.pack, schema, undefined, tools);
+  const { answer, usage } = await askModel(input, config, prepared.parts, undefined, tools);
   return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
 }
 
@@ -179,6 +180,9 @@ export function reviewTools(input: ReviewInput, config: LevelConfig): RepoTools 
 export type PreparedReview = {
   base: string;
   pack: string;
+  /** REV-113. The pack in the parts that a prompt cache can mark. */
+  parts: MessagePart[];
+  contextHash: string;
   skipped: string[];
   rules: PackedRule[];
   lines: ChangedLines;
@@ -218,13 +222,15 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
-  const { pack, skipped, rules } =
+  const { pack, parts, skipped, rules, contextHash } =
     delta || earlier
       ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
   return {
     base,
     pack,
+    parts,
+    contextHash,
     skipped,
     rules,
     lines,
@@ -246,7 +252,7 @@ export function finishReview<F extends Finding>(
   answer: Answer & { findings: F[] },
   usage: Usage,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen } = prepared;
+  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -352,6 +358,7 @@ export function finishReview<F extends Finding>(
     followed: { byModel: linked.byModel, byNet: linked.byNet },
     droppedAsSettled: linked.dropped,
     seenSince: seen?.since ?? null,
+    contextHash,
   };
 }
 

@@ -1,9 +1,10 @@
 // The providers of models: one call that gives an answer held by a JSON schema, its tokens and its
 // cost. OpenRouter, Anthropic, a server with the API of OpenAI, and Ollama each have their adapter.
+import { createHash } from 'node:crypto';
 import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
-import { costFromTable } from './prices.ts';
+import { costFromTable, type Tokens } from './prices.ts';
 import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
 /** The API of OpenRouter. A caller can give another base with the same API, for example a proxy. */
@@ -48,6 +49,12 @@ export function refusedKey(error: unknown): boolean {
 
 export type Schema = { name: string; schema: object };
 
+/**
+ * REV-113. A part of the user message. `cache`: the part ends a prefix that the next requests send
+ * again within this time, so a provider with a prompt cache marks its end with this TTL.
+ */
+export type MessagePart = { text: string; cache?: '1h' | '5m' };
+
 /** What an adapter needs for one call. */
 export type Call = {
   apiKey: string | undefined;
@@ -56,9 +63,17 @@ export type Call = {
   model: string;
   config: LevelConfig;
   prompt: string;
+  /** The user message: the text of `parts`, joined. */
   message: string;
+  /** REV-113. The parts of `message`, for the Anthropic adapter. */
+  parts?: readonly MessagePart[];
   schema: Schema;
   timeoutMs: number;
+  /**
+   * REV-113. Called when the answer of the first request starts: a request that is sent after it
+   * can read its prompt cache. Anthropic only.
+   */
+  onStart?: () => void;
   /**
    * REV-68. The tools of the review, or none. With tools, a call is a loop: the model may ask for
    * tools while `startRound` allows it, then must answer. The time limit covers the whole loop, and
@@ -129,7 +144,7 @@ function count(value: unknown): number | undefined {
 }
 
 /** The cost of a call: the one that the provider gave, else the table, else 0 and `unknown`. */
-function priced(kind: ProviderKind, model: string, tokens: { input: number; output: number; cacheRead?: number; cacheWrite?: number }, given?: unknown): { cost: number; cost_source: CostSource } {
+function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown): { cost: number; cost_source: CostSource } {
   if (typeof given === 'number' && Number.isFinite(given) && given >= 0) return { cost: given, cost_source: 'provider' };
   if (kind === 'ollama') return { cost: 0, cost_source: 'free' };
   const fromTable = costFromTable(kind, model, tokens);
@@ -271,12 +286,28 @@ export function thinkingWaitMs(timeoutMs: number, thinkingAt: number): number | 
 type Block = { type: string; cache_control?: object; [key: string]: unknown };
 type Message = { model?: unknown; stop_reason?: unknown; stop_details?: { category?: string }; content: Block[]; usage: Record<string, any> };
 
+/**
+ * REV-113. The cache mark of the system prompt. A read renews the TTL. In production, 97 % of the
+ * reviews come less than 1 hour after the last review of the same model, and 80 % less than 5
+ * minutes. A mark with the TTL of 1 hour must come before a mark with the TTL of 5 minutes: the
+ * system prompt comes first, so it takes 1 hour, and the pack can then use either TTL.
+ */
+const SYSTEM_MARK = { type: 'ephemeral', ttl: '1h' } as const;
+/** With tools, the mark of the last block. It moves at each round, so it keeps the TTL of 5 minutes. */
+const TAIL_MARK = { type: 'ephemeral' } as const;
+/** The API takes 4 cache marks at most: the system prompt, the pack, and the last block with tools. */
+export const MAX_PACK_MARKS = 2;
+
 /** One request with the conversation of a call, and the request without thinking when it comes. */
 type Run = {
   text: string;
   stopReason: unknown;
   model: string;
-  tokens: { input: number; cacheRead: number; cacheWrite: number; output: number; thinking?: number };
+  /** The thinking of the requests: `adaptive` (the default of the model) or `disabled`. */
+  thinking: string;
+  tokens: Required<Tokens> & { thinking?: number };
+  /** The sum of the cost of each request, from the table. Null when the table does not know a model. */
+  cost: number | null;
   /** From the start of the call: the first content block of any type, and the first text block. */
   firstTokenMs?: number;
   firstTextMs?: number;
@@ -284,20 +315,24 @@ type Run = {
   late: boolean;
 };
 
+const shortHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12);
+
 /**
  * The Messages API of Anthropic, with `stream`. The answer schema goes in `output_config.format`:
  * Claude Opus 5.5 and Sonnet 5.5 refuse a forced tool (`tool_choice` `tool` answers 400), and the
- * structured output holds the answer to the schema in the same way. The system prompt is the same
- * for every review of a level: it carries the cache mark, so the next review with the same model
- * within 5 minutes reads it from the cache. Without tools, the pack changes with each review and is
- * sent once: it carries no mark, since a cache write costs 1.25 times the input and would never be
- * read. With tools (REV-68), each round sends it again, so the last block of each request carries
- * the mark (markLastBlock).
+ * structured output holds the answer to the schema in the same way.
+ *
+ * REV-113. The API puts the schema in the system prompt. The system prompt and the schema are the
+ * same for every review of a level, and the system prompt carries a cache mark. The docs of the
+ * repository carry a mark too (MessagePart): the next review of the repository with the same model
+ * within 1 hour reads them from the cache. In a review of one pass, the rest of the pack carries no
+ * mark: a cache write costs more than the input, and nothing would read it. With tools (REV-68), each round sends the
+ * conversation again, so the last block of each request carries a mark too (markLastBlock).
  *
  * REV-108. An answer cut at `max_tokens`, or a thinking longer than thinkingWaitMs, gets one more
- * request without thinking (thinkingOff), in the time that is left. The request without thinking
- * has no cache mark on the pack: at a rate of 8 %, a cache write on each review costs more than it
- * saves.
+ * request without thinking (thinkingOff), in the time that is left. The change of thinking empties
+ * the cache of the messages, so that request cannot read the pack that the first request wrote.
+ * It has no mark on the pack: nothing reads what it would write.
  */
 async function callAnthropic<T>(call: Call): Promise<Called<T>> {
   const signal = AbortSignal.timeout(call.timeoutMs);
@@ -307,9 +342,11 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
   const cause = first.late ? 'no_answer_in_time' : first.stopReason === 'max_tokens' ? 'max_tokens' : null;
   const runs = off && cause ? [first, await runAgain(call, signal, started, off, cause)] : [first];
   const last = runs.at(-1)!;
-  const sum = (key: 'input' | 'cacheRead' | 'cacheWrite' | 'output') => runs.reduce((total, run) => total + run.tokens[key], 0);
+  const sum = (key: keyof Required<Tokens>) => runs.reduce((total, run) => total + run.tokens[key], 0);
   const thinking = runs.flatMap((run) => (run.tokens.thinking === undefined ? [] : [run.tokens.thinking]));
-  const tokens = { input: sum('input'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite'), output: sum('output') };
+  const tokens = { input: sum('input'), cacheRead: sum('cacheRead'), cacheWrite: sum('cacheWrite'), cacheWrite1h: sum('cacheWrite1h'), output: sum('output') };
+  const written = tokens.cacheWrite + tokens.cacheWrite1h;
+  const cost = runs.some((run) => run.cost === null) ? null : runs.reduce((total, run) => total + run.cost!, 0);
   const answer = parseAnthropic<T>(last.text, last.stopReason, last.tokens.output, runs.length > 1);
   return {
     answer,
@@ -317,11 +354,17 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
       model: last.model,
       provider: 'Anthropic',
       // `input_tokens` is the part that the cache did not hold: the prompt is the sum.
-      prompt_tokens: tokens.input + tokens.cacheRead + tokens.cacheWrite,
+      prompt_tokens: tokens.input + tokens.cacheRead + written,
       completion_tokens: tokens.output,
       cache_read_tokens: tokens.cacheRead,
-      cache_write_tokens: tokens.cacheWrite,
-      ...priced('anthropic', last.model, tokens),
+      cache_write_tokens: written,
+      cache_write_5m_tokens: tokens.cacheWrite,
+      cache_write_1h_tokens: tokens.cacheWrite1h,
+      ...(cost === null ? { cost: 0, cost_source: 'unknown' as const } : { cost: Math.round(cost * 1_000_000) / 1_000_000, cost_source: 'table' as const }),
+      system_hash: shortHash(call.prompt),
+      schema_hash: shortHash(JSON.stringify(call.schema.schema)),
+      effort: call.config.effort,
+      thinking: runs.map((run) => run.thinking).join('+'),
       ...(typeof last.stopReason === 'string' ? { stop_reason: last.stopReason } : {}),
       ...(thinking.length ? { thinking_tokens: thinking.reduce((a, b) => a + b, 0) } : {}),
       ...(first.firstTokenMs !== undefined ? { first_token_ms: first.firstTokenMs } : {}),
@@ -332,7 +375,7 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
 }
 
 /** The request without thinking. Its failure names the cause of the second request. */
-async function runAgain(call: Call, signal: AbortSignal, started: number, thinking: object, cause: string): Promise<Run> {
+async function runAgain(call: Call, signal: AbortSignal, started: number, thinking: { type: string }, cause: string): Promise<Run> {
   try {
     return await runAnthropic(call, signal, started, false, thinking);
   } catch (error) {
@@ -341,15 +384,40 @@ async function runAgain(call: Call, signal: AbortSignal, started: number, thinki
   }
 }
 
+/**
+ * REV-113. The user message as text blocks, one for each part. With `marks`, a part with `cache`
+ * carries a cache mark with its TTL, at most MAX_PACK_MARKS of them: the last ones. A mark of 1 hour
+ * after a mark of 5 minutes becomes a mark of 5 minutes, as the API asks. The API refuses an empty
+ * text block.
+ */
+export function userContent(parts: readonly MessagePart[], marks: boolean): Block[] {
+  const kept = parts.filter((part) => part.text.trim());
+  const cached = kept.flatMap((part, index) => (part.cache ? [index] : []));
+  const marked = new Set(marks ? cached.slice(-MAX_PACK_MARKS) : []);
+  let short = false;
+  return kept.map((part, index) => {
+    if (!marked.has(index)) return { type: 'text', text: part.text };
+    short ||= part.cache === '5m';
+    return { type: 'text', text: part.text, cache_control: short ? { ...TAIL_MARK } : { ...SYSTEM_MARK } };
+  });
+}
+
 /** `stopLongThinking`: the call stops a thinking longer than thinkingWaitMs. */
-async function runAnthropic(call: Call, signal: AbortSignal, started: number, stopLongThinking: boolean, thinking?: object): Promise<Run> {
-  const messages: { role: string; content: string | Block[] }[] = [
-    { role: 'user', content: call.tools ? [{ type: 'text', text: call.message }] : call.message },
-  ];
-  const run: Run = { text: '', stopReason: undefined, model: call.model, tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, late: false };
+async function runAnthropic(call: Call, signal: AbortSignal, started: number, stopLongThinking: boolean, thinking?: { type: string }): Promise<Run> {
+  const messages: { role: string; content: Block[] }[] = [{ role: 'user', content: userContent(call.parts ?? [{ text: call.message }], !thinking) }];
+  const run: Run = {
+    text: '',
+    stopReason: undefined,
+    model: call.model,
+    thinking: thinking?.type ?? 'adaptive',
+    tokens: { input: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 0 },
+    cost: 0,
+    late: false,
+  };
+  let tail: Block | undefined;
   for (let round = 0; ; round++) {
     const offer = offerTools(call, started, round);
-    if (call.tools) markLastBlock(messages);
+    if (call.tools) tail = markLastBlock(messages, tail);
     const late = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const message: Message = { content: [], usage: {} };
@@ -365,7 +433,7 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
           model: call.model,
           max_tokens: call.config.maxTokens,
           stream: true,
-          system: [{ type: 'text', text: call.prompt, cache_control: { type: 'ephemeral' } }],
+          system: [{ type: 'text', text: call.prompt, cache_control: { ...SYSTEM_MARK } }],
           messages,
           ...(thinking ? { thinking } : {}),
           // `none` on the last request: the conversation holds tool calls, so the tools stay declared.
@@ -375,7 +443,7 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
         signal: AbortSignal.any([signal, late.signal]),
       });
       if (!response.ok) throw await refused(response, 'Anthropic');
-      await readMessage(response, message, (type) => {
+      const onBlock = (type: string) => {
         const now = Date.now() - started;
         run.firstTokenMs ??= now;
         if (type === 'thinking' || type === 'redacted_thinking') {
@@ -385,7 +453,8 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
         }
         clearTimeout(timer);
         if (type === 'text') run.firstTextMs ??= now;
-      });
+      };
+      await readMessage(response, message, onBlock, call.onStart);
     } catch (error) {
       if (!late.signal.aborted || signal.aborted) throw error;
       run.late = true;
@@ -394,10 +463,10 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
     }
     if (typeof message.model === 'string') run.model = message.model;
     // The output tokens of a stopped request come only at its end: the cost does not count them.
-    run.tokens.input += count(message.usage.input_tokens) ?? 0;
-    run.tokens.cacheRead += count(message.usage.cache_read_input_tokens) ?? 0;
-    run.tokens.cacheWrite += count(message.usage.cache_creation_input_tokens) ?? 0;
-    run.tokens.output += count(message.usage.output_tokens) ?? 0;
+    const request = requestTokens(message.usage);
+    for (const key of Object.keys(request) as (keyof Required<Tokens>)[]) run.tokens[key] += request[key];
+    const cost = costFromTable('anthropic', run.model, request);
+    run.cost = run.cost === null || cost === null ? null : run.cost + cost;
     const thought = count(message.usage.output_tokens_details?.thinking_tokens);
     if (thought !== undefined) run.tokens.thinking = (run.tokens.thinking ?? 0) + thought;
     if (run.late) return run;
@@ -427,13 +496,32 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
 }
 
 /**
+ * REV-113. The tokens of one request. `cache_creation` splits the cache writes by TTL. Without it,
+ * every write counts at the TTL of 5 minutes.
+ */
+export function requestTokens(usage: Record<string, any>): Required<Tokens> {
+  const written = count(usage.cache_creation_input_tokens) ?? 0;
+  const fiveMinutes = count(usage.cache_creation?.ephemeral_5m_input_tokens);
+  const oneHour = count(usage.cache_creation?.ephemeral_1h_input_tokens);
+  const split = fiveMinutes !== undefined || oneHour !== undefined;
+  return {
+    input: count(usage.input_tokens) ?? 0,
+    cacheRead: count(usage.cache_read_input_tokens) ?? 0,
+    cacheWrite: split ? (fiveMinutes ?? 0) : written,
+    cacheWrite1h: split ? (oneHour ?? 0) : 0,
+    output: count(usage.output_tokens) ?? 0,
+  };
+}
+
+/**
  * Fills `message` from the answer: the events of the stream, or one JSON body from a server that
  * does not stream. `message` keeps what came before an error. `onBlock` gets the type of each
- * content block when it starts.
+ * content block when it starts. `onStart` runs when the answer starts.
  */
-async function readMessage(response: Response, message: Message, onBlock: (type: string) => void): Promise<void> {
+async function readMessage(response: Response, message: Message, onBlock: (type: string) => void, onStart?: () => void): Promise<void> {
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
     const out = await response.json();
+    onStart?.();
     Object.assign(message, out, { content: Array.isArray(out.content) ? out.content : [], usage: out.usage ?? {} });
     return;
   }
@@ -441,6 +529,7 @@ async function readMessage(response: Response, message: Message, onBlock: (type:
   for await (const event of serverEvents(response.body)) {
     switch (event?.type) {
       case 'message_start':
+        onStart?.();
         message.model = event.message?.model;
         addUsage(message.usage, event.message?.usage);
         break;
@@ -509,16 +598,16 @@ async function* serverEvents(body: ReadableStream<Uint8Array> | null): AsyncGene
 }
 
 /**
- * With tools, each request sends the conversation again. The cache mark goes on its last block, and
- * only there: the next request reads the whole conversation up to it from the cache, and the API
- * takes at most four marks.
+ * With tools, each request sends the conversation again. The last block carries a cache mark: the
+ * next request reads the whole conversation up to it from the cache. The call removes the mark of
+ * the previous round (`tail`) and keeps the marks of the pack. It returns the block that it marked.
  */
-function markLastBlock(messages: { content: string | { cache_control?: object }[] }[]): void {
-  for (const message of messages) {
-    if (Array.isArray(message.content)) for (const block of message.content) delete block.cache_control;
-  }
-  const last = messages.at(-1)?.content;
-  if (Array.isArray(last) && last.length) last[last.length - 1]!.cache_control = { type: 'ephemeral' };
+function markLastBlock(messages: { content: Block[] }[], tail: Block | undefined): Block | undefined {
+  if (tail) delete tail.cache_control;
+  const last = messages.at(-1)?.content.at(-1);
+  if (!last || last.cache_control) return undefined;
+  last.cache_control = { ...TAIL_MARK };
+  return last;
 }
 
 // --- A server with the API of OpenAI -----------------------------------------------------------

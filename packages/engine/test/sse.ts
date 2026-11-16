@@ -1,7 +1,8 @@
 // REV-108. A stream of the Messages API of Anthropic, as server-sent events, for the tests.
 
 type Block = { type: string; [key: string]: unknown };
-type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; output?: number; thinking?: number };
+/** `cacheWrite1h`: REV-113, the part of `cacheWrite` with the TTL of 1 hour, in `cache_creation`. */
+type Usage = { input?: number; cacheRead?: number; cacheWrite?: number; cacheWrite1h?: number; output?: number; thinking?: number };
 
 /**
  * A response with these events, cut in chunks of 7 bytes so that an event spans several chunks.
@@ -22,7 +23,25 @@ export function sseResponse(events: object[], signal?: AbortSignal | null, hang 
 /** The start of a message: the input tokens come here. */
 export function startEvents(model: string, usage: Usage = {}): object[] {
   return [
-    { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model, content: [], usage: { input_tokens: usage.input ?? 0, cache_read_input_tokens: usage.cacheRead ?? 0, cache_creation_input_tokens: usage.cacheWrite ?? 0, output_tokens: 1 } } },
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        model,
+        content: [],
+        usage: {
+          input_tokens: usage.input ?? 0,
+          cache_read_input_tokens: usage.cacheRead ?? 0,
+          cache_creation_input_tokens: usage.cacheWrite ?? 0,
+          ...(usage.cacheWrite1h !== undefined
+            ? { cache_creation: { ephemeral_5m_input_tokens: (usage.cacheWrite ?? 0) - usage.cacheWrite1h, ephemeral_1h_input_tokens: usage.cacheWrite1h } }
+            : {}),
+          output_tokens: 1,
+        },
+      },
+    },
     { type: 'ping' },
   ];
 }
