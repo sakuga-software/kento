@@ -26,9 +26,9 @@ const bug: ReviewFinding = {
   severity: 'major',
   category: 'bug',
   confidence: 90,
-  title: 'La valeur du formulaire n’est pas validée',
-  scenario: 'Une valeur vide passe.',
-  fix: 'Valider la valeur.',
+  title: 'The value of the form is not validated',
+  scenario: 'An empty value passes.',
+  fix: 'Validate the value.',
   suggestion: '',
   anchor: 12,
   blocking: true,
@@ -47,8 +47,8 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.01,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'Résumé.',
-    risk: 'Risque.',
+    summary: 'Summary.',
+    risk: 'Risk.',
     diagram: null,
     deeperReview: null,
     findings: [bug],
@@ -112,7 +112,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     await publish(payload())
     let [thread] = fake.botThreads()
     // The reply says it in words that the pattern of the webhook does not read.
-    reply(thread!.id, 'alex', 'Je ne retiendrais pas ce constat : le schéma valide déjà la valeur.')
+    reply(thread!.id, 'alex', 'I would not keep this finding: the schema already validates the value.')
 
     let outcome = await publish(payload({ head: HEAD2, refutedThreads: [`PRRT_${thread!.id}`] }))
 
@@ -169,7 +169,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     let { fake: other, publish: publishOther, reply: replyOther, hints: hintsOther, rows: rowsOther, claimed: claimedOther } = setup()
     await publishOther(payload())
     let [second] = other.botThreads()
-    replyOther(second!.id, 'alex', 'Je ne retiendrais pas ce constat.')
+    replyOther(second!.id, 'alex', 'I would not keep this finding.')
     claimedOther.add(rowsOther[0]!.id!)
     let taken = await publishOther(payload({ head: HEAD2, refutedThreads: [`PRRT_${second!.id}`] }))
     assert.equal(taken.hinted, 0, 'the webhook posted it, or is posting it')
@@ -182,7 +182,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     let { fake, publish, reply, hints, rows } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    reply(thread!.id, 'alex', 'Je ne retiendrais pas ce constat.')
+    reply(thread!.id, 'alex', 'I would not keep this finding.')
     // The ledger forgets the row: the thread is one of an earlier release.
     rows.length = 0
     let outcome = await publish(payload({ head: HEAD2, findings: [], refutedThreads: [`PRRT_${thread!.id}`] }))

@@ -9,7 +9,7 @@ import { REASON_MAX } from './store.ts'
 
 /** The days of the window. */
 export const PRECISION_DAYS = 30
-/** The closed findings under which a share would say nothing: the screen shows « n = 9 of 10 ». */
+/** The closed findings under which a share would say nothing: the screen shows "n = 9 of 10". */
 export const PRECISION_MIN = 10
 
 export interface Precision {
@@ -131,7 +131,7 @@ export async function precisionReport(sql: postgres.Sql, orgId: string, limit = 
     from closed where rule_title is not null group by rule_id, rule_title, rule_repo
     union all
     -- A dismissal with no reason (an empty one, or one of an earlier release) has its own group: key null.
-    -- « Off topic » and « off topic » are one reason: the group goes by the lower case, and shows
+    -- "Off topic" and "off topic" are one reason: the group goes by the lower case, and shows
     -- the first of its spellings. The link of the list compares the same way (screen.ts).
     select 'reason', min(status_reason), null, null, 0::bigint, count(*) from closed where status = 'dismissed' group by lower(status_reason)`
 
@@ -171,7 +171,7 @@ export async function repoPrecisions(sql: postgres.Sql, orgId: string, repoIds: 
   return new Map(rows.map((r) => [r.repoId, precisionOf(Number(r.fixed), Number(r.dismissed))]))
 }
 
-/** « 82% », or « n = 9 of 10 » under PRECISION_MIN closed findings. */
+/** "82%", or "n = 9 of 10" under PRECISION_MIN closed findings. */
 export function precisionLabel(precision: Precision): string {
   if (precision.rate === null) return `n = ${precision.closed} of ${PRECISION_MIN}`
   return `${Math.round(precision.rate * 100)}%`

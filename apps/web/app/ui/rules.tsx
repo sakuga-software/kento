@@ -27,7 +27,7 @@ export function isRuleNotice(value: unknown): value is RuleNotice {
   return typeof value === 'string' && Object.hasOwn(RULE_NOTICES, value)
 }
 
-/** A form of a rule sent back with its errors. `ruleId` null: the form « New rule ». */
+/** A form of a rule sent back with its errors. `ruleId` null: the form "New rule". */
 export interface RuleFormState {
   ruleId: string | null
   values: Record<string, string>
@@ -47,14 +47,14 @@ export interface RulesListProps {
   noticeRule: string | null
 }
 
-/** « disabled by alex on 30 Oct at 10:12 ». */
+/** "disabled by alex on 30 Oct at 10:12". */
 export function disabledLine(rule: Pick<RuleView, 'disabledBy' | 'disabledAt'>): string {
   let by = rule.disabledBy ? ` by ${rule.disabledBy}` : ''
   let at = rule.disabledAt ? ` ${when(rule.disabledAt)}` : ''
   return `disabled${by}${at}`
 }
 
-/** « all paths », or the first patterns. */
+/** "all paths", or the first patterns. */
 function pathsSummary(paths: readonly string[]): string {
   if (paths.length === 0) return 'all paths'
   if (paths.length <= 2) return paths.join(', ')

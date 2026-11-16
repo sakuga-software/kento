@@ -1,5 +1,4 @@
-// REV-114. Kentō writes in English since REV-114. The threads of the pull requests before the deploy
-// hold the French comments, and the review must still read them, with no second thread.
+// The open threads of an earlier review that has no row: the review adopts them, with no second thread.
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
@@ -11,15 +10,11 @@ import { adoptThreads, matchFindings, type BotThread } from './lifecycle.ts'
 
 const PATH = 'src/auth.ts'
 
-// The comment of a P0 security finding as Kentō posted it before REV-114.
-const FRENCH_COMMENT = [
-  '<img alt="P0" src="https://review.sakuga.dev/assets/pr/p0.v1.svg"> <img alt="sécurité" src="https://review.sakuga.dev/assets/pr/securite.v1.svg"> **Le jeton expiré est accepté** `#3cf454`',
+// The comment of a P0 security finding of an earlier release, under another title than the finding of today.
+const EARLIER_COMMENT = [
+  '<img alt="P0" src="https://review.sakuga.dev/assets/pr/p0.v2.svg"> <img alt="security" src="https://review.sakuga.dev/assets/pr/security.v2.svg"> **An expired token gets through** `#3cf454`',
   '',
-  'Un jeton expiré passe la vérification.',
-  '',
-  '**Correction :** Comparer exp à Date.now().',
-  '',
-  '<sub>Constat faux : `@kento-review reject <cause>` en réponse dans ce fil. [Les commandes de Kentō](https://review.sakuga.dev/docs/commandes)</sub>',
+  'An expired token passes the check.',
   '',
   '<!-- sakuga-review:finding 3cf4541234ab -->',
 ].join('\n')
@@ -47,35 +42,34 @@ function finding(over: Partial<ReviewFinding> = {}): ReviewFinding {
   }
 }
 
-describe('the threads of the pull requests before REV-114', () => {
-  it('adopts a French comment: its title, its priority and its security badge', () => {
-    let [adopted] = adoptThreads([], [thread(FRENCH_COMMENT)])
-    assert.equal(adopted?.title, 'Le jeton expiré est accepté')
+describe('the threads of an earlier review', () => {
+  it('adopts a comment: its title, its priority and its security badge', () => {
+    let [adopted] = adoptThreads([], [thread(EARLIER_COMMENT)])
+    assert.equal(adopted?.title, 'An expired token gets through')
     assert.equal(adopted?.severity, 'critical')
     assert.equal(adopted?.category, 'security')
   })
 
-  it('reads the French security badge in text too', () => {
-    let [adopted] = adoptThreads([], [thread(FRENCH_COMMENT.replace(/<img alt="P0"[^>]*> <img alt="sécurité"[^>]*>/, '`P0` `sécurité`'))])
-    assert.equal(adopted?.title, 'Le jeton expiré est accepté')
+  it('reads the security badge in text too', () => {
+    let [adopted] = adoptThreads([], [thread(EARLIER_COMMENT.replace(/<img alt="security"[^>]*>/, '`security`'))])
     assert.equal(adopted?.category, 'security')
   })
 
-  it('adopts an English comment of today', () => {
+  it('adopts a comment of today', () => {
     let body = inlineBody(finding() as never, false, 'https://review.sakuga.dev/docs/commands', 'text')
     let [adopted] = adoptThreads([], [thread(body)])
     assert.equal(adopted?.title, 'Expired token is accepted')
     assert.equal(adopted?.category, 'security')
   })
 
-  // The key and the fingerprint hash the title: an English title does not match a French one. The
+  // The key and the fingerprint hash the title: a new title does not match the earlier one. The
   // open thread a few lines away carries the finding, so the review opens no second thread.
-  it('carries an English finding on the open thread of the same defect in French, with no new thread', () => {
-    let threads = [thread(FRENCH_COMMENT)]
+  it('carries a finding on the open thread of the same defect under another title, with no new thread', () => {
+    let threads = [thread(EARLIER_COMMENT)]
     let stored = adoptThreads([], threads)
-    let english = finding()
-    assert.notEqual(findingKey(english as never), stored[0]!.key)
-    let { matches, unmatched } = matchFindings([english], stored, threads)
+    let renamed = finding()
+    assert.notEqual(findingKey(renamed as never), stored[0]!.key)
+    let { matches, unmatched } = matchFindings([renamed], stored, threads)
     assert.equal(matches[0]?.stored, stored[0])
     assert.equal(matches[0]?.carrier?.commentId, 101)
     assert.deepEqual(unmatched, [])

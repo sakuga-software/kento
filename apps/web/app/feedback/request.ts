@@ -11,8 +11,6 @@ export const FEEDBACK_TEXT_MAX = 4000
 // marker of a comment from a quote.
 const OPENING = 'Kentō reviewed this PR'
 const ASK = 'Your opinion on these reviews'
-// REV-114. The parts of the French request, which the pull requests before the deploy hold.
-const FRENCH_PARTS = ['Kentō a relu cette PR', 'Ton avis sur ces reviews']
 
 /** Hidden in the request: the comment of the App that asks. */
 export const FEEDBACK_MARKER = '<!-- kento:feedback-request -->'
@@ -52,7 +50,7 @@ const flat = (text: string) => text.replaceAll('`', '').replace(/\s+/g, ' ').tri
 /** The comment quotes the request for feedback, in full or in part. */
 export function quotesRequest(body: string): boolean {
   let quoted = flat(split(body).quoted.join(' '))
-  return [OPENING, ASK, ...FRENCH_PARTS].some((part) => quoted.includes(part))
+  return [OPENING, ASK].some((part) => quoted.includes(part))
 }
 
 /** The text of a reply without its quotes, trimmed. Empty when the reply is only a quote. */

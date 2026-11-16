@@ -30,7 +30,7 @@ export interface AuthDependencies {
   store: AuthStore
   lookupRole: LookupRole
   now?: () => number
-  /** REV-32. The page of GitHub that installs the App on an org, for « Access refused ». */
+  /** REV-32. The page of GitHub that installs the App on an org, for "Access refused". */
   installUrl?: string | null
 }
 
@@ -62,14 +62,14 @@ export interface DashboardDependencies {
   githubUrl: string
   /** Reads the head of a pull request before a retry. Null without the GitHub App: the jobs of the database decide alone. */
   readPullRequest: ReadPullRequest | null
-  /** KENTO_PROVIDER_API_KEY is set: the list « Getting started » counts it as a provider (REV-26). */
+  /** KENTO_PROVIDER_API_KEY is set: the list "Getting started" counts it as a provider (REV-26). */
   serviceKey?: boolean
 }
 
-/** The section « Providers et clés » of the settings (REV-11). */
+/** The section "Providers and keys" of the settings (REV-11). */
 export interface ProvidersDependencies {
   store: ProvidersStore
-  /** « Tester »: one call to the provider with its key. */
+  /** "Test": one call to the provider with its key. */
   probe: Probe
   /** KENTO_SECRETS_KEY is set. */
   secretsConfigured: boolean
@@ -112,8 +112,8 @@ export interface UiDependencies {
   repoConfig?: RepoConfigDependencies | null
   dashboard?: DashboardDependencies | null
   orgSettings?: OrgSettingsDependencies | null
-  /** REV-19. The rules of the repositories and of the org. Null: the tab Règles says « Bientôt ». */
+  /** REV-19. The rules of the repositories and of the org. Null: the tab Rules says "Soon". */
   rules?: RulesStore | null
-  /** REV-21. The assignment rules of the repositories. Null: the tab Assignation says « Bientôt ». */
+  /** REV-21. The assignment rules of the repositories. Null: the tab Assignment says "Soon". */
   assignment?: AssignmentStore | null
 }

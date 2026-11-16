@@ -1,6 +1,6 @@
 // REV-99. A finding that the runner linked to an earlier finding (`follows`) goes in the thread of
 // that finding: Kentō answers in it, opens it again when it was resolved, and opens no new thread. A
-// defect that no earlier finding names still gets its own thread. The titles are those of
+// defect that no earlier finding names still gets its own thread. The titles translate those of
 // gallery-app#62 (2026-11-08).
 import { findingKey } from '@sakuga-review/engine/findings'
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
@@ -27,9 +27,9 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'major',
     category: 'bug',
     confidence: 90,
-    title: 'Ligne écrite avant Stripe puis rollback sur erreur Stripe',
-    scenario: 'La ligne est écrite, puis Stripe refuse.',
-    fix: 'Écrire après Stripe.',
+    title: 'Row written before Stripe, then rolled back on a Stripe error',
+    scenario: 'The row is written, then Stripe refuses.',
+    fix: 'Write after Stripe.',
     suggestion: '',
     anchor: 372,
     blocking: true,
@@ -38,13 +38,13 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
   }
 }
 
-/** #c7f3ec, then #ad9b57 that the runner linked to it. */
+/** The first finding, then a finding that the runner linked to it. */
 const rowBeforeStripe = finding()
 const rowNotUndone = finding({
   line: 395,
   start_line: 395,
   anchor: 395,
-  title: 'Écritures Stripe non annulées si le commit échoue ou si la base échoue sur échéancier existant',
+  title: 'Stripe writes not undone if the commit fails or if the database fails on an existing schedule',
   follows: findingKey(rowBeforeStripe),
 })
 
@@ -60,8 +60,8 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.12,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'Résumé.',
-    risk: 'Risque.',
+    summary: 'Summary.',
+    risk: 'Risk.',
     diagram: null,
     deeperReview: null,
     findings: [rowBeforeStripe],
@@ -122,7 +122,7 @@ describe('a finding that follows an earlier finding (REV-99)', () => {
     let replies = fake.repliesTo(thread!.id)
     assert.equal(replies.length, 1)
     assert.match(replies[0]!.body, /^The review of commit `222222222` still finds this finding\./)
-    assert.match(replies[0]!.body, /\*\*Écritures Stripe non annulées si le commit échoue/)
+    assert.match(replies[0]!.body, /\*\*Stripe writes not undone if the commit fails/)
     assert.match(replies[0]!.body, new RegExp(`<!-- kento:variant ${HEAD2} ${findingKey(rowNotUndone)} -->`))
     assert.equal(memory.rows.length, 1, 'one defect, one finding')
     assert.equal(memory.rows[0]!.githubCommentId, thread!.id)
@@ -165,7 +165,7 @@ describe('a finding that follows an earlier finding (REV-99)', () => {
   it('guard: a defect that follows nothing gets its own thread, in the same review', async () => {
     let { fake, publish, memory } = setup()
     await publish(payload())
-    let unrelated = finding({ line: 120, start_line: 120, anchor: 120, title: 'Le refus de Stripe est compté comme un succès dans le journal' })
+    let unrelated = finding({ line: 120, start_line: 120, anchor: 120, title: 'The Stripe refusal counts as a success in the log' })
 
     let outcome = await publish(payload({ head: HEAD2, findings: [rowNotUndone, unrelated] }))
 
@@ -180,7 +180,7 @@ describe('a finding that follows an earlier finding (REV-99)', () => {
     let { fake, publish, memory } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    Object.assign(memory.rows[0]!, { status: 'dismissed', statusReason: 'Faux : la ligne est une copie de l’échéancier.' })
+    Object.assign(memory.rows[0]!, { status: 'dismissed', statusReason: 'False: the row is a copy of the schedule.' })
     fake.state.resolved.add(thread!.id)
 
     // The file did not change since the last review of the finding: the follower is left out.

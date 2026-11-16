@@ -240,7 +240,7 @@ describe('the screen of a pull request', () => {
     assert.equal(response.status, 200)
     let html = await response.text()
     assert.deepEqual(asked, [`${ORG.id} ${REPO_ID} 142`])
-    // REV-91: the title of the pull request is the title of the page; « orchard #142 » leads its facts.
+    // REV-91: the title of the pull request is the title of the page; "orchard #142" leads its facts.
     assert.match(html, /<h1 class="page-title">Sessions: expiry/)
     assert.match(html, /<span class="mono">orchard #142<\/span>/)
     assert.match(html, /@camille/)
@@ -294,24 +294,31 @@ describe('the screen of a pull request', () => {
     let html = await (await request(PATH, await signIn())).text()
     assert.match(html, /GitHub did not answer/)
     assert.match(html, /Exposure sheet/)
-    // REV-91: with no title from GitHub, the title is « orchard #142 », and an admin keeps « Run R5… ».
+    // REV-91: with no title from GitHub, the title is "orchard #142", and an admin keeps "Run R5…".
     assert.match(html, /<h1 class="page-title">orchard #142<\/h1>/)
     assert.match(html, /<summary class="button">Run R\d+…<\/summary>/)
   })
 
   it('drops the cursor of the findings from the links of the status filter', async () => {
     let { request, signIn } = setup()
-    let html = await (await request(`${PATH}?avant=old&suite=rows`, await signIn())).text()
+    let html = await (await request(`${PATH}?before=old&after=rows`, await signIn())).text()
     let filter = /<nav aria-label="Filter by status"[^]*?<\/nav>/.exec(html)![0]
-    assert.match(filter, /\?statut=open&amp;avant=old"/)
-    assert.doesNotMatch(filter, /suite=/)
+    assert.match(filter, /\?status=open&amp;before=old"/)
+    assert.doesNotMatch(filter, /after=/)
+  })
+
+  it('sends a link with the query keys before REV-115 to the same screen with the keys of today', async () => {
+    let { request, signIn } = setup()
+    let response = await request(`${PATH}?statut=open&avant=old`, await signIn())
+    assert.equal(response.status, 301)
+    assert.equal(response.headers.get('Location'), `${PATH}?status=open&before=old`)
   })
 
   it('starts again at the first page for a cursor that it cannot read', async () => {
     let { request, signIn } = setup({ badCursor: true })
-    let response = await request(`${PATH}?avant=nope&statut=open`, await signIn())
+    let response = await request(`${PATH}?before=nope&status=open`, await signIn())
     assert.equal(response.status, 303)
-    assert.equal(response.headers.get('Location'), `${PATH}?statut=open`)
+    assert.equal(response.headers.get('Location'), `${PATH}?status=open`)
   })
 })
 
@@ -332,11 +339,11 @@ describe('the detail of a finding', () => {
     assert.match(html, /@camille · (&quot;|")False positive(&quot;|")/)
     assert.match(html, /Kentō · R1/)
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142#discussion_r914201"/)
-    assert.match(html, /href="\/findings\/33333333-3333-4333-8333-333333333333\?historique=next"/)
+    assert.match(html, /href="\/findings\/33333333-3333-4333-8333-333333333333\?history=next"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/pulls\/142"/)
   })
 
-  it('says « To consider: code already reviewed, not blocking » for a finding that its last review lists so (REV-102)', async () => {
+  it('says "To consider: code already reviewed, not blocking" for a finding that its last review lists so (REV-102)', async () => {
     let considered = setup({ considered: true, status: 'open' })
     let html = await (await considered.request(DETAIL, await considered.signIn(CAMILLE))).text()
     assert.match(html, /<span class="tag tag-info">To consider<\/span>/)
@@ -362,7 +369,7 @@ describe('the detail of a finding', () => {
 
   it('starts the history again for a cursor that it cannot read', async () => {
     let { request, signIn } = setup()
-    let response = await request(`${DETAIL}?historique=bad`, await signIn())
+    let response = await request(`${DETAIL}?history=bad`, await signIn())
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), DETAIL)
   })
@@ -379,12 +386,12 @@ describe('the decisions on a finding', () => {
     return { ...t, cookie, csrf, html }
   }
 
-  it('offers a member « Mark dismissed… » with the reasons of REV-18, and « Mark wontfix… »', async () => {
+  it('offers a member "Mark dismissed…" with the reasons of REV-18, and "Mark wontfix…"', async () => {
     let { html } = await member({ status: 'open' })
     assert.doesNotMatch(html, />Reopen</)
     assert.match(html, /Mark dismissed…/)
     assert.match(html, /Mark wontfix…/)
-    // The reasons of the dialog of REV-18, shared with the Findings screen, and « Other ».
+    // The reasons of the dialog of REV-18, shared with the Findings screen, and "Other".
     for (let reason of DISMISS_REASONS) assert.match(html, new RegExp(`value="${reason}"`))
     assert.match(html, /value="other"/)
     assert.match(html, new RegExp(`name="ids" value="${FINDING_ID}"`))
@@ -395,15 +402,15 @@ describe('the decisions on a finding', () => {
     let { post, cookie, csrf, decisions, replies } = await member()
     let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'False positive' })
     assert.equal(response.status, 303)
-    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?done=dismissed&github=posted`)
     assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed False positive camille`])
     assert.deepEqual(replies, [`sakuga-software/orchard#142 914201 ${replyText('dismissed', 'False positive', 'camille')}`])
   })
 
-  it('takes « Other » with a reason of the person', async () => {
+  it('takes "Other" with a reason of the person', async () => {
     let { post, cookie, csrf, decisions } = await member({ status: 'open' })
     let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'other', other: 'Generated code' })
-    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?done=dismissed&github=posted`)
     assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Generated code camille`])
   })
 
@@ -418,14 +425,14 @@ describe('the decisions on a finding', () => {
   it('posts nothing on GitHub when the status does not change', async () => {
     let { post, cookie, csrf, replies } = await member({ unchanged: true })
     let response = await post(`${DETAIL}/wontfix`, cookie, { _csrf: csrf })
-    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=unchanged`)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?done=unchanged`)
     assert.deepEqual(replies, [])
   })
 
   it('keeps the new status when GitHub refuses the reply, and says so', async () => {
     let { post, cookie, csrf, decisions, request } = await member({ reply: new Error('502') })
     let response = await post(`${DETAIL}/reopen`, cookie, { _csrf: csrf })
-    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=open&github=failed`)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?done=open&github=failed`)
     assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} open null camille`])
     let html = await (await request(response.headers.get('Location')!, cookie)).text()
     assert.match(html, /Kentō could not post the reply on GitHub/)
@@ -442,7 +449,7 @@ describe('the decisions on a finding', () => {
     assert.match(buttons[1]!, new RegExp(`formaction="/findings/${FINDING_ID}/wontfix"`))
   })
 
-  it('offers « Reopen » only for a finding dismissed or kept', async () => {
+  it('offers "Reopen" only for a finding dismissed or kept', async () => {
     let { html } = await member({ status: 'dismissed' })
     assert.match(html, />Reopen</)
     assert.doesNotMatch(html, /Mark dismissed…/)
@@ -451,7 +458,7 @@ describe('the decisions on a finding', () => {
   it('does not set aside a finding that a push fixed, as the Findings screen does not', async () => {
     let { post, cookie, csrf, decisions, replies } = await member({ status: 'fixed' })
     let response = await post(`${DETAIL}/wontfix`, cookie, { _csrf: csrf, ids: FINDING_ID })
-    assert.equal(response.headers.get('Location'), `${DETAIL}?fait=fixed`)
+    assert.equal(response.headers.get('Location'), `${DETAIL}?done=fixed`)
     assert.deepEqual(decisions, [])
     assert.deepEqual(replies, [])
   })
@@ -462,7 +469,7 @@ describe('the decisions on a finding', () => {
   })
 })
 
-describe('« Run at <level> »', () => {
+describe('"Run at <level>"', () => {
   async function as(profile: typeof ALEX, options: Parameters<typeof setup>[0] = {}) {
     let t = setup(options)
     let cookie = await t.signIn(profile)
@@ -484,7 +491,7 @@ describe('« Run at <level> »', () => {
     let { post, cookie, csrf, reruns, request } = await as(ALEX)
     let response = await post(`${PATH}/rerun`, cookie, { _csrf: csrf, level: 'heavy' })
     assert.equal(response.status, 303)
-    assert.equal(response.headers.get('Location'), `${PATH}?relance=queued`)
+    assert.equal(response.headers.get('Location'), `${PATH}?rerun=queued`)
     assert.deepEqual(reruns, [`${ORG.id} ${REPO_ID} 142 heavy ${'d'.repeat(40)}`])
     let html = await (await request(response.headers.get('Location')!, cookie)).text()
     assert.match(html, /Review started again\. It is queued\. A new push cancels it\./)
@@ -496,9 +503,9 @@ describe('« Run at <level> »', () => {
     let admin = await as(ALEX)
     assert.equal((await admin.post(`${PATH}/rerun`, admin.cookie, { _csrf: admin.csrf, level: 'ultra' })).status, 400)
     let closed = await as(ALEX, { github: { open: false, headSha: 'd'.repeat(40) } })
-    assert.equal((await closed.post(`${PATH}/rerun`, closed.cookie, { _csrf: closed.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?relance=closed`)
+    assert.equal((await closed.post(`${PATH}/rerun`, closed.cookie, { _csrf: closed.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?rerun=closed`)
     let down = await as(ALEX, { github: new Error('502') })
-    assert.equal((await down.post(`${PATH}/rerun`, down.cookie, { _csrf: down.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?relance=github_failed`)
+    assert.equal((await down.post(`${PATH}/rerun`, down.cookie, { _csrf: down.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?rerun=github_failed`)
     assert.deepEqual([...member.reruns, ...admin.reruns, ...closed.reruns, ...down.reruns], [])
   })
 })
@@ -522,7 +529,7 @@ describe('the words of the screen of a pull request', () => {
   })
 
   it('reads the known statuses of the filter only', () => {
-    let query = readPullQuery(new URLSearchParams('statut=open&statut=nope&statut=open&avant=x'))
+    let query = readPullQuery(new URLSearchParams('status=open&status=nope&status=open&before=x'))
     assert.deepEqual(query, { statuses: ['open'], reviews: 'x', rows: null })
   })
 })

@@ -47,10 +47,9 @@ export function importsSection(paths: string[], fileAt: (path: string) => string
   return out;
 }
 
-// The title of a finding that says a name is missing: not imported, or not defined. French and English.
-const MISSING_IMPORT =
-  /sans (l')?import|sans l'importer|non import|pas import|n'importe pas|n'est pas import|import (est )?manquant|manque l'import|oubli\S* (de l')?import|not imported|missing import|without (an )?import/i;
-const MISSING_DEFINITION = /non d[ée]fini|pas d[ée]fini|not defined|undeclared|non d[ée]clar|pas d[ée]clar/i;
+// The title of a finding that says a name is missing: not imported, or not defined.
+const MISSING_IMPORT = /not imported|missing import|without (an )?import/i;
+const MISSING_DEFINITION = /not defined|undeclared/i;
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
 /** The names in backquotes of a text, `data(...)` read as `data`. */
@@ -92,7 +91,7 @@ export type MissingNameCheck = {
 /**
  * REV-70. Checks each finding that says a name is not imported or not defined against its file at the
  * head. A finding whose names the file imports as values goes away. A finding that the engine cannot check goes to
- * `not_reviewed` (« Non relu »), not to the findings. A finding whose names the file does not hold stays:
+ * `not_reviewed` ("Not reviewed"), not to the findings. A finding whose names the file does not hold stays:
  * the engine confirmed it. The score of the model does not change: the `Imports` section of the pack
  * is what keeps the model from such a finding, and so from a lower score.
  */
@@ -104,7 +103,7 @@ export function checkMissingNames<F extends Finding>(
   const unchecked: F[] = [];
   const kept: F[] = [];
   for (const f of answer.findings) {
-    // The title says what the finding claims. A scenario can quote a message (« Compte introuvable »)
+    // The title says what the finding claims. A scenario can quote a message ("Account not found")
     // or mention an import in passing, and a real defect must not go away for it.
     const claim = f.title;
     if (!MISSING_IMPORT.test(claim) && !MISSING_DEFINITION.test(claim)) {

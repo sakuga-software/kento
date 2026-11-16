@@ -50,7 +50,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
         select ${orgId}, ${offset} + g, ${owner} || '/service-' || lpad(g::text, 3, '0'), true
         from generate_series(1, 300) g`
       await sql`
-        insert into rules (org_id, title, body) select ${orgId}, 'Règle ' || g, 'Texte.' from generate_series(1, 20) g`
+        insert into rules (org_id, title, body) select ${orgId}, 'Rule ' || g, 'Text.' from generate_series(1, 20) g`
       // One finding every 26 s over 30 days; one in 3 open, then fixed, dismissed, wontfix and stale.
       await sql`
         with r as (select id, row_number() over (order by full_name) as n from repos where org_id = ${orgId}),
@@ -60,7 +60,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
           status, status_reason, first_seen_sha, last_seen_sha, created_at, updated_at)
         select r.id, 1 + g % 900, md5('f' || g), md5('k' || g), (select id from ru where ru.n = 1 + g % 20 and g % 7 = 0),
           'apps/web/app/module_' || (g % 400) || '/file_' || (g % 37) || '.ts', 1 + g % 500,
-          'Le constat numéro ' || g || ' sur une valeur nulle non gérée', (array['critical', 'major', 'minor'])[1 + g % 3],
+          'Finding number ' || g || ' on a null value with no check', (array['critical', 'major', 'minor'])[1 + g % 3],
           (array['bug', 'security', 'data', 'contract', 'test'])[1 + g % 5], 50 + g % 50,
           (array['open', 'open', 'open', 'fixed', 'fixed', 'dismissed', 'wontfix', 'stale'])[1 + g % 8]::finding_status,
           case when g % 8 in (5, 6) then (array['Off topic', 'False positive', 'Already known'])[1 + g % 3] end,
@@ -157,7 +157,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
       `/findings?repo=${repoId}`,
       `/findings?status=all&repo=${repoId}&q=file_3`,
       '/findings?q=module_16%2F',
-      '/findings?status=all&q=aucun-titre-ne-contient-ceci',
+      '/findings?status=all&q=no-title-contains-this',
     ]) {
       let limit = await budget()
       let { best, result } = await timed(() => load(path), limit.ms)

@@ -11,13 +11,13 @@ export function shortName(fullName: string, org: string): string {
   return slash > 0 && fullName.slice(0, slash).toLowerCase() === org.toLowerCase() ? fullName.slice(slash + 1) : fullName
 }
 
-/** « 41 fixed · 9 dismissed »: what the share is made of. */
+/** "41 fixed · 9 dismissed": what the share is made of. */
 export function precisionCounts(precision: Precision): string {
   return `${precision.fixed} fixed · ${precision.dismissed} dismissed`
 }
 
 /**
- * A share, or « n = 9 of 10 » under 10 closed findings, with what it is made of for a screen reader
+ * A share, or "n = 9 of 10" under 10 closed findings, with what it is made of for a screen reader
  * and in its title.
  */
 export function PrecisionValue(handle: Handle<{ precision: Precision; large?: boolean }>) {

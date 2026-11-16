@@ -4,7 +4,7 @@ import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-8: an admin, a member, a person outside of the org, and the way out.
 
-test('an admin of the org gets the full frame, with no « Read only »', async ({ page }) => {
+test('an admin of the org gets the full frame, with no "Read only"', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'alex')
 
@@ -19,7 +19,7 @@ test('an admin of the org gets the full frame, with no « Read only »', async (
   expect(errors).toEqual([])
 })
 
-test('a member sees « Read only » on every screen', async ({ page }) => {
+test('a member sees "Read only" on every screen', async ({ page }) => {
   await signIn(page, 'camille')
 
   for (let path of ['/', '/repos', '/settings']) {

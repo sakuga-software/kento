@@ -17,7 +17,7 @@ import { renderSettings } from './settings.tsx'
 function rulesBack(repoId: string | null, notice: RuleNotice, ruleId: string | null) {
   let query = new URLSearchParams({ rules: notice })
   if (ruleId) query.set('rule', ruleId)
-  let anchor = ruleId && notice !== 'removed' ? `rule-${ruleId}` : repoId ? 'rules' : 'regles'
+  let anchor = ruleId && notice !== 'removed' ? `rule-${ruleId}` : repoId ? 'rules' : 'org-rules'
   if (repoId) {
     query.set('tab', 'rules')
     return redirect(`${pageRoutes.repoConfig.href({ id: repoId })}?${query}#${anchor}`)

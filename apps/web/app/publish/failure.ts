@@ -21,7 +21,7 @@ export function sanitizeReason(reason: string | null): string {
   let line = (reason ?? '').split('\n').find((l) => l.trim() !== '') ?? ''
   for (let secret of SECRETS) line = line.replace(secret, '***')
   line = line.replaceAll('`', "'").replace(/\s+/g, ' ').trim()
-  if (line === '') return 'raison inconnue'
+  if (line === '') return 'unknown reason'
   return line.length > MAX_REASON ? `${line.slice(0, MAX_REASON - 1)}…` : line
 }
 

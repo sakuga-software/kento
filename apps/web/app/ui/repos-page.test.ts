@@ -149,7 +149,7 @@ describe('the Repos screen', () => {
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     assert.match(html, /review\.yml@stable/)
-    // REV-91: « Reviews by » in the four words of the design, with the detail under it.
+    // REV-91: "Reviews by" in the four words of the design, with the detail under it.
     assert.match(html, /Kentō \+ review\.yml/)
     assert.match(html, /<span class="tag">review\.yml<\/span>/)
     assert.match(html, /3\/20/)
@@ -162,13 +162,13 @@ describe('the Repos screen', () => {
     assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
     assert.match(html, /Switch criterion/)
     assert.match(html, /Fallback during the switch/)
-    // « Manage the installation » leads to the page of the App on GitHub.
+    // "Manage the installation" leads to the page of the App on GitHub.
     assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"/)
     // The repositories of another org of the person are not on screen.
     assert.doesNotMatch(html, /orchard\/app/)
   })
 
-  it('gives an admin « Enable », « Disable » and « Read GitHub again », and a member none of them', async () => {
+  it('gives an admin "Enable", "Disable" and "Read GitHub again", and a member none of them', async () => {
     let { signIn } = setup()
     let admin = (await signIn(ALEX)).html
     assert.match(admin, new RegExp(`action="/repos/${ORCHARD}/enable"`))
@@ -194,9 +194,9 @@ describe('the Repos screen', () => {
   it('asks to confirm a disable in its row, then disables and says that the published reviews stay', async () => {
     let { request, signIn, changes } = setup()
     let { cookie, csrf, html: page } = await signIn()
-    // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and « Cancel ».
+    // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and "Cancel".
     let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
-    // REV-91: « Disable Kentō… » sits in the menu « … » of its row.
+    // REV-91: "Disable Kentō…" sits in the menu "…" of its row.
     assert.match(row, /<details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
     assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
@@ -235,7 +235,7 @@ describe('the Repos screen', () => {
     assert.deepEqual(changes, [])
   })
 
-  it('shows « Remove review.yml » to an admin at 20/20 with the workflow still there, and « switched » without it', async () => {
+  it('shows "Remove review.yml" to an admin at 20/20 with the workflow still there, and "switched" without it', async () => {
     let { signIn, rows } = setup()
     rows[ORG.id]![1]!.streak = 23
     rows[ORG.id]![1]!.resetBy = 'failure'
@@ -254,7 +254,7 @@ describe('the Repos screen', () => {
     let { cookie, html } = await signIn()
     assert.doesNotMatch(html, /data-recheck/)
     assert.doesNotMatch(html, /assets\/repos.js/)
-    // REV-91: the menus « … » close on Escape and on a click outside, on every read of the screen.
+    // REV-91: the menus "…" close on Escape and on a click outside, on every read of the screen.
     assert.equal(html.match(/src="\/assets\/row-menu\.js\?v=1\.2\.3"/g)?.length, 1)
     // Both deferred: confirm.js, in the head, registers its listeners first.
     assert.ok(html.indexOf('/assets/confirm.js') < html.indexOf('/assets/row-menu.js'))
@@ -297,7 +297,7 @@ describe('the Repos screen', () => {
     assert.match(html, /No name contains (&quot;|")zzz(&quot;|")/)
   })
 
-  it('gives « Enable » the secondary style, and brings the admin back to the page of the list after it (REV-36)', async () => {
+  it('gives "Enable" the secondary style, and brings the admin back to the page of the list after it (REV-36)', async () => {
     let { request, signIn } = setup()
     let { cookie, csrf } = await signIn()
     let html = await (await request('/repos?filter=disabled&q=key', { cookie })).text()
@@ -324,7 +324,7 @@ describe('the Repos screen', () => {
     assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;after=${FRUITBACK}" rel="next"`))
   })
 
-  it('« Read GitHub again » reads GitHub at once for an admin', async () => {
+  it('"Read GitHub again" reads GitHub at once for an admin', async () => {
     let { request, signIn, checks } = setup()
     let { cookie, csrf } = await signIn()
     let response = await request('/repos/check', { cookie, form: { _csrf: csrf } })

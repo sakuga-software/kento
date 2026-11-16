@@ -236,7 +236,7 @@ export function anchor(finding: Finding, lines: Anchors): number | null {
 /**
  * REV-100. A new finding on code that an earlier review already read, not critical: the earlier
  * review saw that code and did not report it. It does not block, and the summary lists it apart
- * (« À considérer »). It gets a thread only when `raisesToConsider` of publish.ts says so (REV-103).
+ * ("To consider"). It gets a thread only when `raisesToConsider` of publish.ts says so (REV-103).
  * A critical one blocks as before, and so does a finding that follows an earlier finding (REV-99):
  * that defect was already reported.
  */

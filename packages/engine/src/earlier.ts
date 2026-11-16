@@ -2,9 +2,13 @@
 //
 // Before, a review read the whole diff and knew only the answered threads (REV-71) and the rejected
 // findings (REV-95). It wrote the same defect again in other words, or the part of it that a fix
-// left, as a new finding: gallery-app#62 got « Ligne écrite avant Stripe » (#c7f3ec), then « Écritures
-// Stripe non annulées si le commit échoue » (#ad9b57), then « Échec de commit après un appel Stripe
-// réussi » (#1af75f), each one a new P1 or P2 that kept the score at 3/5.
+// left, as a new finding. On gallery-app#62, three findings gave the same Stripe defect:
+//
+// - #c7f3ec: a row written before the Stripe call.
+// - #ad9b57: Stripe writes not undone when the commit fails.
+// - #1af75f: a failed commit after a Stripe call that succeeded.
+//
+// Each one was a new P1 or P2 that kept the score at 3/5.
 //
 // The review now reads every finding of the pull request, whatever its status. A finding of the
 // model that continues one of them names it in `follows`; a finding near one of them, on its file,
@@ -50,10 +54,10 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     const changed = changedOf.get(at)!;
     const ref = `E${held.length + 1}`;
     const since = changed === false ? 'no' : changed ? 'yes' : 'unknown';
-    const cause = (e.status === 'dismissed' || e.status === 'wontfix') && e.reason ? ` · cause written by a person: « ${oneLine(e.reason, 300)} »` : '';
+    const cause = (e.status === 'dismissed' || e.status === 'wontfix') && e.reason ? ` · cause written by a person: "${oneLine(e.reason, 300)}"` : '';
     const row =
       `- ${ref} · \`${oneLine(path, 300)}:${e.line}\` · ${PRIORITY[e.severity]} ${e.category} · ${e.status} · ` +
-      `« ${oneLine(e.title, 200)} » · file changed since: ${since}${cause}\n`;
+      `"${oneLine(e.title, 200)}" · file changed since: ${since}${cause}\n`;
     if (size + row.length > MAX_EARLIER_BYTES) break;
     held.push({ ...e, ref, changed });
     rows.push(row);

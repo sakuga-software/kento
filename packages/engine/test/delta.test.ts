@@ -71,16 +71,16 @@ function fakeModel(answer: () => Answer) {
 
 const answer = (score: number, findings: Finding[]): Answer => ({
   confidence_score: score,
-  risk: 'Faible',
-  summary: 'Résumé',
+  risk: 'Low',
+  summary: 'Summary',
   diagram: '',
   findings,
   not_reviewed: [],
   deeper_review: { recommended: false, reason: '' },
 });
 
-const subtraction = finding('a.ts', 'La somme soustrait');
-const division = finding('b.ts', 'Le produit divise');
+const subtraction = finding('a.ts', 'The sum subtracts');
+const division = finding('b.ts', 'The product divides');
 
 /** The last review, at `reviewed`, with its two findings, scored 4. */
 const delta = (settled: Delta['settled'] = []): Delta => ({ since: reviewed, score: 4, findings: [subtraction, division], settled });
@@ -105,7 +105,7 @@ test('the pack holds only the files changed since the last review, and the earli
   assert.doesNotMatch(deltaPack!, /^diff --git a\/a\.ts/m, 'a.ts did not change since the last review');
   assert.match(deltaPack!, /^diff --git a\/b\.ts/m);
   assert.match(deltaPack!, /This pull request was reviewed at commit/);
-  assert.match(deltaPack!, /`b\.ts:2` \(minor\) Le produit divise/, 'the finding of a file read again, to report again if it stays');
+  assert.match(deltaPack!, /`b\.ts:2` \(minor\) The product divides/, 'the finding of a file read again, to report again if it stays');
   const diff = (pack: string) => pack.slice(pack.indexOf('## Diff'));
   assert.ok(diff(deltaPack!).length < diff(wholePack!).length, 'a smaller diff');
   assert.deepEqual(incremental.delta, { since: reviewed, files: ['b.ts'], pullFiles: ['a.ts', 'b.ts'] });
@@ -119,7 +119,7 @@ test('the findings of the files not read again stay, a finding fixed since goes,
   const result = await reviewPullRequest(input(model.fetch, { delta: delta() }));
   assert.deepEqual(
     result.findings.map((f) => f.title),
-    ['La somme soustrait'],
+    ['The sum subtracts'],
     'a.ts did not change: its finding stays; b.ts changed and the model did not report its finding again',
   );
   assert.equal(result.findings[0]!.anchor, 2, 'the finding kept anchors on the changed lines of the pull request');
@@ -127,21 +127,21 @@ test('the findings of the files not read again stay, a finding fixed since goes,
 });
 
 test('a new finding is a new fact: the score of the model holds', async () => {
-  const model = fakeModel(() => answer(3, [finding('b.ts', 'Le produit oublie le signe')]));
+  const model = fakeModel(() => answer(3, [finding('b.ts', 'The product forgets the sign')]));
   const result = await reviewPullRequest(input(model.fetch, { delta: delta() }));
   assert.equal(result.score, 3);
-  assert.deepEqual(result.findings.map((f) => f.title).sort(), ['La somme soustrait', 'Le produit oublie le signe']);
+  assert.deepEqual(result.findings.map((f) => f.title).sort(), ['The product forgets the sign', 'The sum subtracts']);
 });
 
 test('a finding found again is no new fact, and a dismissed one raised again is dropped', async () => {
-  const dismissed = finding('b.ts', 'Le produit déborde');
+  const dismissed = finding('b.ts', 'The product overflows');
   const settled: Delta['settled'] = [{ path: 'b.ts', line: 2, title: dismissed.title, status: 'dismissed', key: findingKey(dismissed), fingerprint: '0'.repeat(16) }];
   const model = fakeModel(() => answer(2, [division, dismissed]));
   const result = await reviewPullRequest(input(model.fetch, { delta: delta(settled) }));
-  assert.deepEqual(result.findings.map((f) => f.title).sort(), ['La somme soustrait', 'Le produit divise']);
-  assert.deepEqual(result.settledAgain.map((f) => f.title), ['Le produit déborde']);
+  assert.deepEqual(result.findings.map((f) => f.title).sort(), ['The product divides', 'The sum subtracts']);
+  assert.deepEqual(result.settledAgain.map((f) => f.title), ['The product overflows']);
   assert.equal(result.score, 4, 'only known findings: the score stays');
-  assert.match(model.packs[0]!, /Findings that are settled[\s\S]*`b\.ts:2` \(dismissed\) Le produit déborde/);
+  assert.match(model.packs[0]!, /Findings that are settled[\s\S]*`b\.ts:2` \(dismissed\) The product overflows/);
 });
 
 test('a force-push or a rebase reads the whole pull request again', async () => {
@@ -194,7 +194,7 @@ test('a file whose change the pull request reverted since is read again, and its
   const result = await reviewPullRequest(input(model.fetch, { head, delta: delta() }));
   assert.deepEqual(result.delta?.files, ['b.ts']);
   assert.match(model.packs[0]!, /^diff --git a\/b\.ts/m, 'the revert is in the pack');
-  assert.deepEqual(result.findings.map((f) => f.title), ['La somme soustrait'], 'b.ts is no longer in the pull request');
+  assert.deepEqual(result.findings.map((f) => f.title), ['The sum subtracts'], 'b.ts is no longer in the pull request');
 });
 
 test('a file renamed since the last review is read again under its new path, and its old finding goes', async () => {
@@ -208,7 +208,7 @@ test('a file renamed since the last review is read again under its new path, and
   assert.deepEqual(result.delta?.files, ['a.ts', 'c.ts'], 'both paths of the rename are read again');
   assert.match(model.packs[0]!, /c\.ts/);
   assert.ok(!result.findings.some((f) => f.path === 'a.ts'), 'a.ts is no longer in the pull request');
-  assert.deepEqual(result.findings.map((f) => f.title), ['Le produit divise'], 'b.ts did not change since: its finding comes back');
+  assert.deepEqual(result.findings.map((f) => f.title), ['The product divides'], 'b.ts did not change since: its finding comes back');
 });
 
 test('a finding on the old path of a file renamed before the last review does not come back', async () => {
@@ -236,15 +236,15 @@ test('a finding of the last review settled since does not come back on a file no
 });
 
 test('the floor of the score never lifts it over a blocking finding carried from the last review', async () => {
-  const blocking = finding('a.ts', 'La somme soustrait', 'major');
+  const blocking = finding('a.ts', 'The sum subtracts', 'major');
   const model = fakeModel(() => answer(5, []));
   const result = await reviewPullRequest(input(model.fetch, { delta: { since: reviewed, score: 4, findings: [blocking], settled: [] } }));
-  assert.deepEqual(result.findings.map((f) => [f.title, f.blocking]), [['La somme soustrait', true]]);
+  assert.deepEqual(result.findings.map((f) => [f.title, f.blocking]), [['The sum subtracts', true]]);
   assert.equal(result.score, 2, 'a blocking finding caps the score at 2, floor or not');
 });
 
 test('a fixed finding raised again is a regression: it stays, and the score of the model holds', async () => {
-  const back = finding('b.ts', 'Le produit oublie le signe');
+  const back = finding('b.ts', 'The product forgets the sign');
   const settled: Delta['settled'] = [{ path: 'b.ts', line: 2, title: back.title, status: 'fixed', key: findingKey(back), fingerprint: '0'.repeat(16) }];
   const model = fakeModel(() => answer(2, [back]));
   const result = await reviewPullRequest(input(model.fetch, { delta: delta(settled) }));
@@ -275,10 +275,10 @@ test('each lift of the score by the floor is in the log', async () => {
 
 test('a blocking finding fixed in a file read again lets the score rise: the floor never holds it down', async () => {
   // The last review scored 2 because of a blocking finding on b.ts; this push fixes it.
-  const blocker = finding('b.ts', 'Le produit divise', 'major');
+  const blocker = finding('b.ts', 'The product divides', 'major');
   const model = fakeModel(() => answer(5, []));
   const result = await reviewPullRequest(input(model.fetch, { delta: { since: reviewed, score: 2, findings: [subtraction, blocker], settled: [] } }));
-  assert.deepEqual(result.findings.map((f) => f.title), ['La somme soustrait'], 'the fixed one goes, the one of a.ts stays');
+  assert.deepEqual(result.findings.map((f) => f.title), ['The sum subtracts'], 'the fixed one goes, the one of a.ts stays');
   assert.equal(result.score, 5, 'the floor is a minimum: the score of the model rises over it');
   assert.equal(result.scoreFloor, null);
 });
@@ -296,7 +296,7 @@ test('a blocking finding carried on a file not read again keeps its anchor and s
   const head = git('rev-parse', 'HEAD');
   git('checkout', '-q', 'main');
   // The last review, at `pushed`, had a blocking finding on a.ts line 2, anchored on a changed line.
-  const blocking = { ...finding('a.ts', 'La somme soustrait', 'major'), anchor: 2, blocking: true, suggestion_range: null };
+  const blocking = { ...finding('a.ts', 'The sum subtracts', 'major'), anchor: 2, blocking: true, suggestion_range: null };
   const model = fakeModel(() => answer(5, []));
   const result = await reviewPullRequest(input(model.fetch, { base: main3, head, delta: { since: pushed, score: 2, findings: [blocking], settled: [] } }));
   assert.deepEqual(result.delta?.files, ['b.ts'], 'a.ts did not change since: not read again');

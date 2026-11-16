@@ -5,7 +5,7 @@ import { pullRoutes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { DismissDialog } from './dismiss-dialog.tsx'
 
-/** What the detail of a finding says after a decision, from `?fait=` and `?github=`. */
+/** What the detail of a finding says after a decision, from `?done=` and `?github=`. */
 export const FINDING_NOTICES = {
   dismissed: 'Finding marked dismissed.',
   wontfix: 'Finding marked wontfix.',
@@ -38,8 +38,8 @@ export function FindingNoticeView(handle: Handle<{ notice: FindingNotice; github
 }
 
 /**
- * « Mark dismissed… » (the dialog of REV-18, with its reasons), « Mark wontfix… » (the one
- * confirmation of REV-33) and « Reopen ». A member of the org decides, as an admin does. Each button
+ * "Mark dismissed…" (the dialog of REV-18, with its reasons), "Mark wontfix…" (the one
+ * confirmation of REV-33) and "Reopen". A member of the org decides, as an admin does. Each button
  * posts the form of the page, which carries the CSRF token and the id of the finding, to its own action.
  */
 export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: string }>) {

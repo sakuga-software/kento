@@ -42,8 +42,8 @@ const review = (): ReviewPayload => ({
   costUsd: 0.0123,
   promptTokens: 1000,
   completionTokens: 200,
-  summary: 'Résumé',
-  risk: 'Faible',
+  summary: 'Summary',
+  risk: 'Low',
   diagram: null,
   deeperReview: null,
   findings: [
@@ -145,7 +145,7 @@ const resolveJob = (): Job => ({
         id: 'PRRT_kwDO',
         path: 'src/a.ts',
         line: 12,
-        comments: [{ id: 1001, author: 'sakuga-review', isBot: true, body: 'La somme soustrait.', commit: SHA }],
+        comments: [{ id: 1001, author: 'sakuga-review', isBot: true, body: 'The sum subtracts.', commit: SHA }],
       },
     ],
     open: 3,
@@ -188,7 +188,7 @@ test('a resolved result passes with its verdicts, and fails with an unknown verd
       open: 3,
       waiting: 1,
       held: 1,
-      threads: [{ id: 'PRRT_kwDO', verdict: 'fixed', reply: 'Corrigé.', changed: true }],
+      threads: [{ id: 'PRRT_kwDO', verdict: 'fixed', reply: 'Fixed.', changed: true }],
     },
   };
   assert.deepEqual(parseResultRequest(resolved), { ok: true, value: resolved });
@@ -265,8 +265,8 @@ test('a review job carries the answered threads with the feature threads; a reso
 const RULE = {
   id: '5d0e6c1a-8b7f-4e2d-9c3b-1f2a3b4c5d6e',
   scope: 'repo',
-  title: 'Toute migration drizzle a un index pour chaque FK',
-  text: 'Chaque clé étrangère ajoutée par une migration a son index.',
+  title: 'Every drizzle migration has an index for each FK',
+  text: 'Each foreign key that a migration adds has its index.',
   paths: ['**/migrations/**'],
   severityFloor: 'major',
 };
@@ -333,7 +333,7 @@ test('a provider id of a job is `service` or a uuid, and nothing around them', (
 });
 
 test('a review job carries the rejected findings with the feature rejected (REV-95)', () => {
-  const rejected = [{ path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', category: 'bug', severity: 'major', status: 'dismissed', reason: 'validé par le schéma', commit: SHA }];
+  const rejected = [{ path: 'src/a.ts', line: 7, title: 'The port is not validated', category: 'bug', severity: 'major', status: 'dismissed', reason: 'the schema validates it', commit: SHA }];
   assert.deepEqual(parseJob({ ...job(), rejected }), { ok: true, value: { ...job(), rejected } });
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], reason: null, status: 'wontfix' }] }).ok, true);
   assert.equal(parseJob({ ...job(), rejected: [{ ...rejected[0], status: 'open' }] }).ok, false);
@@ -348,7 +348,7 @@ test('a review job carries the rejected findings with the feature rejected (REV-
 });
 
 test('a review job carries the earlier findings with the feature earlier, and a finding may follow one by its key (REV-99)', () => {
-  const findings = [{ key: 'abcdef012345', path: 'src/a.ts', line: 7, title: 'Le port n’est pas validé', severity: 'major', category: 'bug', status: 'fixed', reason: null, commit: SHA }];
+  const findings = [{ key: 'abcdef012345', path: 'src/a.ts', line: 7, title: 'The port is not validated', severity: 'major', category: 'bug', status: 'fixed', reason: null, commit: SHA }];
   const earlier = { findings, last: { head: SHA, score: 4 } };
   assert.deepEqual(parseJob({ ...job(), earlier }), { ok: true, value: { ...job(), earlier } });
   for (const status of ['open', 'dismissed', 'wontfix', 'stale']) assert.equal(parseJob({ ...job(), earlier: { findings: [{ ...findings[0], status }], last: null } }).ok, true);

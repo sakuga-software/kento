@@ -80,13 +80,13 @@ export interface ConfigPageProps {
   tab: ConfigTab
   notice: ConfigNotice | null
   form: ConfigForm | null
-  /** Null: the service has no rules; the tab says « Soon ». */
+  /** Null: the service has no rules; the tab says "Soon". */
   rules?: ConfigRules | null
-  /** REV-21. The tab Assignment. Null: the service has no assignment rules; the tab says « Soon ». */
+  /** REV-21. The tab Assignment. Null: the service has no assignment rules; the tab says "Soon". */
   assignment?: Omit<AssignmentTabProps, 'repoId' | 'defaultLevel' | 'admin' | 'csrf'> | null
 }
 
-/** « config v7, changed by alex on 27 Oct at 18:02 ». */
+/** "config v7, changed by alex on 27 Oct at 18:02". */
 export function versionLine(view: Pick<RepoConfigView, 'version' | 'updatedBy' | 'updatedAt'>): string {
   return sharedVersionLine({ name: 'config', changed: 'changed', empty: 'config v0, everything comes from the organization' }, view)
 }
@@ -113,13 +113,13 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
 ]
 
 /**
- * « Config of orchard » (REV-12): the default level, a provider and a model for each level with their
+ * "Config of orchard" (REV-12): the default level, a provider and a model for each level with their
  * fallback, and what triggers a review. An admin of the org edits; a member reads.
  */
 export function ConfigPage(handle: Handle<ConfigPageProps>) {
   return () => {
     let { frame, view, providers, tab, notice, form, rules, assignment } = handle.props
-    // REV-32. A tab that the service does not have yet: named in the bar, with « Soon » and no link.
+    // REV-32. A tab that the service does not have yet: named in the bar, with "Soon" and no link.
     let soon = (key: ConfigTab) => (key === 'rules' && !rules) || (key === 'assignment' && !assignment)
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
@@ -217,13 +217,13 @@ function Hidden(handle: Handle<{ ctx: FormContext; field: string }>) {
   return () => <VersionFields csrf={handle.props.ctx.csrf} version={handle.props.ctx.version} field={handle.props.field} />
 }
 
-/** « from the org » or « set for this repo ». The word carries the meaning; the colour only repeats it. */
+/** "from the org" or "set for this repo". The word carries the meaning; the colour only repeats it. */
 function SourceTag(handle: Handle<{ source: Source }>) {
   return () =>
     handle.props.source === 'repo' ? <span class="tag tag-info">set for this repo</span> : <span class="tag tag-quiet">from the org</span>
 }
 
-/** « Back to the org value »: a form of its own, shown only for a value that the repository sets. */
+/** "Back to the org value": a form of its own, shown only for a value that the repository sets. */
 function RepoReset(handle: Handle<{ ctx: FormContext; field: ConfigField; label: string }>) {
   return () => {
     let { ctx, field, label } = handle.props
@@ -260,7 +260,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
     let current = value.value
     let effective = effectiveLevel(level, value, providers)
-    // Nothing chosen, in the repository or the org: the form shows what runs, the « Default » provider.
+    // Nothing chosen, in the repository or the org: the form shows what runs, the "Default" provider.
     let shown = value.source === 'kento' ? { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback } : current
     let values = mine?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `level-${level}`
@@ -662,7 +662,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
 }
 
 /**
- * REV-19. « Rules »: the rules of the repository, and a reminder of what else goes to the model with
+ * REV-19. "Rules": the rules of the repository, and a reminder of what else goes to the model with
  * them: the rules of the org, and CLAUDE.md and AGENTS.md of the repository.
  */
 function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: string; admin: boolean; csrf: string | null }>) {
@@ -711,7 +711,7 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
           </h2>
           <ul class="rules-also-list">
             <li>
-              <a href={`${routes.settings.href()}#regles`}>
+              <a href={`${routes.settings.href()}#org-rules`}>
                 {rules.orgActive === 0 ? 'No org rule' : rules.orgActive === 1 ? '1 active org rule' : `${rules.orgActive} active org rules`}
               </a>
               , by the same paths.

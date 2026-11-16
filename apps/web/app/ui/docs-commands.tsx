@@ -1,4 +1,4 @@
-// REV-96. « Kentō commands »: a public page, open without a sign-in, so that the link of a
+// REV-96. "Kentō commands": a public page, open without a sign-in, so that the link of a
 // comment of Kentō on GitHub works for every reader of the pull request. It describes `review`,
 // `force`, `resolve`, `reject` and `feedback` (REV-107): where to write them, who can run them, what they cost, what they do
 // at once and what the next review does with them.

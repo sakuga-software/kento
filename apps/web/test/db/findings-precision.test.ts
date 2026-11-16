@@ -53,7 +53,7 @@ describe('the precision of the reviews', () => {
       returning id`
     ;[orchard, fruitback, quiet] = [repos[0]!.id, repos[1]!.id, repos[2]!.id]
     let [rule] = await sql<{ id: string }[]>`
-      insert into rules (org_id, title, body) values (${orgId}, 'Pas de secret dans les logs', 'Aucun jeton.') returning id`
+      insert into rules (org_id, title, body) values (${orgId}, 'No secret in the logs', 'No token.') returning id`
     ruleId = rule!.id
 
     // orchard: 12 fixed and 3 dismissed in the window, 4 of the fixed and 1 dismissed from the rule.
@@ -76,9 +76,9 @@ describe('the precision of the reviews', () => {
     // fruitback: 5 fixed and 4 dismissed: 9 closed, under the 10 of a share.
     for (let i = 0; i < 5; i++) await finding(fruitback, [['fixed', 2]])
     for (let i = 0; i < 4; i++) await finding(fruitback, [['dismissed', 2, 'Already known']])
-    // quiet: one dismissal with an empty reason (REV-18 review): counted, under « No reason ».
+    // quiet: one dismissal with an empty reason (REV-18 review): counted, under "No reason".
     await finding(quiet, [['dismissed', 1, '']])
-    // The same reason in another case (« Other », typed by hand): one group with « Off topic ».
+    // The same reason in another case ("Other", typed by hand): one group with "Off topic".
     await finding(quiet, [['dismissed', 1, '  off topic ']])
     // Another org: never counted.
     for (let i = 0; i < 10; i++) await finding(repos[3]!.id, [['dismissed', 1, 'Off topic']])
@@ -123,7 +123,7 @@ describe('the precision of the reviews', () => {
     let report = await precisionReport(database.sql, orgId)
     assert.deepEqual(
       report.rules.map((r) => [r.title, r.fixed, r.dismissed, r.repo]),
-      [['Pas de secret dans les logs', 4, 1, null]],
+      [['No secret in the logs', 4, 1, null]],
     )
     assert.deepEqual(
       report.reasons.map((r) => ({ reason: r.reason.toLowerCase(), count: r.count })),

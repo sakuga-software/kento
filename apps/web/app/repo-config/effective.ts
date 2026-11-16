@@ -10,10 +10,10 @@ import type { ProviderOption } from './providers.ts'
 //
 // - the config of the repository or of the org names a provider of the org: that provider, with
 //   the models of the config;
-// - it names « service »: OpenRouter with the key of the service, with the models of the config;
+// - it names "service": OpenRouter with the key of the service, with the models of the config;
 // - it names a provider that the org no longer has: OpenRouter with the key of the service, with the
 //   models of Kentō (the runner gets no models without their provider);
-// - nothing chose (the values of Kentō): the « Default » provider of the org, with its own models
+// - nothing chose (the values of Kentō): the "Default" provider of the org, with its own models
 //   for the level (else those of its type); without a provider, OpenRouter with the models of Kentō.
 //
 // test/db/effective-provider.test.ts checks this rule against the claim of the service.
@@ -25,7 +25,7 @@ export type EffectiveOrigin =
   | 'chosen'
   /** The config chose a provider that the org no longer has: the key of the service. */
   | 'missing'
-  /** Nothing chose: the « Default » provider of the org. */
+  /** Nothing chose: the "Default" provider of the org. */
   | 'default'
   /** Nothing chose, and the org has no provider: the key of the service. */
   | 'service'
@@ -73,7 +73,7 @@ function nextJob(level: Level, resolved: Resolved<LevelModels>, providers: reado
   return { provider: byDefault, origin: 'default', model: models[0] ?? null, fallback: models[1] ?? null }
 }
 
-/** « Anthropic of Sakuga · key on the runner ». The label of the OpenRouter of the service already says its key. */
+/** "Anthropic of Sakuga · key on the runner". The label of the OpenRouter of the service already says its key. */
 export function providerLine(provider: ProviderOption): string {
   return provider.id === SERVICE_PROVIDER ? provider.label : `${provider.label} · ${provider.keyFrom}`
 }

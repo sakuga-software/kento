@@ -205,7 +205,7 @@ describe('the runners of the Runners screen', () => {
       assert.equal((await (await claim(gpu.token)).json()).id, job)
     })
 
-    it('sends the key of the service to a runner of key mode « app », and stops when an admin removes the trust', async () => {
+    it('sends the key of the service to a runner of key mode "app", and stops when an admin removes the trust', async () => {
       let runner = await registered({ trusted: true })
       await queueJob()
       let job = await (await claim(runner.token, false)).json()

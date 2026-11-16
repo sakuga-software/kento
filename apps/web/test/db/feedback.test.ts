@@ -41,8 +41,8 @@ function review(sha: string): ReviewPayload {
     costUsd: 0.01,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'La PR change sum.',
-    risk: 'Faible.',
+    summary: 'The PR changes sum.',
+    risk: 'Low.',
     diagram: null,
     deeperReview: null,
     findings: [],
@@ -192,7 +192,7 @@ describe('feedback on the reviews (REV-107)', () => {
   })
 
   it('records `@kento-review feedback`, with ❤️ and no job, once for a redelivery', async () => {
-    let payload = issueCommentPayload({ body: '@kento-review feedback ça a trouvé le bug', commentId: 9501 })
+    let payload = issueCommentPayload({ body: '@kento-review feedback it found the bug', commentId: 9501 })
     Object.assign(payload.comment, { html_url: 'https://github.com/sakuga-software/sakuga-review/pull/28#issuecomment-9501' })
     let first = await deliver('issue_comment', payload)
     assert.equal(first.status, 202)
@@ -205,7 +205,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.deepEqual(await feedbackRows(), [
       {
         source: 'command',
-        text: 'ça a trouvé le bug',
+        text: 'it found the bug',
         authorLogin: 'alex',
         authorIsBot: false,
         url: 'https://github.com/sakuga-software/sakuga-review/pull/28#issuecomment-9501',
@@ -243,7 +243,7 @@ describe('feedback on the reviews (REV-107)', () => {
   })
 
   it('records a quote of the request only where Kentō asked, and reads the reactions with it', async () => {
-    const quote = "> @camille Kentō a relu cette PR 3 fois. Ton avis sur ces reviews nous aide à l'améliorer.\n\nUn fil inutile sur le cache."
+    const quote = '> @camille Kentō reviewed this PR 3 times. Your opinion on these reviews helps us make it better:\n\nA useless thread on the cache.'
     let none = await deliver('issue_comment', issueCommentPayload({ body: quote, commentId: 9503 }))
     assert.deepEqual(none.body, { outcome: 'skipped', reason: 'no request for feedback on the pull request' })
 
@@ -253,7 +253,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.deepEqual(out.body, { outcome: 'recorded', created: true, reactions: 1 })
     let rows = await feedbackRows()
     assert.deepEqual(rows.map((r) => [r.source, r.text]).sort(), [
-      ['quote', 'Un fil inutile sur le cache.'],
+      ['quote', 'A useless thread on the cache.'],
       ['reaction', '👍'],
     ])
   })

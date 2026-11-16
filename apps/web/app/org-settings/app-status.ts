@@ -4,14 +4,14 @@ import { appJwt } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
 
-/** What GitHub says about the App and one of its installations, for the section « App GitHub ». */
+/** What GitHub says about the App and one of its installations, for the section "App GitHub". */
 export interface AppStatus {
   /** `kento-review`. */
   slug: string
   name: string
   /** The public page of the App, `https://github.com/apps/kento-review`. */
   htmlUrl: string
-  /** « Advanced » of the settings of the App: Recent Deliveries and « Redeliver ». */
+  /** "Advanced" of the settings of the App: Recent Deliveries and "Redeliver". */
   deliveriesUrl: string
   /** The URL that GitHub posts to, and whether it checks its certificate. Null: GitHub did not give it. */
   webhook: { url: string; sslVerified: boolean } | null

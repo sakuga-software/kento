@@ -95,7 +95,7 @@ function money(form: FormData, name: string, errors: Record<string, string>): nu
   return value
 }
 
-/** « Cost cap »: the two limits (empty: none) and the alert percentage. */
+/** "Cost cap": the two limits (empty: none) and the alert percentage. */
 export function readCapsForm(form: FormData): FormResult<OrgCaps> {
   let errors: Record<string, string> = {}
   let dailyCapUsd = money(form, 'dailyCapUsd', errors)
@@ -108,7 +108,7 @@ export function readCapsForm(form: FormData): FormResult<OrgCaps> {
 }
 
 /**
- * « Trusted bots »: one login per line, or separated by commas. `renovate` becomes
+ * "Trusted bots": one login per line, or separated by commas. `renovate` becomes
  * `renovate[bot]`: a person is never a trusted bot.
  */
 export function readTrustedBotsForm(form: FormData): FormResult<string[]> {

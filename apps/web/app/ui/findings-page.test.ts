@@ -1,5 +1,5 @@
-// REV-18. The routes of the Findings screen: the selection for an admin, « Mark dismissed » and
-// « Mark wontfix », and the notice of their answer.
+// REV-18. The routes of the Findings screen: the selection for an admin, "Mark dismissed" and
+// "Mark wontfix", and the notice of their answer.
 import { readFileSync } from 'node:fs'
 
 import * as assert from 'remix/assert'
@@ -67,7 +67,7 @@ function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, mi
 }
 
 describe('the findings to consider (REV-102)', () => {
-  it('tags a finding that its last review lists « To consider », and only that one', async () => {
+  it('tags a finding that its last review lists "To consider", and only that one', async () => {
     let { signIn } = setup()
     let { html } = await signIn()
     let tagged = [...html.matchAll(/<tr id="finding-([0-9a-f-]+)">[\s\S]*?<\/tr>/g)].filter((m) => m[0].includes('>To consider</span>')).map((m) => m[1])
@@ -75,13 +75,13 @@ describe('the findings to consider (REV-102)', () => {
     assert.match(html, /<span title="An earlier review already read this code\. This finding does not block the pull request\." class="tag tag-info">To consider<\/span>|<span class="tag tag-info" title="An earlier review already read this code\. This finding does not block the pull request\.">To consider<\/span>/)
   })
 
-  it('filters them with « Type », in the URL, and keeps the filter through the tabs and « Clear the filters »', async () => {
+  it('filters them with "Type", in the URL, and keeps the filter through the tabs and "Clear the filters"', async () => {
     let { request, signIn, lists } = setup()
     let { cookie } = await signIn()
-    let html = await (await request('/findings?type=a-considerer', { cookie })).text()
+    let html = await (await request('/findings?type=to-consider', { cookie })).text()
     assert.equal(lists.at(-1)!.considered, true)
-    assert.match(html, /<option value="a-considerer" selected>\s*To consider \(code already reviewed\)\s*<\/option>/)
-    assert.match(html, /href="\/findings\?status=all&amp;type=a-considerer"/)
+    assert.match(html, /<option value="to-consider" selected>\s*To consider \(code already reviewed\)\s*<\/option>/)
+    assert.match(html, /href="\/findings\?status=all&amp;type=to-consider"/)
     assert.match(html, /<a href="\/findings" class="button button-ghost">Clear the filters/)
     await request('/findings?type=autre', { cookie })
     assert.equal(lists.at(-1)!.considered, false, 'a value that the screen does not know is ignored')
@@ -89,7 +89,7 @@ describe('the findings to consider (REV-102)', () => {
 })
 
 describe('the Findings screen, its selection and its actions', () => {
-  it('gives an admin a checkbox per finding, the dialog of the reasons and « Mark wontfix »; a member none of them', async () => {
+  it('gives an admin a checkbox per finding, the dialog of the reasons and "Mark wontfix"; a member none of them', async () => {
     let { signIn } = setup()
     let admin = await signIn()
     assert.match(admin.html, new RegExp(`<input type="checkbox" name="ids" value="${A}" form="findings-bulk"`))
@@ -109,21 +109,21 @@ describe('the Findings screen, its selection and its actions', () => {
   it('shows the list under its tab, the statuses as a segmented control, and the precision under its own tab (REV-91)', async () => {
     let { request, signIn } = setup()
     let { cookie, html } = await signIn()
-    assert.match(html, /<nav aria-label="Views of the findings" class="tabs"><a href="\/findings\?status=all&amp;priority=major" aria-current="page">List<\/a><a href="\/findings\?status=all&amp;priority=major&amp;vue=precision">Precision<\/a><\/nav>/)
+    assert.match(html, /<nav aria-label="Views of the findings" class="tabs"><a href="\/findings\?status=all&amp;priority=major" aria-current="page">List<\/a><a href="\/findings\?status=all&amp;priority=major&amp;view=precision">Precision<\/a><\/nav>/)
     assert.match(html, /Precision over 30 d: /)
     assert.match(html, /<nav aria-label="Status of the findings" class="segmented-links findings-views">/)
     assert.match(html, /for="findings-rule"[^>]*>\s*Source\s*<\/label>/)
     assert.match(html, /<option value=""[^>]*>\s*Review and rules\s*<\/option>/)
-    // The org of the test has no rule: the list « Source » is disabled, as before REV-91.
+    // The org of the test has no rule: the list "Source" is disabled, as before REV-91.
     assert.match(html, /<select[^>]*id="findings-rule"[^>]*disabled|<select[^>]*disabled[^>]*id="findings-rule"/)
     assert.match(html, /class="button findings-submit" type="submit"|type="submit" class="button findings-submit"/)
     assert.doesNotMatch(html, /Precision · last 30 days/)
-    let precision = await (await request('/findings?vue=precision', { cookie })).text()
-    assert.match(precision, /<a href="\/findings\?vue=precision" aria-current="page">Precision<\/a>/)
+    let precision = await (await request('/findings?view=precision', { cookie })).text()
+    assert.match(precision, /<a href="\/findings\?view=precision" aria-current="page">Precision<\/a>/)
     assert.doesNotMatch(precision, /name="ids"/)
     assert.doesNotMatch(precision, /findings-filters/)
     // List → Precision → List keeps the filters of the person.
-    let back = await (await request('/findings?status=all&priority=major&vue=precision', { cookie })).text()
+    let back = await (await request('/findings?status=all&priority=major&view=precision', { cookie })).text()
     assert.match(back, /<a href="\/findings\?status=all&amp;priority=major">List<\/a>/)
   })
 
@@ -133,17 +133,17 @@ describe('the Findings screen, its selection and its actions', () => {
     let html = await (await request('/findings', { cookie })).text()
     assert.match(html, /No finding yet/)
     assert.match(html, /<nav aria-label="Views of the findings" class="tabs">/)
-    let precision = await (await request('/findings?vue=precision', { cookie })).text()
-    assert.match(precision, /<a href="\/findings\?vue=precision" aria-current="page">Precision<\/a>/)
+    let precision = await (await request('/findings?view=precision', { cookie })).text()
+    assert.match(precision, /<a href="\/findings\?view=precision" aria-current="page">Precision<\/a>/)
     assert.match(precision, /Precision · last 30 days/)
     assert.doesNotMatch(precision, /No finding yet/)
   })
 
-  it('runs no list query on « Precision », which shows neither rows nor filters (REV-91)', async () => {
+  it('runs no list query on "Precision", which shows neither rows nor filters (REV-91)', async () => {
     let { request, signIn, lists } = setup()
     let { cookie } = await signIn()
     let before = lists.length
-    let precision = await (await request('/findings?status=all&vue=precision', { cookie })).text()
+    let precision = await (await request('/findings?status=all&view=precision', { cookie })).text()
     assert.match(precision, /Precision · last 30 days/)
     assert.equal(lists.length, before)
   })
@@ -162,23 +162,23 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.equal(lists.at(-1)!.after, good)
   })
 
-  it('loads findings.js once on the list, for an admin and a member, and not on « Precision » (REV-91)', async () => {
+  it('loads findings.js once on the list, for an admin and a member, and not on "Precision" (REV-91)', async () => {
     let { request, signIn } = setup()
     let scripts = (html: string) => html.match(/\/assets\/findings\.js/g)?.length ?? 0
     let admin = await signIn()
-    // « Filter » hides under `.js`: theme.js sets it, as a blocking script of the head, before the first paint.
+    // "Filter" hides under `.js`: theme.js sets it, as a blocking script of the head, before the first paint.
     assert.match(admin.html, /<head>(?:(?!<\/head>).)*<script src="\/assets\/theme\.js\?v=[^"]*"><\/script>(?:(?!<\/head>).)*<\/head>/s)
     assert.match(readFileSync(new URL('../../public/assets/theme.js', import.meta.url), 'utf8'), /^ *document\.documentElement\.classList\.add\('js'\)$/m)
     assert.equal(scripts(admin.html), 1)
     assert.equal(scripts(await (await request('/findings?q=cle', { cookie: admin.cookie })).text()), 1)
     let member = await signIn(CAMILLE)
     assert.equal(scripts(member.html), 1)
-    assert.equal(scripts(await (await request('/findings?vue=precision', { cookie: admin.cookie })).text()), 0)
+    assert.equal(scripts(await (await request('/findings?view=precision', { cookie: admin.cookie })).text()), 0)
     // One tag, after the bar: not one inside the bar and one outside it.
     assert.match(admin.html, /data-select-none[^]*<\/div><script src="\/assets\/findings\.js/)
   })
 
-  it('keeps a rule of the URL in the filters when the org has no rule left, and « Source » is disabled (REV-91)', async () => {
+  it('keeps a rule of the URL in the filters when the org has no rule left, and "Source" is disabled (REV-91)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()
     let html = await (await request(`/findings?rule=${A}`, { cookie })).text()
@@ -201,7 +201,7 @@ describe('the Findings screen, its selection and its actions', () => {
     let { cookie, csrf } = await signIn()
     let response = await request('/findings/status', {
       cookie,
-      form: [['_csrf', csrf], ['back', 'status=all&priority=major&evil=1&vue=precision'], ['ids', A], ['ids', B], ['status', 'dismissed'], ['reason', 'Off topic']],
+      form: [['_csrf', csrf], ['back', 'status=all&priority=major&evil=1&view=precision'], ['ids', A], ['ids', B], ['status', 'dismissed'], ['reason', 'Off topic']],
     })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/findings?status=all&priority=major&done=dismissed&n=2&replied=2')

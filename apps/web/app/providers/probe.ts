@@ -5,7 +5,7 @@ import { defaultBaseUrl } from '@sakuga-review/engine/providers'
 import type { ProviderKind } from '@sakuga-review/protocol'
 
 /**
- * « Test » on the screen: one call that reads the list of models of the provider with its key. It
+ * "Test" on the screen: one call that reads the list of models of the provider with its key. It
  * costs nothing and tells a valid key (200) from a refused one (401, 403).
  *
  * - `ok`: the provider answered.

@@ -150,7 +150,7 @@ describe('the form of an assignment rule (REV-21)', () => {
     })
   })
 
-  it('keeps the first error of the mention: a login of an App, even with « No automatic review »', () => {
+  it('keeps the first error of the mention: a login of an App, even with "No automatic review"', () => {
     let form = new FormData()
     form.set('authors', 'camille')
     form.set('outcome', 'command_only')
@@ -159,7 +159,7 @@ describe('the form of an assignment rule (REV-21)', () => {
     assert.deepEqual(read.ok ? null : read.errors.mention, 'The GitHub login of a person, for example alex.')
   })
 
-  it('reads « No automatic review » as a rule with no level', () => {
+  it('reads "No automatic review" as a rule with no level', () => {
     assert.deepEqual(readAssignmentForm(form({ labels: 'wip', outcome: 'command_only' })), {
       ok: true,
       value: { authors: [], paths: [], labels: ['wip'], action: 'command_only', level: null, mention: null },

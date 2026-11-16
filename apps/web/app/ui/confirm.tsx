@@ -1,14 +1,14 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 export interface ConfirmProps {
-  /** The text of the button that opens the confirmation: « Revoke… ». */
+  /** The text of the button that opens the confirmation: "Revoke…". */
   trigger: RemixNode
   /** What the action does and what stays, in a sentence or two. */
   children?: RemixNode
   /** The URL that the confirmation posts to. */
   action: string
   csrf: string | null
-  /** The text of the button that acts: « Revoke runner-1 ». It names what goes. */
+  /** The text of the button that acts: "Revoke runner-1". It names what goes. */
   submit: RemixNode
   /**
    * The id of a form of the page that carries the CSRF token (REV-36): the button posts it to
@@ -23,7 +23,7 @@ export interface ConfirmProps {
  * button that acts have the destructive style, never the primary one.
  *
  * Without JavaScript, the trigger opens and closes it (a `<details>`). With /assets/confirm.js,
- * « Cancel » and Escape close it too, and give the focus back to the trigger.
+ * "Cancel" and Escape close it too, and give the focus back to the trigger.
  */
 export function Confirm(handle: Handle<ConfirmProps>) {
   return () => {

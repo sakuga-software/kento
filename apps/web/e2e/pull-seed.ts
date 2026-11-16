@@ -1,12 +1,12 @@
 // REV-17. A pull request with four reviews, for the screen of a pull request in a browser
 // (e2e/pull.spec.ts) and for its pictures: orchard #142.
 //
-// - A « The session token never expires »: posted by R1, moved from line 42 to 47 by R2 with no
+// - A "The session token never expires": posted by R1, moved from line 42 to 47 by R2 with no
 //   new comment, found again by R3 and R4. Open.
-// - B « API key written to the logs »: posted by R1, fixed by R2.
-// - C « List with no stable key »: posted by R1, found again by R2, dismissed by camille (False positive)
+// - B "API key written to the logs": posted by R1, fixed by R2.
+// - C "List with no stable key": posted by R1, found again by R2, dismissed by camille (False positive)
 //   before R3. R3 and R4 leave it out.
-// - D « SQL query built by concatenation »: posted by R2, absent from R3 (its file did not
+// - D "SQL query built by concatenation": posted by R2, absent from R3 (its file did not
 //   change), kept by alex (wontfix) before R4.
 import { findingKey } from '@sakuga-review/engine/findings'
 import type postgres from 'postgres'

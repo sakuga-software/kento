@@ -40,7 +40,7 @@ export interface QueuedPull {
 }
 
 /**
- * « 30 Oct 14:02 UTC ». The body holds no « for N min »: it changes only when the job, the cause or
+ * "30 Oct 14:02 UTC". The body holds no "for N min": it changes only when the job, the cause or
  * the last runner change, so the publisher does not edit the comment at each run.
  */
 export function utcTime(date: Date): string {
@@ -50,7 +50,7 @@ export function utcTime(date: Date): string {
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** « no Kentō runner is online … », or why the online ones do not take it. */
+/** "no Kentō runner is online …", or why the online ones do not take it. */
 export function causeText(cause: StallCause): string {
   if (cause.kind === 'no_runner') {
     return cause.lastSeenAt

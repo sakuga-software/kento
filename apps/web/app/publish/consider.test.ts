@@ -1,5 +1,5 @@
 // REV-100. A new finding on code that an earlier review already read, not critical, gets no thread
-// and does not ask for changes: the block lists it under « To consider (code already reviewed) », and the
+// and does not ask for changes: the block lists it under "To consider (code already reviewed)", and the
 // database keeps it. A critical one keeps its thread and blocks. The finding is the one of dojo#91.
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
@@ -23,9 +23,9 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'major',
     category: 'contract',
     confidence: 90,
-    title: "STUDIO_HOST n'est ni dans .env.example ni documenté",
-    scenario: 'La page lit process.env.STUDIO_HOST, absent de .env.example.',
-    fix: 'Ajouter STUDIO_HOST à .env.example.',
+    title: 'STUDIO_HOST is neither in .env.example nor documented',
+    scenario: 'The page reads process.env.STUDIO_HOST, which .env.example lacks.',
+    fix: 'Add STUDIO_HOST to .env.example.',
     suggestion: '',
     anchor: 33,
     blocking: false,
@@ -47,8 +47,8 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.01,
     promptTokens: 1,
     completionTokens: 1,
-    summary: 'Résumé.',
-    risk: 'Risque.',
+    summary: 'Summary.',
+    risk: 'Risk.',
     diagram: null,
     deeperReview: null,
     findings: [finding()],
@@ -83,14 +83,14 @@ describe('a new finding on code already read (REV-100)', () => {
     assert.equal(outcome.score, 4)
     assert.equal(fake.botThreads().length, 0)
     assert.equal(fake.state.reviews.at(-1)!.state, 'APPROVED')
-    assert.match(fake.state.pr.body, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/)
+    assert.match(fake.state.pr.body, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST is neither in \.env\.example nor documented/)
     assert.doesNotMatch(fake.state.pr.body, /<h3>Findings<\/h3>/)
-    assert.deepEqual(rows.map((r) => [r.title, r.status]), [["STUDIO_HOST n'est ni dans .env.example ni documenté", 'open']])
+    assert.deepEqual(rows.map((r) => [r.title, r.status]), [['STUDIO_HOST is neither in .env.example nor documented', 'open']])
   })
 
   it('guard: a critical finding on code already read keeps its thread and asks for changes', async () => {
     let { fake, publish } = setup()
-    let critical = finding({ severity: 'critical', title: 'Le jeton de session passe dans STUDIO_HOST', blocking: true })
+    let critical = finding({ severity: 'critical', title: 'The session token goes into STUDIO_HOST', blocking: true })
     let outcome = await publish(payload({ score: 2, verdict: 'REQUEST_CHANGES', findings: [critical] }))
     assert.equal(outcome.inline, 1)
     assert.equal(fake.state.reviews.at(-1)!.state, 'CHANGES_REQUESTED')

@@ -93,7 +93,7 @@ export function createUiControllers(deps: UiDependencies) {
         let page = <CommandsPage theme={readTheme(context.headers.get('Cookie'))} version={deps.version} assetVersion={kit.assetVersion} />
         return context.render(page)
       },
-      commandsFrench(context) {
+      commandsLegacy(context) {
         return new Response(null, { status: 301, headers: { Location: `${docsRoutes.commands.href()}${context.url.search}` } })
       },
     },

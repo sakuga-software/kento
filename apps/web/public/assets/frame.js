@@ -1,6 +1,6 @@
-// The frame of the screens (REV-91). Under 760 px, « Menu » opens and closes the list of the screens;
+// The frame of the screens (REV-91). Under 760 px, "Menu" opens and closes the list of the screens;
 // Escape or a click outside closes it. A choice of org applies at once. Without JavaScript, the list
-// stays open under the bar and « Switch » posts the org.
+// stays open under the bar and "Switch" posts the org.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   const bar = document.querySelector('[data-bar]')

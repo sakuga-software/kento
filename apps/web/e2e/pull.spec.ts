@@ -80,7 +80,7 @@ test('the sheet shows a finding found again after its lines moved, with no new c
   }
 
   await page.getByRole('link', { name: /dismissed/ }).first().click()
-  await expect(page).toHaveURL(/statut=dismissed/)
+  await expect(page).toHaveURL(/status=dismissed/)
   await expect(sheet.getByRole('rowheader')).toHaveCount(1)
   await expect(sheet.getByRole('rowheader')).toContainText('List with no stable key')
 
@@ -119,7 +119,7 @@ test('the detail of a finding: source, model, scenario, its code at its line, hi
 
 const GITHUB = `http://127.0.0.1:${process.env.E2E_GITHUB_PORT ?? 3499}`
 
-test('a member dismisses a finding as « False positive »: status, reply in the GitHub thread, history; then reopens it', async ({ page }) => {
+test('a member dismisses a finding as "False positive": status, reply in the GitHub thread, history; then reopens it', async ({ page }) => {
   let errors = watchConsole(page)
   let before = ((await (await fetch(`${GITHUB}/_test/replies`)).json()) as unknown[]).length
   await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
@@ -150,7 +150,7 @@ test('a member dismisses a finding as « False positive »: status, reply in the
   await expect(page.locator('.finding-tags')).toContainText('open')
   await expect(history.last()).toContainText('@camille')
 
-  // « Mark wontfix » shares the form of the page with « Mark dismissed »: its button posts to /wontfix.
+  // "Mark wontfix" shares the form of the page with "Mark dismissed": its button posts to /wontfix.
   await page.getByText('Mark wontfix…').click()
   await page.getByRole('button', { name: 'Mark wontfix', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Finding marked wontfix.' })).toBeVisible()
@@ -166,7 +166,7 @@ test('an admin re-runs the review in heavy: a column R5 waits, then shows the pu
   await page.context().clearCookies()
   await signIn(page, 'alex')
   await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
-  // REV-91: « Run R5… » beside the title opens the three levels.
+  // REV-91: "Run R5…" beside the title opens the three levels.
   await page.getByText('Run R5…').click()
   let rerun = page.getByRole('group', { name: 'Run R5' })
   await expect(rerun.getByRole('button', { name: /Run at heavy · ≈ \$0\.41/ })).toBeVisible()

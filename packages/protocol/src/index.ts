@@ -275,7 +275,7 @@ export type RejectedFinding = {
 
 /**
  * REV-89. The last review of the pull request that the runner may reuse: its head and its reuse key.
- * Only a review job of a push carries one; a command or « Relancer » always gets a new review.
+ * Only a review job of a push carries one; a command or a manual rerun always gets a new review.
  */
 export type JobReuse = { head: string; key: string; delta?: JobDelta };
 

@@ -3,7 +3,7 @@ import type { Handle, RemixNode } from 'remix/component'
 import type { Theme } from './theme.ts'
 
 export interface DocumentProps {
-  /** The title of the page, before « · Kentō ». */
+  /** The title of the page, before "· Kentō". */
   title: string
   theme: Theme
   /** Appended to the URL of each asset, so that a new release is not read from a stale cache. */
@@ -35,9 +35,9 @@ export function Document(handle: Handle<DocumentProps>) {
           <link rel="stylesheet" href={`/assets/kento.css?v=${v}`} />
           {/* Blocking and tiny: it marks <html> as scripted before the first paint. */}
           <script src={`/assets/theme.js?v=${v}`}></script>
-          {/* The confirmations of the destructive actions: « Cancel » and Escape. */}
+          {/* The confirmations of the destructive actions: "Cancel" and Escape. */}
           <script src={`/assets/confirm.js?v=${v}`} defer></script>
-          {/* REV-91: « Menu » under 760 px, and the org switch. */}
+          {/* REV-91: "Menu" under 760 px, and the org switch. */}
           <script src={`/assets/frame.js?v=${v}`} defer></script>
         </head>
         <body>{children}</body>

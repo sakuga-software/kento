@@ -6,7 +6,7 @@ export const markerResolve = (head: string) => `<!-- sakuga-review:resolve ${hea
 /** The most characters of one comment of a thread that the model reads. */
 export const MAX_THREAD_COMMENT_CHARS = 2000;
 
-const TRUNCATED = '[… coupé ici]';
+const TRUNCATED = '[… cut here]';
 
 /** The text cut to a size, with a mark that the model sees when the cut drops something. */
 export function cut(text: string, max: number): string {

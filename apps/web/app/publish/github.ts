@@ -11,7 +11,7 @@ export class GitHubError extends Error {
 /** The REST and GraphQL API of GitHub, with one installation token. */
 export interface GitHub {
   rest<T = any>(method: string, path: string, payload?: unknown): Promise<T>
-  /** As `rest`, with the status of the answer: some routes answer 200 or 201 for « found » or « created ». */
+  /** As `rest`, with the status of the answer: some routes answer 200 or 201 for "found" or "created". */
   send<T = any>(method: string, path: string, payload?: unknown): Promise<{ status: number; body: T }>
   graphql<T = any>(query: string, variables: Record<string, unknown>): Promise<T>
 }

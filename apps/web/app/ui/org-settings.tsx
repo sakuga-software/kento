@@ -21,14 +21,14 @@ import { appStatusReason, deliveryReason, reasonSentence, TechDetails } from './
 /** The forms of the section, each one a `field` of `POST /settings/org`. */
 export const ORG_FIELDS = ['caps', 'trustedBots', 'level', 'models.lite', 'models.balanced', 'models.heavy'] as const
 export type OrgField = (typeof ORG_FIELDS)[number]
-/** The defaults that « Back to the Kentō value » removes from the config of the org. */
+/** The defaults that "Back to the Kentō value" removes from the config of the org. */
 export const ORG_RESET_FIELDS = ['level', 'models.lite', 'models.balanced', 'models.heavy'] as const satisfies readonly ConfigField[]
 
 /** Where the page goes back after a form: the anchor of its section. */
 export function anchorOf(field: OrgField): string {
-  if (field === 'caps') return 'plafond'
+  if (field === 'caps') return 'cap'
   if (field === 'trustedBots') return 'bots'
-  return 'defauts'
+  return 'defaults'
 }
 
 export type OrgNotice =
@@ -74,7 +74,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 }
 const ACCESS: Record<'read' | 'write', string> = { read: 'read', write: 'write' }
 
-/** « settings v3, changed by alex on 29 Oct at 15:02 ». */
+/** "settings v3, changed by alex on 29 Oct at 15:02". */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
   return versionLine({ name: 'settings', changed: 'changed', empty: 'settings v0, the values of Kentō' }, view)
 }
@@ -82,7 +82,7 @@ export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedB
 const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'Daily', month: 'Monthly' }
 
 /**
- * The settings of the org (REV-13), above « Providers and keys »: the cost limit, the defaults that
+ * The settings of the org (REV-13), above "Providers and keys": the cost limit, the defaults that
  * the repositories inherit, the trusted bots, and the state of the GitHub App. An admin edits; a
  * member reads everything.
  */
@@ -103,7 +103,7 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
                 {PERIOD_TEXT[hit.period]} cap reached, {usd(hit.spentUsd)} of {usd(hit.capUsd)}.
               </strong>{' '}
               No new job starts. The jobs in progress finish, and the reviews start again {resetWhen(hit.resetsAt)}.{' '}
-              {admin ? <a href="#plafond">Raise the cap</a> : 'An admin of the organization can raise it.'}
+              {admin ? <a href="#cap">Raise the cap</a> : 'An admin of the organization can raise it.'}
             </p>
           </div>
         ) : null}
@@ -155,7 +155,7 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
 }
 
 /**
- * REV-27. The next job of each level of the org: the config of the org, else the « Default »
+ * REV-27. The next job of each level of the org: the config of the org, else the "Default"
  * provider. A repository may choose another one in its Config.
  */
 export function orgEffectiveLevels(view: Pick<OrgSettingsView, 'config'>, providers: readonly ProviderOption[]): Record<Level, EffectiveLevel> {
@@ -185,7 +185,7 @@ function CapSection(handle: Handle<SectionProps>) {
       alertPct: String(view.caps.alertPct),
     }
     return (
-      <section class="card config-card" id="plafond" aria-labelledby="cap-title" tabIndex={-1}>
+      <section class="card config-card" id="cap" aria-labelledby="cap-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="cap-title">
             Cost cap
@@ -299,7 +299,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
     let mine = form?.field === 'level' ? form : null
     let selected = mine?.values.defaultLevel ?? level
     return (
-      <section class="card config-card org-defaults" id="defauts" aria-labelledby="defaults-title" tabIndex={-1}>
+      <section class="card config-card org-defaults" id="defaults" aria-labelledby="defaults-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="defaults-title">
             Default values
@@ -371,7 +371,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
   }
 }
 
-/** « set for the org » or « value of Kentō ». The word carries the meaning. */
+/** "set for the org" or "value of Kentō". The word carries the meaning. */
 function OrgSource(handle: Handle<{ set: boolean }>) {
   return () => (handle.props.set ? <span class="tag tag-info">set for the org</span> : <span class="tag tag-quiet">value of Kentō</span>)
 }
@@ -397,7 +397,7 @@ function LevelDefault(
     let { level, value, set, effective, providers, admin, csrf, version, form } = handle.props
     let errors = form?.errors ?? {}
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
-    // A level without a choice shows what runs today: the « Default » provider and its models.
+    // A level without a choice shows what runs today: the "Default" provider and its models.
     let shown = set ? value : { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback }
     let values = form?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `org-${level}`

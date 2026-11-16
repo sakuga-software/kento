@@ -17,7 +17,7 @@ import { createAppRouter } from '../../app/router.ts'
 import { createRunnerStore } from '../../app/runner/store.ts'
 import { createTestDatabase } from './helpers.ts'
 
-// REV-27. What Réglages and Config show as « Prochain job » (app/repo-config/effective.ts) is what
+// REV-27. What Settings and Config show as "Next job" (app/repo-config/effective.ts) is what
 // the claim of the service gives the runner: the same provider, and the same first model. Each case
 // queues a job with the config of the org and of the repository, claims it as a trusted runner that
 // reads the providers and the models, and compares.
@@ -26,7 +26,7 @@ const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = 'b'.repeat(40)
 const RUNNER = { hasProviderKey: false, kinds: ['review'], features: ['providers', 'models'], ownProvider: null }
 
-describe('« Next job » is the provider and the model of the claim (REV-27)', () => {
+describe('"Next job" is the provider and the model of the claim (REV-27)', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
   let box: SecretBox
@@ -126,7 +126,7 @@ describe('« Next job » is the provider and the model of the claim (REV-27)', (
     assert.deepEqual(claimed, { provider: screen.provider.id, model: screen.model })
   })
 
-  it('nothing chosen: the « Default » provider, with its own models', async () => {
+  it('nothing chosen: the "Default" provider, with its own models', async () => {
     let def = await add('Default', { models: { lite: ['claude-haiku-4-5', 'claude-sonnet-4-5'] } })
     let { screen, claimed } = await compare({}, {})
     assert.equal(screen.origin, 'default')
@@ -142,7 +142,7 @@ describe('« Next job » is the provider and the model of the claim (REV-27)', (
     assert.equal(screen.model, defaultModels('anthropic', 'lite')[0])
   })
 
-  it('the org chose « service »: OpenRouter, even with a default provider', async () => {
+  it('the org chose "service": OpenRouter, even with a default provider', async () => {
     await add('Default')
     let { screen, claimed } = await compare({ models: { lite: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } } }, {})
     assert.equal(screen.origin, 'chosen')

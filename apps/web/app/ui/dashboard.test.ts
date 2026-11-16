@@ -206,9 +206,9 @@ describe('the words of the dashboard', () => {
       action: 'Check on the Runners screen that a runner is online, then retry.',
       raw: null,
     })
-    let refused = failureText({ reason: 'the provider « Anthropic » refused its key (401): unauthorized', runnerName: null })
+    let refused = failureText({ reason: 'the provider "Anthropic" refused its key (401): unauthorized', runnerName: null })
     assert.equal(refused.text, 'the provider "Anthropic" refused its key, code 401')
-    assert.equal(refused.raw, 'the provider « Anthropic » refused its key (401): unauthorized')
+    assert.equal(refused.raw, 'the provider "Anthropic" refused its key (401): unauthorized')
     assert.equal(failureText({ reason: 'clone failed', runnerName: 'x' }).text, 'the runner could not clone the repo')
     assert.equal(failureText({ reason: null, runnerName: null }).text, 'no reason recorded')
   })
@@ -235,7 +235,7 @@ function fresh(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
   })
 }
 
-describe('the list « Getting started » (REV-26)', () => {
+describe('the list "Getting started" (REV-26)', () => {
   const OPTIONS = { serviceKey: false, installationUrl: 'https://github.com/organizations/sakuga-software/settings/installations/42' }
   const states = (view: DashboardScreen, options = OPTIONS) => setupSteps(view, options)?.map((step) => `${step.key}:${step.state}`)
 
@@ -278,21 +278,21 @@ describe('the list « Getting started » (REV-26)', () => {
     assert.match(html, /<h2 id="setup-title" class="section-title">Getting started<\/h2>/)
     assert.match(html, /1 of 5 steps/)
     assert.match(html, /href="https:\/\/github.com\/organizations\/sakuga-software\/settings\/installations\/\d+"[^>]*>Choose the repos on GitHub/)
-    assert.match(html, /href="\/settings#nouveau-provider"[^>]*>Add a provider/)
+    assert.match(html, /href="\/settings#new-provider"[^>]*>Add a provider/)
     assert.match(html, /href="\/runners"[^>]*>Create a runner/)
     assert.match(html, /href="\/repos"[^>]*>Enable a repo/)
     assert.match(html, /Open a pull request/)
-    assert.doesNotMatch(html, /Demandez à un admin/)
+    assert.doesNotMatch(html, /Ask an admin/)
   })
 
-  it('shows a member the same list to read, with « Ask an admin » and no link to a step to do', async () => {
+  it('shows a member the same list to read, with "Ask an admin" and no link to a step to do', async () => {
     let { signIn } = setup(fresh())
     let { html } = await signIn(CAMILLE)
     assert.match(html, /Getting started/)
     assert.equal(html.match(/Ask an admin of the organization\./g)?.length, 3)
     assert.doesNotMatch(html, /href="\/runners"[^>]*>Create a runner/)
     assert.doesNotMatch(html, /href="\/repos"[^>]*>Enable a repo/)
-    assert.doesNotMatch(html, /href="\/settings#nouveau-provider"/)
+    assert.doesNotMatch(html, /href="\/settings#new-provider"/)
   })
 
   it('is not on the dashboard of an org with a published review', async () => {
@@ -302,7 +302,7 @@ describe('the list « Getting started » (REV-26)', () => {
   })
 })
 
-describe('« To do » and the band of numbers (REV-91)', () => {
+describe('"To do" and the band of numbers (REV-91)', () => {
   it('weighs the mean time of each day by its published reviews', () => {
     let day = (n: number, mean: number | null) => ({ day: '2026-10-29', published: { lite: n, balanced: 0, heavy: 0 }, failed: 0, meanDurationMs: mean })
     assert.equal(weekMeanDuration([day(1, 60_000), day(3, 120_000)]), 105_000)
@@ -322,13 +322,13 @@ describe('« To do » and the band of numbers (REV-91)', () => {
     assert.match(todo, /To do <span class="count">3<\/span>/)
     assert.match(todo, /The daily alert threshold is reached/)
     assert.match(todo, /\$4\.50 of \$5\.00 · 90%/)
-    assert.match(todo, /href="\/settings#plafond"[^>]*>Change the cap/)
+    assert.match(todo, /href="\/settings#cap"[^>]*>Change the cap/)
     assert.match(todo, /<code>portable-alex<\/code> has given no signal for 47 min/)
     assert.match(todo, /It has no job/)
     assert.match(todo, /still on\s*<code>review.yml<\/code>/)
     // A member reads where the limit is, and cannot change it.
     let member = (await signIn(CAMILLE)).html
-    assert.match(member, /href="\/settings#plafond"[^>]*>See the cap/)
+    assert.match(member, /href="\/settings#cap"[^>]*>See the cap/)
   })
 
   it('counts the silent runners that the bounded list leaves out, with no empty names (REV-91)', async () => {
@@ -343,7 +343,7 @@ describe('« To do » and the band of numbers (REV-91)', () => {
     assert.match(one, /1 runner gives no signal/)
   })
 
-  it('says a limit of 0 is reached with no share and no bar, never « NaN% » (REV-91)', async () => {
+  it('says a limit of 0 is reached with no share and no bar, never "NaN%" (REV-91)', async () => {
     let { signIn } = setup(screen({ banner: null, workflowRepos: [], caps: { dailyCapUsd: 0, monthlyCapUsd: null, alertPct: 80 } }))
     let { html } = await signIn(ALEX)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</ul>', html.indexOf('id="todo-title"')))
@@ -394,11 +394,11 @@ describe('the dashboard', () => {
     assert.match(html, /2 reviews or resolutions of the month with no known/)
     assert.match(html, /On <span class="mono">mac-mini<\/span>/)
     assert.match(html, /attempt 2/)
-    // REV-43: the queue says « held until » with a hint, never the « bail » of the runner protocol.
+    // REV-43: the queue says "held until" with a hint, never the "bail" of the runner protocol.
     assert.match(html, /<span title="Without a signal of the runner before this hour, the job goes back to the queue.">\s*held until <time/)
     assert.doesNotMatch(html, /\bbail\b/)
     assert.match(html, /href="\/runners"/)
-    // REV-91: the last reviews link the screen of each pull request, and « Tous les findings ».
+    // REV-91: the last reviews link the screen of each pull request, and "Tous les findings".
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/pulls\/\d+"/)
     assert.match(html, /<a href="\/findings">All findings<\/a>/)
     assert.match(html, /No closed finding over 30 days\. The share of the findings that a push fixes shows here from 10/)
@@ -417,7 +417,7 @@ describe('the dashboard', () => {
     assert.match(kpis, /Precision · 30 d<\/span><span class="kpi-value kpi-pending">—<\/span>/)
   })
 
-  it('shows the precision of the org and of its repositories, or « n = 9 of 10 » under 10 closed findings (REV-18)', async () => {
+  it('shows the precision of the org and of its repositories, or "n = 9 of 10" under 10 closed findings (REV-18)', async () => {
     let { store } = fakeFindingsScreenStore({
       report: {
         ...EMPTY_REPORT,
@@ -437,7 +437,7 @@ describe('the dashboard', () => {
     assert.match(html, /href="\/findings\?status=closed&amp;repo=33333333-3333-4333-8333-333333333333"[^>]*>orchard<\/a><span class="precision-figures"><span title="37 fixed · 4 dismissed" class="precision-value">90%/)
     assert.match(html, />fruitback<\/a><span class="precision-figures"><span [^>]*class="precision-value precision-pending">n = 9 of 10/)
     assert.match(html, /title="loner" class="precision-name">loner<\/a>/)
-    assert.doesNotMatch(html, /Aucun finding clos sur 30 jours/)
+    assert.doesNotMatch(html, /No closed finding over 30 days/)
   })
 
   it('shows the same dashboard to a member, without the retry buttons', async () => {
@@ -446,7 +446,7 @@ describe('the dashboard', () => {
     assert.match(html, /Read only/)
     assert.match(html, /the runner stopped answering during the job twice/)
     assert.doesNotMatch(html, /\/retry"/)
-    assert.doesNotMatch(html, /Relancer en/)
+    assert.doesNotMatch(html, /Run again at/)
     assert.doesNotMatch(html, /\/dismiss"/)
   })
 
@@ -454,7 +454,7 @@ describe('the dashboard', () => {
     let { signIn } = setup(screen({ banner: banner({ retry: { id: 'j9', level: 'balanced', state: 'queued' } }) }))
     let { html } = await signIn(ALEX)
     assert.match(html, /Retry at balanced queued/)
-    assert.doesNotMatch(html, /Relancer en/)
+    assert.doesNotMatch(html, /Run again at/)
   })
 
   it('lists the runners that work first, the offline ones after, with the counts of all and a link to the rest (REV-37)', async () => {
@@ -487,7 +487,7 @@ describe('the dashboard', () => {
     assert.match(section, /<a href="\/runners" class="button">See the runners<\/a>/)
     assert.ok(html.indexOf('id="todo-stall"') < html.indexOf('id="todo-failure-'), 'the queue comes before the failure')
     assert.ok(html.indexOf('id="todo-stall"') < html.indexOf('id="dash-runners-title"'))
-    // REV-91: each row of « À traiter » has its own id, once on the page, and names its region with it.
+    // REV-91: each row of "To do" has its own id, once on the page, and names its region with it.
     let ids = [...html.matchAll(/ id="([^"]+)"/g)].map((match) => match[1]!)
     assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], 'no id twice on the page')
     assert.match(html, /aria-labelledby="todo-stall"/)
@@ -549,7 +549,7 @@ describe('the dashboard', () => {
     assert.deepEqual(retries, [])
   })
 
-  it('sends a bad id to « missing » without asking the store', async () => {
+  it('sends a bad id to "missing" without asking the store', async () => {
     let { signIn, request, retries } = setup()
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/jobs/not-a-uuid/retry', { cookie, form: { _csrf: csrf, level: 'lite' } })
@@ -610,7 +610,7 @@ describe('the dashboard', () => {
     assert.equal(line?.reviewLevel, 'heavy')
   })
 
-  it('gives an admin « Hide » on the banner and on each failure of the list (REV-59)', async () => {
+  it('gives an admin "Hide" on the banner and on each failure of the list (REV-59)', async () => {
     let { signIn } = setup()
     let { html } = await signIn(ALEX)
     assert.match(html, new RegExp(`action="/jobs/${JOB_ID}/dismiss"`))
@@ -628,7 +628,7 @@ describe('the dashboard', () => {
     assert.match(html, /Failure hidden\. It still counts in "Failures · 7 d"/)
   })
 
-  it('refuses « Hide » from a member or without a CSRF token, and says when nothing was hidden (REV-59)', async () => {
+  it('refuses "Hide" from a member or without a CSRF token, and says when nothing was hidden (REV-59)', async () => {
     let { signIn, request, dismissals } = setup()
     let member = await signIn(CAMILLE)
     assert.equal((await request(`/jobs/${JOB_ID}/dismiss`, { cookie: member.cookie, form: { _csrf: member.csrf } })).status, 403)

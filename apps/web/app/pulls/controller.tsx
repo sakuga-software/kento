@@ -28,7 +28,7 @@ export interface PullsDependencies {
   readCode?: ReadCode | null
   /** Posts the reply of the bot in the thread of a finding (REV-18). Null without the GitHub App. */
   postReply?: ThreadReplier | null
-  /** Reads the state and the head of the pull request before « Run again ». Null without the GitHub App. */
+  /** Reads the state and the head of the pull request before "Run again". Null without the GitHub App. */
   readPullRequest?: ReadPullRequest | null
   now?: () => number
 }
@@ -41,7 +41,7 @@ type Decision = { status: 'dismissed' | 'wontfix' | 'open'; reason: string | nul
 
 /**
  * The decision of a form, or null for a form that the server cannot read. A dismissal reads the
- * fields of the dialog of REV-18 (`readStatusForm`: one of its reasons, or « Other » with a reason),
+ * fields of the dialog of REV-18 (`readStatusForm`: one of its reasons, or "Other" with a reason),
  * for the finding of the address only.
  */
 function readDecision(status: Decision['status'], id: string, form: FormData | undefined): Decision | null {
@@ -70,7 +70,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
     if (!finding) return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
     // As on the Findings screen (REV-18): a finding that a push fixed is not set aside, or the precision
     // of the repository would lose it.
-    if (finding.status === 'fixed' && status !== 'open') return kit.redirect(`${findingHref(id)}?fait=fixed`)
+    if (finding.status === 'fixed' && status !== 'open') return kit.redirect(`${findingHref(id)}?done=fixed`)
     let change = await deps.store.setStatus({ orgId: signed.orgId, findingId: id, status, reason: decision.reason, actor: signed.login })
     if (change.outcome === 'not_found') return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
     if (change.outcome === 'invalid') return kit.errorPage(context, 400, 'form', 'repos')
@@ -92,7 +92,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
     }
     log('info', 'finding.status', { login: signed.login, org: signed.orgLogin, finding: id, status, outcome: change.outcome, github })
     let notice: FindingNotice = change.outcome === 'changed' ? status : 'unchanged'
-    return kit.redirect(`${findingHref(id)}?fait=${notice}${github ? `&github=${github}` : ''}`)
+    return kit.redirect(`${findingHref(id)}?done=${notice}${github ? `&github=${github}` : ''}`)
   }
   return createController(pullRoutes, {
     middleware: kit.middleware,
@@ -120,12 +120,12 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
           }
         }
         let estimates = signed.role === 'admin' ? await deps.store.estimates(summary.target.repoId) : null
-        let relance = context.url.searchParams.get('relance')
+        let rerun = context.url.searchParams.get('rerun')
         return context.render(
           <PullPage
             frame={kit.frame(context)}
             estimates={estimates}
-            rerunNotice={relance !== null && relance in RERUN_NOTICES ? (relance as RerunNotice) : null}
+            rerunNotice={rerun !== null && rerun in RERUN_NOTICES ? (rerun as RerunNotice) : null}
             summary={summary}
             header={header}
             sheet={sheet}
@@ -140,7 +140,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
         let signed = kit.signed(context)
         let finding = deps ? await deps.store.finding(signed.orgId, context.params.id) : null
         if (!deps || !finding) return kit.errorPage(context, 404, 'page', 'repos', REPOS_EXIT)
-        let cursor = context.url.searchParams.get('historique') || null
+        let cursor = context.url.searchParams.get('history') || null
         let history
         try {
           history = await deps.store.history(signed.orgId, finding.id, cursor)
@@ -159,11 +159,11 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
         }
         let page = kit.frame(context)
         let query = context.url.searchParams
-        let fait = query.get('fait')
+        let done = query.get('done')
         let gh = query.get('github')
         let notice =
-          fait !== null && fait in FINDING_NOTICES ? (
-            <FindingNoticeView notice={fait as FindingNotice} github={gh !== null && gh in GITHUB_NOTICES ? (gh as GithubNotice) : null} />
+          done !== null && done in FINDING_NOTICES ? (
+            <FindingNoticeView notice={done as FindingNotice} github={gh !== null && gh in GITHUB_NOTICES ? (gh as GithubNotice) : null} />
           ) : null
         return context.render(
           <FindingPage
@@ -212,7 +212,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
           notice = outcome.kind === 'not_found' ? 'missing' : outcome.kind
         }
         log('info', 'pull.rerun', { login: signed.login, org: signed.orgLogin, repo: summary.target.fullName, pr: prNumber, reviewLevel: level, outcome: notice, jobId })
-        return kit.redirect(`${pullHref(summary.target.repoId, prNumber)}?relance=${notice}`)
+        return kit.redirect(`${pullHref(summary.target.repoId, prNumber)}?rerun=${notice}`)
       },
 
       async findingDismiss(context) {

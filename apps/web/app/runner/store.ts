@@ -215,7 +215,7 @@ export interface RunnerStore {
   recordSentRules(jobId: string, runnerId: string, attempt: number, rules: JobRule[]): Promise<void>
   /**
    * REV-89. The last review on GitHub of the pull request of a review job, when the runner may reuse
-   * it: the job comes from a push (not a command, a « Run again » or a retry), and that review has a
+   * it: the job comes from a push (not a command, a "Run again" or a retry), and that review has a
    * reuse key. Null otherwise: the runner then reviews the head. A copy that waits for its
    * publication (outcome `unchanged`) is not read yet: its source, still the last review on GitHub,
    * has the same key and the same findings, so the runner compares with the same input.
@@ -337,7 +337,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           cross join me
           -- The provider of the job (REV-11, REV-12): the provider of the org that the config of the
           -- repository or of the org chose for the level (jobs.config); the key of the service when the
-          -- config chose « service »; else, with no choice (the values of Kentō), the default provider of
+          -- config chose "service"; else, with no choice (the values of Kentō), the default provider of
           -- the org. A provider of another org never matches, and a provider removed since leaves the
           -- key of the service.
           left join providers prov on prov.org_id = repos.org_id and case
@@ -620,7 +620,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
                 -- A slow job of a runner with a wrong key never hides a later success on another runner.
                 and (not runner_held or last_ok_at is null or last_ok_at <= (select started_at from jobs where id = ${jobId}))
               returning label`
-            if (provider) reason = `the provider « ${provider.label} » refused its key (${result.providerStatus}): ${result.reason}`.slice(0, 2000)
+            if (provider) reason = `the provider "${provider.label}" refused its key (${result.providerStatus}): ${result.reason}`.slice(0, 2000)
           }
           await tx`
             update jobs set state = 'failed', failure_reason = ${reason}, finished_at = now(),

@@ -108,7 +108,7 @@ const runnersScreen: RunnersScreen = {
     { id: '00000000-0000-4000-8000-000000000011', name: 'runners-host', labels: ['linux', 'x64'], version: '0.1.0', trusted: true, orgId: null, revokedAt: null, lastSeenAt: new Date(now.getTime() - 25_000), createdAt: minutes(9000), currentJob: null, jobs24h: 31 },
     { id: '00000000-0000-4000-8000-000000000012', name: 'portable-alex', labels: ['local'], version: '0.0.9', trusted: false, orgId: 'org-1', revokedAt: null, lastSeenAt: minutes(47), createdAt: minutes(6000), currentJob: null, jobs24h: 2 },
     { id: '00000000-0000-4000-8000-000000000013', name: 'gpu-test', labels: ['gpu'], version: '0.1.0', trusted: false, orgId: 'org-1', revokedAt: null, lastSeenAt: minutes(60 * 24 * 4), createdAt: minutes(60 * 24 * 9), currentJob: null, jobs24h: 0 },
-    { id: '00000000-0000-4000-8000-000000000014', name: 'ancien-mac', labels: ['macos'], version: '0.0.8', trusted: false, orgId: 'org-1', revokedAt: minutes(60 * 30), lastSeenAt: minutes(60 * 31), createdAt: minutes(60 * 24 * 20), currentJob: null, jobs24h: 0 },
+    { id: '00000000-0000-4000-8000-000000000014', name: 'old-mac', labels: ['macos'], version: '0.0.8', trusted: false, orgId: 'org-1', revokedAt: minutes(60 * 30), lastSeenAt: minutes(60 * 31), createdAt: minutes(60 * 24 * 20), currentJob: null, jobs24h: 0 },
   ],
 }
 const kentoUrl = 'https://review.sakuga.dev'
@@ -224,7 +224,7 @@ const reposFrames: { file: string; node: unknown }[] = [
   { file: 'repos-member-sumi-390.html', node: reposPage('sumi', member) },
 ]
 
-// The section « Providers and keys » of the settings (REV-11): a valid provider, a refused key with its
+// The section "Providers and keys" of the settings (REV-11): a valid provider, a refused key with its
 // banner, a provider held by the runner, a server without prices, and the form.
 const PROVIDERS_OUT = new URL('../../../design/providers/frames/', import.meta.url)
 function provider(fields: Partial<ProviderView> & Pick<ProviderView, 'id' | 'label' | 'kind'>): ProviderView {
@@ -336,7 +336,7 @@ const DASHBOARD: DashboardScreen = {
   },
   failures: [
     { id: 'f1', repoId: 'r-orchard', repo: 'sakuga-software/orchard', prNumber: 128, kind: 'review', level: 'lite', attempts: 2, reason: 'lease expired 2 times', runnerName: 'runners-host', finishedAt: dAgo(240) },
-    { id: 'f2', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 676, kind: 'review', level: 'balanced', attempts: 1, reason: 'the provider « Anthropic » refused its key (401): invalid x-api-key', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 26) },
+    { id: 'f2', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 676, kind: 'review', level: 'balanced', attempts: 1, reason: 'the provider "Anthropic" refused its key (401): invalid x-api-key', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 26) },
     { id: 'f3', repoId: 'r-dojo', repo: 'sakuga-software/dojo', prNumber: 702, kind: 'resolve', level: 'lite', attempts: 1, reason: 'clone failed: repository not found', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 50) },
   ],
   week: [
@@ -404,7 +404,7 @@ const EMPTY_DASHBOARD: DashboardScreen = {
   runnerCounts: { online: 0, late: 0, offline: 0 },
   stall: null,
   workflowRepos: [],
-  // REV-26: a new org, with the list « Getting started ».
+  // REV-26: a new org, with the list "Getting started".
   setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },
 }
 
@@ -423,7 +423,7 @@ const dashboardFrames: { file: string; node: unknown }[] = [
   { file: 'dashboard-admin-empty-paper.html', node: dashboardPage('paper', admin, EMPTY_DASHBOARD) },
 ]
 
-// REV-13: the settings of the org, above « Providers and keys ».
+// REV-13: the settings of the org, above "Providers and keys".
 const ORG_OUT = new URL('../../../design/org-settings/frames/', import.meta.url)
 const ORG_VIEW: OrgSettingsView = {
   login: 'sakuga-software',

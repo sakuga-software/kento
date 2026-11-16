@@ -45,7 +45,7 @@ describe('the page of the commands (REV-96)', () => {
     }
   })
 
-  it('sends the French address of the comments before REV-114 to the new one, without a sign-in', async () => {
+  it('sends the address of the comments before REV-114 to the new one, without a sign-in', async () => {
     for (let auth of [fakeAuth().deps, null]) {
       let response = await router(auth).fetch(new Request('https://review.sakuga.dev/docs/commandes?from=hint', { headers: BROWSER }))
       assert.equal(response.status, 301)

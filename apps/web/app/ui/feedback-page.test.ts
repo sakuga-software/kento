@@ -1,4 +1,4 @@
-// REV-107. « Feedback »: the answers about the reviews of the org, for every member.
+// REV-107. "Feedback": the answers about the reviews of the org, for every member.
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
@@ -98,10 +98,10 @@ describe('the page of the answers about the reviews (REV-107)', () => {
   it('passes the filters of the query, and drops the values it does not know', async () => {
     let { request, signIn, asked } = setup()
     let cookie = await signIn()
-    let html = await (await request(`/feedback?repo=${REPO}&source=quote&auteur=agent`, cookie)).text()
+    let html = await (await request(`/feedback?repo=${REPO}&source=quote&author=agent`, cookie)).text()
     assert.deepEqual(asked[0]!.query, { repoId: REPO, source: 'quote', kind: 'agent' })
     assert.match(html, /<option value="quote" selected="">Quote<\/option>|<option value="quote" selected>Quote<\/option>/)
-    assert.deepEqual(readFeedbackQuery(new URLSearchParams('source=other&auteur=robot')), { repoId: null, source: null, kind: null })
+    assert.deepEqual(readFeedbackQuery(new URLSearchParams('source=other&author=robot')), { repoId: null, source: null, kind: null })
   })
 
   it('needs a sign-in', async () => {

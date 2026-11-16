@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { reopenText } from './reply.ts'
 
-describe('the reply of the bot after « Reopen »', () => {
+describe('the reply of the bot after "Reopen"', () => {
   it('names the person', () => {
     assert.equal(reopenText('alex'), 'Finding reopened by @alex on Kentō. The next review reports it again if it is still there.')
   })

@@ -10,7 +10,7 @@ export const CAP_CHECK_NAME = 'Kentō · cap'
 
 const CHECK_PERMISSIONS: TokenPermissions = { checks: 'write' }
 
-/** « on 30 Oct at 01:00 (Paris time) ». */
+/** "on 30 Oct at 01:00 (Paris time)". */
 export function resetWhen(date: Date): string {
   return `${when(date)} (Paris time)`
 }
@@ -26,9 +26,9 @@ export function capSentence(hit: CapHit): string {
 }
 
 /**
- * Posts a check run « Kentō · cap », neutral, on the head of a push that the limit of the org
+ * Posts a check run "Kentō · cap", neutral, on the head of a push that the limit of the org
  * stopped. One per head: GitHub shows it in the checks of the pull request, and it never blocks a
- * merge. It has its own name so that a required check « Sakuga Review » stays missing.
+ * merge. It has its own name so that a required check "Sakuga Review" stays missing.
  */
 export function createCapNotice(deps: {
   mintInstallationToken: MintInstallationToken

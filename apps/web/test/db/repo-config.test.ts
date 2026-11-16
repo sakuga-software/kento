@@ -164,7 +164,7 @@ describe('the config of a repository against Postgres', () => {
       })
     })
 
-    it('« Ready for review »: a push of the pull request creates nothing, its passage to ready creates a job', async () => {
+    it('"Ready for review": a push of the pull request creates nothing, its passage to ready creates a job', async () => {
       await setRepoConfig({ trigger: 'ready' })
       let draft = await push({ action: 'synchronize', draft: true, head: headSha(1) })
       assert.equal(draft.outcome, 'ignored', 'a draft never gets a job')
@@ -180,7 +180,7 @@ describe('the config of a repository against Postgres', () => {
       )
     })
 
-    it('« On request »: no push creates a job, and a command still does, with the models of the config', async () => {
+    it('"On request": no push creates a job, and a command still does, with the models of the config', async () => {
       await setRepoConfig({ trigger: 'command', models: { heavy: OPUS } }, 3)
       for (let action of ['opened', 'synchronize', 'reopened', 'ready_for_review']) {
         assert.equal((await push({ action, head: headSha(1) })).outcome, 'skipped', action)
@@ -211,7 +211,7 @@ describe('the config of a repository against Postgres', () => {
       await sql`insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
         values (${first.jobId!}, ${repoId}, 24, ${headSha(1)}, 4, 'm', 1.0, '{}')`
       assert.deepEqual(await push({ head: headSha(2) }), { outcome: 'skipped', reason: 'monthly cost limit of the repository is reached' })
-      // An org without a limit, and a repository that says « none », are not limited.
+      // An org without a limit, and a repository that says "none", are not limited.
       await setRepoConfig({ monthlyCapUsd: null })
       await sql`update orgs set config = ${JSON.stringify({ monthlyCapUsd: 0.5 })}::jsonb where id = ${orgId}`
       assert.equal((await push({ head: headSha(3) })).outcome, 'queued')

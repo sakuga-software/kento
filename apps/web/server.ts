@@ -108,7 +108,7 @@ let auth =
         }),
         store: createAuthStore(database.sql),
         lookupRole: createRoleLookup(config.githubApp),
-        // REV-32: « Installer Kentō sur une organisation » on the page « Accès refusé ».
+        // REV-32: "Install Kentō on an organization" on the page "Access refused".
         installUrl: appInstallUrl(config.githubUrl, config.appSlug),
       }
     : null
@@ -170,7 +170,7 @@ let router = createAppRouter({
   findings: {
     store: createFindingsScreenStore(database.sql),
     githubUrl: config.githubUrl,
-    // « Marquer dismissed » replies in the thread of each finding, with a token of the App.
+    // "Marquer dismissed" replies in the thread of each finding, with a token of the App.
     setStatus: (input) =>
       applyStatus(
         database.sql,
@@ -179,7 +179,7 @@ let router = createAppRouter({
         (event, fields) => log('warn', event, fields),
       ),
   },
-  // The section « Providers et clés » of the settings (REV-11).
+  // The section "Providers and keys" of the settings (REV-11).
   providers: {
     store: providersStore,
     probe: createProbe(),
@@ -229,7 +229,7 @@ let router = createAppRouter({
   webhook: {
     secret: config.githubWebhookSecret,
     // REV-13: the trusted bots of each org, from its settings; each delivery that passes the
-    // signature is kept 30 days for the section « App GitHub ».
+    // signature is kept 30 days for the section "App GitHub".
     trustedBotsFor: (installationId) => orgSettingsStore.trustedBotsFor(installationId),
     recordDelivery: (record) => orgSettingsStore.recordDelivery(record),
     botLogin: config.botLogin,
@@ -239,13 +239,13 @@ let router = createAppRouter({
         mintInstallationToken && config.githubApp
           ? createListChangedFiles({ mintInstallationToken, apiUrl: config.githubApp.apiUrl })
           : undefined,
-      // REV-13: a push stopped by the cost limit of its org gets the check « Kentō · plafond ».
+      // REV-13: a push stopped by the cost limit of its org gets the check "Kentō · cap".
       onCapReached:
         mintInstallationToken && config.githubApp
           ? createCapNotice({
               mintInstallationToken,
               apiUrl: config.githubApp.apiUrl,
-              settingsUrl: publicUrl ? new URL('/settings#plafond', publicUrl).toString() : `${config.githubUrl}`,
+              settingsUrl: publicUrl ? new URL('/settings#cap', publicUrl).toString() : `${config.githubUrl}`,
             })
           : undefined,
       // The commands of the comments (REV-7): `@kento-review heavy`, `@sakuga-review review balanced`.
@@ -288,7 +288,7 @@ if (process.env.KENTO_REPOS !== undefined) {
 }
 
 // REV-13: the trusted bots are a setting of each org. The variable changes nothing now: copy its
-// value into « Bots de confiance » of the settings, then remove it.
+// value into "Bots de confiance" of the settings, then remove it.
 if (process.env.KENTO_TRUSTED_BOTS !== undefined) {
   log('warn', 'startup.kento_trusted_bots_ignored', {
     reason: 'KENTO_TRUSTED_BOTS is not read any more: set the trusted bots of each org in its settings',

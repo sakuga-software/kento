@@ -52,8 +52,8 @@ function branchFrom(name: string, start: string, steps: () => void): string {
 
 const answer = (): Answer => ({
   confidence_score: 4,
-  risk: 'Faible',
-  summary: 'Résumé',
+  risk: 'Low',
+  summary: 'Summary',
   diagram: '',
   findings: [],
   not_reviewed: [],
@@ -124,7 +124,7 @@ test('a new reply, another level or a changed file gives a new review', async ()
     line: 2,
     comments: [
       { id: 1, author: 'kento-review[bot]', isBot: true, body: 'Soustraction', commit: pr1 },
-      { id: 2, author: 'alex', isBot: false, body: 'Voulu : la fonction calcule une différence.', commit: pr1 },
+      { id: 2, author: 'alex', isBot: false, body: 'Intended: the function computes a difference.', commit: pr1 },
     ],
   };
   const calls = model.calls();

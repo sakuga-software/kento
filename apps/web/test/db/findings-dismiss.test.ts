@@ -1,4 +1,4 @@
-// REV-18. « Mark dismissed » on several findings against Postgres: one event each with the login of
+// REV-18. "Mark dismissed" on several findings against Postgres: one event each with the login of
 // the person, one reply in each thread, and the count of the reasons that grows by as many.
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -57,7 +57,7 @@ describe('a change of status of several findings', () => {
     await test?.drop()
   })
 
-  it('dismisses two findings with « Off topic »: two events, two replies, and the reason counts two more', async () => {
+  it('dismisses two findings with "Off topic": two events, two replies, and the reason counts two more', async () => {
     let before = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Off topic')?.count ?? 0
     let posted: { target: ThreadTarget; body: string }[] = []
     let outcome = await applyStatus(

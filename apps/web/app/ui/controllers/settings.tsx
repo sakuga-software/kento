@@ -187,7 +187,7 @@ export function settingsActions(kit: UiKit) {
     orgSettingsSave: createAction(pageRoutes.orgSettingsSave, (context) => changeOrgSettings(context, false)),
     orgSettingsReset: createAction(pageRoutes.orgSettingsReset, (context) => changeOrgSettings(context, true)),
 
-    // REV-11. The forms of « Providers and keys »: an admin of the org on screen only. cop() and
+    // REV-11. The forms of "Providers and keys": an admin of the org on screen only. cop() and
     // csrf() of the session layer ran before. A key is read from the form, encrypted, and never
     // written back into a page, a redirect or a log.
     providerAdd: createAction(pageRoutes.providerAdd, async (context) => {

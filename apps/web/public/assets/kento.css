@@ -120,7 +120,7 @@
 /* ---------------------------------------------------------------- Tokens */
 
 /*
- * The values come from the design file of REV-91 (« Kentō, refonte des écrans »). The older names stay
+ * The values come from the design file of REV-91 (the redesign of the screens). The older names stay
  * as aliases, so that each screen keeps its rules: --paper-raised is the sheet, --line the rule.
  */
 :root {
@@ -256,7 +256,7 @@
   --shadow-2: 0 12px 28px -8px #000000b3;
 }
 
-/* « Appareil »: the theme of the device. Same values as Sumi. */
+/* "Device": the theme of the device. Same values as Sumi. */
 @media (prefers-color-scheme: dark) {
   [data-theme='system'] {
     color-scheme: dark;
@@ -532,14 +532,14 @@ kbd,
 .segmented label:has(input:focus-visible) {
   box-shadow: inset 0 0 0 2px var(--focus);
 }
-/* The « Appliquer » button of the switch serves a browser without JavaScript. */
+/* The "Apply" button of the switch serves a browser without JavaScript. */
 .js .theme-switch .button {
   display: none;
 }
 
 /* ---------------------------------------------------------------- Frame of the app */
 
-/* The bar: the mark, the five screens, the org and the avatar. Under 720 px, « Menu » opens the list. */
+/* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */
 .bar {
   position: relative;
   z-index: 20;
@@ -644,7 +644,7 @@ select.bar-org-box {
 select.bar-org-box:hover {
   background-color: var(--paper);
 }
-/* With JavaScript, a choice applies at once (frame.js): no « Changer » button. */
+/* With JavaScript, a choice applies at once (frame.js): no "Switch" button. */
 .js .bar-org .button {
   display: none;
 }
@@ -743,7 +743,7 @@ select.bar-org-box:hover {
 .banner-info svg {
   color: var(--ai);
 }
-/* « Lecture seule », on its own line, then what a member can do. */
+/* "Read only", on its own line, then what a member can do. */
 .banner-title {
   display: block;
   font-weight: 600;
@@ -816,7 +816,7 @@ select.bar-org-box:hover {
 }
 
 /* ---------------------------------------------------------------- Tables, and the Repos screen (REV-9) */
-/* `.tag` and `.hint` come from « Shared parts » (REV-10) below; the variants here only add a colour. */
+/* `.tag` and `.hint` come from "Shared parts" (REV-10) below; the variants here only add a colour. */
 
 .banner-ok {
   border-left-color: var(--matsu);
@@ -1194,7 +1194,7 @@ select.bar-org-box:hover {
 .repos-table .row-action > * {
   vertical-align: middle;
 }
-/* « Rechercher »: Entrée sends the search; the button shows only while the keyboard is on it. */
+/* "Search": Enter sends the search; the button shows only while the keyboard is on it. */
 .list-search-submit:not(:focus-visible) {
   position: absolute;
   width: 1px;
@@ -1206,7 +1206,7 @@ select.bar-org-box:hover {
   white-space: nowrap;
   border: 0;
 }
-/* « … »: the config, the findings and « Désactiver Kentō… » of a row. Styled by structure: 50 rows a page. */
+/* "…": the config, the findings and "Disable Kentō…" of a row. Styled by structure: 50 rows a page. */
 .row-menu {
   position: relative;
   display: inline-block;
@@ -1290,7 +1290,7 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 /* The table scrolls sideways, so it also clips a menu that goes past its bottom: row-menu.js measures
    the open menu and gives the table that room (padding-bottom), and takes it back once closed. */
 @media (max-width: 760px) {
-  /* A row is a card and « … » is at its left: the menu opens to the right, in the page. */
+  /* A row is a card and "…" is at its left: the menu opens to the right, in the page. */
   .row-menu {
     margin-left: 0;
   }
@@ -1333,7 +1333,7 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 
 /* ---------------------------------------------------------------- The Findings screen (REV-18, redesigned in REV-91) */
 
-/* The tabs of a screen at the right of its title: « Liste », « Précision ». */
+/* The tabs of a screen at the right of its title: "List", "Precision". */
 .page-tabs {
   align-self: flex-end;
 }
@@ -1369,7 +1369,7 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 }
 
 /* The search, wide, then the repository, the priority and the source; they apply on change (findings.js). */
-/* Search, Repo, Priorité, Source, Type (REV-102), then the actions: one row. */
+/* Search, Repo, Priority, Source, Type (REV-102), then the actions: one row. */
 .findings-filters {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 160px) minmax(0, 140px) minmax(0, 240px) minmax(0, 220px) auto;
@@ -1684,7 +1684,7 @@ a.finding-title:hover {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* In a column of a table, « n = 3 sur 10 » may take two lines rather than widen the table. */
+/* In a column of a table, "n = 3 of 10" can take two lines rather than widen the table. */
 .table .precision-value {
   white-space: normal;
 }
@@ -1778,7 +1778,7 @@ a.finding-title:hover {
     flex: 0 0 auto;
     align-items: center;
   }
-  /* « Menu » shows with JavaScript only (frame.js); without it, the list stays open under the bar. */
+  /* "Menu" shows with JavaScript only (frame.js); without it, the list stays open under the bar. */
   .js .bar-menu {
     display: inline-flex;
     align-items: center;
@@ -2080,7 +2080,7 @@ a.finding-title:hover {
 .status-neutral {
   color: var(--ink-muted);
 }
-/* REV-30 keeps a runner offline in vermilion, as an alert: the design draws « Hors ligne » in grey. */
+/* REV-30 keeps a runner offline in vermilion, as an alert: the design draws "Offline" in grey. */
 .status-alert,
 .status-offline {
   color: var(--shu);
@@ -2284,7 +2284,7 @@ a.finding-title:hover {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-/* In a row of a table: a narrower trigger, so « Désactiver… » takes no more room than « Désactiver »
+/* In a row of a table: a narrower trigger, so "Disable…" takes no more room than "Disable"
    did (the REV-25 table fits 1440 px with an 80-character repo name). */
 .row-action .confirm > summary {
   padding-inline: var(--space-3);
@@ -2542,7 +2542,7 @@ a.finding-title:hover {
   }
 }
 
-/* ---------------------------------------------------------------- Providers et clés (REV-11) */
+/* ---------------------------------------------------------------- Providers and keys (REV-11) */
 
 .provider-section {
   margin-bottom: var(--space-8);
@@ -2651,7 +2651,7 @@ a.finding-title:hover {
 .provider-usage {
   margin-top: var(--space-2);
 }
-/* REV-27. « Prochain job » of a level: the provider, its key and the models that the next job uses. */
+/* REV-27. "Next job" of a level: the provider, its key and the models that the next job uses. */
 .effective-line {
   margin-bottom: var(--space-3);
 }
@@ -2661,7 +2661,7 @@ a.finding-title:hover {
   font-size: var(--text-sm);
   font-weight: 600;
 }
-/* REV-28. « Rien n’est enregistré » at the top of a form sent back with its errors. */
+/* REV-28. "Nothing is saved." at the top of a form sent back with its errors. */
 .form-errors {
   margin-bottom: var(--space-4);
 }
@@ -2683,7 +2683,7 @@ a.finding-title:hover {
   }
 }
 
-/* ---------------------------------------------------------------- Réglages de l’org (REV-13) */
+/* ---------------------------------------------------------------- Settings of the org (REV-13) */
 
 .org-settings {
   display: grid;
@@ -2881,7 +2881,7 @@ a.finding-title:hover {
 .dashboard > .banner {
   margin: 0;
 }
-/* « Mis à jour il y a 12 s · Actualiser »: the lead of the page, under its title. */
+/* "Updated at 10:12:04 · Refresh": the lead of the page, under its title. */
 .dash-updated {
   margin-top: calc(-1 * var(--space-8) + var(--space-1));
   color: var(--ink-muted);
@@ -2922,7 +2922,7 @@ a.finding-title:hover {
   align-items: start;
 }
 
-/* « À traiter »: one row per thing to do, a mark and a word, what happened, then the actions. */
+/* "To do": one row per thing to do, a mark and a word, what happened, then the actions. */
 .dash-todo .section-title {
   align-items: baseline;
 }
@@ -3001,7 +3001,7 @@ a.finding-title:hover {
 .todo-empty {
   padding: var(--space-5) var(--space-6);
 }
-/* The marks of « À traiter »: a triangle for a cost, a ring in two halves for the switch of review.yml. */
+/* The marks of "To do": a triangle for a cost, a ring in two halves for the switch of review.yml. */
 .status-cost {
   color: var(--kuchiba);
 }
@@ -3101,7 +3101,7 @@ a.finding-title:hover {
 
 /*
  * Tiles of numbers outside the band: the findings received on the screen of a user (user.tsx), and
- * the head of a step of « Mise en route » or of a failure (dashboard.tsx). Same type as the band.
+ * the head of a step of "Getting started" or of a failure (dashboard.tsx). Same type as the band.
  */
 .dash-tiles {
   display: grid;
@@ -3333,7 +3333,7 @@ a.finding-title:hover {
   }
 }
 
-/* 390 px: « À traiter » stacks, the numbers go two by two, each review is a card. */
+/* 390 px: "To do" stacks, the numbers go two by two, each review is a card. */
 @media (max-width: 760px) {
   .dashboard {
     gap: var(--space-6);
@@ -3414,14 +3414,14 @@ a.finding-title:hover {
     float: right;
     margin-left: var(--space-2);
   }
-  /* The facts of a review flow as one line of text: « lite · 4/5 · 1 finding · 0,004 $ · 3 min ». */
+  /* The facts of a review flow as one line of text: "lite · 4/5 · 1 finding · $0.004 · 3 min". */
   .dash-reviews td[data-label] {
     display: inline;
     color: var(--ink-muted);
     font-size: var(--text-xs);
     line-height: 20px;
   }
-  .dash-reviews td[data-label='Niveau']::before {
+  .dash-reviews td[data-label='Level']::before {
     content: '\A';
     white-space: pre;
   }
@@ -3526,7 +3526,7 @@ a.finding-title:hover {
 .config-card .cap-fields .input.config-cap {
   max-width: none;
 }
-/* « Ajouter un provider »: a secondary button until it is open, then the form under it. */
+/* "Add a provider": a secondary button until it is open, then the form under it. */
 .new-provider-toggle > summary {
   list-style: none;
 }
@@ -3624,7 +3624,7 @@ a.finding-title:hover {
   }
 }
 
-/* ---------------------------------------------------------------- Accès refusé (REV-32) */
+/* ---------------------------------------------------------------- Access refused (REV-32) */
 
 /* A tab of the Config screen that comes with M5. */
 .config-tab-soon {
@@ -3639,7 +3639,7 @@ a.finding-title:hover {
   white-space: nowrap;
 }
 
-/* --- Règles (REV-19): the tab Règles of the Config screen, and Règles d’org in the settings ------ */
+/* --- Rules (REV-19): the tab "Rules" of the Config screen, and "Org rules" in the settings - */
 .rules-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
@@ -3666,7 +3666,7 @@ a.finding-title:hover {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-/* A disabled rule stays readable: the tag says « désactivée », the text keeps its contrast. */
+/* A disabled rule stays readable: the tag says "disabled", the text keeps its contrast. */
 .rule-off {
   border-style: dashed;
 }
@@ -3958,7 +3958,7 @@ a.finding-title:hover {
   border: 1px dashed var(--line-strong);
   border-radius: var(--radius-sm);
 }
-/* The stamp: vermilion marks, whatever the verdict (« Le vermillon marque, l’encre agit »). */
+/* The stamp: vermilion marks, whatever the verdict ("Vermilion marks, ink acts"). */
 .stamp {
   display: inline-flex;
   align-items: center;
@@ -3990,7 +3990,7 @@ a.finding-title:hover {
   border-left: 0;
 }
 
-/* The sheet: its title, « ? », then the status filter at the right. */
+/* The sheet: its title, "?", then the status filter at the right. */
 .pull-sheet-head {
   display: flex;
   flex-wrap: wrap;
@@ -4407,7 +4407,7 @@ a.sheet-title {
   }
 }
 
-/* « Relancer R5… » (REV-17, 4/4): the three levels open under the button, at the right of the title. */
+/* "Run R5 again…" (REV-17, 4/4): the three levels open under the button, at the right of the title. */
 .pull-rerun {
   position: relative;
 }
@@ -4598,7 +4598,7 @@ a.sheet-title {
   }
 }
 
-/* REV-107. « Retours »: three filters and their actions, then the answers. */
+/* REV-107. "Feedback": three filters and their actions, then the answers. */
 .feedback-filters {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 220px)) auto;

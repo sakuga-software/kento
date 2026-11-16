@@ -94,10 +94,10 @@ describe('parseCommentCommand', () => {
 
 describe('reject (REV-93)', () => {
   it('reads the reason as written, with its case and its punctuation', () => {
-    assert.deepEqual(parseCommentCommand('@kento-review reject faux positif, la valeur est validée par le schéma'), {
+    assert.deepEqual(parseCommentCommand('@kento-review reject False positive, the value is validated by the schema'), {
       verb: 'reject',
       id: null,
-      reason: 'faux positif, la valeur est validée par le schéma',
+      reason: 'False positive, the value is validated by the schema',
     })
     assert.deepEqual(parseCommentCommand('@sakuga-review REJECT  Zod checks it  '), { verb: 'reject', id: null, reason: 'Zod checks it' })
     assert.deepEqual(parseCommentCommand('Not a bug.\n\n@kento-review reject the caller checks `x`'), { verb: 'reject', id: null, reason: 'the caller checks `x`' })
@@ -115,7 +115,7 @@ describe('reject (REV-93)', () => {
   })
 
   it('reads the id exactly as a comment of Kentō shows it, `#` included', () => {
-    let finding = { path: 'src/a.ts', line: 3, severity: 'major', category: 'bug', confidence: 90, title: 'Le jeton `exp` passe', scenario: 's', fix: 'f', suggestion: '' }
+    let finding = { path: 'src/a.ts', line: 3, severity: 'major', category: 'bug', confidence: 90, title: 'The `exp` token passes', scenario: 's', fix: 'f', suggestion: '' }
     let shown = /`(#[0-9a-f]{6})`/.exec(inlineBody(finding as never, false).split('\n')[0]!)?.[1]
     assert.equal(shown, shortId(finding as never))
     assert.deepEqual(parseCommentCommand(`@kento-review reject ${shown} the schema validates it`), {
@@ -174,16 +174,16 @@ describe('USAGE', () => {
 
 describe('feedback (REV-107)', () => {
   it('reads `feedback` with its text, and never as a review or an unknown command', () => {
-    assert.deepEqual(parseCommentCommand('@kento-review feedback ça a trouvé le bug'), { verb: 'feedback', text: 'ça a trouvé le bug' })
+    assert.deepEqual(parseCommentCommand('@kento-review feedback it found the bug'), { verb: 'feedback', text: 'it found the bug' })
     assert.deepEqual(parseCommentCommand('@Kento-Review FEEDBACK  heavy force'), { verb: 'feedback', text: 'heavy force' })
     assert.deepEqual(parseCommentCommand('@sakuga-review feedback'), { verb: 'feedback', text: '' })
     assert.equal(parseCommentCommand('@kento-review feedbacks')?.verb, 'unknown')
   })
 
   it('keeps the lines under the command as the text', () => {
-    assert.deepEqual(parseCommentCommand('Merci.\n@kento-review feedback un faux positif :\n\nle fil sur le cache.'), {
+    assert.deepEqual(parseCommentCommand('Thanks.\n@kento-review feedback a false positive:\n\nthe thread on the cache.'), {
       verb: 'feedback',
-      text: 'un faux positif :\n\nle fil sur le cache.',
+      text: 'a false positive:\n\nthe thread on the cache.',
     })
   })
 })

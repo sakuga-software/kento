@@ -46,14 +46,14 @@ export interface Config {
    */
   botLogin: string
   /**
-   * REV-32. The slug of the GitHub App, in the URL of its page: « Installer Kentō sur une
-   * organisation ». KENTO_APP_SLUG, or the bot login without `[bot]` (GitHub names the bot of an App
+   * REV-32. The slug of the GitHub App, in the URL of its page: "Install Kentō on an
+   * organization". KENTO_APP_SLUG, or the bot login without `[bot]` (GitHub names the bot of an App
    * `<slug>[bot]`).
    */
   appSlug: string
   /**
    * The GitHub sign-in of the screens, with the user authorization of the GitHub App. Null when
-   * one of its variables is missing: every screen then shows « Connexion indisponible ».
+   * one of its variables is missing: every screen then shows "Sign-in unavailable".
    */
   signIn: SignInConfig | null
 }

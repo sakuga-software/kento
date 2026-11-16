@@ -22,7 +22,7 @@ export const FINDINGS_PAGE_SIZE = 50
 export const SEARCH_MAX = 100
 /** REV-22. A GitHub login, or the login of an App (`name[bot]`). */
 export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/
-/** REV-22. The longest period of the filter « N derniers jours ». */
+/** REV-22. The longest period of the filter "last N days". */
 export const DAYS_MAX = 365
 
 /** What the screen asks for. Every filter is optional; `view` is `open` by default. */
@@ -31,7 +31,7 @@ export interface FindingQuery {
   repoId?: string | null
   severity?: Severity | null
   ruleId?: string | null
-  /** The reason of a dismissed or wontfix finding, as written: a group of « Dismissal reasons ». */
+  /** The reason of a dismissed or wontfix finding, as written: a group of "Dismissal reasons". */
   reason?: string | null
   /** A part of the title or of the path, any case. */
   search?: string
@@ -69,7 +69,7 @@ export interface FindingRow {
   lastSeenSha: string
   githubCommentId: number | null
   /**
-   * REV-102. The last review that found it lists it under « To consider (code already reviewed) »: new on
+   * REV-102. The last review that found it lists it under "To consider (code already reviewed)": new on
    * code that an earlier review read, not critical, continuing no earlier finding. It does not block.
    */
   considered: boolean
@@ -211,7 +211,7 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     limit ${limit + 1}`
   // Fewer than a page before the cursor (findings came or went since the link was made): the
   // previous page is the first one, whole, and not a short page.
-  // In the same way, « Next » past the last row (its findings left the tab since) gives the first page.
+  // In the same way, "Next" past the last row (its findings left the tab since) gives the first page.
   if ((before && fetched.length < limit) || (after && fetched.length === 0)) {
     return listFindingScreen(sql, orgId, { ...query, after: null, before: null })
   }

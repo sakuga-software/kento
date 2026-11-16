@@ -119,9 +119,8 @@ export function liveThread(stored: StoredFinding, threads: readonly BotThread[])
 
 const BADGE_SEVERITY: Record<string, StoredFinding['severity']> = { P0: 'critical', P1: 'major', P2: 'minor' }
 
-// The badge of a security finding: its alt in an image, or its text in backquotes. REV-114: the
-// comments before the deploy say « sécurité ».
-const SECURITY_BADGE = /alt="(?:security|sécurité)"|`(?:security|sécurité)`/
+// The badge of a security finding: its alt in an image, or its text in backquotes.
+const SECURITY_BADGE = /alt="security"|`security`/
 
 /**
  * The open threads of the bot that no stored finding holds: a review of an earlier release opened

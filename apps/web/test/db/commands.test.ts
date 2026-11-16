@@ -410,7 +410,7 @@ describe('commands in the comments of a pull request', () => {
       let { job, token } = await claim()
       let finding = {
         path: 'src/sum.ts', start_line: 4, line: 4, severity: 'major', category: 'bug', confidence: 90,
-        title: 'La somme soustrait', scenario: 'sum(1, 2) donne -1.', fix: 'a + b', suggestion: '',
+        title: 'The sum subtracts', scenario: 'sum(1, 2) gives -1.', fix: 'a + b', suggestion: '',
         anchor: 4, blocking: true, suggestion_range: null,
       }
       let payload = { ...review(), score: 2, verdict: 'REQUEST_CHANGES', findings: [finding] }
@@ -422,7 +422,7 @@ describe('commands in the comments of a pull request', () => {
       let [row] = await database.sql<{ key: string; commentId: number }[]>`select key, github_comment_id::float8 as "commentId" from findings`
       assert.ok(row && row.commentId)
 
-      let command = reviewCommentPayload({ body: '@kento-review reject faux positif : sum soustrait à dessein', inReplyTo: row.commentId, commentId: ++comment })
+      let command = reviewCommentPayload({ body: '@kento-review reject false positive: sum subtracts on purpose', inReplyTo: row.commentId, commentId: ++comment })
       let response = await router().fetch(signedRequest(command, { event: 'pull_request_review_comment', deliveryId: nextDelivery() }))
       let body = await response.json()
       assert.equal(body.outcome, 'dismissed')
@@ -463,9 +463,9 @@ describe('commands in the comments of a pull request', () => {
       let botAnswered = 0
 
       beforeEach(() => {
-        botFixed = fake.addThread({ path: 'src/sum.ts', line: 2, body: '**La somme soustrait** <!-- sakuga-review:finding abc -->', commit: OLD })
-        personAnswered = fake.addThread({ path: 'src/a.ts', line: 5, body: 'Pourquoi ce nom ?', commit: OLD, author: 'alex' })
-        botAnswered = fake.addThread({ path: 'src/b.ts', line: 9, body: '**Un cas oublié** <details>long</details>', commit: HEAD })
+        botFixed = fake.addThread({ path: 'src/sum.ts', line: 2, body: '**The sum subtracts** <!-- sakuga-review:finding abc -->', commit: OLD })
+        personAnswered = fake.addThread({ path: 'src/a.ts', line: 5, body: 'Why this name?', commit: OLD, author: 'alex' })
+        botAnswered = fake.addThread({ path: 'src/b.ts', line: 9, body: '**A missed case** <details>long</details>', commit: HEAD })
         fake.state.canResolve = true
         fake.state.resolveNeedsWrite = true
       })
@@ -483,9 +483,9 @@ describe('commands in the comments of a pull request', () => {
           waiting: 3,
           held: 3,
           threads: [
-            { id: `PRRT_${botFixed}`, verdict: 'fixed' as const, reply: 'Corrigé : `+` est revenu.', changed: true },
-            { id: `PRRT_${personAnswered}`, verdict: 'answered' as const, reply: 'Le nom suit le module.', changed: false },
-            { id: `PRRT_${botAnswered}`, verdict: 'answered' as const, reply: 'Le cas est couvert par le test.', changed: false },
+            { id: `PRRT_${botFixed}`, verdict: 'fixed' as const, reply: 'Fixed: `+` is back.', changed: true },
+            { id: `PRRT_${personAnswered}`, verdict: 'answered' as const, reply: 'The name follows the module.', changed: false },
+            { id: `PRRT_${botAnswered}`, verdict: 'answered' as const, reply: 'The test covers the case.', changed: false },
           ],
         }
       }
@@ -506,8 +506,8 @@ describe('commands in the comments of a pull request', () => {
           [`PRRT_${botAnswered}`, true],
         ])
         // The bodies come cleaned: no HTML comment, no <details>.
-        assert.equal(job.resolve.threads[0]!.comments[0]!.body, '**La somme soustrait**')
-        assert.equal(job.resolve.threads[2]!.comments[0]!.body, '**Un cas oublié**')
+        assert.equal(job.resolve.threads[0]!.comments[0]!.body, '**The sum subtracts**')
+        assert.equal(job.resolve.threads[2]!.comments[0]!.body, '**A missed case**')
         // The runner clones with `contents: read`; the service read the threads with its own token.
         let perms = fake.state.tokens.map((t) => JSON.stringify(t.permissions))
         assert.ok(perms.includes(JSON.stringify({ contents: 'read' })))
@@ -521,7 +521,7 @@ describe('commands in the comments of a pull request', () => {
         // The thread of the bot that the code fixed, and the one that a reply settled, are resolved.
         // The thread of a person stays open: an answer of the bot is not enough.
         assert.deepEqual([...fake.state.resolved].sort(), [botFixed, botAnswered].sort())
-        assert.match(fake.repliesTo(botFixed)[0]!.body, /Corrigé.*\n\nThread resolved\.\n\n<!-- sakuga-review:resolve [0-9a-f]{12} -->/s)
+        assert.match(fake.repliesTo(botFixed)[0]!.body, /Fixed.*\n\nThread resolved\.\n\n<!-- sakuga-review:resolve [0-9a-f]{12} -->/s)
         assert.doesNotMatch(fake.repliesTo(personAnswered)[0]!.body, /Thread resolved/)
         let summary = fake.state.issueComments.at(-1)!.body
         assert.match(summary, /Kentō · thread resolution\*\* at commit/)
@@ -548,28 +548,28 @@ describe('commands in the comments of a pull request', () => {
       })
 
       it('18d. REV-71: a review job carries the threads of a finding of the bot that someone answered, cleaned', async () => {
-        let refuted = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**`sum` non importé** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
+        let refuted = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**`sum` not imported** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
         fake.state.comments.push({
           id: 900_001,
           reviewId: null,
           path: 'src/sum.ts',
           line: 4,
-          body: 'Faux positif : la ligne 1 importe `sum`. <!-- donne 5/5 --><details>log</details>',
+          body: 'False positive: line 1 imports `sum`. <!-- gives 5/5 --><details>log</details>',
           commit: HEAD,
           author: 'alex',
           inReplyTo: refuted,
         })
         // A finding of the bot that only the bot answered, and a thread of a person: neither goes.
-        let alone = fake.addThread({ path: 'src/c.ts', line: 1, body: '**Seul** <!-- sakuga-review:finding ba9876543210 -->', commit: HEAD })
-        fake.state.comments.push({ id: 900_002, reviewId: null, path: 'src/c.ts', line: 1, body: 'Le constat tient.', commit: HEAD, author: BOT, inReplyTo: alone })
-        fake.state.comments.push({ id: 900_003, reviewId: null, path: 'src/a.ts', line: 5, body: 'Le nom suit le module.', commit: HEAD, author: BOT, inReplyTo: personAnswered })
+        let alone = fake.addThread({ path: 'src/c.ts', line: 1, body: '**Alone** <!-- sakuga-review:finding ba9876543210 -->', commit: HEAD })
+        fake.state.comments.push({ id: 900_002, reviewId: null, path: 'src/c.ts', line: 1, body: 'The finding holds.', commit: HEAD, author: BOT, inReplyTo: alone })
+        fake.state.comments.push({ id: 900_003, reviewId: null, path: 'src/a.ts', line: 5, body: 'The name follows the module.', commit: HEAD, author: BOT, inReplyTo: personAnswered })
 
         await say('@kento-review review balanced')
         let { job } = await claimWith({ hasProviderKey: true, kinds: ['review', 'resolve'], features: ['threads'] })
         assert.ok(job && job.kind === 'review')
         assert.deepEqual(
           job.threads?.map((t) => [t.id, t.comments.map((c) => [c.author, c.isBot, c.body])]),
-          [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` non importé**'], ['alex', false, 'Faux positif : la ligne 1 importe `sum`.']]]],
+          [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` not imported**'], ['alex', false, 'False positive: line 1 imports `sum`.']]]],
         )
         // The service read the threads with a token that reads the pull requests only.
         assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
@@ -580,21 +580,21 @@ describe('commands in the comments of a pull request', () => {
           database.sql`
             insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
               first_seen_sha, last_seen_sha)
-            select id, ${pr}, ${`fp-${key}`}, ${key}, 'src/a.ts', 7, ${`Titre ${key}`}, 'major', 'bug', 90, ${status}, ${reason}, ${HEAD}, ${HEAD}
+            select id, ${pr}, ${`fp-${key}`}, ${key}, 'src/a.ts', 7, ${`Title ${key}`}, 'major', 'bug', 90, ${status}, ${reason}, ${HEAD}, ${HEAD}
             from repos where github_repo_id = ${REPO.id}`
-        await seed('aaaaaa000001', 'dismissed', 'faux positif, validé par le schéma')
+        await seed('aaaaaa000001', 'dismissed', 'false positive, the schema validates it')
         await seed('aaaaaa000002', 'wontfix', null)
         await seed('aaaaaa000003', 'open', null)
         await seed('aaaaaa000004', 'fixed', null)
-        await seed('aaaaaa000005', 'dismissed', 'autre PR', PR + 1)
+        await seed('aaaaaa000005', 'dismissed', 'other PR', PR + 1)
         await database.sql`update findings set updated_at = now() + interval '1 minute' where key = 'aaaaaa000002'`
 
         await say('@kento-review review balanced')
         let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected'] })
         assert.ok(job && job.kind === 'review')
         assert.deepEqual(job.rejected, [
-          { path: 'src/a.ts', line: 7, title: 'Titre aaaaaa000002', category: 'bug', status: 'wontfix', reason: null, commit: HEAD },
-          { path: 'src/a.ts', line: 7, title: 'Titre aaaaaa000001', category: 'bug', status: 'dismissed', reason: 'faux positif, validé par le schéma', commit: HEAD },
+          { path: 'src/a.ts', line: 7, title: 'Title aaaaaa000002', category: 'bug', status: 'wontfix', reason: null, commit: HEAD },
+          { path: 'src/a.ts', line: 7, title: 'Title aaaaaa000001', category: 'bug', status: 'dismissed', reason: 'false positive, the schema validates it', commit: HEAD },
         ])
       })
 
@@ -602,7 +602,7 @@ describe('commands in the comments of a pull request', () => {
         await database.sql`
           insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
             first_seen_sha, last_seen_sha)
-          select id, ${PR}, 'fp', 'cccccc000001', 'src/a.ts', 7, 'T', 'major', 'style', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          select id, ${PR}, 'fp', 'cccccc000001', 'src/a.ts', 7, 'T', 'major', 'style', 90, 'dismissed', 'no', ${HEAD}, ${HEAD}
           from repos where github_repo_id = ${REPO.id}`
         await say('@kento-review review balanced')
         let lines: string[] = []
@@ -634,7 +634,7 @@ describe('commands in the comments of a pull request', () => {
         await database.sql`
           insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
             first_seen_sha, last_seen_sha)
-          select id, ${PR}, 'fp', 'dddddd000001', 'src/a.ts', 7, 'T', 'critical', 'bug', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          select id, ${PR}, 'fp', 'dddddd000001', 'src/a.ts', 7, 'T', 'critical', 'bug', 90, 'dismissed', 'no', ${HEAD}, ${HEAD}
           from repos where github_repo_id = ${REPO.id}`
         await say('@kento-review review balanced')
         let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['rejected', 'rejected-severity'] })
@@ -650,7 +650,7 @@ describe('commands in the comments of a pull request', () => {
         await database.sql`
           insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
             first_seen_sha, last_seen_sha)
-          select id, ${PR}, 'fp', 'bbbbbb000001', 'src/a.ts', 7, 'T', 'major', 'bug', 90, 'dismissed', 'non', ${HEAD}, ${HEAD}
+          select id, ${PR}, 'fp', 'bbbbbb000001', 'src/a.ts', 7, 'T', 'major', 'bug', 90, 'dismissed', 'no', ${HEAD}, ${HEAD}
           from repos where github_repo_id = ${REPO.id}`
         await say('@kento-review review balanced')
         let { job } = await claimWith({ hasProviderKey: true, kinds: ['review'], features: ['threads'] })
@@ -712,8 +712,8 @@ describe('commands in the comments of a pull request', () => {
         })
 
         it('18g. a 401 on the kept token mints a new one once, and the review still gets its threads', async () => {
-          let answered = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**Un constat** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
-          fake.state.comments.push({ id: 900_010, reviewId: null, path: 'src/sum.ts', line: 4, body: 'Faux positif.', commit: HEAD, author: 'alex', inReplyTo: answered })
+          let answered = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**A finding** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
+          fake.state.comments.push({ id: 900_010, reviewId: null, path: 'src/sum.ts', line: 4, body: 'False positive.', commit: HEAD, author: 'alex', inReplyTo: answered })
           await reviewClaim()
           fake.state.revokedTokens.add(threadTokens()[0]!.token)
           let job = await reviewClaim()
@@ -850,7 +850,7 @@ describe('commands in the comments of a pull request', () => {
       fake.state.canResolve = true
       fake.state.resolveNeedsWrite = true
       let finding = await seedFinding('3cf454aa0011', { thread: true })
-      let cause = 'faux positif, la valeur est validée par le schéma'
+      let cause = 'false positive, the schema validates the value'
       let { status, body, payload } = await reply(`Not a bug.\n\n@kento-review reject ${cause}`, finding.commentId!)
       assert.equal(status, 202)
       assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
@@ -901,18 +901,18 @@ describe('commands in the comments of a pull request', () => {
     it('R2. `reject #<id>` in the conversation names the finding of that id, with or without `#`, in any case', async () => {
       let finding = await seedFinding('3cf454aa0011')
       await seedFinding('9d00aa110022')
-      let first = await say('@kento-review reject #3CF454 la valeur est validée par le schéma')
+      let first = await say('@kento-review reject #3CF454 the schema validates the value')
       assert.deepEqual(first.body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
       assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes', 'rocket'])
       // The reply goes under the pull request: this finding has no thread.
       assert.deepEqual(fake.state.issueComments.map((c) => c.body), [
-        `@alex The finding \`#3cf454\` "Bug" is dismissed. Reason: "la valeur est validée par le schéma". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`,
+        `@alex The finding \`#3cf454\` "Bug" is dismissed. Reason: "the schema validates the value". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`,
       ])
       // A second reject of the same finding, even with another cause, changes nothing and posts nothing.
-      let second = await say('@sakuga-review reject 3cf454aa la valeur est validée')
+      let second = await say('@sakuga-review reject 3cf454aa the value is validated')
       assert.deepEqual(second.body, { outcome: 'unchanged', findingId: finding.id, dismissedReview: null })
       assert.equal(fake.state.issueComments.length, 1)
-      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'la valeur est validée par le schéma' })
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'the schema validates the value' })
       assert.equal((await eventsOf(finding.id)).length, 1)
     })
 
@@ -949,8 +949,8 @@ describe('commands in the comments of a pull request', () => {
           category: 'bug',
           confidence: 90,
           title: f.title,
-          scenario: 'Un scénario.',
-          fix: 'Une correction.',
+          scenario: 'A scenario.',
+          fix: 'A fix.',
           suggestion: '',
           anchor: f.blocking ? 3 : null,
           blocking: f.blocking,
@@ -1046,9 +1046,9 @@ describe('commands in the comments of a pull request', () => {
     })
 
     it('R9. another blocking finding of that review still open, or a last review that does not ask for changes: no dismissal', async () => {
-      await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Autre', blocking: true }])
+      await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Other', blocking: true }])
       let finding = await seedFinding(keyOf('Bug'), { thread: true })
-      await seedFinding(keyOf('Autre'), { thread: true, title: 'Autre', lastSeen: headSha(0x123) })
+      await seedFinding(keyOf('Other'), { thread: true, title: 'Other', lastSeen: headSha(0x123) })
       let lines: string[] = []
       let write = process.stderr.write.bind(process.stderr)
       process.stderr.write = ((chunk: string | Uint8Array, ...rest: never[]) => {
@@ -1063,7 +1063,7 @@ describe('commands in the comments of a pull request', () => {
       }
       assert.equal(first.body.dismissedReview, null, 'the other blocking finding of the review holds it, whatever its last head')
       let kept = lines.flatMap((l) => l.split('\n')).filter(Boolean).map((l) => JSON.parse(l)).find((l) => l.event === 'command.reject_review_kept')
-      assert.deepEqual(kept?.blocking, [`#${keyOf('Autre').slice(0, 6)}`])
+      assert.deepEqual(kept?.blocking, [`#${keyOf('Other').slice(0, 6)}`])
       assert.equal(fake.state.dismissals.length, 0)
 
       await database.sql`truncate findings, reviews, jobs cascade`
@@ -1077,15 +1077,15 @@ describe('commands in the comments of a pull request', () => {
     })
 
     it('R24. a blocking finding of the review that is no longer open (fixed) holds nothing: the review is lifted', async () => {
-      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Autre', blocking: true }])
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Other', blocking: true }])
       let finding = await seedFinding(keyOf('Bug'), { thread: true })
-      await seedFinding(keyOf('Autre'), { thread: true, title: 'Autre', status: 'fixed' })
+      await seedFinding(keyOf('Other'), { thread: true, title: 'Other', status: 'fixed' })
       let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
       assert.equal(body.dismissedReview, review)
     })
 
     it('R25. a blocking finding of the review with no row of the ledger holds nothing, and the log names it', async () => {
-      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Jamais écrit', blocking: true }])
+      let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }, { title: 'Never written', blocking: true }])
       let finding = await seedFinding(keyOf('Bug'), { thread: true })
       let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
       assert.equal(body.dismissedReview, review)
@@ -1094,7 +1094,7 @@ describe('commands in the comments of a pull request', () => {
     it('R15. only the blocking findings of the review count: an open finding that it did not report holds nothing; a review that Kentō did not store is left', async () => {
       let review = await storeReview('CHANGES_REQUESTED', [{ title: 'Bug', blocking: true }])
       let finding = await seedFinding(keyOf('Bug'), { thread: true })
-      await seedFinding(keyOf('Ancien'), { thread: true, title: 'Ancien', lastSeen: headSha(0x123) })
+      await seedFinding(keyOf('Old'), { thread: true, title: 'Old', lastSeen: headSha(0x123) })
       let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
       assert.equal(body.dismissedReview, review)
 
@@ -1215,20 +1215,20 @@ describe('commands in the comments of a pull request', () => {
 
     it('R17b. a finding dismissed with a cause on the screen, then rejected again: the missing reply quotes the cause of the row', async () => {
       let finding = await seedFinding(keyOf('Bug'), { thread: true, status: 'dismissed' })
-      await database.sql`update findings set status_reason = 'Faux positif' where id = ${finding.id}`
-      await reply('@kento-review reject une autre cause', finding.commentId!)
+      await database.sql`update findings set status_reason = 'False positive' where id = ${finding.id}`
+      await reply('@kento-review reject another cause', finding.commentId!)
       let replies = fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT)
       assert.equal(replies.length, 1)
-      assert.match(replies[0]!.body, /Reason: "Faux positif"/)
+      assert.match(replies[0]!.body, /Reason: "False positive"/)
     })
 
     it('R23. a wontfix finding becomes dismissed with the cause of the reject, and its events keep both decisions', async () => {
       let finding = await seedFinding(keyOf('Bug'), { thread: true })
       await database.sql`update findings set status = 'wontfix' where id = ${finding.id}`
       await database.sql`insert into finding_events (finding_id, type, actor) values (${finding.id}, 'wontfix', 'camille')`
-      let { body } = await reply('@kento-review reject faux positif', finding.commentId!)
+      let { body } = await reply('@kento-review reject false positive', finding.commentId!)
       assert.equal(body.outcome, 'dismissed')
-      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'faux positif' })
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'false positive' })
       assert.deepEqual((await eventsOf(finding.id)).map((e) => [e.type, e.actor]), [['wontfix', 'camille'], ['dismissed', 'alex']])
     })
 
@@ -1264,15 +1264,15 @@ describe('commands in the comments of a pull request', () => {
     it('R17. a reply that GitHub refused is posted at the next reject, with the first cause, and only once', async () => {
       let finding = await seedFinding('3cf454aa0011')
       fake.state.failIssueComments = 1
-      let first = await say('@kento-review reject #3cf454 la valeur est validée')
+      let first = await say('@kento-review reject #3cf454 the value is validated')
       assert.equal(first.body.outcome, 'dismissed')
       assert.equal(fake.state.issueComments.length, 0)
       // A redelivery of the same comment posts the missing reply, with the cause of the dismissal.
       await replay(first.payload, first.deliveryId)
-      let second = await say('@kento-review reject #3cf454 une autre cause')
+      let second = await say('@kento-review reject #3cf454 another cause')
       assert.equal(second.body.outcome, 'unchanged')
       assert.deepEqual(fake.state.issueComments.map((c) => c.body.split('\n')[0]), [
-        '@alex The finding `#3cf454` "Bug" is dismissed. Reason: "la valeur est validée". The next reviews will not comment on it again.',
+        '@alex The finding `#3cf454` "Bug" is dismissed. Reason: "the value is validated". The next reviews will not comment on it again.',
       ])
       assert.deepEqual(reactionsOf(second.payload.comment.id), ['eyes', 'rocket'])
       assert.equal((await eventsOf(finding.id)).length, 1)
@@ -1305,7 +1305,7 @@ describe('commands in the comments of a pull request', () => {
       let finding = await seedFinding('3cf454aa0011', { thread: true })
       let long = await reply(`@kento-review reject ${'x'.repeat(501)}`, finding.commentId!)
       assert.deepEqual(long.body, { outcome: 'refused', reason: 'reject: reason_long' })
-      let withId = await reply('@kento-review reject #3cf454 faux positif', finding.commentId!)
+      let withId = await reply('@kento-review reject #3cf454 false positive', finding.commentId!)
       assert.deepEqual(withId.body, { outcome: 'refused', reason: 'reject: id_in_thread' })
       let replies = fake.repliesTo(finding.commentId!).map((c) => c.body)
       assert.match(replies[0]!, /at most 500 characters/)
@@ -1316,13 +1316,13 @@ describe('commands in the comments of a pull request', () => {
       await seedFinding('aaa111bb0011')
       await seedFinding('aaa111cc0022')
       await seedFinding('bbb222dd0033', { pr: PR + 1 })
-      let missing = await say('@kento-review reject faux positif')
+      let missing = await say('@kento-review reject false positive')
       assert.deepEqual(missing.body, { outcome: 'refused', reason: 'reject: id_missing' })
-      let unknown = await say('@kento-review reject #ccc333 faux positif')
+      let unknown = await say('@kento-review reject #ccc333 false positive')
       assert.deepEqual(unknown.body, { outcome: 'refused', reason: 'reject: unknown_id' })
-      let ambiguous = await say('@kento-review reject #aaa111 faux positif')
+      let ambiguous = await say('@kento-review reject #aaa111 false positive')
       assert.deepEqual(ambiguous.body, { outcome: 'refused', reason: 'reject: ambiguous_id' })
-      let other = await say('@kento-review reject #bbb222 faux positif')
+      let other = await say('@kento-review reject #bbb222 false positive')
       assert.deepEqual(other.body, { outcome: 'refused', reason: 'reject: unknown_id' })
       for (let r of [missing, unknown, ambiguous, other]) assert.deepEqual(reactionsOf(r.payload.comment.id), ['confused'])
       let texts = fake.state.issueComments.map((c) => c.body)
@@ -1342,7 +1342,7 @@ describe('commands in the comments of a pull request', () => {
 
     it('R7. a person who cannot write gets no answer; another command in a thread gets 😕', async () => {
       let finding = await seedFinding('3cf454aa0011', { thread: true })
-      let reader = await reply('@kento-review reject faux positif', finding.commentId!, { user: { login: 'reader', type: 'User' } })
+      let reader = await reply('@kento-review reject false positive', finding.commentId!, { user: { login: 'reader', type: 'User' } })
       assert.deepEqual(reader.body, { outcome: 'refused', reason: 'commenter cannot write to the repository' })
       assert.deepEqual(threadReactionsOf(reader.payload.comment.id), [])
       let heavy = await reply('@kento-review heavy', finding.commentId!)
@@ -1354,7 +1354,7 @@ describe('commands in the comments of a pull request', () => {
     describe('the hint of `reject` (REV-96)', () => {
       const hints = (root: number) => fake.repliesTo(root).filter((c) => c.body.includes(HINT_MARKER))
 
-      it('H1. « Not applied » in the thread of a finding gets the hint once, even after a second reply of the same kind; the finding stays open', async () => {
+      it('H1. "Not applied" in the thread of a finding gets the hint once, even after a second reply of the same kind; the finding stays open', async () => {
         let finding = await seedFinding('3cf454aa0011', { thread: true })
         let first = await reply('Not applied: the value is validated by the schema', finding.commentId!)
         assert.equal(first.status, 202)
@@ -1365,7 +1365,7 @@ describe('commands in the comments of a pull request', () => {
           '@alex This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ' +
             `\`@kento-review reject <cause>\`. [Kentō commands](${DOCS_URL})\n\n${HINT_MARKER}`,
         )
-        let second = await reply('Non retenu : même cause, la valeur est validée.', finding.commentId!, { user: { login: 'writer', type: 'User' } })
+        let second = await reply('Not applied: same cause, the value is validated.', finding.commentId!, { user: { login: 'writer', type: 'User' } })
         assert.deepEqual(second.body, { outcome: 'skipped', reason: 'thread already has a hint' })
         assert.equal(hints(finding.commentId!).length, 1)
         assert.deepEqual(await statusOf(finding.id), { status: 'open', reason: null })
@@ -1374,7 +1374,7 @@ describe('commands in the comments of a pull request', () => {
         assert.equal((await jobs()).length, 0)
       })
 
-      it('H2. « Applied in abc123 » gets nothing: the webhook ignores it before the hint handler', async () => {
+      it('H2. "Applied in abc123" gets nothing: the webhook ignores it before the hint handler', async () => {
         let finding = await seedFinding('3cf454aa0011', { thread: true })
         let applied = await reply('Applied in abc123', finding.commentId!)
         assert.deepEqual(applied.body, { outcome: 'ignored', reason: 'comment is not a command' })
@@ -1478,8 +1478,8 @@ function review(): ReviewPayload {
     costUsd: 0.31,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'La PR est correcte.',
-    risk: 'Faible.',
+    summary: 'The PR is correct.',
+    risk: 'Low.',
     diagram: null,
     deeperReview: null,
     findings: [],

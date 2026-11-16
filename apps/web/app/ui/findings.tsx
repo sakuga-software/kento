@@ -25,7 +25,7 @@ import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** REV-102. The value of `type` that keeps the findings to consider only. */
-export const CONSIDERED = 'a-considerer'
+export const CONSIDERED = 'to-consider'
 
 /** REV-102. What the screens say of a finding to consider (REV-100). */
 export const CONSIDERED_LABEL = 'To consider'
@@ -39,14 +39,14 @@ export interface FindingList extends FindingQuery {
   ruleId: string | null
   reason: string | null
   search: string
-  /** REV-22. The pull requests of one person: the link « See my N open findings » of their screen. */
+  /** REV-22. The pull requests of one person: the link "See my N open findings" of their screen. */
   author: string | null
   days: number | null
-  /** REV-102. The findings to consider only (`?type=a-considerer`). */
+  /** REV-102. The findings to consider only (`?type=to-consider`). */
   considered: boolean
   after: string | null
   before: string | null
-  /** REV-91. The tab of the screen: the list, or the precision (`?vue=precision`). */
+  /** REV-91. The tab of the screen: the list, or the precision (`?view=precision`). */
   tab: 'list' | 'precision'
 }
 
@@ -61,7 +61,7 @@ export interface FindingsPageProps {
   githubUrl: string
   /** For the dates of the screen. */
   now: Date
-  /** What the screen says after « Mark dismissed » or « Mark wontfix », from the query of the redirect. */
+  /** What the screen says after "Mark dismissed" or "Mark wontfix", from the query of the redirect. */
   notice?: FindingsNotice | null
 }
 
@@ -158,7 +158,7 @@ export function readFindingList(query: URLSearchParams): FindingList {
     considered: query.get('type') === CONSIDERED,
     after,
     before: after ? null : cursorOf(query.get('before')),
-    tab: query.get('vue') === 'precision' ? 'precision' : 'list',
+    tab: query.get('view') === 'precision' ? 'precision' : 'list',
   }
 }
 
@@ -176,7 +176,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.considered) query.set('type', CONSIDERED)
   if (list.after) query.set('after', list.after)
   else if (list.before) query.set('before', list.before)
-  if (list.tab === 'precision') query.set('vue', 'precision')
+  if (list.tab === 'precision') query.set('view', 'precision')
   return query
 }
 
@@ -209,7 +209,7 @@ function hasFilters(list: FindingList): boolean {
  * The Findings screen (REV-18): every finding of the org, filtered by repository, status, priority,
  * rule and a search, a page of 50 at a time.
  */
-/** « Precision over 30 d: 78% (n = 40) », or « n = 5 of 10 » under the minimum, for the lead of the screen. */
+/** "Precision over 30 d: 78% (n = 40)", or "n = 5 of 10" under the minimum, for the lead of the screen. */
 export function precisionLead(report: PrecisionReport): string {
   let org = report.org
   let value = org.rate === null ? `n = ${org.closed} of ${PRECISION_MIN}` : `${Math.round(org.rate * 100)}% (n = ${org.closed})`
@@ -228,7 +228,7 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
         <a href={findingsHref({ ...filtersOf(list), tab: 'list' })} aria-current={list.tab === 'list' ? 'page' : undefined}>
           List
         </a>
-        {/* The filters ride along, unused by the precision: « List » gives them back. */}
+        {/* The filters ride along, unused by the precision: "List" gives them back. */}
         <a href={findingsHref({ ...filtersOf(list), tab: 'precision' })} aria-current={list.tab === 'precision' ? 'page' : undefined}>
           Precision
         </a>
@@ -376,7 +376,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           <label class="field-label" for="findings-rule">
             Source
           </label>
-          {/* With no rule, « Review and rules » is the only choice: the list says so and stays still. */}
+          {/* With no rule, "Review and rules" is the only choice: the list says so and stays still. */}
           {/* A disabled select is not sent: a rule of the URL that the org no longer has stays in the list. */}
           {facets.rules.length === 0 && list.ruleId ? <input type="hidden" name="rule" value={list.ruleId} /> : null}
           <select class="input" id="findings-rule" name="rule" disabled={facets.rules.length === 0}>
@@ -394,7 +394,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           <label class="field-label" for="findings-type">
             Type
           </label>
-          {/* REV-102: the findings that the last review lists under « To consider (code already reviewed) ». */}
+          {/* REV-102: the findings that the last review lists under "To consider (code already reviewed)". */}
           <select class="input" id="findings-type" name="type">
             <option value="" selected={!list.considered}>
               All findings
@@ -405,7 +405,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </select>
         </div>
         <div class="findings-filter-actions">
-          {/* REV-91: with JavaScript a filter applies on change (findings.js); « Filter » serves a browser without it. */}
+          {/* REV-91: with JavaScript a filter applies on change (findings.js); "Filter" serves a browser without it. */}
           <button class="button findings-submit" type="submit">
             Filter
           </button>
@@ -559,7 +559,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
   }
 }
 
-/** « 1 to 50 of 1,234 findings », and the links to the pages around. Shown when the tab has more than a page. */
+/** "1 to 50 of 1,234 findings", and the links to the pages around. Shown when the tab has more than a page. */
 function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
   return () => {
     let { page, list } = handle.props
@@ -598,10 +598,10 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
 }
 
 /**
- * REV-18. The actions on the findings checked in the table: « Mark dismissed… » with the dialog of
- * the reason (shared with the screen of a pull request), and « Mark wontfix ». Each finding
+ * REV-18. The actions on the findings checked in the table: "Mark dismissed…" with the dialog of
+ * the reason (shared with the screen of a pull request), and "Mark wontfix". Each finding
  * changed gets a reply in its thread on GitHub. REV-91: a bar that floats at the foot of the screen;
- * with JavaScript it shows once a finding is checked, with « Deselect ».
+ * with JavaScript it shows once a finding is checked, with "Deselect".
  */
 function BulkBar(handle: Handle<{ csrf: string | null; back: string }>) {
   return () => {

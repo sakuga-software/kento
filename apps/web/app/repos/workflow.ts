@@ -1,5 +1,5 @@
 // Reads the workflows of a repository and tells which review workflow it still runs, for the
-// « Mode » column of the Repos screen. Text only: no YAML parser, no network.
+// "Mode" column of the Repos screen. Text only: no YAML parser, no network.
 
 export type WorkflowMode = 'none' | 'reusable' | 'copy'
 

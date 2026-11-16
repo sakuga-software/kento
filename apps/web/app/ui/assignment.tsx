@@ -23,7 +23,7 @@ export function isAssignmentNotice(value: unknown): value is AssignmentNotice {
   return typeof value === 'string' && Object.hasOwn(ASSIGNMENT_NOTICES, value)
 }
 
-/** The form « New rule » sent back with its errors. */
+/** The form "New rule" sent back with its errors. */
 export interface AssignmentFormState {
   values: Record<string, string>
   errors: Partial<Record<AssignmentField, string>>
@@ -49,13 +49,13 @@ const OUTCOME_LABELS: Record<Outcome, string> = {
   command_only: 'No automatic review (command only)',
 }
 
-/** « the author is sakuga-agent[bot] or renovate[bot] ». */
+/** "the author is sakuga-agent[bot] or renovate[bot]". */
 function oneOf(values: readonly string[]): string {
   if (values.length <= 1) return values[0] ?? ''
   return `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`
 }
 
-/** « If the author is sakuga-agent[bot] and the PR changes **\/migrations/** ». */
+/** "If the author is sakuga-agent[bot] and the PR changes **\/migrations/**". */
 export function conditionText(rule: Pick<AssignmentView, 'authors' | 'paths' | 'labels'>): string {
   let parts: string[] = []
   if (rule.authors.length) parts.push(`the author is ${oneOf(rule.authors)}`)
@@ -281,7 +281,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
 }
 
 /**
- * REV-21. « Assignment »: the ordered rules that set the level of the review of a push, from the
+ * REV-21. "Assignment": the ordered rules that set the level of the review of a push, from the
  * author, the changed paths and the labels of the pull request. The first one that matches wins;
  * the last line says what a push gets when none does. An admin of the org writes; a member reads.
  */

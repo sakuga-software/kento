@@ -93,11 +93,11 @@ describe('purge of the old jobs (REV-38)', () => {
 
     // A finding of REV-16 first and last found by the old review, with its event; a rule of REV-19.
     let [review] = await database.sql<{ id: string }[]>`select id from reviews where job_id = ${oldReviewJob}`
-    let [rule] = await database.sql<{ id: string }[]>`insert into rules (org_id, title, body) values (${orgId}, 'Règle', 'Corps.') returning id`
+    let [rule] = await database.sql<{ id: string }[]>`insert into rules (org_id, title, body) values (${orgId}, 'Rule', 'Body.') returning id`
     let [finding] = await database.sql<{ id: string }[]>`
       insert into findings (repo_id, pr_number, fingerprint, key, rule_id, path, line, title, severity, category, confidence,
         first_review_id, last_review_id, first_seen_sha, last_seen_sha)
-      values (${busy}, 1, '0123456789abcdef', 'k', ${rule!.id}, 'src/a.ts', 3, 'Un constat', 'major', 'bug', 90,
+      values (${busy}, 1, '0123456789abcdef', 'k', ${rule!.id}, 'src/a.ts', 3, 'A finding', 'major', 'bug', 90,
         ${review!.id}, ${review!.id}, 'busy-old-published', 'busy-old-published')
       returning id`
     await database.sql`

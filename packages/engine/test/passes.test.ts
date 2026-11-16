@@ -46,8 +46,8 @@ const finding = (title: string, severity: 'critical' | 'major' | 'minor' = 'majo
 
 const answer = (findings: ReturnType<typeof finding>[], confidence = 4): Answer => ({
   confidence_score: confidence,
-  risk: 'Moyen',
-  summary: 'Résumé',
+  risk: 'Medium',
+  summary: 'Summary',
   diagram: '',
   findings,
   not_reviewed: [],
@@ -82,9 +82,9 @@ function fakeModel(byPass: Record<string, Answer>, verdicts: { index: number; ke
 test('runs the three passes of base at once on one pack, then one check that keeps or drops each finding', async () => {
   const { fetch, calls } = fakeModel(
     {
-      security: answer([finding('Injection SQL', 'critical')], 3),
-      data: answer([finding('Injection SQL par id')]),
-      contracts: answer([finding('Retour sans type', 'minor')], 5),
+      security: answer([finding('SQL injection', 'critical')], 3),
+      data: answer([finding('SQL injection by id')]),
+      contracts: answer([finding('Return without a type', 'minor')], 5),
     },
     [
       { index: 0, keep: true, reason: 'line 2 builds the query from id' },
@@ -109,10 +109,10 @@ test('runs the three passes of base at once on one pack, then one check that kee
 
   // The kept findings keep their pass; the dropped one keeps the reason of the check.
   assert.deepEqual(result.findings.map((f) => [f.pass, f.title]), [
-    ['security', 'Injection SQL'],
-    ['contracts', 'Retour sans type'],
+    ['security', 'SQL injection'],
+    ['contracts', 'Return without a type'],
   ]);
-  assert.deepEqual(result.dropped.map((f) => [f.pass, f.title, f.reason]), [['data', 'Injection SQL par id', 'same defect as 0']]);
+  assert.deepEqual(result.dropped.map((f) => [f.pass, f.title, f.reason]), [['data', 'SQL injection by id', 'same defect as 0']]);
   assert.equal(result.verification, 'done');
   assert.deepEqual(result.passes.map((p) => [p.id, p.model, p.findings]), [
     ['security', PASS_MODEL, 1],
@@ -129,12 +129,12 @@ test('runs the three passes of base at once on one pack, then one check that kee
 
 test('a pass that fails does not stop the others, and the result names it', async () => {
   const { fetch } = fakeModel(
-    { security: answer([finding('Injection SQL', 'critical')]), data: answer([]), contracts: answer([]) },
+    { security: answer([finding('SQL injection', 'critical')]), data: answer([]), contracts: answer([]) },
     [{ index: 0, keep: true, reason: 'line 2' }],
     ['data'],
   );
   const result = await reviewInPasses({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {} }, { passConfig, verifyConfig });
-  assert.deepEqual(result.findings.map((f) => f.title), ['Injection SQL']);
+  assert.deepEqual(result.findings.map((f) => f.title), ['SQL injection']);
   const failed = result.passes.find((p) => p.id === 'data')!;
   assert.equal(failed.model, null);
   assert.match(failed.error!, /no model gave a usable answer/);
@@ -143,13 +143,13 @@ test('a pass that fails does not stop the others, and the result names it', asyn
 test('a check that fails keeps every finding, and every pass failing throws', async () => {
   const logs: string[] = [];
   const kept = fakeModel(
-    { security: answer([finding('Injection SQL', 'critical')]), data: answer([finding('Autre')]), contracts: answer([]) },
+    { security: answer([finding('SQL injection', 'critical')]), data: answer([finding('Other')]), contracts: answer([]) },
     [],
     ['check'],
   );
   const result = await reviewInPasses({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch: kept.fetch, log: (m) => logs.push(m) }, { passConfig, verifyConfig });
   assert.equal(result.verification, 'failed');
-  assert.deepEqual(result.findings.map((f) => f.title), ['Injection SQL', 'Autre']);
+  assert.deepEqual(result.findings.map((f) => f.title), ['SQL injection', 'Other']);
   assert.ok(logs.some((m) => m.startsWith('the check of the findings failed, every finding is kept')));
 
   const none = fakeModel({}, [], ['security', 'data', 'contracts']);
@@ -170,15 +170,15 @@ test('no finding: no check is called', async () => {
 test('the score is the lowest of the passes that still count: not a pass whose findings were all dropped, nor a score out of 1 to 5', () => {
   const [security, data, contracts] = BASE_PASSES as [typeof BASE_PASSES[0], typeof BASE_PASSES[0], typeof BASE_PASSES[0]];
   const answers = [
-    { pass: security, answer: answer([finding('Injection SQL', 'critical')], 1) },
+    { pass: security, answer: answer([finding('SQL injection', 'critical')], 1) },
     { pass: data, answer: answer([], 0) },
-    { pass: contracts, answer: answer([finding('Retour sans type', 'minor')], 4) },
+    { pass: contracts, answer: answer([finding('Return without a type', 'minor')], 4) },
   ];
   const kept = (title: string, pass: string) => ({ ...finding(title), pass });
   // The check kept the finding of security: its 1 counts.
-  assert.equal(passesScore(answers, [kept('Injection SQL', 'security'), kept('Retour sans type', 'contracts')]), 1);
+  assert.equal(passesScore(answers, [kept('SQL injection', 'security'), kept('Return without a type', 'contracts')]), 1);
   // The check dropped it: security no longer counts, data has no valid score, contracts gives 4.
-  assert.equal(passesScore(answers, [kept('Retour sans type', 'contracts')]), 4);
+  assert.equal(passesScore(answers, [kept('Return without a type', 'contracts')]), 4);
   // Nothing left: 0, that score() reads as 3.
   assert.equal(passesScore([{ pass: data, answer: answer([], 0) }], []), 0);
 });
@@ -186,7 +186,7 @@ test('the score is the lowest of the passes that still count: not a pass whose f
 test('two verdicts that disagree keep the finding, and a verdict that names no finding is logged', async () => {
   const logs: string[] = [];
   const { fetch } = fakeModel(
-    { security: answer([finding('Injection SQL', 'critical')]), data: answer([finding('Autre')]), contracts: answer([]) },
+    { security: answer([finding('SQL injection', 'critical')]), data: answer([finding('Other')]), contracts: answer([]) },
     [
       { index: 0, keep: true, reason: 'line 2' },
       { index: 0, keep: false, reason: 'changed its mind' },
@@ -195,7 +195,7 @@ test('two verdicts that disagree keep the finding, and a verdict that names no f
     ],
   );
   const result = await reviewInPasses({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: (m) => logs.push(m) }, { passConfig, verifyConfig });
-  assert.deepEqual(result.findings.map((f) => f.title), ['Injection SQL']);
-  assert.deepEqual(result.dropped.map((f) => f.title), ['Autre']);
+  assert.deepEqual(result.findings.map((f) => f.title), ['SQL injection']);
+  assert.deepEqual(result.dropped.map((f) => f.title), ['Other']);
   assert.ok(logs.includes('the check named 1 finding(s) that the list does not hold: 7'));
 });

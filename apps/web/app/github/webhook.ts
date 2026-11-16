@@ -102,7 +102,7 @@ async function applyVerified(
   try {
     trustedBots = await deps.trustedBotsFor(installationId)
   } catch (error) {
-    // The database: GitHub marks the delivery as failed, and « Redeliver » sends it again.
+    // The database: GitHub marks the delivery as failed, and "Redeliver" sends it again.
     log('error', 'webhook.failed', { githubEvent: event, action, deliveryId, command: 'trusted_bots', error: errorMessage(error) })
     return text(500, 'webhook could not be applied')
   }
@@ -130,7 +130,7 @@ async function applyVerified(
   try {
     result = await deps.apply(command, deliveryId)
   } catch (error) {
-    // 500: GitHub marks the delivery as failed, and « Redeliver » sends it again.
+    // 500: GitHub marks the delivery as failed, and "Redeliver" sends it again.
     log('error', 'webhook.failed', { ...context, command: command.type, error: errorMessage(error) })
     await record(deps, { ...base, status: 500, outcome: 'failed', reason: errorMessage(error).slice(0, 200) })
     return text(500, 'webhook could not be applied')

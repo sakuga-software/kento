@@ -21,7 +21,7 @@ export function watchConsole(page: Page): string[] {
   return errors
 }
 
-/** REV-91: on the Repos screen, opens the menu « … » of a repository and its link « Open the config ». */
+/** REV-91: on the Repos screen, opens the menu "…" of a repository and its link "Open the config". */
 export async function openRepoConfig(page: Page, repo: string) {
   await page.locator(`summary[aria-label="Actions of ${repo}"]`).click()
   await page.locator(`summary[aria-label="Actions of ${repo}"] + div`).getByRole('link', { name: 'Open the config' }).click()

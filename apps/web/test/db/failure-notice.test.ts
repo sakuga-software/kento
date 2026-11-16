@@ -117,7 +117,7 @@ describe('comment of a failed job', () => {
 
   it('5. a key in the reason is masked', async () => {
     let key = 'sk-ant-api03-Zx9Yw8Vu7Ts6Rq5Po4Nm3Lk2'
-    await failedJob({ reason: `the provider « Anthropic » refused its key (401): invalid x-api-key ${key}` })
+    await failedJob({ reason: `the provider "Anthropic" refused its key (401): invalid x-api-key ${key}` })
     await publisher().publishPending()
     let body = failureComments()[0]!.body
     assert.ok(!body.includes(key), body)

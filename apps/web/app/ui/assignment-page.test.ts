@@ -193,7 +193,7 @@ describe('the tab Assignment of the Config screen (REV-21)', () => {
     assert.equal((await request(`/repos/${ORCHARD}/assignment`, { cookie, form: { ...AGENT } })).status, 403)
   })
 
-  it('says « Soon » on a service without the assignment rules', async () => {
+  it('says "Soon" on a service without the assignment rules', async () => {
     let { request, signIn } = setup({ assignment: false })
     let { cookie, html } = await signIn()
     assert.match(html, /The assignment rules \(who triggers what, at which level\) come soon\./)

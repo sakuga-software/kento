@@ -1,7 +1,12 @@
-// The Settings screen (REV-29). « Add a provider » is folded: a link to #nouveau-provider
+// The Settings screen (REV-29). "Add a provider" is folded: a link to #new-provider
 // (the home screen has one) opens it. The table of contents marks the section on screen.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
+  // REV-115. The anchors of an earlier release, in the check runs and the bookmarks before it.
+  const LEGACY_ANCHORS = { plafond: 'cap', defauts: 'defaults', regles: 'org-rules', 'nouveau-provider': 'new-provider' }
+  const legacy = location.hash.slice(1)
+  if (Object.hasOwn(LEGACY_ANCHORS, legacy)) location.replace(`#${LEGACY_ANCHORS[legacy]}`)
+
   const openTarget = () => {
     let id
     try {

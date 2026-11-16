@@ -1,11 +1,12 @@
-// REV-96. Whether a reply in the thread of a finding sets the finding aside in words: « Not applied:
-// the value is validated by the schema », « Non appliqué : … », « Kept as is », « Risque accepté ».
-// The pattern reads the start of the reply only, in French and in English, with no call to a model.
+// REV-96. Whether a reply in the thread of a finding sets the finding aside in words: "Not applied:
+// the value is validated by the schema", "Kept as is", "Risk accepted".
+// The pattern reads the start of the reply only, in English, with no call to a model.
 // A wrong hint on a reply that applied the fix is noise: the pattern prefers to miss a refutation.
 // The verdict `refuted` of the next review (REV-71) catches the turns of phrase that it misses.
 //
 // It was built on 1,051 replies in the threads of Kentō, in the repositories of the org from 2026-09-01,
-// labelled by hand: precision 98.9 %, recall 82.5 %. refutation.cases.ts holds 290 of their starts.
+// labelled by hand. refutation.cases.ts holds 174 of their starts, the replies in English: on them,
+// precision 100 %, recall 68.8 %.
 
 import { COMMAND_NAMES } from '../github/comment-command.ts'
 import { docsRoutes } from '../routes.ts'
@@ -13,32 +14,24 @@ import { docsRoutes } from '../routes.ts'
 /** The pattern reads this many characters of the reply, after its cleaning. */
 export const HEAD_LENGTH = 160
 
-// The end of a word. `\b` of a regular expression reads only ASCII letters: « accepté » would never
-// end a word.
+// The end of a word, for the letters outside ASCII too: `\b` of a regular expression reads only ASCII
+// letters.
 const END = '(?![\\p{L}\\p{N}_])'
 
-/** An opening that agrees with the finding, then says that nothing changes: « Agreed, no change ». */
-const NOTHING = "(?:[,:;.]? (?:and )?(?:no change|nothing to (?:change|fix|do)|rien (?:à|a) (?:changer|corriger|faire)))"
+/** An opening that agrees with the finding, then says that nothing changes: "Agreed, no change". */
+const NOTHING = '(?:[,:;.]? (?:and )?(?:no change|nothing to (?:change|fix|do)))'
 
 /**
- * A reply that says the fix went in, even in part: never a refutation, whatever follows (« Partially
- * applied: the rest is out of scope »).
+ * A reply that says the fix went in, even in part: never a refutation, whatever follows ("Partially
+ * applied: the rest is out of scope").
  */
 const APPLIED = new RegExp(
   '^(?:' +
     [
-      // English
       '(?:partly |partially |now )?(?:applied|fixed|addressed|done|resolved|implemented|corrected|handled|updated|changed|added|removed|reworked|moved|renamed)',
       'good (?:catch|point|call)',
       `agreed(?!${NOTHING})`,
       'valid (?:point|finding)',
-      // French
-      '(?:corrig|appliqu|trait|ajout|retir|supprim|modifi|renomm|chang|r[ée]gl)[ée]+e?s?',
-      '(?:en partie|partiellement)',
-      'bien vu',
-      `d'accord(?!${NOTHING})`,
-      // « Fait exprès » sets the finding aside: REFUTES reads it.
-      'fait(?! (?:expr[èe]s|volontairement|[àa] dessein))',
     ].join('|') +
     `)${END}`,
   'iu',
@@ -48,7 +41,6 @@ const APPLIED = new RegExp(
 const REFUTES = new RegExp(
   '^(?:' +
     [
-      // English: the fix did not go in, on purpose.
       'not (?:applied|applying|changed|changing|fixed|fixing|addressed|adopted|taken|done|real|right|the case|a (?:bug|defect|regression|problem|real issue|valid finding)|an issue|valid|relevant|reachable|live|needed|necessary)',
       "(?:won'?t|will not|didn'?t|did not|do not|don'?t) (?:fix|apply|change)",
       'wontfix',
@@ -75,30 +67,6 @@ const REFUTES = new RegExp(
       '(?:same|duplicate) (?:finding|issue|defect|request|point) (?:as|of)',
       'still no change',
       'refuted',
-      // French: pas de correction, volontaire.
-      '(?:non|pas) (?:appliqu|retenu|corrig|chang|modifi|trait)\\p{L}*',
-      "je (?:ne |n')(?:retiens|corrige|change|modifie|applique) pas",
-      "nous (?:ne |n')(?:retenons|corrigeons|changeons|appliquons) pas",
-      '(?:pas|aucun|sans) (?:de )?(?:changement|correction|modification)',
-      'rien (?:à|a) (?:changer|corriger|faire)',
-      `d'accord${NOTHING}`,
-      "(?:laiss|gard|conserv)[ée]+e?s? (?:tel|tels|telle|en l'[ée]tat)",
-      '(?:choix|comportement) (?:retenu|voulu|d[ée]lib[ée]r[ée]|assum[ée]|volontaire)',
-      "(?:le )?comportement est voulu",
-      'volontaire',
-      'fait (?:expr[èe]s|volontairement|[àa] dessein)',
-      "c'est (?:bien )?voulu",
-      'voulu',
-      'hors (?:sujet|p[ée]rim[èe]tre|scope|ticket)',
-      'faux positif',
-      'risque (?:accept[ée]|assum[ée])',
-      'la pr[ée]misse ne tient pas',
-      '(?:le )?constat (?:faux|erron[ée]|infond[ée]|r[ée]fut[ée]|retir[ée]|abandonn[ée]|se retire)',
-      'écart[ée]',
-      "ne s'applique pas",
-      '(?:m[êe]me constat|le constat revient|doublon)',
-      '(?:toujours )?r[ée]fut[ée]',
-      'v[ée]rifi[ée][,:;.]? (?:non reproduit|rien (?:à|a) changer)',
     ].join('|') +
     `)${END}`,
   'iu',

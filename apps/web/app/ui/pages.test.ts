@@ -72,7 +72,6 @@ describe('without the sign-in configured', () => {
 
     let page = await (await router.fetch(new Request('http://localhost/login'))).text()
     assert.match(page, /Sign-in unavailable/)
-    assert.doesNotMatch(page, /Continuer avec GitHub/)
   })
 })
 
@@ -96,7 +95,7 @@ describe('the GitHub sign-in', () => {
     assert.ok(cookie)
   })
 
-  it('gives an admin of the org the full frame, with no « Read only »', async () => {
+  it('gives an admin of the org the full frame, with no "Read only"', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn(ALEX)
 
@@ -109,7 +108,7 @@ describe('the GitHub sign-in', () => {
     assert.equal(auth.memberships.get('user-1/org-1')?.role, 'admin')
   })
 
-  it('shows « Read only » to a member', async () => {
+  it('shows "Read only" to a member', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(CAMILLE)
 
@@ -146,7 +145,6 @@ describe('the GitHub sign-in', () => {
     assert.match(html, /href="\/login\/github\?switch=1"[^>]*>.*Switch GitHub account/s)
     assert.match(html, new RegExp(`href="${INSTALL_URL}"[^>]*>Install Kentō on an organization`))
     assert.match(html, /href="\/login\/github">Try again with @stranger<\/a>/)
-    assert.doesNotMatch(html, /Continuer avec GitHub/)
 
     // Without the cookie, or with a forged one, the page names no account.
     let bare = await (await request('/login?notice=not_member')).text()
@@ -154,7 +152,7 @@ describe('the GitHub sign-in', () => {
     assert.match(bare, /Switch GitHub account/)
     let forged = await (await request('/login?notice=not_member', { cookie: '__Host-kento_refused=evil' })).text()
     assert.doesNotMatch(forged, /@evil/)
-    // The cookie names the account on « Access refused » only, and any visit of the page empties it,
+    // The cookie names the account on "Access refused" only, and any visit of the page empties it,
     // forged or not.
     let other = await request('/login?notice=signed_out', { cookie: refused })
     assert.doesNotMatch(await other.text(), /@stranger/)
@@ -176,7 +174,7 @@ describe('the GitHub sign-in', () => {
     assert.notEqual(cookieOf(callback, COOKIE) ?? `${COOKIE}=`, `${COOKIE}=`, 'the session cookie is still set')
   })
 
-  it('makes the link « Install Kentō » from the slug of the App, on github.com or a GitHub Enterprise Server (REV-32)', () => {
+  it('makes the link "Install Kentō" from the slug of the App, on github.com or a GitHub Enterprise Server (REV-32)', () => {
     assert.equal(appInstallUrl('https://github.com', 'kento-review'), 'https://github.com/apps/kento-review/installations/new')
     assert.equal(appInstallUrl('https://ghe.example.com/', 'sakuga-review'), 'https://ghe.example.com/apps/sakuga-review/installations/new')
   })
@@ -189,7 +187,7 @@ describe('the GitHub sign-in', () => {
     assert.equal((await request('/login/github')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
   })
 
-  it('« Switch GitHub account » asks GitHub for its account picker (REV-32)', async () => {
+  it('"Switch GitHub account" asks GitHub for its account picker (REV-32)', async () => {
     let { request } = setup()
     let plain = new URL((await request('/login/github')).headers.get('Location')!)
     assert.equal(plain.searchParams.get('prompt'), null)
@@ -198,7 +196,7 @@ describe('the GitHub sign-in', () => {
     assert.ok(picker.searchParams.get('state'))
   })
 
-  it('links Findings in the bar, with no « Soon » left (REV-18)', async () => {
+  it('links Findings in the bar, with no "Soon" left (REV-18)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/', { cookie })).text()
@@ -393,7 +391,7 @@ describe('the role, from GitHub', () => {
     await signIn(CAMILLE)
     assert.equal(auth.memberships.get('user-2/org-2')?.role, 'admin', 'GitHub never said that camille left orchard')
 
-    // A « not a member » from GitHub does forget it.
+    // A "not a member" from GitHub does forget it.
     auth.setRole(OTHER_ORG, CAMILLE, null)
     await signIn(CAMILLE)
     assert.equal(auth.memberships.get('user-2/org-2'), undefined)

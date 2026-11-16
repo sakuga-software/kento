@@ -1,4 +1,4 @@
-// REV-91. The menu « … » of a row on the Repos screen: one open at a time; Escape and a click
+// REV-91. The menu "…" of a row on the Repos screen: one open at a time; Escape and a click
 // outside close it. Without JavaScript, its summary opens and closes it.
 {
   const menus = () => document.querySelectorAll('details.row-menu[open]')
@@ -41,16 +41,16 @@
   )
 
   document.addEventListener('click', (event) => {
-    // Both read before any change to the page: the nodes of the click, and « Cancel » in a menu.
+    // Both read before any change to the page: the nodes of the click, and "Cancel" in a menu.
     const path = event.composedPath()
     const cancel = event.target instanceof Element ? event.target.closest('.row-menu [data-confirm-cancel]') : null
     const cancelled = cancel?.closest('details.row-menu')
     for (const menu of menus()) if (!path.includes(menu)) closeMenu(menu, false)
-    // « Cancel » of the confirmation in a menu: the person gives up the action, the menu closes too.
+    // "Cancel" of the confirmation in a menu: the person gives up the action, the menu closes too.
     // After every listener of this click, confirm.js included, whatever their order: the focus ends
     // on the summary of the menu.
     // A menu that something else closed or took away keeps its state, and the focus stays where it is.
-    // confirm.js closes only the confirmation (never this menu): e2e/repos.spec.ts, « a click inside the inner confirmation… ».
+    // confirm.js closes only the confirmation (never this menu): e2e/repos.spec.ts, "a click inside the inner confirmation…".
     if (cancelled) setTimeout(() => cancelled.isConnected && cancelled.open && closeMenu(cancelled, true))
   })
 

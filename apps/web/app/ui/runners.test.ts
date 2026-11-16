@@ -108,7 +108,7 @@ function setup(screen: Partial<RunnersScreen> = {}, orgs = [ORG]) {
   return { ...fake, auth, request, signIn }
 }
 
-describe('the form « Nouveau runner »', () => {
+describe('the form "New runner"', () => {
   function form(values: Record<string, string>) {
     let data = new FormData()
     for (let [key, value] of Object.entries(values)) data.set(key, value)
@@ -123,7 +123,7 @@ describe('the form « Nouveau runner »', () => {
   })
 
   it('refuses a name or a label that the runner protocol refuses, and a missing key mode', () => {
-    let read = readRegistrationForm(form({ name: 'mac mini', labels: 'ok,pas bien;', keyMode: 'other' }))
+    let read = readRegistrationForm(form({ name: 'mac mini', labels: 'ok,not good;', keyMode: 'other' }))
     assert.equal(read.input, null)
     assert.ok(read.errors.name)
     assert.ok(read.errors.labels)
@@ -224,11 +224,11 @@ describe('the Runners screen', () => {
     // A runner of the service shows, with no form: only an operator manages it.
     assert.match(html, /Runner of the service/)
     assert.doesNotMatch(html, /Revoke runners-host/)
-    // REV-30: the facts of the protocol fold under « Technical details ».
+    // REV-30: the facts of the protocol fold under "Technical details".
     assert.match(html, /<details class="runner-details"><summary>Technical details<\/summary>/)
     assert.match(html, /Protocol/)
     assert.match(html, /Reservation and attempts/)
-    // REV-30: « Key on the runner » is the choice by default; the key of the app is an explicit choice.
+    // REV-30: "Key on the runner" is the choice by default; the key of the app is an explicit choice.
     assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
     // REV-51: no screen sets the pool of a repository, so the help of the labels does not name it.
@@ -247,7 +247,6 @@ describe('the Runners screen', () => {
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/runners', { cookie })).text()
     assert.match(html, /<h2 id="runners-title" class="section-title">Runners<\/h2><p class="runner-counts">1 online · 2 offline<\/p>/)
-    assert.doesNotMatch(html, /Runners actifs/)
     let main = html.slice(html.indexOf('id="runners-title"'), html.indexOf('class="runner-silent"'))
     assert.match(main, /<table class="table runners-table">/)
     assert.match(main, /<span class="status status-offline">Offline for 2 h<\/span>/)
@@ -294,7 +293,7 @@ describe('the Runners screen', () => {
     assert.doesNotMatch(html, /New runner<\/a>/)
   })
 
-  it('shows an expired token with the help and « New token »', async () => {
+  it('shows an expired token with the help and "New token"', async () => {
     let { request, signIn } = setup({
       registrations: [{ id: REGISTRATION_ID, name: 'gpu', labels: ['gpu'], trusted: false, expiresAt: new Date(NOW.getTime() - 1000), createdAt: NOW }],
     })

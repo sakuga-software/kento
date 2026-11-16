@@ -9,7 +9,7 @@ import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
 export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
 
 /**
- * `soon`: the screen is not there yet (REV-32). The bar names it, with « Soon » and no link. No link
+ * `soon`: the screen is not there yet (REV-32). The bar names it, with "Soon" and no link. No link
  * of the navigation leads to an empty screen.
  */
 const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
@@ -57,17 +57,17 @@ export interface ShellProps {
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */
   actions?: RemixNode
-  /** REV-91. The tabs of a screen at the right of its title, for every person (« List », « Precision »). */
+  /** REV-91. The tabs of a screen at the right of its title, for every person ("List", "Precision"). */
   tabs?: RemixNode
-  /** REV-17. What a member can do on this screen, in place of « only the admins … can change ». */
+  /** REV-17. What a member can do on this screen, in place of "only the admins … can change". */
   memberCan?: string
   children?: RemixNode
 }
 
 /**
  * The frame of every screen (REV-91): the bar with the mark, the screens, the org and the avatar;
- * under 760 px, « Menu » opens the list (public/assets/frame.js). Then the page header, the « Read
- * only » notice for a member, and the foot: « Kentō x.y.z · by Sakuga », the theme and the sign-out.
+ * under 760 px, "Menu" opens the list (public/assets/frame.js). Then the page header, the "Read
+ * only" notice for a member, and the foot: "Kentō x.y.z · by Sakuga", the theme and the sign-out.
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
@@ -158,7 +158,7 @@ function Mark(_handle: Handle<{}>) {
   )
 }
 
-/** Paper / Sumi / Device. public/assets/theme.js applies a choice at once; without it, « Apply ». */
+/** Paper / Sumi / Device. public/assets/theme.js applies a choice at once; without it, "Apply". */
 export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
   return () => {
     let { frame } = handle.props

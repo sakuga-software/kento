@@ -1,4 +1,4 @@
-// REV-22. The screen of a user (« alex · Kentō »): the preferences of the reviews of their own pull
+// REV-22. The screen of a user ("alex · Kentō"): the preferences of the reviews of their own pull
 // requests, the findings that those pull requests received, and the pull requests that Kentō
 // reviewed. Every member of the org reads it; only the user changes it.
 import type { Handle } from 'remix/component'
@@ -13,7 +13,7 @@ import { agoOrDate, plural } from './format.ts'
 import { pullHref } from './pull.tsx'
 import { Shell, ThemeSwitch, type PageFrame } from './shell.tsx'
 
-/** What the screen says after a form, from `?fait=`. */
+/** What the screen says after a form, from `?done=`. */
 export const USER_NOTICES = {
   saved: 'Preferences saved. They apply from the next push of your PRs.',
   added: 'Repo added to your preferences.',

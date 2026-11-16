@@ -7,7 +7,7 @@ import type { DeliveryRecord } from '../github/webhook.ts'
 import { readOverrides, type ConfigOverrides } from '../repo-config/model.ts'
 import { DEFAULT_TRUSTED_BOTS, readMoney, readTrustedBots, type OrgCaps } from './model.ts'
 
-/** A delivery of the webhook, as the section « App GitHub » shows it. */
+/** A delivery of the webhook, as the section "App GitHub" shows it. */
 export interface DeliveryView {
   deliveryId: string
   event: string

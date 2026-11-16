@@ -63,7 +63,7 @@ export interface JobAssignment {
   level: Level
   mention: string | null
   reasons: AssignmentReasons
-  /** The trigger of the config when the job was queued, for « à chaque push ». */
+  /** The trigger of the config when the job was queued, for "at each push". */
   trigger: Trigger
 }
 
@@ -119,7 +119,7 @@ export function readUnreadPathRules(config: unknown): number[] {
 }
 
 /**
- * « Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths). »
+ * "Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths)."
  * The list is missing when GitHub did not give it, or when the rule came while the push was read.
  */
 export function unreadPathsLine(positions: readonly number[]): string {
@@ -139,7 +139,7 @@ const TRIGGER_WORDS: Record<Trigger, string> = {
   command: 'on request',
 }
 
-/** « the author is sakuga-agent[bot] and the PR changes db/migrations/0002.sql ». */
+/** "the author is sakuga-agent[bot] and the PR changes db/migrations/0002.sql". */
 export function reasonsText(reasons: AssignmentReasons): string {
   let parts: string[] = []
   if (reasons.author !== undefined) parts.push(`the author is ${reasons.author}`)
@@ -148,7 +148,7 @@ export function reasonsText(reasons: AssignmentReasons): string {
   return parts.join(' and ')
 }
 
-/** « Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push. » */
+/** "Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push." */
 export function assignmentLine(assignment: JobAssignment): string {
   return `Assignment: rule ${assignment.position}, ${reasonsText(assignment.reasons)}, so ${assignment.level} ${TRIGGER_WORDS[assignment.trigger]}.`
 }
@@ -190,7 +190,7 @@ function safeParse(text: string): unknown {
 export const ASSIGNMENT_FIELDS = ['authors', 'paths', 'labels', 'outcome', 'mention'] as const
 export type AssignmentField = (typeof ASSIGNMENT_FIELDS)[number]
 
-/** The choices of « Alors » in the form: a level, or no automatic review. */
+/** The choices of "Then" in the form: a level, or no automatic review. */
 export const OUTCOMES = [...LEVELS, 'command_only'] as const
 export type Outcome = (typeof OUTCOMES)[number]
 

@@ -54,7 +54,7 @@ export const orgs = pgTable('orgs', {
   /**
    * REV-13. The cost limits of the whole org, in dollars: the reviews and resolutions of all its
    * repositories since the start of the UTC day, and of the UTC calendar month. At a limit, a new job
-   * is not queued (a push gets the check « Kentō · plafond », a command a reply); a job already queued
+   * is not queued (a push gets the check "Kentō · cap", a command a reply); a job already queued
    * or running finishes. Null: no limit.
    */
   dailyCapUsd: numeric('daily_cap_usd', { precision: 10, scale: 2 }),
@@ -155,7 +155,7 @@ export const runners = pgTable(
     /**
      * A trusted runner without its own model key gets the key of the service with each job. An
      * admin of its org sets it in the Runners screen, or its registration token sets it (key mode
-     * « app »). A runner of the service: only an operator sets it, in the database.
+     * "app"). A runner of the service: only an operator sets it, in the database.
      */
     trusted: boolean('trusted').notNull().default(false),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -180,7 +180,7 @@ export const runnerRegistrations = pgTable(
       .references(() => orgs.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
-    /** Key mode « app »: the runner is trusted, and gets the model key of the service. */
+    /** Key mode "app": the runner is trusted, and gets the model key of the service. */
     trusted: boolean('trusted').notNull(),
     /** SHA-256 of the registration token, in hex. The token itself is never stored. */
     tokenHash: text('token_hash').notNull().unique(),
@@ -308,15 +308,15 @@ export const jobs = pgTable(
     /**
      * REV-21. What chose the level of the job: `rule` (an assignment rule of the repository),
      * `preference` (the level of the author, REV-22), `repo` (the level of the config), `command` (a
-     * command or « Run again » on the screen of the pull request), `retry` (a retry from the
+     * command or "Run again" on the screen of the pull request), `retry` (a retry from the
      * dashboard). Null on a job queued before the column.
      */
     levelSource: text('level_source'),
     /** REV-21. The assignment rule that chose the level, with `level_source` `rule`; null once it is removed. */
     assignmentRuleId: uuid('assignment_rule_id').references((): AnyPgColumn => assignmentRules.id, { onDelete: 'set null' }),
     /**
-     * REV-59. An admin hid this failure on the dashboard: it leaves the banner and the list « Recent
-     * failures ». The counts of the week keep it. Null: shown.
+     * REV-59. An admin hid this failure on the dashboard: it leaves the banner and the list "Recent
+     * failures". The counts of the week keep it. Null: shown.
      */
     failureDismissedAt: timestamp('failure_dismissed_at', { withTimezone: true }),
     /** REV-59. The login of the admin who hid the failure. */
@@ -663,7 +663,7 @@ export const rules = pgTable(
 )
 
 /**
- * REV-52. The comment « Kentō · review en attente » of a pull request: one per pull request, found
+ * REV-52. The comment "Kentō · review waiting" of a pull request: one per pull request, found
  * on GitHub by `<!-- kento:queued <repo id>#<number> -->`. The publisher writes it while a job of
  * the pull request waits in the queue for too long, and deletes it, then this row, once no job
  * waits for too long.
@@ -691,7 +691,7 @@ export const queueNotices = pgTable(
 
 /**
  * REV-22. The author of each pull request that Kentō saw: the event of a push or the comment of a
- * command writes it. The screen of a user reads « Mes PR reviewées » and « Findings reçus » from it,
+ * command writes it. The screen of a user reads "My reviewed PRs" and "Findings received" from it,
  * and the Findings screen filters on it.
  */
 export const pullAuthors = pgTable(

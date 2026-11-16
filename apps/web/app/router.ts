@@ -7,6 +7,7 @@ import { createRouter, type RouterContext } from 'remix/router'
 import { createController } from './actions/controller.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
+import { legacyQueryRedirect } from './legacy-urls.ts'
 import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
@@ -39,7 +40,7 @@ export interface AppDependencies {
   webhook: WebhookDependencies
   /** The runner API. Without it, its routes answer 404. */
   runner?: RunnerApiDependencies
-  /** The GitHub sign-in of the screens. Without it, every screen leads to « Connexion indisponible ». */
+  /** The GitHub sign-in of the screens. Without it, every screen leads to "Sign-in unavailable". */
   auth?: AuthDependencies | null
   /** The Repos screen. Without it, the screen shows its empty frame. */
   repos?: ReposDependencies | null
@@ -47,7 +48,7 @@ export interface AppDependencies {
   findings?: FindingsDependencies | null
   /** What the Runners screen reads and writes. Without it, the screen stays empty. */
   runnersAdmin?: RunnersAdminStore | null
-  /** The section « Providers et clés » of the settings (REV-11). Without it, the settings stay empty. */
+  /** The section "Providers and keys" of the settings (REV-11). Without it, the settings stay empty. */
   providers?: ProvidersDependencies | null
   /** The Config screen of a repository (REV-12). Without it, the screen answers 404. */
   repoConfig?: RepoConfigDependencies | null
@@ -55,9 +56,9 @@ export interface AppDependencies {
   dashboard?: DashboardDependencies | null
   /** The settings of the org (REV-13). Without them, the settings show the providers only. */
   orgSettings?: OrgSettingsDependencies | null
-  /** The rules of the repositories and of the org (REV-19). Without them, the tab Règles says « Bientôt ». */
+  /** The rules of the repositories and of the org (REV-19). Without them, the tab Rules says "Soon". */
   rules?: RulesStore | null
-  /** The assignment rules of the repositories (REV-21). Without them, the tab Assignation says « Bientôt ». */
+  /** The assignment rules of the repositories (REV-21). Without them, the tab Assignment says "Soon". */
   assignment?: AssignmentStore | null
   /** The screen of a pull request (REV-17). Without it, the screen answers 404. */
   pulls?: PullsDependencies | null
@@ -100,6 +101,7 @@ export function createAppRouter(deps: AppDependencies) {
         cacheControl: process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache',
       }),
       render(),
+      legacyQueryRedirect(),
     ],
   })
   router.map(routes, createController(deps))

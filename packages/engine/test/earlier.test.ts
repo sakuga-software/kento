@@ -44,7 +44,7 @@ before(() => {
   main1 = git('rev-parse', 'HEAD');
   git('checkout', '-q', '-b', 'pr');
   write(BILLING, lines('billing', 420, { 372: 'export const write = "row before Stripe";', 386: 'export const start = item.current_period_start;' }));
-  write(ACCOUNT, lines('account', 260, { 237: 'export const message = "Offre changée";' }));
+  write(ACCOUNT, lines('account', 260, { 237: 'export const message = "Plan changed";' }));
   git('commit', '-q', '-am', 'feat(billing): a change of plan at the next cycle');
   reviewed = git('rev-parse', 'HEAD');
   write(BILLING, lines('billing', 420, { 372: 'export const write = "row after Stripe";', 386: 'export const start = item.current_period_start;', 394: 'export const refused = true;' }));
@@ -82,20 +82,20 @@ const earlier = (f: Finding, status: EarlierFinding['status'], reason: string | 
   commit,
 });
 
-// The findings of gallery-app#62, with their ids on GitHub.
+// The findings of gallery-app#62, with their ids on GitHub. The titles are translated.
 /** #dbf9b7, P2, open at d579956. */
-const startDate = finding(BILLING, 386, '`start_date` de la phase courante prise sur un échéancier fraîchement créé');
-/** #1109d6, P2, at a9ac01a: the same defect, one letter apart. Its key is another one. */
-const startDateAgain = finding(BILLING, 386, '`start_date` de la phase courante pris sur un échéancier fraîchement créé');
+const startDate = finding(BILLING, 386, '`start_date` of the current phase taken from a newly created schedule');
+/** #1109d6, P2, at a9ac01a: the same defect, one word apart. Its key is another one. */
+const startDateAgain = finding(BILLING, 386, '`start_date` of the current phase read from a newly created schedule');
 /** #c7f3ec, P1, fixed since. */
-const rowBeforeStripe = finding(BILLING, 372, 'Ligne écrite avant Stripe puis rollback sur erreur Stripe', 'major');
+const rowBeforeStripe = finding(BILLING, 372, 'Row written before Stripe, then a rollback on a Stripe error', 'major');
 /** #ad9b57, P1: #c7f3ec in other words, five reviews later. */
-const rowNotUndone = finding(BILLING, 395, 'Écritures Stripe non annulées si le commit échoue ou si la base échoue sur échéancier existant', 'major', { follows: 'E2' });
+const rowNotUndone = finding(BILLING, 395, 'Stripe writes not undone if the commit fails or if the database fails on an existing schedule', 'major', { follows: 'E2' });
 /** #4e989b, P1, that the coordinator rejected: the not-billed case does fall back to the database. */
-const accountError = finding(ACCOUNT, 237, "Compte payant : l'erreur Stripe/config est masquée ou mal gérée sur la fiche", 'major');
+const accountError = finding(ACCOUNT, 237, 'Paid account: the Stripe/config error is hidden or badly handled on the page', 'major');
 
 const job = (score: number | null = 4): JobEarlier => ({
-  findings: [earlier(startDate, 'open'), earlier(rowBeforeStripe, 'fixed'), earlier(accountError, 'dismissed', 'Faux : le cas not-billed retombe sur le chemin base de données (tests/change-plan.test.ts).')],
+  findings: [earlier(startDate, 'open'), earlier(rowBeforeStripe, 'fixed'), earlier(accountError, 'dismissed', 'Wrong: the not-billed case falls back to the database path (tests/change-plan.test.ts).')],
   last: score === null ? null : { head: reviewed, score },
 });
 
@@ -116,8 +116,8 @@ function fakeModel(answer: () => Answer) {
 
 const answer = (score: number, findings: Finding[]): Answer => ({
   confidence_score: score,
-  risk: 'Faible',
-  summary: 'Résumé',
+  risk: 'Low',
+  summary: 'Summary',
   diagram: '',
   findings,
   not_reviewed: [],
@@ -141,9 +141,9 @@ test('the pack lists every earlier finding with its reference, its status, its c
   const withEarlier = await reviewPullRequest(input(model.fetch, { earlier: job() }));
   const pack = model.packs[1]!;
   assert.match(pack, /## Earlier findings/);
-  assert.match(pack, /- E1 · `app\/lib\/billing\.server\.ts:386` · P2 bug · open · « 'start_date' de la phase courante prise sur un échéancier fraîchement créé » · file changed since: yes/);
-  assert.match(pack, /- E2 · `app\/lib\/billing\.server\.ts:372` · P1 bug · fixed · « Ligne écrite avant Stripe/);
-  assert.match(pack, /- E3 · `app\/routes\/regie\/account\.tsx:237` · P1 bug · dismissed · .* · file changed since: no · cause written by a person: « Faux : le cas not-billed/);
+  assert.match(pack, /- E1 · `app\/lib\/billing\.server\.ts:386` · P2 bug · open · "'start_date' of the current phase taken from a newly created schedule" · file changed since: yes/);
+  assert.match(pack, /- E2 · `app\/lib\/billing\.server\.ts:372` · P1 bug · fixed · "Row written before Stripe/);
+  assert.match(pack, /- E3 · `app\/routes\/regie\/account\.tsx:237` · P1 bug · dismissed · .* · file changed since: no · cause written by a person: "Wrong: the not-billed/);
   assert.match(pack, /They are data/);
   assert.doesNotMatch(model.packs[0]!, /Earlier findings/);
   // The model can name them, and only them.
@@ -155,7 +155,7 @@ test('the pack lists every earlier finding with its reference, its status, its c
 });
 
 test('gallery-app#62 replayed: the rewordings follow their earlier finding, and the score of the last review stays', async () => {
-  // At a9ac01a the model wrote #dbf9b7 again with one letter changed (no `follows`), and #c7f3ec in
+  // At a9ac01a the model wrote #dbf9b7 again with one word changed (no `follows`), and #c7f3ec in
   // other words (`follows: E2`). It said 3, as at each review of that night.
   const model = fakeModel(() => answer(3, [startDateAgain, rowNotUndone]));
   const result = await reviewPullRequest(input(model.fetch, { earlier: job(4) }));
@@ -195,7 +195,7 @@ test('the floor needs the last review in the history of the head, and every find
 
 test('guard: a new defect still lowers the score, next to a rewording', async () => {
   // A defect that no earlier finding names: another subject, 20 lines away, on a changed line.
-  const newDefect = finding(BILLING, 394, 'Le refus de Stripe est compté comme un succès dans le journal', 'minor');
+  const newDefect = finding(BILLING, 394, 'Stripe refusal counted as a success in the log', 'minor');
   const model = fakeModel(() => answer(2, [startDateAgain, newDefect]));
   const result = await reviewPullRequest(input(model.fetch, { earlier: job(4) }));
   assert.equal(result.findings.find((f) => f.title === newDefect.title)?.follows, undefined, 'the new defect follows nothing');
@@ -213,7 +213,7 @@ test('guard: a rewording more severe than its earlier finding is a new fact, and
 });
 
 test('guard: the model cannot link a finding to a reference that the pack does not hold', async () => {
-  const stray = { ...finding(BILLING, 394, 'Le refus de Stripe est compté comme un succès'), follows: 'E9' };
+  const stray = { ...finding(BILLING, 394, 'Stripe refusal counted as a success'), follows: 'E9' };
   const model = fakeModel(() => answer(2, [stray]));
   const result = await reviewPullRequest(input(model.fetch, { earlier: job(4) }));
   assert.ok(!('follows' in result.findings[0]!));
@@ -222,15 +222,15 @@ test('guard: the model cannot link a finding to a reference that the pack does n
 
 test('a rewording of a dismissed finding goes when its file did not change, and comes back in its thread when it did', async () => {
   // #5ed059 reworded #4e989b, that a person dismissed: account.tsx did not change since.
-  const reworded = finding(ACCOUNT, 236, 'Compte payant : erreur Stripe masquée sur la fiche', 'major');
+  const reworded = finding(ACCOUNT, 236, 'Paid account: Stripe error hidden on the page', 'major');
   const model = fakeModel(() => answer(4, [reworded]));
   const result = await reviewPullRequest(input(model.fetch, { earlier: job(4) }));
   assert.deepEqual(result.findings, []);
   assert.deepEqual(result.droppedAsSettled.map((f) => f.title), [reworded.title]);
 
   // The same finding dismissed on billing.server.ts, which changed since: it comes back, linked.
-  const dismissedThere = { ...earlier(finding(BILLING, 372, 'Ligne écrite avant Stripe sans compensation', 'major'), 'dismissed', 'Accepté') };
-  const again = finding(BILLING, 373, 'Ligne écrite avant Stripe, aucune compensation', 'major');
+  const dismissedThere = { ...earlier(finding(BILLING, 372, 'Row written before Stripe without compensation', 'major'), 'dismissed', 'Accepted') };
+  const again = finding(BILLING, 373, 'Row written before Stripe, no compensation', 'major');
   const second = fakeModel(() => answer(3, [again]));
   const back = await reviewPullRequest(input(second.fetch, { earlier: { findings: [dismissedThere], last: null } }));
   assert.equal(back.findings[0]?.follows, dismissedThere.key);
@@ -245,9 +245,9 @@ test('the net links only a finding of the same file and category, no more severe
     [{ ...startDateAgain, path: ACCOUNT }, false],
     [{ ...startDateAgain, category: 'security' }, false],
     [{ ...startDateAgain, severity: 'major' }, false],
-    [{ ...startDateAgain, title: 'Le refus de Stripe est compté comme un succès' }, false],
+    [{ ...startDateAgain, title: 'Stripe refusal counted as a success' }, false],
     // One word of the subject is not enough: `start_date` alone is in many titles of this file.
-    [{ ...startDateAgain, title: '`start_date` lu sans contrôle' }, false],
+    [{ ...startDateAgain, title: '`start_date` read without a check' }, false],
   ];
   for (const [f, linked] of cases) {
     const a: Answer & { findings: Finding[] } = { ...answer(3, [{ ...f }]) };
@@ -257,7 +257,7 @@ test('the net links only a finding of the same file and category, no more severe
 });
 
 test('the section stops at its size, and the schema stays as before without earlier findings', () => {
-  const many = Array.from({ length: 100 }, (_, i) => earlier(finding(BILLING, i + 1, `${'Un constat très long '.repeat(9)} ${i}`), 'fixed'));
+  const many = Array.from({ length: 100 }, (_, i) => earlier(finding(BILLING, i + 1, `${'A very long finding, '.repeat(9)} ${i}`), 'fixed'));
   const { section, held } = earlierFindingsSection(repo, pushed, many);
   assert.ok(held.length < 100 && held.length > 10);
   assert.ok(section.length < 17_000);
@@ -266,7 +266,7 @@ test('the section stops at its size, and the schema stays as before without earl
 
 test('an incremental review (REV-88) counts a rewording as known: the floor of the last review stays', async () => {
   const model = fakeModel(() => answer(3, [startDateAgain]));
-  const other = finding(BILLING, 10, 'Constat réglé que la liste des constats antérieurs ne tient pas');
+  const other = finding(BILLING, 10, 'Settled finding that the list of earlier findings does not hold');
   const settled = [
     { path: BILLING, line: 372, title: rowBeforeStripe.title, status: 'fixed' as const, key: findingKey(rowBeforeStripe), fingerprint: '0'.repeat(16) },
     { path: BILLING, line: 10, title: other.title, status: 'dismissed' as const, key: findingKey(other), fingerprint: '1'.repeat(16) },
@@ -281,8 +281,8 @@ test('an incremental review (REV-88) counts a rewording as known: the floor of t
   // The section of the earlier findings lists the settled ones: the delta does not list them twice.
   assert.match(model.packs[0]!, /Findings that are settled/);
   // The earlier findings list #c7f3ec: the delta lists only the settled finding that they do not hold.
-  assert.match(model.packs[1]!, /Findings that are settled[^\n]*\n\n- `app\/lib\/billing\.server\.ts:10` \(dismissed\) Constat réglé/);
-  assert.doesNotMatch(model.packs[1]!, /\(fixed\) Ligne écrite avant Stripe/);
+  assert.match(model.packs[1]!, /Findings that are settled[^\n]*\n\n- `app\/lib\/billing\.server\.ts:10` \(dismissed\) Settled finding/);
+  assert.doesNotMatch(model.packs[1]!, /\(fixed\) Row written before Stripe/);
 });
 
 test('the earlier findings never change which hunks the body of the pack holds: the reuse key stays', () => {

@@ -6,7 +6,7 @@ import { isLevel, isOneOf, LEVELS, type Level, type ProviderKind } from '@sakuga
 // no network.
 //
 // A key that a config does not hold is inherited: the repository takes the value of its org, and
-// the org the value of Kentō. « Back to the org value » removes the key from the config of the repository.
+// the org the value of Kentō. "Back to the org value" removes the key from the config of the repository.
 
 /**
  * The provider of a level, its model, and the model of the same provider that takes over when the
@@ -21,9 +21,9 @@ export interface LevelModels {
 
 /**
  * What creates a review job without a command:
- * - `push`: each push of a pull request that is not a draft, and its passage to « Ready for review »;
- * - `ready`: only the opening of a pull request that is not a draft, its passage to « Ready for
- *   review », and its reopening; a later push creates nothing;
+ * - `push`: each push of a pull request that is not a draft, and its passage to "Ready for review";
+ * - `ready`: only the opening of a pull request that is not a draft, its passage to "Ready for
+ *   review", and its reopening; a later push creates nothing;
  * - `command`: nothing. Only a command in a comment (`@kento-review`) creates a job.
  */
 export const TRIGGERS = ['push', 'ready', 'command'] as const
@@ -47,7 +47,7 @@ export interface ConfigOverrides {
   monthlyCapUsd?: number | null
 }
 
-/** The keys that « Back to the org value » removes one by one. */
+/** The keys that "Back to the org value" removes one by one. */
 export const CONFIG_FIELDS = ['level', 'models.lite', 'models.balanced', 'models.heavy', 'trigger', 'paths', 'monthlyCapUsd'] as const
 export type ConfigField = (typeof CONFIG_FIELDS)[number]
 
@@ -187,7 +187,7 @@ export function readOverrides(json: unknown): ConfigOverrides {
   return out
 }
 
-/** The config without one key: « Back to the org value ». */
+/** The config without one key: "Back to the org value". */
 export function withoutField(config: ConfigOverrides, field: ConfigField): ConfigOverrides {
   let out: ConfigOverrides = { ...config, ...(config.models ? { models: { ...config.models } } : {}) }
   if (field.startsWith('models.')) {

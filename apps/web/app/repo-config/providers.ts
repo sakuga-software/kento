@@ -10,9 +10,9 @@ export interface ProviderOption {
   label: string
   /** One line under the name: where its key comes from, or its state. */
   hint: string
-  /** REV-27. The « Default » provider of the org: a level without a choice runs on it. */
+  /** REV-27. The "Default" provider of the org: a level without a choice runs on it. */
   isDefault: boolean
-  /** REV-27. Where the key of a call comes from, in words: « key on the runner », « key of the service »… */
+  /** REV-27. Where the key of a call comes from, in words: "key on the runner", "key of the service"… */
   keyFrom: string
   /** The service holds the key of a call: the OpenRouter key of the service, or a key that it keeps encrypted. */
   serviceHoldsKey: boolean

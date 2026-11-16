@@ -2,7 +2,7 @@
 // review workflow, and writes them in `repos`. It never enables a repository.
 //
 // A screen starts it in the background when the last check is older than CHECK_MAX_AGE_MS; an admin
-// can run it at once (« Actualiser »). One check per org at a time.
+// can run it at once ("Reload"). One check per org at a time.
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'

@@ -18,7 +18,7 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 (`public/assets/theme.js`). The design is in [design/](../../design/README.md).
 
 - `app/ui/shell.tsx`: the frame of every screen. Sidebar (wider than 760 px) or top bar and tab
-  bar, page header, « Read only » banner for a member, footer `Kentō x.y.z · by Sakuga`.
+  bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
 - `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
   the frame. A screen writes a token name, never a colour value.
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
@@ -28,7 +28,7 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
   org and of the service with their state, version, last call and jobs; registration tokens
   (`kento_reg_…`, shown once, one use, one hour, kept as a hash); trust and revocation for an admin.
-  `public/assets/runners.js` adds « Copy the command ».
+  `public/assets/runners.js` adds "Copy the command".
 - `app/ui/user.tsx`, `app/users/`: the screen of a user, `/users/:login` (REV-22). Every member of
   the org reads it; only the user changes it. Their preferences for the reviews of their own pull
   requests (`user_prefs`: automatic review on or off, a default level, for every repository and per
@@ -43,7 +43,7 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   the GitHub App, authorization code with PKCE and `state`. The user token reads `GET /user` once and
   is dropped.
 - The role comes from GitHub, never from Kentō: `GET /orgs/{org}/memberships/{login}` with an
-  installation token limited to `members: read`. `admin` edits, `member` reads (the « Read only »
+  installation token limited to `members: read`. `admin` edits, `member` reads (the "Read only"
   banner), `pending` or absent gets nothing. The owner of a personal account is its admin. Someone in
   none of the orgs of the App is refused, and nothing is written. The role is read again after 10
   minutes; while GitHub fails, the last one holds 1 hour, then the access ends.
@@ -55,7 +55,7 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   `_csrf` field). The webhook and the runner API are outside of it.
 - Logs: `auth.signed_in`, `auth.sign_in_refused`, `auth.sign_in_failed`, `auth.signed_out`,
   `auth.access_lost`, `auth.role_check_failed`, `sessions.swept`. No token or secret.
-- REV-9, REV-10, REV-13, REV-14 and REV-18 fill the screens; each one is an empty « Soon here »
+- REV-9, REV-10, REV-13, REV-14 and REV-18 fill the screens; each one is an empty "Soon here"
   until then.
 
 ## Configuration
@@ -63,7 +63,7 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 Environment variables, read once at startup. An invalid value stops the process before it listens,
 and the log names the variable, never its value. The table of every variable, with an example and
 its effect, is in [DEPLOY.md](DEPLOY.md#4-environment-variables). To run the service on your machine,
-`DATABASE_URL` is enough (see « Develop » below).
+`DATABASE_URL` is enough (see "Develop" below).
 
 ## `GET /healthz`
 
@@ -92,7 +92,7 @@ The webhook of the GitHub App. Steps, in order; nothing reads the database befor
 | Event | Action | Effect |
 | ----- | ------ | ------ |
 | `ping` | | 200 `pong` |
-| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the level that the config of the repository resolves (repository, then org, then `lite`). The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside the trusted bots of the org (settings, REV-13), a pull request from a fork. No job (202 `capped`): the org reached its cost limit of the day or of the month; the head gets the neutral check « Kentō · cap ». |
+| `pull_request` | `opened`, `synchronize`, `reopened`, `ready_for_review` | One `review` job, `queued`, at the level that the config of the repository resolves (repository, then org, then `lite`). The other queued or running jobs of the pull request become `cancelled`. Skipped (202 `skipped`): a repository that is not enabled on the Repos screen. Skipped (202 `ignored`): a draft, a push or a pull request of a bot outside the trusted bots of the org (settings, REV-13), a pull request from a fork. No job (202 `capped`): the org reached its cost limit of the day or of the month; the head gets the neutral check "Kentō · cap". |
 | `pull_request` | `closed` | The queued or running jobs of the pull request become `cancelled`. REV-107: then the 👍 and 👎 on the request for feedback of the pull request are read and kept. |
 | `pull_request` | `edited` with a new base | 202 `retargeted`: the queued and failed jobs of the pull request take the new base branch (a stacked pull request moves to the base of its parent when the branch of the parent is deleted). Other edits: 202 `ignored`. |
 | `installation` | `created`, `new_permissions_accepted`, `unsuspend` | Upserts the org and the listed repositories; clears `suspended_at`. |
@@ -113,7 +113,7 @@ published reviews stay.
 The Repos screen reads the repositories of the installation on GitHub (`GET
 /installation/repositories`, then the files of `.github/workflows`) with an installation token
 `contents: read`: at the first visit, then when the last check is older than 10 minutes, in the
-background; « Read GitHub again » runs it at once. The screen still finds a workflow of the old GitHub
+background; "Read GitHub again" runs it at once. The screen still finds a workflow of the old GitHub
 Action, removed from this repository on 2026-11-15: one that calls `review.yml@<ref>` is
 `reusable`, one that runs `review/sakuga-review.ts` without `workflow_call` is a `copy`. The switch
 counter is the number of reviews that Kentō published on GitHub since the last failed job of the
@@ -122,7 +122,7 @@ level); at 20, the screen offers to remove `review.yml` on GitHub.
 
 Duplicates:
 
-- The delivery id of a job is unique: « Redeliver » on the page of the App creates no second job and
+- The delivery id of a job is unique: "Redeliver" on the page of the App creates no second job and
   cancels nothing.
 - A head that already had a review job gets no second one, unless that job was cancelled by a close,
   a suspension or an uninstall: a reopen on the same head is reviewed again. `jobs.failure_reason`

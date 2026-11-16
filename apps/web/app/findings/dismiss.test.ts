@@ -1,4 +1,4 @@
-// REV-18. The form of « Mark dismissed » and « Mark wontfix », and the reply in a thread.
+// REV-18. The form of "Mark dismissed" and "Mark wontfix", and the reply in a thread.
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
@@ -23,20 +23,15 @@ describe('the form of a change of status', () => {
     })
   })
 
-  // REV-114. A page opened before the deploy posts the French reason: it is stored in English.
-  it('reads a French reason of the dialog before the deploy as its English value', () => {
-    for (let [french, english] of [['Faux positif', 'False positive'], ['Hors sujet', 'Off topic'], ['Déjà connu', 'Already known'], ['Style, pas un défaut', 'Style, not a defect']]) {
-      assert.deepEqual(readStatusForm(form([['ids', A], ['status', 'dismissed'], ['reason', french!]])), { ok: true, ids: [A], status: 'dismissed', reason: english })
-    }
-    // A key of the prototype of the table is no French reason.
-    for (let key of ['constructor', 'toString', '__proto__']) {
+  it('refuses a reason outside the list, and a key of the prototype of the table', () => {
+    for (let key of ['Faux positif', 'constructor', 'toString', '__proto__']) {
       assert.deepEqual(readStatusForm(form([['ids', A], ['status', 'dismissed'], ['reason', key]])), { ok: false, error: 'reason' })
     }
   })
 
-  it('takes « Other » with the reason of the person, and a wontfix with no reason', () => {
-    let other = readStatusForm(form([['ids', A], ['status', 'dismissed'], ['reason', OTHER_REASON], ['other', '  Corrigé ailleurs  ']]))
-    assert.deepEqual(other, { ok: true, ids: [A], status: 'dismissed', reason: 'Corrigé ailleurs' })
+  it('takes "Other" with the reason of the person, and a wontfix with no reason', () => {
+    let other = readStatusForm(form([['ids', A], ['status', 'dismissed'], ['reason', OTHER_REASON], ['other', '  Fixed elsewhere  ']]))
+    assert.deepEqual(other, { ok: true, ids: [A], status: 'dismissed', reason: 'Fixed elsewhere' })
     assert.deepEqual(readStatusForm(form([['ids', A], ['status', 'wontfix']])), { ok: true, ids: [A], status: 'wontfix', reason: null })
   })
 

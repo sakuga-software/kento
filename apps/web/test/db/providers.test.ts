@@ -83,7 +83,7 @@ describe('providers and their encrypted keys', () => {
   function review(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     return {
       level: 'lite', base: BASE, head: HEAD, score: 4, verdict: 'COMMENT', model: 'claude-haiku-5-5', provider: 'Anthropic',
-      costUsd: 0.0015, costSource: 'table', promptTokens: 10_000, completionTokens: 1000, summary: 'Résumé', risk: 'Faible',
+      costUsd: 0.0015, costSource: 'table', promptTokens: 10_000, completionTokens: 1000, summary: 'Summary', risk: 'Low',
       diagram: null, deeperReview: null, findings: [], notReviewed: [], skipped: [], ...overrides,
     }
   }
@@ -151,13 +151,13 @@ describe('providers and their encrypted keys', () => {
       assert.equal(refused!.refusedStatus, 401)
       let first = refused!.refusedAt
       await store.recordRefused(a.id, 403, 'later', a.keySetAt)
-      assert.deepEqual((await store.list(orgId))[0]!.refusedAt, first, 'the first refusal stays: « 401 since 09:40 »')
+      assert.deepEqual((await store.list(orgId))[0]!.refusedAt, first, 'the first refusal stays: "401 since 09:40"')
       let replaced = await store.replaceKey(orgId, a.id, 'sk-ant-new-key-0123456789-abcd')
       assert.equal(replaced!.keyLast4, 'abcd')
       assert.equal(replaced!.refusedAt, null)
     })
 
-    it('« Test » marks only the key that it used: a key replaced during the test keeps its state', async () => {
+    it('"Test" marks only the key that it used: a key replaced during the test keeps its state', async () => {
       let a = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       let read = (await store.withKey(orgId, a.id))!
       await new Promise((resolve) => setTimeout(resolve, 5))
@@ -383,7 +383,7 @@ describe('providers and their encrypted keys', () => {
       assert.deepEqual(job!.models, { provider: chosen.id, model: 'anthropic/claude-opus-5.5', fallback: null })
     })
 
-    it('a config that chose « service » runs on the key of the service, even with a default provider', async () => {
+    it('a config that chose "service" runs on the key of the service, even with a default provider', async () => {
       await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueWithConfig({ repoConfigVersion: 1, source: 'org', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } })
       let token = await runner({ trusted: true })
@@ -412,8 +412,8 @@ describe('providers and their encrypted keys', () => {
   })
 
   describe('the result marks the state of the provider', () => {
-    it('a refused key: the provider shows « refused, 401 », and the job fails with a clear reason', async () => {
-      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic de Sakuga', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+    it('a refused key: the provider shows "refused, 401", and the job fails with a clear reason', async () => {
+      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Sakuga Anthropic', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       let jobId = await queueJob()
       let token = await runner({ trusted: true })
       let { job } = await claim(token)
@@ -428,12 +428,12 @@ describe('providers and their encrypted keys', () => {
       assert.equal(state!.refusedStatus, 401)
       assert.ok(state!.refusedAt)
       let [row] = await database.sql<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${jobId}`
-      assert.match(row!.failure_reason, /^the provider « Anthropic de Sakuga » refused its key \(401\): /)
+      assert.match(row!.failure_reason, /^the provider "Sakuga Anthropic" refused its key \(401\): /)
       assert.equal(provider.id, state!.id)
     })
 
     it('a runner-held key that its provider refuses: the provider shows the refusal, and the next review clears it (REV-31)', async () => {
-      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic du runner', baseUrl: null, apiKey: null, models: {} })
+      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Runner Anthropic', baseUrl: null, apiKey: null, models: {} })
       assert.equal(provider.keySetAt, null)
       let first = await queueJob()
       let token = await runner({ trusted: false })
@@ -455,7 +455,7 @@ describe('providers and their encrypted keys', () => {
       assert.equal(refused!.refusedStatus, 401)
       assert.match(refused!.refusedMessage!, /^runner "r": 401 /, 'the runner that got the refusal is named')
       let [reason] = await database.sql<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${first}`
-      assert.match(reason!.failure_reason, /^the provider « Anthropic du runner » refused its key \(401\)/)
+      assert.match(reason!.failure_reason, /^the provider "Runner Anthropic" refused its key \(401\)/)
 
       let second = await queueJob()
       let next = await claim(token, held)
@@ -467,7 +467,7 @@ describe('providers and their encrypted keys', () => {
     })
 
     it('a runner-held provider follows the order of the jobs: an older job never overwrites a newer state (REV-31)', async () => {
-      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic du runner', baseUrl: null, apiKey: null, models: {} })
+      let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Runner Anthropic', baseUrl: null, apiKey: null, models: {} })
       let held = { ...NEW_RUNNER, hasProviderKey: true, ownProvider: 'anthropic' }
       let slow = await runner()
       let good = await runner()
@@ -539,7 +539,7 @@ describe('providers and their encrypted keys', () => {
       let { job } = await claim(token, { ...NEW_RUNNER, hasProviderKey: true, ownProvider: 'anthropic' })
       assert.equal(job!.providers![0]!.apiKey, null)
       let [row] = await database.sql<{ provider_id: string | null }[]>`select provider_id from jobs where id = ${jobId}`
-      assert.equal(row!.provider_id, null, 'the job is not the provider’s: the service gave no key')
+      assert.equal(row!.provider_id, null, 'the job has no provider: the service gave no key')
       await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'failed', attempt: job!.attempt, reason: 'Anthropic answered 401', providerStatus: 401 })
       let [state] = await store.list(orgId)
       assert.equal(state!.refusedAt, null)

@@ -94,8 +94,8 @@ describe('runner API', () => {
       costUsd: 0.0123,
       promptTokens: 1000,
       completionTokens: 200,
-      summary: 'Résumé',
-      risk: 'Faible',
+      summary: 'Summary',
+      risk: 'Low',
       diagram: null,
       deeperReview: null,
       findings: [],
@@ -723,7 +723,7 @@ describe('runner API', () => {
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
         values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
       // A row written outside the protocol (by hand, or by a release with another limit): 120 findings.
-      let many = Array.from({ length: 120 }, (_, i) => ({ ...finding, line: i + 1, title: `constat ${i}`, fingerprint: i.toString(16).padStart(16, '0') }))
+      let many = Array.from({ length: 120 }, (_, i) => ({ ...finding, line: i + 1, title: `finding ${i}`, fingerprint: i.toString(16).padStart(16, '0') }))
       let result = review({ head: PREVIOUS, score: 3, findings: many, reuseKey: KEY })
       await database.sql`
         insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
@@ -772,33 +772,33 @@ describe('runner API', () => {
     })
 
     it('sends the delta of the last review to a runner that reads it: score, open findings, settled ones (REV-88)', async () => {
-      let open = { ...finding, title: 'ouvert', fingerprint: '1111111111111111' }
-      let gone = { ...finding, title: 'rejeté', fingerprint: '2222222222222222' }
+      let open = { ...finding, title: 'open one', fingerprint: '1111111111111111' }
+      let gone = { ...finding, title: 'dismissed one', fingerprint: '2222222222222222' }
       // A finding of a review stored before the fingerprint, settled since: found by its key.
-      let { fingerprint: _none, ...unprinted } = { ...finding, path: 'b.ts', title: 'corrigé', fingerprint: '' }
+      let { fingerprint: _none, ...unprinted } = { ...finding, path: 'b.ts', title: 'fixed one', fingerprint: '' }
       let [job0] = await database.sql<{ id: string }[]>`
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
         values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
       // Two findings with the same path and title: the ledger settled one of them, by its fingerprint.
-      let twinSettled = { ...finding, path: 'c.ts', title: 'jumeau', fingerprint: '4444444444444444' }
-      let twinOpen = { ...finding, path: 'c.ts', line: 9, title: 'jumeau', fingerprint: '5555555555555555' }
+      let twinSettled = { ...finding, path: 'c.ts', title: 'twin', fingerprint: '4444444444444444' }
+      let twinOpen = { ...finding, path: 'c.ts', line: 9, title: 'twin', fingerprint: '5555555555555555' }
       // A finding stored with the title of its rule (a key of the service), and one that an older
       // release stored with a fingerprint of another form: the runner would refuse the job with them.
-      let ruled = { ...finding, path: 'd.ts', title: 'règle', fingerprint: '6666666666666666', rule_title: 'Pas de SQL brut' }
-      let malformed = { ...finding, path: 'e.ts', title: 'ancien', fingerprint: 'not-hex' }
+      let ruled = { ...finding, path: 'd.ts', title: 'ruled', fingerprint: '6666666666666666', rule_title: 'No raw SQL' }
+      let malformed = { ...finding, path: 'e.ts', title: 'old', fingerprint: 'not-hex' }
       let result = review({ head: PREVIOUS, score: 3, findings: [open, gone, unprinted, twinSettled, twinOpen, ruled, malformed], reuseKey: KEY })
       await database.sql`
         insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
         values (${job0!.id}, ${repoId}, 28, ${PREVIOUS}, 3, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 555, now())`
       await database.sql`
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
-        values (${repoId}, 28, '2222222222222222', 'aaaaaaaaaaaa', 'a.ts', 2, 'rejeté', 'major', 'bug', 90, 'dismissed', ${PREVIOUS}, ${PREVIOUS})`
+        values (${repoId}, 28, '2222222222222222', 'aaaaaaaaaaaa', 'a.ts', 2, 'dismissed one', 'major', 'bug', 90, 'dismissed', ${PREVIOUS}, ${PREVIOUS})`
       await database.sql`
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
-        values (${repoId}, 28, '3333333333333333', ${findingKey(unprinted)}, 'b.ts', 7, 'corrigé', 'major', 'bug', 90, 'fixed', ${PREVIOUS}, ${PREVIOUS})`
+        values (${repoId}, 28, '3333333333333333', ${findingKey(unprinted)}, 'b.ts', 7, 'fixed one', 'major', 'bug', 90, 'fixed', ${PREVIOUS}, ${PREVIOUS})`
       await database.sql`
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
-        values (${repoId}, 28, '4444444444444444', ${findingKey(twinSettled)}, 'c.ts', 2, 'jumeau', 'major', 'bug', 90, 'wontfix', ${PREVIOUS}, ${PREVIOUS})`
+        values (${repoId}, 28, '4444444444444444', ${findingKey(twinSettled)}, 'c.ts', 2, 'twin', 'major', 'bug', 90, 'wontfix', ${PREVIOUS}, ${PREVIOUS})`
       let runner = await register()
       await queueJob()
       let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
@@ -814,7 +814,7 @@ describe('runner API', () => {
         'the settled ones are not carried, the open twin is, and a finding that the runner would refuse is not',
       )
       assert.ok(!('rule_title' in delta!.findings[2]!), 'a key of the service is not sent')
-      assert.deepEqual(delta?.settled.map((f) => f.title).sort(), ['corrigé', 'jumeau', 'rejeté'])
+      assert.deepEqual(delta?.settled.map((f) => f.title).sort(), ['dismissed one', 'fixed one', 'twin'])
 
       // A runner of REV-89 gets no delta.
       await queueJob()
@@ -837,11 +837,11 @@ describe('runner API', () => {
           first_seen_sha, last_seen_sha, updated_at)
         values (${repoId}, 28, '1111111111111111', ${key}, 'app/lib/billing.server.ts', 372, ${title}, 'major', 'bug', 90, ${status}, ${reason},
           ${PREVIOUS}, ${PREVIOUS}, now() - ${at}::interval)`
-      await insert('c7f3ec000000', 'Ligne écrite avant Stripe puis rollback sur erreur Stripe', 'fixed', '1 minute')
-      await insert('4e989b000000', "Compte payant : l'erreur Stripe/config est masquée", 'dismissed', '2 minutes', 'Faux : le cas not-billed retombe sur la base.')
-      await insert('dbf9b7000000', '`start_date` de la phase courante', 'open', '1 hour')
+      await insert('c7f3ec000000', 'Row written before Stripe, then a rollback on a Stripe error', 'fixed', '1 minute')
+      await insert('4e989b000000', 'Paid account: the Stripe/config error is hidden', 'dismissed', '2 minutes', 'False: the not-billed case falls back to the database.')
+      await insert('dbf9b7000000', '`start_date` of the current phase', 'open', '1 hour')
       // A row that the runner would refuse (a key of another form) stays out.
-      await insert('not-a-key', 'ancien', 'open', '2 hours')
+      await insert('not-a-key', 'old', 'open', '2 hours')
       let runner = await register()
       await queueJob()
       let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
@@ -855,7 +855,7 @@ describe('runner API', () => {
         [['dbf9b7000000', 'open'], ['c7f3ec000000', 'fixed'], ['4e989b000000', 'dismissed']],
         'the open ones first, then the newest',
       )
-      assert.equal(earlier!.findings[2]!.reason, 'Faux : le cas not-billed retombe sur la base.')
+      assert.equal(earlier!.findings[2]!.reason, 'False: the not-billed case falls back to the database.')
       assert.equal(earlier!.findings[0]!.commit, PREVIOUS)
       assert.deepEqual(earlier!.last, { head: PREVIOUS, score: 2 }, 'the last review of the level of the job')
 

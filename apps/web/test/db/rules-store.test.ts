@@ -6,7 +6,7 @@ import { runMigrations } from '../../app/db/migrate.ts'
 import { createRulesStore, MAX_RULES, type RulesStore } from '../../app/rules/store.ts'
 import { createTestDatabase } from './helpers.ts'
 
-const VALUES = { title: 'Index des FK', body: 'Chaque FK a son index.', paths: ['**/migrations/**'], severityFloor: 'major' as const }
+const VALUES = { title: 'FK indexes', body: 'Each FK has its index.', paths: ['**/migrations/**'], severityFloor: 'major' as const }
 
 describe('the store of the rules (REV-19)', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
@@ -56,12 +56,12 @@ describe('the store of the rules (REV-19)', () => {
     let [rule] = await store.list(orgId, repoId)
     assert.deepEqual(
       { title: rule!.title, paths: rule!.paths, floor: rule!.severityFloor, active: rule!.active, version: rule!.version, by: rule!.updatedBy },
-      { title: 'Index des FK', paths: ['**/migrations/**'], floor: 'major', active: true, version: 1, by: 'alex' },
+      { title: 'FK indexes', paths: ['**/migrations/**'], floor: 'major', active: true, version: 1, by: 'alex' },
     )
     assert.deepEqual(await store.list(orgId, null), [], 'a rule of a repository is not a rule of the org')
 
-    let saved = await store.update(orgId, added.id, userId, 1, { ...VALUES, title: 'FK indexées', severityFloor: null })
-    assert.deepEqual(saved, { kind: 'saved', id: added.id, title: 'FK indexées', version: 2, repoId })
+    let saved = await store.update(orgId, added.id, userId, 1, { ...VALUES, title: 'Indexed FKs', severityFloor: null })
+    assert.deepEqual(saved, { kind: 'saved', id: added.id, title: 'Indexed FKs', version: 2, repoId })
 
     let stale = await store.update(orgId, added.id, userId, 1, VALUES)
     assert.equal(stale.kind, 'conflict')
@@ -76,7 +76,7 @@ describe('the store of the rules (REV-19)', () => {
     let [on] = await store.list(orgId, repoId)
     assert.deepEqual({ active: on!.active, by: on!.disabledBy, at: on!.disabledAt }, { active: true, by: null, at: null })
 
-    assert.deepEqual(await store.remove(orgId, added.id), { title: 'FK indexées', repoId })
+    assert.deepEqual(await store.remove(orgId, added.id), { title: 'Indexed FKs', repoId })
     assert.deepEqual(await store.list(orgId, repoId), [])
   })
 
@@ -95,7 +95,7 @@ describe('the store of the rules (REV-19)', () => {
   it(`holds ${MAX_RULES} rules at most for a repository, even with additions at the same time`, async () => {
     await database.sql`
       insert into rules (org_id, repo_id, title, body)
-      select ${orgId}, ${repoId}, 'R' || n, 'Texte' from generate_series(1, ${MAX_RULES - 1}) n`
+      select ${orgId}, ${repoId}, 'R' || n, 'Text' from generate_series(1, ${MAX_RULES - 1}) n`
     let outcomes = await Promise.all([store.create(orgId, repoId, userId, VALUES), store.create(orgId, repoId, userId, VALUES)])
     assert.deepEqual(outcomes.map((o) => o.kind).sort(), ['full', 'saved'])
     assert.equal((await store.list(orgId, repoId)).length, MAX_RULES)

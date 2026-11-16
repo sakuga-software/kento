@@ -7,6 +7,51 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-115: No French left in the code
+
+One migration (`0028_failure_reasons_straight_quotes`): `/healthz` gives `"migrations":29`. No new
+variable, no new permission, no change to the protocol of the runners.
+
+**Deploy `web` first, then the runners.** Each side works with the other at either release. The
+runners carry the prompts and the pack; `web` carries the migration, the redirects and the label.
+
+- The service no longer reads the French texts that REV-114 kept for the pull requests opened
+  before it: the badge `sécurité` of an open thread with no row, a quote of the French request for
+  feedback, the French reasons of the dismiss dialog, and the French starts of a reply that sets a
+  finding aside (`Non appliqué`, `faux positif`, `voulu`…). Accepted consequence: a pull request
+  opened before REV-114 and reviewed after this release can lose the security category of an old
+  thread, and a quote of the old French request no longer counts as an answer. The hint of
+  `reject` reads English replies only (`refutation.cases.ts` keeps the 174 English starts: precision
+  100 %, recall 68.8 %).
+- The reason of a failed job writes the label of the provider in straight quotes
+  (`the provider "X" refused its key (401): …`). The migration rewrites the stored reasons in
+  French quotation marks, and is idempotent. The previous container still serves while it runs: a
+  reason that it writes in that window shows as unknown, with its text under "Technical details".
+  Run the statement again to map it.
+- The anchors of the settings are in English: `#cap`, `#defaults`, `#org-rules`, `#new-provider`
+  (and `#new-runner` on the Runners screen). The check `Kentō · cap` links `/settings#cap`.
+  `settings.js` sends an old anchor (`#plafond`, `#defauts`, `#regles`, `#nouveau-provider`) to
+  the new one, so the check runs posted before the deployment still open the right section.
+- The keys of a query are in English: `?status=`, `?before=`, `?after=`, `?rerun=` on the screen of
+  a pull request, `?done=` and `?history=` on a finding and a user, `?view=precision` and
+  `?type=to-consider` on Findings, `?author=` on Feedback. A GET with an old key (`statut`, `avant`,
+  `suite`, `relance`, `fait`, `historique`, `vue`, `auteur`, or `type=a-considerer`) gets a `301` to
+  the same URL with the new names. `/docs/commandes` still answers a `301` to `/docs/commands`.
+- When Kentō sets a label `review: N/5` whose description is not `Kentō confidence score (5: ready to
+  merge)`, it writes that description (`PATCH /repos/{repo}/labels/{name}`), after it sets the
+  label. A description that a person wrote by hand on these labels is overwritten too.
+- The prompts and the pack quote with straight quotes, and a long comment or diff ends with
+  `[… cut here]` (was `[… coupé ici]`). The reuse key (REV-89) reads the prompt, so the first push
+  of each pull request after the runners are updated calls the model again.
+- On the dashboard at 390 px, the list of the last reviews starts the facts of each review on their
+  own line again: the stylesheet read the French label `Niveau` of the cell since REV-114.
+- The icons `*.v1.svg` with French names stay in `public/assets/pr`: the comments posted before
+  REV-106 link them.
+
+Check: `/settings#plafond` opens the section `#cap`; `/findings?vue=precision` opens
+`/findings?view=precision`; after a review on a repository whose labels an earlier release created,
+the label `review: N/5` reads `Kentō confidence score (5: ready to merge)` on GitHub.
+
 ## REV-114: Kentō writes in English
 
 One migration (`0027_dismiss_reasons_in_english`): `/healthz` gives `"migrations":28`. No new

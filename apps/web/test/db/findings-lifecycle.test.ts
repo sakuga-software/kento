@@ -51,8 +51,8 @@ function finding(d: Draft): ReviewFinding {
     category: 'bug',
     confidence: 90,
     title: d.title,
-    scenario: 'Un cas qui casse.',
-    fix: 'Corriger.',
+    scenario: 'A case that breaks.',
+    fix: 'Fix it.',
     suggestion: '',
     anchor: d.line,
     blocking: (d.severity ?? 'major') !== 'minor',
@@ -61,10 +61,10 @@ function finding(d: Draft): ReviewFinding {
   }
 }
 
-const SUBTRACTS = (line: number, file: string[]) => finding({ path: 'src/sum.ts', line, title: 'La somme soustrait', file })
-const DIVIDES = finding({ path: 'src/div.ts', line: 2, title: 'Division par zéro', file: DIV, severity: 'minor' })
+const SUBTRACTS = (line: number, file: string[]) => finding({ path: 'src/sum.ts', line, title: 'The sum subtracts', file })
+const DIVIDES = finding({ path: 'src/div.ts', line: 2, title: 'Division by zero', file: DIV, severity: 'minor' })
 const MEAN = ['export function mean(xs: number[]) {', '  return Math.trunc(sum(xs) / xs.length);', '}']
-const TRUNCATES = finding({ path: 'src/mean.ts', line: 2, title: 'La moyenne tronque', file: MEAN, severity: 'minor' })
+const TRUNCATES = finding({ path: 'src/mean.ts', line: 2, title: 'The mean truncates', file: MEAN, severity: 'minor' })
 
 function review(head: string, findings: ReviewFinding[]): ReviewPayload {
   return {
@@ -78,8 +78,8 @@ function review(head: string, findings: ReviewFinding[]): ReviewPayload {
     costUsd: 0.01,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'La PR change sum et div.',
-    risk: 'Un calcul faux.',
+    summary: 'The PR changes sum and div.',
+    risk: 'A wrong result.',
     diagram: null,
     deeperReview: null,
     findings,
@@ -214,15 +214,15 @@ describe('findings from push to push (REV-16)', () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES, TRUNCATES], ['src/sum.ts', 'src/div.ts', 'src/mean.ts'])
     let rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status, r.line]), [
-      ['Division par zéro', 'open', 2],
-      ['La moyenne tronque', 'open', 2],
-      ['La somme soustrait', 'open', 2],
+      ['Division by zero', 'open', 2],
+      ['The mean truncates', 'open', 2],
+      ['The sum subtracts', 'open', 2],
     ])
     assert.equal(fake.botThreads().length, 3)
     let comment = (path: string) => fake.botThreads().find((c) => c.path === path)!
     let sumComment = comment('src/sum.ts')
-    assert.equal(rows.find((r) => r.title === 'La somme soustrait')!.githubCommentId, sumComment.id)
-    assert.deepEqual((await events('La somme soustrait')).map((e) => [e.type, e.actor, e.reviewed]), [['opened', 'kento', true]])
+    assert.equal(rows.find((r) => r.title === 'The sum subtracts')!.githubCommentId, sumComment.id)
+    assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor, e.reviewed]), [['opened', 'kento', true]])
 
     // 2. Three lines above it: line 2 → 5, the same fingerprint, no new comment.
     assert.equal(SUBTRACTS(5, SUM_V2).fingerprint, SUBTRACTS(2, SUM_V1).fingerprint)
@@ -233,7 +233,7 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(fake.state.reviews.at(-1)!.comments, 0)
     rows = await findingRows()
     assert.equal(rows.length, 3, 'no new finding')
-    assert.deepEqual(rows.find((r) => r.title === 'La somme soustrait')!.line, 5)
+    assert.deepEqual(rows.find((r) => r.title === 'The sum subtracts')!.line, 5)
     assert.match(fake.state.pr.body, new RegExp(`#discussion_r${sumComment.id}`), 'the description links the thread that carries it')
 
     // 3. The fix: the finding is not found again, and its file changed → fixed, and its thread
@@ -241,13 +241,13 @@ describe('findings from push to push (REV-16)', () => {
     await push(HEADS[2]!, [DIVIDES, TRUNCATES], ['src/sum.ts'])
     rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [
-      ['Division par zéro', 'open'],
-      ['La moyenne tronque', 'open'],
-      ['La somme soustrait', 'fixed'],
+      ['Division by zero', 'open'],
+      ['The mean truncates', 'open'],
+      ['The sum subtracts', 'fixed'],
     ])
     assert.equal(fake.repliesTo(sumComment.id).length, 1)
     assert.ok(fake.repliesTo(sumComment.id)[0]!.body.includes(GONE))
-    assert.deepEqual((await events('La somme soustrait')).map((e) => e.type), ['opened', 'fixed'])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'fixed'])
     // The other findings are not fixed: their files did not change.
     assert.equal(fake.repliesTo(comment('src/div.ts').id).length, 0)
 
@@ -256,12 +256,12 @@ describe('findings from push to push (REV-16)', () => {
     fake.react(comment('src/mean.ts').id, 'kento-review[bot]')
     await push(HEADS[3]!, [DIVIDES, TRUNCATES], [])
     rows = await findingRows()
-    let divides = rows.find((r) => r.title === 'Division par zéro')!
+    let divides = rows.find((r) => r.title === 'Division by zero')!
     assert.deepEqual([divides.status, divides.statusReason], ['dismissed', 'no reason, GitHub reaction'])
-    assert.equal(rows.find((r) => r.title === 'La moyenne tronque')!.status, 'open', 'the 👎 of a bot does not count')
+    assert.equal(rows.find((r) => r.title === 'The mean truncates')!.status, 'open', 'the 👎 of a bot does not count')
     assert.equal(fake.botThreads().length, 3, 'no new comment')
-    assert.doesNotMatch(fake.state.reviews.at(-1)!.body, /Division par zéro/)
-    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reason, e.reviewed]), [
+    assert.doesNotMatch(fake.state.reviews.at(-1)!.body, /Division by zero/)
+    assert.deepEqual((await events('Division by zero')).map((e) => [e.type, e.actor, e.reason, e.reviewed]), [
       ['opened', 'kento', null, true],
       ['dismissed', 'camille', 'no reason, GitHub reaction', true],
     ])
@@ -280,11 +280,11 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(result.outcome, 'cancelled')
     rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [
-      ['Division par zéro', 'dismissed'],
-      ['La moyenne tronque', 'stale'],
-      ['La somme soustrait', 'fixed'],
+      ['Division by zero', 'dismissed'],
+      ['The mean truncates', 'stale'],
+      ['The sum subtracts', 'fixed'],
     ])
-    assert.deepEqual((await events('La moyenne tronque')).map((e) => [e.type, e.actor, e.reviewed]), [
+    assert.deepEqual((await events('The mean truncates')).map((e) => [e.type, e.actor, e.reviewed]), [
       ['opened', 'kento', true],
       ['stale', 'kento', false],
     ])
@@ -301,7 +301,7 @@ describe('findings from push to push (REV-16)', () => {
 
     let [after] = await findingRows()
     assert.deepEqual([after!.status, after!.statusReason], ['dismissed', 'no reason, GitHub reaction'])
-    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reviewed]), [
+    assert.deepEqual((await events('Division by zero')).map((e) => [e.type, e.actor, e.reviewed]), [
       ['opened', 'kento', true],
       ['dismissed', 'alex', false],
     ])
@@ -313,7 +313,7 @@ describe('findings from push to push (REV-16)', () => {
   it('never comments again on a finding that a person dismissed, and leaves it out of the review', async () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
     let [row] = await findingRows()
-    let change = await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Voulu : sum soustrait ici.', actor: 'alex' })
+    let change = await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Intended: sum subtracts here.', actor: 'alex' })
     assert.equal(change.outcome, 'changed')
     // The person resolves the thread on GitHub; the next review finds the finding again.
     fake.state.resolved.add(fake.botThreads()[0]!.id)
@@ -322,16 +322,16 @@ describe('findings from push to push (REV-16)', () => {
 
     assert.equal(fake.botThreads().length, 1, 'no new comment')
     let last = fake.state.reviews.at(-1)!
-    assert.doesNotMatch(last.body, /La somme soustrait/)
+    assert.doesNotMatch(last.body, /The sum subtracts/)
     assert.notEqual(last.state, 'CHANGES_REQUESTED', 'a dismissed finding blocks nothing')
     let [after] = await findingRows()
-    assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'Voulu : sum soustrait ici.', 5])
-    assert.deepEqual((await events('La somme soustrait')).map((e) => [e.type, e.actor, e.reason]), [
+    assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'Intended: sum subtracts here.', 5])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor, e.reason]), [
       ['opened', 'kento', null],
-      ['dismissed', 'alex', 'Voulu : sum soustrait ici.'],
+      ['dismissed', 'alex', 'Intended: sum subtracts here.'],
     ])
 
-    // « Rouvrir »: the next review comments on it again.
+    // "Reopen": the next review comments on it again.
     assert.equal((await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'open', actor: 'alex' })).outcome, 'changed')
     await push(HEADS[2]!, [SUBTRACTS(5, SUM_V2)], [])
     assert.equal(fake.botThreads().length, 2, 'a new comment: its old thread is resolved')
@@ -351,7 +351,7 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(kept.outcome, 'changed')
     assert.equal(kept.outcome === 'changed' && kept.finding.status, 'wontfix')
     assert.equal((await set('wontfix')).outcome, 'unchanged')
-    assert.deepEqual((await events('La somme soustrait')).map((e) => [e.type, e.actor]), [
+    assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
       ['wontfix', 'camille'],
     ])
@@ -368,22 +368,22 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(row!.status, 'open')
     assert.equal(fake.botThreads().length, 2, 'the old thread was answered as gone: a new one')
     assert.equal(row!.githubCommentId, fake.botThreads()[1]!.id)
-    assert.deepEqual((await events('La somme soustrait')).map((e) => e.type), ['opened', 'fixed', 'reopened'])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'fixed', 'reopened'])
   })
 
   it('keeps open a finding not found again on a file that did not change', async () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES], ['src/sum.ts', 'src/div.ts'])
     await push(HEADS[1]!, [DIVIDES], ['src/div.ts'])
     assert.deepEqual((await findingRows()).map((r) => [r.title, r.status]), [
-      ['Division par zéro', 'open'],
-      ['La somme soustrait', 'open'],
+      ['Division by zero', 'open'],
+      ['The sum subtracts', 'open'],
     ])
   })
 
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {
     const twice = ['function a(x: number) {', '  return 1 / x;', '}', 'function b(y: number) {', '  return 2 / y;', '}']
     const moved = ['// Two divisions.', '', ...twice]
-    let at = (line: number, file: string[]) => finding({ path: 'src/div.ts', line, title: 'Division par zéro', file })
+    let at = (line: number, file: string[]) => finding({ path: 'src/div.ts', line, title: 'Division by zero', file })
     await push(HEADS[0]!, [at(2, twice), at(5, twice)], ['src/div.ts'])
     let before = await database.sql<{ id: string; line: number }[]>`select id, line from findings order by line`
 
@@ -432,8 +432,8 @@ describe('findings from push to push (REV-16)', () => {
       assert.equal(fake.state.reviews.length, 1, 'no second review')
       assert.equal(fake.botThreads().length, 1, 'no second comment')
       let rows = await findingRows()
-      assert.deepEqual(rows.map((r) => [r.title, r.status, r.githubCommentId]), [['La somme soustrait', 'open', fake.botThreads()[0]!.id]])
-      assert.deepEqual((await events('La somme soustrait')).map((e) => e.type), ['opened'])
+      assert.deepEqual(rows.map((r) => [r.title, r.status, r.githubCommentId]), [['The sum subtracts', 'open', fake.botThreads()[0]!.id]])
+      assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
     } finally {
       await database.sql.unsafe('drop trigger fail_findings on findings; drop function fail_findings(); drop table fail_findings;')
     }
@@ -472,29 +472,29 @@ describe('findings from push to push (REV-16)', () => {
     let [after] = await findingRows()
     assert.equal(after!.status, 'open')
     assert.equal(fake.botThreads().length, 1, 'still carried by its thread')
-    assert.deepEqual((await events('Division par zéro')).map((e) => e.type), ['opened'])
+    assert.deepEqual((await events('Division by zero')).map((e) => e.type), ['opened'])
 
     // A person who can write puts 👎 next: that one dismisses it.
     fake.react(row!.githubCommentId!, 'camille')
     await newPublisher().publishPending()
     let [dismissed] = await findingRows()
     assert.equal(dismissed!.status, 'dismissed')
-    assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor]), [
+    assert.deepEqual((await events('Division by zero')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
       ['dismissed', 'camille'],
     ])
   })
 
   it('dismisses an open thread of an earlier release on a 👎, after its opened event', async () => {
-    let body = `<img alt="P2" src="x"> **Ancien constat**\n\nUn cas.\n\n<!-- sakuga-review:finding ${'e'.repeat(12)} -->`
+    let body = `<img alt="P2" src="x"> **Old finding**\n\nA case.\n\n<!-- sakuga-review:finding ${'e'.repeat(12)} -->`
     let legacy = fake.addThread({ path: 'src/div.ts', line: 2, body, commit: HEADS[0]! })
     fake.react(legacy, 'camille')
 
     await push(HEADS[1]!, [], [])
 
     let [row] = await findingRows()
-    assert.deepEqual([row!.title, row!.status, row!.statusReason, row!.githubCommentId], ['Ancien constat', 'dismissed', 'no reason, GitHub reaction', legacy])
-    assert.deepEqual((await events('Ancien constat')).map((e) => [e.type, e.actor]), [
+    assert.deepEqual([row!.title, row!.status, row!.statusReason, row!.githubCommentId], ['Old finding', 'dismissed', 'no reason, GitHub reaction', legacy])
+    assert.deepEqual((await events('Old finding')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
       ['dismissed', 'camille'],
     ])
@@ -512,11 +512,11 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(fake.botThreads().length, 2, 'no second comment: the open thread still carries it')
     let rows = await findingRows()
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [
-      ['Division par zéro', 'fixed'],
-      ['La somme soustrait', 'open'],
+      ['Division by zero', 'fixed'],
+      ['The sum subtracts', 'open'],
     ])
     assert.equal(fake.repliesTo(fake.botThreads().find((c) => c.path === 'src/div.ts')!.id).length, 1, 'its thread gets the answer')
-    assert.deepEqual((await events('La somme soustrait')).map((e) => e.type), ['opened', 'stale', 'reopened'])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'stale', 'reopened'])
   })
 
   it('keeps a status that a person set while the review was being published', async () => {
@@ -525,13 +525,13 @@ describe('findings from push to push (REV-16)', () => {
     // The next review reads the finding open; a person dismisses it while GitHub takes the review.
     fake.state.onReview = async () => {
       fake.state.onReview = null
-      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Faux positif.', actor: 'alex' })
+      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'False positive.', actor: 'alex' })
     }
     await push(HEADS[1]!, [SUBTRACTS(5, SUM_V2)], ['src/sum.ts'])
 
     let [after] = await findingRows()
-    assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'Faux positif.', 5])
-    assert.deepEqual((await events('La somme soustrait')).map((e) => [e.type, e.actor]), [
+    assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'False positive.', 5])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
       ['dismissed', 'alex'],
     ])
@@ -539,9 +539,9 @@ describe('findings from push to push (REV-16)', () => {
 
   it('takes the open threads of an earlier release as findings, and finds them again by their key', async () => {
     // A thread of a review before the table: no row.
-    let body = `<img alt="P1" src="x"> **La somme soustrait**\n\nUn cas.\n\n<!-- sakuga-review:finding ${'0'.repeat(12)} -->`
+    let body = `<img alt="P1" src="x"> **The sum subtracts**\n\nA case.\n\n<!-- sakuga-review:finding ${'0'.repeat(12)} -->`
     let legacy = fake.addThread({ path: 'src/sum.ts', line: 2, body, commit: HEADS[0]! })
-    let other = fake.addThread({ path: 'src/div.ts', line: 2, body: body.replace('La somme soustrait', 'Ancien constat').replace('0'.repeat(12), 'f'.repeat(12)), commit: HEADS[0]! })
+    let other = fake.addThread({ path: 'src/div.ts', line: 2, body: body.replace('The sum subtracts', 'Old finding').replace('0'.repeat(12), 'f'.repeat(12)), commit: HEADS[0]! })
 
     // The review finds the first one again a line away; the second is not found, and its file changed.
     await push(HEADS[1]!, [SUBTRACTS(3, SUM_V1)], ['src/div.ts'])
@@ -549,9 +549,9 @@ describe('findings from push to push (REV-16)', () => {
     assert.equal(fake.botThreads().length, 2, 'no new comment for the finding that a thread carries')
     let rows = await findingRows()
     let byTitle = new Map(rows.map((r) => [r.title, r]))
-    assert.equal(byTitle.get('La somme soustrait')!.status, 'open')
-    assert.equal(byTitle.get('La somme soustrait')!.githubCommentId, legacy)
-    assert.equal(byTitle.get('Ancien constat')!.status, 'fixed')
+    assert.equal(byTitle.get('The sum subtracts')!.status, 'open')
+    assert.equal(byTitle.get('The sum subtracts')!.githubCommentId, legacy)
+    assert.equal(byTitle.get('Old finding')!.status, 'fixed')
     assert.equal(fake.repliesTo(other).length, 1)
   })
 })

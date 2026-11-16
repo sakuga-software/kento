@@ -9,21 +9,10 @@ import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'
 import { REASON_MAX, setFindingStatus, type FindingStatus } from './store.ts'
 
-/** The reasons that the dialog offers; « Other » takes a reason of the person. */
+/** The reasons that the dialog offers. "Other" takes a reason of the person. */
 export const DISMISS_REASONS = ['False positive', 'Off topic', 'Already known', 'Style, not a defect'] as const
 
-/**
- * REV-114. The French reasons of the dialog before the deploy, and their English value. A page that
- * a person opened before the deploy still posts them. Migration 0027 changes the stored rows.
- */
-export const FRENCH_REASONS: Readonly<Record<string, (typeof DISMISS_REASONS)[number]>> = {
-  'Faux positif': 'False positive',
-  'Hors sujet': 'Off topic',
-  'Déjà connu': 'Already known',
-  'Style, pas un défaut': 'Style, not a defect',
-}
-
-/** The value of « Other » in the form: the reason is then the field `other`. */
+/** The value of "Other" in the form: the reason is then the field `other`. */
 export const OTHER_REASON = 'other'
 
 /** The most findings of one form: two pages of the screen. */
@@ -47,7 +36,7 @@ export function readStatusForm(form: FormData | null | undefined): StatusForm {
   let status = form?.get('status')
   if (status !== 'dismissed' && status !== 'wontfix') return { ok: false, error: 'status' }
   let choice = String(form?.get('reason') ?? '').trim()
-  let reason = choice === OTHER_REASON ? String(form?.get('other') ?? '').trim() : (Object.hasOwn(FRENCH_REASONS, choice) ? FRENCH_REASONS[choice]! : choice)
+  let reason = choice === OTHER_REASON ? String(form?.get('other') ?? '').trim() : choice
   if (reason && choice !== OTHER_REASON && !isOneOf(DISMISS_REASONS, reason)) return { ok: false, error: 'reason' }
   if (reason.length > REASON_MAX) return { ok: false, error: 'reason_long' }
   if (status === 'dismissed' && !reason) return { ok: false, error: 'reason' }

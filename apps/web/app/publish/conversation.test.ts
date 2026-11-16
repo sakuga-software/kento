@@ -1,6 +1,6 @@
 // REV-103. Every P0 and P1 gets a conversation on GitHub. Below the blocking confidence, its thread
-// has the mark « to check » and does not block. Outside the diff, it gets a comment on its file,
-// with a link to its line. A P1 to consider (REV-100) gets a thread with the mark « to consider »
+// has the mark "to check" and does not block. Outside the diff, it gets a comment on its file,
+// with a link to its line. A P1 to consider (REV-100) gets a thread with the mark "to consider"
 // only when the published score is below 4 and no other new P0 or P1 is in the review.
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
@@ -25,9 +25,9 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'major',
     category: 'bug',
     confidence: 90,
-    title: 'La somme soustrait',
-    scenario: 'sum(1, 2) rend -1.',
-    fix: 'Remettre +.',
+    title: 'The sum subtracts',
+    scenario: 'sum(1, 2) returns -1.',
+    fix: 'Put + back.',
     suggestion: '',
     anchor: 2,
     blocking: true,
@@ -48,8 +48,8 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.01,
     promptTokens: 1,
     completionTokens: 1,
-    summary: 'Résumé.',
-    risk: 'Risque.',
+    summary: 'Summary.',
+    risk: 'Risk.',
     diagram: null,
     deeperReview: null,
     findings: [finding()],
@@ -89,7 +89,7 @@ function setup(head = HEAD1) {
 const titleOf = (body: string) => /\*\*(.+?)\*\*/.exec(body)![1]
 
 describe('a P0 or P1 below the blocking confidence (REV-103)', () => {
-  it('gets a thread « to check », and the review comments without asking for changes', async () => {
+  it('gets a thread "to check", and the review comments without asking for changes', async () => {
     let { fake, publish } = setup()
     let outcome = await publish(payload({ findings: [finding({ confidence: 60, blocking: false })] }))
     assert.equal(outcome.inline, 1)
@@ -119,7 +119,7 @@ describe('a P0 or P1 below the blocking confidence (REV-103)', () => {
 })
 
 describe('a P0 or P1 outside the diff (REV-103)', () => {
-  let outside = finding({ path: CONFIG, start_line: 40, line: 42, anchor: null, blocking: false, title: 'La clé de config est lue avant le chargement' })
+  let outside = finding({ path: CONFIG, start_line: 40, line: 42, anchor: null, blocking: false, title: 'The config key is read before the load' })
 
   it('gets a comment on its file that links its lines, and its row keeps the comment', async () => {
     let { fake, publish, rows } = setup()
@@ -193,7 +193,7 @@ describe('a P0 or P1 outside the diff (REV-103)', () => {
     assert.equal(outcome.fileComments, 0)
     assert.equal(fake.botThreads().length, 0)
     assert.deepEqual(warnings, ['publish.file_comment_refused'])
-    assert.match(fake.state.pr.body, /Le chargement|La clé de config est lue avant le chargement/)
+    assert.match(fake.state.pr.body, /The config key is read before the load/)
   })
 
   it('guard: a P2 outside the diff gets no comment', async () => {
@@ -204,9 +204,9 @@ describe('a P0 or P1 outside the diff (REV-103)', () => {
 })
 
 describe('a P1 to consider (REV-100, REV-103)', () => {
-  let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté" })
+  let considered = finding({ seen: true, blocking: false, title: 'STUDIO_HOST is not documented' })
 
-  it('gets a thread « to consider » that does not block when the published score is below 4', async () => {
+  it('gets a thread "to consider" that does not block when the published score is below 4', async () => {
     let { fake, publish } = setup()
     let outcome = await publish(payload({ score: 3, findings: [considered] }))
     assert.equal(outcome.inline, 1)
@@ -224,9 +224,9 @@ describe('a P1 to consider (REV-100, REV-103)', () => {
 
   it('stays in the list only when another new P1 explains the score', async () => {
     let { fake, publish } = setup()
-    let other = finding({ title: 'La somme soustrait', confidence: 60, blocking: false, anchor: 30, line: 30, start_line: 30 })
+    let other = finding({ title: 'The sum subtracts', confidence: 60, blocking: false, anchor: 30, line: 30, start_line: 30 })
     await publish(payload({ score: 3, findings: [considered, other] }))
-    assert.deepEqual(fake.botThreads().map((c) => titleOf(c.body)), ['La somme soustrait'])
+    assert.deepEqual(fake.botThreads().map((c) => titleOf(c.body)), ['The sum subtracts'])
   })
 
   it('guard: a P2 to consider stays in the list, whatever the score', async () => {

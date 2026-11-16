@@ -125,7 +125,7 @@ describe('the Config screen of a repository', () => {
     assert.doesNotMatch(html, /set for this repo|Back to the org value/)
   })
 
-  it('replaces the model of balanced for an admin, then « Revenir à l’org » takes the value of the org back', async () => {
+  it('replaces the model of balanced for an admin, then "Back to the org value" takes the value of the org back', async () => {
     let { request, signIn, rows } = setup()
     let { cookie, csrf } = await signIn()
     let response = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', ...BALANCED, model: 'anthropic/claude-sonnet-5.6' } })
@@ -169,7 +169,7 @@ describe('the Config screen of a repository', () => {
     let levels = await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text()
     assert.match(levels, /value="balanced" checked/)
     assert.match(levels, /One pass/)
-    // REV-43: « Soon » and no milestone of the team; a label ends with a period, not an em dash.
+    // REV-43: "Soon" and no milestone of the team; a label ends with a period, not an em dash.
     assert.doesNotMatch(levels.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b|bench/, 'the paths of the icons aside')
     assert.match(levels, /<span class="tag tag-quiet">Soon<\/span>/)
     assert.match(levels, /<strong class="mono">lite<\/strong>\. Fast and the cheapest, about 1 cent per review\./)
@@ -213,7 +213,7 @@ describe('the Config screen of a repository', () => {
     assert.deepEqual(rows[ORCHARD]!.config, { trigger: 'command' })
   })
 
-  it('shows a member the config under « Lecture seule », with no form, and refuses their POST (403)', async () => {
+  it('shows a member the config under "Read only", with no form, and refuses their POST (403)', async () => {
     let { request, signIn, saves } = setup()
     let { cookie, csrf, html } = await signIn(CAMILLE)
     assert.match(html, /Read only<\/strong>/)
@@ -245,7 +245,7 @@ describe('the Config screen of a repository', () => {
     assert.equal(saves.length, 0)
   })
 
-  it('inherits the level of the org, and « Revenir à l’org » takes it back (REV-13)', async () => {
+  it('inherits the level of the org, and "Back to the org value" takes it back (REV-13)', async () => {
     let { request, signIn, rows } = setup({ level: 'heavy' })
     let { cookie, csrf } = await signIn()
     let levels = await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text()
@@ -263,7 +263,7 @@ describe('the Config screen of a repository', () => {
     assert.match(await (await request(`/repos/${ORCHARD}/config?tab=levels`, { cookie })).text(), /value="heavy" checked/)
   })
 
-  it('names the tabs to come with « Bientôt » and no link (REV-32)', async () => {
+  it('names the tabs to come with "Soon" and no link (REV-32)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()
     let html = await (await request(`/repos/${ORCHARD}/config`, { cookie })).text()
@@ -281,7 +281,7 @@ describe('the Config screen of a repository', () => {
   })
 })
 
-describe('the « Default » provider in Config (REV-27)', () => {
+describe('the "Default" provider in Config (REV-27)', () => {
   const DEFAULT_ID = '0f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
   const catalog: ProviderCatalog = {
     list: async () => [
@@ -299,7 +299,7 @@ describe('the « Default » provider in Config (REV-27)', () => {
     ],
   }
 
-  it('a level without a choice shows the default provider, and « Set here » says that it fixes the choice', async () => {
+  it('a level without a choice shows the default provider, and "Set here" says that it fixes the choice', async () => {
     let { signIn } = setup({}, catalog)
     let { html } = await signIn()
     let lite = html.slice(html.indexOf('id="level-lite"'), html.indexOf('id="level-balanced"'))

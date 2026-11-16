@@ -23,13 +23,13 @@ const KIND_HINTS: Record<ProviderKind, string> = {
   openai_compatible: 'the URL of the server, required, and at least one model per level.',
   ollama: 'a server on the machine of a runner. The service never has a key.',
 }
-/** The order of the fields of « Add a provider »: the first one in error gets the focus. */
+/** The order of the fields of "Add a provider": the first one in error gets the focus. */
 const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', 'apiKey', 'models']
 
 /** What the section says after a form, from `?notice=`. */
 export const PROVIDER_NOTICES = {
   added: { tone: 'ok', text: 'Provider added. Test it to check the key.' },
-  // No « Test » for these two: the service has no key, and cannot reach the server of a runner.
+  // No "Test" for these two: the service has no key, and cannot reach the server of a runner.
   added_runner: { tone: 'ok', text: 'Provider added. Its key stays on the runner, and the first job of a runner that has it tells whether it works.' },
   added_ollama: { tone: 'ok', text: 'Provider added. Its server is on the network of a runner. The first job of a runner with PROVIDER_KIND=ollama tells whether it answers.' },
   replaced: { tone: 'ok', text: 'Key replaced. Kentō no longer keeps the old key.' },
@@ -68,7 +68,7 @@ export interface SettingsPageProps {
   serviceKey: boolean
   notice?: { kind: ProviderNotice; detail?: string | null } | null
   form?: { values: ProviderFormValues; errors: Partial<Record<ProviderField, string>> } | null
-  /** The provider whose « Replace the key » failed, with its message. */
+  /** The provider whose "Replace the key" failed, with its message. */
   keyError?: { id: string; message: string } | null
   /** REV-19. The rules of the org. Null: the service has no rules. */
   rules?: { list: RuleView[]; form: RuleFormState | null; notice: RuleNotice | null; noticeRule: string | null } | null
@@ -88,7 +88,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         frame={frame}
         section="settings"
         title="Settings"
-        // REV-91: the version of the settings goes under the title, after « For the whole organization ».
+        // REV-91: the version of the settings goes under the title, after "For the whole organization".
         lead={org ? `For the whole organization · ${orgVersionLine(org.view)}` : 'What applies to the whole organization.'}
       >
         {refused.map((p) => {
@@ -135,7 +135,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
         {rules ? (
-          <section class="card config-card" id="regles" aria-labelledby="org-rules-title" tabIndex={-1}>
+          <section class="card config-card" id="org-rules" aria-labelledby="org-rules-title" tabIndex={-1}>
             <h2 id="org-rules-title" class="section-title">
               Org rules <span class="count">{rules.list.filter((r) => r.active).length}</span>
             </h2>
@@ -210,8 +210,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
 
 /**
  * The table of contents of the settings (REV-29): one link per section, as tabs under the title
- * (REV-91). Each section keeps its anchor: #plafond, #defauts, #bots, #app, #regles, #providers.
- * #nouveau-provider still opens the form (settings.js); the button of the section does too.
+ * (REV-91). Each section keeps its anchor: #cap, #defaults, #bots, #app, #org-rules, #providers.
+ * #new-provider still opens the form (settings.js); the button of the section does too.
  */
 function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: boolean }>) {
   return () => {
@@ -219,13 +219,13 @@ function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: b
     let links: [string, string][] = [
       ...(org
         ? ([
-            ['#plafond', 'Costs and cap'],
-            ['#defauts', 'Levels and models'],
+            ['#cap', 'Costs and cap'],
+            ['#defaults', 'Levels and models'],
             ['#bots', 'Trusted bots'],
             ['#app', 'GitHub App'],
           ] as [string, string][])
         : []),
-      ...(rules ? ([['#regles', 'Org rules']] as [string, string][]) : []),
+      ...(rules ? ([['#org-rules', 'Org rules']] as [string, string][]) : []),
       ...(providers ? ([['#providers', 'Providers and keys']] as [string, string][]) : []),
     ]
     if (links.length < 2) return null
@@ -250,20 +250,20 @@ const STATE_TEXT: Record<ProviderState, string> = {
   unknown: 'Never called',
 }
 const STATE_CLASS: Record<ProviderState, string> = {
-  // A key on the runner is a normal state: neutral. The amber of `status-wait` says « attention ».
+  // A key on the runner is a normal state: neutral. The amber of `status-wait` says "attention".
   runner: 'status-neutral',
   refused: 'status-alert',
   valid: 'status-online',
   unknown: 'status-stale',
 }
 
-/** « lite », « lite and heavy », « lite, balanced and heavy ». */
+/** "lite", "lite and heavy", "lite, balanced and heavy". */
 function levelList(levels: readonly Level[]): string {
   return levels.length <= 1 ? levels.join('') : `${levels.slice(0, -1).join(', ')} and ${levels.at(-1)}`
 }
 
 /**
- * REV-27. The levels of the org that run on this provider, under its name: « Default » and the
+ * REV-27. The levels of the org that run on this provider, under its name: "Default" and the
  * choices of Default values never say two different things. Null: the service has no settings of
  * the org.
  */
@@ -272,7 +272,7 @@ function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] 
     let { provider, levels } = handle.props
     if (!levels) return null
     let others = LEVELS.filter((level) => !levels.includes(level))
-    let defaults = <a href="#defauts">Default values</a>
+    let defaults = <a href="#defaults">Default values</a>
     if (provider.isDefault) {
       return (
         <p class="hint provider-usage">
@@ -490,8 +490,8 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
       )
     return (
       // Folded until it is asked for (REV-29): open after a form with errors, or when the URL names
-      // #nouveau-provider (public/assets/settings.js).
-      <section class="new-provider" id="nouveau-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
+      // #new-provider (public/assets/settings.js).
+      <section class="new-provider" id="new-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
         <details class="new-provider-toggle" open={form && Object.keys(form.errors).length > 0 ? true : undefined}>
           <summary class="button">
             <span id="new-provider-title">Add a provider</span>

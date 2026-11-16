@@ -89,7 +89,7 @@ export const LEVEL_COST_CENTS: Record<Level, readonly [low: number, high: number
   heavy: [30, 50],
 };
 
-/** The cost of one review at a level: « about 1 cent », « 10 to 20 cents ». */
+/** The cost of one review at a level: "about 1 cent", "10 to 20 cents". */
 export function levelCost(level: Level): string {
   const [low, high] = LEVEL_COST_CENTS[level];
   const cents = (n: number) => `${n} cent${n === 1 ? '' : 's'}`;

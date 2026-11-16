@@ -19,7 +19,7 @@ export function focusIf(first: string | null, key: string): { autoFocus?: true }
   return first === key ? { autoFocus: true } : {}
 }
 
-/** « Nothing is saved. 2 fields to fix. » at the top of a form with errors. */
+/** "Nothing is saved. 2 fields to fix." at the top of a form with errors. */
 export function FormErrors(handle: Handle<{ errors: Record<string, string | undefined> }>) {
   return () => {
     let count = Object.values(handle.props.errors).filter(Boolean).length

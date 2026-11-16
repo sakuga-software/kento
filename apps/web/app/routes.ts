@@ -9,9 +9,9 @@ export const routes = route({
 /** The screens, and the forms of their frame. A signed-in member of an org only. */
 export const pageRoutes = route({
   home: get('/'),
-  /** REV-14: « Relancer en <niveau> » on the banner of the last failure. An admin only. */
+  /** REV-14: "Run again at <level>" on the banner of the last failure. An admin only. */
   jobRetry: post('/jobs/:id/retry'),
-  /** REV-59: « Masquer » hides a failure of the dashboard. An admin only. */
+  /** REV-59: "Hide" hides a failure of the dashboard. An admin only. */
   jobDismiss: post('/jobs/:id/dismiss'),
   repos: get('/repos'),
   /** REV-9: an admin enables or disables a repository, or reads GitHub again. */
@@ -66,7 +66,7 @@ export const pageRoutes = route({
  */
 export const pullRoutes = route({
   pull: get('/repos/:id/pulls/:number'),
-  /** « Relancer en <niveau> »: a new review of the last head. An admin only: it costs. */
+  /** "Run again at <level>": a new review of the last head. An admin only: it costs. */
   pullRerun: post('/repos/:id/pulls/:number/rerun'),
   /** One finding: where it comes from, its code, its history, its thread on GitHub. */
   finding: get('/findings/:id'),
@@ -106,8 +106,8 @@ export const fallbackRoutes = route({
 /** REV-96. The pages of documentation. Open to anyone, without a sign-in: the comments of Kentō link to them. */
 export const docsRoutes = route({
   commands: get('/docs/commands'),
-  /** REV-114. The French address of the page, in the comments posted before the deploy: a permanent redirect. */
-  commandsFrench: get('/docs/commandes'),
+  /** REV-114. The address of the page before REV-114, in the comments posted before it: a permanent redirect. */
+  commandsLegacy: get('/docs/commandes'),
 })
 
 /** The GitHub sign-in. Open to anyone. */

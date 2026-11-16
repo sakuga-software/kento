@@ -46,7 +46,7 @@ export async function canWrite(github: GitHub, fullName: string, login: string, 
  * null. On a public repository anyone can react: the 👎 of a person without write access, and the 👎
  * of a bot, do not count, as for the commands. `writers` keeps the permissions read in one run.
  * GitHub answers 404 for a comment deleted meanwhile: null too, and logged. The endpoint needs
- * `pull_requests: read` (« List reactions for a pull request review comment »).
+ * `pull_requests: read` ("List reactions for a pull request review comment").
  */
 export async function thumbsDownBy(
   github: GitHub,

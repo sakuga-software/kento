@@ -72,7 +72,7 @@ describe('the tools of a review', () => {
       assert.match(tools.run({ name: 'read_file', input: { path } }), /needs a path/, String(path));
     }
     assert.match(tools.run({ name: 'read_file', input: { path: 'src/mail' } }), /is a folder/);
-    // Kentō on #146: a submodule and a file too big to read get a clear answer, not « The tool failed ».
+    // Kentō on #146: a submodule and a file too big to read get a clear answer, not "The tool failed".
     assert.equal(tools.run({ name: 'read_file', input: { path: 'vendor/lib' } }), 'vendor/lib is a submodule: its code is not in this repository.');
     assert.match(tools.run({ name: 'read_file', input: { path: 'huge.txt' } }), /^huge\.txt has \d+ bytes, more than the \d+ that read_file reads\. Use grep on it\.$/);
     assert.equal(tools.run({ name: 'read_file', input: { path: 'blob.bin' } }), 'blob.bin is a binary file.');

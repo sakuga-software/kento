@@ -1,5 +1,5 @@
 // The dashboard reads itself again every 10 s while it is on screen, and says how old its numbers
-// are (« Updated 12 s ago »). Without JavaScript, the link « Refresh » does the same.
+// are ("Updated 12 s ago"). Without JavaScript, the link "Refresh" does the same.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   const live = document.getElementById('dashboard-live')

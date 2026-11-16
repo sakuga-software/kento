@@ -44,7 +44,7 @@ export interface CheckedRepo {
   workflow: DetectedWorkflow
 }
 
-/** The filters of the Repos screen (REV-36). « To switch »: review.yml is still in the repository. */
+/** The filters of the Repos screen (REV-36). "To switch": review.yml is still in the repository. */
 export type RepoFilter = 'all' | 'enabled' | 'disabled' | 'switching'
 
 export const REPO_FILTERS: readonly RepoFilter[] = ['all', 'enabled', 'disabled', 'switching']

@@ -130,7 +130,7 @@ export function configActions(kit: UiKit) {
     }
 
     let outcome: SaveOutcome = await configDeps.store.save(signed.membership.org.id, id, signed.user.id, version, (current) => {
-      // « Back to the org value » on a key that the repository does not set changes nothing, but still
+      // "Back to the org value" on a key that the repository does not set changes nothing, but still
       // writes a version: the person sees which version they are on.
       if (reset && !hasField(current.config, key) && !(key === 'level' && current.defaultLevel !== 'lite')) return current
       return change(current)

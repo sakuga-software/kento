@@ -52,7 +52,7 @@ runners of the service) is [DEPLOY.md](DEPLOY.md).
    its jobs only to the runners that have the label of the pool. No screen sets a pool today: the
    operator of Kentō sets it in the database. Without a pool, which is the default, the labels
    change nothing.
-4. **Model key**: where the model key is. See [Key modes](#key-modes). Keep « Key on the runner »
+4. **Model key**: where the model key is. See [Key modes](#key-modes). Keep "Key on the runner"
    unless the runner is a machine of Sakuga.
 5. Click **Create the token**.
 
@@ -61,7 +61,7 @@ Copy the command now. The screen never shows the token again. The token works on
 hour. The name, the labels and the key mode are fixed in the token. The variables of the machine
 cannot change them.
 
-Until a runner uses it, the token stays in **Waiting tokens** with « Waiting for the runner ».
+Until a runner uses it, the token stays in **Waiting tokens** with "Waiting for the runner".
 
 ## 2. Start the runner
 
@@ -105,7 +105,7 @@ docker logs kento-runner
 {"time":"…","level":"info","event":"startup.ready","runnerId":"…","version":"0.1.0","url":"https://review.sakuga.dev","ownKey":true}
 ```
 
-Reload the Runners screen. The runner is in **Runners** with « Online ». The token leaves
+Reload the Runners screen. The runner is in **Runners** with "Online". The token leaves
 **Waiting tokens**.
 
 The command keeps `KENTO_REGISTRATION_TOKEN` in the container. Once `runner.json` exists, the
@@ -122,10 +122,10 @@ when creating the token, and can change it later on the runner's card.
 
 | Mode on the screen | Card | What happens |
 | --- | --- | --- |
-| **Key on the runner** (recommended for a machine outside Sakuga) | « Key on the runner » | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
-| **Key of the service** | « Key of the service (trusted) » | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
+| **Key on the runner** (recommended for a machine outside Sakuga) | "Key on the runner" | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
+| **Key of the service** | "Key of the service (trusted)" | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
 
-« Mark as trusted » and « Remove the trust » on the card switch between the two. The
+"Mark as trusted" and "Remove the trust" on the card switch between the two. The
 service reads the trust again at each claim.
 
 Which jobs a runner takes depends on the provider of the job, which the organization sets in
@@ -135,7 +135,7 @@ Which jobs a runner takes depends on the provider of the job, which the organiza
 | --- | --- |
 | None (the organization has no provider) | `PROVIDER_KIND=openrouter` with `PROVIDER_API_KEY`, or the runner is trusted and the service has its OpenRouter key. |
 | A provider whose key the service holds | The runner has its own key of that kind (`PROVIDER_KIND` and `PROVIDER_API_KEY`), or it is trusted. |
-| A provider with « The key stays on the runner » | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
+| A provider with "The key stays on the runner" | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
 | Ollama | The runner has `PROVIDER_KIND=ollama`. |
 
 A job that no runner can take stays in the queue. It does not fail.
@@ -152,8 +152,8 @@ Change `PROVIDER_KIND`, `PROVIDER_BASE_URL` and `PROVIDER_API_KEY` in the comman
 | `ollama` | see [Ollama](#ollama-on-the-machine-of-the-runner) | none |
 
 `PROVIDER_BASE_URL` must be HTTPS, except for Ollama. The organization needs a provider of the same
-kind in **Settings → Providers and keys**, set « Default » or chosen for a level in the Config of
-a repository. Tick « The key stays on the runner » there so that the service never stores the key.
+kind in **Settings → Providers and keys**, set "Default" or chosen for a level in the Config of
+a repository. Tick "The key stays on the runner" there so that the service never stores the key.
 
 ## Ollama on the machine of the runner
 
@@ -162,13 +162,13 @@ cost of 0.
 
 1. In Kentō, **Settings → Add a provider**:
    - **Type**: Ollama;
-   - **Name**: for example « Ollama of the Mac mini »;
+   - **Name**: for example "Ollama of the Mac mini";
    - **Server URL**: leave it empty, the runner gives it;
    - **Models per level**: Ollama has no default model, so name one for each of `lite`,
      `balanced` and `heavy`, for example `qwen3`. Pull them first on the Ollama server
      (`ollama pull qwen3`).
 
-   Click **Add the provider**. The first provider of the organization becomes « Default »;
+   Click **Add the provider**. The first provider of the organization becomes "Default";
    otherwise click **Make default**, or choose it for a level in the Config of a repository.
 2. Start the runner with these two lines in place of the three `PROVIDER_` lines of the command:
 
@@ -194,7 +194,7 @@ shows the model and `"costUsd":0`:
 ## Update the runner
 
 When the service moves to a newer release, the card shows the new version next to the runner's
-version, for example « 0.2.0 available ». The command of the Runners screen always names the image
+version, for example "0.2.0 available". The command of the Runners screen always names the image
 of the release of the service.
 
 1. Pull the new image:
@@ -210,7 +210,7 @@ of the release of the service.
    ```
 
    A job in progress stops, and the service queues it again once its lease ends, within 2
-   minutes. To avoid that, wait until « Job in progress » on the card says « none ».
+   minutes. To avoid that, wait until "Job in progress" on the card says "none".
 3. Run your `docker run` command again with the new tag. The runner reads `runner.json` from the
    volume and does not register again. The card keeps its name and shows the new version.
 
@@ -235,7 +235,7 @@ A revoked runner never comes back. To use the machine again, create a new token
 ([step 1](#1-create-the-runner-in-the-runners-screen)) and run its command. With the old volume
 removed, the runner registers as a new runner.
 
-A runner of the service (« Runner of the service » on its card) has no button. The operator revokes it
+A runner of the service ("Runner of the service" on its card) has no button. The operator revokes it
 in the database ([DEPLOY.md](DEPLOY.md#5-revoke-a-runner)).
 
 ## Troubleshooting
@@ -245,7 +245,7 @@ runner removes its tokens and keys from every line.
 
 ### The registration token expired
 
-The card in **Waiting tokens** says « Token expired » when no runner registered within the hour. A
+The card in **Waiting tokens** says "Token expired" when no runner registered within the hour. A
 token that a runner already used fails the same way.
 
 On the machine, the runner logs this line once, then waits without calling the service until you
@@ -255,7 +255,7 @@ stop it:
 {"level":"error","event":"runner.registration_refused","error":"the service refused the registration token: it expired after one hour, was already used, or was cancelled. Create a new token on the Runners screen, then remove this container and start the command of the new token."}
 ```
 
-1. On the card, click **Nouveau token**. The screen shows a new token and its command, with the same
+1. On the card, click **New token**. The screen shows a new token and its command, with the same
    name, labels and key mode.
 2. On the machine:
 
@@ -303,10 +303,10 @@ Remove the container and the volume, then register again with a new token, as in
 
 The runner tries again, waiting twice as long each time, up to one minute. It does not stop. Check
 the DNS, the proxy and the firewall of the machine for outbound HTTPS to `review.sakuga.dev`. The
-card goes from « Online » to « Late signal » after 90 s without a call, and to « Offline
-for … » after one hour.
+card goes from "Online" to "Late signal" after 90 s without a call, and to "Offline
+for …" after one hour.
 
-### The runner is « Online » but takes no job
+### The runner is "Online" but takes no job
 
 A job waits in the queue until a runner can take it. Check, in this order:
 
@@ -318,7 +318,7 @@ A job waits in the queue until a runner can take it. Check, in this order:
 
 ### A job fails because its lease expired
 
-The Dashboard shows the failure « the runner stopped answering during the job twice, last <runner> ».
+The Dashboard shows the failure "the runner stopped answering during the job twice, last <runner>".
 
 The runner holds a job with a lease of 2 minutes, and renews it with a heartbeat every 30 seconds.
 When the heartbeats stop (the machine sleeps, the network goes down, someone stops the container),
@@ -333,7 +333,7 @@ If the runner comes back during the job, its next heartbeat gets 409 and it drop
 ```
 
 Keep the machine awake, and keep the runner running during jobs. To review the pull request again,
-an admin clicks « Run again at <level> » on the Dashboard, or anyone with write access
+an admin clicks "Run again at <level>" on the Dashboard, or anyone with write access
 comments `@kento-review` on the pull request.
 
 ### A job fails with a model error
@@ -345,8 +345,8 @@ The job fails with the answer of the provider, in the log of the runner and on t
 ```
 
 A 401 or 403 means that the provider refused `PROVIDER_API_KEY`. Replace it as in
-[Update the runner](#update-the-runner). When the provider has « The key stays on the runner »,
-**Settings** shows « Refused on the runner » until a job with the new key succeeds.
+[Update the runner](#update-the-runner). When the provider has "The key stays on the runner",
+**Settings** shows "Refused on the runner" until a job with the new key succeeds.
 
 With Ollama, `Ollama answered 404: {"error":"model 'qwen3' not found"}` names a model that the
 server has not pulled, and `fetch failed` an address that the container cannot reach (see

@@ -12,12 +12,12 @@ for (const name of ['review.md', 'resolve.md']) {
   test(`${name} gives the rules of style of the published text`, () => {
     const text = prompt(name);
     const style = /# Style (.*?) # Answer/.exec(text)?.[1];
-    assert.ok(style, `${name} has a « # Style » section before « # Answer »`);
+    assert.ok(style, `${name} has a "# Style" section before "# Answer"`);
     assert.match(style, /One idea per sentence\./);
     assert.match(style, /Use the active voice, and name the actor/);
     assert.match(style, /Never write an em dash \(—\) or an en dash \(–\)\./);
     assert.match(style, /Do not join two clauses with a colon, and do not open a sentence with a label and a colon\./);
-    for (const word of BANNED) assert.ok(style.includes(`« ${word} »`), `${name} bans « ${word} »`);
+    for (const word of BANNED) assert.ok(style.includes(`"${word}"`), `${name} bans "${word}"`);
     assert.match(style, /No closing formula/);
     assert.match(style, /Write (them|it) in plain English, even when/);
     assert.doesNotMatch(text, /French/);

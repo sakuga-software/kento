@@ -77,7 +77,7 @@ function run(cwd: string, env: Record<string, string>, args: string[], input?: s
 
 /**
  * The waits before the second and the third attempt of a clone. Just after a push, GitHub can
- * answer a fetch with « did not send all necessary objects »: the same fetch works seconds later.
+ * answer a fetch with "did not send all necessary objects": the same fetch works seconds later.
  */
 export const CLONE_RETRY_DELAYS_MS = [3_000, 10_000];
 
@@ -106,7 +106,7 @@ export function isTransientGitError(error: unknown): boolean {
 /**
  * Fetches the head commit and the base branch of a pull request into a new bare repository under
  * `workDir`, with every object. It is not a partial clone (`--filter=blob:none`): GitHub can refuse
- * to send a blob that a partial clone asks for by its id (« did not send all necessary objects »),
+ * to send a blob that a partial clone asks for by its id ("did not send all necessary objects"),
  * on every attempt (#104, #106).
  *
  * After a transient error, a new attempt starts in a new directory, after each delay of

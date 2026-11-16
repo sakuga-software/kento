@@ -46,7 +46,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
         trustedBotsFor: (id) => settings.trustedBotsFor(id),
         recordDelivery: (record) => settings.recordDelivery(record),
         apply: createWebhookStore(database.db, {
-          onCapReached: createCapNotice({ mintInstallationToken: mint, apiUrl: fake.apiUrl, settingsUrl: 'https://review.sakuga.dev/settings#plafond', fetch: fake.fetch }),
+          onCapReached: createCapNotice({ mintInstallationToken: mint, apiUrl: fake.apiUrl, settingsUrl: 'https://review.sakuga.dev/settings#cap', fetch: fake.fetch }),
           handleCommentCommand: createCommandHandler({ db: database.db, sql: database.sql, mintInstallationToken: mint, apiUrl: fake.apiUrl, fetch: fake.fetch }),
         }),
       },
@@ -116,7 +116,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
   })
 
   describe('the cost limit at the enqueue', () => {
-    it('a limit of $0.01 stops the next push, with the check « Kentō · cap »; $8 lets the jobs go again', async () => {
+    it('a limit of $0.01 stops the next push, with the check "Kentō · cap"; $8 lets the jobs go again', async () => {
       await spend(0.02)
       await sql`update orgs set daily_cap_usd = 0.01 where id = ${orgId}`
       let stopped = await push()
@@ -143,7 +143,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       // limit sums every review and resolution of the org and never reads jobs.provider_id: the same
       // costs stop the same push, whatever the provider of the jobs.
       let [held] = await sql<{ id: string }[]>`
-        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'anthropic', 'Anthropic du runner', true) returning id`
+        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'anthropic', 'Runner Anthropic', true) returning id`
       await spend(0.6, { providerId: held!.id })
       await spend(0.6)
       await sql`update orgs set daily_cap_usd = 1.2 where id = ${orgId}`
@@ -155,7 +155,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.deepEqual(
         view!.costs.dayByProvider.map((p) => [p.label, p.usd]).sort(),
         [
-          ['Anthropic du runner', 0.6],
+          ['Runner Anthropic', 0.6],
           ['Service key', 0.6],
         ],
         'only the split per provider follows jobs.provider_id',
@@ -164,7 +164,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
 
     it('the Settings screen, the dashboard, a push, a command and a retry read the same total, costs of source unknown included (REV-47)', async () => {
       let [held] = await sql<{ id: string }[]>`
-        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'openrouter', 'OpenRouter du runner', true) returning id`
+        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'openrouter', 'Runner OpenRouter', true) returning id`
       await spend(0.25)
       await spend(0.12, { resolve: true })
       // OpenRouter answered without a cost: no cost, `costSource` unknown.
@@ -241,7 +241,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.match(reply.body, /^@alex Kentō does not start a review: the organization reached its daily cost cap/)
     })
 
-    it('a check that GitHub refuses is logged, and the delivery still answers « capped »', async () => {
+    it('a check that GitHub refuses is logged, and the delivery still answers "capped"', async () => {
       fake.state.appPermissions.delete('checks')
       await sql`update orgs set daily_cap_usd = 0 where id = ${orgId}`
       let result = await push()
@@ -314,7 +314,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
   describe('the store of the screen', () => {
     it('reads the defaults of a new org, and adds the cost of the day per provider', async () => {
       let [provider] = await sql<{ id: string }[]>`
-        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'ollama', 'GPU du bureau', true) returning id`
+        insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'ollama', 'Office GPU', true) returning id`
       await spend(1.25, { providerId: provider!.id })
       await spend(0.5)
       await spend(0.25, { resolve: true })
@@ -328,7 +328,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.deepEqual(
         view!.costs.dayByProvider.map((p) => [p.label, p.usd]),
         [
-          ['GPU du bureau', 1.25],
+          ['Office GPU', 1.25],
           ['Service key', 0.75],
         ],
       )

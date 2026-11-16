@@ -231,7 +231,7 @@ describe('POST /webhooks/github against Postgres', () => {
     assert.equal(title.body.outcome, 'ignored')
   })
 
-  it('« Relancer » of the dashboard queues its job as a push does, on the new base of the pull request (REV-47)', async () => {
+  it('"Run again" of the dashboard queues its job as a push does, on the new base of the pull request (REV-47)', async () => {
     let parent = 'fru-popup/fru-525-popup-layout-parent'
     await post(pullRequestPayload({ head: headSha(1), baseRef: parent }))
     await sql`update jobs set state = 'failed', finished_at = now() where head_sha = ${headSha(1)}`

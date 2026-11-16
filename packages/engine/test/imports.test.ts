@@ -10,7 +10,7 @@ import { checkMissingNames, importStatements } from '../src/imports.ts';
 
 // REV-70. The replay of gallery-app#13 at c85aa470: `app/routes/regie/account.tsx` imports `data` on
 // line 3, far from the hunks of the pull request. The diff showed a hunk of the imports (line 19) and
-// the new branch of the action that calls `data(...)`. Kentō reported « `data` utilisé sans import »
+// the new branch of the action that calls `data(...)`. Kentō reported that `data` had no import
 // as a P1, and the score went from 4/5 to 2/5.
 
 const PATH = 'app/routes/regie/account.tsx';
@@ -87,18 +87,18 @@ const finding = (over: Partial<Finding>): Finding => ({
   severity: 'major',
   category: 'bug',
   confidence: 90,
-  title: '`data` utilisé sans import dans account.tsx',
+  title: '`data` used without an import in account.tsx',
   scenario:
-    "Le diff de account.tsx importe depuis plan-change et regie-actions mais pas `data` de react-router. Quand le rôle n'a pas le droit entier, l'appel `data(...)` lève une ReferenceError, d'où un 500 au lieu du 403 attendu.",
-  fix: 'Ajouter `import { data } from "react-router";` dans account.tsx.',
+    'The diff of account.tsx imports from plan-change and regie-actions, but not `data` from react-router. When the role does not have the full right, the call `data(...)` throws a ReferenceError, and the route gives a 500 instead of the expected 403.',
+  fix: 'Add `import { data } from "react-router";` to account.tsx.',
   suggestion: '',
   ...over,
 });
 
 const answer = (findings: Finding[], score = 2): Answer => ({
   confidence_score: score,
-  risk: 'Risque',
-  summary: 'Résumé',
+  risk: 'Risk',
+  summary: 'Summary',
   diagram: '',
   findings,
   not_reviewed: [],
@@ -130,7 +130,7 @@ test('gallery-app#13: the pack shows the imports of the file, line 3 included, t
   assert.match(imports, /\n5\| import \{\n6\|   Avatar,\n7\|   Breadcrumbs,\n8\|   Button,\n9\| \} from "~\/components\/ui";\n/);
 });
 
-test('gallery-app#13: a P1 « `data` utilisé sans import » goes away, and no longer caps the score at 2', async () => {
+test('gallery-app#13: a P1 "`data` used without an import" goes away, and no longer caps the score at 2', async () => {
   // The model scores 4/5, as on gallery-app#13 before the false P1. Without the check, the P1 blocks and caps the score at 2.
   const { fetch } = fakeModel(answer([finding({})], 4));
   const logs: string[] = [];
@@ -139,11 +139,11 @@ test('gallery-app#13: a P1 « `data` utilisé sans import » goes away, and no l
   assert.equal(result.score, 4);
   assert.notEqual(result.verdict, 'REQUEST_CHANGES');
   assert.deepEqual(result.answer.not_reviewed, []);
-  assert.match(logs.join('\n'), /finding dropped, its file at the head holds the name: app\/routes\/regie\/account\.tsx: `data` utilisé sans import/);
+  assert.match(logs.join('\n'), /finding dropped, its file at the head holds the name: app\/routes\/regie\/account\.tsx: `data` used without an import/);
 });
 
 test('a name that the file does not import stays a blocking finding', async () => {
-  const missing = finding({ line: lineOf('throw json('), start_line: lineOf('throw json('), title: '`json` utilisé sans import', scenario: "`json` n'est importé nulle part." });
+  const missing = finding({ line: lineOf('throw json('), start_line: lineOf('throw json('), title: '`json` used without an import', scenario: 'No line imports `json`.' });
   const { fetch } = fakeModel(answer([missing], 2));
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {} });
   assert.equal(result.findings.length, 1);
@@ -152,9 +152,9 @@ test('a name that the file does not import stays a blocking finding', async () =
   assert.equal(result.verdict, 'REQUEST_CHANGES');
 });
 
-test('gallery-app#12: `and` and `isNull` imported on line 1 refute « peut-être non importés »', () => {
+test('gallery-app#12: `and` and `isNull` imported on line 1 refute "maybe not imported"', () => {
   const lines = ['import { and, eq, isNull } from "drizzle-orm";', 'export const where = and(eq(a, b), isNull(c));'];
-  const reply = answer([finding({ path: 'team.tsx', title: '`and` et `isNull` peut-être non importés' })], 3);
+  const reply = answer([finding({ path: 'team.tsx', title: '`and` and `isNull` maybe not imported' })], 3);
   const { refuted, unchecked } = checkMissingNames(reply, () => lines);
   assert.equal(refuted.length, 1);
   assert.equal(unchecked.length, 0);
@@ -162,13 +162,13 @@ test('gallery-app#12: `and` and `isNull` imported on line 1 refute « peut-être
   assert.equal(reply.confidence_score, 3, 'the check never changes the score of the model');
 });
 
-test('a finding that the engine cannot check goes to « Not reviewed »', () => {
+test('a finding that the engine cannot check goes to "Not reviewed"', () => {
   // No name in backquotes: the engine cannot tell which name the finding means.
-  const reply = answer([finding({ title: 'Fonction utilisée sans import', scenario: 'La route appelle une fonction que le diff ne montre pas importée.' }), finding({ severity: 'minor', title: 'Libellé en dur', line: 1 })], 3);
+  const reply = answer([finding({ title: 'Function used without an import', scenario: 'The route calls a function that the diff does not show as imported.' }), finding({ severity: 'minor', title: 'Hard-coded label', line: 1 })], 3);
   const { unchecked } = checkMissingNames(reply, () => ['export const x = 1;']);
   assert.equal(unchecked.length, 1);
-  assert.deepEqual(reply.findings.map((f) => f.title), ['Libellé en dur']);
-  assert.deepEqual(reply.not_reviewed, [`${PATH}: Fonction utilisée sans import. Kentō could not check it in the file at the head.`]);
+  assert.deepEqual(reply.findings.map((f) => f.title), ['Hard-coded label']);
+  assert.deepEqual(reply.not_reviewed, [`${PATH}: Function used without an import. Kentō could not check it in the file at the head.`]);
   assert.equal(reply.confidence_score, 3, 'the check never changes the score of the model');
 });
 
@@ -177,40 +177,40 @@ test('the check leaves alone the other findings, an import under another name, a
   const reply = answer(
     [
       // `import { data as payload }` imports `payload`, not `data`: the finding stays.
-      finding({ title: '`data` utilisé sans import' }),
+      finding({ title: '`data` used without an import' }),
       // A declaration does not refute: it can sit in another scope, or come after the use.
-      finding({ title: '`helper` non défini dans la route' }),
+      finding({ title: '`helper` not defined in the route' }),
       // An import as a value refutes.
-      finding({ title: '`payload` non défini' }),
+      finding({ title: '`payload` not defined' }),
       // A finding that only quotes a message is not a claim about a name.
-      finding({ title: '`loadStudio` renvoie 500 au lieu de 404', scenario: '« Compte introuvable » sans import de rien.' }),
+      finding({ title: '`loadStudio` returns 500 instead of 404', scenario: '"Account not found" without an import of anything.' }),
     ],
     2,
   );
   const { refuted } = checkMissingNames(reply, () => lines);
-  assert.deepEqual(refuted.map((f) => f.title), ['`payload` non défini']);
-  assert.deepEqual(reply.findings.map((f) => f.title), ['`data` utilisé sans import', '`helper` non défini dans la route', '`loadStudio` renvoie 500 au lieu de 404']);
+  assert.deepEqual(refuted.map((f) => f.title), ['`payload` not defined']);
+  assert.deepEqual(reply.findings.map((f) => f.title), ['`data` used without an import', '`helper` not defined in the route', '`loadStudio` returns 500 instead of 404']);
   // The module string binds no name: `from "react-router"` and `import "./side.css"` import no `react` and no `side`.
-  for (const title of ['`react` non importé', '`router` non importé', '`side` non importé', '`import` non défini']) {
+  for (const title of ['`react` not imported', '`router` not imported', '`side` not imported', '`import` not defined']) {
     const one = answer([finding({ title })], 2);
     checkMissingNames(one, () => ['import { data } from "react-router";', 'import "./side.css";', 'from react import side_effects']);
     assert.equal(one.findings.length, 1, `${title} stays`);
   }
   // A type is no value: `data(...)` still fails at run time, so these findings stay.
   for (const file of [['import type { data } from "x";'], ['import { type data } from "x";'], ['type data = string;'], ['export interface data {}']]) {
-    const one = answer([finding({ title: '`data` non défini' })], 2);
+    const one = answer([finding({ title: '`data` not defined' })], 2);
     checkMissingNames(one, () => file);
     assert.equal(one.findings.length, 1, `${file[0]} does not refute`);
   }
-  // The names of the scenario do not count: the title names none, so the finding goes to « Not reviewed ».
-  const vague = answer([finding({ title: 'Fonction utilisée sans import', scenario: 'La route appelle `data` puis `json`.' })], 2);
+  // The names of the scenario do not count: the title names none, so the finding goes to "Not reviewed".
+  const vague = answer([finding({ title: 'Function used without an import', scenario: 'The route calls `data`, then `json`.' })], 2);
   const { unchecked } = checkMissingNames(vague, () => ['import { data, json } from "react-router";']);
   assert.equal(unchecked.length, 1);
   assert.deepEqual(vague.findings, []);
-  const python = answer([finding({ title: '`name` non importé' })], 2);
+  const python = answer([finding({ title: '`name` not imported' })], 2);
   checkMissingNames(python, () => ['from pkg.mod import name']);
   assert.deepEqual(python.findings, [], 'a Python import binds its name');
-  const multi = answer([finding({ title: '`b` non importé' })], 2);
+  const multi = answer([finding({ title: '`b` not imported' })], 2);
   checkMissingNames(multi, () => ['from pkg import (', '    a,', '    b,', ')']);
   assert.deepEqual(multi.findings, [], 'a Python import between parentheses binds each name');
 });
@@ -231,7 +231,7 @@ test('a changed file whose path is not ASCII gets its imports too', () => {
     run('init', '-q', '-b', 'main');
     run('config', 'user.email', 'test@example.com');
     run('config', 'user.name', 'Test');
-    const path = 'app/routes/équipe.tsx';
+    const path = 'app/routes/café.tsx';
     mkdirSync(join(dir, 'app', 'routes'), { recursive: true });
     writeFileSync(join(dir, path), 'import { and, isNull } from "drizzle-orm";\n\nexport const a = 1;\n');
     run('add', '.');
@@ -240,7 +240,7 @@ test('a changed file whose path is not ASCII gets its imports too', () => {
     writeFileSync(join(dir, path), 'import { and, isNull } from "drizzle-orm";\n\nexport const a = 2;\n');
     run('commit', '-q', '-am', 'change');
     const { pack } = buildPack(dir, from, run('rev-parse', 'HEAD'), 'definitions');
-    assert.match(pack, /## Imports\n[\s\S]*### app\/routes\/équipe\.tsx\n\n```\n1\| import \{ and, isNull \} from "drizzle-orm";/);
+    assert.match(pack, /## Imports\n[\s\S]*### app\/routes\/café\.tsx\n\n```\n1\| import \{ and, isNull \} from "drizzle-orm";/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

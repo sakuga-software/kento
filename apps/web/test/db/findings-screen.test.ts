@@ -44,7 +44,7 @@ describe('the Findings screen list', () => {
     repoId = repos[0]!.id
     otherRepoId = repos[1]!.id
     let [rule] = await sql<{ id: string }[]>`
-      insert into rules (org_id, repo_id, title, body) values (${orgId}, ${repoId}, 'Pas de any', 'Typer.') returning id`
+      insert into rules (org_id, repo_id, title, body) values (${orgId}, ${repoId}, 'No any', 'Type it.') returning id`
     ruleId = rule!.id
     // 12 findings of sakuga-review, one a minute, the newest last; 3 of orchard; 1 of another org.
     for (let n = 0; n < 12; n++) {
@@ -95,9 +95,9 @@ describe('the Findings screen list', () => {
 
     let ruled = await listFindingScreen(database.sql, orgId, { view: 'all', ruleId })
     assert.deepEqual(ruled.rows.map((r) => [r.title, r.ruleTitle]), [
-      ['Finding 8', 'Pas de any'],
-      ['Finding 4', 'Pas de any'],
-      ['Finding 0', 'Pas de any'],
+      ['Finding 8', 'No any'],
+      ['Finding 4', 'No any'],
+      ['Finding 0', 'No any'],
     ])
 
     let dismissed = await listFindingScreen(database.sql, orgId, { view: 'dismissed' })
@@ -109,7 +109,7 @@ describe('the Findings screen list', () => {
     assert.equal(byReason.rows.length, 2)
     assert.equal((await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: 'False positive' })).rows.length, 0)
     // A reason of an earlier release, longer than REASON_MAX: the link carries its first 500 characters, and finds it.
-    let long = `Trop long ${'x'.repeat(600)}`
+    let long = `Too long ${'x'.repeat(600)}`
     await database.sql`update findings set status_reason = ${`  ${long}`} where title = 'Finding 9'`
     let byLong = await listFindingScreen(database.sql, orgId, { view: 'dismissed', reason: long.slice(0, 500) })
     // Any case, and a cut that ends on a space: the same rule on both sides.
@@ -148,12 +148,12 @@ describe('the Findings screen list', () => {
     assert.deepEqual(pages.map((p) => [p.offset, p.rows.length]), [[0, 5], [5, 5], [10, 2]])
     assert.equal(pages[0]!.previous, null)
 
-    // « Précédents » from the last page gives the middle page back, with its links both ways.
+    // "Previous" from the last page gives the middle page back, with its links both ways.
     let back = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: pages[2]!.previous })
     assert.deepEqual(back.rows.map((r) => r.id), pages[1]!.rows.map((r) => r.id))
     assert.equal(back.offset, 5)
     assert.ok(back.next && back.previous)
-    // Exactly a page before the cursor: the same first page as without a cursor, with the same « Suivants ».
+    // Exactly a page before the cursor: the same first page as without a cursor, with the same "Next".
     let first = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: back.previous })
     assert.deepEqual(first.rows.map((r) => r.id), pages[0]!.rows.map((r) => r.id))
     assert.equal(first.previous, null)
@@ -164,7 +164,7 @@ describe('the Findings screen list', () => {
   })
 
   it('gives the whole first page when fewer than a page are left before the cursor', async () => {
-    // A cursor on the 3rd newest finding: two rows before it, where « Précédents » expects five.
+    // A cursor on the 3rd newest finding: two rows before it, where "Previous" expects five.
     let page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5 })
     let short = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: encodeCursorOf(page.rows[2]!) })
     assert.deepEqual(short.rows.map((r) => r.id), page.rows.map((r) => r.id))
@@ -173,7 +173,7 @@ describe('the Findings screen list', () => {
     assert.equal(short.next, page.next)
   })
 
-  it('gives the first page for « Suivants » past the last row, rather than an empty page', async () => {
+  it('gives the first page for "Next" past the last row, rather than an empty page', async () => {
     let page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5 })
     let past = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, after: encodeCursorOf(page.rows.at(-1)!) })
     assert.equal(past.rows.length, 5)
@@ -207,6 +207,6 @@ describe('the Findings screen list', () => {
   it('offers the repositories that have findings, and the rules of the org', async () => {
     let facets = await findingFacets(database.sql, orgId)
     assert.deepEqual(facets.repos.map((r) => r.fullName), ['sakuga-software/orchard', 'sakuga-software/sakuga-review'])
-    assert.deepEqual([...facets.rules].map((r) => ({ ...r })), [{ id: ruleId, title: 'Pas de any', repo: 'sakuga-software/sakuga-review' }])
+    assert.deepEqual([...facets.rules].map((r) => ({ ...r })), [{ id: ruleId, title: 'No any', repo: 'sakuga-software/sakuga-review' }])
   })
 })

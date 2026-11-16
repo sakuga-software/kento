@@ -248,7 +248,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </div>
         </details>
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
-        {/* REV-91: the menus « … » of the rows close on Escape and on a click outside. */}
+        {/* REV-91: the menus "…" of the rows close on Escape and on a click outside. */}
         <script src={`/assets/row-menu.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
     )
@@ -360,7 +360,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               Enable<span class="visually-hidden"> {name}</span>
             </button>
           ) : null}
-          {/* REV-91: the other actions of a row sit in « … »: the config, the findings, and « Disable Kentō… ». */}
+          {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…". */}
           <details class="row-menu">
             {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 50 of them (budget of 110 KB). */}
             <summary aria-label={`Actions of ${name}`}>…</summary>
@@ -370,7 +370,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               {admin && repo.enabled ? (
                 <Confirm
                   trigger={
-                    // One flex item: the gap of .button would split the visible « Disable… ».
+                    // One flex item: the gap of .button would split the visible "Disable…".
                     <span>
                       Disable<span class="visually-hidden"> {name}</span> Kentō…
                     </span>
@@ -431,7 +431,7 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
   }
 }
 
-/** « 51 to 100 of 122 », and the links to the pages around. Shown when the list has more than a page. */
+/** "51 to 100 of 122", and the links to the pages around. Shown when the list has more than a page. */
 function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
   return () => {
     let { page, list } = handle.props

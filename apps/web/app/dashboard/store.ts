@@ -10,17 +10,17 @@ import { readMoney, type CapPeriod, type OrgCaps } from '../org-settings/model.t
 import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
 import { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
-/** The days of the chart « Published reviews », today included. */
+/** The days of the chart "Published reviews", today included. */
 export const WEEK_DAYS = 7
 /** The last reviews of the list. */
 export const RECENT_LIMIT = 10
 /** A failure older than this gets no banner. */
 export const FAILURE_SHOWN_DAYS = 7
-/** The failures of the list « Failures », newest first. */
+/** The failures of the list "Failures", newest first. */
 export const FAILURES_LIMIT = 5
 /** The jobs of each part of the queue. More are counted, not listed. */
 export const QUEUE_LIMIT = 20
-/** REV-37. The runners online or late on the card « Runners ». */
+/** REV-37. The runners online or late on the card "Runners". */
 export const RUNNERS_LIMIT = 10
 /** REV-37. The offline runners on the card, the last ones seen first. More are counted, not listed. */
 export const OFFLINE_RUNNERS_LIMIT = 5
@@ -128,7 +128,7 @@ export interface RunnerCounts {
 }
 
 /**
- * REV-26. What the list « Getting started » reads, until the first review of the org is published:
+ * REV-26. What the list "Getting started" reads, until the first review of the org is published:
  * the App, the providers, the runners and the repositories. The runners themselves are in
  * `DashboardScreen.runners`, the jobs in `DashboardScreen.queue`.
  */
@@ -190,7 +190,7 @@ export interface RetryTarget {
   headSha: string
 }
 
-/** What the dashboard reads, and its writes: « Run again » and « Hide ». Every query is for one org. */
+/** What the dashboard reads, and its writes: "Run again" and "Hide". Every query is for one org. */
 export interface DashboardStore {
   screen(orgId: string): Promise<DashboardScreen>
   /** The pull request of a failed review job of the org. Null: no such job. */
@@ -471,7 +471,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       with seen as (
         select runners.id, runners.name, runners.org_id, runners.last_seen_at,
           case
-            -- Never seen: « offline », as runnerState() says for a null lastSeenAt.
+            -- Never seen: "offline", as runnerState() says for a null lastSeenAt.
             when runners.last_seen_at is null then 'offline'
             when runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval then 'online'
             when runners.last_seen_at >= now() - ${`${OFFLINE_SECONDS} seconds`}::interval then 'late'
@@ -618,7 +618,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       }
     },
 
-    // « Run again at <level> »: a new review job of the head and the base of the failed one, with the
+    // "Run again at <level>": a new review job of the head and the base of the failed one, with the
     // config of today. As a command does, it skips the trigger, the paths and the monthly limit of
     // the repository: an admin asked for it.
     async retry(orgId, jobId, level, githubHead) {

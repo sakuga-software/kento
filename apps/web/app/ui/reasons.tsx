@@ -6,7 +6,7 @@ import type { Handle } from 'remix/component'
 
 import { sanitizeReason } from '../publish/failure.ts'
 
-/** A reason in words. `raw`: the text of the service, shown under « Technical details », or null. */
+/** A reason in words. `raw`: the text of the service, shown under "Technical details", or null. */
 export interface Reason {
   /** What happened, from a lowercase letter, with no final period. */
   text: string
@@ -17,7 +17,7 @@ export interface Reason {
 
 /** The names that the adapters of the engine give to a provider (packages/engine/src/providers.ts). */
 const PROVIDER_NAMES = 'OpenRouter|Anthropic|Ollama|The OpenAI-compatible server'
-/** « ProviderError: <name> <what> », at the start of the error of the model. */
+/** `ProviderError: <name> <what>`, at the start of the error of the model. */
 const PROVIDER_ERROR = (what: string) => new RegExp(`^ProviderError: (?:${PROVIDER_NAMES}) ${what}`)
 
 const TIMES: Record<number, string> = { 1: 'once', 2: 'twice', 3: 'three times' }
@@ -34,9 +34,9 @@ function providerStatus(status: number): Omit<Reason, 'raw'> {
 }
 
 /**
- * The reason of a failed job. The service writes « lease expired N times » and « the provider « X »
- * refused its key (N): … »; the runner sends the message of its error (apps/runner/src/job.ts, the
- * engine). Any other reason is unknown, and its text goes under « Technical details ».
+ * The reason of a failed job. The service writes `lease expired N times` and `the provider "X"
+ * refused its key (N): …`; the runner sends the message of its error (apps/runner/src/job.ts, the
+ * engine). Any other reason is unknown, and its text goes under "Technical details".
  */
 export function jobReason(reason: string | null, runnerName: string | null): Reason {
   let trimmed = reason?.trim() ?? ''
@@ -51,7 +51,7 @@ export function jobReason(reason: string | null, runnerName: string | null): Rea
     }
   }
   let raw = sanitizeReason(trimmed)
-  let refused = /^the provider « (.+) » refused its key \((\d{3})\)/.exec(trimmed)
+  let refused = /^the provider "(.+)" refused its key \((\d{3})\)/.exec(trimmed)
   if (refused) return { text: `the provider "${refused[1]}" refused its key, code ${refused[2]}`, action: 'Replace its key in Settings, then retry.', raw }
   let known = ((): Omit<Reason, 'raw'> | null => {
     // The steps of the service at the claim (app/runner/controller.ts).
@@ -60,13 +60,13 @@ export function jobReason(reason: string | null, runnerName: string | null): Rea
     }
     if (trimmed.startsWith('review threads: ')) return { text: 'Kentō could not read the threads of the pull request on GitHub', action: 'Retry in a few minutes.' }
     if (trimmed.startsWith('rules: ')) return { text: 'Kentō could not read the rules of the repo', action: 'Retry in a few minutes.' }
-    if (/^the provider « .+ » is not of the org of the runner$/.test(trimmed)) {
+    if (/^the provider ".+" is not of the org of the runner$/.test(trimmed)) {
       return { text: 'the provider of the config belongs to another organization than the runner', action: 'Choose a provider of this organization in the config of the repo, then retry.' }
     }
-    if (/^the provider « .+ » needs a trusted runner$/.test(trimmed)) {
+    if (/^the provider ".+" needs a trusted runner$/.test(trimmed)) {
       return { text: 'the key of this provider goes only to a trusted runner', action: 'Mark a runner as trusted on the Runners screen, then retry.' }
     }
-    if (/^the key of the provider « .+ » cannot be decrypted/.test(trimmed)) {
+    if (/^the key of the provider ".+" cannot be decrypted/.test(trimmed)) {
       return { text: 'the master key of the service does not decrypt the key of the provider', action: 'Replace the key in Settings, or check KENTO_SECRETS_KEY on the service.' }
     }
     if (/^no model key\b/.test(trimmed)) {
@@ -81,7 +81,7 @@ export function jobReason(reason: string | null, runnerName: string | null): Rea
       return { text: 'the config of the repo names a provider or a model that the job does not have', action: 'Choose the provider and the models of this level in the config of the repo, then retry.' }
     }
     // The engine wraps the error of the last model (`askJson` in packages/engine/src/model.ts):
-    // « no model gave a usable answer: ProviderError: <name> … » or « …: TimeoutError: … ». Each
+    // `no model gave a usable answer: ProviderError: <name> …` or `…: TimeoutError: …`. Each
     // pattern reads the start of that error, never a word of the answer body that follows it.
     let model = /^no model gave a usable answer: (.*)$/s.exec(trimmed)?.[1] ?? null
     let status = model === null ? /^provider: (\d{3})\b/.exec(trimmed) : PROVIDER_ERROR('answered (\\d{3})\\b').exec(model)
@@ -168,13 +168,13 @@ export function appStatusReason(error: string): Reason {
   return { text: 'GitHub does not answer about the App', action: 'Reload the page in a few minutes.', raw }
 }
 
-/** The reason as one sentence: « Text. Action. » */
+/** The reason as one sentence: "Text. Action." */
 export function reasonSentence(reason: Reason): string {
   let text = `${reason.text.charAt(0).toUpperCase()}${reason.text.slice(1)}.`
   return reason.action ? `${text} ${reason.action}` : text
 }
 
-/** The text of the service, folded under « Technical details ». Nothing when there is none. */
+/** The text of the service, folded under "Technical details". Nothing when there is none. */
 export function TechDetails(handle: Handle<{ raw: string | null }>) {
   return () =>
     handle.props.raw ? (

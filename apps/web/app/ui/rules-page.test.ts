@@ -130,7 +130,7 @@ function setup(options: { config?: boolean } = {}) {
 const FK_RULE = { title: 'Every drizzle migration has an index for each FK', body: 'Each foreign key has its index.', paths: '**/migrations/**', severityFloor: 'major' }
 
 describe('the rules of a repository and of the org (REV-19)', () => {
-  it('opens the tab Règles, with what else goes to the model', async () => {
+  it('opens the tab Rules, with what else goes to the model', async () => {
     let { signIn } = setup()
     let { html } = await signIn()
     assert.match(html, /<a href="\/repos\/[^"]+\/config\?tab=rules" aria-current="page">Rules<\/a>/)
@@ -138,7 +138,7 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.match(html, /Rules of orchard <span class="count">0<\/span>/)
     assert.match(html, /No rule for this repo\./)
     assert.match(html, /Also goes to the model/)
-    assert.match(html, /<a href="\/settings#regles">No org rule<\/a>/)
+    assert.match(html, /<a href="\/settings#org-rules">No org rule<\/a>/)
     assert.match(html, /<span class="mono">CLAUDE\.md<\/span> and <span class="mono">AGENTS\.md<\/span>/)
     assert.match(html, /never from the code of a PR/)
     // An empty list opens the form of a new rule.
@@ -280,11 +280,11 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.equal(rule.repoId, null)
     assert.equal(added.headers.get('Location'), `/settings?rules=added&rule=${rule.id}#rule-${rule.id}`)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /<section id="regles"[^>]*class="card config-card"/)
+    assert.match(html, /<section id="org-rules"[^>]*class="card config-card"/)
     assert.match(html, /Org rules <span class="count">1<\/span>/)
     assert.match(html, /<span class="tag tag-quiet mono">all paths<\/span>/)
     // The Config screen of a repository counts it.
     let config = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.match(config, /<a href="\/settings#regles">1 active org rule<\/a>/)
+    assert.match(config, /<a href="\/settings#org-rules">1 active org rule<\/a>/)
   })
 })

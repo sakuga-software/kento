@@ -8,7 +8,7 @@ import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './h
 
 // The Config screen of a repository (REV-12) in a browser, against the server, Postgres and the
 // fake GitHub, with the tests of the ticket: a model replaced on balanced goes into the next job and
-// to the runner; « Back to the org value » takes the value back; « Ready for review » leaves the pushes of a
+// to the runner; "Back to the org value" takes the value back; "Ready for review" leaves the pushes of a
 // draft without a job, and its passage to ready creates one.
 
 const ORCHARD = { id: 7001, full_name: 'sakuga-software/orchard', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
@@ -19,7 +19,7 @@ function database() {
 
 /**
  * orchard enabled, at its first config, with no job; the org sets nothing and has no provider. A
- * « Default » provider left by another spec would run the levels without a choice (REV-27).
+ * "Default" provider left by another spec would run the levels without a choice (REV-27).
  */
 async function reset(page: Page) {
   await page.goto('/repos')
@@ -104,7 +104,7 @@ const head = (n: number) => n.toString(16).padStart(40, '0')
 
 test.describe('the Config screen of a repository', () => {
   for (let theme of ['paper', 'sumi'] as const) {
-    test(`an admin replaces the model of balanced, the next push and its runner use it, and « Back to the org value » takes it back (${theme})`, async ({
+    test(`an admin replaces the model of balanced, the next push and its runner use it, and "Back to the org value" takes it back (${theme})`, async ({
       page,
       context,
       baseURL,
@@ -149,7 +149,7 @@ test.describe('the Config screen of a repository', () => {
       let claimed = await claim(page, job!.id)
       expect(claimed.models).toEqual({ provider: 'service', model: 'anthropic/claude-sonnet-5.6', fallback: 'anthropic/claude-sonnet-5.5' })
 
-      // « Back to the org value »: the next push takes the value of the org (here, of Kentō).
+      // "Back to the org value": the next push takes the value of the org (here, of Kentō).
       await page.getByRole('link', { name: 'Provider and models' }).click()
       await page.getByRole('button', { name: 'Back to the org value for balanced' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'Value of the organization restored (v3)' })).toBeVisible()
@@ -175,7 +175,7 @@ test.describe('the Config screen of a repository', () => {
     try {
       let [provider] = await sql<{ id: string }[]>`
         insert into providers (id, org_id, kind, label, runner_held)
-        select gen_random_uuid(), org_id, 'anthropic', 'Anthropic de Sakuga', true from repos where full_name = ${ORCHARD.full_name}
+        select gen_random_uuid(), org_id, 'anthropic', 'Sakuga Anthropic', true from repos where full_name = ${ORCHARD.full_name}
         returning id`
       let models = { balanced: { provider: provider!.id, model: 'anthropic/claude-opus-5.5', fallback: null } }
       await sql`update repos set config = ${sql.json({ models })}, config_version = 1 where full_name = ${ORCHARD.full_name}`
@@ -202,7 +202,7 @@ test.describe('the Config screen of a repository', () => {
     expect(errors).toEqual([])
   })
 
-  test('« Ready for review »: a push of a draft creates no job, its passage to ready creates one, a later push none', async ({ page }) => {
+  test('"Ready for review": a push of a draft creates no job, its passage to ready creates one, a later push none', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'alex')
     await reset(page)
@@ -238,7 +238,7 @@ test.describe('the Config screen of a repository', () => {
     expect(errors.filter((e) => !e.includes('status of 422'))).toEqual([])
   })
 
-  test('a member reads the config under « Read only », with no form', async ({ page }) => {
+  test('a member reads the config under "Read only", with no form', async ({ page }) => {
     await signIn(page, 'alex')
     await reset(page)
     await page.context().clearCookies()

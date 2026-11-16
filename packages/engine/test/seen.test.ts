@@ -1,5 +1,5 @@
 // REV-100. A new finding on code that an earlier review already read does not block, unless it is
-// critical. The case replays dojo#91: « STUDIO_HOST n'est ni dans .env.example ni documenté »
+// critical. The case replays dojo#91: the finding that STUDIO_HOST is not in .env.example
 // came at the second review, on a file that did not change since the first one.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -25,7 +25,7 @@ const lines = (name: string, count: number, edit: Record<number, string> = {}) =
 const SETTINGS = 'apps/app/src/routes/investigations/id/settings/page.tsx';
 const ENGINE = 'packages/engine/src/operations.ts';
 /** A path that git quotes in the header of a patch. */
-const ACCENT = 'packages/engine/src/opérations [v2].ts';
+const ACCENT = 'packages/engine/src/naïve [v2].ts';
 
 // main; the pull request at its first review (`reviewed`); a push that changes operations.ts only
 // (`pushed`); and, on another line, a force-push of the same change (`forced`).
@@ -78,9 +78,9 @@ const finding = (path: string, line: number, title: string, severity: Finding['s
 });
 
 /** The finding of dojo#91, at its line on the unchanged settings page, as a P1. */
-const studioHost = finding(SETTINGS, 33, "STUDIO_HOST n'est ni dans .env.example ni documenté");
+const studioHost = finding(SETTINGS, 33, 'STUDIO_HOST is not in .env.example and has no documentation');
 /** A defect in the zone that the push changed. */
-const applyBug = finding(ENGINE, 150, "L'opération est appliquée deux fois", 'major', { category: 'bug' });
+const applyBug = finding(ENGINE, 150, 'The operation is applied twice', 'major', { category: 'bug' });
 
 function fakeModel(answer: () => Answer) {
   const packs: string[] = [];
@@ -139,12 +139,12 @@ test('dojo#91 replayed: a new P1 on code that the first review read is to consid
     commitUrl: 'https://github.com/o/r/commit/x',
     level: 'balanced',
   });
-  assert.match(block, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/);
+  assert.match(block, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST is not in \.env\.example and has no documentation/);
   assert.doesNotMatch(block, /<h3>Findings<\/h3>/);
 });
 
 test('guard: a critical finding on code already read keeps blocking', async () => {
-  const critical = { ...studioHost, severity: 'critical' as const, title: 'Le jeton de session passe dans STUDIO_HOST' };
+  const critical = { ...studioHost, severity: 'critical' as const, title: 'The session token goes into STUDIO_HOST' };
   const model = fakeModel(() => answer(2, [critical]));
   const result = await reviewPullRequest(input(model.fetch, { earlier: earlier(), reviewed }));
   assert.equal(result.findings[0]?.seen, true);

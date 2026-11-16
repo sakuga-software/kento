@@ -82,10 +82,10 @@ function job(overrides: Partial<Job> & Record<string, unknown> = {}): Job {
 
 const answer = (): Answer => ({
   confidence_score: 5,
-  risk: 'Faible',
-  summary: 'Résumé',
+  risk: 'Low',
+  summary: 'Summary',
   diagram: '',
-  findings: [{ path: 'sum.ts', start_line: 2, line: 2, severity: 'major', category: 'bug', confidence: 90, title: 'Soustraction', scenario: 'sum(1, 2) donne -1.', fix: 'a + b', suggestion: '  return a + b;\n' }],
+  findings: [{ path: 'sum.ts', start_line: 2, line: 2, severity: 'major', category: 'bug', confidence: 90, title: 'Subtraction', scenario: 'sum(1, 2) gives -1.', fix: 'a + b', suggestion: '  return a + b;\n' }],
   not_reviewed: [],
   deeper_review: { recommended: false, reason: '' },
 });
@@ -508,7 +508,7 @@ function stubResolveModel() {
     const pack: string = body.messages[1].content;
     packs.push(pack);
     const ids = [...pack.matchAll(/^## Thread (\S+)$/gm)].map((m) => m[1]!);
-    const threads = ids.map((id) => ({ id, verdict: 'fixed', reply: `Corrigé (${id}).` }));
+    const threads = ids.map((id) => ({ id, verdict: 'fixed', reply: `Fixed (${id}).` }));
     return new Response(
       JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify({ threads }) } }], usage: { prompt_tokens: 20, completion_tokens: 8, cost: 0.003 } }),
     );
@@ -524,7 +524,7 @@ function resolveJob(threads: { id: string; commit: string | null; author?: strin
         id: t.id,
         path: 'sum.ts',
         line: 2,
-        comments: [{ id: 100 + i, author: t.author ?? 'sakuga-review', isBot: t.isBot ?? true, body: 'La somme soustrait.', commit: t.commit }],
+        comments: [{ id: 100 + i, author: t.author ?? 'sakuga-review', isBot: t.isBot ?? true, body: 'The sum subtracts.', commit: t.commit }],
       })),
       open: threads.length + 1,
       waiting: threads.length,
@@ -561,7 +561,7 @@ test('a resolve job: the pack of the threads, one model call, and whether each f
       ['PRRT_at_head', 'fixed', false],
       // A force-push removed the commit of the thread: nobody can tell.
       ['PRRT_gone', 'fixed', null],
-      // GitHub gave no commit for the thread: unknown too, not « unchanged ».
+      // GitHub gave no commit for the thread: unknown too, not "unchanged".
       ['PRRT_unknown', 'fixed', null],
     ],
   );
@@ -795,8 +795,8 @@ function stubRuleModel(cite: string | null) {
 const rule = (overrides: Record<string, unknown> = {}) => ({
   id: RULE_ID,
   scope: 'repo' as const,
-  title: 'Une somme additionne',
-  text: 'Toute fonction `sum` additionne ses arguments.',
+  title: 'A sum adds',
+  text: 'Every `sum` function adds its arguments.',
   paths: ['*.ts'],
   severityFloor: 'major' as const,
   ...overrides,
@@ -805,12 +805,12 @@ const rule = (overrides: Record<string, unknown> = {}) => ({
 test('a job with rules: the pack holds the rules that the diff touches, and a finding cites one by its id', async () => {
   const { api, results } = fakeApi();
   const model = stubRuleModel('R1');
-  const rules = [rule(), rule({ id: OTHER_RULE_ID, title: 'Index des FK', paths: ['**/migrations/**'] })];
+  const rules = [rule(), rule({ id: OTHER_RULE_ID, title: 'Index of the FKs', paths: ['**/migrations/**'] })];
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, rules }), deps(api, model.fetch));
 
   const pack = model.bodies[0].messages.at(-1).content as string;
-  assert.match(pack, /### R1 · Une somme additionne/);
-  assert.doesNotMatch(pack, /Index des FK/, 'a rule whose paths the diff does not touch is not in the pack');
+  assert.match(pack, /### R1 · A sum adds/);
+  assert.doesNotMatch(pack, /Index of the FKs/, 'a rule whose paths the diff does not touch is not in the pack');
   const result = results[0]!;
   assert.equal(result.outcome, 'done');
   if (result.outcome !== 'done') return;
@@ -839,7 +839,7 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   const model = (async (_url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
     bodies.push(body);
-    const content = { ...answer(), confidence_score: 4, threads: [{ id: 'T1', verdict: 'refuted', reason: 'La ligne 2 soustrait à dessein.' }] };
+    const content = { ...answer(), confidence_score: 4, threads: [{ id: 'T1', verdict: 'refuted', reason: 'Line 2 subtracts on purpose.' }] };
     return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
   }) as typeof globalThis.fetch;
   const threads = [
@@ -848,15 +848,15 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
       path: 'sum.ts',
       line: 2,
       comments: [
-        { id: 1, author: 'kento-review', isBot: true, body: '**Soustraction**', commit: head },
-        { id: 2, author: 'alex', isBot: false, body: 'Voulu : `sum` soustrait dans ce module.', commit: head },
+        { id: 1, author: 'kento-review', isBot: true, body: '**Subtraction**', commit: head },
+        { id: 2, author: 'alex', isBot: false, body: 'Intended: `sum` subtracts in this module.', commit: head },
       ],
     },
   ];
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, threads }), deps(api, model));
 
   const pack = bodies[0].messages.at(-1).content as string;
-  assert.match(pack, /## Answered threads[\s\S]*\*\*alex\*\* \(person\):\n\nVoulu : `sum` soustrait dans ce module\./);
+  assert.match(pack, /## Answered threads[\s\S]*\*\*alex\*\* \(person\):\n\nIntended: `sum` subtracts in this module\./);
   assert.ok(JSON.stringify(bodies[0].response_format).includes('"threads"'));
   const result = results[0]!;
   assert.equal(result.outcome, 'done');
@@ -898,15 +898,15 @@ test('a review job with a rejected finding: the pack holds its cause, and the fi
     const body = JSON.parse(String(init.body));
     bodies.push(body);
     // The model words the defect again, one line off; it keeps the score of the pull request.
-    const reworded = { ...answer().findings[0]!, title: 'Soustraction au lieu d’une addition', line: 3, start_line: 3 };
+    const reworded = { ...answer().findings[0]!, title: 'Subtraction instead of an addition', line: 3, start_line: 3 };
     const content = { ...answer(), confidence_score: 4, findings: [reworded] };
     return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
   }) as typeof globalThis.fetch;
-  const rejected = [{ path: 'sum.ts', line: 2, title: 'Soustraction', category: 'bug' as const, severity: 'major' as const, status: 'dismissed' as const, reason: 'Voulu : ce module soustrait.', commit: head }];
+  const rejected = [{ path: 'sum.ts', line: 2, title: 'Subtraction', category: 'bug' as const, severity: 'major' as const, status: 'dismissed' as const, reason: 'Intended: this module subtracts.', commit: head }];
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, rejected }), deps(api, model));
 
   const pack = bodies[0].messages.at(-1).content as string;
-  assert.match(pack, /## Rejected findings[\s\S]*- Cause written by the person: « Voulu : ce module soustrait\. »/);
+  assert.match(pack, /## Rejected findings[\s\S]*- Cause written by the person: "Intended: this module subtracts\."/);
   const result = results[0]!;
   assert.equal(result.outcome, 'done');
   if (result.outcome !== 'done') return;
@@ -973,14 +973,14 @@ test('with a delta whose head is the base, the review reads only the change sinc
   }) as typeof fetch;
   // The last reviewed head is the merge base: the whole change of the pull request came since.
   const since = git(source, 'merge-base', base, head);
-  const carried = { path: 'other.ts', start_line: 1, line: 1, severity: 'minor' as const, category: 'bug' as const, confidence: 80, title: 'Hors PR', scenario: 's', fix: 'f', suggestion: '', anchor: null, blocking: false, suggestion_range: null };
+  const carried = { path: 'other.ts', start_line: 1, line: 1, severity: 'minor' as const, category: 'bug' as const, confidence: 80, title: 'Outside the PR', scenario: 's', fix: 'f', suggestion: '', anchor: null, blocking: false, suggestion_range: null };
   const reuse = { head: since, key: 'e'.repeat(64), delta: { score: 5, findings: [carried], settled: [] } };
   assert.equal(await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, reuse }), deps(api, stub)), 'done');
   const result = results[0]!;
   assert.ok(result.outcome === 'done');
   assert.deepEqual(result.review.delta, { since, files: 1 });
   assert.match(packs[0]!, /This pull request was reviewed at commit/);
-  assert.ok(!result.review.findings.some((f) => f.title === 'Hors PR'), 'a finding on a file outside the pull request does not come back');
+  assert.ok(!result.review.findings.some((f) => f.title === 'Outside the PR'), 'a finding on a file outside the pull request does not come back');
   assert.ok(logs.some((l) => l.includes('"event":"job.review_incremental"')));
 
   // Without `delta` in the job (a service of REV-89), no `delta` in the result.
@@ -995,7 +995,7 @@ test('with a delta whose head is the base, the review reads only the change sinc
 test('a service that sends earlier findings gets `follows` on a finding that continues one, and an earlier service gets none (REV-99)', async () => {
   const earlier = {
     // The same finding, with the key of its path and title, fixed since.
-    findings: [{ key: findingKey(answer().findings[0]!), path: 'sum.ts', line: 2, title: 'Soustraction', severity: 'major' as const, category: 'bug' as const, status: 'fixed' as const, reason: null, commit: head }],
+    findings: [{ key: findingKey(answer().findings[0]!), path: 'sum.ts', line: 2, title: 'Subtraction', severity: 'major' as const, category: 'bug' as const, status: 'fixed' as const, reason: null, commit: head }],
     last: null,
   };
   const sent = job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, earlier });
@@ -1004,7 +1004,7 @@ test('a service that sends earlier findings gets `follows` on a finding that con
   assert.equal(await runJob(sent, deps(api, stubModel().fetch)), 'done');
   const result = results[0]!;
   assert.ok(result.outcome === 'done');
-  assert.equal(result.review.findings[0]!.follows, findingKey(answer().findings[0]!), '« Soustraction » is the fixed finding again: it follows it');
+  assert.equal(result.review.findings[0]!.follows, findingKey(answer().findings[0]!), '"Subtraction" is the fixed finding again: it follows it');
   assert.ok(logs.some((l) => l.includes('job.earlier_findings') && l.includes('"byNet":1')));
 
   // A service of an earlier release sends no `earlier`, and refuses a key that it does not know.

@@ -98,7 +98,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
 
       assert.equal((await store.move(orgId, repoId, ids[2]!, 'up')).kind, 'saved')
       assert.deepEqual((await store.list(orgId, repoId)).map((r) => r.id), [ids[0], ids[2], ids[1]])
-      // At the top, « Monter » moves nothing.
+      // At the top, "Move up" moves nothing.
       assert.deepEqual(await store.move(orgId, repoId, ids[0]!, 'up'), { kind: 'saved', id: ids[0], position: 1 })
 
       assert.deepEqual(await store.remove(orgId, repoId, ids[0]!), { kind: 'removed', position: 1 })
@@ -125,7 +125,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
       assert.deepEqual(await places(), [['c', 1], ['a', 2], ['d', 3]])
       await store.move(orgId, repoId, ids[0]!, 'up')
       assert.deepEqual(await places(), [['a', 1], ['c', 2], ['d', 3]])
-      // At the end, « Descendre » moves nothing.
+      // At the end, "Move down" moves nothing.
       let last = (await store.list(orgId, repoId)).at(-1)!
       assert.deepEqual(await store.move(orgId, repoId, last.id, 'down'), { kind: 'saved', id: last.id, position: 3 })
 

@@ -18,7 +18,7 @@ import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
 
-/** What the dashboard says after « Retry », from `?notice=`. */
+/** What the dashboard says after "Retry", from `?notice=`. */
 export const DASHBOARD_NOTICES = {
   retried: 'Review started again. The job is queued.',
   already: 'A review of this level is already queued or in progress on this commit.',
@@ -76,7 +76,7 @@ const CAP_STATUS: Record<CapState, string> = {
 export interface DashboardPageProps {
   frame: PageFrame
   screen: DashboardScreen
-  /** `https://github.com`, or the GitHub Enterprise Server: the links « Open the PR ». */
+  /** `https://github.com`, or the GitHub Enterprise Server: the links "Open the PR". */
   githubUrl: string
   notice?: DashboardNotice | null
   /** KENTO_PROVIDER_API_KEY is set: a trusted runner gets the key of the service without a provider. */
@@ -87,14 +87,14 @@ export interface DashboardPageProps {
   precision?: PrecisionReport | null
 }
 
-/** One step of the list « Getting started » (REV-26). */
+/** One step of the list "Getting started" (REV-26). */
 export interface SetupStep {
   key: 'app' | 'provider' | 'runner' | 'repo' | 'review'
   title: string
   state: 'done' | 'wait' | 'todo'
   /** What is true now, in one sentence. */
   text: string
-  /** Where the step is done. An admin gets it as a link; a member reads « Ask an admin ». */
+  /** Where the step is done. An admin gets it as a link; a member reads "Ask an admin". */
   action: { label: string; href: string; external?: boolean } | null
 }
 
@@ -149,14 +149,14 @@ export function setupSteps(
             title: 'Add a provider',
             state: 'done',
             text: 'No provider. A trusted runner gets the key of the service. Add your own to pay for your own reviews.',
-            action: { label: 'Add a provider', href: `${routes.settings.href()}#nouveau-provider` },
+            action: { label: 'Add a provider', href: `${routes.settings.href()}#new-provider` },
           }
         : {
             key: 'provider',
             title: 'Add a provider',
             state: 'todo',
             text: 'No provider, and no key of the service. A runner has no model to call.',
-            action: { label: 'Add a provider', href: `${routes.settings.href()}#nouveau-provider` },
+            action: { label: 'Add a provider', href: `${routes.settings.href()}#new-provider` },
           },
     online > 0
       ? {
@@ -367,7 +367,7 @@ export function stallText(stall: QueueStall, online: number, now: Date): { title
 }
 
 /**
- * REV-91. « To do »: what asks for a person now, one row each. The failure of the banner, the
+ * REV-91. "To do": what asks for a person now, one row each. The failure of the banner, the
  * queue that waits, a cost over the alert threshold, the runners with no signal, the repositories
  * still on review.yml. Each row: a mark and a word, what happened, then its actions.
  */
@@ -419,7 +419,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                   </p>
                 </div>
                 <div class="todo-actions">
-                  <a class="button" href={`${routes.settings.href()}#plafond`}>
+                  <a class="button" href={`${routes.settings.href()}#cap`}>
                     {admin ? 'Change the cap' : 'See the cap'}
                   </a>
                 </div>
@@ -499,7 +499,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
   }
 }
 
-/** REV-52, in « To do »: jobs wait for more than QUEUE_STALL_MINUTES, the probable cause and what to do. */
+/** REV-52, in "To do": jobs wait for more than QUEUE_STALL_MINUTES, the probable cause and what to do. */
 function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date }>) {
   return () => {
     let { stall, online, now } = handle.props
@@ -1065,7 +1065,7 @@ function QueueRunnersSection(
 }
 
 /**
- * REV-59. « Hide »: the failure leaves the banner and the list, for every member. The counts of
+ * REV-59. "Hide": the failure leaves the banner and the list, for every member. The counts of
  * the week keep it. A failure of a pull request closed since shows nowhere.
  */
 function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; small?: boolean; ghost?: boolean }>) {

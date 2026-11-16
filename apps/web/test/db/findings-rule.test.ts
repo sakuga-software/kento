@@ -25,7 +25,7 @@ async function seedRepo(sql: Database['sql']) {
 }
 
 async function insertRule(sql: Database['sql'], orgId: string, title: string) {
-  let [rule] = await sql<{ id: string }[]>`insert into rules (org_id, title, body) values (${orgId}, ${title}, 'Corps.') returning id`
+  let [rule] = await sql<{ id: string }[]>`insert into rules (org_id, title, body) values (${orgId}, ${title}, 'Body.') returning id`
   return rule!.id
 }
 
@@ -81,8 +81,8 @@ describe('the rule of a finding (REV-55)', () => {
   })
 
   it('keeps the findings of a removed rule, with no rule', async () => {
-    let cited = await insertRule(database.sql, orgId, 'Pas de console.log')
-    let other = await insertRule(database.sql, orgId, 'Pas de any')
+    let cited = await insertRule(database.sql, orgId, 'No console.log')
+    let other = await insertRule(database.sql, orgId, 'No any')
     let a = await insertFinding(database.sql, repoId, 'cites the removed rule', cited)
     let b = await insertFinding(database.sql, repoId, 'cites the other rule', other)
 
@@ -107,8 +107,8 @@ describe('the rule of a finding (REV-55)', () => {
   })
 
   it('stores the finding of a review without the rule that an admin removed while its job ran', async () => {
-    let kept = await insertRule(database.sql, orgId, 'Toujours là')
-    let removed = await insertRule(database.sql, orgId, 'Supprimée pendant le job')
+    let kept = await insertRule(database.sql, orgId, 'Still there')
+    let removed = await insertRule(database.sql, orgId, 'Removed during the job')
     await database.sql`delete from rules where id = ${removed}`
     let [job] = await database.sql<{ id: string }[]>`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', 7, ${HEAD}, 'main') returning id`
@@ -143,7 +143,7 @@ describe('the rule of a finding (REV-55)', () => {
       await writeFile(journalPath, JSON.stringify(journal))
       await runMigrations(other.url, earlier)
       let seeded = await seedRepo(check.sql)
-      let rule = await insertRule(check.sql, seeded.orgId, 'Toujours là')
+      let rule = await insertRule(check.sql, seeded.orgId, 'Still there')
       let orphan = await insertFinding(check.sql, seeded.repoId, 'orphan', '00000000-0000-0000-0000-000000000000')
       let cited = await insertFinding(check.sql, seeded.repoId, 'cited', rule)
 

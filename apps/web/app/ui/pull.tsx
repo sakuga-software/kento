@@ -11,7 +11,7 @@ import { agoOrDate, clock, duration, plural, usdPrecise } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
-/** What the screen says after « Run again », from `?relance=`. */
+/** What the screen says after "Run again", from `?rerun=`. */
 export const RERUN_NOTICES = {
   queued: 'Review started again. It is queued. A new push cancels it.',
   already: 'A review of this level is already queued or in progress on this commit.',
@@ -29,24 +29,24 @@ export const SEVERITY_BADGES: Record<PullFinding['severity'], string> = { critic
 /** The query of the screen: the status filter and the two cursors. */
 export interface PullQuery {
   statuses: FindingStatus[]
-  /** The cursor of the older reviews (`?avant=`). */
+  /** The cursor of the older reviews (`?before=`). */
   reviews: string | null
-  /** The cursor of the next findings (`?suite=`). */
+  /** The cursor of the next findings (`?after=`). */
   rows: string | null
 }
 
-/** Reads `?statut=open&statut=fixed&avant=…&suite=…`. An unknown status is left out. */
+/** Reads `?status=open&status=fixed&before=…&after=…`. An unknown status is left out. */
 export function readPullQuery(query: URLSearchParams): PullQuery {
-  let statuses = query.getAll('statut').filter((s): s is FindingStatus => isOneOf(FINDING_STATUSES, s))
-  return { statuses: [...new Set(statuses)], reviews: query.get('avant') || null, rows: query.get('suite') || null }
+  let statuses = query.getAll('status').filter((s): s is FindingStatus => isOneOf(FINDING_STATUSES, s))
+  return { statuses: [...new Set(statuses)], reviews: query.get('before') || null, rows: query.get('after') || null }
 }
 
 /** The address of the screen with this query. */
 export function pullHref(repoId: string, prNumber: number, query: Partial<PullQuery> = {}): string {
   let params = new URLSearchParams()
-  for (let s of query.statuses ?? []) params.append('statut', s)
-  if (query.reviews) params.set('avant', query.reviews)
-  if (query.rows) params.set('suite', query.rows)
+  for (let s of query.statuses ?? []) params.append('status', s)
+  if (query.reviews) params.set('before', query.reviews)
+  if (query.rows) params.set('after', query.rows)
   let search = params.toString()
   return `${pullRoutes.pull.href({ id: repoId, number: String(prNumber) })}${search ? `?${search}` : ''}`
 }
@@ -58,7 +58,7 @@ export function pullUrl(githubUrl: string, fullName: string, prNumber: number): 
 
 const short = (sha: string) => sha.slice(0, 7)
 
-/** « 4/5, +1 since R3 »: the last score and how it moved since the review before. */
+/** "4/5, +1 since R3": the last score and how it moved since the review before. */
 export function scoreProgress(summary: Pick<PullSummary, 'lastScores' | 'reviews'>): { value: string; change: string | null } {
   let [last, previous] = summary.lastScores
   if (last === undefined) return { value: '—', change: null }
@@ -77,7 +77,7 @@ export interface PullPageProps {
   query: PullQuery
   githubUrl: string
   now: Date
-  /** The estimate of a review of each level, for an admin; null for a member (no « Run again »). */
+  /** The estimate of a review of each level, for an admin; null for a member (no "Run again"). */
   estimates?: Record<Level, number | null> | null
   rerunNotice?: RerunNotice | null
 }
@@ -294,7 +294,7 @@ function ActiveBanner(handle: Handle<{ job: PullActiveJob; now: Date }>) {
 
 const LEVEL_DEFAULT_HINT = 'The estimate is the mean of the last reviews of this level on this repo.'
 
-/** « Run R5 again… » beside the title: it opens the three levels with their estimate (confirm.js closes it on Escape). */
+/** "Run R5 again…" beside the title: it opens the three levels with their estimate (confirm.js closes it on Escape). */
 function RerunMenu(handle: Handle<{ summary: PullSummary; estimates: Record<Level, number | null>; csrf: string }>) {
   return () => {
     let { summary, estimates, csrf } = handle.props
@@ -333,7 +333,7 @@ function RerunMenu(handle: Handle<{ summary: PullSummary; estimates: Record<Leve
   }
 }
 
-/** The order of the legend, and what each case says (REV-91, « Read the sheet »). */
+/** The order of the legend, and what each case says (REV-91, "Read the sheet"). */
 const LEGEND: { state: Exclude<Cell['state'], 'none'>; text: string }[] = [
   { state: 'posted', text: 'posted' },
   { state: 'found', text: 'found again, no new comment' },
@@ -345,7 +345,7 @@ const LEGEND: { state: Exclude<Cell['state'], 'none'>; text: string }[] = [
   { state: 'absent', text: 'absent from this review' },
 ]
 
-/** « ? »: how to read the sheet. Help is asked for, not shown at all times. */
+/** "?": how to read the sheet. Help is asked for, not shown at all times. */
 function SheetHelp(_handle: Handle<{}>) {
   return () => (
     <details class="sheet-help">

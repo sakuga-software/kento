@@ -88,7 +88,7 @@ def svg(width: float, height: int, body: str, title: str) -> str:
     )
 
 
-# A small warning triangle, 10 px wide, for the badge « to check ».
+# A small warning triangle, 10 px wide, for the badge "to check".
 def triangle(x: float, fill: str, mark: str) -> str:
     return (
         f'<path d="M{x + 5} 5.2 L{x + 10} 14.6 H{x} Z" fill="{fill}" stroke="{fill}" stroke-width="1.2" stroke-linejoin="round"/>'

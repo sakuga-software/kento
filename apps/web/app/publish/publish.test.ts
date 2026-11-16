@@ -6,7 +6,7 @@ import { describe, it } from 'remix/test'
 
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, CHECK_NAME, publishReview, publishUnchanged, usageOf } from './publish.ts'
+import { anchorOf, answerOf, CHECK_NAME, LABEL_DESCRIPTION, publishReview, publishUnchanged, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -21,9 +21,9 @@ function finding(overrides: Partial<ReviewFinding> = {}): ReviewFinding {
     severity: 'major',
     category: 'bug',
     confidence: 90,
-    title: 'La somme soustrait',
-    scenario: 'sum(1, 2) rend -1.',
-    fix: 'Remettre +.',
+    title: 'The sum subtracts',
+    scenario: 'sum(1, 2) returns -1.',
+    fix: 'Put + back.',
     suggestion: '  return a + b;',
     anchor: 2,
     blocking: true,
@@ -44,8 +44,8 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.0123,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'La PR change sum.',
-    risk: 'Un calcul faux.',
+    summary: 'The PR changes sum.',
+    risk: 'A wrong result.',
     diagram: null,
     deeperReview: null,
     findings: [finding()],
@@ -81,7 +81,7 @@ describe('publishReview', () => {
     assert.equal(review!.state, 'CHANGES_REQUESTED')
     assert.equal(review!.commitId, HEAD1)
     // The fields that boo and the scripts read.
-    assert.match(review!.body, /\*\*Confidence score: 2\/5\*\* · <picture>.*?<img alt="Blocking" src="https:\/\/review\.test\/assets\/pr\/blocking\.v2\.svg" [^>]+><\/picture> 1 blocking issue · Un calcul faux\./)
+    assert.match(review!.body, /\*\*Confidence score: 2\/5\*\* · <picture>.*?<img alt="Blocking" src="https:\/\/review\.test\/assets\/pr\/blocking\.v2\.svg" [^>]+><\/picture> 1 blocking issue · A wrong result\./)
     assert.match(review!.body, /<sub>Kentō · Level `lite` · `anthropic\/claude-haiku-5\.5` · \$0\.012 · /)
 
     let [comment] = fake.botThreads()
@@ -93,7 +93,7 @@ describe('publishReview', () => {
     assert.match(comment!.body, /<!-- sakuga-review:finding [0-9a-f]{12} -->/)
 
     let body = fake.state.pr.body
-    assert.ok(body.startsWith('Description de la PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
+    assert.ok(body.startsWith('The description of the PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
     assert.match(body, /<h2>Kentō · Confidence score: 2\/5 <picture>.*?<img alt="2\/5" src="https:\/\/review\.test\/assets\/pr\/gauge-2\.v2\.svg" [^>]+><\/picture><\/h2>/)
     assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}"><picture><source [^>]+thread-dark\\.v2\\.svg"><img alt="Thread" [^>]+></picture></a>`))
     assert.match(body, /Reviews \(1\) · Last reviewed commit: \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Level `lite`/)
@@ -112,6 +112,20 @@ describe('publishReview', () => {
     assert.equal(check!.conclusion, 'success')
     assert.equal(check!.output.title, 'Confidence score: 2/5')
     assert.equal(check!.token, 'ghs_fake_checks_2', 'the check goes with its own token')
+  })
+
+  it('gives its description to a label of an earlier release, and leaves a label that has it', async () => {
+    let { fake, publish } = setup()
+    fake.state.repoLabels.add('review: 2/5')
+    fake.state.labelDescriptions.set('review: 2/5', 'The description of an earlier release')
+    await publish(payload())
+    assert.equal(fake.state.labelDescriptions.get('review: 2/5'), LABEL_DESCRIPTION)
+    assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
+    let patches = fake.state.calls.filter((c) => c.method === 'PATCH' && c.path.includes('/labels/'))
+    assert.equal(patches.length, 1)
+
+    await publish(payload({ head: HEAD2 }))
+    assert.equal(fake.state.calls.filter((c) => c.method === 'PATCH' && c.path.includes('/labels/')).length, 1)
   })
 
   it('posts no emoji, and no image when the service does not know its public URL (REV-106)', async () => {
@@ -184,7 +198,7 @@ describe('publishReview', () => {
     fake.state.pr.head = HEAD2
     fake.state.compare.set(`${HEAD1}...${HEAD2}`, { status: 'ahead', files: ['src/sum.ts'] })
 
-    await publish(payload({ head: HEAD2, findings: [finding({ title: 'Signe inversé dans sum', anchor: 3, line: 3, start_line: 3 })] }))
+    await publish(payload({ head: HEAD2, findings: [finding({ title: 'Inverted sign in sum', anchor: 3, line: 3, start_line: 3 })] }))
 
     let [thread] = fake.botThreads()
     assert.equal(fake.botThreads().length, 1)
@@ -340,16 +354,16 @@ describe('publishReview', () => {
     assert.deepEqual(fake.botThreads(), [])
     assert.deepEqual(warnings.map((w) => w.event), ['publish.inline_refused'])
     // Without a thread, the block shows the scenario of the finding.
-    assert.match(fake.state.pr.body, /sum\(1, 2\) rend -1\. \*\*Fix:\*\* Remettre \+\./)
+    assert.match(fake.state.pr.body, /sum\(1, 2\) returns -1\. \*\*Fix:\*\* Put \+ back\./)
   })
 
   it('keeps the inline comments to the sure P2 findings, five at most; a P1 outside the diff gets a comment on its file', async () => {
     let { fake, publish } = setup()
     let findings = [
-      finding({ title: 'Peu sûr', confidence: 50, severity: 'minor', blocking: false, anchor: 10, line: 10, start_line: 10 }),
-      finding({ title: 'Hors diff', anchor: null, line: 200, start_line: 200, blocking: false }),
+      finding({ title: 'Not sure', confidence: 50, severity: 'minor', blocking: false, anchor: 10, line: 10, start_line: 10 }),
+      finding({ title: 'Outside the diff', anchor: null, line: 200, start_line: 200, blocking: false }),
       ...Array.from({ length: 6 }, (_, i) =>
-        finding({ title: `Constat ${i}`, severity: 'minor', blocking: false, anchor: 20 + 10 * i, line: 20 + 10 * i, start_line: 20 + 10 * i, suggestion: '', suggestion_range: null }),
+        finding({ title: `Finding ${i}`, severity: 'minor', blocking: false, anchor: 20 + 10 * i, line: 20 + 10 * i, start_line: 20 + 10 * i, suggestion: '', suggestion_range: null }),
       ),
     ]
 
@@ -359,7 +373,7 @@ describe('publishReview', () => {
     assert.equal(outcome.fileComments, 1)
     assert.deepEqual(
       fake.botThreads().map((c) => [c.body.match(/\*\*(.+?)\*\*/)![1], c.line]),
-      [['Constat 0', 20], ['Constat 1', 30], ['Constat 2', 40], ['Constat 3', 50], ['Constat 4', 60], ['Hors diff', null]],
+      [['Finding 0', 20], ['Finding 1', 30], ['Finding 2', 40], ['Finding 3', 50], ['Finding 4', 60], ['Outside the diff', null]],
     )
     assert.equal(fake.state.reviews[0]!.state, 'COMMENTED')
     // A finding outside the diff links the line of the file at the reviewed commit.
@@ -485,7 +499,7 @@ describe('publishReview', () => {
         finding({ title: 'Loin', line: 40, start_line: 40, anchor: null, blocking: false, suggestion_range: null }),
         finding({ title: 'Proche', line: 9, start_line: 9, anchor: 4, blocking: true, suggestion_range: null }),
       ],
-      deeperReview: 'Le diff touche la sécurité.',
+      deeperReview: 'The diff touches security.',
       score: 2,
     })
     let answer = answerOf(review)
@@ -539,7 +553,7 @@ describe('publishUnchanged (REV-89)', () => {
   it('gives the head of the source review when its P1 to consider has a thread (REV-106)', async () => {
     let { fake, publish, republish } = setup()
     let unsure = finding({ confidence: 60, blocking: false })
-    let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté", line: 3, start_line: 3, anchor: 3, suggestion_range: null })
+    let considered = finding({ seen: true, blocking: false, title: 'STUDIO_HOST is not documented', line: 3, start_line: 3, anchor: 3, suggestion_range: null })
     await publish(payload({ score: 2, verdict: 'COMMENT', findings: [unsure] }))
     // HEAD2: the P1 at 60 is carried, so the P1 to consider is the only new one, and gets a thread.
     fake.state.pr.head = HEAD2
@@ -556,7 +570,7 @@ describe('publishUnchanged (REV-89)', () => {
 
   it('guard: a P1 to consider with a thread does not count when the source score is 4 (REV-106)', async () => {
     let { fake, publish, republish } = setup()
-    let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté" })
+    let considered = finding({ seen: true, blocking: false, title: 'STUDIO_HOST is not documented' })
     await publish(payload({ score: 3, verdict: 'COMMENT', findings: [considered] }))
     assert.equal(fake.botThreads().length, 1)
     fake.state.pr.head = HEAD2
@@ -580,11 +594,11 @@ describe('publishUnchanged (REV-89)', () => {
     assert.match(fake.state.pr.body, /No reviewed file changed since commit `111111111`/)
   })
 
-  it('posts its check on the head even when the job « Sakuga Review » of the Action already has one', async () => {
+  it('posts its check on the head even when the job "Sakuga Review" of the Action already has one', async () => {
     let { fake, publish, republish } = setup()
     await publish(payload())
     fake.state.pr.head = HEAD2
-    // The workflow of the Action names its job « Sakuga Review » too.
+    // The workflow of the Action names its job "Sakuga Review" too.
     fake.state.checkRuns.push({ name: CHECK_NAME, head_sha: HEAD2, conclusion: 'success', output: { title: '', summary: '' }, token: 'actions', app: 'github-actions' })
     await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
     let ours = fake.state.checkRuns.filter((c) => c.head_sha === HEAD2 && c.app === undefined)

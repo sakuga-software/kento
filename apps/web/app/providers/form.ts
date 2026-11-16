@@ -16,7 +16,7 @@ const KEY = /^[\x21-\x7e]{8,500}$/
 
 export type ProviderField = 'kind' | 'label' | 'baseUrl' | 'apiKey' | 'models'
 
-/** The form « Add a provider », as typed. The key is never sent back to the browser. */
+/** The form "Add a provider", as typed. The key is never sent back to the browser. */
 export interface ProviderFormValues {
   kind: ProviderKind
   label: string
@@ -59,7 +59,7 @@ function readModels(text: string): string[] | null {
   return models
 }
 
-/** Checks the form « Add a provider ». Returns the input, or a message per field. */
+/** Checks the form "Add a provider". Returns the input, or a message per field. */
 export function readProviderForm(form: FormData | undefined): {
   values: ProviderFormValues
   input: ProviderInput | null
@@ -110,7 +110,7 @@ export function readProviderForm(form: FormData | undefined): {
   }
 }
 
-/** The form « Replace the key ». */
+/** The form "Replace the key". */
 export function readKeyForm(form: FormData | undefined): { apiKey: string | null; error: string | null } {
   let apiKey = String(form?.get('apiKey') ?? '').trim()
   return KEY.test(apiKey) ? { apiKey, error: null } : { apiKey: null, error: 'The key: 8 to 500 characters, with no space.' }

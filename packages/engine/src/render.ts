@@ -98,8 +98,8 @@ function badges(finding: Finding, icons: Icons): string {
 }
 
 /**
- * REV-103. The mark of a P0 or P1 that has a thread but does not block: « to consider » for a
- * finding to consider (REV-100), « to check » below the blocking confidence.
+ * REV-103. The mark of a P0 or P1 that has a thread but does not block: "to consider" for a
+ * finding to consider (REV-100), "to check" below the blocking confidence.
  */
 function threadMark(finding: Finding, icons: Icons): string {
   if (!BLOCKING_SEVERITIES.has(finding.severity)) return '';
@@ -210,8 +210,8 @@ function deeperReviewNote(reason: string, poster?: Poster): string {
 }
 
 /**
- * REV-106. The P0 and P1 that have a thread and do not block: « to check » below the blocking
- * confidence or outside the diff, and « to consider » when `raised` (REV-103).
+ * REV-106. The P0 and P1 that have a thread and do not block: "to check" below the blocking
+ * confidence or outside the diff, and "to consider" when `raised` (REV-103).
  */
 export function toCheck(answer: Answer, lines: Anchors, raised: boolean): number {
   return answer.findings.filter((f) => BLOCKING_SEVERITIES.has(f.severity) && !isBlocking(f, lines) && (raised || !toConsider(f))).length;

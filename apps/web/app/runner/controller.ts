@@ -254,13 +254,13 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     let apiKey: string | null = null
     if (needsKey) {
       let reason: string | null = null
-      if (job.runnerOrgId !== null && job.runnerOrgId !== p.orgId) reason = `the provider « ${p.label} » is not of the org of the runner`
-      else if (!job.runnerTrusted || !secrets || !p.keyCiphertext) reason = `the provider « ${p.label} » needs a trusted runner`
+      if (job.runnerOrgId !== null && job.runnerOrgId !== p.orgId) reason = `the provider "${p.label}" is not of the org of the runner`
+      else if (!job.runnerTrusted || !secrets || !p.keyCiphertext) reason = `the provider "${p.label}" needs a trusted runner`
       else {
         try {
           apiKey = secrets.decrypt(p.keyCiphertext, providerAad(p))
         } catch (cause) {
-          reason = `the key of the provider « ${p.label} » cannot be decrypted: ${errorMessage(cause)}`
+          reason = `the key of the provider "${p.label}" cannot be decrypted: ${errorMessage(cause)}`
         }
       }
       if (reason) {

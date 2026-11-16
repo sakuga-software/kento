@@ -157,7 +157,7 @@ test.describe('the settings of the org', () => {
     let run = info.project.name === 'mobile' ? 100 : 0
     await signIn(page, 'alex')
     await reset(page)
-    await page.goto('/settings#defauts')
+    await page.goto('/settings#defaults')
     let defaults = page.getByRole('region', { name: 'Default values' })
     await defaults.getByRole('radio', { name: /balanced/ }).check()
     await defaults.getByRole('button', { name: 'Save the level' }).click()
@@ -183,9 +183,9 @@ test.describe('the settings of the org', () => {
     for (let [name, id] of [
       ['GitHub App', 'app'],
       ['Trusted bots', 'bots'],
-      ['Levels and models', 'defauts'],
+      ['Levels and models', 'defaults'],
       ['Providers and keys', 'providers'],
-      ['Costs and cap', 'plafond'],
+      ['Costs and cap', 'cap'],
     ] as const) {
       await nav.getByRole('link', { name }).click()
       await expect(page).toHaveURL(new RegExp(`/settings#${id}$`))
@@ -197,6 +197,13 @@ test.describe('the settings of the org', () => {
       expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
     }
     await expectNoAxeViolations(page)
+  })
+
+  test('an old anchor of the settings leads to its section under the new anchor', async ({ page }) => {
+    await signIn(page, 'alex')
+    await page.goto('/settings#plafond')
+    await expect(page).toHaveURL(/\/settings#cap$/)
+    await expect(page.locator('#cap')).toBeInViewport()
   })
 
   test('a member reads everything, and has no form', async ({ page }) => {

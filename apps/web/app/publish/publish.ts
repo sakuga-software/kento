@@ -1,7 +1,7 @@
 // The publication of a review on GitHub, as review/sakuga-review.ts posts it from the Action: the
 // review with its inline comments, the replies on the threads of a finding that is gone, the
 // dismissal of the previous REQUEST_CHANGES, the block of the description, the label `review: N/5`
-// and the check « Sakuga Review ». The format is the same, so that the scripts that read a review
+// and the check "Sakuga Review". The format is the same, so that the scripts that read a review
 // (score, level, badges P1/P2) read this one too.
 //
 // The web service has no checkout. The runner computed where each finding anchors; a call to the
@@ -609,7 +609,7 @@ export function sameScoreLine(reusedFrom: string): string {
 
 /**
  * REV-89. Whether the check of Kentō is already on the head: a second try posts no second one. Only
- * a check of this App counts: the job « Sakuga Review » of the Action has the same name.
+ * a check of this App counts: the job "Sakuga Review" of the Action has the same name.
  */
 async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
   let slug = botLogin.replace(/\[bot\]$/, '')
@@ -741,7 +741,7 @@ async function postHeadReview(
 }
 
 /**
- * REV-89. The check « Sakuga Review » of a reused head, when the head has none of Kentō yet: a second
+ * REV-89. The check "Sakuga Review" of a reused head, when the head has none of Kentō yet: a second
  * try posts no second one. `answer`: the findings that the block shows; all of them when not given.
  */
 export async function postReusedCheck(
@@ -990,17 +990,25 @@ async function botThreads(github: GitHub, target: PublishTarget): Promise<BotThr
   return threads
 }
 
-/** One label `review: N/5` on the pull request, created on the first use in a repository. */
+/** The description of the labels `review: N/5`. */
+export const LABEL_DESCRIPTION = `${BY} confidence score (5: ready to merge)`
+
+/**
+ * One label `review: N/5` on the pull request, created on the first use in a repository. A label with
+ * another description gets this one: an earlier release wrote it in French.
+ */
 async function setScoreLabel(github: GitHub, repo: string, pr: number, value: number) {
   let label = `${LABEL_PREFIX}${value}/5`
+  let path = `${repo}/labels/${encodeURIComponent(label)}`
+  let existing: { description?: string | null } | null = null
   try {
-    await github.rest('GET', `${repo}/labels/${encodeURIComponent(label)}`)
+    existing = await github.rest('GET', path)
   } catch (error) {
     if (!(error instanceof GitHubError && error.status === 404)) throw error
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: `${BY} confidence score (5: ready to merge)`,
+      description: LABEL_DESCRIPTION,
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []
@@ -1010,4 +1018,5 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     }
   }
   await github.rest('POST', `${repo}/issues/${pr}/labels`, { labels: [label] })
+  if (existing && existing.description !== LABEL_DESCRIPTION) await github.rest('PATCH', path, { description: LABEL_DESCRIPTION })
 }

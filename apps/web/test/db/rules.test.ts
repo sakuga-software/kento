@@ -76,7 +76,7 @@ describe('rules of a repository and of its org (REV-19)', () => {
     let active = values.active ?? true
     let [row] = await database.sql<{ id: string }[]>`
       insert into rules (org_id, repo_id, title, body, paths, severity_floor, active, disabled_at)
-      values (${values.orgId ?? orgId}, ${values.repoId === undefined ? repoId : values.repoId}, ${values.title}, ${`Texte de ${values.title}`},
+      values (${values.orgId ?? orgId}, ${values.repoId === undefined ? repoId : values.repoId}, ${values.title}, ${`Text of ${values.title}`},
         ${values.paths ?? []}, ${values.floor ?? null}, ${active}, ${active ? null : new Date().toISOString()})
       returning id`
     return row!.id
@@ -94,8 +94,8 @@ describe('rules of a repository and of its org (REV-19)', () => {
       costUsd: 0.01,
       promptTokens: 1,
       completionTokens: 1,
-      summary: 'Résumé',
-      risk: 'Faible',
+      summary: 'Summary',
+      risk: 'Low',
       diagram: null,
       deeperReview: null,
       findings,
@@ -136,7 +136,7 @@ describe('rules of a repository and of its org (REV-19)', () => {
     otherRepoId = other!.id
     let [otherOrg] = await database.sql<{ id: string }[]>`
       insert into orgs (github_installation_id, github_account_id, login) values (78, 2002, 'someone-else') returning id`
-    otherOrgRuleId = await addRule({ orgId: otherOrg!.id, repoId: null, title: "Règle d'une autre org" })
+    otherOrgRuleId = await addRule({ orgId: otherOrg!.id, repoId: null, title: 'Rule of another org' })
   })
 
   beforeEach(async () => {
@@ -150,22 +150,22 @@ describe('rules of a repository and of its org (REV-19)', () => {
   })
 
   it('sends the active rules of the repository, then those of the org, to a runner that reads them', async () => {
-    let orgRule = await addRule({ repoId: null, title: 'Pas de console.log' })
-    let repoRule = await addRule({ title: 'Index des FK', paths: ['**/migrations/**'], floor: 'major' })
-    await addRule({ title: 'Désactivée', active: false })
-    await addRule({ repoId: otherRepoId, title: "Règle d'un autre repo" })
+    let orgRule = await addRule({ repoId: null, title: 'No console.log' })
+    let repoRule = await addRule({ title: 'FK indexes', paths: ['**/migrations/**'], floor: 'major' })
+    await addRule({ title: 'Disabled', active: false })
+    await addRule({ repoId: otherRepoId, title: 'Rule of another repo' })
     let token = await register()
     await queueJob()
     let response = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
     let job = (await response.json()) as Job
     assert.deepEqual(job.rules, [
-      { id: repoRule, scope: 'repo', title: 'Index des FK', text: 'Texte de Index des FK', paths: ['**/migrations/**'], severityFloor: 'major' },
-      { id: orgRule, scope: 'org', title: 'Pas de console.log', text: 'Texte de Pas de console.log', paths: [], severityFloor: null },
+      { id: repoRule, scope: 'repo', title: 'FK indexes', text: 'Text of FK indexes', paths: ['**/migrations/**'], severityFloor: 'major' },
+      { id: orgRule, scope: 'org', title: 'No console.log', text: 'Text of No console.log', paths: [], severityFloor: null },
     ])
   })
 
   it('a runner already deployed gets a job with no key that it does not know, and its result without rule_id is stored', async () => {
-    await addRule({ title: 'Index des FK', paths: ['**/migrations/**'] })
+    await addRule({ title: 'FK indexes', paths: ['**/migrations/**'] })
     let token = await register()
     let jobId = await queueJob()
     let response = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: EARLIER_FEATURES, ownProvider: 'openrouter' })
@@ -174,25 +174,25 @@ describe('rules of a repository and of its org (REV-19)', () => {
     assert.deepEqual(Object.keys(job).filter((k) => !EARLIER_JOB_KEYS.includes(k)), [])
 
     // Its findings have no rule_id: the service takes them as before.
-    let result = await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: 1, review: review([finding('Sans règle')]) })
+    let result = await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: 1, review: review([finding('No rule')]) })
     assert.equal(result.status, 204)
     let [stored] = await database.sql<{ result: ReviewPayload }[]>`select result from reviews where job_id = ${jobId}`
     assert.ok(!('rule_id' in stored!.result.findings[0]!))
   })
 
   it('keeps a rule_id of a rule of the repository or of its org with its title, and drops any other', async () => {
-    let repoRule = await addRule({ title: 'Index des FK' })
-    let orgRule = await addRule({ repoId: null, title: 'Pas de console.log' })
-    let otherRepoRule = await addRule({ repoId: otherRepoId, title: "Règle d'un autre repo" })
+    let repoRule = await addRule({ title: 'FK indexes' })
+    let orgRule = await addRule({ repoId: null, title: 'No console.log' })
+    let otherRepoRule = await addRule({ repoId: otherRepoId, title: 'Rule of another repo' })
     let token = await register()
     let jobId = await queueJob()
     await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
     let findings = [
-      finding('Du repo', repoRule),
-      finding("De l'org", orgRule),
-      finding("D'un autre repo", otherRepoRule),
-      finding("D'une autre org", otherOrgRuleId),
-      finding('Inconnue', '7f2a8e3c-0d9b-4a4f-9e5d-3b4c5d6e7f80'),
+      finding('Of the repo', repoRule),
+      finding('Of the org', orgRule),
+      finding('Of another repo', otherRepoRule),
+      finding('Of another org', otherOrgRuleId),
+      finding('Unknown', '7f2a8e3c-0d9b-4a4f-9e5d-3b4c5d6e7f80'),
     ]
     let result = await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: 1, review: review(findings) })
     assert.equal(result.status, 204)
@@ -201,26 +201,26 @@ describe('rules of a repository and of its org (REV-19)', () => {
     assert.deepEqual(
       stored!.result.findings.map((f) => [f.title, f.rule_id ?? null, f.rule_title ?? null]),
       [
-        ['Du repo', repoRule, 'Index des FK'],
-        ["De l'org", orgRule, 'Pas de console.log'],
-        ["D'un autre repo", null, null],
-        ["D'une autre org", null, null],
-        ['Inconnue', null, null],
+        ['Of the repo', repoRule, 'FK indexes'],
+        ['Of the org', orgRule, 'No console.log'],
+        ['Of another repo', null, null],
+        ['Of another org', null, null],
+        ['Unknown', null, null],
       ],
     )
   })
 
   it('keeps the citation of a rule that the job carried, with its title then, even when the rule is renamed, disabled or removed since', async () => {
-    let renamed = await addRule({ title: 'Index des FK', floor: 'major' })
-    let removed = await addRule({ repoId: null, title: 'Pas de console.log' })
+    let renamed = await addRule({ title: 'FK indexes', floor: 'major' })
+    let removed = await addRule({ repoId: null, title: 'No console.log' })
     let token = await register()
     let jobId = await queueJob()
     await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
     // While the runner works: an admin renames and disables one rule, and removes the other.
-    await database.sql`update rules set title = 'Autre titre', active = false, disabled_at = now() where id = ${renamed}`
+    await database.sql`update rules set title = 'Other title', active = false, disabled_at = now() where id = ${renamed}`
     await database.sql`delete from rules where id = ${removed}`
     // A rule added after the claim was never sent: a finding cannot cite it.
-    let later = await addRule({ title: 'Ajoutée après' })
+    let later = await addRule({ title: 'Added later' })
     let result = await call(`/api/runner/jobs/${jobId}/result`, token, {
       outcome: 'done',
       attempt: 1,
@@ -232,15 +232,15 @@ describe('rules of a repository and of its org (REV-19)', () => {
     assert.deepEqual(
       stored!.result.findings.map((f) => [f.title, f.rule_id ?? null, f.rule_title ?? null]),
       [
-        ['A', renamed, 'Index des FK'],
-        ['B', removed, 'Pas de console.log'],
+        ['A', renamed, 'FK indexes'],
+        ['B', removed, 'No console.log'],
         ['C', null, null],
       ],
     )
   })
 
   it('forgets the rules of an attempt when an older runner claims the job again', async () => {
-    let rule = await addRule({ title: 'Index des FK' })
+    let rule = await addRule({ title: 'FK indexes' })
     let token = await register()
     let jobId = await queueJob()
     await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
@@ -255,7 +255,7 @@ describe('rules of a repository and of its org (REV-19)', () => {
   })
 
   it('cites no rule for a runner that was sent none', async () => {
-    let rule = await addRule({ title: 'Index des FK' })
+    let rule = await addRule({ title: 'FK indexes' })
     let token = await register()
     let jobId = await queueJob()
     await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: EARLIER_FEATURES, ownProvider: 'openrouter' })
@@ -269,7 +269,7 @@ describe('rules of a repository and of its org (REV-19)', () => {
   })
 
   it('gives the job back to the queue when its rules cannot be read', async () => {
-    await addRule({ title: 'Index des FK' })
+    await addRule({ title: 'FK indexes' })
     let token = await register()
     let jobId = await queueJob()
     let store = createRunnerStore(database.sql)
@@ -292,24 +292,24 @@ describe('rules of a repository and of its org (REV-19)', () => {
   })
 
   it('publishes a stored finding of a rule with the title of the rule', async () => {
-    let repoRule = await addRule({ title: 'Index des FK' })
+    let repoRule = await addRule({ title: 'FK indexes' })
     let token = await register()
     let jobId = await queueJob()
     await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
-    await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: 1, review: review([finding('FK sans index', repoRule)]) })
+    await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: 1, review: review([finding('FK with no index', repoRule)]) })
     // The publisher reads `reviews.result` as stored, with `rule_title`, and no check refuses the key.
     let [stored] = await database.sql<{ result: ReviewPayload }[]>`select result from reviews where job_id = ${jobId}`
     let fake = createFakeGitHub({ head: HEAD, commits: { [HEAD]: 'feat: orders' } })
     let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake', fetch: fake.fetch })
     await publishReview(github, { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }, stored!.result)
     let [comment] = fake.botThreads()
-    assert.match(comment!.body, /\*\*FK sans index\*\* `#[0-9a-f]{6}`\n\nRule: "Index des FK"/)
+    assert.match(comment!.body, /\*\*FK with no index\*\* `#[0-9a-f]{6}`\n\nRule: "FK indexes"/)
   })
 
   it('never sends a pattern out of the limits of the protocol, whatever the row holds', async () => {
     await database.sql`
       insert into rules (org_id, repo_id, title, body, paths)
-      values (${orgId}, ${repoId}, 'Motifs', 'Texte', ${['', 'x'.repeat(301), 'ok/**']})`
+      values (${orgId}, ${repoId}, 'Patterns', 'Text', ${['', 'x'.repeat(301), 'ok/**']})`
     let token = await register()
     await queueJob()
     let response = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })
@@ -322,8 +322,8 @@ describe('rules of a repository and of its org (REV-19)', () => {
     await addRule({ title: '🙂'.repeat(150) })
     await database.sql`
       insert into rules (org_id, repo_id, title, body, paths)
-      values (${orgId}, ${repoId}, 'Motifs trop longs', 'Texte', ${['x'.repeat(301)]})`
-    let kept = await addRule({ title: 'Valide', paths: ['src/**'] })
+      values (${orgId}, ${repoId}, 'Patterns too long', 'Text', ${['x'.repeat(301)]})`
+    let kept = await addRule({ title: 'Valid', paths: ['src/**'] })
     let token = await register()
     await queueJob()
     let response = await call('/api/runner/jobs/claim', token, { hasProviderKey: true, features: [...FEATURES], ownProvider: 'openrouter' })

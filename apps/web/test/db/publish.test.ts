@@ -37,8 +37,8 @@ function review(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
     costUsd: 0.0123,
     promptTokens: 1000,
     completionTokens: 200,
-    summary: 'La PR change sum.',
-    risk: 'Un calcul faux.',
+    summary: 'The PR changes sum.',
+    risk: 'A wrong result.',
     diagram: null,
     deeperReview: null,
     findings: [
@@ -49,9 +49,9 @@ function review(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
         severity: 'major',
         category: 'bug',
         confidence: 90,
-        title: 'La somme soustrait',
-        scenario: 'sum(1, 2) rend -1.',
-        fix: 'Remettre +.',
+        title: 'The sum subtracts',
+        scenario: 'sum(1, 2) returns -1.',
+        fix: 'Put the + back.',
         suggestion: '  return a + b;',
         anchor: 2,
         blocking: true,
@@ -306,7 +306,7 @@ describe('publication of a review', () => {
     await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD1}, 'main')`
     let first = await claimNext()
     assert.equal(first.kind === 'review' && first.reuse, null, 'no review yet')
-    let mul = { ...review().findings[0]!, path: 'src/mul.ts', title: 'Le produit divise', scenario: 'mul(1, 2) rend 0,5.' }
+    let mul = { ...review().findings[0]!, path: 'src/mul.ts', title: 'The product divides', scenario: 'mul(1, 2) returns 0.5.' }
     let done = { outcome: 'done', attempt: 1, review: review({ reuseKey: KEY, diffHash: '0123456789abcdef', findings: [...review().findings, mul] }) }
     assert.equal((await call(`/api/runner/jobs/${first.id}/result`, token, done)).status, 204)
     await publisher.stop()
@@ -317,7 +317,7 @@ describe('publication of a review', () => {
     assert.equal(threads.length, 2)
     let sumThread = threads.find((t) => t.path === 'src/sum.ts')!
     fake.state.resolved.add(sumThread.id)
-    await database.sql`update findings set status = 'dismissed', status_reason = 'voulu' where title = 'Le produit divise'`
+    await database.sql`update findings set status = 'dismissed', status_reason = 'intended' where title = 'The product divides'`
     fake.state.pr.head = HEAD2
     await database.sql`insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${HEAD2}, 'main')`
     publisher = newPublisher()
@@ -329,10 +329,10 @@ describe('publication of a review', () => {
 
     let body = fake.state.pr.body
     assert.match(body, /No reviewed file changed since commit `111111111`/)
-    assert.doesNotMatch(body, /Le produit divise/, 'a finding dismissed since is out of the block')
-    assert.match(body, /La somme soustrait/)
+    assert.doesNotMatch(body, /The product divides/, 'a finding dismissed since is out of the block')
+    assert.match(body, /The sum subtracts/)
     assert.doesNotMatch(body, new RegExp(`#discussion_r${sumThread.id}`), 'a resolved thread gives no link')
-    assert.match(body, /sum\(1, 2\) rend -1\./, 'without a thread, the block shows the scenario')
+    assert.match(body, /sum\(1, 2\) returns -1\./, 'without a thread, the block shows the scenario')
     assert.equal(fake.state.reviews.length, 2, 'one review on the new head, without comments')
     assert.equal(fake.state.reviews[1]!.comments, 0)
     assert.match(fake.state.reviews[1]!.body, /Confidence score: 2\/5/, 'the score of the block')
@@ -575,7 +575,7 @@ describe('publication of a review', () => {
     await publisher.stop()
 
     assert.equal(fake.state.reviews.length, 0)
-    assert.equal(fake.state.pr.body, 'Description de la PR.')
+    assert.equal(fake.state.pr.body, 'The description of the PR.')
     for (let row of await rows()) {
       assert.ok(row.publishedAt, 'a skipped review is not tried again')
       assert.equal(row.githubReviewId, null)

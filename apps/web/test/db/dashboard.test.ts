@@ -13,7 +13,7 @@ import { createTestDatabase } from './helpers.ts'
 const HEAD = 'a'.repeat(40)
 const NEWER = 'b'.repeat(40)
 
-// REV-14: what the dashboard reads for one org, and « Relancer », against a real Postgres.
+// REV-14: what the dashboard reads for one org, and "Run again", against a real Postgres.
 describe('the dashboard of an org', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
@@ -99,7 +99,7 @@ describe('the dashboard of an org', () => {
     await test.drop()
   })
 
-  it('reads the steps of « Mise en route » for the org only, until a review of the org is published (REV-26)', async () => {
+  it('reads the steps of "Getting started" for the org only, until a review of the org is published (REV-26)', async () => {
     let setup = async () => (await store.screen(org)).setup
     assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 0, pendingRegistrations: 0 })
 
@@ -151,7 +151,7 @@ describe('the dashboard of an org', () => {
     assert.deepEqual(screen.runners.map((r) => r.name), ['runners-host'])
   })
 
-  it('« Masquer » hides a failure from the banner and the list, and the week still counts it (REV-59)', async () => {
+  it('"Hide" hides a failure from the banner and the list, and the week still counts it (REV-59)', async () => {
     let older = await job({ state: 'failed', reason: 'older', pr: 20, createdAgo: '40 minutes', finishedAgo: '30 minutes' })
     let newer = await job({ state: 'failed', reason: 'newer', pr: 21, createdAgo: '20 minutes', finishedAgo: '10 minutes' })
     let done = await job({ pr: 22 })
@@ -178,7 +178,7 @@ describe('the dashboard of an org', () => {
     let [kept] = await database.sql<{ n: number }[]>`select count(*)::int as n from jobs where failure_dismissed_at is not null`
     assert.equal(kept!.n, 1)
 
-    // A failure that a close already hides can still be hidden: the notice « Échec masqué » is true.
+    // A failure that a close already hides can still be hidden: the notice "Failure hidden" is true.
     await database.sql`insert into pull_closures (repo_id, pr_number) values (${repo}, 20)`
     assert.equal(await store.dismissFailure(org, older, 'alex'), true)
     await database.sql`delete from pull_closures`
@@ -202,7 +202,7 @@ describe('the dashboard of an org', () => {
     await database.sql`delete from pull_closures`
   })
 
-  it('« Relancer » queues a review of the same head; the banner says it, then goes when its review is published', async () => {
+  it('"Run again" queues a review of the same head; the banner says it, then goes when its review is published', async () => {
     let failed = await job({ state: 'failed', reason: 'lease expired 3 times', attempts: 3, finishedAgo: '5 minutes', createdAgo: '30 minutes' })
     let outcome = await store.retry(org, failed, 'balanced', null)
     assert.equal(outcome.kind, 'queued')
@@ -235,7 +235,7 @@ describe('the dashboard of an org', () => {
     assert.equal((await store.screen(org)).banner, null)
   })
 
-  it('« Relancer » freezes the models of the config of the org and of the repository in its job (REV-47)', async () => {
+  it('"Run again" freezes the models of the config of the org and of the repository in its job (REV-47)', async () => {
     // The retry reads the two `jsonb` configs through drizzle: they must reach readOverrides as objects.
     let opus = { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null }
     let sonnet = { provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: null }
@@ -310,9 +310,9 @@ describe('the dashboard of an org', () => {
     assert.equal((await store.retry(org, failed, 'lite', HEAD)).kind, 'queued')
   })
 
-  // Constat P1 de la review balanced sur #65 : la jointure des jours avec les reviews publiées et
-  // les échecs, et le fuseau de la session. Plusieurs reviews et plusieurs échecs le même jour, sous
-  // une session à UTC+14.
+  // Finding P1 of the balanced review on #65: the join of the days with the published reviews and the
+  // failures, and the time zone of the session. Several reviews and several failures on one day, in a
+  // session at UTC+14.
   it('counts the week the same under a session that is not in UTC, with several reviews and failures a day', async () => {
     for (let pr of [30, 31, 32]) {
       let id = await job({ level: pr === 32 ? 'heavy' : 'lite', pr, createdAgo: '3 minutes', startedAgo: '3 minutes', finishedAgo: pr === 30 ? '2 minutes' : '1 minute' })
@@ -349,7 +349,7 @@ describe('the dashboard of an org', () => {
     await review(a, { publishedAgo: '9 minutes', createdAgo: '9 minutes' })
     let b = await job({ level: 'heavy', pr: 13, createdAgo: '10 minutes', startedAgo: '10 minutes', finishedAgo: '7 minutes' })
     await review(b, { publishedAgo: '7 minutes', createdAgo: '7 minutes' })
-    // Not published: not counted in the chart, but listed in « Dernières reviews ».
+    // Not published: not counted in the chart, but listed in "Latest reviews".
     let c = await job({ level: 'lite', pr: 14, createdAgo: '5 minutes', finishedAgo: '4 minutes', startedAgo: '5 minutes' })
     await review(c, { publishedAgo: null, createdAgo: '4 minutes' })
     // Eight days ago: out of the week.
@@ -379,7 +379,7 @@ describe('the dashboard of an org', () => {
 
   it('makes the cost of the day the sum of the costs of the day in the database, per provider', async () => {
     let [provider] = await database.sql<{ id: string }[]>`
-      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${org}, 'ollama', 'Ollama du bureau', true) returning id`
+      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${org}, 'ollama', 'Office Ollama', true) returning id`
     let a = await job({ createdAgo: '5 minutes' })
     await review(a, { cost: 0.25, createdAgo: '1 minute' })
     let b = await job({ pr: 13, createdAgo: '5 minutes', providerId: provider!.id })
@@ -408,7 +408,7 @@ describe('the dashboard of an org', () => {
       costs.dayByProvider.map((p) => [p.label, p.usd]),
       [
         [SERVICE_KEY_LABEL, 0.3125],
-        ['Ollama du bureau', 0.125],
+        ['Office Ollama', 0.125],
       ],
     )
   })
@@ -456,7 +456,7 @@ describe('the dashboard of an org', () => {
     assert.ok(stall!.lastRunnerSeenAt, 'the last call of a runner of the org')
   })
 
-  it('bounds the card « Runners » in SQL and counts all the runners in service of the org and of the service (REV-37)', async () => {
+  it('bounds the card "Runners" in SQL and counts all the runners in service of the org and of the service (REV-37)', async () => {
     let sql = database.sql
     try {
       await sql`

@@ -67,10 +67,10 @@ test.describe('the Repos screen', () => {
       await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
       await expectNoAxeViolations(page)
 
-      // REV-33: the confirmation opens in the row, at the keyboard; Escape and « Cancel » close it and
+      // REV-33: the confirmation opens in the row, at the keyboard; Escape and "Cancel" close it and
       // give the focus back to its trigger.
       let row = rowOf(page, 'orchard')
-      // REV-91: « Disable Kentō… » sits in the menu « … » of the row.
+      // REV-91: "Disable Kentō…" sits in the menu "…" of the row.
       await row.locator('.row-menu > summary').click()
       let trigger = row.locator('summary', { hasText: 'Disable' })
       let act = row.getByRole('button', { name: 'Disable orchard' })
@@ -96,7 +96,7 @@ test.describe('the Repos screen', () => {
       await page.keyboard.press('Enter')
       await row.getByRole('button', { name: 'Cancel' }).click()
       await expect(act).toBeHidden()
-      // REV-91: « Cancel » also closes the menu « … », and gives the focus back to it.
+      // REV-91: "Cancel" also closes the menu "…", and gives the focus back to it.
       await expect(row.locator('.row-menu')).not.toHaveAttribute('open', '')
       await expect(row.locator('.row-menu > summary')).toBeFocused()
       // The room under the table goes with the menu.
@@ -123,7 +123,7 @@ test.describe('the Repos screen', () => {
     })
   }
 
-  test('the counter: 20 published reviews offer « Remove review.yml »; a failed job brings it back to 0/20', async ({ page }) => {
+  test('the counter: 20 published reviews offer "Remove review.yml"; a failed job brings it back to 0/20', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let sql = database()
@@ -161,7 +161,7 @@ test.describe('the Repos screen', () => {
     }
   })
 
-  test('a repository name of 80 characters: the page does not scroll sideways, and « Disable » stays in view (REV-25)', async ({ page }) => {
+  test('a repository name of 80 characters: the page does not scroll sideways, and "Disable" stays in view (REV-25)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let sql = database()
@@ -189,7 +189,7 @@ test.describe('the Repos screen', () => {
       let layout = await page.evaluate(() => {
         let wrap = document.querySelector('.table-wrap')!
         let box = wrap.getBoundingClientRect()
-        // REV-91: a row shows « Enable » and the menu « … »; « Disable Kentō… » is in the menu.
+        // REV-91: a row shows "Enable" and the menu "…"; "Disable Kentō…" is in the menu.
         let actions = [...document.querySelectorAll('.row-action > .button, .row-action > .row-menu > summary')].map((button) => {
           let r = button.getBoundingClientRect()
           return r.left >= box.left - 0.5 && r.right <= Math.min(box.right, window.innerWidth) + 0.5
@@ -221,14 +221,14 @@ test.describe('the Repos screen', () => {
       await disable.scrollIntoViewIfNeeded()
       await expect(disable).toBeInViewport({ ratio: 1 })
       let right = await disable.evaluate((el) => el.getBoundingClientRect().right - window.innerWidth)
-      expect(right, `« Disable » at ${viewport} px`).toBeLessThanOrEqual(0)
+      expect(right, `"Disable" at ${viewport} px`).toBeLessThanOrEqual(0)
       // The open menu covers the row under it: closed again for axe.
       await row.locator('.row-menu > summary').click()
     }
     await expectNoAxeViolations(page)
   })
 
-  test('a click inside the inner confirmation does not close the menu, and « Cancel » gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
+  test('a click inside the inner confirmation does not close the menu, and "Cancel" gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
@@ -248,7 +248,7 @@ test.describe('the Repos screen', () => {
     await confirm.getByText('The published reviews and the counter stay').click()
     await expect(menu).toHaveAttribute('open', '')
     await expect(confirm).toHaveAttribute('open', '')
-    // « Cancel »: confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
+    // "Cancel": confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
     await confirm.getByRole('button', { name: 'Cancel' }).click()
     await expect(confirm).not.toHaveAttribute('open', '')
     await expect(menu).not.toHaveAttribute('open', '')
@@ -262,7 +262,7 @@ test.describe('the Repos screen', () => {
     await expect(row.locator('.row-action')).not.toHaveClass(/row-action-open/)
   })
 
-  test('a menu « … » closes on Escape and on a click outside, one open at a time; « Search » shows at the keyboard (REV-91)', async ({ page }) => {
+  test('a menu "…" closes on Escape and on a click outside, one open at a time; "Search" shows at the keyboard (REV-91)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let orchard = rowOf(page, 'orchard').locator('.row-menu')
@@ -295,7 +295,7 @@ test.describe('the Repos screen', () => {
     await expectNoAxeViolations(page)
   })
 
-  test('on a screen of 280 px, the menu « … » and its confirmation stay inside the screen (REV-91)', async ({ page }) => {
+  test('on a screen of 280 px, the menu "…" and its confirmation stay inside the screen (REV-91)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
@@ -352,7 +352,7 @@ test.describe('the Repos screen', () => {
       await expect(page).toHaveURL(/[?&]filter=enabled(&|$)/)
       await expect(rows).toHaveCount(1)
 
-      // Enabled from page 2 of a search in « Not enabled », a repository comes back to that page.
+      // Enabled from page 2 of a search in "Not enabled", a repository comes back to that page.
       await page.goto('/repos?filter=disabled&q=bulk')
       await page.getByRole('link', { name: 'Next' }).click()
       let url = page.url()
@@ -366,7 +366,7 @@ test.describe('the Repos screen', () => {
     }
   })
 
-  test('a member reads the list under « Read only », with no action', async ({ page }) => {
+  test('a member reads the list under "Read only", with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')
     await expect(page.getByText('Read only', { exact: true })).toBeVisible()
@@ -374,10 +374,10 @@ test.describe('the Repos screen', () => {
     await expect(page.getByRole('button', { name: /^Enable/ })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Disable' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Read GitHub again' })).toHaveCount(0)
-    // REV-91: a member keeps the menu « … » with the config and the findings; its cell has no label.
+    // REV-91: a member keeps the menu "…" with the config and the findings; its cell has no label.
     let row = rowOf(page, 'orchard')
     expect(await row.locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
-    // Under 760 px each other cell keeps its label, « Precision 30 d » included for a repo without Kentō.
+    // Under 760 px each other cell keeps its label, "Precision 30 d" included for a repo without Kentō.
     if (page.viewportSize()!.width <= 760) {
       let gh = rowOf(page, 'infra-repo')
       expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
@@ -395,7 +395,7 @@ test.describe('the Repos screen', () => {
 test.describe('the Repos screen without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('the menu « … » of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
+  test('the menu "…" of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
     // The list comes from GitHub: read once in a browser with JavaScript, which waits for it.
     let reader = await browser.newContext({ baseURL, javaScriptEnabled: true })
     let readerPage = await reader.newPage()

@@ -46,14 +46,14 @@ export function createUserControllers(kit: ScreenKit, deps: UsersDependencies | 
         let pulls = pullsOf(context.url.searchParams.get('prs'))
         let screen = deps ? await deps.store.screen(signed.orgId, context.params.login, pulls) : null
         if (!deps || !screen) return kit.errorPage(context, 404, 'page', undefined, EXIT)
-        let fait = context.url.searchParams.get('fait')
+        let done = context.url.searchParams.get('done')
         return context.render(
           <UserPage
             frame={kit.frame(context)}
             screen={screen}
             self={isSelf(signed.login, screen.user.login)}
             pulls={pulls}
-            notice={fait !== null && fait in USER_NOTICES ? (fait as UserNotice) : null}
+            notice={done !== null && done in USER_NOTICES ? (done as UserNotice) : null}
             now={new Date(now())}
           />,
         )
@@ -76,7 +76,7 @@ export function createUserControllers(kit: ScreenKit, deps: UsersDependencies | 
           outcome: change.outcome,
         })
         let notice: UserNotice = change.outcome === 'not_found' ? 'missing' : read.repoId === null ? 'saved' : 'added'
-        return kit.redirect(`${userHref(user.login)}?fait=${notice}`)
+        return kit.redirect(`${userHref(user.login)}?done=${notice}`)
       },
 
       async userPrefRemove(context) {
@@ -86,7 +86,7 @@ export function createUserControllers(kit: ScreenKit, deps: UsersDependencies | 
         if (!deps || !user || !UUID.test(context.params.repoId)) return kit.errorPage(context, 404, 'page', undefined, EXIT)
         await deps.store.removePref(user.id, context.params.repoId)
         log('info', 'user.prefs_removed', { login: signed.login, org: signed.orgLogin, repoId: context.params.repoId })
-        return kit.redirect(`${userHref(user.login)}?fait=removed`)
+        return kit.redirect(`${userHref(user.login)}?done=removed`)
       },
     },
   })

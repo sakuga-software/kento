@@ -71,7 +71,7 @@ test.describe('the Findings screen', () => {
       await expect(page.getByText('1 to 50 of 60 findings')).toBeVisible()
 
       // P0 only: one in three.
-      // REV-91: a filter applies on change, with no « Filter » button.
+      // REV-91: a filter applies on change, with no "Filter" button.
       await expect(page.getByRole('button', { name: 'Filter' })).toBeHidden()
       await page.getByLabel('Priority').selectOption({ label: 'P0 · critical' })
       await expect(page).toHaveURL(/priority=critical/)
@@ -92,7 +92,7 @@ test.describe('the Findings screen', () => {
       // REV-91: the precision has its own tab.
       await page.goto('/findings')
       await page.getByRole('navigation', { name: 'Views of the findings' }).getByRole('link', { name: 'Precision' }).click()
-      await expect(page).toHaveURL(/vue=precision/)
+      await expect(page).toHaveURL(/view=precision/)
       let precision = page.getByRole('region', { name: 'Precision · last 30 days' })
       await expect(precision.getByText('n = 3 of 10').first()).toBeVisible()
       await precision.getByRole('link', { name: 'Off topic' }).click()
@@ -117,7 +117,7 @@ test.describe('the Findings screen', () => {
     await expect(bar).toBeHidden()
   })
 
-  test('an admin dismisses two findings « Off topic »: both threads get the reply, and the reason counts two more', async ({ page }) => {
+  test('an admin dismisses two findings "Off topic": both threads get the reply, and the reason counts two more', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'alex')
     await seed()
@@ -126,10 +126,10 @@ test.describe('the Findings screen', () => {
     let before = (await replies()).length
 
     let reasons = page.getByRole('region', { name: 'Precision · last 30 days' })
-    await page.goto('/findings?vue=precision')
+    await page.goto('/findings?view=precision')
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('3')
     await page.goto('/findings')
-    // REV-91: the bar of the actions shows once a finding is checked, and « Deselect » empties it.
+    // REV-91: the bar of the actions shows once a finding is checked, and "Deselect" empties it.
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
     await expect(bar).toBeHidden()
     await page.getByRole('checkbox', { name: /Finding 01/ }).check()
@@ -148,7 +148,7 @@ test.describe('the Findings screen', () => {
     await expect(page.getByText('2 findings marked dismissed.')).toBeVisible()
     await expect(page.getByText('2 replies posted in the GitHub threads.')).toBeVisible()
     await expect(page.getByRole('link', { name: /open\s*58/ })).toBeVisible()
-    await page.goto('/findings?vue=precision')
+    await page.goto('/findings?view=precision')
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('5')
     let posted = (await replies()).slice(before)
     expect(posted.map((r) => r.commentId).sort()).toEqual([900001, 900002])

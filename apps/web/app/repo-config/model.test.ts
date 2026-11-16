@@ -46,13 +46,13 @@ describe('the config of a repository', () => {
     assert.equal(kentoDefaults().monthlyCapUsd, null)
   })
 
-  it('« Revenir à l’org » removes one key, and only that one', () => {
+  it('"Back to the org value" removes one key, and only that one', () => {
     let repo: ConfigOverrides = { models: { balanced: SONNET, heavy: SONNET }, trigger: 'command', monthlyCapUsd: null }
     let without = withoutField(repo, 'models.balanced')
     assert.deepEqual(without, { models: { heavy: SONNET }, trigger: 'command', monthlyCapUsd: null })
     assert.deepEqual(repo.models?.balanced, SONNET, 'the config it came from does not change')
     assert.deepEqual(withoutField(withoutField(without, 'models.heavy'), 'trigger'), { monthlyCapUsd: null })
-    // A limit set to « none » on the repository is a value: it hides the limit of the org.
+    // A limit set to "none" on the repository is a value: it hides the limit of the org.
     assert.equal(hasField({ monthlyCapUsd: null }, 'monthlyCapUsd'), true)
     assert.equal(resolveConfig({ monthlyCapUsd: 5 }, { monthlyCapUsd: null }).monthlyCapUsd.value, null)
   })
@@ -87,7 +87,7 @@ describe('the config of a repository', () => {
 })
 
 describe('the trigger', () => {
-  it('« push » takes every action, « ready » no later push, « command » nothing', () => {
+  it('"push" takes every action, "ready" no later push, "command" nothing', () => {
     for (let action of ['opened', 'synchronize', 'reopened', 'ready_for_review'] as const) assert.equal(triggerAllows('push', action), true)
     assert.equal(triggerAllows('ready', 'ready_for_review'), true)
     assert.equal(triggerAllows('ready', 'opened'), true)

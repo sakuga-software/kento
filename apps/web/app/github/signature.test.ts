@@ -11,7 +11,7 @@ describe('verifySignature', () => {
     assert.equal(verifySignature(secret, body, sign(secret, body)), true)
   })
 
-  // The example of the GitHub documentation: secret « It's a Secret to Everybody », body « Hello, World! ».
+  // The example of the GitHub documentation: secret "It's a Secret to Everybody", body "Hello, World!".
   it('matches the example of the GitHub documentation', () => {
     let header = 'sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17'
     assert.equal(verifySignature("It's a Secret to Everybody", new TextEncoder().encode('Hello, World!'), header), true)

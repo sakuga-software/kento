@@ -76,7 +76,7 @@ describe('the encryption of the keys', () => {
   })
 })
 
-describe('the form « Add a provider »', () => {
+describe('the form "Add a provider"', () => {
   function form(values: Record<string, string>) {
     let data = new FormData()
     for (let [key, value] of Object.entries(values)) data.set(key, value)
@@ -143,13 +143,13 @@ describe('the form « Add a provider »', () => {
     assert.ok(readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: KEY, models_lite: '--help' })).errors.models)
   })
 
-  it('reads the form « Replace the key »', () => {
+  it('reads the form "Replace the key"', () => {
     assert.equal(readKeyForm(form({ apiKey: ` ${KEY} ` })).apiKey, KEY)
     assert.ok(readKeyForm(form({ apiKey: '' })).error)
   })
 })
 
-describe('« Test » a provider', () => {
+describe('"Test" a provider', () => {
   function fetchAnswering(status: number, body = '{}') {
     let calls: { url: string; headers: Record<string, string>; redirect?: string }[] = []
     let fetch = (async (url: URL | string, init: RequestInit = {}) => {
@@ -235,7 +235,7 @@ describe('« Test » a provider', () => {
     assert.equal(result.outcome, 'refused', 'an endless body ends the probe')
   })
 
-  it('answers « ok » from the status alone, without reading the body of the answer', async () => {
+  it('answers "ok" from the status alone, without reading the body of the answer', async () => {
     // A body that gives one byte a second: reading 4 KB of it would take over an hour.
     let fetch = (async () =>
       new Response(new ReadableStream({ pull: (c) => new Promise<void>((r) => setTimeout(() => (c.enqueue(new Uint8Array(1)), r()), 1000)) }), { status: 200 })) as typeof globalThis.fetch

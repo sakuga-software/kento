@@ -32,7 +32,7 @@ async function startRunner(request: APIRequestContext, token: string) {
 async function createToken(page: Page, name: string, labels: string, keyMode: 'app' | 'runner') {
   await page.goto('/runners')
   await page.getByRole('link', { name: 'New runner' }).click()
-  let form = page.locator('#nouveau-runner')
+  let form = page.locator('#new-runner')
   await form.getByLabel('Name').fill(name)
   await form.getByLabel('Labels').fill(labels)
   await form.getByRole('radio', { name: keyMode === 'app' ? /Key of the service/ : /Key on the runner/ }).check()
@@ -93,7 +93,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
 
   await card.getByText('Revoke…').click()
   await expect(card.getByText('stops working at its next call')).toBeVisible()
-  // REV-33: Escape closes the confirmation and gives the focus back to « Revoke… ».
+  // REV-33: Escape closes the confirmation and gives the focus back to "Revoke…".
   await card.getByRole('button', { name: `Revoke ${name}` }).focus()
   await page.keyboard.press('Escape')
   await expect(card.getByText('stops working at its next call')).toBeHidden()
@@ -116,7 +116,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   expect(errors).toEqual([])
 })
 
-test('a token that expires without a runner shows the help and « New token »', async ({ page }, testInfo) => {
+test('a token that expires without a runner shows the help and "New token"', async ({ page }, testInfo) => {
   let name = `gpu-${testInfo.project.name}`
   await signIn(page, 'alex')
   await createToken(page, name, 'gpu', 'app')
@@ -136,7 +136,7 @@ test('a token that expires without a runner shows the help and « New token »',
   await expect(page.getByLabel('docker run command')).toHaveValue(/KENTO_RUNNER_LABELS=gpu/)
 })
 
-test('« Cancel the token » asks first: « Cancel » keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
+test('"Cancel the token" asks first: "Cancel" keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
   let name = `spare-${testInfo.project.name}`
   await signIn(page, 'alex')
   await createToken(page, name, 'spare', 'runner')
@@ -162,7 +162,7 @@ test('« Cancel the token » asks first: « Cancel » keeps the token, the confi
 test('the form says what is wrong, and makes no token', async ({ page }) => {
   await signIn(page, 'alex')
   await page.goto('/runners')
-  let form = page.locator('#nouveau-runner')
+  let form = page.locator('#new-runner')
   await form.getByLabel('Name').fill('mac mini')
   await form.getByRole('button', { name: 'Create the token' }).click()
   await expect(form.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
@@ -177,7 +177,7 @@ for (let theme of ['paper', 'sumi'] as const) {
     await signIn(page, 'alex')
     await page.goto('/runners')
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
-    // REV-30: the facts of the protocol are folded under « Technical details ».
+    // REV-30: the facts of the protocol are folded under "Technical details".
     await expect(page.getByRole('heading', { name: 'Protocol' })).toBeHidden()
     await page.getByText('Technical details').click()
     await expect(page.getByRole('heading', { name: 'Protocol' })).toBeVisible()
@@ -188,7 +188,7 @@ for (let theme of ['paper', 'sumi'] as const) {
   })
 }
 
-test('a runner offline for 2 h is « Offline », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
+test('a runner offline for 2 h is "Offline", in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
   let name = `hetzner-${testInfo.project.name}`
   let db = sql()
   try {
@@ -217,7 +217,7 @@ test('a runner offline for 2 h is « Offline », in red, at the top; a new token
   })
   expect(colours.state).toBe(colours.alert)
 
-  let form = page.locator('#nouveau-runner')
+  let form = page.locator('#new-runner')
   await expect(form.getByRole('radio', { name: /Key on the runner/ })).toBeChecked()
   await expect(form.getByRole('radio', { name: /Key of the service/ })).not.toBeChecked()
   await expectNoAxeViolations(page)

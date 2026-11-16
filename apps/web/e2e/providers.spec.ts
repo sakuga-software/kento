@@ -6,17 +6,17 @@ import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
-// and the screen shows « refused, 401 » with a banner; the admin replaces the key; a member reads
+// and the screen shows "refused, 401" with a banner; the admin replaces the key; a member reads
 // and changes nothing.
 
 function sql() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
 }
 
-/** A trusted runner of the org, registered with a token of the Runners screen (key mode « app »). */
+/** A trusted runner of the org, registered with a token of the Runners screen (key mode "app"). */
 async function trustedRunner(page: Page, request: APIRequestContext, name: string): Promise<string> {
   await page.goto('/runners')
-  let form = page.locator('#nouveau-runner')
+  let form = page.locator('#new-runner')
   await form.getByLabel('Name').fill(name)
   await form.getByRole('radio', { name: /Key of the service/ }).check()
   await form.getByRole('button', { name: 'Create the token' }).click()
@@ -47,7 +47,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expect(page.getByRole('heading', { name: 'Providers and keys' })).toBeVisible()
     await expectNoAxeViolations(page)
     // REV-29: the form is folded; the table of contents opens it.
-    let form = page.locator('#nouveau-provider')
+    let form = page.locator('#new-provider')
     await expect(form.getByLabel('Type')).toBeHidden()
     // REV-91: the button of the section opens it.
     await form.getByText('Add a provider', { exact: true }).click()
@@ -94,7 +94,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     })
     expect(result.status()).toBe(204)
     let [failed] = await db<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${job!.id}`
-    expect(failed!.failure_reason).toMatch(new RegExp(`^the provider « ${label} » refused its key \\(401\\)`))
+    expect(failed!.failure_reason).toMatch(new RegExp(`^the provider "${label}" refused its key \\(401\\)`))
 
     await page.goto('/settings')
     await expect(page.getByRole('alert')).toContainText(`The key of "${label}" is refused (401) since`)
@@ -128,22 +128,22 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 })
 
 // REV-28. A form sent back with its errors opens on its first field in error, in view, with the
-// focus: « Add a provider » is at the bottom of a long page.
+// focus: "Add a provider" is at the bottom of a long page.
 test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'alex')
   // A malformed hash stops nothing: settings.js still opens the form on a later change of the hash.
   await page.goto('/settings#%E0%A4%A')
-  // A link to #nouveau-provider in the page (the home screen has one) changes the hash: settings.js opens the form.
+  // A link to #new-provider in the page (the home screen has one) changes the hash: settings.js opens the form.
   await page.evaluate(() => {
-    location.hash = 'nouveau-provider'
+    location.hash = 'new-provider'
   })
-  await expect(page.locator('#nouveau-provider').getByLabel('Type')).toBeVisible()
+  await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
   expect(errors.filter((e) => /URI/i.test(e))).toEqual([])
 
   // A link to the anchor opens the folded form (the home screen has one).
-  await page.goto('/settings#nouveau-provider')
-  let form = page.locator('#nouveau-provider')
+  await page.goto('/settings#new-provider')
+  let form = page.locator('#new-provider')
   await form.getByLabel('Type').selectOption('openai_compatible')
   await form.getByLabel('Name').fill('vLLM')
   await form.getByLabel('Server URL').fill('http://llm.example.com/v1')
@@ -177,8 +177,8 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
     await db`delete from providers where org_id = ${org!.id}`
 
-    await page.goto('/settings#nouveau-provider')
-    let form = page.locator('#nouveau-provider')
+    await page.goto('/settings#new-provider')
+    let form = page.locator('#new-provider')
     await form.getByLabel('Type').selectOption('anthropic')
     await form.getByLabel('Name').fill(label)
     await form.getByLabel('Key', { exact: true }).fill(key)
@@ -186,7 +186,7 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
     await form.getByRole('button', { name: 'Add the provider' }).click()
 
     // Refused, with what Anthropic expects; nothing is kept, and the typed id stays to be corrected.
-    let refused = page.locator('#nouveau-provider')
+    let refused = page.locator('#new-provider')
     await expect(refused.getByText('heavy: "anthropic/claude-opus-5.5". Anthropic expects its own id')).toBeVisible()
     await expect(refused.getByLabel('heavy')).toHaveValue('anthropic/claude-opus-5.5')
     await expect(refused.getByLabel('heavy')).toHaveAttribute('aria-invalid', 'true')

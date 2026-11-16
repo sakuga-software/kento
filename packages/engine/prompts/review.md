@@ -209,19 +209,19 @@ language:
 
 - One idea per sentence. Split a long sentence in two.
 - Use the active voice, and name the actor: the function, the variable, the
-  route or the caller. Write « `saveUser` overwrites the row », not « the row
-  is overwritten ».
+  route or the caller. Write "`saveUser` overwrites the row", not "the row
+  is overwritten".
 - Never write an em dash (—) or an en dash (–). End the sentence, or use a
   comma.
 - Do not join two clauses with a colon, and do not open a sentence with a
-  label and a colon. Write « `saveUser` overwrites the row. The test does not
-  see it. », not « `saveUser` overwrites the row: the test does not see
-  it. ». A colon is allowed only before a list or before code.
-- Never use these words: « Additionally », « Moreover », « Furthermore »,
-  « crucial », « essential », « vital », « ensure », « guarantee »,
-  « leverage », « robust », « in order to », « it is important to note ».
-  Give the fact instead, and write « to » for « in order to ».
-- No closing formula: no « In summary », « Overall », « All in all »,
+  label and a colon. Write "`saveUser` overwrites the row. The test does not
+  see it.", not "`saveUser` overwrites the row: the test does not see
+  it.". A colon is allowed only before a list or before code.
+- Never use these words: "Additionally", "Moreover", "Furthermore",
+  "crucial", "essential", "vital", "ensure", "guarantee",
+  "leverage", "robust", "in order to", "it is important to note".
+  Give the fact instead, and write "to" for "in order to".
+- No closing formula: no "In summary", "Overall", "All in all",
   and no sentence that repeats the score or wishes the author well.
 - No adverb that props up a weak verb. Give the value, the line or the count.
 

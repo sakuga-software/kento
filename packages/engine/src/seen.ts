@@ -2,9 +2,9 @@
 //
 // A finding of a later review on code that did not change since the earlier review is a defect that
 // the earlier review saw and did not report: 74 of the 357 late findings of the analysis of
-// 2026-11-09, such as « STUDIO_HOST n'est ni dans .env.example ni documenté » at the second review of
+// 2026-11-09, such as "STUDIO_HOST is not in .env.example and has no documentation" at the second review of
 // dojo#91. Each one kept the pull request in CHANGES_REQUESTED for one more loop. Such a finding,
-// when it is not critical, now goes in a list « À considérer » and does not block (findings.ts).
+// when it is not critical, now goes in a list "To consider" and does not block (findings.ts).
 //
 // A line is new when the diff from the last reviewed commit to the head touches its zone: the lines
 // of the finding and SEEN_MARGIN lines around them. A file that the last reviewed commit did not

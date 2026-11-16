@@ -470,7 +470,7 @@ export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<Comma
 /**
  * Creates the review job of a push, and cancels the jobs of the earlier heads of the pull request.
  *
- * - A delivery that already created a job creates nothing: GitHub's « Redeliver ».
+ * - A delivery that already created a job creates nothing: GitHub's "Redeliver".
  * - A head that already had a review job gets no second one, unless that job was cancelled by a close
  *   or by the installation (`CANCEL_REASON`): a reopen on the same head is reviewed again. The
  *   delivery id is not covered by the signature, so a captured request can come back with a new one.
@@ -521,7 +521,7 @@ async function enqueueReview(
     }
   }
 
-  // REV-12. The trigger of the config: a push of a repository set to « Ready for review » or to
+  // REV-12. The trigger of the config: a push of a repository set to "Ready for review" or to
   // the commands only creates nothing. The older jobs of the pull request stay.
   let resolved = resolveConfig(readOverrides(org.config), readOverrides(repo.config), repo.defaultLevel)
   if (!triggerAllows(resolved.trigger.value, command.action)) {

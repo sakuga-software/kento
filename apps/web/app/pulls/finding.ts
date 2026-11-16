@@ -35,7 +35,7 @@ export interface FindingDetail {
   githubCommentId: number | null
   /**
    * The last review that found it, and what its result says of it. Null once that review is removed.
-   * `considered` (REV-102): that review lists it under « À considérer (code déjà relu) » (REV-100):
+   * `considered` (REV-102): that review lists it under "To consider (code already reviewed)" (REV-100):
    * new on code already read, not critical, continuing no earlier finding. It does not block.
    */
   review: {

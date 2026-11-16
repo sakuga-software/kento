@@ -44,11 +44,11 @@ export function rejectedSection(repo: string, head: string, rejected: readonly R
   for (const { r, changed } of ordered) {
     const ref = `R${held.length + 1}`;
     const since = changed === false ? 'No' : changed ? 'Yes' : 'Unknown';
-    const cause = r.reason ? `« ${oneLine(r.reason)} »` : '(none given)';
+    const cause = r.reason ? `"${oneLine(r.reason)}"` : '(none given)';
     const text =
       `### Rejected ${ref}\n\n` +
       `- Where: \`${oneLine(r.path, 1000)}:${r.line}\`\n` +
-      `- Finding: « ${oneLine(r.title, 300)} » (${r.category})\n` +
+      `- Finding: "${oneLine(r.title, 300)}" (${r.category})\n` +
       `- Set aside as: ${r.status}\n` +
       `- Cause written by the person: ${cause}\n` +
       `- The file changed since the rejection: ${since}.\n\n`;
@@ -71,8 +71,8 @@ export function rejectedSection(repo: string, head: string, rejected: readonly R
 /** The order of the severities: a higher rank is more severe. */
 const SEVERITY_RANK = { minor: 0, major: 1, critical: 2 } as const;
 
-/** Short words that say nothing of the defect, in French and in English. */
-const COMMON = new Set(['dans', 'avec', 'sans', 'pour', 'mais', 'plus', 'tout', 'sont', 'with', 'from', 'that', 'this', 'when', 'into', 'without']);
+/** Short words that say nothing of the defect. */
+const COMMON = new Set(['with', 'from', 'that', 'this', 'when', 'into', 'without']);
 
 /** The words of a title that name its subject: 4 letters or more, without accents and case. */
 export function wordsOf(title: string): Set<string> {
@@ -80,7 +80,7 @@ export function wordsOf(title: string): Set<string> {
   return new Set((flat.match(/[a-z0-9_]{4,}/g) ?? []).filter((w) => !COMMON.has(w)));
 }
 
-/** Two titles share a word of their subject: `Port accepté sans contrôle` and `Le port n'est pas validé`. */
+/** Two titles share a word of their subject: `Port accepted without a check` and `The port is not validated`. */
 function shareAWord(a: string, b: string): boolean {
   const words = wordsOf(b);
   return [...wordsOf(a)].some((w) => words.has(w));

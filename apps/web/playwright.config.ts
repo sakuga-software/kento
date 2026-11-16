@@ -13,7 +13,7 @@ import { E2E_WEBHOOK_SECRET } from './e2e/fake-github.ts'
 const port = Number(process.env.E2E_PORT ?? 3488)
 const githubPort = Number(process.env.E2E_GITHUB_PORT ?? 3499)
 const databaseUrl = process.env.E2E_DATABASE_URL
-if (!databaseUrl) throw new Error('E2E_DATABASE_URL is not set. See apps/web/README.md, « Develop ».')
+if (!databaseUrl) throw new Error('E2E_DATABASE_URL is not set. See apps/web/README.md, "Develop".')
 
 // A key of a fake App, made for this run only.
 const appKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()

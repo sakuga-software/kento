@@ -7,11 +7,11 @@ const SHA = 'a'.repeat(40)
 const row = (over: Partial<RejectedRow> = {}): RejectedRow => ({
   path: 'src/a.ts',
   line: 7,
-  title: 'Le port n’est pas validé',
+  title: 'The port is not validated',
   category: 'bug',
   severity: 'major',
   status: 'dismissed',
-  reason: 'validé par le schéma',
+  reason: 'validated by the schema',
   commit: SHA,
   ...over,
 })

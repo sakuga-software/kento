@@ -1,4 +1,4 @@
-// REV-17. « Relancer en <niveau> » against Postgres: a job of the last head, the cases that refuse it,
+// REV-17. "Run again at <level>" against Postgres: a job of the last head, the cases that refuse it,
 // and a newer push that cancels it.
 import postgres from 'postgres'
 import * as assert from 'remix/assert'

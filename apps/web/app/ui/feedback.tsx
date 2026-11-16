@@ -1,4 +1,4 @@
-// REV-107. « Feedback »: the answers about the reviews of Kentō in the org, the newest first. A
+// REV-107. "Feedback": the answers about the reviews of Kentō in the org, the newest first. A
 // command `feedback`, a comment that quotes the request for feedback, or a 👍 or 👎 on the request.
 import type { Handle } from 'remix/component'
 
@@ -29,10 +29,10 @@ export const KIND_LABELS: Record<FeedbackKind, string> = {
   agent: 'Agent',
 }
 
-/** The filters of the query: `repo`, `source`, `auteur`. A value that the screen does not know is dropped. */
+/** The filters of the query: `repo`, `source`, `author`. A value that the screen does not know is dropped. */
 export function readFeedbackQuery(params: URLSearchParams): FeedbackQuery {
   let source = params.get('source')
-  let kind = params.get('auteur')
+  let kind = params.get('author')
   return {
     repoId: params.get('repo') || null,
     source: (FEEDBACK_SOURCES as readonly string[]).includes(source ?? '') ? (source as FeedbackSource) : null,
@@ -44,7 +44,7 @@ export function feedbackHref(query: FeedbackQuery = {}): string {
   let params = new URLSearchParams()
   if (query.repoId) params.set('repo', query.repoId)
   if (query.source) params.set('source', query.source)
-  if (query.kind) params.set('auteur', query.kind)
+  if (query.kind) params.set('author', query.kind)
   let search = params.toString()
   return search ? `${feedbackRoutes.feedback.href()}?${search}` : feedbackRoutes.feedback.href()
 }
@@ -199,7 +199,7 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
           <label class="field-label" for="feedback-kind">
             Author
           </label>
-          <select class="input" id="feedback-kind" name="auteur">
+          <select class="input" id="feedback-kind" name="author">
             <option value="" selected={!query.kind}>
               People and agents
             </option>

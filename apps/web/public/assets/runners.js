@@ -1,4 +1,4 @@
-// The Runners screen: « Copy the command » copies the docker run of a new token. Without
+// The Runners screen: "Copy the command" copies the docker run of a new token. Without
 // JavaScript, the button stays hidden and the command is selectable in its field.
 // Its names stay in a block: the scripts of a page share one global scope.
 {

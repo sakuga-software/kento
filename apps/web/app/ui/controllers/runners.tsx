@@ -45,7 +45,7 @@ export function runnersActions(kit: UiKit) {
       })
     }),
 
-    // « New runner »: a registration token, shown on this response only. A reload posts the
+    // "New runner": a registration token, shown on this response only. A reload posts the
     // form again and makes another token; the first one then ends unused after its hour.
     runnerNew: createAction(pageRoutes.runnerNew, async (context) => {
       let found = admin(context)
@@ -135,7 +135,7 @@ export function runnersActions(kit: UiKit) {
       return redirect(`${pageRoutes.runners.href()}?notice=${revoked ? 'revoked' : 'missing'}`)
     }),
 
-    // REV-37. « Revoke these runners… » of the block of the silent runners: the ids that the screen
+    // REV-37. "Revoke these runners…" of the block of the silent runners: the ids that the screen
     // showed. The store keeps only those still silent. cop() and csrf() ran before.
     runnersRevokeSilent: createAction(pageRoutes.runnersRevokeSilent, async (context) => {
       let found = admin(context)

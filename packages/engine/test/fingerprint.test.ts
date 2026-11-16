@@ -4,7 +4,7 @@ import { codeAround, fingerprint, FINGERPRINT, normalizeTitle } from '../src/fin
 import { headFiles } from '../src/review.ts';
 
 const FILE = ['import x from "x";', '', 'export function sum(a, b) {', '  return a - b;', '}', ''];
-const finding = { path: 'src/sum.ts', line: 4, title: 'La somme soustrait' };
+const finding = { path: 'src/sum.ts', line: 4, title: 'The sum subtracts' };
 
 test('a finding whose lines move keeps its fingerprint (line 4 → 7)', () => {
   const moved = ['// one', '// two', '// three', ...FILE];
@@ -18,20 +18,20 @@ test('a change of the code around the line, of the path or of the title gives an
   const fixed = FILE.map((l) => l.replace('a - b', 'a + b'));
   assert.notEqual(fingerprint(finding, fixed), before);
   assert.notEqual(fingerprint({ ...finding, path: 'src/other.ts' }, FILE), before);
-  assert.notEqual(fingerprint({ ...finding, title: 'Un autre défaut' }, FILE), before);
+  assert.notEqual(fingerprint({ ...finding, title: 'Another defect' }, FILE), before);
 });
 
 test('the title counts without case, accents, punctuation or extra spaces', () => {
-  assert.equal(normalizeTitle('  Écrit  la SOMME, faux ! '), 'ecrit la somme faux');
-  assert.equal(fingerprint({ ...finding, title: 'la somme  soustrait.' }, FILE), fingerprint(finding, FILE));
+  assert.equal(normalizeTitle('  Naïve  SUM, wrong ! '), 'naive sum wrong');
+  assert.equal(fingerprint({ ...finding, title: 'the sum  subtracts.' }, FILE), fingerprint(finding, FILE));
   assert.equal(fingerprint({ ...finding, path: '/src/sum.ts' }, FILE), fingerprint(finding, FILE));
 });
 
 test('with a rule, the fingerprint reads the rule instead of the title', () => {
   const rule = '0b6f6c1e-3f0a-4a52-9a43-0d3c1f7a2b11';
   assert.equal(
-    fingerprint({ ...finding, rule_id: rule, title: 'Un titre' }, FILE),
-    fingerprint({ ...finding, rule_id: rule, title: 'Un autre titre' }, FILE),
+    fingerprint({ ...finding, rule_id: rule, title: 'A title' }, FILE),
+    fingerprint({ ...finding, rule_id: rule, title: 'Another title' }, FILE),
   );
   assert.notEqual(fingerprint({ ...finding, rule_id: rule }, FILE), fingerprint(finding, FILE));
 });

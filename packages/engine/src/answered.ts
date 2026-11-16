@@ -81,7 +81,7 @@ export function refutedThreadIds(answer: Answer, held: readonly AnsweredThread[]
  * A review in passes gives one verdict per pass. A finding goes away when one pass refutes its
  * thread, unless the pass that reported it upholds the thread: a pass with another focus answers
  * `upheld` by default, and it must not cancel the refutation (#145). In one pass, a verdict and a
- * finding have no pass, and the same rule reads « refuted and not upheld ».
+ * finding have no pass, and the same rule reads "refuted and not upheld".
  *
  * The model can omit `threads`, give null, or give entries of a wrong shape: the engine then reads
  * no verdict, and the findings stay.

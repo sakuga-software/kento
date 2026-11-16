@@ -41,7 +41,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
       number: options.pr ?? 28,
       state: 'open',
       head: options.head,
-      body: 'Description de la PR.',
+      body: 'The description of the PR.',
       labels: [] as string[],
       /** The repository of the head: another id for a fork, null for a deleted fork. */
       headRepoId: (options.repoId ?? 3001) as number | null,
@@ -409,7 +409,13 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     }
     if ((m = /^\/labels\/(.+)$/.exec(rest)) && method === 'GET') {
       let label = decodeURIComponent(m[1]!)
-      return state.repoLabels.has(label) ? json(200, { name: label }) : json(404, { message: 'Not Found' })
+      return state.repoLabels.has(label) ? json(200, { name: label, description: state.labelDescriptions.get(label) ?? '' }) : json(404, { message: 'Not Found' })
+    }
+    if ((m = /^\/labels\/(.+)$/.exec(rest)) && method === 'PATCH') {
+      let label = decodeURIComponent(m[1]!)
+      if (!state.repoLabels.has(label)) return json(404, { message: 'Not Found' })
+      if (body.description !== undefined) state.labelDescriptions.set(label, body.description)
+      return json(200, { name: label, description: state.labelDescriptions.get(label) ?? '' })
     }
     if (rest === '/labels' && method === 'POST') {
       state.repoLabels.add(body.name)

@@ -4,7 +4,7 @@ import postgres from 'postgres'
 import { FAKE_ORG } from './fake-github.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
-// REV-102. The findings that their last review lists under « To consider (code already reviewed) » (REV-100):
+// REV-102. The findings that their last review lists under "To consider (code already reviewed)" (REV-100):
 // the Findings screen tags them and filters them, and the detail of a finding says it. The second
 // review of dojo#91 (2026-11-09): a new P1 on the settings page that did not change, beside a P1
 // of the diff that blocks.
@@ -102,7 +102,7 @@ test('a member sees the findings to consider, filters them, and reads why one do
 
   // The filter applies on change (findings.js), and the URL keeps it.
   await page.getByLabel('Type').selectOption({ label: 'To consider (code already reviewed)' })
-  await expect(page).toHaveURL(/type=a-considerer/)
+  await expect(page).toHaveURL(/type=to-consider/)
   await expect(page.getByRole('rowheader')).toHaveCount(1)
   await expect(page.getByRole('rowheader').first()).toContainText(TITLE_CONSIDERED)
   await expect(page.getByRole('navigation', { name: 'Status of the findings' }).getByRole('link', { name: /open\s*1/ })).toBeVisible()
@@ -116,8 +116,8 @@ test('a member sees the findings to consider, filters them, and reads why one do
   await expect(page.getByRole('heading', { level: 1, name: TITLE_BLOCKING })).toBeVisible()
   await expect(page.getByText('To consider')).toHaveCount(0)
 
-  // « Clear the filters » gives every finding back.
-  await page.goto('/findings?type=a-considerer')
+  // "Clear the filters" gives every finding back.
+  await page.goto('/findings?type=to-consider')
   await page.getByRole('link', { name: 'Clear the filters' }).first().click()
   await expect(page.getByRole('rowheader')).toHaveCount(2)
   expect(errors).toEqual([])

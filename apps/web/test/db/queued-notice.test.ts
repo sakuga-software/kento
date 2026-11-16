@@ -167,7 +167,7 @@ describe('comment of a pull request whose job waits in the queue', () => {
     await Promise.all([one.publishPending(), publisher().publishPending()])
     await expectState(1, 'two publishers')
 
-    // A runner comes back and does not take it (« again », the cause changes): the same comment.
+    // A runner comes back and does not take it ("again", the cause changes): the same comment.
     await database.sql`update runners set last_seen_at = now()`
     await one.publishPending()
     await expectState(1, 'cause changed while waiting')

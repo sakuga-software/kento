@@ -35,7 +35,7 @@ test.describe('the frame of the screens', () => {
     await page.goto('/')
     let nav = page.getByRole('navigation', { name: 'Main navigation', exact: true })
     await expect(nav).toBeVisible()
-    // REV-91: under 760 px, « Menu » opens the list of the screens.
+    // REV-91: under 760 px, "Menu" opens the list of the screens.
     if (testInfo.project.name === 'mobile') await nav.getByRole('button', { name: 'Menu' }).click()
     await nav.getByRole('link', { name: 'Runners' }).click()
     await expect(page).toHaveURL(/\/runners$/)
@@ -62,7 +62,7 @@ test.describe('the frame of the screens', () => {
     await theme.getByText('Sumi', { exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(paper)
-    // No « Apply » button with JavaScript: the click was enough.
+    // No "Apply" button with JavaScript: the click was enough.
     await expect(theme.getByRole('button', { name: 'Apply' })).toBeHidden()
 
     await page.goto('/findings')
@@ -70,7 +70,7 @@ test.describe('the frame of the screens', () => {
     await expect(page.getByRole('group', { name: 'Theme' }).locator('visible=true').getByRole('radio', { name: 'Sumi' })).toBeChecked()
   })
 
-  test('« Device » follows the theme of the device', async ({ page }) => {
+  test('"Device" follows the theme of the device', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/')
     let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
@@ -82,7 +82,7 @@ test.describe('the frame of the screens', () => {
     expect(light).toBe('rgb(243, 242, 238)')
   })
 
-  test('the mobile frame folds the screens under « Menu », which Escape closes', async ({ page }, testInfo) => {
+  test('the mobile frame folds the screens under "Menu", which Escape closes', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'mobile only')
     await page.goto('/')
     let nav = page.getByRole('navigation', { name: 'Main navigation', exact: true })
@@ -151,7 +151,7 @@ test.describe('a page that does not exist', () => {
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('the theme form applies the choice with « Apply »', async ({ page }) => {
+  test('the theme form applies the choice with "Apply"', async ({ page }) => {
     await signIn(page, 'alex')
     await page.goto('/runners')
     let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')

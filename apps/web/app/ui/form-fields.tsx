@@ -44,7 +44,7 @@ export function describedBy(id: string, error: string | undefined, hint: boolean
 }
 
 /**
- * « Back to the org value » or « Back to the Kentō value »: a form of its own that removes the value of `field`,
+ * "Back to the org value" or "Back to the Kentō value": a form of its own that removes the value of `field`,
  * shown only for a value that the page sets.
  */
 export function ResetForm(handle: Handle<{ action: string; csrf: string | null; version: number; field: string; to: string; label: RemixNode }>) {
@@ -62,7 +62,7 @@ export function ResetForm(handle: Handle<{ action: string; csrf: string | null; 
 }
 
 /**
- * The line of the version of a versioned form: « config v7, changed by alex on 27 Oct at 18:02 ».
+ * The line of the version of a versioned form: "config v7, changed by alex on 27 Oct at 18:02".
  * `empty` is the line of version 0, before any change.
  */
 export function versionLine(

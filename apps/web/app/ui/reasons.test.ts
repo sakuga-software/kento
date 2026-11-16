@@ -10,13 +10,13 @@ import { appStatusReason, deliveryReason, jobReason, reasonSentence } from './re
 describe('the reason of a failed job (REV-44)', () => {
   it('says what happened and what to do, in plain words, for each reason that Kentō writes', () => {
     let cases: [string, RegExp, RegExp][] = [
-      ['the provider « Anthropic » refused its key (401): unauthorized', /^the provider "Anthropic" refused its key, code 401$/, /Replace its key in Settings/],
+      ['the provider "Anthropic" refused its key (401): unauthorized', /^the provider "Anthropic" refused its key, code 401$/, /Replace its key in Settings/],
       ['installation token: GitHub answered 404: Not Found', /gave no token for this repo/, /GitHub App is still installed/],
       ['review threads: POST /graphql answered 502: bad gateway', /threads of the pull request/, /Retry in a few minutes/],
       ['rules: connection reset', /rules of the repo/, /Retry/],
-      ['the provider « vLLM » needs a trusted runner', /only to a trusted runner/, /Runners screen/],
-      ['the provider « vLLM » is not of the org of the runner', /another organization/, /config of the repo/],
-      ['the key of the provider « vLLM » cannot be decrypted: bad tag', /master key of the service/, /KENTO_SECRETS_KEY/],
+      ['the provider "vLLM" needs a trusted runner', /only to a trusted runner/, /Runners screen/],
+      ['the provider "vLLM" is not of the org of the runner', /another organization/, /config of the repo/],
+      ['the key of the provider "vLLM" cannot be decrypted: bad tag', /master key of the service/, /KENTO_SECRETS_KEY/],
       ['no model key: set PROVIDER_API_KEY on the runner, or mark the runner as trusted', /no key for this provider/, /PROVIDER_API_KEY/],
       ['clone failed: git fetch failed (128): fatal: could not read', /could not clone the repo/, /GitHub App still has access/],
       ['the service refused the review: result: the service answered 400 bad finding', /refused the result of the runner/, /version that the Runners screen shows/],
@@ -38,9 +38,9 @@ describe('the reason of a failed job (REV-44)', () => {
       let reason = jobReason(raw, null)
       assert.match(reason.text, text, raw)
       assert.match(reason.action, action, raw)
-      assert.equal(reason.raw, raw, 'the text of the service stays under « Technical details »')
+      assert.equal(reason.raw, raw, 'the text of the service stays under "Technical details"')
       assert.notEqual(reason.text, raw)
-      assert.doesNotMatch(reason.text, /\b(?:answered|provider:)/, `no text of the service in « ${reason.text} »`)
+      assert.doesNotMatch(reason.text, /\b(?:answered|provider:)/, `no text of the service in "${reason.text}"`)
     }
   })
 
@@ -136,7 +136,7 @@ describe('the reason of a webhook delivery (REV-44)', () => {
     for (let raw of reasons) {
       let reason = deliveryReason(delivery(raw))
       assert.ok(reason, raw)
-      assert.equal(reason.raw, null, `« ${raw} » has a translation`)
+      assert.equal(reason.raw, null, `"${raw}" has a translation`)
       assert.ok(reason.text, raw)
     }
     assert.equal(deliveryReason(delivery('pushed by an untrusted bot'))!.action, 'Add it to the trusted bots so that it starts a review.')
@@ -205,6 +205,6 @@ describe('the answers of the webhook stay in English (REV-44)', () => {
       assert.deepEqual(await response.json(), { outcome: 'ignored', reason })
     }
     assert.deepEqual(records.map((r) => r.reason), sent.map(([, , reason]) => reason))
-    for (let record of records) assert.equal(deliveryReason(record)!.raw, null, `« ${record.reason} » has a translation`)
+    for (let record of records) assert.equal(deliveryReason(record)!.raw, null, `"${record.reason}" has a translation`)
   })
 })

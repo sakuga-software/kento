@@ -11,7 +11,7 @@ import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './h
 // it no longer goes. A rule of the org, written in the settings, goes with it.
 
 const ORCHARD = { id: 7001, full_name: 'sakuga-software/orchard', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
-const FK_RULE = 'Toute migration drizzle a un index pour chaque FK'
+const FK_RULE = 'Every drizzle migration has an index for each FK'
 
 function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
@@ -104,7 +104,7 @@ test.describe('the rules of a repository and of the org', () => {
 
     let form = page.locator('#repo-rule-new')
     await form.getByLabel('Title').fill(FK_RULE)
-    await form.getByLabel('What the rule asks for').fill('Chaque clé étrangère ajoutée par une migration a son index, dans la même migration.')
+    await form.getByLabel('What the rule asks for').fill('Each foreign key that a migration adds has its index, in the same migration.')
     await form.getByLabel('Paths').fill('**/migrations/**')
     await form.getByLabel('Lowest priority of a finding of this rule').selectOption('major')
     await form.getByRole('button', { name: 'Add the rule' }).click()
@@ -135,18 +135,18 @@ test.describe('the rules of a repository and of the org', () => {
 
     await page.goto('/settings')
     await page.getByRole('navigation', { name: 'Sections of the settings' }).getByRole('link', { name: 'Org rules' }).click()
-    let section = page.locator('#regles')
+    let section = page.locator('#org-rules')
     await expect(section.getByRole('heading', { name: /Org rules/ })).toBeVisible()
 
-    await section.getByLabel('Title').fill('Pas de console.log')
+    await section.getByLabel('Title').fill('No console.log')
     await section.getByLabel('Paths').fill('/src/**')
     await section.getByRole('button', { name: 'Add the rule' }).click()
     await expect(page.getByText(/"\/src\/\*\*": a path starts without "\/"/)).toBeVisible()
-    await expect(page.locator('#regles').getByLabel('Title')).toHaveValue('Pas de console.log')
+    await expect(page.locator('#org-rules').getByLabel('Title')).toHaveValue('No console.log')
     await expectNoAxeViolations(page)
 
-    section = page.locator('#regles')
-    await section.getByLabel('What the rule asks for').fill('Aucun console.log dans le code livré.')
+    section = page.locator('#org-rules')
+    await section.getByLabel('What the rule asks for').fill('No console.log in the shipped code.')
     await section.getByLabel('Paths').fill('')
     await section.getByRole('button', { name: 'Add the rule' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Rule added.' })).toBeVisible()
@@ -158,7 +158,7 @@ test.describe('the rules of a repository and of the org', () => {
     await expect(page.getByRole('link', { name: '1 active org rule' })).toBeVisible()
 
     let job = await claim(page, await push(page, 3))
-    expect(job.rules?.map((r) => [r.title, r.paths, r.scope])).toEqual([['Pas de console.log', [], 'org']])
+    expect(job.rules?.map((r) => [r.title, r.paths, r.scope])).toEqual([['No console.log', [], 'org']])
     // The wrong form answers 422 on purpose; nothing else may fail.
     expect(errors.filter((e) => !e.includes('status of 422'))).toEqual([])
   })
@@ -169,7 +169,7 @@ test.describe('the rules of a repository and of the org', () => {
     let sql = database()
     try {
       await sql`insert into rules (org_id, repo_id, title, body, paths)
-        select repos.org_id, repos.id, ${FK_RULE}, 'Chaque FK a son index.', ${['**/migrations/**']} from repos where full_name = ${ORCHARD.full_name}`
+        select repos.org_id, repos.id, ${FK_RULE}, 'Each FK has its index.', ${['**/migrations/**']} from repos where full_name = ${ORCHARD.full_name}`
     } finally {
       await sql.end()
     }
@@ -179,7 +179,7 @@ test.describe('the rules of a repository and of the org', () => {
     await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Rules', exact: true }).click()
     await page.getByText(FK_RULE).click()
-    await expect(page.getByText('Chaque FK a son index.')).toBeVisible()
+    await expect(page.getByText('Each FK has its index.')).toBeVisible()
     await expect(page.getByRole('button', { name: /Add the rule|Disable|Save/ })).toHaveCount(0)
     await expectNoAxeViolations(page)
   })

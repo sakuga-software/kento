@@ -185,7 +185,7 @@ export async function listFindingEvents(
   return page(rows, limit)
 }
 
-/** The statuses that a person sets. `open` is « Reopen ». */
+/** The statuses that a person sets. `open` is "Reopen". */
 export const PERSON_STATUSES = ['dismissed', 'wontfix', 'open'] as const
 export type PersonStatus = (typeof PERSON_STATUSES)[number]
 
@@ -202,7 +202,7 @@ export type StatusChange =
 
 /**
  * A person sets the status of a finding of their org: `dismissed` with a reason, `wontfix` with an
- * optional reason, or `open` again (« Reopen »). Each change writes one event with the person's
+ * optional reason, or `open` again ("Reopen"). Each change writes one event with the person's
  * GitHub login. A dismissed finding never gets a comment again, even when a review finds it again.
  */
 export async function setFindingStatus(
@@ -218,7 +218,7 @@ export async function setFindingStatus(
     /**
      * REV-94. A finding already dismissed stays as it is, with its first reason, and a finding that a
      * push fixed or a close made stale stays too: `unchanged`. A `wontfix` finding does become
-     * `dismissed`: `reject` says that it is a false positive, which is more than « accepted as is »,
+     * `dismissed`: `reject` says that it is a false positive, which is more than "accepted as is",
      * and its events keep both decisions. The status is read under the lock of
      * the row, so a push that fixed the finding after the caller read it is not undone.
      */

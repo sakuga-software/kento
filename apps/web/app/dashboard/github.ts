@@ -9,7 +9,7 @@ export interface PullRequestNow {
   headSha: string
 }
 
-/** Reads the state and the head of a pull request on GitHub, for « Run again ». */
+/** Reads the state and the head of a pull request on GitHub, for "Run again". */
 export type ReadPullRequest = (target: {
   installationId: number
   githubRepoId: number

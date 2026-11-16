@@ -43,7 +43,7 @@ export function createConfigProviders(store: ProvidersStore, options: { serviceK
   }
 }
 
-/** « key on the runner », « server of the runner » or « key encrypted by the service ». */
+/** "key on the runner", "server of the runner" or "key encrypted by the service". */
 export function keyFrom(provider: Pick<ProviderView, 'runnerHeld' | 'kind'>): string {
   if (provider.kind === 'ollama') return 'server of the runner'
   return provider.runnerHeld ? 'key on the runner' : 'key encrypted by the service'

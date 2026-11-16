@@ -3,7 +3,7 @@
 ## The keys of the model providers (REV-11)
 
 An org of Kentō can add its own providers of models (Anthropic, OpenRouter, a server with the API of
-OpenAI, Ollama) on the screen « Réglages · Providers et clés ». This section is the threat model of
+OpenAI, Ollama) on the screen "Settings · Providers and keys". This section is the threat model of
 their keys.
 
 ### What is protected
@@ -24,7 +24,7 @@ flowchart LR
   DB --> C["web: claim of a job"]
   C -- "decrypted, in the job, HTTPS" --> R["trusted runner of the org"]
   R -- "x-api-key / Bearer" --> P["provider API"]
-  W -- "« Tester »: GET models, HTTPS, public host only" --> P
+  W -- "Test button: GET models, HTTPS, public host only" --> P
 ```
 
 1. The admin types the key once, in a `password` field, over HTTPS. The form is protected by the
@@ -37,26 +37,26 @@ flowchart LR
    - in the job of a **claim**, to a runner that is **trusted** at the moment of the claim, of the
      **org of the provider** or of the service, which does not hold that kind of key itself; for that
      one job, over the existing HTTPS runner channel (`providers[].apiKey`);
-   - to the **provider itself**, when an admin presses « Tester » (`GET /v1/models`, `/models`,
+   - to the **provider itself**, when an admin presses "Test" (`GET /v1/models`, `/models`,
      `/key`), over HTTPS, to a public address only, without following a redirect.
 
 ### Threats and what answers them
 
 | Threat | Answer | Where |
 | --- | --- | --- |
-| A copy of the database (backup, dump, SQL injection that reads) gives the keys | Only ciphertexts and the last 4 characters are stored; the master key is not in the database | `secrets.ts`, migration `0009_providers`, test « keeps no key in clear » |
-| A write to the database moves the ciphertext of org A to a provider of org B, so that B's runners receive A's key | The additional data binds a ciphertext to its row and its org: the copy does not decrypt, and the claim gives the job back with « cannot be decrypted » | `providerAad`, DB test « A ciphertext copied to a row of another org does not decrypt there » |
+| A copy of the database (backup, dump, SQL injection that reads) gives the keys | Only ciphertexts and the last 4 characters are stored; the master key is not in the database | `secrets.ts`, migration `0009_providers`, test "keeps no key in clear" |
+| A write to the database moves the ciphertext of org A to a provider of org B, so that B's runners receive A's key | The additional data binds a ciphertext to its row and its org: the copy does not decrypt, and the claim gives the job back with "cannot be decrypted" | `providerAad`, DB test "A ciphertext copied to a row of another org does not decrypt there" |
 | A runner of another org, or an untrusted one, gets the key | The claim (one SQL statement) gives a job of a provider only to a runner of the same org or of the service, and the key only when the runner is trusted at that moment; the controller checks the trust again before it decrypts | `runner/store.ts` `claimJob`, `runner/controller.ts`, DB tests of the claim |
 | The key reaches the browser | The screen reads `ProviderView`, which has no key; a form with an error is rendered again without the key; no notice takes text from the URL | `ui/settings.tsx`, `settings.test.ts` |
 | The key reaches the logs | No log line carries a key (the logs name the provider id and kind); the runner redacts every key of a job from its lines; a refusal message from a provider is cut and any token of 16 characters or more is replaced by `…` | `controller.ts`, `apps/runner/src/log.ts`, `refusalMessage` |
-| An admin makes the service call its own network with the key (SSRF: the metadata server, the database) through the URL of a provider | « Tester » calls HTTPS only, refuses a host that resolves to a private, loopback, link-local, CGNAT or multicast address, and follows no redirect. A URL with credentials, a query or a fragment is refused by the form | `providers/probe.ts`, `providers/form.ts` |
+| An admin makes the service call its own network with the key (SSRF: the metadata server, the database) through the URL of a provider | "Test" calls HTTPS only, refuses a host that resolves to a private, loopback, link-local, CGNAT or multicast address, and follows no redirect. A URL with credentials, a query or a fragment is refused by the form | `providers/probe.ts`, `providers/form.ts` |
 | The provider echoes the key in its error, which ends on the screen | The message is cut to 300 characters and long tokens are replaced by `…` | `refusalMessage`, unit test |
 | A stolen master key | Rotate it (below); every key encrypted under the old one is encrypted again, then the old one leaves the environment | `app/providers/rotate-keys.ts` |
 | A runner of the org, trusted, is compromised | It receives the key of its org: trust a runner only on a machine you control. The admin can untrust or revoke it on the Runners screen, then replace the key | Runners screen (REV-10) |
 
 ### What is not covered
 
-- **DNS rebinding between the check and the call of « Tester »**: the service resolves the host,
+- **DNS rebinding between the check and the call of "Test"**: the service resolves the host,
   checks every address, then `fetch` resolves it again. A host whose answer changes in between could
   still reach a private address once, with the key of its own org. The key belongs to the admin who
   set the URL; the call reads the answer only to tell 200 from 401.

@@ -62,8 +62,8 @@ describe('sanitizeReason', () => {
   })
 
   it('says that the reason is unknown when there is none', () => {
-    assert.equal(sanitizeReason(null), 'raison inconnue')
-    assert.equal(sanitizeReason('  \n '), 'raison inconnue')
+    assert.equal(sanitizeReason(null), 'unknown reason')
+    assert.equal(sanitizeReason('  \n '), 'unknown reason')
   })
 })
 

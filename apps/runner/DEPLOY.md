@@ -17,7 +17,7 @@ columns `jobs.base_ref` and `jobs.runner_id`. Then, in Dokploy → `web` → **E
 
 ```sh
 KENTO_RUNNER_REGISTRATION_TOKEN=<openssl rand -hex 32>
-GITHUB_APP_ID=<App ID of « Sakuga Review »>
+GITHUB_APP_ID=<App ID of "Sakuga Review">
 GITHUB_APP_PRIVATE_KEY=<the PEM of the App, on one line with \n>
 KENTO_PROVIDER_API_KEY=<the OpenRouter key of the service>
 ```
@@ -47,7 +47,7 @@ runners run as `ghrunner`, and every CI job can call its rootless Docker. A job 
 `docker exec` into a Kentō runner, or mount its volume, and read its token. A trusted runner gets the
 key of the provider and an installation token with each job. So Kentō has its own user, `kento`,
 with its own rootless Docker and a home in mode 700 (REV-60). `ghrunner` has no sudo and gets
-« permission denied » on the socket of `kento`.
+"permission denied" on the socket of `kento`.
 
 Create the user once, as `ubuntu` (the same steps as `~/setup.sh` for `ghrunner`):
 
@@ -81,7 +81,7 @@ KENTO_REGISTRATION_TOKEN=<the value of KENTO_RUNNER_REGISTRATION_TOKEN of the we
 KENTO_RUNNER_NAME=runners-host
 KENTO_RUNNER_LABELS=linux,x64
 PROVIDER_KIND=openrouter
-# M2: the key stays on the service (key mode « app »). For a runner with its own key, set
+# M2: the key stays on the service (key mode "app"). For a runner with its own key, set
 # PROVIDER_API_KEY here instead, and the service never sends its key to this runner.
 ```
 
@@ -105,7 +105,7 @@ docker run -d --name kento-runner --restart unless-stopped \
   `startup.ready`. After that, remove `KENTO_REGISTRATION_TOKEN` from the env file and recreate the
   container: the runner no longer needs it.
 
-## 3. Trust the runner (key mode « app »)
+## 3. Trust the runner (key mode "app")
 
 A registration never makes a trusted runner. In M2, `runners-host` has no key of its own and uses
 the OpenRouter key of the service, so mark it trusted in the database of the web service. Until
@@ -144,18 +144,18 @@ update runners set trusted = true where id = '<id of runners-host>';
 ## Another runner: the Runners screen (REV-10)
 
 From REV-10 on, an admin of the org adds a runner from `https://review.sakuga.dev/runners`, with no
-change to the web service: « New runner » → a name, labels and the key mode → a registration
+change to the web service: "New runner" → a name, labels and the key mode → a registration
 token shown once, valid one hour and one use, and a `docker run` to copy. The runner gets the name,
 the labels and the trust of the token, and runs the jobs of that org only. The image of the command
 is `ghcr.io/sakuga-software/kento-runner:<version of the service>`: publish that tag (section 1).
 
 The runners registered with `KENTO_RUNNER_REGISTRATION_TOKEN`, like `runners-host`, stay
-runners of the service (« Runner of the service » on their card): they run the jobs of every org, the screen shows them, and only an operator
+runners of the service ("Runner of the service" on their card): they run the jobs of every org, the screen shows them, and only an operator
 trusts or revokes them, in the database, as below.
 
 ## 5. Revoke a runner
 
-A runner of the screen: « Revoke… » on its card. Its token stops at the next call, and its
+A runner of the screen: "Revoke…" on its card. Its token stops at the next call, and its
 running job goes back to the queue at once, without spending an attempt.
 
 A runner of the service:
@@ -184,7 +184,7 @@ needed.
 | `KENTO_RUNNER_LABELS` | no | | Comma-separated labels, kept in `runners.labels`. A token of the Runners screen sets them itself. A repository with a `default_runner_pool` gives its jobs only to a runner that has that label. |
 | `PROVIDER_KIND` | no | `openrouter` | The provider of the runner's own key or server: `openrouter`, `anthropic`, `openai_compatible` or `ollama`. The runner calls it for the jobs whose provider has this kind; for the others it needs the key of the job (a trusted runner). |
 | `PROVIDER_BASE_URL` | no | the URL of the kind | Another server with the same API. HTTPS only, except for `ollama` (HTTP allowed: a server on this machine or the private network; default `http://localhost:11434`). Required with `openai_compatible`. |
-| `PROVIDER_API_KEY` | no | | The key of the runner (key mode « runner »). With it, the service never sends its key for this kind. Ollama needs none. A secret. |
+| `PROVIDER_API_KEY` | no | | The key of the runner (key mode "runner"). With it, the service never sends its key for this kind. Ollama needs none. A secret. |
 
 The service must be deployed before a runner of this release: the runner sends `features` and
 `ownProvider` with each claim, and an earlier service refuses them (400).

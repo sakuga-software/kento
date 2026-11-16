@@ -118,7 +118,7 @@ describe('findings store', () => {
   it('REV-94: with keepDismissed, a finding fixed or stale, read under the lock, is not dismissed', async () => {
     for (let status of ['fixed', 'stale']) {
       let id = await insertFinding({ repoId, prNumber: 77, title: `race ${status}`, status })
-      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'faux positif', actor: 'alex', source: 'command', keepDismissed: true })
+      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'alex', source: 'command', keepDismissed: true })
       assert.equal(change.outcome, 'unchanged')
       assert.equal(change.outcome === 'unchanged' && change.finding.status, status)
       assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 0)

@@ -40,12 +40,12 @@ after(() => rmSync(repo, { recursive: true, force: true }));
 
 const answer = (): Answer => ({
   confidence_score: 5,
-  risk: 'Faible',
-  summary: 'Résumé',
+  risk: 'Low',
+  summary: 'Summary',
   diagram: 'flowchart LR\n  A --> B',
   findings: [
     { path: 'sum.ts', start_line: 2, line: 2, severity: 'major', category: 'bug', confidence: 90, title: 'Soustraction', scenario: 'sum(1, 2) donne -1.', fix: 'a + b', suggestion: '  return a + b;\n' },
-    { path: '', start_line: 1, line: 1, severity: 'minor', category: 'test', confidence: 10, title: 'Sans chemin', scenario: '', fix: '', suggestion: '' },
+    { path: '', start_line: 1, line: 1, severity: 'minor', category: 'test', confidence: 10, title: 'No path', scenario: '', fix: '', suggestion: '' },
   ],
   not_reviewed: [],
   deeper_review: { recommended: false, reason: '' },

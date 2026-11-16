@@ -18,7 +18,7 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 const NAME = /^[A-Za-z0-9._-]{1,100}$/
 const LABEL = /^[A-Za-z0-9._-]{1,64}$/
 
-/** The form « New runner », as typed, and what is wrong with it. */
+/** The form "New runner", as typed, and what is wrong with it. */
 export interface RegistrationForm {
   name: string
   labels: string
@@ -27,7 +27,7 @@ export interface RegistrationForm {
 
 export type RegistrationInput = { name: string; labels: string[]; trusted: boolean }
 
-/** Checks the form « New runner ». Returns the input, or a message per field. */
+/** Checks the form "New runner". Returns the input, or a message per field. */
 export function readRegistrationForm(form: FormData | undefined): {
   values: RegistrationForm
   input: RegistrationInput | null
@@ -87,7 +87,7 @@ const STATE_LABELS: Record<RunnerState, string> = {
   offline: 'Offline',
 }
 
-/** « Online », « Late signal », « Offline for 3 d »: the word of the state of a runner. */
+/** "Online", "Late signal", "Offline for 3 d": the word of the state of a runner. */
 export function runnerStateLabel(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>, now: Date): string {
   let state = runnerState(runner, now)
   if (state === 'offline' && runner.lastSeenAt) return `Offline for ${elapsed(runner.lastSeenAt, now)}`
@@ -115,7 +115,7 @@ export function isSilent(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt' | '
   return now.getTime() - last.getTime() >= SILENT_HOURS * 3_600_000
 }
 
-/** « 1 online · 1 late · 27 offline »: the runners in service by state, the empty states left out. */
+/** "1 online · 1 late · 27 offline": the runners in service by state, the empty states left out. */
 export function stateCounts(runners: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>[], now: Date): string {
   let counts = { online: 0, late: 0, offline: 0 }
   for (let runner of runners) {
@@ -125,7 +125,7 @@ export function stateCounts(runners: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'
   return countsText(counts)
 }
 
-/** « 1 online · 27 offline », from counts by state. */
+/** "1 online · 27 offline", from counts by state. */
 export function countsText(counts: { online: number; late: number; offline: number }): string {
   let parts = [
     counts.online > 0 ? `${counts.online} online` : null,
@@ -202,7 +202,7 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         title="Runners"
         lead="The machines that do the reviews."
         actions={
-          <a class="button button-primary" href="#nouveau-runner">
+          <a class="button button-primary" href="#new-runner">
             New runner
           </a>
         }
@@ -617,7 +617,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
     let values = form?.values ?? { name: '', labels: '', keyMode: 'runner' as const }
     let errors = form?.errors ?? {}
     return (
-      <section class="card new-runner" id="nouveau-runner" aria-labelledby="new-runner-title" tabIndex={-1}>
+      <section class="card new-runner" id="new-runner" aria-labelledby="new-runner-title" tabIndex={-1}>
         <h2 id="new-runner-title" class="section-title">
           New runner
         </h2>

@@ -32,7 +32,7 @@ export async function runnerToken(config: Pick<Config, 'stateDir' | 'kentoUrl' |
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`cannot read ${file}: ${errorMessage(error)}`);
   }
-  if (!config.registrationToken) throw new Error(`no runner token in ${file}, and KENTO_REGISTRATION_TOKEN is not set: set it to a token from the Runners screen (« Nouveau runner »)`);
+  if (!config.registrationToken) throw new Error(`no runner token in ${file}, and KENTO_REGISTRATION_TOKEN is not set: set it to a token from the Runners screen ("New runner")`);
   addSecret(config.registrationToken);
   const state = await register(config.kentoUrl, config.registrationToken, { name: config.name, labels: config.labels, version: VERSION }, doFetch);
   addSecret(state.token);

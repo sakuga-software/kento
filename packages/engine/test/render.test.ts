@@ -14,19 +14,19 @@ const finding: Finding = {
   severity: 'major',
   category: 'security',
   confidence: 90,
-  title: 'Le jeton expiré passe',
-  scenario: 'Un jeton expiré depuis une heure ouvre la session.',
-  fix: 'Comparer exp à Date.now().',
+  title: 'The expired token passes',
+  scenario: 'A token that expired one hour ago opens the session.',
+  fix: 'Compare exp with Date.now().',
   suggestion: '',
 };
 const answer = {
   confidence_score: 2,
-  summary: 'La PR change la vérification du jeton.',
-  risk: 'Un jeton expiré passe.',
+  summary: 'The PR changes the check of the token.',
+  risk: 'An expired token passes.',
   findings: [finding],
   not_reviewed: [],
   diagram: '',
-  deeper_review: { recommended: true, reason: 'le changement touche la vérification des jetons.' },
+  deeper_review: { recommended: true, reason: 'the change touches the check of the tokens.' },
 } as unknown as Answer;
 const anchors = () => 12;
 const usage: Usage = { model: 'anthropic/claude-haiku-5.5', cost: 0.0112, cost_source: 'table' };
@@ -41,9 +41,9 @@ test('the body of a review by Kentō names its command and the cost of each leve
     reviewBody(answer, anchors, 'lite', usage, kento),
     [
       '<!-- sakuga-review:summary -->',
-      `**Confidence score: 2/5** · ${picture('blocking', 'Blocking')} 1 blocking issue · Un jeton expiré passe.`,
+      `**Confidence score: 2/5** · ${picture('blocking', 'Blocking')} 1 blocking issue · An expired token passes.`,
       '',
-      `${picture('warning', 'To check')} **A deeper review is advised:** le changement touche la vérification des jetons.`,
+      `${picture('warning', 'To check')} **A deeper review is advised:** the change touches the check of the tokens.`,
       'Comment `@kento-review balanced` (10 to 20 cents) or `@kento-review heavy` (30 to 50 cents).',
       '',
       '<sub>Kentō · Level `lite` · `anthropic/claude-haiku-5.5` · $0.011 · The summary, the diagram and the list of findings are at the end of the PR description.</sub>',
@@ -78,9 +78,9 @@ test('the block of Kentō ends with one line that lists its commands and links t
   const first = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, anchors, context);
   assert.ok(first.endsWith(`${line}\n\n<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->`));
   // A later review writes its block in place of the earlier one: the line stays unique.
-  const body = withBlock(withBlock('Le texte de l\'auteur.', first), descriptionBlock(answer, [], [], 1, usage, anchors, { ...context, count: 2 }));
+  const body = withBlock(withBlock('The text of the author.', first), descriptionBlock(answer, [], [], 1, usage, anchors, { ...context, count: 2 }));
   assert.equal(body.split(line).length - 1, 1);
-  assert.ok(body.startsWith('Le texte de l\'auteur.\n\n<!-- sakuga-review:start -->'));
+  assert.ok(body.startsWith('The text of the author.\n\n<!-- sakuga-review:start -->'));
   // Without the page, or for the Action, the block lists no command.
   for (const other of [{ ...context, docsUrl: null }, { ...context, poster: undefined }]) {
     assert.doesNotMatch(descriptionBlock(answer, [], [], 0, usage, anchors, other), /Kentō commands/);
@@ -92,12 +92,12 @@ test('a finding shows its short id in its comment and in the list of the descrip
   assert.equal(shortId(finding), id);
   assert.match(id, /^#[0-9a-f]{6}$/);
   const body = inlineBody(finding, false);
-  assert.equal(body.split('\n')[0]!.endsWith(`**Le jeton expiré passe** \`${id}\``), true);
+  assert.equal(body.split('\n')[0]!.endsWith(`**The expired token passes** \`${id}\``), true);
   // The hidden key stays whole: the next review reads it back.
   assert.match(body, new RegExp(`<!-- sakuga-review:finding ${findingKey(finding)} -->`));
   const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
   const withThread = descriptionBlock(answer, [{ finding, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 0, usage, anchors, context);
-  assert.match(withThread, new RegExp(`^1\\. .*\\*\\*Le jeton expiré passe\\*\\* \`${id}\` \`src/auth\\.ts:12\``, 'm'));
+  assert.match(withThread, new RegExp(`^1\\. .*\\*\\*The expired token passes\\*\\* \`${id}\` \`src/auth\\.ts:12\``, 'm'));
   const withoutThread = descriptionBlock(answer, [{ finding, url: null }], [], 0, usage, () => null, context);
   assert.match(withoutThread, new RegExp(`^1\\. .*\`${id}\``, 'm'));
 });
@@ -135,7 +135,7 @@ const patch = '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -12 +12 @@\n-  return tr
 
 test('a thread shows the patch of a finding under its fix, and an applicable suggestion wins over it (REV-104)', () => {
   const withPatch = { ...finding, patch };
-  assert.match(inlineBody(withPatch, false), /\*\*Fix:\*\* Comparer exp à Date\.now\(\)\.\n\n```diff\n--- a\/src\/auth\.ts\n[\s\S]*\+  return exp > Date\.now\(\);\n```\n/);
+  assert.match(inlineBody(withPatch, false), /\*\*Fix:\*\* Compare exp with Date\.now\(\)\.\n\n```diff\n--- a\/src\/auth\.ts\n[\s\S]*\+  return exp > Date\.now\(\);\n```\n/);
   const both = inlineBody({ ...withPatch, suggestion: '  return exp > Date.now();' }, true);
   assert.match(both, /```suggestion\n  return exp > Date\.now\(\);\n```/);
   assert.doesNotMatch(both, /```diff/);
@@ -148,7 +148,7 @@ test('a finding without a thread shows its patch in the description, in a detail
   const block = descriptionBlock({ ...answer, findings: [withPatch] }, [{ finding: withPatch, url: null }], [], 0, usage, () => null, context);
   assert.match(
     block,
-    /Comparer exp à Date\.now\(\)\.\n\n {3}<details><summary>Fix<\/summary>\n\n {3}```diff\n {3}--- a\/src\/auth\.ts\n {3}\+\+\+ b\/src\/auth\.ts\n {3}@@ -12 \+12 @@\n {3}- {2}return true;\n {3}\+ {2}return exp > Date\.now\(\);\n {3}```\n {3}<\/details>\n/,
+    /Compare exp with Date\.now\(\)\.\n\n {3}<details><summary>Fix<\/summary>\n\n {3}```diff\n {3}--- a\/src\/auth\.ts\n {3}\+\+\+ b\/src\/auth\.ts\n {3}@@ -12 \+12 @@\n {3}- {2}return true;\n {3}\+ {2}return exp > Date\.now\(\);\n {3}```\n {3}<\/details>\n/,
   );
   const threaded = descriptionBlock({ ...answer, findings: [withPatch] }, [{ finding: withPatch, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 0, usage, anchors, context);
   assert.doesNotMatch(threaded, /```diff/);
@@ -163,7 +163,7 @@ function everyText(icons: Icons): string[] {
     { ...finding, seen: true },
     { ...finding, severity: 'minor', category: 'bug' as const },
   ];
-  const full = { ...answer, findings, not_reviewed: ['src/big.ts : plus de 400 lignes modifiées'] } as Answer;
+  const full = { ...answer, findings, not_reviewed: ['src/big.ts: more than 400 changed lines'] } as Answer;
   const poster = icons === 'emoji' ? undefined : { ...kento, icons };
   const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const, poster };
   const links = findings.map((f, i) => ({ finding: f, url: i % 2 ? null : `https://github.com/o/n/pull/1#discussion_r${i}` }));
@@ -233,5 +233,5 @@ test('the head of a review: blocking, else points to check, else nothing blocks 
   // The warning is for a point to check: a review with P2 findings only, and no advice, has none.
   const quiet = reviewBody({ ...answer, findings: [p2], deeper_review: { recommended: false, reason: '' } } as Answer, anchors, 'lite', usage, kento);
   assert.doesNotMatch(quiet, /avertissement/);
-  assert.equal(head([], false), `**Confidence score: 2/5** · ${picture('ok', 'Nothing blocking')} Nothing blocking · Un jeton expiré passe.`);
+  assert.equal(head([], false), `**Confidence score: 2/5** · ${picture('ok', 'Nothing blocking')} Nothing blocking · An expired token passes.`);
 });

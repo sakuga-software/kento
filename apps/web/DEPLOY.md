@@ -14,7 +14,7 @@ named `Kentō`. The runners are a separate service: [apps/runner/DEPLOY.md](../r
 ## 1. Prerequisites
 
 - Access to Dokploy on `prod-host`, and to the zone `sakuga.dev` at Gandi.
-- An owner of the GitHub organization `sakuga-software`: the GitHub App « Sakuga Review » (client id
+- An owner of the GitHub organization `sakuga-software`: the GitHub App "Sakuga Review" (client id
   `Iv23liesB1xzywavcnv2`, bot `kento-review[bot]`) belongs to it, and its owners accept each change of
   its permissions.
 - `openssl` on your machine, to make the secrets.
@@ -35,7 +35,7 @@ named `Kentō`. The runners are a separate service: [apps/runner/DEPLOY.md](../r
 
 ## 3. The GitHub App
 
-Kentō uses the existing App « Sakuga Review ». Its settings are under GitHub > organization
+Kentō uses the existing App "Sakuga Review". Its settings are under GitHub > organization
 `sakuga-software` > **Settings > Developer settings > GitHub Apps > Sakuga Review**.
 
 ### Permissions
@@ -47,7 +47,7 @@ Kentō uses the existing App « Sakuga Review ». Its settings are under GitHub 
 | Repository: Contents | Read and write | Read: the clone of a job, the files of `.github/workflows` on the Repos screen. Write: a resolve job resolves the threads that the code settled. With Read only, it answers in each thread and resolves none. |
 | Repository: Pull requests | Read and write | The review, its inline comments and threads, the block of the description, the files of a pull request for the paths of a config. |
 | Repository: Issues | Read and write | The label `review: N/5`, the reactions and the replies to a command, the comment of a failed job. |
-| Repository: Checks | Read and write | The check « Sakuga Review », and « Kentō · cap » at the cost limit. Without it, the review is published without its check (`review.check_token_refused`). |
+| Repository: Checks | Read and write | The check "Sakuga Review", and "Kentō · cap" at the cost limit. Without it, the review is published without its check (`review.check_token_refused`). |
 | Organization: Members | Read-only | The role of a person who signs in (`admin` or `member`). Without it, nobody but the owner of a personal account can sign in (`auth.sign_in_refused`). |
 
 Save. GitHub then asks the owners of the organization to accept the change: accept it
@@ -110,7 +110,7 @@ secrets, `openssl rand -base64 32` for `KENTO_SECRETS_KEY`.
 | `KENTO_PROVIDER_API_KEY` | no | an OpenRouter key | The key of the service, for the jobs of an org that has no provider. Sent with a job only to a trusted runner with no key of its own. A secret. |
 
 The sign-in needs its four variables together, plus `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`.
-Without them, every screen says « Sign-in unavailable. » and nobody gets in.
+Without them, every screen says "Sign-in unavailable." and nobody gets in.
 
 ### Optional
 
@@ -126,7 +126,7 @@ Without them, every screen says « Sign-in unavailable. » and nobody gets in.
 | `GITHUB_API_URL` | `https://api.github.com` | The GitHub API, for GitHub Enterprise Server (`https://<host>/api/v3`) or a local test. |
 | `GITHUB_URL` | the server of `GITHUB_API_URL` | The server where the runners clone, HTTPS only, on the server of `GITHUB_API_URL`. |
 | `KENTO_BOT_LOGIN` | `kento-review[bot]` | The login of the App: the publisher finds its threads and reviews with it. |
-| `KENTO_APP_SLUG` | `KENTO_BOT_LOGIN` without `[bot]` | The slug of the App, for the install link of the page « Access refused. ». |
+| `KENTO_APP_SLUG` | `KENTO_BOT_LOGIN` without `[bot]` | The slug of the App, for the install link of the page "Access refused.". |
 
 `KENTO_REPOS` and `KENTO_TRUSTED_BOTS` are not read any more: the Repos screen and the settings of
 the org replaced them. When one is still set, the log at startup says `startup.kento_repos_ignored`
@@ -195,27 +195,27 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
    ```
 
 4. **Sign-in**, in a private window:
-   - `https://review.sakuga.dev/` goes to « Sign in to Kentō ».
-   - « Continue with GitHub » opens GitHub, which asks once to authorize « Sakuga Review ». It then
-     comes back to the dashboard, with your login and « Admin » at the bottom of the sidebar. The log
+   - `https://review.sakuga.dev/` goes to "Sign in to Kentō".
+   - "Continue with GitHub" opens GitHub, which asks once to authorize "Sakuga Review". It then
+     comes back to the dashboard, with your login and "Admin" at the bottom of the sidebar. The log
      has `auth.signed_in`.
-   - A member of the org who is not an owner sees « Read only » on every screen. An account
-     outside the org gets « Access refused. », and `users` has no row for it.
-5. **State of the App**: `/settings` > « GitHub App » says « Everything is in place ». Otherwise it names
+   - A member of the org who is not an owner sees "Read only" on every screen. An account
+     outside the org gets "Access refused.", and `users` has no row for it.
+5. **State of the App**: `/settings` > "GitHub App" says "Everything is in place". Otherwise it names
    what is missing: a permission or an event (section 3, then accept it in the org), or another
    webhook URL.
-6. **A provider** (once): `/settings` > « Add a provider », its key, then « Test »: « The
-   provider accepted the key. » An org with no provider runs on `KENTO_PROVIDER_API_KEY`.
+6. **A provider** (once): `/settings` > "Add a provider", its key, then "Test": "The
+   provider accepted the key." An org with no provider runs on `KENTO_PROVIDER_API_KEY`.
 7. **A runner**: start one as [apps/runner/DEPLOY.md](../runner/DEPLOY.md) says. The Runners screen
-   shows it « Online » within 30 s.
-8. **A repository**: `/repos` lists the repositories of the installation. « Enable » on one of them.
+   shows it "Online" within 30 s.
+8. **A repository**: `/repos` lists the repositories of the installation. "Enable" on one of them.
 9. **A review, end to end**: push a commit on an open pull request of that repository. The logs show
    `job.claimed`, `job.result`, then `review.published` with `"check":true`. On the pull request: a
    review of `kento-review[bot]` whose footer starts with `Kentō · Level`, its inline comments, the
-   block of the description, the label `review: N/5` and the check « Sakuga Review ».
+   block of the description, the label `review: N/5` and the check "Sakuga Review".
 10. **A command**: `@kento-review heavy` in a comment of the pull request gets 👀, then a review
-    « Level `heavy` », then 🚀. `@kento-review resolve` answers in the open threads and posts
-    « Kentō · thread resolution ».
+    "Level `heavy`", then 🚀. `@kento-review resolve` answers in the open threads and posts
+    "Kentō · thread resolution".
 
 The state of the queue, from the database:
 
@@ -256,25 +256,25 @@ migration, and the previous release runs on the newer schema. Read the entry of 
 - **Private key of the App**: generate a new key in the App settings, put it in Dokploy, deploy, then
   delete the old key in the App settings.
 - **OpenRouter key of the service**: replace `KENTO_PROVIDER_API_KEY` and deploy. The key of a
-  provider of an org is replaced on the Settings screen (« Replace the key »).
+  provider of an org is replaced on the Settings screen ("Replace the key").
 
 ### Cost limit
 
-The limits of an org are on `/settings` > « Cost cap », for an admin: per UTC day, per UTC
+The limits of an org are on `/settings` > "Cost cap", for an admin: per UTC day, per UTC
 month, and an alert threshold. At a limit, a push queues nothing (202 `capped`) and its head gets the
-neutral check « Kentō · cap »; a command gets 😕 and a reply. A job already queued or running
+neutral check "Kentō · cap"; a command gets 😕 and a reply. A job already queued or running
 finishes. A repository can also have a monthly limit of its automatic reviews on its Config screen.
 The daily limit of the OpenRouter key stays a second guard.
 
 ### Repositories, runners and people
 
-- **Enable or disable a repository**: `/repos`, « Enable » or « Disable Kentō… ». A disabled repository
+- **Enable or disable a repository**: `/repos`, "Enable" or "Disable Kentō…". A disabled repository
   gets no job; its queued jobs are cancelled.
-- **Trusted bots** (bots whose pull requests and commands count as a person's): `/settings` > « Trusted
-  bots ».
-- **A new runner**: `/runners` > « New runner » gives a token that works once, for one hour. See
+- **Trusted bots** (bots whose pull requests and commands count as a person's): `/settings` > "Trusted
+  bots".
+- **A new runner**: `/runners` > "New runner" gives a token that works once, for one hour. See
   [apps/runner/DEPLOY.md](../runner/DEPLOY.md).
-- **Revoke a runner**: `/runners` > « Revoke… ». Its token stops at the next call, and its running
+- **Revoke a runner**: `/runners` > "Revoke…". Its token stops at the next call, and its running
   job goes back to the queue without spending an attempt.
 - **Remove a person**: remove them from the org on GitHub. Their access ends within 10 minutes;
   `delete from users where login = '…'` ends it at once.
@@ -289,7 +289,7 @@ wait (`not_before`). A job with no `base_ref` is never claimed and is left out. 
 - the dashboard shows a red banner at the top: how many jobs wait and since when. It names the cause
   (no runner of the org or of the service online since …, or online runners that do not take the
   jobs) and the action (start a runner, see the Runners screen);
-- the pull request gets one comment « Kentō · review waiting », with the same cause and a hidden
+- the pull request gets one comment "Kentō · review waiting", with the same cause and a hidden
   `<!-- kento:queued <repo id>#<number> -->`. The publisher writes it on its 30 s timer, and
   deletes it once no job of the pull request waits for too long. A failure still gets its own
   comment.

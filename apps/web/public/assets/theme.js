@@ -1,6 +1,6 @@
 // The theme switch: Paper, Sumi or Device applies at once, with no reload and no save button.
 // The choice lives in a cookie of this browser, so the server renders the next page in it. Without
-// JavaScript, the « Apply » button of the form posts the same choice.
+// JavaScript, the "Apply" button of the form posts the same choice.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   document.documentElement.classList.add('js')

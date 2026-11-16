@@ -6,7 +6,7 @@ import postgres from 'postgres'
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
-// The end-to-end test of REV-14: the banner of a failed job and « Run again », a push that shows in
+// The end-to-end test of REV-14: the banner of a failed job and "Run again", a push that shows in
 // the queue without a reload, the cost of the day against the database, and a member who reads only.
 
 const REPO = { id: 7099, full_name: 'sakuga-software/dash-e2e', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
@@ -166,7 +166,7 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
-  test('an admin hides a failure with « Hide », and the merge of a pull request hides its failure (REV-59)', async ({ page }) => {
+  test('an admin hides a failure with "Hide", and the merge of a pull request hides its failure (REV-59)', async ({ page }) => {
     let errors = watchConsole(page)
     let { failedJobId } = await seed()
     await page.goto('/')
@@ -174,7 +174,7 @@ test.describe('the dashboard', () => {
     let banner = page.getByRole('region', { name: /The lite review of sakuga-software\/dash-e2e#41 failed/ })
     await expect(banner).toBeVisible()
     await expect(failures.getByRole('button', { name: 'Hide the failure of sakuga-software/dash-e2e#41' })).toBeVisible()
-    // REV-91: the head of a failure (and of a step of « Getting started », the same class) is one flex line.
+    // REV-91: the head of a failure (and of a step of "Getting started", the same class) is one flex line.
     expect(await failures.locator('.dash-review-head').first().evaluate((el) => getComputedStyle(el).display)).toBe('flex')
 
     await banner.getByRole('button', { name: 'Hide the failure of sakuga-software/dash-e2e#41' }).click()
@@ -204,7 +204,7 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
-  // REV-91: the name of a job in « Queue and runners » wraps; nothing goes past the column.
+  // REV-91: the name of a job in "Queue and runners" wraps; nothing goes past the column.
   test('a queued job of a repository named with 80 characters stays in its column', async ({ page }) => {
     let name = `sakuga-software/${'very-long-repository-name-'.repeat(3)}xx`.slice(0, 96)
     let sql = database()

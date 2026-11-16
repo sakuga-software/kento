@@ -55,7 +55,7 @@ export interface SignInPageProps {
   installHref?: string | null
 }
 
-/** « Sign in to Kentō »: one button, GitHub. */
+/** "Sign in to Kentō": one button, GitHub. */
 export function SignInPage(handle: Handle<SignInPageProps>) {
   return () => {
     let { theme, version, assetVersion, signInHref, notice, refusedLogin, switchHref, installHref } = handle.props

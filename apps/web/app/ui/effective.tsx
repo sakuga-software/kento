@@ -5,8 +5,8 @@ import { originText, providerLine, wrongIdAction, type EffectiveLevel } from '..
 import type { Source } from '../repo-config/model.ts'
 
 /**
- * REV-27. « Next job: Anthropic of Sakuga · key on the runner · claude-haiku-4-5, fallback … · the
- * "Default" provider of Providers and keys ». The same words in Settings and in Config.
+ * REV-27. "Next job: Anthropic of Sakuga · key on the runner · claude-haiku-4-5, fallback … · the
+ * "Default" provider of Providers and keys". The same words in Settings and in Config.
  */
 export function EffectiveLine(handle: Handle<{ effective: EffectiveLevel; scope: 'org' | 'repo'; source: Source }>) {
   return () => {

@@ -1,4 +1,4 @@
-// REV-102. The findings that their last review lists under « À considérer (code déjà relu) » (REV-100):
+// REV-102. The findings that their last review lists under "To consider (code already reviewed)" (REV-100):
 // the Findings screen tags and filters them in SQL, and the detail of a finding says it. The rule is
 // the one of `toConsider` (packages/engine): `seen`, no `follows`, not critical, in `reviews.result`.
 import * as assert from 'remix/assert'
@@ -50,15 +50,15 @@ describe('the findings to consider (REV-102)', () => {
     })
     let result = {
       findings: [
-        finding('STUDIO_HOST non documenté', { seen: true }),
+        finding('STUDIO_HOST not documented', { seen: true }),
         // The same rule, matched by its path and title: a runner of an earlier release gave no fingerprint.
-        finding('Titre sans empreinte', { seen: true, fingerprint: undefined }),
-        finding('Suite d’un constat', { seen: true, follows: 'abcdef012345', blocking: true }),
-        finding('Injection SQL', { seen: true, severity: 'critical', blocking: true }),
-        finding('Défaut du diff', { blocking: true }),
+        finding('Title with no fingerprint', { seen: true, fingerprint: undefined }),
+        finding('Follow-up of a finding', { seen: true, follows: 'abcdef012345', blocking: true }),
+        finding('SQL injection', { seen: true, severity: 'critical', blocking: true }),
+        finding('Defect of the diff', { blocking: true }),
         // Two findings of one path and title: their fingerprints tell them apart, never their title.
-        finding('Doublon', { seen: true, fingerprint: 'fp-dup-seen' }),
-        finding('Doublon', { severity: 'critical', blocking: true, fingerprint: 'fp-dup-blocking' }),
+        finding('Duplicate', { seen: true, fingerprint: 'fp-dup-seen' }),
+        finding('Duplicate', { severity: 'critical', blocking: true, fingerprint: 'fp-dup-blocking' }),
       ],
     }
     let [review] = await sql<{ id: string }[]>`
@@ -71,14 +71,14 @@ describe('the findings to consider (REV-102)', () => {
         values (${repo!.id}, 91, ${f.fingerprint === undefined ? 'fp-other' : f.fingerprint}, ${`k-${f.title}`}, ${f.path}, 12, ${f.title},
           ${f.severity}, 'bug', 80, 'open', ${HEAD}, ${HEAD}, ${review!.id})
         returning id`
-      ids.set(f.fingerprint === 'fp-dup-blocking' ? 'Doublon bloquant' : f.title, row!.id)
+      ids.set(f.fingerprint === 'fp-dup-blocking' ? 'Blocking duplicate' : f.title, row!.id)
     }
     // A finding with no review left (the review was removed): never to consider.
     let [orphan] = await sql<{ id: string }[]>`
       insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
-      values (${repo!.id}, 91, 'fp-STUDIO_HOST non documenté', 'k-orphan', 'app/routes/settings.tsx', 12, 'Sans review', 'major', 'bug', 80, 'open', ${HEAD}, ${HEAD})
+      values (${repo!.id}, 91, 'fp-STUDIO_HOST not documented', 'k-orphan', 'app/routes/settings.tsx', 12, 'No review', 'major', 'bug', 80, 'open', ${HEAD}, ${HEAD})
       returning id`
-    ids.set('Sans review', orphan!.id)
+    ids.set('No review', orphan!.id)
   })
 
   after(async () => {
@@ -91,20 +91,20 @@ describe('the findings to consider (REV-102)', () => {
     let titleOf = new Map([...ids].map(([title, id]) => [id, title]))
     let considered = Object.fromEntries(page.rows.map((r) => [titleOf.get(r.id), r.considered]))
     assert.deepEqual(considered, {
-      'STUDIO_HOST non documenté': true,
-      'Titre sans empreinte': true,
-      'Suite d’un constat': false,
-      'Injection SQL': false,
-      'Défaut du diff': false,
-      Doublon: true,
-      'Doublon bloquant': false,
-      'Sans review': false,
+      'STUDIO_HOST not documented': true,
+      'Title with no fingerprint': true,
+      'Follow-up of a finding': false,
+      'SQL injection': false,
+      'Defect of the diff': false,
+      Duplicate: true,
+      'Blocking duplicate': false,
+      'No review': false,
     })
   })
 
   it('filters them in SQL, and the counts of the tabs follow the filter', async () => {
     let page = await listFindingScreen(database.sql, orgId, { considered: true })
-    assert.deepEqual(page.rows.map((r) => r.id).sort(), [ids.get('STUDIO_HOST non documenté'), ids.get('Titre sans empreinte'), ids.get('Doublon')].sort())
+    assert.deepEqual(page.rows.map((r) => r.id).sort(), [ids.get('STUDIO_HOST not documented'), ids.get('Title with no fingerprint'), ids.get('Duplicate')].sort())
     assert.equal(page.counts.open, 3)
     assert.equal(page.counts.all, 3)
     let none = await listFindingScreen(database.sql, orgId, { considered: true, view: 'fixed' })
@@ -112,15 +112,15 @@ describe('the findings to consider (REV-102)', () => {
   })
 
   it('says it in the detail of a finding, and not for the others: the detail and the screen read one rule', async () => {
-    for (let title of ['STUDIO_HOST non documenté', 'Titre sans empreinte', 'Doublon']) {
+    for (let title of ['STUDIO_HOST not documented', 'Title with no fingerprint', 'Duplicate']) {
       let seen = await readFindingDetail(database.sql, orgId, ids.get(title)!)
       assert.equal(seen?.review?.considered, true, title)
     }
-    for (let title of ['Suite d’un constat', 'Injection SQL', 'Défaut du diff', 'Doublon bloquant']) {
+    for (let title of ['Follow-up of a finding', 'SQL injection', 'Defect of the diff', 'Blocking duplicate']) {
       let other = await readFindingDetail(database.sql, orgId, ids.get(title)!)
       assert.equal(other?.review?.considered, false, title)
     }
-    let orphan = await readFindingDetail(database.sql, orgId, ids.get('Sans review')!)
+    let orphan = await readFindingDetail(database.sql, orgId, ids.get('No review')!)
     assert.equal(orphan?.review, null)
   })
 })

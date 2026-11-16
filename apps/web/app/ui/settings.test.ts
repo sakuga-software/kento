@@ -134,7 +134,7 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
   return { ...fake, probed, request, signIn }
 }
 
-describe('the section « Providers and keys »', () => {
+describe('the section "Providers and keys"', () => {
   it('shows the last 4 characters of a key, never the key, and the forms to an admin', async () => {
     let { request, signIn } = setup([provider({ lastOkAt: new Date(NOW.getTime() - 5 * 60_000) })])
     let { cookie } = await signIn(ALEX)
@@ -146,7 +146,7 @@ describe('the section « Providers and keys »', () => {
     assert.match(html, /Valid · last call/)
     assert.match(html, /5 min ago/)
     assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
-    assert.doesNotMatch(html, /of the org\b(?!anization)/, '« organization » in a sentence (REV-43)')
+    assert.doesNotMatch(html, /of the org\b(?!anization)/, '"organization" in a sentence (REV-43)')
     assert.match(html, /claude-haiku-5-5/)
     assert.match(html, /Default/)
     assert.match(html, /action="\/settings\/providers\/7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f\/test"/)
@@ -167,7 +167,7 @@ describe('the section « Providers and keys »', () => {
     assert.match(html, /Last answer: 401 invalid x-api-key/)
   })
 
-  it('shows a provider that the runner holds as « Key on the runner », neutral, with no test', async () => {
+  it('shows a provider that the runner holds as "Key on the runner", neutral, with no test', async () => {
     let { request, signIn } = setup([provider({ kind: 'ollama', runnerHeld: true, keyLast4: null, models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } })])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
@@ -248,7 +248,7 @@ describe('the section « Providers and keys »', () => {
     assert.deepEqual(writes, [`add ${ORG.id} anthropic`])
   })
 
-  it('asks to test only a provider that « Test » can test: not a key on the runner, not Ollama (REV-51)', async () => {
+  it('asks to test only a provider that "Test" can test: not a key on the runner, not Ollama (REV-51)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let held = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'Anthropic', runnerHeld: 'on' } })
@@ -265,17 +265,17 @@ describe('the section « Providers and keys »', () => {
     }
   })
 
-  it('folds « Add a provider » behind a button, and opens it on an error (REV-29)', async () => {
+  it('folds "Add a provider" behind a button, and opens it on an error (REV-29)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let page = await (await request('/settings', { cookie })).text()
-    let toggle = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
+    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
-    // REV-91: no tab for the form; the button of the section opens it, and so does a link to #nouveau-provider.
-    assert.doesNotMatch(page, /<a href="#nouveau-provider">/)
+    // REV-91: no tab for the form; the button of the section opens it, and so does a link to #new-provider.
+    assert.doesNotMatch(page, /<a href="#new-provider">/)
     assert.match(page, /src="\/assets\/settings\.js\?v=/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
-    let open = /<section [^>]*id="nouveau-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
+    let open = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
     assert.match(open, /\bopen\b/)
   })
 
@@ -289,7 +289,7 @@ describe('the section « Providers and keys »', () => {
     assert.ok(!html.includes(KEY))
   })
 
-  it('focuses the first field in error of « Add a provider », and announces that nothing was saved (REV-28)', async () => {
+  it('focuses the first field in error of "Add a provider", and announces that nothing was saved (REV-28)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'openai_compatible', label: 'x', baseUrl: 'http://llm.example.com', apiKey: '' } })
@@ -302,7 +302,7 @@ describe('the section « Providers and keys »', () => {
     assert.doesNotMatch(page, /Nothing is saved/)
   })
 
-  it('focuses the key of « Replace the key » after an error (REV-28)', async () => {
+  it('focuses the key of "Replace the key" after an error (REV-28)', async () => {
     let { request, signIn } = setup([provider()])
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'short' } })
@@ -310,7 +310,7 @@ describe('the section « Providers and keys »', () => {
     assert.deepEqual(autofocused(await response.text()), [`key-${ID}`])
   })
 
-  it('says under « Type » what each type needs, not only Ollama (REV-28)', async () => {
+  it('says under "Type" what each type needs, not only Ollama (REV-28)', async () => {
     let { request, signIn } = setup([])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
@@ -351,7 +351,7 @@ describe('the section « Providers and keys »', () => {
     assert.deepEqual(failed.writes, [], 'a failed test changes nothing')
   })
 
-  it('replaces a key, and a provider of another org is « missing »', async () => {
+  it('replaces a key, and a provider of another org is "missing"', async () => {
     let { request, signIn, writes } = setup([provider(), provider({ id: '9f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', orgId: OTHER_ORG.id })])
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'sk-ant-new-key-0123456789-wxyz' } })

@@ -152,13 +152,13 @@ describe('the settings of the org (REV-13)', () => {
     let html = await (await request('/settings', { cookie })).text()
     let nav = /<nav aria-label="Sections of the settings" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
     let anchors = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
-    assert.deepEqual(anchors, ['plafond', 'defauts', 'bots', 'app'])
+    assert.deepEqual(anchors, ['cap', 'defaults', 'bots', 'app'])
     for (let id of anchors) assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `the section #${id} is on the page`)
     // Each section of the org: at most one primary button (the defaults have none, their rows are secondary).
     let sections = html.split('<section ').slice(1)
     assert.ok(sections.length >= 4)
     for (let section of sections) assert.ok((section.match(/button-primary/g) ?? []).length <= 1, section.slice(0, 120))
-    assert.doesNotMatch(sections.find((s) => s.includes('id="defauts"'))!, /button-primary/)
+    assert.doesNotMatch(sections.find((s) => s.includes('id="defaults"'))!, /button-primary/)
   })
 
   it('has the four sections of its table of contents for a member, and without the state of the App (REV-29)', async () => {
@@ -166,7 +166,7 @@ describe('the settings of the org (REV-13)', () => {
       let { request, signIn } = app === null ? setup(null) : setup()
       let { cookie } = await signIn(profile)
       let html = await (await request('/settings', { cookie })).text()
-      for (let id of ['plafond', 'defauts', 'bots', 'app']) {
+      for (let id of ['cap', 'defaults', 'bots', 'app']) {
         assert.match(html, new RegExp(`href="#${id}"`))
         assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `#${id} for ${profile.login}, App ${app === null ? 'unknown' : 'known'}`)
       }
@@ -212,7 +212,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'caps', dailyCapUsd: '0,01', monthlyCapUsd: '', alertPct: '75' } })
     assert.equal(response.status, 303)
-    assert.equal(response.headers.get('Location'), '/settings?org=saved&v=1#plafond')
+    assert.equal(response.headers.get('Location'), '/settings?org=saved&v=1#cap')
     assert.deepEqual(rows[ORG.id]!.caps, { dailyCapUsd: 0.01, monthlyCapUsd: null, alertPct: 75 })
     assert.deepEqual(rows[OTHER_ORG.id]!.caps, { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 }, 'the other org keeps its limits')
     let html = await (await request('/settings?org=saved&v=1', { cookie })).text()
@@ -268,7 +268,7 @@ describe('the settings of the org (REV-13)', () => {
     assert.deepEqual(rows[ORG.id]!.trustedBots, ['sakuga-agent[bot]', 'renovate[bot]'])
   })
 
-  it('saves a default level and the models of a level, then « Revenir à Kentō » removes one', async () => {
+  it('saves a default level and the models of a level, then "Back to the Kentō value" removes one', async () => {
     let { request, signIn, rows } = setup()
     let { cookie, csrf } = await signIn(ALEX)
     assert.equal((await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'level', defaultLevel: 'balanced' } })).status, 303)
@@ -282,7 +282,7 @@ describe('the settings of the org (REV-13)', () => {
     assert.match(html, /Back to the Kentō value<span class="visually-hidden"> for heavy/)
     let reset = await request('/settings/org/reset', { cookie, form: { _csrf: csrf, version: '2', field: 'models.heavy' } })
     assert.equal(reset.status, 303)
-    assert.equal(reset.headers.get('Location'), '/settings?org=reset&v=3#defauts')
+    assert.equal(reset.headers.get('Location'), '/settings?org=reset&v=3#defaults')
     assert.deepEqual(rows[ORG.id]!.config, { level: 'balanced' })
   })
 
@@ -357,7 +357,7 @@ describe('one rule for the provider of a level (REV-27)', () => {
   }
   const catalog = (serviceKey: boolean): ProviderCatalog => ({ list: async () => [serviceOption(serviceKey), runnerAnthropic] })
 
-  it('a level without a choice shows the « Default » provider, its key and its models, never « key of the service »', async () => {
+  it('a level without a choice shows the "Default" provider, its key and its models, never "key of the service"', async () => {
     let { request, signIn } = setup(undefined, catalog(false))
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
@@ -366,7 +366,7 @@ describe('one rule for the provider of a level (REV-27)', () => {
     assert.match(lite, /the (&quot;|")Default(&quot;|") provider of Providers and keys/)
     assert.match(lite, new RegExp(`<option value="${DEFAULT_ID}" selected>`), 'the form shows what runs')
     assert.match(lite, /the level no longer follows the (&quot;|")Default(&quot;|") provider/)
-    // Without a key in the service, the OpenRouter option says « key on the runner », as its help.
+    // Without a key in the service, the OpenRouter option says "key on the runner", as its help.
     assert.match(html, /OpenRouter · key on the runner/)
     assert.doesNotMatch(html, /key of the service/)
     assert.doesNotMatch(html, /\$10 per day/, 'no level runs on the key of the service')

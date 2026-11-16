@@ -1,4 +1,4 @@
-// REV-17. « Relancer en <niveau> » on the screen of a pull request: a new review job of its last head,
+// REV-17. "Run again at <level>" on the screen of a pull request: a new review job of its last head,
 // at the level that an admin chooses, with an estimate of its cost. A newer push cancels it, as it
 // cancels every job of an older head (app/db/webhook-store.ts, `cancelActive`).
 import type { Level } from '@sakuga-review/protocol'
