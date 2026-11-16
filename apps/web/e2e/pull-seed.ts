@@ -1,12 +1,12 @@
 // REV-17. A pull request with four reviews, for the screen of a pull request in a browser
 // (e2e/pull.spec.ts) and for its pictures: orchard #142.
 //
-// - A « Le jeton de session n’expire jamais »: posted by R1, moved from line 42 to 47 by R2 with no
+// - A « The session token never expires »: posted by R1, moved from line 42 to 47 by R2 with no
 //   new comment, found again by R3 and R4. Open.
-// - B « Clé API écrite dans les logs »: posted by R1, fixed by R2.
-// - C « Liste sans clé stable »: posted by R1, found again by R2, dismissed by camille (Faux positif)
+// - B « API key written to the logs »: posted by R1, fixed by R2.
+// - C « List with no stable key »: posted by R1, found again by R2, dismissed by camille (False positive)
 //   before R3. R3 and R4 leave it out.
-// - D « Requête SQL construite par concaténation »: posted by R2, absent from R3 (its file did not
+// - D « SQL query built by concatenation »: posted by R2, absent from R3 (its file did not
 //   change), kept by alex (wontfix) before R4.
 import { findingKey } from '@sakuga-review/engine/findings'
 import type postgres from 'postgres'
@@ -19,10 +19,10 @@ export const PULL_NUMBER = 142
 type Seeded = { orgId: string; repoId: string; findings: Record<'A' | 'B' | 'C' | 'D', string>; reviews: string[] }
 
 const FINDINGS = {
-  A: { path: 'src/auth/session.ts', title: 'Le jeton de session n’expire jamais', severity: 'major', fingerprint: 'a1a1a1a1a1a1a1a1', comment: 914201 },
-  B: { path: 'src/api/keys.ts', title: 'Clé API écrite dans les logs', severity: 'critical', fingerprint: 'b2b2b2b2b2b2b2b2', comment: 914202 },
-  C: { path: 'src/ui/list.tsx', title: 'Liste sans clé stable', severity: 'minor', fingerprint: 'c3c3c3c3c3c3c3c3', comment: 914203 },
-  D: { path: 'src/db/query.ts', title: 'Requête SQL construite par concaténation', severity: 'major', fingerprint: 'd4d4d4d4d4d4d4d4', comment: 914204 },
+  A: { path: 'src/auth/session.ts', title: 'The session token never expires', severity: 'major', fingerprint: 'a1a1a1a1a1a1a1a1', comment: 914201 },
+  B: { path: 'src/api/keys.ts', title: 'API key written to the logs', severity: 'critical', fingerprint: 'b2b2b2b2b2b2b2b2', comment: 914202 },
+  C: { path: 'src/ui/list.tsx', title: 'List with no stable key', severity: 'minor', fingerprint: 'c3c3c3c3c3c3c3c3', comment: 914203 },
+  D: { path: 'src/db/query.ts', title: 'SQL query built by concatenation', severity: 'major', fingerprint: 'd4d4d4d4d4d4d4d4', comment: 914204 },
 } as const
 type Name = keyof typeof FINDINGS
 
@@ -36,8 +36,8 @@ function resultFinding(name: Name, line: number) {
     category: name === 'B' || name === 'D' ? 'security' : 'bug',
     confidence: 88,
     title: f.title,
-    scenario: `Scénario de ${name}.`,
-    fix: `Piste de ${name}.`,
+    scenario: `Scenario of ${name}.`,
+    fix: `Fix of ${name}.`,
     suggestion: '',
     anchor: line,
     blocking: f.severity === 'critical',
@@ -101,8 +101,8 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
   }
   await insert('A', 47, 'open', null, 0, 3, 180.5)
   await insert('B', 88, 'fixed', null, 0, 0, 180.4)
-  await insert('C', 12, 'dismissed', 'Faux positif', 0, 2, 180.3)
-  await insert('D', 30, 'wontfix', 'Hors sujet pour cette PR', 1, 1, 120.5)
+  await insert('C', 12, 'dismissed', 'False positive', 0, 2, 180.3)
+  await insert('D', 30, 'wontfix', 'Off topic for this PR', 1, 1, 120.5)
 
   let event = async (name: Name, review: number | null, type: string, actor: string, reason: string | null, at: number) => {
     await sql`
@@ -114,7 +114,7 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
   await event('C', 0, 'opened', 'kento', null, 180.3)
   await event('B', 1, 'fixed', 'kento', null, 120.4)
   await event('D', 1, 'opened', 'kento', null, 120.5)
-  await event('C', null, 'dismissed', 'camille', 'Faux positif', 90)
-  await event('D', null, 'wontfix', 'alex', 'Hors sujet pour cette PR', 30)
+  await event('C', null, 'dismissed', 'camille', 'False positive', 90)
+  await event('D', null, 'wontfix', 'alex', 'Off topic for this PR', 30)
   return { orgId: org!.id, repoId, findings: ids, reviews }
 }

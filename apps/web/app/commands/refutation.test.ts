@@ -87,8 +87,8 @@ describe('hintText (REV-96)', () => {
     let text = hintText('alex', `https://review.sakuga.dev${DOCS_PATH}`)
     assert.equal(
       text,
-      "@alex Cette réponse semble écarter le constat. Pour qu'il compte comme rejeté (il ne reviendra pas et ne baissera plus la note) : " +
-        '`@kento-review reject <cause>`. [Les commandes de Kentō](https://review.sakuga.dev/docs/commandes)\n\n<!-- kento:reject-hint -->',
+      '@alex This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ' +
+        '`@kento-review reject <cause>`. [Kentō commands](https://review.sakuga.dev/docs/commands)\n\n<!-- kento:reject-hint -->',
     )
     // At a review, nobody is mentioned; without a public URL, no link.
     assert.ok(!hintText(null, null).includes('@alex'))

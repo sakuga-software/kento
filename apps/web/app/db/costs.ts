@@ -26,7 +26,7 @@ export interface OrgCostsDetail extends OrgCosts {
 }
 
 /** The label of the spend without a provider row: the key of the service, or a provider removed since. */
-export const SERVICE_KEY_LABEL = 'Clé du service'
+export const SERVICE_KEY_LABEL = 'Service key'
 
 /** The costs of all the repositories of an org, or of one repository. */
 export type CostScope = { orgId: string } | { repoId: string }

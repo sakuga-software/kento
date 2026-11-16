@@ -59,10 +59,10 @@ describe('pulls store', () => {
       ['R1 lite 2 3', 'R2 balanced 3 3', 'R3 heavy 4 2', 'R4 lite 4 1'],
     )
     assert.deepEqual(grid(sheet), {
-      'Le jeton de ': ['posted', 'moved', 'found', 'found'],
-      'Clé API écri': ['posted', 'fixed', 'fixed*', 'fixed*'],
-      'Liste sans c': ['posted', 'found', 'dismissed', 'dismissed*'],
-      'Requête SQL ': ['none', 'posted', 'absent', 'wontfix'],
+      'The session ': ['posted', 'moved', 'found', 'found'],
+      'API key writ': ['posted', 'fixed', 'fixed*', 'fixed*'],
+      'List with no': ['posted', 'found', 'dismissed', 'dismissed*'],
+      'SQL query bu': ['none', 'posted', 'absent', 'wontfix'],
     })
     assert.equal(sheet.olderCursor, null)
     assert.equal(sheet.nextRowsCursor, null)
@@ -119,11 +119,11 @@ describe('pulls store', () => {
   it('reads the detail of a finding: its last review, its scenario and fix, its rule', async () => {
     let store = createPullsStore(database.sql)
     let moved = (await store.finding(seeded.orgId, seeded.findings.A))!
-    assert.equal(moved.title, 'Le jeton de session n’expire jamais')
+    assert.equal(moved.title, 'The session token never expires')
     assert.equal(moved.line, 47)
     assert.deepEqual(
       moved.review && { number: moved.review.number, level: moved.review.level, model: moved.review.model, scenario: moved.review.scenario, fix: moved.review.fix },
-      { number: 4, level: 'lite', model: 'claude-haiku-4-5', scenario: 'Scénario de A.', fix: 'Piste de A.' },
+      { number: 4, level: 'lite', model: 'claude-haiku-4-5', scenario: 'Scenario of A.', fix: 'Fix of A.' },
     )
     assert.equal(moved.rule, null)
     assert.equal(moved.githubCommentId, 914201)
@@ -136,7 +136,7 @@ describe('pulls store', () => {
     let history = await store.history(seeded.orgId, seeded.findings.C, null)
     assert.deepEqual(
       history.items.map((e) => `${e.type} ${e.actor} ${e.review ?? '-'} ${e.reason ?? ''}`.trim()),
-      ['opened kento 1', 'dismissed camille - Faux positif'],
+      ['opened kento 1', 'dismissed camille - False positive'],
     )
     assert.ok(history.items[0]!.createdAt instanceof Date)
     for (let n = 0; n < 25; n++) {
@@ -173,6 +173,6 @@ describe('pulls store', () => {
     assert.equal(older.olderCursor, null)
 
     // R4 is the review before the newest page: A found at 47 by R4 and by R5 is not moved.
-    assert.equal(grid(newest)['Le jeton de ']![0], 'found')
+    assert.equal(grid(newest)['The session ']![0], 'found')
   })
 })

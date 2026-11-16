@@ -6,7 +6,7 @@ import postgres from 'postgres'
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
-// The end-to-end test of REV-14: the banner of a failed job and « Relancer », a push that shows in
+// The end-to-end test of REV-14: the banner of a failed job and « Run again », a push that shows in
 // the queue without a reload, the cost of the day against the database, and a member who reads only.
 
 const REPO = { id: 7099, full_name: 'sakuga-software/dash-e2e', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
@@ -100,14 +100,14 @@ test.describe('the dashboard', () => {
     let { failedJobId } = await seed()
     await page.goto('/')
 
-    let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
+    let banner = page.getByRole('region', { name: /The lite review of sakuga-software\/dash-e2e#41 failed/ })
     await expect(banner).toBeVisible()
-    await expect(banner.getByText('Raison : le runner a cessé de répondre pendant le job deux fois, en dernier runners-host. Vérifiez sur l’écran Runners qu’un runner est en ligne, puis relancez.')).toBeVisible()
-    await expect(banner.getByText(/La review précédente \(3\/5, publiée le .*\) reste publiée sur la PR\./)).toBeVisible()
-    await expect(banner.getByRole('link', { name: 'Voir la PR' })).toHaveAttribute('href', /\/sakuga-software\/dash-e2e\/pull\/41$/)
+    await expect(banner.getByText('Reason: the runner stopped answering during the job twice, last runners-host. Check on the Runners screen that a runner is online, then retry.')).toBeVisible()
+    await expect(banner.getByText(/The previous review \(3\/5, published on .*\) stays on the pull request\./)).toBeVisible()
+    await expect(banner.getByRole('link', { name: 'Open the PR' })).toHaveAttribute('href', /\/sakuga-software\/dash-e2e\/pull\/41$/)
     // The estimate of balanced: the mean of the balanced reviews of the repository.
-    await expect(banner.getByRole('button', { name: /Relancer en balanced · ≈ 0,13\s\$/ })).toBeVisible()
-    await expect(banner.getByRole('button', { name: /Relancer en heavy · coût inconnu/ })).toBeVisible()
+    await expect(banner.getByRole('button', { name: /Run again at balanced · ≈ \$0\.13/ })).toBeVisible()
+    await expect(banner.getByRole('button', { name: /Run again at heavy · unknown cost/ })).toBeVisible()
 
     // The cost of the day is the sum of the costs of the day in the database.
     let sql = database()
@@ -124,25 +124,25 @@ test.describe('the dashboard', () => {
     } finally {
       await sql.end()
     }
-    let expected = new Intl.NumberFormat('fr-FR', {
+    let expected = new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: Number(total) > 0 && Number(total) < 0.1 ? 3 : 2,
       maximumFractionDigits: Number(total) > 0 && Number(total) < 0.1 ? 3 : 2,
     }).format(Number(total))
-    let cost = page.getByRole('region', { name: 'Coût' })
+    let cost = page.getByRole('region', { name: 'Cost' })
     await expect(cost.locator('.dash-cost').first().locator('.dash-cost-value')).toHaveText(expected)
 
-    let recent = page.getByRole('region', { name: 'Dernières reviews' })
+    let recent = page.getByRole('region', { name: 'Latest reviews' })
     await expect(recent.getByRole('link', { name: 'dash-e2e #41' })).toBeVisible()
-    await expect(recent.getByText('Commentaire', { exact: true })).toBeVisible()
+    await expect(recent.getByText('Comment', { exact: true })).toBeVisible()
     await expectNoAxeViolations(page)
 
-    await banner.getByRole('button', { name: /Relancer en balanced/ }).click()
-    await expect(page.getByText('Review relancée. Le job est en file.')).toBeVisible()
-    await expect(page.getByText('Relance en balanced en file')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
+    await banner.getByRole('button', { name: /Run again at balanced/ }).click()
+    await expect(page.getByText('Review started again. The job is queued.')).toBeVisible()
+    await expect(page.getByText('Retry at balanced queued')).toBeVisible()
+    await expect(page.getByRole('button', { name: /Run again at/ })).toHaveCount(0)
 
     // The new job is a balanced review of the same head; a runner runs it and the service publishes it.
     let db = database()
@@ -161,26 +161,26 @@ test.describe('the dashboard', () => {
       await db.end()
     }
     await page.goto('/')
-    await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Échecs récents' }).getByText('le runner a cessé de répondre pendant le job deux fois, en dernier runners-host')).toBeVisible()
+    await expect(page.getByRole('region', { name: /review of .* failed/ })).toHaveCount(0)
+    await expect(page.getByRole('region', { name: 'Recent failures' }).getByText('the runner stopped answering during the job twice, last runners-host')).toBeVisible()
     expect(errors).toEqual([])
   })
 
-  test('an admin hides a failure with « Masquer », and the merge of a pull request hides its failure (REV-59)', async ({ page }) => {
+  test('an admin hides a failure with « Hide », and the merge of a pull request hides its failure (REV-59)', async ({ page }) => {
     let errors = watchConsole(page)
     let { failedJobId } = await seed()
     await page.goto('/')
-    let failures = page.getByRole('region', { name: 'Échecs récents' })
-    let banner = page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#41 a échoué/ })
+    let failures = page.getByRole('region', { name: 'Recent failures' })
+    let banner = page.getByRole('region', { name: /The lite review of sakuga-software\/dash-e2e#41 failed/ })
     await expect(banner).toBeVisible()
-    await expect(failures.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' })).toBeVisible()
-    // REV-91: the head of a failure (and of a step of « Mise en route », the same class) is one flex line.
+    await expect(failures.getByRole('button', { name: 'Hide the failure of sakuga-software/dash-e2e#41' })).toBeVisible()
+    // REV-91: the head of a failure (and of a step of « Getting started », the same class) is one flex line.
     expect(await failures.locator('.dash-review-head').first().evaluate((el) => getComputedStyle(el).display)).toBe('flex')
 
-    await banner.getByRole('button', { name: 'Masquer l’échec de sakuga-software/dash-e2e#41' }).click()
-    await expect(page.getByText('Échec masqué. Il reste compté dans « Échecs sur 7 jours ».')).toBeVisible()
-    await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
-    await expect(failures.getByText('Aucun échec à traiter sur 7 jours.')).toBeVisible()
+    await banner.getByRole('button', { name: 'Hide the failure of sakuga-software/dash-e2e#41' }).click()
+    await expect(page.getByText('Failure hidden. It still counts in "Failures · 7 d".')).toBeVisible()
+    await expect(page.getByRole('region', { name: /review of .* failed/ })).toHaveCount(0)
+    await expect(failures.getByText('No failure to handle over 7 days.')).toBeVisible()
     await expectNoAxeViolations(page)
 
     // Another failure, on pull request 43; GitHub then says that the pull request is merged.
@@ -196,15 +196,15 @@ test.describe('the dashboard', () => {
       await sql.end()
     }
     await page.goto('/')
-    await expect(page.getByRole('region', { name: /La review lite de sakuga-software\/dash-e2e#43 a échoué/ })).toBeVisible()
+    await expect(page.getByRole('region', { name: /The lite review of sakuga-software\/dash-e2e#43 failed/ })).toBeVisible()
     expect((await push(page, 'e'.repeat(40), 'closed', 43)).outcome).toBe('cancelled')
     await page.goto('/')
-    await expect(page.getByRole('region', { name: /a échoué/ })).toHaveCount(0)
-    await expect(failures.getByText('Aucun échec à traiter sur 7 jours.')).toBeVisible()
+    await expect(page.getByRole('region', { name: /review of .* failed/ })).toHaveCount(0)
+    await expect(failures.getByText('No failure to handle over 7 days.')).toBeVisible()
     expect(errors).toEqual([])
   })
 
-  // REV-91: the name of a job in « File et runners » wraps; nothing goes past the column.
+  // REV-91: the name of a job in « Queue and runners » wraps; nothing goes past the column.
   test('a queued job of a repository named with 80 characters stays in its column', async ({ page }) => {
     let name = `sakuga-software/${'very-long-repository-name-'.repeat(3)}xx`.slice(0, 96)
     let sql = database()
@@ -230,16 +230,16 @@ test.describe('the dashboard', () => {
     let errors = watchConsole(page)
     await seed()
     await page.goto('/')
-    let queue = page.getByRole('region', { name: 'File et runners' })
-    await expect(queue.getByText('Aucun job en attente.')).toBeVisible()
-    await expect(page.getByText(/Mis à jour il y a \d+ s/)).toBeVisible()
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    await expect(queue.getByText('No job waiting.')).toBeVisible()
+    await expect(page.getByText(/Updated \d+ s ago/)).toBeVisible()
 
     let pushed = await push(page, 'e'.repeat(40))
     expect(pushed.outcome).toBe('queued')
     let started = Date.now()
     await expect(queue.getByRole('link', { name: 'sakuga-software/dash-e2e#42' })).toBeVisible({ timeout: 15_000 })
     expect(Date.now() - started).toBeLessThan(15_000)
-    await expect(queue.getByText(/En file depuis/)).toBeVisible()
+    await expect(queue.getByText(/Queued for/)).toBeVisible()
     expect(errors).toEqual([])
   })
 
@@ -248,11 +248,11 @@ test.describe('the dashboard', () => {
     await context.clearCookies()
     await signIn(page, 'camille')
     await page.goto('/')
-    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
-    await expect(page.getByRole('region', { name: /a échoué/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Relancer en/ })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /Masquer/ })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: /gérer les runners/ })).toHaveAttribute('href', '/runners')
+    await expect(page.getByText('Read only', { exact: true })).toBeVisible()
+    await expect(page.getByRole('region', { name: /review of .* failed/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Run again at/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Hide/ })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: /manage the runners/ })).toHaveAttribute('href', '/runners')
     await expectNoAxeViolations(page)
   })
 })

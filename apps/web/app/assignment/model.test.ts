@@ -91,14 +91,14 @@ describe('the rules with paths that GitHub kept from being tested (REV-21)', () 
     assert.deepEqual(unreadPathRules(rules, null, rules[1]!), [1])
     assert.deepEqual(unreadPathRules(rules, null, null), [1, 3])
     assert.deepEqual(unreadPathRules(rules, ['a.ts'], null), [])
-    assert.equal(unreadPathsLine([1]), 'Assignation : sans la liste des fichiers de la PR, la règle 1 (chemins) n’a pas pu être testée.')
+    assert.equal(unreadPathsLine([1]), 'Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths).')
     assert.deepEqual(readUnreadPathRules({ assignmentUnread: [1, 'x', 0, 3] }), [1, 3])
     assert.deepEqual(readUnreadPathRules(null), [])
     // With a rule that applied: its line first, then the rules that could not be tested, then the mention.
     let applied: JobAssignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'alex', reasons: { author: 'camille' }, trigger: 'push' }
     assert.equal(
       assignmentNote(applied, [1]),
-      '\n\n<sub>Assignation : règle 2, l’auteur est camille, donc heavy à chaque push.</sub>\n\n<sub>Assignation : sans la liste des fichiers de la PR, la règle 1 (chemins) n’a pas pu être testée.</sub>\n\nRelecture demandée par la règle : @alex',
+      '\n\n<sub>Assignment: rule 2, the author is camille, so heavy at each push.</sub>\n\n<sub>Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths).</sub>\n\nReview requested by the rule: @alex',
     )
   })
 })
@@ -107,17 +107,17 @@ describe('what the review and the screen of the pull request say (REV-21)', () =
   let assignment: JobAssignment = { ruleId: 'r1', position: 1, level: 'balanced', mention: null, reasons: { author: 'sakuga-agent[bot]' }, trigger: 'push' }
 
   it('names the rule, why it matched and the level', () => {
-    assert.equal(assignmentLine(assignment), 'Assignation : règle 1, l’auteur est sakuga-agent[bot], donc balanced à chaque push.')
+    assert.equal(assignmentLine(assignment), 'Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push.')
     assert.equal(
       assignmentLine({ ...assignment, position: 2, level: 'heavy', reasons: { path: 'db/migrations/1.sql', label: 'risky' }, trigger: 'ready' }),
-      'Assignation : règle 2, la PR touche db/migrations/1.sql et la PR porte le label « risky », donc heavy au passage en « Ready for review ».',
+      'Assignment: rule 2, the PR changes db/migrations/1.sql and the PR has the label "risky", so heavy when the PR becomes "Ready for review".',
     )
   })
 
   it('adds the line to the body of the review, and the mention of the rule', () => {
     assert.equal(assignmentNote(null), '')
-    assert.equal(assignmentNote(assignment), '\n\n<sub>Assignation : règle 1, l’auteur est sakuga-agent[bot], donc balanced à chaque push.</sub>')
-    assert.match(assignmentNote({ ...assignment, mention: 'alex' }), /\n\nRelecture demandée par la règle : @alex$/)
+    assert.equal(assignmentNote(assignment), '\n\n<sub>Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push.</sub>')
+    assert.match(assignmentNote({ ...assignment, mention: 'alex' }), /\n\nReview requested by the rule: @alex$/)
   })
 
   it('reads the assignment of jobs.config back, and nothing from a job without one', () => {
@@ -150,16 +150,16 @@ describe('the form of an assignment rule (REV-21)', () => {
     })
   })
 
-  it('keeps the first error of the mention: a login of an App, even with « Aucune review automatique »', () => {
+  it('keeps the first error of the mention: a login of an App, even with « No automatic review »', () => {
     let form = new FormData()
     form.set('authors', 'camille')
     form.set('outcome', 'command_only')
     form.set('mention', 'renovate[bot]')
     let read = readAssignmentForm(form)
-    assert.deepEqual(read.ok ? null : read.errors.mention, 'Un login GitHub d’une personne, par exemple alex.')
+    assert.deepEqual(read.ok ? null : read.errors.mention, 'The GitHub login of a person, for example alex.')
   })
 
-  it('reads « Aucune review automatique » as a rule with no level', () => {
+  it('reads « No automatic review » as a rule with no level', () => {
     assert.deepEqual(readAssignmentForm(form({ labels: 'wip', outcome: 'command_only' })), {
       ok: true,
       value: { authors: [], paths: [], labels: ['wip'], action: 'command_only', level: null, mention: null },
@@ -169,10 +169,10 @@ describe('the form of an assignment rule (REV-21)', () => {
   it('refuses a rule with no condition, a bad login, a bad path, an unknown outcome or a mention without a review', () => {
     let empty = readAssignmentForm(form({ outcome: 'balanced' }))
     assert.equal(empty.ok, false)
-    assert.match(String(!empty.ok && empty.errors.authors), /au moins un auteur, un chemin ou un label/)
+    assert.match(String(!empty.ok && empty.errors.authors), /at least one author, path or label/)
     let bad = readAssignmentForm(form({ authors: 'not a login', paths: '/abs', outcome: 'ultra', mention: 'a b' }))
     assert.deepEqual(Object.keys(!bad.ok ? bad.errors : {}).sort(), ['authors', 'mention', 'outcome', 'paths'])
     let silent = readAssignmentForm(form({ labels: 'wip', outcome: 'command_only', mention: 'alex' }))
-    assert.match(String(!silent.ok && silent.errors.mention), /pas de review où mentionner/)
+    assert.match(String(!silent.ok && silent.errors.mention), /no review to mention someone in/)
   })
 })

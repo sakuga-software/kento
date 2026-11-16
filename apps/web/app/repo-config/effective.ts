@@ -5,7 +5,7 @@ import { idFormHelp, SERVICE_PROVIDER, type LevelModels, type Resolved } from '.
 import type { ProviderOption } from './providers.ts'
 
 // REV-27. The provider and the models that the next job of a level uses, in the words of the screen.
-// One rule for Réglages and Config, the same as the claim of a job (runner/store.ts, `pick`) and as
+// One rule for Settings and Config, the same as the claim of a job (runner/store.ts, `pick`) and as
 // the models that the runner API sends (runner/controller.ts):
 //
 // - the config of the repository or of the org names a provider of the org: that provider, with
@@ -13,7 +13,7 @@ import type { ProviderOption } from './providers.ts'
 // - it names « service »: OpenRouter with the key of the service, with the models of the config;
 // - it names a provider that the org no longer has: OpenRouter with the key of the service, with the
 //   models of Kentō (the runner gets no models without their provider);
-// - nothing chose (the values of Kentō): the provider « Par défaut » of the org, with its own models
+// - nothing chose (the values of Kentō): the « Default » provider of the org, with its own models
 //   for the level (else those of its type); without a provider, OpenRouter with the models of Kentō.
 //
 // test/db/effective-provider.test.ts checks this rule against the claim of the service.
@@ -25,7 +25,7 @@ export type EffectiveOrigin =
   | 'chosen'
   /** The config chose a provider that the org no longer has: the key of the service. */
   | 'missing'
-  /** Nothing chose: the provider « Par défaut » of the org. */
+  /** Nothing chose: the « Default » provider of the org. */
   | 'default'
   /** Nothing chose, and the org has no provider: the key of the service. */
   | 'service'
@@ -73,7 +73,7 @@ function nextJob(level: Level, resolved: Resolved<LevelModels>, providers: reado
   return { provider: byDefault, origin: 'default', model: models[0] ?? null, fallback: models[1] ?? null }
 }
 
-/** « Anthropic de Sakuga · clé du runner ». The label of the OpenRouter of the service already says its key. */
+/** « Anthropic of Sakuga · key on the runner ». The label of the OpenRouter of the service already says its key. */
 export function providerLine(provider: ProviderOption): string {
   return provider.id === SERVICE_PROVIDER ? provider.label : `${provider.label} · ${provider.keyFrom}`
 }
@@ -82,29 +82,29 @@ export function providerLine(provider: ProviderOption): string {
 export function originText(effective: EffectiveLevel, scope: 'org' | 'repo', source: Resolved<LevelModels>['source']): string {
   switch (effective.origin) {
     case 'default':
-      return 'le provider « Par défaut » de Providers et clés'
+      return 'the "Default" provider of Providers and keys'
     case 'service':
-      return 'aucun provider dans l’organisation, donc la clé OpenRouter'
+      return 'no provider in the organization, so the OpenRouter key'
     case 'missing':
-      return 'le provider choisi n’existe plus, et la clé OpenRouter le remplace'
+      return 'the chosen provider no longer exists, and the OpenRouter key replaces it'
     case 'chosen':
-      if (scope === 'repo') return source === 'repo' ? 'choisi pour ce repo' : 'choisi pour l’organisation'
-      return 'choisi pour l’organisation, ne suit pas le provider « Par défaut »'
+      if (scope === 'repo') return source === 'repo' ? 'chosen for this repo' : 'chosen for the organization'
+      return 'chosen for the organization, does not follow the "Default" provider'
   }
 }
 
 /**
  * REV-62. Where an admin corrects an id of the wrong form: the form of the level on this screen, the
- * Réglages of the org for a repository that follows them, or the provider in Providers et clés.
+ * Settings of the org for a repository that follows them, or the provider in Providers and keys.
  */
 export function wrongIdAction(effective: EffectiveLevel, scope: 'org' | 'repo', source: Resolved<LevelModels>['source']): string {
   if (effective.origin === 'default') {
     return scope === 'repo'
-      ? 'Pour le corriger : les modèles de ce provider dans Providers et clés, ou un modèle pour ce repo dans le formulaire ci-dessous.'
-      : 'Pour le corriger : les modèles de ce provider dans Providers et clés, ou un modèle pour ce niveau dans le formulaire ci-dessous.'
+      ? 'To fix it, change the models of this provider in Providers and keys, or set a model for this repo in the form below.'
+      : 'To fix it, change the models of this provider in Providers and keys, or set a model for this level in the form below.'
   }
   if (scope === 'repo' && source === 'org') {
-    return 'Pour le corriger : le modèle de ce niveau dans les Réglages de l’organisation, ou un modèle pour ce repo dans le formulaire ci-dessous.'
+    return 'To fix it, change the model of this level in the Settings of the organization, or set a model for this repo in the form below.'
   }
-  return 'Pour le corriger : le modèle de ce niveau dans le formulaire ci-dessous.'
+  return 'To fix it, change the model of this level in the form below.'
 }

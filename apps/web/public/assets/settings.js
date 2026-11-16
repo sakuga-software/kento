@@ -1,4 +1,4 @@
-// The Settings screen (REV-29). « Ajouter un provider » is folded: a link to #nouveau-provider
+// The Settings screen (REV-29). « Add a provider » is folded: a link to #nouveau-provider
 // (the home screen has one) opens it. The table of contents marks the section on screen.
 // Its names stay in a block: the scripts of a page share one global scope.
 {

@@ -1,4 +1,4 @@
-// REV-91. The menu « … » of a row on the Repos screen: one open at a time; Échap and a click
+// REV-91. The menu « … » of a row on the Repos screen: one open at a time; Escape and a click
 // outside close it. Without JavaScript, its summary opens and closes it.
 {
   const menus = () => document.querySelectorAll('details.row-menu[open]')
@@ -41,12 +41,12 @@
   )
 
   document.addEventListener('click', (event) => {
-    // Both read before any change to the page: the nodes of the click, and « Annuler » in a menu.
+    // Both read before any change to the page: the nodes of the click, and « Cancel » in a menu.
     const path = event.composedPath()
     const cancel = event.target instanceof Element ? event.target.closest('.row-menu [data-confirm-cancel]') : null
     const cancelled = cancel?.closest('details.row-menu')
     for (const menu of menus()) if (!path.includes(menu)) closeMenu(menu, false)
-    // « Annuler » of the confirmation in a menu: the person gives up the action, the menu closes too.
+    // « Cancel » of the confirmation in a menu: the person gives up the action, the menu closes too.
     // After every listener of this click, confirm.js included, whatever their order: the focus ends
     // on the summary of the menu.
     // A menu that something else closed or took away keeps its state, and the focus stays where it is.
@@ -64,7 +64,7 @@
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || !(event.target instanceof Element)) return
-    // confirm.js closed an open confirmation with this Échap: the next one closes the menu.
+    // confirm.js closed an open confirmation with this Escape: the next one closes the menu.
     if (event.defaultPrevented) return
     const menu = event.target.closest('details.row-menu[open]')
     if (!menu) return

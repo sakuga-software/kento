@@ -316,10 +316,10 @@ test('the price table: long context of Haiku 5.5, and a model without a price', 
 });
 
 test('the cost line says when the cost is not known', () => {
-  assert.match(costLine('lite', { model: 'qwen3', cost: 0, cost_source: 'unknown' }), /coût inconnu \(aucun prix pour ce modèle, compté 0 \$\)$/);
-  assert.match(costLine('lite', { model: 'qwen3', cost: 0, cost_source: 'free' }), /0,000 \$ \(modèle local\)$/);
-  assert.match(costLine('lite', { model: 'm', cost: 0.0123, cost_source: 'table' }), /· 0,012 \$$/);
-  assert.match(costLine('lite', { model: 'm', cost: 0.0123 }), /· 0,012 \$$/);
+  assert.match(costLine('lite', { model: 'qwen3', cost: 0, cost_source: 'unknown' }), /unknown cost \(no price for this model, counted as \$0\)$/);
+  assert.match(costLine('lite', { model: 'qwen3', cost: 0, cost_source: 'free' }), /\$0\.000 \(local model\)$/);
+  assert.match(costLine('lite', { model: 'm', cost: 0.0123, cost_source: 'table' }), /· \$0\.012$/);
+  assert.match(costLine('lite', { model: 'm', cost: 0.0123 }), /· \$0\.012$/);
 });
 
 test('a prompt that the client gives replaces the file of prompts/ with that name only', async () => {

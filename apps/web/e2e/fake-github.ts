@@ -57,7 +57,7 @@ const FAKE_PULL_FILES: Record<string, string[]> = {
 
 /** REV-17. The title, the author and the branches of a pull request, for the header of its screen. */
 const FAKE_PULL_DETAILS: Record<string, { title: string; user: { login: string }; head: { ref: string } }> = {
-  'sakuga-software/orchard#142': { title: 'Sessions : expiration et rotation des clés', user: { login: 'camille' }, head: { ref: 'feat/session-expiry' } },
+  'sakuga-software/orchard#142': { title: 'Sessions: expiry and rotation of the keys', user: { login: 'camille' }, head: { ref: 'feat/session-expiry' } },
   'sakuga-software/orchard#43': { title: 'Sessions : table et index', user: { login: 'camille' }, head: { ref: 'feat/sessions-table' } },
 }
 

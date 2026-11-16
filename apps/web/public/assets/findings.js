@@ -1,8 +1,8 @@
-// REV-18. The selection of the Findings screen: « Sélectionner tous les findings de la page » in the
+// REV-18. The selection of the Findings screen: « Select all the findings of the page » in the
 // header of the table, and the count of the findings checked. Without JavaScript, each row is
 // checked by hand and the actions work the same.
-// REV-91: « Désélectionner » empties the selection (kento.css hides the bar with none); a filter
-// applies on change, with no « Filtrer » button.
+// REV-91: « Clear the selection » empties the selection (kento.css hides the bar with none); a filter
+// applies on change, with no « Filter » button.
 // Its names stay in a block: the scripts of a page share one global scope (frame.js has a `bar` too).
 {
   const all = document.querySelector('[data-select-all]')
@@ -12,7 +12,7 @@
 
   const update = () => {
     const n = boxes.filter((box) => box.checked).length
-    if (count) count.textContent = n === 0 ? 'Cochez des findings pour les marquer.' : n === 1 ? '1 finding coché' : `${n} findings cochés`
+    if (count) count.textContent = n === 0 ? 'Check findings to mark them.' : n === 1 ? '1 finding checked' : `${n} findings checked`
     if (all) {
       all.checked = n > 0 && n === boxes.length
       all.indeterminate = n > 0 && n < boxes.length

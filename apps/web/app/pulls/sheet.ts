@@ -150,10 +150,10 @@ export function sheetCells(input: {
 
 /** The words of each state, on the screen. The colour of a cell never carries its meaning alone. */
 export const CELL_LABELS: Record<CellState, string> = {
-  posted: 'posté',
-  found: 'retrouvé',
-  moved: 'déplacé',
-  reopened: 'rouvert',
+  posted: 'posted',
+  found: 'found again',
+  moved: 'moved',
+  reopened: 'reopened',
   fixed: 'fixed',
   dismissed: 'dismissed',
   wontfix: 'wontfix',
@@ -163,9 +163,9 @@ export const CELL_LABELS: Record<CellState, string> = {
 
 /** The words of each status of a finding, on the screen. */
 export const STATUS_LABELS: Record<FindingStatus, string> = {
-  open: 'ouvert',
+  open: 'open',
   fixed: 'fixed',
-  stale: 'en suspens',
+  stale: 'stale',
   dismissed: 'dismissed',
   wontfix: 'wontfix',
 }

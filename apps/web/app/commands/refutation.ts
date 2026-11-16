@@ -155,9 +155,9 @@ export const DOCS_PATH = docsRoutes.commands.href()
  */
 export function hintText(login: string | null, docsUrl: string | null): string {
   let lead = login ? `@${login} ` : ''
-  let link = docsUrl ? ` [Les commandes de Kentō](${docsUrl})` : ''
+  let link = docsUrl ? ` [Kentō commands](${docsUrl})` : ''
   return (
-    `${lead}Cette réponse semble écarter le constat. Pour qu'il compte comme rejeté (il ne reviendra pas et ne baissera plus la note) : ` +
+    `${lead}This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ` +
     `\`@${COMMAND_NAMES[0]} reject <cause>\`.${link}\n\n${HINT_MARKER}`
   )
 }

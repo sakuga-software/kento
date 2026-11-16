@@ -71,7 +71,7 @@ describe('without the sign-in configured', () => {
     assert.equal(screen.headers.get('Location'), '/login?returnTo=%2Frepos')
 
     let page = await (await router.fetch(new Request('http://localhost/login'))).text()
-    assert.match(page, /Connexion indisponible/)
+    assert.match(page, /Sign-in unavailable/)
     assert.doesNotMatch(page, /Continuer avec GitHub/)
   })
 })
@@ -96,7 +96,7 @@ describe('the GitHub sign-in', () => {
     assert.ok(cookie)
   })
 
-  it('gives an admin of the org the full frame, with no « Lecture seule »', async () => {
+  it('gives an admin of the org the full frame, with no « Read only »', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn(ALEX)
 
@@ -104,18 +104,18 @@ describe('the GitHub sign-in', () => {
     assert.match(html, /<a href="\/users\/alex" title="alex" class="bar-avatar"><span aria-hidden="true">MA<\/span>/)
     assert.match(html, /<span class="who-role">Admin<\/span>/)
     assert.match(html, /<span class="bar-org-box">sakuga-software<\/span>/)
-    assert.doesNotMatch(html, /Lecture seule/)
+    assert.doesNotMatch(html, /Read only/)
     assert.match(html, /action="\/logout"/)
     assert.equal(auth.memberships.get('user-1/org-1')?.role, 'admin')
   })
 
-  it('shows « Lecture seule » to a member', async () => {
+  it('shows « Read only » to a member', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(CAMILLE)
 
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /<span class="who-role">Membre<\/span>/)
-    assert.match(html, /<strong class="banner-title">Lecture seule<\/strong> Vous êtes membre de sakuga-software/)
+    assert.match(html, /<span class="who-role">Member<\/span>/)
+    assert.match(html, /<strong class="banner-title">Read only<\/strong> You are a member of sakuga-software/)
   })
 
   it('refuses a person outside of every org, and writes nothing', async () => {
@@ -127,7 +127,7 @@ describe('the GitHub sign-in', () => {
     assert.equal(cookie, `${COOKIE}=`)
     assert.equal(auth.users.size, 0)
     assert.equal((await request('/', { cookie })).status, 303)
-    assert.match(await (await request('/login?notice=not_member')).text(), /Accès refusé\./)
+    assert.match(await (await request('/login?notice=not_member')).text(), /Access refused\./)
   })
 
   it('names the refused account and offers another account or the App on an org (REV-32)', async () => {
@@ -142,19 +142,19 @@ describe('the GitHub sign-in', () => {
     // Shown once: the page empties the cookie for the next person at this browser.
     assert.match(shown.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /^__Host-kento_refused=;.*Max-Age=0/)
     let html = await shown.text()
-    assert.match(html, /Connecté à GitHub en tant que <strong class="mono">@stranger<\/strong>/)
-    assert.match(html, /href="\/login\/github\?switch=1"[^>]*>.*Changer de compte GitHub/s)
-    assert.match(html, new RegExp(`href="${INSTALL_URL}"[^>]*>Installer Kentō sur une organisation`))
-    assert.match(html, /href="\/login\/github">Réessayer avec @stranger<\/a>/)
+    assert.match(html, /Signed in to GitHub as <strong class="mono">@stranger<\/strong>/)
+    assert.match(html, /href="\/login\/github\?switch=1"[^>]*>.*Switch GitHub account/s)
+    assert.match(html, new RegExp(`href="${INSTALL_URL}"[^>]*>Install Kentō on an organization`))
+    assert.match(html, /href="\/login\/github">Try again with @stranger<\/a>/)
     assert.doesNotMatch(html, /Continuer avec GitHub/)
 
     // Without the cookie, or with a forged one, the page names no account.
     let bare = await (await request('/login?notice=not_member')).text()
-    assert.doesNotMatch(bare, /Connecté à GitHub en tant que/)
-    assert.match(bare, /Changer de compte GitHub/)
+    assert.doesNotMatch(bare, /Signed in to GitHub as/)
+    assert.match(bare, /Switch GitHub account/)
     let forged = await (await request('/login?notice=not_member', { cookie: '__Host-kento_refused=evil' })).text()
     assert.doesNotMatch(forged, /@evil/)
-    // The cookie names the account on « Accès refusé » only, and any visit of the page empties it,
+    // The cookie names the account on « Access refused » only, and any visit of the page empties it,
     // forged or not.
     let other = await request('/login?notice=signed_out', { cookie: refused })
     assert.doesNotMatch(await other.text(), /@stranger/)
@@ -176,7 +176,7 @@ describe('the GitHub sign-in', () => {
     assert.notEqual(cookieOf(callback, COOKIE) ?? `${COOKIE}=`, `${COOKIE}=`, 'the session cookie is still set')
   })
 
-  it('makes the link « Installer Kentō » from the slug of the App, on github.com or a GitHub Enterprise Server (REV-32)', () => {
+  it('makes the link « Install Kentō » from the slug of the App, on github.com or a GitHub Enterprise Server (REV-32)', () => {
     assert.equal(appInstallUrl('https://github.com', 'kento-review'), 'https://github.com/apps/kento-review/installations/new')
     assert.equal(appInstallUrl('https://ghe.example.com/', 'sakuga-review'), 'https://ghe.example.com/apps/sakuga-review/installations/new')
   })
@@ -189,7 +189,7 @@ describe('the GitHub sign-in', () => {
     assert.equal((await request('/login/github')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
   })
 
-  it('« Changer de compte GitHub » asks GitHub for its account picker (REV-32)', async () => {
+  it('« Switch GitHub account » asks GitHub for its account picker (REV-32)', async () => {
     let { request } = setup()
     let plain = new URL((await request('/login/github')).headers.get('Location')!)
     assert.equal(plain.searchParams.get('prompt'), null)
@@ -198,12 +198,12 @@ describe('the GitHub sign-in', () => {
     assert.ok(picker.searchParams.get('state'))
   })
 
-  it('links Findings in the bar, with no « Bientôt » left (REV-18)', async () => {
+  it('links Findings in the bar, with no « Soon » left (REV-18)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/', { cookie })).text()
     assert.equal(html.match(/href="\/findings"/g)?.length, 1)
-    assert.doesNotMatch(html, /class="bar-link">[^<]*<span class="tag tag-quiet">Bientôt/)
+    assert.doesNotMatch(html, /class="bar-link">[^<]*<span class="tag tag-quiet">Soon/)
   })
 
   it('says the sign-in failed when GitHub cannot tell, and lets nobody in', async () => {
@@ -324,7 +324,7 @@ describe('the role, from GitHub', () => {
     auth.clock.now = signedInAt + ROLE_GRACE_MS + 1000
     let down = await request('/', { cookie })
     assert.equal(down.status, 503)
-    assert.match(await down.text(), /GitHub ne répond pas\./)
+    assert.match(await down.text(), /GitHub does not answer\./)
     assert.equal(cookieOf(down, COOKIE), null, 'the session is not cleared')
 
     auth.setRole(ORG, ALEX, 'admin')
@@ -363,7 +363,7 @@ describe('the role, from GitHub', () => {
     auth.clock.now += ROLE_TTL_MS + 1000
     let alone = await (await request('/', { cookie })).text()
     assert.match(alone, /<span class="bar-org-box">sakuga-software<\/span>/)
-    assert.match(alone, /Lecture seule/)
+    assert.match(alone, /Read only/)
 
     // She comes back to orchard: the session stays on the org it moved to.
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
@@ -408,14 +408,14 @@ describe('the role, from GitHub', () => {
     // The admin org comes first.
     let html = await (await request('/', { cookie })).text()
     assert.match(html, /<option value="org-2" selected>orchard<\/option>/)
-    assert.doesNotMatch(html, /Lecture seule/)
+    assert.doesNotMatch(html, /Read only/)
 
     let token = await csrfOf(cookie!)
     let switched = await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-1', returnTo: '/repos' } })
     assert.equal(switched.headers.get('Location'), '/repos')
     let member = await (await request('/repos', { cookie })).text()
     assert.match(member, /<option value="org-1" selected>sakuga-software<\/option>/)
-    assert.match(member, /Lecture seule/)
+    assert.match(member, /Read only/)
 
     await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-9' } })
     assert.match(await (await request('/', { cookie })).text(), /<option value="org-1" selected>/)
@@ -488,12 +488,12 @@ describe('the frame of a screen', () => {
 
     assert.equal(response.status, 200)
     let html = await response.text()
-    assert.match(html, /<html lang="fr" data-theme="system">/)
-    assert.match(html, /<title>Tableau de bord · Kentō<\/title>/)
-    for (let label of ['Tableau de bord', 'Repos', 'Runners', 'Réglages']) {
+    assert.match(html, /<html lang="en" data-theme="system">/)
+    assert.match(html, /<title>Dashboard · Kentō<\/title>/)
+    for (let label of ['Dashboard', 'Repos', 'Runners', 'Settings']) {
       assert.ok(html.includes(`${label}</a>`), `the navigation has ${label}`)
     }
-    assert.match(html, /Kentō 1\.2\.3 · par Sakuga/)
+    assert.match(html, /Kentō 1\.2\.3 · by Sakuga/)
     assert.match(html, /\/assets\/kento\.css\?v=abc1234/)
   })
 

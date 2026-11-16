@@ -17,7 +17,7 @@ export function Document(handle: Handle<DocumentProps>) {
     let { title, theme, assetVersion, children } = handle.props
     let v = encodeURIComponent(assetVersion)
     return (
-      <html lang="fr" data-theme={theme}>
+      <html lang="en" data-theme={theme}>
         <head>
           <meta charSet="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -35,7 +35,7 @@ export function Document(handle: Handle<DocumentProps>) {
           <link rel="stylesheet" href={`/assets/kento.css?v=${v}`} />
           {/* Blocking and tiny: it marks <html> as scripted before the first paint. */}
           <script src={`/assets/theme.js?v=${v}`}></script>
-          {/* The confirmations of the destructive actions: « Annuler » and Échap. */}
+          {/* The confirmations of the destructive actions: « Cancel » and Escape. */}
           <script src={`/assets/confirm.js?v=${v}`} defer></script>
           {/* REV-91: « Menu » under 760 px, and the org switch. */}
           <script src={`/assets/frame.js?v=${v}`} defer></script>

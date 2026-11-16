@@ -96,10 +96,10 @@ describe('comment of a pull request whose job waits in the queue', () => {
 
     await expectState(1, 'first run')
     let body = queueComments()[0]!.body
-    assert.ok(body.startsWith(`**Kentō · review en attente** au commit \`${HEAD.slice(0, 9)}\``), body)
-    assert.match(body, /La review `balanced` de ce commit attend un runner depuis le \d\d\/\d\d \d\d:\d\d UTC : aucun runner de Kentō n’est en ligne, et aucun n’a jamais appelé Kentō\./)
-    assert.ok(body.includes('rien à relancer. Ce commentaire disparaît alors.'), body)
-    assert.ok(body.includes('démarrez un runner, voir l’écran [Runners](https://review.test/runners).'), body)
+    assert.ok(body.startsWith(`**Kentō · review waiting** at commit \`${HEAD.slice(0, 9)}\``), body)
+    assert.match(body, /The `balanced` review of this commit waits for a runner\. It entered the queue on \d{1,2} [A-Z][a-z]{2} \d\d:\d\d UTC\. No Kentō runner is online, and no runner ever called Kentō\./)
+    assert.ok(body.includes('There is nothing to run again. This comment then goes away.'), body)
+    assert.ok(body.includes('start a runner on the [Runners](https://review.test/runners) screen.'), body)
     assert.ok(body.endsWith(marker()), body)
 
     // The body does not change from one run to the next: no call to GitHub.
@@ -112,15 +112,15 @@ describe('comment of a pull request whose job waits in the queue', () => {
     await runner({ seenAgo: '2 hours' })
     await queuedJob()
     await publisher().publishPending()
-    assert.match(queueComments()[0]!.body, /aucun runner de Kentō n’est en ligne \(dernier signal le \d\d\/\d\d \d\d:\d\d UTC\)\./)
+    assert.match(queueComments()[0]!.body, /No Kentō runner is online \(last signal on \d{1,2} [A-Z][a-z]{2} \d\d:\d\d UTC\)\./)
 
     // A runner of the service comes online and does not take it: the same comment changes.
     await runner({ seenAgo: '5 seconds', orgId: null })
     await publisher().publishPending()
     await expectState(1, 'cause changed')
     let body = queueComments()[0]!.body
-    assert.ok(body.includes('1 runner est en ligne, mais il ne la prend pas'), body)
-    assert.ok(body.includes('vérifiez les runners'), body)
+    assert.ok(body.includes('1 runner is online, but it does not take the job'), body)
+    assert.ok(body.includes('check the runners'), body)
   })
 
   it('3. a job queued for 5 min, or one with no base, gets nothing', async () => {
@@ -136,8 +136,7 @@ describe('comment of a pull request whose job waits in the queue', () => {
     await publisher().publishPending()
     await expectState(1, 'two jobs')
     let body = queueComments()[0]!.body
-    assert.ok(body.includes('La review `heavy` de ce commit attend un runner'), body)
-    assert.ok(body.includes('(et 1 autre job de cette PR)'), body)
+    assert.ok(body.includes('The `heavy` review of this commit (and 1 other job of this PR) waits for a runner'), body)
   })
 
   it('5. the life of a job, step by step: exactly one comment while it waits, none after, never a row left behind', async () => {
@@ -172,7 +171,7 @@ describe('comment of a pull request whose job waits in the queue', () => {
     await database.sql`update runners set last_seen_at = now()`
     await one.publishPending()
     await expectState(1, 'cause changed while waiting')
-    assert.ok(queueComments()[0]!.body.includes('1 runner est en ligne'), queueComments()[0]!.body)
+    assert.ok(queueComments()[0]!.body.includes('1 runner is online'), queueComments()[0]!.body)
 
     // A crash between the DELETE and the delete of the row: the next DELETE answers 404, and that is done.
     let commentId = queueComments()[0]!.id

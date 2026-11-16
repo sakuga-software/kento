@@ -19,9 +19,9 @@ export type RuleField = (typeof RULE_FIELDS)[number]
 
 /** The priority of each floor, as the review shows it (P0 to P2). */
 export const FLOOR_LABELS: Record<SeverityFloor, string> = {
-  critical: 'P0 · critique',
-  major: 'P1 · majeur',
-  minor: 'P2 · mineur',
+  critical: 'P0 · critical',
+  major: 'P1 · major',
+  minor: 'P2 · minor',
 }
 
 function text(form: FormData, name: string): string {
@@ -33,24 +33,24 @@ function text(form: FormData, name: string): string {
 export function readRuleForm(form: FormData): FormResult<RuleValues> {
   let errors: Partial<Record<RuleField, string>> = {}
   let title = text(form, 'title').replace(/\s+/g, ' ').trim()
-  if (!title) errors.title = 'Donnez un titre à la règle.'
-  else if (title.length > RULE_TITLE_MAX) errors.title = `${RULE_TITLE_MAX} caractères au plus ; un emoji compte pour deux.`
+  if (!title) errors.title = 'Give the rule a title.'
+  else if (title.length > RULE_TITLE_MAX) errors.title = `${RULE_TITLE_MAX} characters at most. An emoji counts as two.`
 
   let body = text(form, 'body').replace(/\r\n/g, '\n').trim()
-  if (!body) errors.body = 'Écrivez ce que la règle demande : le modèle ne lit que ce texte.'
-  else if (body.length > RULE_TEXT_MAX) errors.body = `${RULE_TEXT_MAX.toLocaleString('fr-FR')} caractères au plus, un emoji comptant pour deux (${body.length.toLocaleString('fr-FR')} ici).`
+  if (!body) errors.body = 'Write what the rule asks for. The model reads only this text.'
+  else if (body.length > RULE_TEXT_MAX) errors.body = `${RULE_TEXT_MAX.toLocaleString('en-US')} characters at most, and an emoji counts as two (${body.length.toLocaleString('en-US')} here).`
 
   let lines = text(form, 'paths')
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
   let paths = [...new Set(lines)]
-  if (paths.length > RULE_PATHS_MAX) errors.paths = `${RULE_PATHS_MAX} motifs au plus.`
+  if (paths.length > RULE_PATHS_MAX) errors.paths = `${RULE_PATHS_MAX} patterns at most.`
   else {
     for (let pattern of paths) {
-      let problem = pattern.length > MAX_PATH_LENGTH ? `plus de ${MAX_PATH_LENGTH} caractères` : checkPattern(pattern)
+      let problem = pattern.length > MAX_PATH_LENGTH ? `more than ${MAX_PATH_LENGTH} characters` : checkPattern(pattern)
       if (problem) {
-        errors.paths = `« ${pattern.slice(0, 60)} » : ${problem}.`
+        errors.paths = `"${pattern.slice(0, 60)}": ${problem}.`
         break
       }
     }
@@ -59,7 +59,7 @@ export function readRuleForm(form: FormData): FormResult<RuleValues> {
   let floor = text(form, 'severityFloor')
   let severityFloor: SeverityFloor | null = null
   if (isOneOf(SEVERITIES, floor)) severityFloor = floor
-  else if (floor !== '') errors.severityFloor = 'Choisissez une priorité, ou « Aucun plancher ».'
+  else if (floor !== '') errors.severityFloor = 'Choose a priority, or "No floor".'
 
   if (Object.keys(errors).length) return { ok: false, errors: errors as Record<string, string> }
   return { ok: true, value: { title, body, paths, severityFloor } }

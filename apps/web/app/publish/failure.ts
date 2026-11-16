@@ -42,15 +42,15 @@ export const failureMarker = (jobId: string) => `<!-- kento:failure ${jobId} -->
 /** The body of the comment that tells the pull request why the job failed, and how to run it again. */
 export function failureComment(job: FailedJob): string {
   let review = job.kind === 'review'
-  let what = review ? 'review' : 'résolution des fils'
+  let what = review ? 'review' : 'thread resolution'
   let command = review ? `@kento-review ${job.level}` : `@kento-review resolve ${job.level}`
   let mention = job.commenter ? `@${job.commenter} ` : ''
-  let retry = `Pour relancer : \`${command}\`.`
-  if (job.configUrl) retry += ` Si l’erreur vient d’un modèle ou d’un provider, vérifiez la [config du repo](${job.configUrl}).`
+  let retry = `To run it again: \`${command}\`.`
+  if (job.configUrl) retry += ` If the error comes from a model or a provider, check the [config of the repo](${job.configUrl}).`
   return [
-    `**Kentō · ${what} en échec** au commit \`${job.headSha.slice(0, 9)}\``,
-    `${mention}La ${what} \`${job.level}\` de ce commit a échoué : Kentō ne la relancera pas seul.`,
-    `Raison : \`${sanitizeReason(job.failureReason)}\``,
+    `**Kentō · ${what} failed** at commit \`${job.headSha.slice(0, 9)}\``,
+    `${mention}The \`${job.level}\` ${what} of this commit failed. Kentō will not run it again by itself.`,
+    `Reason: \`${sanitizeReason(job.failureReason)}\``,
     retry,
     failureMarker(job.id),
   ].join('\n\n')

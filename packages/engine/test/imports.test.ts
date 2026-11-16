@@ -162,13 +162,13 @@ test('gallery-app#12: `and` and `isNull` imported on line 1 refute « peut-être
   assert.equal(reply.confidence_score, 3, 'the check never changes the score of the model');
 });
 
-test('a finding that the engine cannot check goes to « Non relu »', () => {
+test('a finding that the engine cannot check goes to « Not reviewed »', () => {
   // No name in backquotes: the engine cannot tell which name the finding means.
   const reply = answer([finding({ title: 'Fonction utilisée sans import', scenario: 'La route appelle une fonction que le diff ne montre pas importée.' }), finding({ severity: 'minor', title: 'Libellé en dur', line: 1 })], 3);
   const { unchecked } = checkMissingNames(reply, () => ['export const x = 1;']);
   assert.equal(unchecked.length, 1);
   assert.deepEqual(reply.findings.map((f) => f.title), ['Libellé en dur']);
-  assert.deepEqual(reply.not_reviewed, [`${PATH} : Fonction utilisée sans import. Kentō n'a pas pu le vérifier dans le fichier à la tête.`]);
+  assert.deepEqual(reply.not_reviewed, [`${PATH}: Fonction utilisée sans import. Kentō could not check it in the file at the head.`]);
   assert.equal(reply.confidence_score, 3, 'the check never changes the score of the model');
 });
 
@@ -202,7 +202,7 @@ test('the check leaves alone the other findings, an import under another name, a
     checkMissingNames(one, () => file);
     assert.equal(one.findings.length, 1, `${file[0]} does not refute`);
   }
-  // The names of the scenario do not count: the title names none, so the finding goes to « Non relu ».
+  // The names of the scenario do not count: the title names none, so the finding goes to « Not reviewed ».
   const vague = answer([finding({ title: 'Fonction utilisée sans import', scenario: 'La route appelle `data` puis `json`.' })], 2);
   const { unchecked } = checkMissingNames(vague, () => ['import { data, json } from "react-router";']);
   assert.equal(unchecked.length, 1);

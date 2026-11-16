@@ -119,6 +119,10 @@ export function liveThread(stored: StoredFinding, threads: readonly BotThread[])
 
 const BADGE_SEVERITY: Record<string, StoredFinding['severity']> = { P0: 'critical', P1: 'major', P2: 'minor' }
 
+// The badge of a security finding: its alt in an image, or its text in backquotes. REV-114: the
+// comments before the deploy say « sécurité ».
+const SECURITY_BADGE = /alt="(?:security|sécurité)"|`(?:security|sécurité)`/
+
 /**
  * The open threads of the bot that no stored finding holds: a review of an earlier release opened
  * them. They become findings, read from their comment: the title in bold, the priority badge.
@@ -136,7 +140,7 @@ export function adoptThreads(stored: readonly StoredFinding[], threads: readonly
       line: t.line ?? 0,
       title: (/\*\*(.+?)\*\*/.exec(t.body)?.[1] ?? '').slice(0, 1000),
       severity: BADGE_SEVERITY[/alt="(P[012])"/.exec(t.body)?.[1] ?? ''] ?? 'minor',
-      category: t.body.includes('alt="sécurité"') ? 'security' : 'bug',
+      category: SECURITY_BADGE.test(t.body) ? 'security' : 'bug',
       // The comment does not give the confidence. 70 is the confidence of a sure finding.
       confidence: 70,
       status: 'open',

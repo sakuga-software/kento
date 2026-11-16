@@ -26,7 +26,7 @@ import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = headSha(0xabc)
 const PR = 28
-const DOCS_URL = 'https://review.sakuga.dev/docs/commandes'
+const DOCS_URL = 'https://review.sakuga.dev/docs/commands'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 
@@ -185,7 +185,7 @@ describe('commands in the comments of a pull request', () => {
     assert.equal(second.body.reason, 'head already has a review at this level')
     assert.deepEqual(reactionsOf(second.payload.comment.id), ['confused'])
     assert.equal(fake.state.issueComments.length, 1)
-    assert.match(fake.state.issueComments[0]!.body, /@alex .*déjà une review `heavy`.*@kento-review heavy force/s)
+    assert.match(fake.state.issueComments[0]!.body, /@alex .*already has a `heavy` review.*@kento-review heavy force/s)
 
     // The replay of the refused comment posts no second reply.
     await replay(second.payload, nextDelivery())
@@ -269,7 +269,7 @@ describe('commands in the comments of a pull request', () => {
     assert.deepEqual(body, { outcome: 'refused', reason: 'unknown command' })
     assert.deepEqual(reactionsOf(payload.comment.id), ['confused'])
     assert.equal(fake.state.issueComments.length, 1)
-    assert.match(fake.state.issueComments[0]!.body, /`@kento-review frobnicate` n'est pas une commande de Kentō/)
+    assert.match(fake.state.issueComments[0]!.body, /`@kento-review frobnicate` is not a Kentō command/)
     assert.match(fake.state.issueComments[0]!.body, /@kento-review \[lite\|balanced\|heavy\]/)
     await replay(payload, deliveryId)
     assert.equal(fake.state.issueComments.length, 1)
@@ -316,7 +316,7 @@ describe('commands in the comments of a pull request', () => {
     assert.deepEqual(reactionsOf(payload.comment.id), ['eyes'])
     let again = await say('@kento-review resolve')
     assert.deepEqual(again.body, { outcome: 'refused', reason: 'a resolve of the pull request is already running' })
-    assert.match(fake.state.issueComments.at(-1)!.body, /déjà en file ou en cours/)
+    assert.match(fake.state.issueComments.at(-1)!.body, /already queued or in progress/)
     await database.sql`update jobs set state = 'done', finished_at = now()`
     assert.equal((await say('@kento-review resolve')).body.outcome, 'queued')
     assert.deepEqual((await jobs()).map((j) => [j.kind, j.level]), [['resolve', 'balanced'], ['resolve', 'lite']])
@@ -521,14 +521,14 @@ describe('commands in the comments of a pull request', () => {
         // The thread of the bot that the code fixed, and the one that a reply settled, are resolved.
         // The thread of a person stays open: an answer of the bot is not enough.
         assert.deepEqual([...fake.state.resolved].sort(), [botFixed, botAnswered].sort())
-        assert.match(fake.repliesTo(botFixed)[0]!.body, /Corrigé.*\n\nFil résolu\.\n\n<!-- sakuga-review:resolve [0-9a-f]{12} -->/s)
-        assert.doesNotMatch(fake.repliesTo(personAnswered)[0]!.body, /Fil résolu/)
+        assert.match(fake.repliesTo(botFixed)[0]!.body, /Corrigé.*\n\nThread resolved\.\n\n<!-- sakuga-review:resolve [0-9a-f]{12} -->/s)
+        assert.doesNotMatch(fake.repliesTo(personAnswered)[0]!.body, /Thread resolved/)
         let summary = fake.state.issueComments.at(-1)!.body
-        assert.match(summary, /Kentō · résolution des fils\*\* au commit/)
-        assert.match(summary, /^- résolu · \[`src\/sum.ts:2`\]/m)
-        assert.match(summary, /^- reste ouvert · \[`src\/a.ts:5`\].* · alex/m)
+        assert.match(summary, /Kentō · thread resolution\*\* at commit/)
+        assert.match(summary, /^- resolved · \[`src\/sum.ts:2`\]/m)
+        assert.match(summary, /^- stays open · \[`src\/a.ts:5`\].* · alex/m)
         assert.doesNotMatch(summary, /\p{Extended_Pictographic}/u)
-        assert.match(summary, /Kentō · Niveau `lite` · `anthropic\/claude-haiku-5.5` · 0,004 \$/)
+        assert.match(summary, /Kentō · Level `lite` · `anthropic\/claude-haiku-5.5` · \$0\.004/)
         assert.deepEqual(reactionsOf(payload.comment.id), ['eyes', 'rocket'])
         // Only the publication asked for `contents: write`, for this repository.
         let writers = fake.state.tokens.filter((t) => t.permissions.contents === 'write')
@@ -756,7 +756,7 @@ describe('commands in the comments of a pull request', () => {
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: result })
         await publisher().publishPending()
         let summary = fake.state.issueComments.at(-1)!.body
-        assert.match(summary, /2 fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande `@kento-review resolve` les relira\./)
+        assert.match(summary, /2 threads got no answer from the model\. They stay open, and the next `@kento-review resolve` command reads them again\./)
         assert.equal(fake.repliesTo(personAnswered).length, 0)
       })
 
@@ -768,11 +768,11 @@ describe('commands in the comments of a pull request', () => {
         await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
         await publisher(new URL('https://review.test')).publishPending()
         assert.equal(fake.state.resolved.size, 0)
-        assert.match(fake.repliesTo(botFixed)[0]!.body, /Le fil peut être résolu : l'App n'a pas encore le droit/)
+        assert.match(fake.repliesTo(botFixed)[0]!.body, /The thread can be resolved\. The App does not have the permission/)
         // REV-106. A service that knows its public URL shows its icons.
         assert.match(
           fake.state.issueComments.at(-1)!.body,
-          /^- <picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/to-resolve-dark\.v2\.svg"><img alt="To resolve" src="https:\/\/review\.test\/assets\/pr\/to-resolve\.v2\.svg" height="20" align="top"><\/picture> à résoudre · \[`src\/sum.ts:2`\]/m,
+          /^- <picture><source media="\(prefers-color-scheme: dark\)" srcset="https:\/\/review\.test\/assets\/pr\/to-resolve-dark\.v2\.svg"><img alt="To resolve" src="https:\/\/review\.test\/assets\/pr\/to-resolve\.v2\.svg" height="20" align="top"><\/picture> to resolve · \[`src\/sum.ts:2`\]/m,
         )
       })
 
@@ -861,7 +861,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(await eventsOf(finding.id), [{ type: 'dismissed', actor: 'alex', reason: cause, source: 'command' }])
       let replies = fake.repliesTo(finding.commentId!)
       assert.equal(replies.length, 1)
-      assert.equal(replies[0]!.body, `Finding écarté (dismissed) par @alex sur Kentō. Motif : « ${cause} ». Les prochaines reviews ne le commenteront plus.\n\n<!-- kento:reject ${finding.id} -->`)
+      assert.equal(replies[0]!.body, `Finding dismissed by @alex on Kentō. Reason: "${cause}". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`)
       assert.ok(fake.state.resolved.has(finding.commentId!))
       assert.equal(fake.state.issueComments.length, 0)
       assert.equal((await jobs()).length, 0)
@@ -872,7 +872,7 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` n'est plus ouvert : un push l'a déjà corrigé/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a push already fixed it/)
       await seedFinding('eeeeee000001', { status: 'stale' })
       let stale = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
@@ -906,7 +906,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes', 'rocket'])
       // The reply goes under the pull request: this finding has no thread.
       assert.deepEqual(fake.state.issueComments.map((c) => c.body), [
-        `@alex Le constat \`#3cf454\` « Bug » est écarté (dismissed). Motif : « la valeur est validée par le schéma ». Les prochaines reviews ne le commenteront plus.\n\n<!-- kento:reject ${finding.id} -->`,
+        `@alex The finding \`#3cf454\` "Bug" is dismissed. Reason: "la valeur est validée par le schéma". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`,
       ])
       // A second reject of the same finding, even with another cause, changes nothing and posts nothing.
       let second = await say('@sakuga-review reject 3cf454aa la valeur est validée')
@@ -980,7 +980,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: review })
       let id = keyOf('Bug').slice(0, 6)
       assert.deepEqual(fake.state.dismissals, [
-        { reviewId: review, message: `Retirée par Kentō : @alex a écarté le constat \`#${id}\` « Bug », et aucun constat bloquant ne reste ouvert.` },
+        { reviewId: review, message: `Dismissed by Kentō: @alex dismissed the finding \`#${id}\` "Bug", and no blocking finding stays open.` },
       ])
       // The review of an older head is not the last one on the head: publish.ts dismisses it at the next review.
       assert.equal(fake.state.reviews.find((r) => r.id === older)!.state, 'CHANGES_REQUESTED')
@@ -1219,7 +1219,7 @@ describe('commands in the comments of a pull request', () => {
       await reply('@kento-review reject une autre cause', finding.commentId!)
       let replies = fake.repliesTo(finding.commentId!).filter((c) => c.author === BOT)
       assert.equal(replies.length, 1)
-      assert.match(replies[0]!.body, /Motif : « Faux positif »/)
+      assert.match(replies[0]!.body, /Reason: "Faux positif"/)
     })
 
     it('R23. a wontfix finding becomes dismissed with the cause of the reject, and its events keep both decisions', async () => {
@@ -1243,7 +1243,7 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /n'est plus ouvert : un push l'a déjà corrigé/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a push already fixed it/)
       let stale = await seedFinding('eeeeee000001', { status: 'stale' })
       let staleRefused = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(staleRefused.body, { outcome: 'refused', reason: 'reject: finding is stale' })
@@ -1257,7 +1257,7 @@ describe('commands in the comments of a pull request', () => {
       let { body, payload } = await reply('@kento-review reject the schema validates it', finding.commentId!)
       assert.equal(body.outcome, 'dismissed')
       assert.equal(fake.state.resolved.size, 0)
-      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /Kentō n'a pas pu résoudre ce fil : s'il est encore ouvert, il peut être résolu à la main\.\n\n<!-- kento:reject /)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /Kentō could not resolve this thread\. If it is still open, a person can resolve it\.\n\n<!-- kento:reject /)
       assert.deepEqual(threadReactionsOf(payload.comment.id), ['eyes', 'rocket'])
     })
 
@@ -1272,7 +1272,7 @@ describe('commands in the comments of a pull request', () => {
       let second = await say('@kento-review reject #3cf454 une autre cause')
       assert.equal(second.body.outcome, 'unchanged')
       assert.deepEqual(fake.state.issueComments.map((c) => c.body.split('\n')[0]), [
-        '@alex Le constat `#3cf454` « Bug » est écarté (dismissed). Motif : « la valeur est validée ». Les prochaines reviews ne le commenteront plus.',
+        '@alex The finding `#3cf454` "Bug" is dismissed. Reason: "la valeur est validée". The next reviews will not comment on it again.',
       ])
       assert.deepEqual(reactionsOf(second.payload.comment.id), ['eyes', 'rocket'])
       assert.equal((await eventsOf(finding.id)).length, 1)
@@ -1294,7 +1294,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(threadReactionsOf(payload.comment.id), ['confused'])
       let replies = fake.repliesTo(finding.commentId!)
       assert.equal(replies.length, 1)
-      assert.match(replies[0]!.body, /^@alex La commande `reject` demande une cause/)
+      assert.match(replies[0]!.body, /^@alex The `reject` command needs a cause/)
       assert.match(replies[0]!.body, /@kento-review reject <cause>/)
       assert.equal(fake.state.issueComments.length, 0)
       await replayReply(payload, deliveryId)
@@ -1308,8 +1308,8 @@ describe('commands in the comments of a pull request', () => {
       let withId = await reply('@kento-review reject #3cf454 faux positif', finding.commentId!)
       assert.deepEqual(withId.body, { outcome: 'refused', reason: 'reject: id_in_thread' })
       let replies = fake.repliesTo(finding.commentId!).map((c) => c.body)
-      assert.match(replies[0]!, /au plus 500 caractères/)
-      assert.match(replies[1]!, /vise ce constat/)
+      assert.match(replies[0]!, /at most 500 characters/)
+      assert.match(replies[1]!, /applies to that finding/)
     })
 
     it('R5. in the conversation: no id, an unknown id, an ambiguous id, a finding of another pull request', async () => {
@@ -1326,10 +1326,10 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(other.body, { outcome: 'refused', reason: 'reject: unknown_id' })
       for (let r of [missing, unknown, ambiguous, other]) assert.deepEqual(reactionsOf(r.payload.comment.id), ['confused'])
       let texts = fake.state.issueComments.map((c) => c.body)
-      assert.match(texts[0]!, /demande l'id du constat/)
-      assert.match(texts[1]!, /Aucun constat de cette PR n'a l'id `#ccc333`/)
-      assert.match(texts[2]!, /`#aaa111` désigne plusieurs constats de cette PR : `#aaa111bb0011`, `#aaa111cc0022`/)
-      assert.match(texts[3]!, /Aucun constat de cette PR n'a l'id `#bbb222`/)
+      assert.match(texts[0]!, /needs the id of the finding/)
+      assert.match(texts[1]!, /No finding of this PR has the id `#ccc333`/)
+      assert.match(texts[2]!, /`#aaa111` matches several findings of this PR: `#aaa111bb0011`, `#aaa111cc0022`/)
+      assert.match(texts[3]!, /No finding of this PR has the id `#bbb222`/)
     })
 
     it('R6. a reject in a thread that is not the thread of a finding gets 😕', async () => {
@@ -1337,7 +1337,7 @@ describe('commands in the comments of a pull request', () => {
       let { body, payload } = await reply('@kento-review reject not relevant', thread)
       assert.deepEqual(body, { outcome: 'refused', reason: 'reject: not_a_finding_thread' })
       assert.deepEqual(threadReactionsOf(payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(thread)[0]!.body, /n'est pas celui d'un constat de Kentō/)
+      assert.match(fake.repliesTo(thread)[0]!.body, /is not the thread of a Kentō finding/)
     })
 
     it('R7. a person who cannot write gets no answer; another command in a thread gets 😕', async () => {
@@ -1347,7 +1347,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(threadReactionsOf(reader.payload.comment.id), [])
       let heavy = await reply('@kento-review heavy', finding.commentId!)
       assert.deepEqual(heavy.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
-      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /ne lit que `@kento-review reject <cause>`/)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /reads only `@kento-review reject <cause>`/)
       assert.equal((await jobs()).length, 0)
     })
 
@@ -1362,8 +1362,8 @@ describe('commands in the comments of a pull request', () => {
         let [hint] = hints(finding.commentId!)
         assert.equal(
           hint!.body,
-          "@alex Cette réponse semble écarter le constat. Pour qu'il compte comme rejeté (il ne reviendra pas et ne baissera plus la note) : " +
-            `\`@kento-review reject <cause>\`. [Les commandes de Kentō](${DOCS_URL})\n\n${HINT_MARKER}`,
+          '@alex This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ' +
+            `\`@kento-review reject <cause>\`. [Kentō commands](${DOCS_URL})\n\n${HINT_MARKER}`,
         )
         let second = await reply('Non retenu : même cause, la valeur est validée.', finding.commentId!, { user: { login: 'writer', type: 'User' } })
         assert.deepEqual(second.body, { outcome: 'skipped', reason: 'thread already has a hint' })
@@ -1460,7 +1460,7 @@ describe('commands in the comments of a pull request', () => {
       it('H5. the list of the commands links the page of the commands', async () => {
         let finding = await seedFinding('3cf454aa0011', { thread: true })
         await reply('@kento-review reject', finding.commentId!)
-        assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /\[Les commandes de Kentō\]\(https:\/\/review\.sakuga\.dev\/docs\/commandes\)/)
+        assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /\[Kentō commands\]\(https:\/\/review\.sakuga\.dev\/docs\/commands\)/)
       })
     })
   })

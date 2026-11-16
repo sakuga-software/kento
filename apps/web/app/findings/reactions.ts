@@ -9,7 +9,7 @@ import { errorMessage, log } from '../log.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
 
 /** The reason of a finding dismissed by a 👎: the person gave none. */
-export const REACTION_REASON = 'sans motif, réaction GitHub'
+export const REACTION_REASON = 'no reason, GitHub reaction'
 
 /** The open findings that one sweep reads, the least recently read first. */
 export const SWEEP_BATCH = 50

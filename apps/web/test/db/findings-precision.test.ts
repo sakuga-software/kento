@@ -29,7 +29,7 @@ describe('the precision of the reviews', () => {
       insert into findings (repo_id, pr_number, fingerprint, key, rule_id, path, line, title, severity, category, confidence,
         status, status_reason, first_seen_sha, last_seen_sha, created_at)
       values (${repoId}, 1, ${`f${n}`}, ${`k${n}`}, ${ruleOf}, 'a.ts', ${++n}, 't', 'major', 'bug', 80, ${status},
-        ${status === 'dismissed' || status === 'wontfix' ? (last[2] ?? 'Hors sujet') : null}, ${HEAD}, ${HEAD}, now() - interval '60 days')
+        ${status === 'dismissed' || status === 'wontfix' ? (last[2] ?? 'Off topic') : null}, ${HEAD}, ${HEAD}, now() - interval '60 days')
       returning id`
     for (let [type, days, reason] of [['opened', 60] as [string, number, string?], ...events]) {
       await database.sql`
@@ -58,30 +58,30 @@ describe('the precision of the reviews', () => {
 
     // orchard: 12 fixed and 3 dismissed in the window, 4 of the fixed and 1 dismissed from the rule.
     for (let i = 0; i < 12; i++) await finding(orchard, [['fixed', 1 + i]], i < 4 ? ruleId : null)
-    await finding(orchard, [['dismissed', 2, 'Hors sujet']], ruleId)
-    await finding(orchard, [['dismissed', 3, 'Hors sujet']])
-    await finding(orchard, [['dismissed', 4, 'Faux positif']])
+    await finding(orchard, [['dismissed', 2, 'Off topic']], ruleId)
+    await finding(orchard, [['dismissed', 3, 'Off topic']])
+    await finding(orchard, [['dismissed', 4, 'False positive']])
     // Out of the count: closed before the window, fixed then opened again, wontfix, stale, open.
     await finding(orchard, [['fixed', 45]])
-    await finding(orchard, [['dismissed', 31, 'Hors sujet']])
+    await finding(orchard, [['dismissed', 31, 'Off topic']])
     await finding(orchard, [['fixed', 5], ['reopened', 2]])
-    await finding(orchard, [['wontfix', 1, 'Accepté']])
+    await finding(orchard, [['wontfix', 1, 'Accepted']])
     await finding(orchard, [['stale', 1]])
     await finding(orchard, [['opened', 1]])
     // In the count: dismissed before the window, opened again, then fixed in the window.
-    await finding(orchard, [['dismissed', 40, 'Hors sujet'], ['reopened', 20], ['fixed', 3]])
+    await finding(orchard, [['dismissed', 40, 'Off topic'], ['reopened', 20], ['fixed', 3]])
     // Out of the count (REV-18 review): fixed in the window, then opened again, and fixed again by an
     // event older than the window (events written out of order). Its last event is not in the window.
     await finding(orchard, [['fixed', 5], ['reopened', 2], ['fixed', 45]])
     // fruitback: 5 fixed and 4 dismissed: 9 closed, under the 10 of a share.
     for (let i = 0; i < 5; i++) await finding(fruitback, [['fixed', 2]])
-    for (let i = 0; i < 4; i++) await finding(fruitback, [['dismissed', 2, 'Déjà connu']])
-    // quiet: one dismissal with an empty reason (REV-18 review): counted, under « Sans motif ».
+    for (let i = 0; i < 4; i++) await finding(fruitback, [['dismissed', 2, 'Already known']])
+    // quiet: one dismissal with an empty reason (REV-18 review): counted, under « No reason ».
     await finding(quiet, [['dismissed', 1, '']])
-    // The same reason in another case (« Autre », typed by hand): one group with « Hors sujet ».
-    await finding(quiet, [['dismissed', 1, '  hors sujet ']])
+    // The same reason in another case (« Other », typed by hand): one group with « Off topic ».
+    await finding(quiet, [['dismissed', 1, '  off topic ']])
     // Another org: never counted.
-    for (let i = 0; i < 10; i++) await finding(repos[3]!.id, [['dismissed', 1, 'Hors sujet']])
+    for (let i = 0; i < 10; i++) await finding(repos[3]!.id, [['dismissed', 1, 'Off topic']])
   })
 
   after(async () => {
@@ -92,16 +92,16 @@ describe('the precision of the reviews', () => {
   it('counts the findings closed in 30 days, for the org and by repository, as a query written by hand does', async () => {
     let report = await precisionReport(database.sql, orgId)
     assert.deepEqual(report.org, { fixed: 18, dismissed: 9, closed: 27, rate: 18 / 27 })
-    assert.equal(precisionLabel(report.org), '67 %')
+    assert.equal(precisionLabel(report.org), '67%')
     assert.deepEqual(
       report.repos.map((r) => [r.fullName, r.fixed, r.dismissed, r.rate === null ? null : precisionLabel(r)]),
       [
-        ['sakuga-software/orchard', 13, 3, '81 %'],
+        ['sakuga-software/orchard', 13, 3, '81%'],
         ['sakuga-software/fruitback', 5, 4, null],
         ['sakuga-software/quiet', 0, 2, null],
       ],
     )
-    assert.equal(precisionLabel(report.repos[1]!), 'n = 9 sur 10')
+    assert.equal(precisionLabel(report.repos[1]!), 'n = 9 of 10')
     assert.equal(report.repoCount, 3)
 
     // By hand: the last event of each finding of the org, when it closed the finding in the window.
@@ -128,9 +128,9 @@ describe('the precision of the reviews', () => {
     assert.deepEqual(
       report.reasons.map((r) => ({ reason: r.reason.toLowerCase(), count: r.count })),
       [
-        { reason: 'déjà connu', count: 4 },
-        { reason: 'hors sujet', count: 3 },
-        { reason: 'faux positif', count: 1 },
+        { reason: 'already known', count: 4 },
+        { reason: 'off topic', count: 3 },
+        { reason: 'false positive', count: 1 },
       ],
     )
     // The empty reason is no group of its own name: a link could not filter on it.

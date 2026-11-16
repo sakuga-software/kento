@@ -5,7 +5,7 @@ import { defaultBaseUrl } from '@sakuga-review/engine/providers'
 import type { ProviderKind } from '@sakuga-review/protocol'
 
 /**
- * « Tester » on the screen: one call that reads the list of models of the provider with its key. It
+ * « Test » on the screen: one call that reads the list of models of the provider with its key. It
  * costs nothing and tells a valid key (200) from a refused one (401, 403).
  *
  * - `ok`: the provider answered.
@@ -99,18 +99,18 @@ export function createProbe(options: { fetch?: typeof fetch; resolve?: (host: st
   let resolve = options.resolve ?? (async (host: string) => (await lookup(host, { all: true })).map((entry) => entry.address))
   return async ({ kind, baseUrl, apiKey }) => {
     let target = probeUrl(kind, baseUrl)
-    if (!target) return { outcome: 'failed', message: 'Ce provider se teste depuis le runner qui le tient.' }
+    if (!target) return { outcome: 'failed', message: 'Test this provider from the runner that holds it.' }
     let url = new URL(target)
-    if (url.protocol !== 'https:') return { outcome: 'failed', message: 'Le service n’appelle un provider qu’en HTTPS. Mettez une URL en https://.' }
+    if (url.protocol !== 'https:') return { outcome: 'failed', message: 'The service calls a provider only over HTTPS. Enter a URL with https://.' }
     let host = url.hostname.replace(/^\[|\]$/g, '')
     let addresses: string[]
     try {
       addresses = isIP(host) ? [host] : await resolve(host)
     } catch {
-      return { outcome: 'failed', message: `Le nom ${host} ne se résout pas. Vérifiez l’URL du provider.` }
+      return { outcome: 'failed', message: `The name ${host} does not resolve. Check the URL of the provider.` }
     }
     if (addresses.length === 0 || addresses.some(privateAddress)) {
-      return { outcome: 'failed', message: `${host} est sur un réseau privé, et le service ne l’appelle pas. Pour qu’un runner de ce réseau l’appelle, ajoutez-le avec « La clé reste sur le runner ».` }
+      return { outcome: 'failed', message: `${host} is on a private network, and the service does not call it. For a runner of this network to call it, add it with "The key stays on the runner".` }
     }
     let headers: Record<string, string> =
       kind === 'anthropic' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { Authorization: `Bearer ${apiKey}` }
@@ -119,7 +119,7 @@ export function createProbe(options: { fetch?: typeof fetch; resolve?: (host: st
       // No redirect: a redirect could lead the key to another host.
       response = await doFetch(url, { headers, redirect: 'manual', signal: AbortSignal.timeout(options.timeoutMs ?? 10_000) })
     } catch (error) {
-      return { outcome: 'failed', message: error instanceof Error && error.name === 'TimeoutError' ? 'Pas de réponse en 10 s. Vérifiez l’URL, puis relancez le test.' : 'Le provider ne répond pas. Vérifiez l’URL, puis relancez le test.' }
+      return { outcome: 'failed', message: error instanceof Error && error.name === 'TimeoutError' ? 'No answer in 10 s. Check the URL, then run the test again.' : 'The provider does not answer. Check the URL, then run the test again.' }
     }
     if (response.status === 401 || response.status === 403) {
       // The whole head: a JSON error cut short would not parse. apiErrorMessage keeps 200 characters.
@@ -129,7 +129,7 @@ export function createProbe(options: { fetch?: typeof fetch; resolve?: (host: st
     // The status says it all: the body is never read.
     await response.body?.cancel().catch(() => {})
     if (response.ok) return { outcome: 'ok' }
-    return { outcome: 'failed', message: `Le provider a répondu ${response.status}. Vérifiez l’URL, puis relancez le test.` }
+    return { outcome: 'failed', message: `The provider answered ${response.status}. Check the URL, then run the test again.` }
   }
 }
 

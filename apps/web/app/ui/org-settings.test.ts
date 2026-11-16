@@ -23,7 +23,7 @@ function view(orgId: string, overrides: Partial<OrgSettingsView> = {}): OrgSetti
     updatedBy: null,
     updatedAt: null,
     repos: { total: 4, enabled: 1 },
-    costs: { dayUsd: 1.5, monthUsd: 12.25, dayByProvider: [{ providerId: null, label: 'Clé du service', usd: 1.5 }] },
+    costs: { dayUsd: 1.5, monthUsd: 12.25, dayByProvider: [{ providerId: null, label: 'Service key', usd: 1.5 }] },
     deliveries: {
       last: { deliveryId: 'd-2', event: 'pull_request', action: 'synchronize', status: 202, outcome: 'queued', reason: null, receivedAt: new Date(NOW.getTime() - 120_000) },
       lastPullRequest: { deliveryId: 'd-2', event: 'pull_request', action: 'synchronize', status: 202, outcome: 'queued', reason: null, receivedAt: new Date(NOW.getTime() - 120_000) },
@@ -128,20 +128,20 @@ describe('the settings of the org (REV-13)', () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /Plafond de coût/)
-    assert.match(html, /1,50\s\$/)
-    assert.match(html, /Clé du service/)
+    assert.match(html, /Cost cap/)
+    assert.match(html, /\$1\.50/)
+    assert.match(html, /Service key/)
     assert.match(html, /name="dailyCapUsd"/)
-    assert.match(html, /Valeurs par défaut/)
+    assert.match(html, /Default values/)
     assert.match(html, /name="defaultLevel"/)
     assert.match(html, /sakuga-agent\[bot\]/)
     assert.match(html, /name="trustedBots"/)
-    assert.match(html, /Tout est en place/)
+    assert.match(html, /Everything is in place/)
     assert.match(html, /pull_request\.synchronize · 202 queued/)
-    assert.match(html, /<strong>1<\/strong> sur 9 livraisons/)
-    assert.match(html, /Kentō n’a pas traité la livraison\. Rejouez-la depuis la page de l’App\./)
+    assert.match(html, /<strong>1<\/strong> of 9 deliveries/)
+    assert.match(html, /Kentō did not process the delivery\. Redeliver it from the page of the App\./)
     assert.match(html, /<code class="mono">database is down<\/code>/)
-    assert.match(html, /Rejouer depuis la page de l’App/)
+    assert.match(html, /Redeliver from the page of the App/)
     assert.match(html, /settings\/apps\/kento-review\/advanced/)
     assert.match(html, /commit <span class="mono">abcdef123<\/span>/)
   })
@@ -150,7 +150,7 @@ describe('the settings of the org (REV-13)', () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    let nav = /<nav aria-label="Sections des réglages" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
+    let nav = /<nav aria-label="Sections of the settings" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
     let anchors = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
     assert.deepEqual(anchors, ['plafond', 'defauts', 'bots', 'app'])
     for (let id of anchors) assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `the section #${id} is on the page`)
@@ -177,10 +177,10 @@ describe('the settings of the org (REV-13)', () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(CAMILLE)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /Plafond de coût/)
-    assert.match(html, /Aucun plafond par jour/)
+    assert.match(html, /Cost cap/)
+    assert.match(html, /No daily cap/)
     assert.match(html, /sakuga-agent\[bot\]/)
-    assert.match(html, /Tout est en place/)
+    assert.match(html, /Everything is in place/)
     assert.doesNotMatch(html, /action="\/settings\/org/)
     assert.doesNotMatch(html, /name="trustedBots"/)
   })
@@ -216,9 +216,9 @@ describe('the settings of the org (REV-13)', () => {
     assert.deepEqual(rows[ORG.id]!.caps, { dailyCapUsd: 0.01, monthlyCapUsd: null, alertPct: 75 })
     assert.deepEqual(rows[OTHER_ORG.id]!.caps, { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 }, 'the other org keeps its limits')
     let html = await (await request('/settings?org=saved&v=1', { cookie })).text()
-    assert.match(html, /Réglages enregistrés/)
-    assert.match(html, /Plafond du jour atteint, 1,50\s\$ sur 0,01\s\$/)
-    assert.match(html, /réglages v1, modifiés par alex/)
+    assert.match(html, /Settings saved/)
+    assert.match(html, /Daily cap reached, \$1\.50 of \$0\.01/)
+    assert.match(html, /settings v1, changed by alex/)
   })
 
   it('warns from the alert percentage, under the limit', async () => {
@@ -226,8 +226,8 @@ describe('the settings of the org (REV-13)', () => {
     rows[ORG.id]!.caps = { dailyCapUsd: 1.8, monthlyCapUsd: null, alertPct: 80 }
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /Seuil d’alerte du jour atteint/)
-    assert.doesNotMatch(html, /Plafond du jour atteint/)
+    assert.match(html, /Daily alert threshold reached/)
+    assert.doesNotMatch(html, /Daily cap reached/)
   })
 
   it('shows the errors of the limits with the values typed, and writes nothing', async () => {
@@ -237,13 +237,13 @@ describe('the settings of the org (REV-13)', () => {
     assert.equal(response.status, 422)
     let html = await response.text()
     assert.match(html, /name="dailyCapUsd" value="beaucoup"/)
-    assert.match(html, /Un montant en dollars/)
-    assert.match(html, /Un pourcentage entier, de 1 à 100/)
+    assert.match(html, /An amount in dollars/)
+    assert.match(html, /A whole percentage, from 1 to 100/)
     assert.match(html, /aria-invalid="true"/)
     assert.deepEqual(saves, [])
     // REV-28: the page opens on the first field in error, and says that nothing was saved.
     assert.deepEqual(autofocused(html), ['cap-day'])
-    assert.match(html, /Rien n’est enregistré<\/strong> : 3 champs à corriger/)
+    assert.match(html, /Nothing is saved\.<\/strong> 3 fields to fix/)
   })
 
   it('focuses the first field in error of each form of the settings (REV-28)', async () => {
@@ -261,7 +261,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie, csrf } = await signIn(ALEX)
     let refused = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'trustedBots', trustedBots: 'renovate[bot]\ngithub.com/renovate' } })
     assert.equal(refused.status, 422)
-    assert.match(await refused.text(), /n’est pas le login d’un bot/)
+    assert.match(await refused.text(), /is not the login of a bot/)
     let saved = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'trustedBots', trustedBots: 'sakuga-agent[bot]\nRenovate' } })
     assert.equal(saved.status, 303)
     assert.equal(saved.headers.get('Location'), '/settings?org=saved&v=1#bots')
@@ -278,8 +278,8 @@ describe('the settings of the org (REV-13)', () => {
     )
     assert.deepEqual(rows[ORG.id]!.config, { level: 'balanced', models: { heavy: { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null } } })
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /réglé pour l’org/)
-    assert.match(html, /Revenir à Kentō<span class="visually-hidden"> pour heavy/)
+    assert.match(html, /set for the org/)
+    assert.match(html, /Back to the Kentō value<span class="visually-hidden"> for heavy/)
     let reset = await request('/settings/org/reset', { cookie, form: { _csrf: csrf, version: '2', field: 'models.heavy' } })
     assert.equal(reset.status, 303)
     assert.equal(reset.headers.get('Location'), '/settings?org=reset&v=3#defauts')
@@ -291,7 +291,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'models.lite', provider: 'not-ours', model: 'x', fallback: '' } })
     assert.equal(response.status, 422)
-    assert.match(await response.text(), /Choisissez un provider de l’organisation/)
+    assert.match(await response.text(), /Choose a provider of the organization/)
     assert.deepEqual(saves, [])
   })
 
@@ -302,7 +302,7 @@ describe('the settings of the org (REV-13)', () => {
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '3', field: 'caps', dailyCapUsd: '8', alertPct: '80' } })
     assert.equal(response.status, 409)
-    assert.match(await response.text(), /Les réglages ont changé entre-temps<\/strong> \(v4, modifiés par camille/)
+    assert.match(await response.text(), /The settings changed in the meantime<\/strong> \(v4, changed by camille/)
     assert.deepEqual(saves, [])
   })
 
@@ -325,21 +325,21 @@ describe('the settings of the org (REV-13)', () => {
     })
     let { cookie } = await signIn(CAMILLE)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /4 points à corriger/)
-    assert.match(html, /Checks : écriture<span class="field-error">, accordé : lecture/)
-    assert.match(html, /issue_comment : non abonné/)
-    assert.match(html, /Kentō attend <span class="mono">https:\/\/review\.sakuga\.dev\/webhooks\/github/)
-    assert.match(html, /SSL non vérifié/)
+    assert.match(html, /4 items to fix/)
+    assert.match(html, /Checks: write<span class="field-error">, granted: read/)
+    assert.match(html, /issue_comment: not subscribed/)
+    assert.match(html, /Kentō expects <span class="mono">https:\/\/review\.sakuga\.dev\/webhooks\/github/)
+    assert.match(html, /SSL not verified/)
   })
 
   it('says when GitHub does not answer about the App', async () => {
     let { request, signIn } = setup({ ok: false, error: 'GET /app answered 401' })
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /GitHub a refusé la clé de l’App, code 401\. Vérifiez GITHUB_APP_ID et GITHUB_APP_PRIVATE_KEY sur le service\./)
-    assert.match(html, /<summary>Détails techniques<\/summary><code class="mono">GET \/app answered 401<\/code>/)
-    assert.match(html, /État GitHub inconnu/)
-    assert.doesNotMatch(html, /Rejouer depuis la page/)
+    assert.match(html, /GitHub refused the key of the App, code 401\. Check GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY on the service\./)
+    assert.match(html, /<summary>Technical details<\/summary><code class="mono">GET \/app answered 401<\/code>/)
+    assert.match(html, /GitHub state unknown/)
+    assert.doesNotMatch(html, /Redeliver from the page/)
   })
 })
 
@@ -348,28 +348,28 @@ describe('one rule for the provider of a level (REV-27)', () => {
   const runnerAnthropic = {
     id: DEFAULT_ID,
     kind: 'anthropic' as const,
-    label: 'Anthropic de Sakuga',
-    hint: 'Anthropic, provider par défaut de l’organisation · clé sur le runner',
+    label: 'Anthropic of Sakuga',
+    hint: 'Anthropic, default provider of the organization · key on the runner',
     isDefault: true,
-    keyFrom: 'clé du runner',
+    keyFrom: 'key on the runner',
     serviceHoldsKey: false,
     models: { lite: ['claude-haiku-4-5'] },
   }
   const catalog = (serviceKey: boolean): ProviderCatalog => ({ list: async () => [serviceOption(serviceKey), runnerAnthropic] })
 
-  it('a level without a choice shows the provider « Par défaut », its key and its models, never « clé du service »', async () => {
+  it('a level without a choice shows the « Default » provider, its key and its models, never « key of the service »', async () => {
     let { request, signIn } = setup(undefined, catalog(false))
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
     let lite = html.slice(html.indexOf('id="org-lite"'), html.indexOf('id="org-balanced"'))
-    assert.match(lite, /Prochain job<\/span> <strong>Anthropic de Sakuga · clé du runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>/)
-    assert.match(lite, /le provider « Par défaut » de Providers et clés/)
+    assert.match(lite, /Next job<\/span> <strong>Anthropic of Sakuga · key on the runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>/)
+    assert.match(lite, /the (&quot;|")Default(&quot;|") provider of Providers and keys/)
     assert.match(lite, new RegExp(`<option value="${DEFAULT_ID}" selected>`), 'the form shows what runs')
-    assert.match(lite, /ne suivra plus le provider « Par défaut »/)
-    // Without a key in the service, the OpenRouter option says « clé du runner », as its help.
-    assert.match(html, /OpenRouter · clé du runner/)
-    assert.doesNotMatch(html, /clé du service/)
-    assert.doesNotMatch(html, /10 \$ par jour/, 'no level runs on the key of the service')
+    assert.match(lite, /the level no longer follows the (&quot;|")Default(&quot;|") provider/)
+    // Without a key in the service, the OpenRouter option says « key on the runner », as its help.
+    assert.match(html, /OpenRouter · key on the runner/)
+    assert.doesNotMatch(html, /key of the service/)
+    assert.doesNotMatch(html, /\$10 per day/, 'no level runs on the key of the service')
   })
 
   it('a level that chose OpenRouter says so, and the limit of the key of the service shows', async () => {
@@ -378,9 +378,9 @@ describe('one rule for the provider of a level (REV-27)', () => {
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
     let heavy = html.slice(html.indexOf('id="org-heavy"'))
-    assert.match(heavy, /<strong>OpenRouter · clé du service<\/strong> · <span class="mono">anthropic\/claude-opus-5.5<\/span>/)
-    assert.match(heavy, /choisi pour l’organisation, ne suit pas le provider « Par défaut »/)
-    assert.match(html, /La clé OpenRouter du service a aussi sa propre limite de 10 \$ par jour/)
+    assert.match(heavy, /<strong>OpenRouter · key of the service<\/strong> · <span class="mono">anthropic\/claude-opus-5.5<\/span>/)
+    assert.match(heavy, /chosen for the organization, does not follow the (&quot;|")Default(&quot;|") provider/)
+    assert.match(html, /The OpenRouter key of the service also has its own limit of \$10 per day/)
   })
 })
 

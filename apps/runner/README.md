@@ -45,23 +45,23 @@ runners of the service) is [DEPLOY.md](DEPLOY.md).
 
 ## 1. Create the runner in the Runners screen
 
-1. Open `https://review.sakuga.dev/runners`, then click **Nouveau runner**.
-2. **Nom**: the name of the machine, for example `mac-mini`. Letters, digits, dots, dashes or
+1. Open `https://review.sakuga.dev/runners`, then click **New runner**.
+2. **Name**: the name of the machine, for example `mac-mini`. Letters, digits, dots, dashes or
    underscores, 100 at most.
 3. **Labels**: optional, separated by commas, for example `macos`. A repository with a pool sends
    its jobs only to the runners that have the label of the pool. No screen sets a pool today: the
    operator of Kentō sets it in the database. Without a pool, which is the default, the labels
    change nothing.
-4. **Clé du modèle**: where the model key is. See [Key modes](#key-modes). Keep « Clé du runner »
+4. **Model key**: where the model key is. See [Key modes](#key-modes). Keep « Key on the runner »
    unless the runner is a machine of Sakuga.
-5. Click **Créer le token**.
+5. Click **Create the token**.
 
 The screen shows a registration token (`kento_reg_…`) and a `docker run` command that contains it.
 Copy the command now. The screen never shows the token again. The token works once, and for one
 hour. The name, the labels and the key mode are fixed in the token. The variables of the machine
 cannot change them.
 
-Until a runner uses it, the token stays in **Tokens en attente** with « En attente du runner ».
+Until a runner uses it, the token stays in **Waiting tokens** with « Waiting for the runner ».
 
 ## 2. Start the runner
 
@@ -75,13 +75,13 @@ docker run -d --name kento-runner --restart unless-stopped \
   -e KENTO_RUNNER_LABELS=macos \
   -e PROVIDER_KIND=openrouter \
   -e PROVIDER_BASE_URL=https://openrouter.ai/api/v1 \
-  -e PROVIDER_API_KEY=<votre clé OpenRouter> \
+  -e PROVIDER_API_KEY=<your OpenRouter key> \
   -v kento-runner-state:/var/lib/kento-runner \
   --tmpfs /tmp:rw,size=2g --read-only --cap-drop ALL --security-opt no-new-privileges \
   ghcr.io/sakuga-software/kento-runner:0.1.0
 ```
 
-Replace `<votre clé OpenRouter>` with your key before you run it. The shell reads the `<` as a
+Replace `<your OpenRouter key>` with your key before you run it. The shell reads the `<` as a
 redirection, so the command fails if you leave it.
 
 What the parts do:
@@ -105,8 +105,8 @@ docker logs kento-runner
 {"time":"…","level":"info","event":"startup.ready","runnerId":"…","version":"0.1.0","url":"https://review.sakuga.dev","ownKey":true}
 ```
 
-Reload the Runners screen. The runner is in **Runners actifs** with « En ligne ». The token leaves
-**Tokens en attente**.
+Reload the Runners screen. The runner is in **Runners** with « Online ». The token leaves
+**Waiting tokens**.
 
 The command keeps `KENTO_REGISTRATION_TOKEN` in the container. Once `runner.json` exists, the
 runner does not read it again, so you can run the same command later (an update, another key) with
@@ -122,20 +122,20 @@ when creating the token, and can change it later on the runner's card.
 
 | Mode on the screen | Card | What happens |
 | --- | --- | --- |
-| **Clé du runner** (recommended for a machine outside Sakuga) | « Clé du runner » | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
-| **Clé de l’app** | « Clé de l’app (de confiance) » | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
+| **Key on the runner** (recommended for a machine outside Sakuga) | « Key on the runner » | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
+| **Key of the service** | « Key of the service (trusted) » | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
 
-« Marquer de confiance » and « Retirer la confiance » on the card switch between the two. The
+« Mark as trusted » and « Remove the trust » on the card switch between the two. The
 service reads the trust again at each claim.
 
 Which jobs a runner takes depends on the provider of the job, which the organization sets in
-**Réglages → Providers et clés** and in the Config of each repository:
+**Settings → Providers and keys** and in the Config of each repository:
 
 | Provider of the job | The runner takes it when |
 | --- | --- |
 | None (the organization has no provider) | `PROVIDER_KIND=openrouter` with `PROVIDER_API_KEY`, or the runner is trusted and the service has its OpenRouter key. |
 | A provider whose key the service holds | The runner has its own key of that kind (`PROVIDER_KIND` and `PROVIDER_API_KEY`), or it is trusted. |
-| A provider with « La clé reste sur le runner » | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
+| A provider with « The key stays on the runner » | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
 | Ollama | The runner has `PROVIDER_KIND=ollama`. |
 
 A job that no runner can take stays in the queue. It does not fail.
@@ -152,24 +152,24 @@ Change `PROVIDER_KIND`, `PROVIDER_BASE_URL` and `PROVIDER_API_KEY` in the comman
 | `ollama` | see [Ollama](#ollama-on-the-machine-of-the-runner) | none |
 
 `PROVIDER_BASE_URL` must be HTTPS, except for Ollama. The organization needs a provider of the same
-kind in **Réglages → Providers et clés**, set « Par défaut » or chosen for a level in the Config of
-a repository. Tick « La clé reste sur le runner » there so that the service never stores the key.
+kind in **Settings → Providers and keys**, set « Default » or chosen for a level in the Config of
+a repository. Tick « The key stays on the runner » there so that the service never stores the key.
 
 ## Ollama on the machine of the runner
 
 The model runs on your machine or on your network. The service has no key, and the review shows a
 cost of 0.
 
-1. In Kentō, **Réglages → Ajouter un provider**:
+1. In Kentō, **Settings → Add a provider**:
    - **Type**: Ollama;
-   - **Nom**: for example « Ollama du Mac mini »;
-   - **URL du serveur**: leave it empty, the runner gives it;
-   - **Modèles par niveau**: Ollama has no default model, so name one for each of `lite`,
+   - **Name**: for example « Ollama of the Mac mini »;
+   - **Server URL**: leave it empty, the runner gives it;
+   - **Models per level**: Ollama has no default model, so name one for each of `lite`,
      `balanced` and `heavy`, for example `qwen3`. Pull them first on the Ollama server
      (`ollama pull qwen3`).
 
-   Click **Ajouter le provider**. The first provider of the organization becomes « Par défaut »;
-   otherwise click **Mettre par défaut**, or choose it for a level in the Config of a repository.
+   Click **Add the provider**. The first provider of the organization becomes « Default »;
+   otherwise click **Make default**, or choose it for a level in the Config of a repository.
 2. Start the runner with these two lines in place of the three `PROVIDER_` lines of the command:
 
    ```sh
@@ -194,7 +194,7 @@ shows the model and `"costUsd":0`:
 ## Update the runner
 
 When the service moves to a newer release, the card shows the new version next to the runner's
-version, for example « 0.2.0 disponible ». The command of the Runners screen always names the image
+version, for example « 0.2.0 available ». The command of the Runners screen always names the image
 of the release of the service.
 
 1. Pull the new image:
@@ -210,7 +210,7 @@ of the release of the service.
    ```
 
    A job in progress stops, and the service queues it again once its lease ends, within 2
-   minutes. To avoid that, wait until « Job en cours » on the card says « aucun ».
+   minutes. To avoid that, wait until « Job in progress » on the card says « none ».
 3. Run your `docker run` command again with the new tag. The runner reads `runner.json` from the
    volume and does not register again. The card keeps its name and shows the new version.
 
@@ -218,11 +218,11 @@ The same steps change a variable of the runner, for example a new `PROVIDER_API_
 
 ## Revoke a runner
 
-1. On the card of the runner, click **Révoquer…**, then **Révoquer <nom>**.
+1. On the card of the runner, click **Revoke…**, then **Revoke <name>**.
 
    The token of the runner stops working at its next call. Its job in progress goes back to the
    queue at once, for another runner, without counting as an attempt. The runner moves to
-   **Révoqués**.
+   **Revoked**.
 2. On the machine, the runner logs `runner.token_refused` once, and then waits without calling the
    service until you stop it. Remove the container and its volume:
 
@@ -235,7 +235,7 @@ A revoked runner never comes back. To use the machine again, create a new token
 ([step 1](#1-create-the-runner-in-the-runners-screen)) and run its command. With the old volume
 removed, the runner registers as a new runner.
 
-A runner of the service (« Runner du service » on its card) has no button. The operator revokes it
+A runner of the service (« Runner of the service » on its card) has no button. The operator revokes it
 in the database ([DEPLOY.md](DEPLOY.md#5-revoke-a-runner)).
 
 ## Troubleshooting
@@ -245,7 +245,7 @@ runner removes its tokens and keys from every line.
 
 ### The registration token expired
 
-The card in **Tokens en attente** says « Token expiré » when no runner registered within the hour. A
+The card in **Waiting tokens** says « Token expired » when no runner registered within the hour. A
 token that a runner already used fails the same way.
 
 On the machine, the runner logs this line once, then waits without calling the service until you
@@ -303,10 +303,10 @@ Remove the container and the volume, then register again with a new token, as in
 
 The runner tries again, waiting twice as long each time, up to one minute. It does not stop. Check
 the DNS, the proxy and the firewall of the machine for outbound HTTPS to `review.sakuga.dev`. The
-card goes from « En ligne » to « Signal en retard » after 90 s without a call, and to « Hors
-ligne » after one hour.
+card goes from « Online » to « Late signal » after 90 s without a call, and to « Offline
+for … » after one hour.
 
-### The runner is « En ligne » but takes no job
+### The runner is « Online » but takes no job
 
 A job waits in the queue until a runner can take it. Check, in this order:
 
@@ -318,7 +318,7 @@ A job waits in the queue until a runner can take it. Check, in this order:
 
 ### A job fails because its lease expired
 
-The Tableau de bord shows the failure « le bail a expiré deux fois sur <runner> ».
+The Dashboard shows the failure « the runner stopped answering during the job twice, last <runner> ».
 
 The runner holds a job with a lease of 2 minutes, and renews it with a heartbeat every 30 seconds.
 When the heartbeats stop (the machine sleeps, the network goes down, someone stops the container),
@@ -333,20 +333,20 @@ If the runner comes back during the job, its next heartbeat gets 409 and it drop
 ```
 
 Keep the machine awake, and keep the runner running during jobs. To review the pull request again,
-an admin clicks « Relancer en <niveau> » on the Tableau de bord, or anyone with write access
+an admin clicks « Run again at <level> » on the Dashboard, or anyone with write access
 comments `@kento-review` on the pull request.
 
 ### A job fails with a model error
 
-The job fails with the answer of the provider, in the log of the runner and on the Tableau de bord:
+The job fails with the answer of the provider, in the log of the runner and on the Dashboard:
 
 ```json
 {"level":"warn","event":"job.finished",…,"outcome":"failed","reason":"no model gave a usable answer: ProviderError: OpenRouter answered 401: {\"error\":{\"message\":\"User not found.\",\"code\":401}}"}
 ```
 
 A 401 or 403 means that the provider refused `PROVIDER_API_KEY`. Replace it as in
-[Update the runner](#update-the-runner). When the provider has « La clé reste sur le runner »,
-**Réglages** shows « Refusée sur le runner » until a job with the new key succeeds.
+[Update the runner](#update-the-runner). When the provider has « The key stays on the runner »,
+**Settings** shows « Refused on the runner » until a job with the new key succeeds.
 
 With Ollama, `Ollama answered 404: {"error":"model 'qwen3' not found"}` names a model that the
 server has not pulled, and `fetch failed` an address that the container cannot reach (see

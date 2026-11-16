@@ -9,8 +9,10 @@ export const FEEDBACK_TEXT_MAX = 4000
 
 // Two parts of the request. A quote of the request holds one of them: GitHub drops the hidden
 // marker of a comment from a quote.
-const OPENING = 'Kentō a relu cette PR'
-const ASK = 'Ton avis sur ces reviews'
+const OPENING = 'Kentō reviewed this PR'
+const ASK = 'Your opinion on these reviews'
+// REV-114. The parts of the French request, which the pull requests before the deploy hold.
+const FRENCH_PARTS = ['Kentō a relu cette PR', 'Ton avis sur ces reviews']
 
 /** Hidden in the request: the comment of the App that asks. */
 export const FEEDBACK_MARKER = '<!-- kento:feedback-request -->'
@@ -18,9 +20,9 @@ export const FEEDBACK_MARKER = '<!-- kento:feedback-request -->'
 /** The comment that asks the author of the pull request for their opinion. */
 export function requestText(author: string, reviews: number): string {
   return (
-    `@${author} ${OPENING} ${reviews} fois. ${ASK} nous aide à l'améliorer : ce qui t'a servi, un faux positif, un fil inutile, ` +
-    "un défaut manqué. Pour répondre, écris `@kento-review feedback <ton avis>`, cite ce message, ou réagis avec 👍 ou 👎. " +
-    `Kentō ne posera pas la question une deuxième fois sur cette PR.\n\n${FEEDBACK_MARKER}`
+    `@${author} ${OPENING} ${reviews} times. ${ASK} helps us make it better: what helped you, a false positive, a useless thread, ` +
+    'a missed defect. To answer, write `@kento-review feedback <your opinion>`, quote this message, or react with 👍 or 👎. ' +
+    `Kentō will not ask again on this PR.\n\n${FEEDBACK_MARKER}`
   )
 }
 
@@ -50,7 +52,7 @@ const flat = (text: string) => text.replaceAll('`', '').replace(/\s+/g, ' ').tri
 /** The comment quotes the request for feedback, in full or in part. */
 export function quotesRequest(body: string): boolean {
   let quoted = flat(split(body).quoted.join(' '))
-  return quoted.includes(OPENING) || quoted.includes(ASK)
+  return [OPENING, ASK, ...FRENCH_PARTS].some((part) => quoted.includes(part))
 }
 
 /** The text of a reply without its quotes, trimmed. Empty when the reply is only a quote. */

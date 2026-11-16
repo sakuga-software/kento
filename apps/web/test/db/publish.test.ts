@@ -166,7 +166,7 @@ describe('publication of a review', () => {
     let [posted] = fake.state.reviews
     assert.equal(posted!.user, BOT)
     assert.equal(posted!.state, 'CHANGES_REQUESTED')
-    assert.match(posted!.body, /Score de confiance : 2\/5/)
+    assert.match(posted!.body, /Confidence score: 2\/5/)
     assert.equal(fake.botThreads().length, 1)
     assert.match(fake.state.pr.body, /<!-- sakuga-review:start -->[\s\S]*<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->$/)
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
@@ -228,10 +228,10 @@ describe('publication of a review', () => {
     assert.equal(copy.commitId, HEAD2)
     assert.equal(copy.state, 'CHANGES_REQUESTED', 'the verdict of the review of HEAD1')
     assert.equal(copy.comments, 0)
-    assert.match(copy.body, /\*\*Score de confiance : 2\/5\*\*/)
-    assert.match(copy.body, /Même score que le commit `111111111` : aucun fichier relu n'a changé depuis\./)
+    assert.match(copy.body, /\*\*Confidence score: 2\/5\*\*/)
+    assert.match(copy.body, /Same score as commit `111111111`\. No reviewed file changed since\./)
     assert.equal(fake.botThreads().length, 1, 'no second thread')
-    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(fake.state.pr.body, /No reviewed file changed since commit `111111111`/)
     assert.match(fake.state.pr.body, /<!-- sakuga-review:count 1 -->/)
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
     assert.deepEqual(fake.state.checkRuns.map((c) => c.head_sha), [HEAD1, HEAD2], 'the new head gets its check')
@@ -279,10 +279,10 @@ describe('publication of a review', () => {
       [[HEAD1, 'APPROVED'], [HEAD2, 'APPROVED'], [HEAD3, 'APPROVED']],
     )
     for (let copy of fake.state.reviews.slice(1)) {
-      assert.match(copy.body, /\*\*Score de confiance : 4\/5\*\*/)
-      assert.match(copy.body, /Même score que le commit `111111111`/, 'a copy of a copy names the review that a model made')
+      assert.match(copy.body, /\*\*Confidence score: 4\/5\*\*/)
+      assert.match(copy.body, /Same score as commit `111111111`/, 'a copy of a copy names the review that a model made')
     }
-    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(fake.state.pr.body, /No reviewed file changed since commit `111111111`/)
     let all = await rows()
     assert.deepEqual(all.map((r) => Number(r.githubReviewId)), [posted!.id, posted!.id, posted!.id])
 
@@ -328,14 +328,14 @@ describe('publication of a review', () => {
     await publisher.stop()
 
     let body = fake.state.pr.body
-    assert.match(body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(body, /No reviewed file changed since commit `111111111`/)
     assert.doesNotMatch(body, /Le produit divise/, 'a finding dismissed since is out of the block')
     assert.match(body, /La somme soustrait/)
     assert.doesNotMatch(body, new RegExp(`#discussion_r${sumThread.id}`), 'a resolved thread gives no link')
     assert.match(body, /sum\(1, 2\) rend -1\./, 'without a thread, the block shows the scenario')
     assert.equal(fake.state.reviews.length, 2, 'one review on the new head, without comments')
     assert.equal(fake.state.reviews[1]!.comments, 0)
-    assert.match(fake.state.reviews[1]!.body, /Score de confiance : 2\/5/, 'the score of the block')
+    assert.match(fake.state.reviews[1]!.body, /Confidence score: 2\/5/, 'the score of the block')
     assert.equal(fake.state.reviews[0]!.id, posted!.id)
   })
 
@@ -369,7 +369,7 @@ describe('publication of a review', () => {
 
     assert.equal(fake.state.reviews.length, 2, 'the copy is posted as a review of its own')
     assert.equal(fake.state.reviews[1]!.commitId, HEAD2)
-    assert.doesNotMatch(fake.state.pr.body, /Aucun fichier relu n'a changé/)
+    assert.doesNotMatch(fake.state.pr.body, /No reviewed file changed/)
     let [, row] = await rows()
     assert.equal(Number(row!.githubReviewId), fake.state.reviews[1]!.id)
     assert.notEqual(Number(row!.githubReviewId), posted!.id)
@@ -392,7 +392,7 @@ describe('publication of a review', () => {
     let copy = fake.state.reviews[2]!
     assert.equal(copy.commitId, HEAD3)
     assert.equal(copy.comments, 0, 'a copy, not a review of its own')
-    assert.match(copy.body, /Même score que le commit `222222222`/)
+    assert.match(copy.body, /Same score as commit `222222222`/)
     assert.match(copy.body, new RegExp(`<!-- kento:same-as ${fake.state.reviews[1]!.id} -->`))
   })
 
@@ -425,7 +425,7 @@ describe('publication of a review', () => {
     await publisher.stop()
 
     assert.deepEqual(fake.state.reviews.map((r) => r.id), [posted!.id, later], 'no review posted for the copy')
-    assert.doesNotMatch(fake.state.pr.body, /Aucun fichier relu n'a changé/, 'the block of the later review stays')
+    assert.doesNotMatch(fake.state.pr.body, /No reviewed file changed/, 'the block of the later review stays')
     // The later review was of HEAD1: HEAD2 still gets its check, once.
     assert.deepEqual(fake.state.checkRuns.map((c) => c.head_sha), [HEAD1, HEAD2], 'the new head is not left without a check')
     let [, row] = await rows()
@@ -464,7 +464,7 @@ describe('publication of a review', () => {
 
     assert.equal(fake.state.failReviewLists, 0)
     assert.deepEqual(fake.state.reviews.map((r) => r.commitId), [HEAD1, HEAD2], 'one review on the new head')
-    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(fake.state.pr.body, /No reviewed file changed since commit `111111111`/)
     let [, row] = await rows()
     assert.ok(row!.publishedAt, 'published after the failures, its tries intact')
     assert.equal(Number(row!.githubReviewId), posted!.id)
@@ -475,7 +475,7 @@ describe('publication of a review', () => {
     await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignment })
     await publisher.stop()
     let [posted] = fake.state.reviews
-    assert.match(posted!.body, /<sub>Assignation : règle 2, la PR touche db\/migrations\/0002\.sql, donc heavy à chaque push\.<\/sub>\n\nRelecture demandée par la règle : @alex/)
+    assert.match(posted!.body, /<sub>Assignment: rule 2, the PR changes db\/migrations\/0002\.sql, so heavy at each push\.<\/sub>\n\nReview requested by the rule: @alex/)
     // The hidden marker of the review stays last.
     assert.match(posted!.body, /@alex\n\n<!-- kento:review [0-9a-f-]+ -->$/)
   })
@@ -483,13 +483,13 @@ describe('publication of a review', () => {
   it('says in the review which rules with paths GitHub kept from being tested (REV-21)', async () => {
     await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignmentUnread: [1, 3] })
     await publisher.stop()
-    assert.match(fake.state.reviews[0]!.body, /<sub>Assignation : sans la liste des fichiers de la PR, les règles 1, 3 \(chemins\) n’ont pas pu être testées\.<\/sub>/)
+    assert.match(fake.state.reviews[0]!.body, /<sub>Assignment: without the list of the files of the PR, Kentō could not test rules 1, 3 \(paths\)\.<\/sub>/)
   })
 
   it('says nothing of an assignment for the review of a job without one', async () => {
     await runJob(HEAD1, review())
     await publisher.stop()
-    assert.doesNotMatch(fake.state.reviews[0]!.body, /Assignation|Relecture demandée/)
+    assert.doesNotMatch(fake.state.reviews[0]!.body, /Assignment|Review requested/)
   })
 
   it('does not post twice a review whose row could not be marked, after a restart', async () => {

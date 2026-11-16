@@ -1,6 +1,6 @@
 // REV-103. Every P0 and P1 gets a conversation on GitHub. Below the blocking confidence, its thread
-// has the mark « à vérifier » and does not block. Outside the diff, it gets a comment on its file,
-// with a link to its line. A P1 to consider (REV-100) gets a thread with the mark « à considérer »
+// has the mark « to check » and does not block. Outside the diff, it gets a comment on its file,
+// with a link to its line. A P1 to consider (REV-100) gets a thread with the mark « to consider »
 // only when the published score is below 4 and no other new P0 or P1 is in the review.
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
@@ -89,7 +89,7 @@ function setup(head = HEAD1) {
 const titleOf = (body: string) => /\*\*(.+?)\*\*/.exec(body)![1]
 
 describe('a P0 or P1 below the blocking confidence (REV-103)', () => {
-  it('gets a thread « à vérifier », and the review comments without asking for changes', async () => {
+  it('gets a thread « to check », and the review comments without asking for changes', async () => {
     let { fake, publish } = setup()
     let outcome = await publish(payload({ findings: [finding({ confidence: 60, blocking: false })] }))
     assert.equal(outcome.inline, 1)
@@ -102,7 +102,7 @@ describe('a P0 or P1 below the blocking confidence (REV-103)', () => {
   it('guard: a sure P1 has no mark and asks for changes', async () => {
     let { fake, publish } = setup()
     await publish(payload({ score: 2, verdict: 'REQUEST_CHANGES' }))
-    assert.doesNotMatch(fake.botThreads()[0]!.body, /à vérifier|à considérer/)
+    assert.doesNotMatch(fake.botThreads()[0]!.body, /to check|to consider/)
     assert.equal(fake.state.reviews.at(-1)!.state, 'CHANGES_REQUESTED')
   })
 
@@ -132,7 +132,7 @@ describe('a P0 or P1 outside the diff (REV-103)', () => {
     assert.equal(comment!.commit, HEAD1)
     assert.ok(
       comment!.body.startsWith(
-        `Hors du diff de la PR : [\`${CONFIG}:40-42\`](https://github.com/sakuga-software/sakuga-review/blob/${HEAD1}/${CONFIG}#L40-L42)`,
+        `Outside the diff of the PR: [\`${CONFIG}:40-42\`](https://github.com/sakuga-software/sakuga-review/blob/${HEAD1}/${CONFIG}#L40-L42)`,
       ),
     )
     assert.match(comment!.body, /<!-- sakuga-review:finding [0-9a-f]{12} -->/)
@@ -206,13 +206,13 @@ describe('a P0 or P1 outside the diff (REV-103)', () => {
 describe('a P1 to consider (REV-100, REV-103)', () => {
   let considered = finding({ seen: true, blocking: false, title: "STUDIO_HOST n'est pas documenté" })
 
-  it('gets a thread « à considérer » that does not block when the published score is below 4', async () => {
+  it('gets a thread « to consider » that does not block when the published score is below 4', async () => {
     let { fake, publish } = setup()
     let outcome = await publish(payload({ score: 3, findings: [considered] }))
     assert.equal(outcome.inline, 1)
     assert.match(fake.botThreads()[0]!.body, /<img alt="P1" [^>]+><\/picture> <picture><source [^>]+><img alt="to consider" /)
     assert.equal(fake.state.reviews.at(-1)!.state, 'COMMENTED')
-    assert.match(fake.state.pr.body, /<h3>À considérer \(code déjà relu\)<\/h3>/)
+    assert.match(fake.state.pr.body, /<h3>To consider \(code already reviewed\)<\/h3>/)
   })
 
   it('stays in the list only when the published score is 4', async () => {

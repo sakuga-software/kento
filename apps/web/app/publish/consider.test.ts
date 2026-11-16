@@ -1,5 +1,5 @@
 // REV-100. A new finding on code that an earlier review already read, not critical, gets no thread
-// and does not ask for changes: the block lists it under « À considérer (code déjà relu) », and the
+// and does not ask for changes: the block lists it under « To consider (code already reviewed) », and the
 // database keeps it. A critical one keeps its thread and blocks. The finding is the one of dojo#91.
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
@@ -83,8 +83,8 @@ describe('a new finding on code already read (REV-100)', () => {
     assert.equal(outcome.score, 4)
     assert.equal(fake.botThreads().length, 0)
     assert.equal(fake.state.reviews.at(-1)!.state, 'APPROVED')
-    assert.match(fake.state.pr.body, /<h3>À considérer \(code déjà relu\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/)
-    assert.doesNotMatch(fake.state.pr.body, /<h3>Constats<\/h3>/)
+    assert.match(fake.state.pr.body, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/)
+    assert.doesNotMatch(fake.state.pr.body, /<h3>Findings<\/h3>/)
     assert.deepEqual(rows.map((r) => [r.title, r.status]), [["STUDIO_HOST n'est ni dans .env.example ni documenté", 'open']])
   })
 
@@ -94,7 +94,7 @@ describe('a new finding on code already read (REV-100)', () => {
     let outcome = await publish(payload({ score: 2, verdict: 'REQUEST_CHANGES', findings: [critical] }))
     assert.equal(outcome.inline, 1)
     assert.equal(fake.state.reviews.at(-1)!.state, 'CHANGES_REQUESTED')
-    assert.match(fake.state.pr.body, /<h3>Constats<\/h3>/)
+    assert.match(fake.state.pr.body, /<h3>Findings<\/h3>/)
   })
 
   it('guard: the same P1 on code that changed keeps its thread and asks for changes', async () => {

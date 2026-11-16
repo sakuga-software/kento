@@ -123,13 +123,13 @@ function setup(options: { assignment?: boolean } = {}) {
 const AGENT = { authors: 'sakuga-agent[bot]', paths: '', labels: '', outcome: 'balanced', mention: '' }
 const MIGRATIONS = { authors: '', paths: '**/migrations/**', labels: '', outcome: 'heavy', mention: 'alex' }
 
-describe('the tab Assignation of the Config screen (REV-21)', () => {
+describe('the tab Assignment of the Config screen (REV-21)', () => {
   it('opens the tab, with the default level of the repository as its last line and the form of a first rule', async () => {
     let { html } = await setup().signIn()
-    assert.match(html, /<a href="\/repos\/[^"]+\/config\?tab=assignment" aria-current="page">Assignation<\/a>/)
-    assert.doesNotMatch(html, /config-tab-soon">Assignation/)
-    assert.match(html, /Assignation <span class="count">0<\/span>/)
-    assert.match(html, /<p class="assignment-when">Sinon<\/p><p class="assignment-then">les préférences de l’auteur s’il en a, puis le niveau par défaut du repo, <strong class="mono">lite<\/strong>/)
+    assert.match(html, /<a href="\/repos\/[^"]+\/config\?tab=assignment" aria-current="page">Assignment<\/a>/)
+    assert.doesNotMatch(html, /config-tab-soon">Assignment/)
+    assert.match(html, /Assignment <span class="count">0<\/span>/)
+    assert.match(html, /<p class="assignment-when">Else<\/p><p class="assignment-then">the preferences of the author if they have some, then the default level of the repo, <strong class="mono">lite<\/strong>/)
     assert.match(html, /<details id="assignment-new" open class="rule-new">/)
   })
 
@@ -145,17 +145,17 @@ describe('the tab Assignation of the Config screen (REV-21)', () => {
     assert.deepEqual({ level: second.level, mention: second.mention, paths: second.paths }, { level: 'heavy', mention: 'alex', paths: ['**/migrations/**'] })
 
     let html = await (await request(added.headers.get('Location')!, { cookie })).text()
-    assert.match(html, /Règle ajoutée en dernier\./)
-    assert.match(html, /Si l’auteur est sakuga-agent\[bot\]<\/p><p class="assignment-then">alors <strong class="mono">balanced<\/strong>\.<\/p>/)
-    assert.match(html, /Si la PR touche \*\*\/migrations\/\*\*<\/p><p class="assignment-then">alors <strong class="mono">heavy<\/strong>, et la review mentionne <span class="mono">@alex<\/span>\./)
+    assert.match(html, /Rule added last\./)
+    assert.match(html, /If the author is sakuga-agent\[bot\]<\/p><p class="assignment-then">then <strong class="mono">balanced<\/strong>\.<\/p>/)
+    assert.match(html, /If the PR changes \*\*\/migrations\/\*\*<\/p><p class="assignment-then">then <strong class="mono">heavy<\/strong>, and the review mentions <span class="mono">@alex<\/span>\./)
     // The first rule cannot go up, the last one cannot go down.
-    assert.match(html, /<button type="submit" disabled class="button">Monter<span class="visually-hidden"> la règle 1<\/span>/)
-    assert.match(html, /<button type="submit" disabled class="button">Descendre<span class="visually-hidden"> la règle 2<\/span>/)
+    assert.match(html, /<button type="submit" disabled class="button">Move up<span class="visually-hidden"> rule 1<\/span>/)
+    assert.match(html, /<button type="submit" disabled class="button">Move down<span class="visually-hidden"> rule 2<\/span>/)
 
     let moved = await request(`/repos/${ORCHARD}/assignment/${second.id}/move`, { cookie, form: { _csrf: csrf, direction: 'up' } })
     assert.equal(moved.status, 303)
     assert.deepEqual(rows().map((r) => r.id), [second.id, first.id])
-    assert.match(await (await request(moved.headers.get('Location')!, { cookie })).text(), /Ordre enregistré\./)
+    assert.match(await (await request(moved.headers.get('Location')!, { cookie })).text(), /Order saved\./)
 
     let removed = await request(`/repos/${ORCHARD}/assignment/${second.id}/remove`, { cookie, form: { _csrf: csrf } })
     assert.equal(removed.headers.get('Location'), `/repos/${ORCHARD}/config?tab=assignment&assign=removed#assignment`)
@@ -169,7 +169,7 @@ describe('the tab Assignation of the Config screen (REV-21)', () => {
     assert.equal(response.status, 422)
     let html = await response.text()
     assert.deepEqual(autofocused(html), ['assignment-new-paths'])
-    assert.match(html, /« \/abs » : un chemin commence sans « \/ »/)
+    assert.match(html, /\/abs.{1,12}: a path starts without .{1,6}\/.{1,6}, from the root of the repo/)
     assert.match(html, />\/abs<\/textarea>/)
     assert.equal(rows().length, 0)
   })
@@ -179,8 +179,8 @@ describe('the tab Assignation of the Config screen (REV-21)', () => {
     let admin = await signIn()
     await request(`/repos/${ORCHARD}/assignment`, { cookie: admin.cookie, form: { _csrf: admin.csrf, ...AGENT } })
     let member = await signIn(CAMILLE)
-    assert.match(member.html, /Si l’auteur est sakuga-agent\[bot\]/)
-    assert.doesNotMatch(member.html, /Nouvelle règle|Monter|Supprimer…/)
+    assert.match(member.html, /If the author is sakuga-agent\[bot\]/)
+    assert.doesNotMatch(member.html, /New rule|Move up|Delete…/)
     let refused = await request(`/repos/${ORCHARD}/assignment`, { cookie: member.cookie, form: { _csrf: member.csrf, ...MIGRATIONS } })
     assert.equal(refused.status, 403)
     assert.equal(rows().length, 1)
@@ -193,11 +193,11 @@ describe('the tab Assignation of the Config screen (REV-21)', () => {
     assert.equal((await request(`/repos/${ORCHARD}/assignment`, { cookie, form: { ...AGENT } })).status, 403)
   })
 
-  it('says « Bientôt » on a service without the assignment rules', async () => {
+  it('says « Soon » on a service without the assignment rules', async () => {
     let { request, signIn } = setup({ assignment: false })
     let { cookie, html } = await signIn()
-    assert.match(html, /Les règles d’assignation \(qui déclenche quoi, à quel niveau\) arrivent bientôt\./)
+    assert.match(html, /The assignment rules \(who triggers what, at which level\) come soon\./)
     let models = await (await request(`/repos/${ORCHARD}/config`, { cookie })).text()
-    assert.match(models, /<span class="config-tab-soon">Assignation<span class="tag tag-quiet">Bientôt<\/span>/)
+    assert.match(models, /<span class="config-tab-soon">Assignment<span class="tag tag-quiet">Soon<\/span>/)
   })
 })

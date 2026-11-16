@@ -10,33 +10,33 @@ export type SignInNotice = 'not_member' | 'failed' | 'signed_out' | 'expired' | 
 const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; text: string }> = {
   not_member: {
     tone: 'alert',
-    title: 'Accès refusé.',
-    text: 'Ce compte GitHub n’est membre d’aucune organisation où Kentō est installé. Changez de compte, demandez à un admin de l’organisation de vous inviter, ou installez Kentō sur votre organisation.',
+    title: 'Access refused.',
+    text: 'This GitHub account is not a member of an organization where Kentō is installed. Switch accounts, ask an admin of the organization to invite you, or install Kentō on your organization.',
   },
   failed: {
     tone: 'alert',
-    title: 'La connexion a échoué.',
-    text: 'GitHub n’a pas confirmé la connexion. Réessayez ; si cela se reproduit, prévenez un admin.',
+    title: 'The sign-in failed.',
+    text: 'GitHub did not confirm the sign-in. Try again. If it happens again, tell an admin.',
   },
   expired: {
     tone: 'info',
-    title: 'Session terminée.',
-    text: 'Votre session a expiré ou vos droits sur l’organisation ont changé. Reconnectez-vous.',
+    title: 'Session ended.',
+    text: 'Your session expired, or your rights on the organization changed. Sign in again.',
   },
   signed_out: {
     tone: 'info',
-    title: 'Vous êtes déconnecté.',
-    text: 'À bientôt.',
+    title: 'You are signed out.',
+    text: 'See you soon.',
   },
   unavailable: {
     tone: 'alert',
-    title: 'GitHub ne répond pas.',
-    text: 'Kentō ne peut pas confirmer votre rôle dans l’organisation. Votre session est gardée : réessayez dans une minute.',
+    title: 'GitHub does not answer.',
+    text: 'Kentō cannot confirm your role in the organization. Kentō keeps your session. Try again in a minute.',
   },
   disabled: {
     tone: 'alert',
-    title: 'Connexion indisponible.',
-    text: 'La connexion GitHub n’est pas encore configurée sur ce serveur.',
+    title: 'Sign-in unavailable.',
+    text: 'The GitHub sign-in is not configured on this server yet.',
   },
 }
 
@@ -55,7 +55,7 @@ export interface SignInPageProps {
   installHref?: string | null
 }
 
-/** « Se connecter à Kentō »: one button, GitHub. */
+/** « Sign in to Kentō »: one button, GitHub. */
 export function SignInPage(handle: Handle<SignInPageProps>) {
   return () => {
     let { theme, version, assetVersion, signInHref, notice, refusedLogin, switchHref, installHref } = handle.props
@@ -63,7 +63,7 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
     // REV-32: after a refusal, the same button would sign in the same account again.
     let refused = notice === 'not_member' && signInHref !== null
     return (
-      <Document title="Connexion" theme={theme} assetVersion={assetVersion}>
+      <Document title="Sign in" theme={theme} assetVersion={assetVersion}>
         <main class="signin">
           <div class="signin-wrap">
             <div class="signin-card">
@@ -72,10 +72,10 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                   <Logo />
                 </span>
                 <div>
-                  <h1>Se connecter à Kentō</h1>
+                  <h1>Sign in to Kentō</h1>
                   <p class="signin-lead">
-                    La review des pull requests de votre organisation. Chaque finding est suivi d’un push à l’autre, avec
-                    le coût de chaque review et la précision de chaque repo.
+                    The review of the pull requests of your organization. Kentō follows each finding from one push to the
+                    next, with the cost of each review and the precision of each repo.
                   </p>
                 </div>
                 {message ? (
@@ -85,7 +85,7 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                       <strong>{message.title}</strong>{' '}
                       {refused && refusedLogin ? (
                         <>
-                          Connecté à GitHub en tant que <strong class="mono">@{refusedLogin}</strong>.{' '}
+                          Signed in to GitHub as <strong class="mono">@{refusedLogin}</strong>.{' '}
                         </>
                       ) : null}
                       {message.text}
@@ -96,43 +96,43 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                   <div class="signin-actions">
                     <a class="button button-primary button-large" href={switchHref ?? signInHref!}>
                       <GitHubIcon />
-                      Changer de compte GitHub
+                      Switch GitHub account
                     </a>
                     {installHref ? (
                       <a class="button button-large" href={installHref} rel="noreferrer" target="_blank">
-                        Installer Kentō sur une organisation
+                        Install Kentō on an organization
                         <ExternalIcon />
-                        <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                        <span class="visually-hidden">(GitHub, new tab)</span>
                       </a>
                     ) : null}
                     <p class="signin-note">
-                      Un admin vous a invité ? <a href={signInHref!}>Réessayer avec {refusedLogin ? `@${refusedLogin}` : 'ce compte'}</a>.
+                      An admin invited you? <a href={signInHref!}>Try again with {refusedLogin ? `@${refusedLogin}` : 'this account'}</a>.
                     </p>
                   </div>
                 ) : signInHref ? (
                   <a class="button button-primary button-large" href={signInHref}>
                     <GitHubIcon />
-                    Continuer avec GitHub
+                    Continue with GitHub
                   </a>
                 ) : null}
                 <p class="signin-note">
-                  Réservé aux membres des organisations où l’App Kentō est installée. Kentō lit votre identifiant GitHub
-                  et votre rôle dans l’organisation ; il n’écrit rien en votre nom.
+                  For the members of the organizations where the Kentō App is installed. Kentō reads your GitHub login
+                  and your role in the organization. It writes nothing in your name.
                 </p>
               </div>
               {/* REV-91: the facts of the design, without a price: none is known before the sign-in. */}
               <dl class="signin-facts">
                 <div>
-                  <dt>Précision d’un repo</dt>
-                  <dd class="mono">fixed ÷ (fixed + dismissed) · n affiché</dd>
+                  <dt>Precision of a repo</dt>
+                  <dd class="mono">fixed ÷ (fixed + dismissed) · n shown</dd>
                 </div>
                 <div>
-                  <dt>Où tournent les reviews</dt>
-                  <dd class="mono">vos runners, avec votre clé, ou le runner du service</dd>
+                  <dt>Where the reviews run</dt>
+                  <dd class="mono">your runners, with your key, or the runner of the service</dd>
                 </div>
               </dl>
             </div>
-            <p class="signin-foot">Kentō {version} · par Sakuga</p>
+            <p class="signin-foot">Kentō {version} · by Sakuga</p>
           </div>
         </main>
       </Document>

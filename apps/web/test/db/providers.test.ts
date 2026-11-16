@@ -151,13 +151,13 @@ describe('providers and their encrypted keys', () => {
       assert.equal(refused!.refusedStatus, 401)
       let first = refused!.refusedAt
       await store.recordRefused(a.id, 403, 'later', a.keySetAt)
-      assert.deepEqual((await store.list(orgId))[0]!.refusedAt, first, 'the first refusal stays: « 401 depuis 9 h 40 »')
+      assert.deepEqual((await store.list(orgId))[0]!.refusedAt, first, 'the first refusal stays: « 401 since 09:40 »')
       let replaced = await store.replaceKey(orgId, a.id, 'sk-ant-new-key-0123456789-abcd')
       assert.equal(replaced!.keyLast4, 'abcd')
       assert.equal(replaced!.refusedAt, null)
     })
 
-    it('« Tester » marks only the key that it used: a key replaced during the test keeps its state', async () => {
+    it('« Test » marks only the key that it used: a key replaced during the test keeps its state', async () => {
       let a = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       let read = (await store.withKey(orgId, a.id))!
       await new Promise((resolve) => setTimeout(resolve, 5))
@@ -262,7 +262,7 @@ describe('providers and their encrypted keys', () => {
       assert.equal(row!.state, 'failed')
       assert.equal(
         row!.failure_reason,
-        'id de modèle invalide pour Anthropic : anthropic/claude-opus-5.5. Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+        'invalid model id for Anthropic: anthropic/claude-opus-5.5. Anthropic expects its own id, without "anthropic/", for example claude-sonnet-5-5.',
       )
     })
 
@@ -276,7 +276,7 @@ describe('providers and their encrypted keys', () => {
       assert.equal((await claim(serviceRunner, { hasProviderKey: false, features: ['models'] })).status, 204)
       let [row] = await database.sql<{ state: string; failure_reason: string }[]>`select state, failure_reason from jobs where id = ${queued!.id}`
       assert.equal(row!.state, 'failed')
-      assert.match(row!.failure_reason, /^id de modèle invalide pour OpenRouter : claude-haiku-5-5\. OpenRouter attend le fournisseur/)
+      assert.match(row!.failure_reason, /^invalid model id for OpenRouter: claude-haiku-5-5\. OpenRouter expects the vendor/)
     })
 
     it('gives that job to a runner that does not read the models: it runs those of Kentō (REV-62)', async () => {
@@ -412,7 +412,7 @@ describe('providers and their encrypted keys', () => {
   })
 
   describe('the result marks the state of the provider', () => {
-    it('a refused key: the provider shows « refusée, 401 », and the job fails with a clear reason', async () => {
+    it('a refused key: the provider shows « refused, 401 », and the job fails with a clear reason', async () => {
       let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Anthropic de Sakuga', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       let jobId = await queueJob()
       let token = await runner({ trusted: true })
@@ -453,7 +453,7 @@ describe('providers and their encrypted keys', () => {
       let [refused] = await store.list(orgId)
       assert.ok(refused!.refusedAt, 'the screen can show the refusal')
       assert.equal(refused!.refusedStatus, 401)
-      assert.match(refused!.refusedMessage!, /^runner « r » : 401 /, 'the runner that got the refusal is named')
+      assert.match(refused!.refusedMessage!, /^runner "r": 401 /, 'the runner that got the refusal is named')
       let [reason] = await database.sql<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${first}`
       assert.match(reason!.failure_reason, /^the provider « Anthropic du runner » refused its key \(401\)/)
 

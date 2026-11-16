@@ -76,7 +76,7 @@ describe('the encryption of the keys', () => {
   })
 })
 
-describe('the form « Ajouter un provider »', () => {
+describe('the form « Add a provider »', () => {
   function form(values: Record<string, string>) {
     let data = new FormData()
     for (let [key, value] of Object.entries(values)) data.set(key, value)
@@ -84,16 +84,16 @@ describe('the form « Ajouter un provider »', () => {
   }
 
   it('reads an Anthropic provider with its key and the default models', () => {
-    let read = readProviderForm(form({ kind: 'anthropic', label: 'Anthropic de Sakuga', apiKey: KEY, models_lite: '', models_balanced: '', models_heavy: '' }))
+    let read = readProviderForm(form({ kind: 'anthropic', label: 'Anthropic of Sakuga', apiKey: KEY, models_lite: '', models_balanced: '', models_heavy: '' }))
     assert.deepEqual(read.errors, {})
-    assert.deepEqual(read.input, { kind: 'anthropic', label: 'Anthropic de Sakuga', baseUrl: null, apiKey: KEY, models: {} })
+    assert.deepEqual(read.input, { kind: 'anthropic', label: 'Anthropic of Sakuga', baseUrl: null, apiKey: KEY, models: {} })
   })
 
   it('needs a URL and the models of each level for a server of the OpenAI API', () => {
     let read = readProviderForm(form({ kind: 'openai_compatible', label: 'vLLM', apiKey: KEY, models_lite: 'qwen3' }))
     assert.equal(read.input, null)
     assert.ok(read.errors.baseUrl)
-    assert.match(read.errors.models!, /nommez au moins un modèle pour chaque niveau/)
+    assert.match(read.errors.models!, /Name at least one model for each level/)
     let ok = readProviderForm(
       form({ kind: 'openai_compatible', label: 'vLLM', baseUrl: 'https://llm.example.com/v1', apiKey: KEY, models_lite: 'qwen3, qwen3', models_balanced: 'a', models_heavy: 'b,c' }),
     )
@@ -114,10 +114,10 @@ describe('the form « Ajouter un provider »', () => {
     assert.equal(wrong.input, null)
     assert.equal(
       wrong.errors.models,
-      'heavy : « anthropic/claude-opus-5.5 ». Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+      'heavy: "anthropic/claude-opus-5.5". Anthropic expects its own id, without "anthropic/", for example claude-sonnet-5-5.',
     )
     let openrouter = readProviderForm(form({ kind: 'openrouter', label: 'O', apiKey: KEY, models_lite: 'claude-haiku-5-5' }))
-    assert.match(openrouter.errors.models!, /^lite : « claude-haiku-5-5 »\. OpenRouter attend le fournisseur devant le modèle/)
+    assert.match(openrouter.errors.models!, /^lite: "claude-haiku-5-5"\. OpenRouter expects the vendor before the model/)
 
     let right = readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: KEY, models_heavy: 'claude-opus-5-5' }))
     assert.deepEqual(right.errors, {})
@@ -143,13 +143,13 @@ describe('the form « Ajouter un provider »', () => {
     assert.ok(readProviderForm(form({ kind: 'anthropic', label: 'A', apiKey: KEY, models_lite: '--help' })).errors.models)
   })
 
-  it('reads the form « Remplacer la clé »', () => {
+  it('reads the form « Replace the key »', () => {
     assert.equal(readKeyForm(form({ apiKey: ` ${KEY} ` })).apiKey, KEY)
     assert.ok(readKeyForm(form({ apiKey: '' })).error)
   })
 })
 
-describe('« Tester » a provider', () => {
+describe('« Test » a provider', () => {
   function fetchAnswering(status: number, body = '{}') {
     let calls: { url: string; headers: Record<string, string>; redirect?: string }[] = []
     let fetch = (async (url: URL | string, init: RequestInit = {}) => {

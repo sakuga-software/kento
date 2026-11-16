@@ -9,7 +9,7 @@ import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
 import type { ProvidersStore, ProviderView } from '../providers/store.ts'
 import { createAppRouter } from '../router.ts'
-import { frenchHour } from './format.ts'
+import { hour } from './format.ts'
 import { providerState } from './settings.tsx'
 
 const COOKIE = '__Host-kento_session'
@@ -27,7 +27,7 @@ function provider(overrides: Partial<ProviderView> = {}): ProviderView {
     id: ID,
     orgId: ORG.id,
     kind: 'anthropic',
-    label: 'Anthropic de Sakuga',
+    label: 'Anthropic of Sakuga',
     baseUrl: null,
     keyLast4: 'abcd',
     keySetAt: NOW,
@@ -134,24 +134,24 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
   return { ...fake, probed, request, signIn }
 }
 
-describe('the section « Providers et clés »', () => {
+describe('the section « Providers and keys »', () => {
   it('shows the last 4 characters of a key, never the key, and the forms to an admin', async () => {
     let { request, signIn } = setup([provider({ lastOkAt: new Date(NOW.getTime() - 5 * 60_000) })])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /Providers et clés/)
-    assert.match(html, /Anthropic de Sakuga/)
+    assert.match(html, /Providers and keys/)
+    assert.match(html, /Anthropic of Sakuga/)
     assert.match(html, /••••abcd/)
     assert.ok(!html.includes(KEY), 'the page never holds the key')
-    assert.match(html, /Valide · dernier appel/)
-    assert.match(html, /il y a 5 min/)
+    assert.match(html, /Valid · last call/)
+    assert.match(html, /5 min ago/)
     assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
-    assert.doesNotMatch(html, /de l’org\b(?!anisation)/, '« organisation » in a sentence (REV-43)')
+    assert.doesNotMatch(html, /of the org\b(?!anization)/, '« organization » in a sentence (REV-43)')
     assert.match(html, /claude-haiku-5-5/)
-    assert.match(html, /Par défaut/)
+    assert.match(html, /Default/)
     assert.match(html, /action="\/settings\/providers\/7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f\/test"/)
-    assert.match(html, /Remplacer la clé/)
-    assert.match(html, /Ajouter le provider/)
+    assert.match(html, /Replace the key/)
+    assert.match(html, /Add the provider/)
     assert.match(html, /type="password"/)
   })
 
@@ -160,19 +160,19 @@ describe('the section « Providers et clés »', () => {
     let { request, signIn } = setup([provider({ refusedAt, refusedStatus: 401, refusedMessage: '401 invalid x-api-key' })])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.equal(frenchHour(refusedAt), '9 h 40')
-    assert.match(html, /La clé de « Anthropic de Sakuga » est refusée \(401\) depuis <time[^>]*>9 h 40<\/time>/)
-    assert.match(html, /Refusée · 401 depuis/)
-    assert.match(html, /Les jobs de l’organisation échouent/)
-    assert.match(html, /Dernière réponse : 401 invalid x-api-key/)
+    assert.equal(hour(refusedAt), '09:40')
+    assert.match(html, /The key of (&quot;|")Anthropic of Sakuga(&quot;|") is refused \(401\) since <time[^>]*>09:40<\/time>/)
+    assert.match(html, /Refused · 401 since/)
+    assert.match(html, /The jobs of the organization fail/)
+    assert.match(html, /Last answer: 401 invalid x-api-key/)
   })
 
-  it('shows a provider that the runner holds as « Clé sur le runner », neutral, with no test', async () => {
+  it('shows a provider that the runner holds as « Key on the runner », neutral, with no test', async () => {
     let { request, signIn } = setup([provider({ kind: 'ollama', runnerHeld: true, keyLast4: null, models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } })])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /class="status status-neutral">Serveur du runner/, 'a normal state is not amber (REV-31)')
-    assert.match(html, /aucune, serveur du runner/)
+    assert.match(html, /class="status status-neutral">Server of the runner/, 'a normal state is not amber (REV-31)')
+    assert.match(html, /none, server of the runner/)
     assert.doesNotMatch(html, /\/test"/)
     assert.equal(providerState({ runnerHeld: true, refusedAt: null, lastOkAt: null }), 'runner')
   })
@@ -182,7 +182,7 @@ describe('the section « Providers et clés »', () => {
     let { request, signIn } = setup([
       provider({
         kind: 'openai_compatible',
-        label: 'vLLM interne',
+        label: 'Internal vLLM',
         baseUrl: 'https://llm.internal.example/v1',
         runnerHeld: true,
         keyLast4: null,
@@ -196,11 +196,11 @@ describe('the section « Providers et clés »', () => {
     assert.equal(providerState({ runnerHeld: true, refusedAt, lastOkAt: null }), 'refused')
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /role="alert"[^>]*><p><strong>Le runner a reçu 401 pour la clé de « vLLM interne » depuis <time datetime="2026-10-29T08:00:00.000Z">9 h 00<\/time>/)
-    assert.match(html, /class="status status-alert">Refusée sur le runner · 401 depuis/)
-    assert.match(html, /Dernière réponse : 401 Invalid API key/)
-    assert.match(html, /Remplacez <span class="mono">PROVIDER_API_KEY<\/span> sur les runners de l’organisation/)
-    assert.doesNotMatch(html, /Remplacer la clé/, 'the service has no key to replace')
+    assert.match(html, /role="alert"[^>]*><p><strong>The runner got 401 for the key of (&quot;|")Internal vLLM(&quot;|") since <time datetime="2026-10-29T08:00:00.000Z">09:00<\/time>/)
+    assert.match(html, /class="status status-alert">Refused on the runner · 401 since/)
+    assert.match(html, /Last answer: 401 Invalid API key/)
+    assert.match(html, /Replace <span class="mono">PROVIDER_API_KEY<\/span> on the runners of the organization/)
+    assert.doesNotMatch(html, /Replace the key/, 'the service has no key to replace')
   })
 
   it('marks a model without a price as a warning that says its effect on the limit (REV-31)', async () => {
@@ -209,7 +209,7 @@ describe('the section « Providers et clés »', () => {
     ])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    assert.match(html, /<span class="tag tag-warn">sans prix : non compté dans le plafond<\/span>/)
+    assert.match(html, /<span class="tag tag-warn">no price: not counted in the cap<\/span>/)
   })
 
   it('shows a member the providers and no form', async () => {
@@ -217,7 +217,7 @@ describe('the section « Providers et clés »', () => {
     let { cookie } = await signIn(CAMILLE)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /••••abcd/)
-    assert.doesNotMatch(html, /Ajouter le provider/)
+    assert.doesNotMatch(html, /Add the provider/)
     assert.doesNotMatch(html, /\/settings\/providers\//)
   })
 
@@ -248,7 +248,7 @@ describe('the section « Providers et clés »', () => {
     assert.deepEqual(writes, [`add ${ORG.id} anthropic`])
   })
 
-  it('asks to test only a provider that « Tester » can test: not a key on the runner, not Ollama (REV-51)', async () => {
+  it('asks to test only a provider that « Test » can test: not a key on the runner, not Ollama (REV-51)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let held = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'Anthropic', runnerHeld: 'on' } })
@@ -260,12 +260,12 @@ describe('the section « Providers et clés »', () => {
     assert.match(ollama.headers.get('Location') ?? '', /^\/settings\?notice=added_ollama#provider-/)
     for (let notice of ['added_runner', 'added_ollama']) {
       let html = await (await request(`/settings?notice=${notice}`, { cookie })).text()
-      assert.match(html, /Provider ajouté\./, notice)
-      assert.doesNotMatch(html, /Testez-le/, notice)
+      assert.match(html, /Provider added\./, notice)
+      assert.doesNotMatch(html, /Test it/, notice)
     }
   })
 
-  it('folds « Ajouter un provider » behind a button, and opens it on an error (REV-29)', async () => {
+  it('folds « Add a provider » behind a button, and opens it on an error (REV-29)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let page = await (await request('/settings', { cookie })).text()
@@ -285,24 +285,24 @@ describe('the section « Providers et clés »', () => {
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     assert.equal(response.status, 422)
     let html = await response.text()
-    assert.match(html, /Un nom de 1 à 60 caractères/)
+    assert.match(html, /A name of 1 to 60 characters/)
     assert.ok(!html.includes(KEY))
   })
 
-  it('focuses the first field in error of « Ajouter un provider », and announces that nothing was saved (REV-28)', async () => {
+  it('focuses the first field in error of « Add a provider », and announces that nothing was saved (REV-28)', async () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'openai_compatible', label: 'x', baseUrl: 'http://llm.example.com', apiKey: '' } })
     assert.equal(response.status, 422)
     let html = await response.text()
     assert.deepEqual(autofocused(html), ['provider-baseUrl'], 'the URL comes before the key in the form')
-    assert.match(html, /role="alert"[^>]*><p><strong>Rien n’est enregistré<\/strong> : 3 champs à corriger/)
+    assert.match(html, /role="alert"[^>]*><p><strong>Nothing is saved\.<\/strong> 3 fields to fix/)
     let page = await (await request('/settings', { cookie })).text()
     assert.deepEqual(autofocused(page), [], 'a page without error moves no focus')
-    assert.doesNotMatch(page, /Rien n’est enregistré/)
+    assert.doesNotMatch(page, /Nothing is saved/)
   })
 
-  it('focuses the key of « Remplacer la clé » after an error (REV-28)', async () => {
+  it('focuses the key of « Replace the key » after an error (REV-28)', async () => {
     let { request, signIn } = setup([provider()])
     let { cookie, csrf } = await signIn(ALEX)
     let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'short' } })
@@ -314,7 +314,7 @@ describe('the section « Providers et clés »', () => {
     let { request, signIn } = setup([])
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/settings', { cookie })).text()
-    for (let kind of ['Anthropic', 'OpenRouter', 'Compatible OpenAI', 'Ollama']) assert.match(html, new RegExp(`<li><strong>${kind}</strong> : `))
+    for (let kind of ['Anthropic', 'OpenRouter', 'OpenAI-compatible', 'Ollama']) assert.match(html, new RegExp(`<li><strong>${kind}</strong>: `))
     assert.match(html, /aria-describedby="provider-kind-hint"/)
   })
 
@@ -343,11 +343,11 @@ describe('the section « Providers et clés »', () => {
     await refused.request(`/settings/providers/${ID}/test`, { cookie: second.cookie, form: { _csrf: second.csrf } })
     assert.deepEqual(refused.writes, [`refused ${ID} 401`])
 
-    let failed = setup([provider()], { probe: { outcome: 'failed', message: 'llm.example.com est sur un réseau privé : le service ne l’appelle pas.' } })
+    let failed = setup([provider()], { probe: { outcome: 'failed', message: 'llm.example.com is on a private network, and the service does not call it.' } })
     let third = await failed.signIn(ALEX)
     let page = await failed.request(`/settings/providers/${ID}/test`, { cookie: third.cookie, form: { _csrf: third.csrf } })
     assert.equal(page.status, 200)
-    assert.match(await page.text(), /réseau privé/)
+    assert.match(await page.text(), /private network/)
     assert.deepEqual(failed.writes, [], 'a failed test changes nothing')
   })
 

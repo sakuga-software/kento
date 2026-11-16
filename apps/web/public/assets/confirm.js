@@ -1,5 +1,5 @@
-// The confirmation of a destructive action (app/ui/confirm.tsx, REV-33): « Annuler » and Échap
-// close it, and the focus goes back to its trigger. Without JavaScript, « Annuler » stays hidden
+// The confirmation of a destructive action (app/ui/confirm.tsx, REV-33): « Cancel » and Escape
+// close it, and the focus goes back to its trigger. Without JavaScript, « Cancel » stays hidden
 // and the trigger closes the confirmation.
 // Its names stay in a block: the scripts of a page share one global scope.
 {

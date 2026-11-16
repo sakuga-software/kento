@@ -26,7 +26,7 @@ const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = 'b'.repeat(40)
 const RUNNER = { hasProviderKey: false, kinds: ['review'], features: ['providers', 'models'], ownProvider: null }
 
-describe('« Prochain job » is the provider and the model of the claim (REV-27)', () => {
+describe('« Next job » is the provider and the model of the claim (REV-27)', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
   let box: SecretBox
@@ -126,7 +126,7 @@ describe('« Prochain job » is the provider and the model of the claim (REV-27)
     assert.deepEqual(claimed, { provider: screen.provider.id, model: screen.model })
   })
 
-  it('nothing chosen: the provider « Par défaut », with its own models', async () => {
+  it('nothing chosen: the « Default » provider, with its own models', async () => {
     let def = await add('Default', { models: { lite: ['claude-haiku-4-5', 'claude-sonnet-4-5'] } })
     let { screen, claimed } = await compare({}, {})
     assert.equal(screen.origin, 'default')

@@ -131,7 +131,7 @@ export async function applyReject(input: RejectInput): Promise<RejectOutcome> {
   let marker = rejectMarker(finding.id)
   let said = outcome.changed ? { reason: input.reason, login: input.login } : await dismissal(input, change.finding.statusReason)
   if (finding.githubCommentId !== null && (await replyNeeded(outcome, 'thread_reply', () => threadHas(input, marker)))) {
-    let unresolved = !outcome.resolved ? '\n\nKentō n\'a pas pu résoudre ce fil : s\'il est encore ouvert, il peut être résolu à la main.' : ''
+    let unresolved = !outcome.resolved ? '\n\nKentō could not resolve this thread. If it is still open, a person can resolve it.' : ''
     await step(outcome, input, 'thread_reply', () =>
       github.rest('POST', `/repos/${fullName}/pulls/${prNumber}/comments/${finding.githubCommentId}/replies`, {
         body: `${replyText('dismissed', said.reason, said.login)}${unresolved}\n\n${marker}`,
@@ -139,10 +139,10 @@ export async function applyReject(input: RejectInput): Promise<RejectOutcome> {
     )
   }
   if (input.place.kind === 'conversation' && (await replyNeeded(outcome, 'conversation_reply', () => conversationHas(input, marker)))) {
-    let what = `Le constat \`${shortIdOf(finding.key)}\` « ${finding.title} »`
+    let what = `The finding \`${shortIdOf(finding.key)}\` "${finding.title}"`
     await step(outcome, input, 'conversation_reply', () =>
       github.rest('POST', `/repos/${fullName}/issues/${prNumber}/comments`, {
-        body: `@${said.login} ${what} est écarté (dismissed). Motif : « ${said.reason} ». Les prochaines reviews ne le commenteront plus.\n\n${marker}`,
+        body: `@${said.login} ${what} is dismissed. Reason: "${said.reason}". The next reviews will not comment on it again.\n\n${marker}`,
       }),
     )
   }
@@ -302,7 +302,7 @@ async function dismissBlockingReview(input: RejectInput): Promise<number | null>
   for (let review of dismissed) {
     try {
       await github.rest('PUT', `/repos/${fullName}/pulls/${prNumber}/reviews/${review.id}/dismissals`, {
-        message: `Retirée par Kentō : @${input.login} a écarté le constat \`${shortIdOf(input.finding.key)}\` « ${input.finding.title} », et aucun constat bloquant ne reste ouvert.`,
+        message: `Dismissed by Kentō: @${input.login} dismissed the finding \`${shortIdOf(input.finding.key)}\` "${input.finding.title}", and no blocking finding stays open.`,
         event: 'DISMISS',
       })
     } catch (error) {

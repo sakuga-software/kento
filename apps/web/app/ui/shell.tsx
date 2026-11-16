@@ -9,16 +9,16 @@ import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
 export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
 
 /**
- * `soon`: the screen is not there yet (REV-32). The bar names it, with « Bientôt » and no link. No link
+ * `soon`: the screen is not there yet (REV-32). The bar names it, with « Soon » and no link. No link
  * of the navigation leads to an empty screen.
  */
 const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
-  { key: 'dashboard', label: 'Tableau de bord', href: routes.home.href() },
+  { key: 'dashboard', label: 'Dashboard', href: routes.home.href() },
   { key: 'repos', label: 'Repos', href: routes.repos.href() },
   { key: 'findings', label: 'Findings', href: routes.findings.href() },
-  { key: 'feedback', label: 'Retours', href: feedbackRoutes.feedback.href() },
+  { key: 'feedback', label: 'Feedback', href: feedbackRoutes.feedback.href() },
   { key: 'runners', label: 'Runners', href: routes.runners.href() },
-  { key: 'settings', label: 'Réglages', href: routes.settings.href() },
+  { key: 'settings', label: 'Settings', href: routes.settings.href() },
 ]
 
 /** The person who is signed in, and their role in the org on screen. */
@@ -57,17 +57,17 @@ export interface ShellProps {
   lead?: string
   /** Buttons at the right of the title. A screen passes none to a member. */
   actions?: RemixNode
-  /** REV-91. The tabs of a screen at the right of its title, for every person (« Liste », « Précision »). */
+  /** REV-91. The tabs of a screen at the right of its title, for every person (« List », « Precision »). */
   tabs?: RemixNode
-  /** REV-17. What a member can do on this screen, in place of « seuls les admins … modifient ». */
+  /** REV-17. What a member can do on this screen, in place of « only the admins … can change ». */
   memberCan?: string
   children?: RemixNode
 }
 
 /**
  * The frame of every screen (REV-91): the bar with the mark, the screens, the org and the avatar;
- * under 760 px, « Menu » opens the list (public/assets/frame.js). Then the page header, the « Lecture
- * seule » notice for a member, and the foot: « Kentō x.y.z · par Sakuga », the theme and the sign-out.
+ * under 760 px, « Menu » opens the list (public/assets/frame.js). Then the page header, the « Read
+ * only » notice for a member, and the foot: « Kentō x.y.z · by Sakuga », the theme and the sign-out.
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
@@ -77,12 +77,12 @@ export function Shell(handle: Handle<ShellProps>) {
     return (
       <Document title={title} theme={frame.theme} assetVersion={frame.assetVersion}>
         <a class="skip-link" href="#content">
-          Aller au contenu
+          Skip to content
         </a>
         <header class="bar" data-bar="">
           <div class="bar-in">
             <Mark />
-            <nav class="bar-nav" aria-label="Navigation principale">
+            <nav class="bar-nav" aria-label="Main navigation">
               <button class="bar-menu" type="button" aria-expanded="false" aria-controls="bar-links" data-bar-menu="">
                 <MenuIcon />
                 Menu
@@ -93,9 +93,9 @@ export function Shell(handle: Handle<ShellProps>) {
                     {soon && key !== section ? (
                       <span class="bar-link">
                         {label}
-                        <span class="tag tag-quiet">Bientôt</span>
+                        <span class="tag tag-quiet">Soon</span>
                         {/* REV-32: a screen reader hears that it is no link yet. */}
-                        <span class="visually-hidden"> : pas encore disponible</span>
+                        <span class="visually-hidden">, not available yet</span>
                       </span>
                     ) : (
                       <a class="bar-link" href={href} aria-current={key === section ? 'page' : undefined}>
@@ -129,9 +129,9 @@ export function Shell(handle: Handle<ShellProps>) {
             <div class="banner banner-info" role="status">
               <LockIcon />
               <p>
-                <strong class="banner-title">Lecture seule</strong> Vous êtes membre de {viewer.org.login} : vous voyez tout
-                {memberCan ? `, ${memberCan}` : ''}, et seuls les admins de l’organisation modifient
-                {memberCan ? ' le reste' : ''}.
+                <strong class="banner-title">Read only</strong> You are a member of {viewer.org.login}. You can see everything
+                {memberCan ? `, ${memberCan}` : ''}, and only the admins of the organization can change
+                {memberCan ? ' the rest' : ' it'}.
               </p>
             </div>
           ) : null}
@@ -139,7 +139,7 @@ export function Shell(handle: Handle<ShellProps>) {
         </main>
 
         <footer class="footer">
-          <p>Kentō {frame.version} · par Sakuga</p>
+          <p>Kentō {frame.version} · by Sakuga</p>
           <div class="footer-settings">
             <ThemeSwitch frame={frame} />
             {viewer ? <Who frame={frame} viewer={viewer} /> : null}
@@ -152,13 +152,13 @@ export function Shell(handle: Handle<ShellProps>) {
 
 function Mark(_handle: Handle<{}>) {
   return () => (
-    <a class="mark" href={routes.home.href()} aria-label="Kentō, tableau de bord">
+    <a class="mark" href={routes.home.href()} aria-label="Kentō, dashboard">
       <Logo />
     </a>
   )
 }
 
-/** Papier / Sumi / Appareil. public/assets/theme.js applies a choice at once; without it, « Appliquer ». */
+/** Paper / Sumi / Device. public/assets/theme.js applies a choice at once; without it, « Apply ». */
 export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
   return () => {
     let { frame } = handle.props
@@ -167,7 +167,7 @@ export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
         {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
         <input type="hidden" name="returnTo" value={frame.path} />
         <fieldset class="theme-switch">
-          <legend>Thème</legend>
+          <legend>Theme</legend>
           <div class="segmented">
             {THEMES.map((theme) => (
               <label>
@@ -177,7 +177,7 @@ export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
             ))}
           </div>
           <button class="button" type="submit">
-            Appliquer
+            Apply
           </button>
         </fieldset>
       </form>
@@ -192,7 +192,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
     if (viewer.orgs.length < 2) {
       return (
         <span class="bar-org">
-          <span class="visually-hidden">Organisation : </span>
+          <span class="visually-hidden">Organization: </span>
           <span class="bar-org-box">{viewer.org.login}</span>
         </span>
       )
@@ -202,7 +202,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
         {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
         <input type="hidden" name="returnTo" value={frame.path} />
         <label class="visually-hidden" for="org-switch">
-          Organisation
+          Organization
         </label>
         <select class="bar-org-box" id="org-switch" name="orgId">
           {viewer.orgs.map((org) => (
@@ -212,7 +212,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
           ))}
         </select>
         <button class="button" type="submit">
-          Changer
+          Switch
         </button>
       </form>
     )
@@ -243,7 +243,7 @@ function Avatar(handle: Handle<{ viewer: Viewer; current: boolean }>) {
         title={viewer.login}
       >
         <span aria-hidden="true">{initials(viewer)}</span>
-        <span class="visually-hidden">{viewer.login}, vos préférences</span>
+        <span class="visually-hidden">{viewer.login}, your preferences</span>
       </a>
     )
   }
@@ -256,12 +256,12 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
     return (
       <div class="who">
         <span class="who-login">{viewer.login}</span>
-        <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Membre'}</span>
+        <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Member'}</span>
         <form method="post" action={routes.signOut.href()}>
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
           <button class="button button-ghost" type="submit">
             <SignOutIcon />
-            Se déconnecter
+            Sign out
           </button>
         </form>
       </div>

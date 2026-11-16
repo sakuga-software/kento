@@ -55,7 +55,7 @@ export function rulesSection(rules: readonly Rule[]): { section: string; packed:
     const candidate = { ...rule, ref: `R${packed.length + 1}` };
     const text = ruleText(candidate);
     if (size + text.length > MAX_RULES_BYTES) {
-      skipped.push(`règle « ${rule.title} » : retirée pour tenir dans la taille maximale de la revue`);
+      skipped.push(`rule "${rule.title}": removed to fit in the maximum size of the review`);
       continue;
     }
     packed.push(candidate);

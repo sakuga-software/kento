@@ -47,16 +47,16 @@ export async function publishResolution(
 ): Promise<ResolveOutcome> {
   let { fullName, pr } = target
   let marker = markerResolve(payload.head)
-  let at = `au commit \`${payload.head.slice(0, 9)}\``
+  let at = `at commit \`${payload.head.slice(0, 9)}\``
   let outcome: ResolveOutcome = { replied: 0, resolved: 0, toResolve: 0 }
 
   if (payload.held === 0) {
     let text =
       payload.waiting > 0
-        ? `Le premier fil à traiter dépasse à lui seul la taille d'une commande (${MAX_PACK_KB} ko) : aucun fil n'a été relu ${at}.`
+        ? `The first thread to read is larger than one command by itself (${MAX_PACK_KB} KB). No thread was read ${at}.`
         : payload.open > 0
-          ? `Les ${payload.open} fils ouverts ont déjà reçu une réponse ${at}. Poussez un commit pour qu'ils soient relus.`
-          : `Aucun fil ouvert ${at}.`
+          ? `The ${payload.open} open threads already got an answer ${at}. Push a commit to have them read again.`
+          : `No open thread ${at}.`
     await github.rest('POST', `/repos/${fullName}/issues/${pr}/comments`, { body: `${text}\n\n${marker}` })
     return outcome
   }
@@ -74,7 +74,7 @@ export async function publishResolution(
     let close = verdict.verdict === 'fixed' ? verdict.changed === true : verdict.verdict === 'answered' && opener.isBot
     let status =
       verdict.verdict === 'fixed' && verdict.changed === null
-        ? "Le commit de ce fil est inconnu ou absent de l'historique (un force-push) : le changement depuis ce commit est inconnu, et le fil reste ouvert."
+        ? 'The commit of this thread is unknown or gone from the history (a force-push). The change since that commit is unknown, and the thread stays open.'
         : ''
     let resolved = false
     if (close) {
@@ -86,7 +86,7 @@ export async function publishResolution(
           warn('resolve.thread_not_resolved', { thread: thread.id, error: String(error).slice(0, 300) })
         }
       }
-      status = resolved ? 'Fil résolu.' : "Le fil peut être résolu : l'App n'a pas encore le droit de le faire."
+      status = resolved ? 'Thread resolved.' : 'The thread can be resolved. The App does not have the permission to do it yet.'
       if (resolved) outcome.resolved++
       else outcome.toResolve++
     }
@@ -100,7 +100,7 @@ export async function publishResolution(
     }
     let url = `${target.webUrl}/${fullName}/pull/${pr}#discussion_r${opener.id}`
     let icons = target.icons ?? 'text'
-    let label = close ? (resolved ? withIcon('resolved', icons, 'résolu') : withIcon('to-resolve', icons, 'à résoudre')) : withIcon('stays-open', icons, 'reste ouvert')
+    let label = close ? (resolved ? withIcon('resolved', icons, 'resolved') : withIcon('to-resolve', icons, 'to resolve')) : withIcon('stays-open', icons, 'stays open')
     lines.push(`- ${label} · [\`${thread.path}:${thread.line ?? '?'}\`](${url}) · ${opener.author}`)
   }
 
@@ -116,22 +116,22 @@ export async function publishResolution(
   }
   await github.rest('POST', `/repos/${fullName}/issues/${pr}/comments`, {
     body: [
-      `**${BY} · résolution des fils** ${at}`,
+      `**${BY} · thread resolution** ${at}`,
       '',
-      ...(lines.length ? lines : unanswered ? [] : ["Aucun des fils relus n'est encore ouvert."]),
+      ...(lines.length ? lines : unanswered ? [] : ['None of the threads that Kentō read is still open.']),
       '',
       ...(unanswered
         ? [
             unanswered > 1
-              ? `${unanswered} fils relus sans réponse du modèle : ils restent ouverts, et la prochaine commande \`@kento-review resolve\` les relira.`
-              : 'Un fil relu sans réponse du modèle : il reste ouvert, et la prochaine commande `@kento-review resolve` le relira.',
+              ? `${unanswered} threads got no answer from the model. They stay open, and the next \`@kento-review resolve\` command reads them again.`
+              : 'One thread got no answer from the model. It stays open, and the next `@kento-review resolve` command reads it again.',
             '',
           ]
         : []),
       ...(skipped
         ? [
-            `${skipped} ${plural(skipped, 'autre')} ${plural(skipped, 'fil')} ${plural(skipped, 'ouvert')} ${plural(skipped, 'attend', 'attendent')} : ` +
-              `une commande traite au plus ${MAX_RESOLVE_THREADS} fils et ${MAX_PACK_KB} ko. Relancez \`@kento-review resolve\`.`,
+            `${skipped} other open ${plural(skipped, 'thread')} ${plural(skipped, 'waits', 'wait')}. ` +
+              `One command reads at most ${MAX_RESOLVE_THREADS} threads and ${MAX_PACK_KB} KB. Run \`@kento-review resolve\` again.`,
             '',
           ]
         : []),

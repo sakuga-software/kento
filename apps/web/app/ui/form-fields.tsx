@@ -44,7 +44,7 @@ export function describedBy(id: string, error: string | undefined, hint: boolean
 }
 
 /**
- * « Revenir à l’org » or « Revenir à Kentō »: a form of its own that removes the value of `field`,
+ * « Back to the org value » or « Back to the Kentō value »: a form of its own that removes the value of `field`,
  * shown only for a value that the page sets.
  */
 export function ResetForm(handle: Handle<{ action: string; csrf: string | null; version: number; field: string; to: string; label: RemixNode }>) {
@@ -54,7 +54,7 @@ export function ResetForm(handle: Handle<{ action: string; csrf: string | null; 
       <form method="post" action={action}>
         <VersionFields csrf={csrf} version={version} field={field} />
         <button class="button" type="submit">
-          Revenir à {to}<span class="visually-hidden"> pour {label}</span>
+          Back to the {to} value<span class="visually-hidden"> for {label}</span>
         </button>
       </form>
     )
@@ -62,7 +62,7 @@ export function ResetForm(handle: Handle<{ action: string; csrf: string | null; 
 }
 
 /**
- * The line of the version of a versioned form: « config v7, modifiée par alex le 27 oct. à 18:02 ».
+ * The line of the version of a versioned form: « config v7, changed by alex on 27 Oct at 18:02 ».
  * `empty` is the line of version 0, before any change.
  */
 export function versionLine(
@@ -70,7 +70,7 @@ export function versionLine(
   view: { version: number; updatedBy: string | null; updatedAt: Date | null },
 ): string {
   if (view.version === 0) return words.empty
-  let by = view.updatedBy ? ` par ${view.updatedBy}` : ''
+  let by = view.updatedBy ? ` by ${view.updatedBy}` : ''
   let at = view.updatedAt ? ` ${when(view.updatedAt)}` : ''
   return `${words.name} v${view.version}, ${words.changed}${by}${at}`
 }

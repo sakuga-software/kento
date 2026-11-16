@@ -31,7 +31,7 @@ export interface FeedbackHandlerDependencies {
 }
 
 /** The reply to a `feedback` without a text, after the mention of the person. */
-export const FEEDBACK_EMPTY = 'La commande `feedback` demande un avis, sur la même ligne ou en dessous : `@kento-review feedback <ton avis>`.'
+export const FEEDBACK_EMPTY = 'The `feedback` command needs your opinion, on the same line or below it: `@kento-review feedback <your opinion>`.'
 
 export function createFeedbackHandler(deps: FeedbackHandlerDependencies) {
   async function githubFor(installationId: number, githubRepoId: number): Promise<GitHub> {

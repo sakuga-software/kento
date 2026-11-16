@@ -337,7 +337,7 @@ const APPROVE_SCORE = 4;
 export function deeperReview(answer: Answer, level: Level): string | null {
   const deeper = answer.deeper_review;
   if (level !== 'lite' || !deeper?.recommended) return null;
-  return deeper.reason?.trim() || "le modèle n'a pas donné sa raison.";
+  return deeper.reason?.trim() || 'the model gave no reason.';
 }
 
 /**

@@ -79,8 +79,8 @@ describe('comment of a failed job', () => {
 
     assert.equal(failureComments().length, 1)
     let body = failureComments()[0]!.body
-    assert.ok(body.startsWith(`**Kentō · review en échec** au commit \`${HEAD.slice(0, 9)}\``), body)
-    assert.ok(body.includes('La review `lite` de ce commit a échoué'), body)
+    assert.ok(body.startsWith(`**Kentō · review failed** at commit \`${HEAD.slice(0, 9)}\``), body)
+    assert.ok(body.includes('The `lite` review of this commit failed'), body)
     assert.ok(body.includes('Anthropic answered 404'), body)
     assert.ok(body.includes('model: anthropic/claude-sonnet-5.5'), body)
     assert.ok(body.includes('`@kento-review lite`'), body)
@@ -138,7 +138,7 @@ describe('comment of a failed job', () => {
     assert.deepEqual([...fake.state.reactions], ['9001:confused'])
     assert.equal(failureComments().length, 1)
     let body = failureComments()[0]!.body
-    assert.ok(body.includes('@alex La review `heavy` de ce commit a échoué'), body)
+    assert.ok(body.includes('@alex The `heavy` review of this commit failed'), body)
     assert.ok(body.endsWith(`<!-- kento:failure ${id} -->`), body)
   })
 
@@ -146,9 +146,9 @@ describe('comment of a failed job', () => {
     await failedJob({ kind: 'resolve', level: 'balanced', commentId: 9002, reason: 'lease expired 2 times' })
     await publisher().publishPending()
     let body = failureComments()[0]!.body
-    assert.ok(body.startsWith('**Kentō · résolution des fils en échec**'), body)
-    assert.ok(body.includes('\n\nLa résolution des fils `balanced` de ce commit a échoué'), body)
-    assert.ok(body.includes('Raison : `lease expired 2 times`'), body)
+    assert.ok(body.startsWith('**Kentō · thread resolution failed**'), body)
+    assert.ok(body.includes('\n\nThe `balanced` thread resolution of this commit failed'), body)
+    assert.ok(body.includes('Reason: `lease expired 2 times`'), body)
     assert.ok(body.includes('`@kento-review resolve balanced`'), body)
   })
 

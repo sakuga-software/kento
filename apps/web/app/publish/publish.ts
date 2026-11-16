@@ -408,8 +408,8 @@ export async function publishReview(
         warn('publish.thread_not_resolved', { thread: t.id, error: String(error) })
         await github.rest('POST', `${repo}/pulls/${pr}/comments/${t.commentId}/replies`, {
           body:
-            `Ce constat n'apparaît plus au commit \`${head.slice(0, 9)}\`, et le fichier a changé depuis. ` +
-            `Le fil peut être résolu.\n\n${MARKER_GONE}`,
+            `This finding does not show anymore at commit \`${head.slice(0, 9)}\`, and the file changed since. ` +
+            `The thread can be resolved.\n\n${MARKER_GONE}`,
         })
       }
       resolved++
@@ -491,7 +491,7 @@ export async function publishReview(
     for (let p of previous) {
       if (p.user?.login === target.botLogin && p.state === 'CHANGES_REQUESTED' && p.id !== found.id) {
         await github.rest('PUT', `${reviewsPath}/${p.id}/dismissals`, {
-          message: 'Remplacée par la review du dernier commit.',
+          message: 'Replaced by the review of the last commit.',
           event: 'DISMISS',
         })
       }
@@ -538,7 +538,7 @@ export async function publishReview(
         status: 'completed',
         conclusion: 'success',
         details_url: `${target.webUrl}/${owner}/${name}/pull/${pr}`,
-        output: { title: `Score de confiance : ${value}/5`, summary: body.slice(0, 60_000) },
+        output: { title: `Confidence score: ${value}/5`, summary: body.slice(0, 60_000) },
       })
     })
   }
@@ -604,7 +604,7 @@ function sameAsMarker(id: number): string {
 
 /** REV-101. The line of a copied review that names the commit of its source. */
 export function sameScoreLine(reusedFrom: string): string {
-  return `Même score que le commit \`${reusedFrom.slice(0, 9)}\` : aucun fichier relu n'a changé depuis.`
+  return `Same score as commit \`${reusedFrom.slice(0, 9)}\`. No reviewed file changed since.`
 }
 
 /**
@@ -758,14 +758,14 @@ export async function postReusedCheck(
   let value = score(answer, anchorOf)
   let body =
     reviewBody(answer, anchorOf, review.level, usageOf(review), posterOf(target), raised) +
-    `\n\nAucun fichier relu n'a changé depuis le commit \`${reusedFrom.slice(0, 9)}\` : sa review vaut pour ce commit.`
+    `\n\nNo reviewed file changed since commit \`${reusedFrom.slice(0, 9)}\`. Its review applies to this commit.`
   await checks.rest('POST', `${repo}/check-runs`, {
     name: CHECK_NAME,
     head_sha: review.head,
     status: 'completed',
     conclusion: 'success',
     details_url: `${target.webUrl}/${owner}/${name}/pull/${pr}`,
-    output: { title: `Score de confiance : ${value}/5`, summary: body.slice(0, 60_000) },
+    output: { title: `Confidence score: ${value}/5`, summary: body.slice(0, 60_000) },
   })
 }
 
@@ -851,7 +851,7 @@ export function ledgerEntries(
 export function assignmentNote(assignment: JobAssignment | null, unread: readonly number[] = []): string {
   let unreadLine = unread.length > 0 ? `\n\n<sub>${unreadPathsLine(unread)}</sub>` : ''
   if (!assignment) return unreadLine
-  let mention = assignment.mention ? `\n\nRelecture demandée par la règle : @${assignment.mention}` : ''
+  let mention = assignment.mention ? `\n\nReview requested by the rule: @${assignment.mention}` : ''
   // The rule that applied first, then the rules before it that could not be tested.
   return `\n\n<sub>${assignmentLine(assignment)}</sub>${unreadLine}${mention}`
 }
@@ -862,11 +862,11 @@ export function assignmentNote(assignment: JobAssignment | null, unread: readonl
  */
 function goneNote(gone: number, base: string, icons: Icons): string {
   if (!gone) return ''
-  let threads = gone > 1 ? `${gone} fils ouverts` : 'un fil ouvert'
+  let threads = gone > 1 ? `${gone} open threads` : 'an open thread'
   return (
-    `\n\n> ${withIcon('warning', icons, `Un force-push a retiré de l'historique le commit relu par ${threads}.`)} ` +
-    `Le diff depuis ce commit est impossible : cette review relit toute la PR depuis la base \`${base.slice(0, 9)}\`, ` +
-    `et ${gone > 1 ? 'ces fils restent ouverts' : 'ce fil reste ouvert'}.`
+    `\n\n> ${withIcon('warning', icons, `A force-push removed from the history the commit that ${threads} reviewed.`)} ` +
+    `A diff from that commit is not possible. This review reads the whole PR from the base \`${base.slice(0, 9)}\`, ` +
+    `and ${gone > 1 ? 'these threads stay open' : 'this thread stays open'}.`
   )
 }
 
@@ -1000,7 +1000,7 @@ async function setScoreLabel(github: GitHub, repo: string, pr: number, value: nu
     await github.rest('POST', `${repo}/labels`, {
       name: label,
       color: SCORE_COLOUR[value],
-      description: `Score de confiance de ${BY} (5 : prête à fusionner)`,
+      description: `${BY} confidence score (5: ready to merge)`,
     })
   }
   let current: { name: string }[] = (await github.rest('GET', `${repo}/issues/${pr}/labels`)) ?? []

@@ -19,8 +19,8 @@ function database() {
 /** orchard enabled, with no job, no config and no assignment rule. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Relire GitHub' }).click()
-  await expect(page.getByText('Liste à jour.')).toBeVisible()
+  await page.getByRole('button', { name: 'Read GitHub again' }).click()
+  await expect(page.getByText('List up to date.')).toBeVisible()
   let sql = database()
   try {
     await sql`delete from jobs where repo_id in (select id from repos where full_name = ${ORCHARD.full_name})`
@@ -90,25 +90,25 @@ test.describe('the assignment rules of a repository', () => {
     await reset(page)
 
     await openRepoConfig(page, 'orchard')
-    await page.getByRole('link', { name: 'Assignation', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /Assignation/ })).toBeVisible()
-    await expect(page.getByText(/puis le niveau par défaut du repo, lite/)).toBeVisible()
+    await page.getByRole('link', { name: 'Assignment', exact: true }).click()
+    await expect(page.getByRole('heading', { name: /Assignment/ })).toBeVisible()
+    await expect(page.getByText(/then the default level of the repo, lite/)).toBeVisible()
     await expectNoAxeViolations(page)
 
     let form = page.locator('#assignment-new')
-    await form.getByLabel('L’auteur de la PR est').fill('sakuga-agent[bot]')
-    await form.getByLabel('Alors').selectOption('balanced')
-    await form.getByRole('button', { name: 'Ajouter la règle' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Règle ajoutée en dernier.' })).toBeVisible()
+    await form.getByLabel('The author of the PR is').fill('sakuga-agent[bot]')
+    await form.getByLabel('Then').selectOption('balanced')
+    await form.getByRole('button', { name: 'Add the rule' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Rule added last.' })).toBeVisible()
 
     await page.locator('#assignment-new > summary').click()
-    await form.getByLabel('La PR touche l’un de ces chemins').fill('**/migrations/**')
-    await form.getByLabel('Alors').selectOption('heavy')
-    await form.getByLabel('Mentionner dans la review (facultatif)').fill('alex')
-    await form.getByRole('button', { name: 'Ajouter la règle' }).click()
+    await form.getByLabel('The PR changes one of these paths').fill('**/migrations/**')
+    await form.getByLabel('Then').selectOption('heavy')
+    await form.getByLabel('Mention in the review (optional)').fill('alex')
+    await form.getByRole('button', { name: 'Add the rule' }).click()
     let list = page.locator('.assignment-list')
-    await expect(list.getByText('Si la PR touche **/migrations/**')).toBeVisible()
-    await expect(list.getByText(/alors heavy, et la review mentionne @alex\./)).toBeVisible()
+    await expect(list.getByText('If the PR changes **/migrations/**')).toBeVisible()
+    await expect(list.getByText(/then heavy, and the review mentions @alex\./)).toBeVisible()
     await expectNoAxeViolations(page)
 
     // 1. A pull request of the agent: balanced. 2. A person touches a migration: heavy. 3. Neither: lite.
@@ -118,7 +118,7 @@ test.describe('the assignment rules of a repository', () => {
 
     // The screen of the pull request says which rule set its level.
     await page.goto(`/repos/${await repoId()}/pulls/43`)
-    await expect(page.getByText('Assignation : règle 2, la PR touche db/migrations/0007_sessions.sql, donc heavy à chaque push.')).toBeVisible()
+    await expect(page.getByText('Assignment: rule 2, the PR changes db/migrations/0007_sessions.sql, so heavy at each push.')).toBeVisible()
     await expectNoAxeViolations(page)
 
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

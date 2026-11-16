@@ -127,20 +127,20 @@ function setup(options: { config?: boolean } = {}) {
   return { request, signIn, rules }
 }
 
-const FK_RULE = { title: 'Toute migration drizzle a un index pour chaque FK', body: 'Chaque clé étrangère a son index.', paths: '**/migrations/**', severityFloor: 'major' }
+const FK_RULE = { title: 'Every drizzle migration has an index for each FK', body: 'Each foreign key has its index.', paths: '**/migrations/**', severityFloor: 'major' }
 
 describe('the rules of a repository and of the org (REV-19)', () => {
   it('opens the tab Règles, with what else goes to the model', async () => {
     let { signIn } = setup()
     let { html } = await signIn()
-    assert.match(html, /<a href="\/repos\/[^"]+\/config\?tab=rules" aria-current="page">Règles<\/a>/)
-    assert.doesNotMatch(html, /config-tab-soon">Règles/)
-    assert.match(html, /Règles de orchard <span class="count">0<\/span>/)
-    assert.match(html, /Aucune règle pour ce repo\./)
-    assert.match(html, /Part aussi au modèle/)
-    assert.match(html, /<a href="\/settings#regles">Aucune règle d’org<\/a>/)
-    assert.match(html, /<span class="mono">CLAUDE\.md<\/span> et <span class="mono">AGENTS\.md<\/span>/)
-    assert.match(html, /jamais du code d’une PR/)
+    assert.match(html, /<a href="\/repos\/[^"]+\/config\?tab=rules" aria-current="page">Rules<\/a>/)
+    assert.doesNotMatch(html, /config-tab-soon">Rules/)
+    assert.match(html, /Rules of orchard <span class="count">0<\/span>/)
+    assert.match(html, /No rule for this repo\./)
+    assert.match(html, /Also goes to the model/)
+    assert.match(html, /<a href="\/settings#regles">No org rule<\/a>/)
+    assert.match(html, /<span class="mono">CLAUDE\.md<\/span> and <span class="mono">AGENTS\.md<\/span>/)
+    assert.match(html, /never from the code of a PR/)
     // An empty list opens the form of a new rule.
     assert.match(html, /<details id="repo-rule-new" open class="rule-new">/)
   })
@@ -155,25 +155,25 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.equal(added.headers.get('Location'), `/repos/${ORCHARD}/config?rules=added&rule=${rule.id}&tab=rules#rule-${rule.id}`)
 
     let html = await (await request(added.headers.get('Location')!, { cookie })).text()
-    assert.match(html, /Règle ajoutée\./)
+    assert.match(html, /Rule added\./)
     assert.match(html, new RegExp(`<li id="rule-${rule.id}"[^>]*class="rule"><details open class="rule-details">`))
-    assert.match(html, /<span class="tag tag-quiet mono">\*\*\/migrations\/\*\*<\/span><span class="tag tag-info">au moins P1<\/span>/)
+    assert.match(html, /<span class="tag tag-quiet mono">\*\*\/migrations\/\*\*<\/span><span class="tag tag-info">at least P1<\/span>/)
 
-    let saved = await request(`/rules/${rule.id}`, { cookie, form: { _csrf: csrf, repo: ORCHARD, version: '1', ...FK_RULE, title: 'Index des FK' } })
+    let saved = await request(`/rules/${rule.id}`, { cookie, form: { _csrf: csrf, repo: ORCHARD, version: '1', ...FK_RULE, title: 'FK indexes' } })
     assert.equal(saved.status, 303)
-    assert.equal(rules.rows()[0]!.title, 'Index des FK')
+    assert.equal(rules.rows()[0]!.title, 'FK indexes')
 
     // A form from version 1 again: someone saved in between, nothing is written.
     let stale = await request(`/rules/${rule.id}`, { cookie, form: { _csrf: csrf, repo: ORCHARD, version: '1', ...FK_RULE, title: 'Autre' } })
     assert.match(stale.headers.get('Location')!, /rules=conflict/)
-    assert.equal(rules.rows()[0]!.title, 'Index des FK')
+    assert.equal(rules.rows()[0]!.title, 'FK indexes')
 
     let disabled = await request(`/rules/${rule.id}/active`, { cookie, form: { _csrf: csrf, repo: ORCHARD, version: '2', active: 'false' } })
     assert.equal(disabled.status, 303)
     html = await (await request(disabled.headers.get('Location')!, { cookie })).text()
-    assert.match(html, /Règle désactivée : elle ne part plus au modèle\./)
-    assert.match(html, /<span class="tag tag-warn">désactivée par alex le 30 oct\. à 10:12<\/span>/)
-    assert.match(html, />Réactiver<span class="visually-hidden"> la règle Index des FK<\/span>/)
+    assert.match(html, /Rule disabled\. It no longer goes to the model\./)
+    assert.match(html, /<span class="tag tag-warn">disabled by alex on 30 Oct at 10:12<\/span>/)
+    assert.match(html, />Enable again<span class="visually-hidden"> the rule FK indexes<\/span>/)
 
     let removed = await request(`/rules/${rule.id}/remove?repo=${ORCHARD}`, { cookie, form: { _csrf: csrf } })
     assert.equal(removed.headers.get('Location'), `/repos/${ORCHARD}/config?rules=removed&tab=rules#rules`)
@@ -186,9 +186,9 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     let response = await request('/rules', { cookie, form: { _csrf: csrf, repo: ORCHARD, title: '  ', body: 'Texte', paths: '/abs\n**/ok/**', severityFloor: 'info' } })
     assert.equal(response.status, 422)
     let html = await response.text()
-    assert.match(html, /Rien n’est enregistré<\/strong> : 3 champs à corriger/)
+    assert.match(html, /Nothing is saved\.<\/strong> 3 fields to fix/)
     assert.deepEqual(autofocused(html), ['repo-rule-new-title'])
-    assert.match(html, /« \/abs » : un chemin commence sans « \/ »/)
+    assert.match(html, /\/abs.{1,12}: a path starts without .{1,6}\/.{1,6}, from the root of the repo/)
     assert.match(html, />Texte<\/textarea>/)
     assert.equal(rules.rows().length, 0)
   })
@@ -199,7 +199,7 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     await request('/rules', { cookie: admin.cookie, form: { _csrf: admin.csrf, repo: ORCHARD, ...FK_RULE } })
     let member = await signIn(CAMILLE)
     assert.doesNotMatch(member.html, /action="\/rules/)
-    assert.match(member.html, /<dd class="rule-body">Chaque clé étrangère a son index\.<\/dd>/)
+    assert.match(member.html, /<dd class="rule-body">Each foreign key has its index\.<\/dd>/)
     let refused = await request('/rules', { cookie: member.cookie, form: { _csrf: member.csrf, repo: ORCHARD, ...FK_RULE } })
     assert.equal(refused.status, 403)
   })
@@ -223,8 +223,8 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     let full = await request('/rules', { cookie, form: { _csrf: csrf, repo: ORCHARD, ...FK_RULE } })
     assert.match(full.headers.get('Location')!, /rules=full/)
     let html = await (await request(full.headers.get('Location')!, { cookie })).text()
-    assert.match(html, /50 règles au plus ici, désactivées comprises : supprimez-en une d’abord\./)
-    assert.doesNotMatch(html, /désactivez ou supprimez/)
+    assert.match(html, /50 rules at most here, disabled ones included\. Delete one first\./)
+    assert.doesNotMatch(html, /Disable or delete/)
   })
 
   it('counts an emoji for two in the limits of the form, and says so', async () => {
@@ -232,7 +232,7 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     let { cookie, csrf } = await signIn()
     let response = await request('/rules', { cookie, form: { _csrf: csrf, repo: ORCHARD, ...FK_RULE, title: '🙂'.repeat(150) } })
     assert.equal(response.status, 422)
-    assert.match(await response.text(), /200 caractères au plus ; un emoji compte pour deux\./)
+    assert.match(await response.text(), /200 characters at most\. An emoji counts as two\./)
     assert.equal(rules.rows().length, 0)
   })
 
@@ -242,14 +242,14 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     for (let i = 0; i < 30; i++) await rules.store.create(ORG.id, ORCHARD, 'u', { title: `Repo ${i}`, body: 'x', paths: [], severityFloor: null })
     for (let i = 0; i < 22; i++) await rules.store.create(ORG.id, null, 'u', { title: `Org ${i}`, body: 'x', paths: [], severityFloor: null })
     let html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.match(html, /Un job envoie 50 règles au plus : les 2 dernières règles d’org actives ne partent pas/)
+    assert.match(html, /A job sends 50 rules at most\. The last 2 active org rules do not go/)
     let org = rules.rows().find((r) => r.title === 'Org 21')!
     await rules.store.setActive(ORG.id, org.id, 'u', 1, false)
     html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.match(html, /la dernière règle d’org active ne part pas/)
+    assert.match(html, /The last active org rule does not go/)
     await rules.store.setActive(ORG.id, rules.rows().find((r) => r.title === 'Org 20')!.id, 'u', 1, false)
     html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.doesNotMatch(html, /Un job envoie 50 règles au plus/)
+    assert.doesNotMatch(html, /A job sends 50 rules at most/)
   })
 
   it('shows a rule that no job sends, written outside the screens, with what to fix', async () => {
@@ -259,9 +259,9 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     await rules.store.create(ORG.id, ORCHARD, 'u', { title: 'Motifs', body: 'x', paths: ['x'.repeat(301)], severityFloor: null })
     await rules.store.create(ORG.id, ORCHARD, 'u', { title: 'Valide', body: 'x', paths: ['src/**'], severityFloor: null })
     let html = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.equal([...html.matchAll(/<span class="tag tag-alert">jamais envoyée<\/span>/g)].length, 2)
-    assert.match(html, /son titre dépasse 200 caractères ou son texte 4\s000 \(un emoji compte pour deux\)/)
-    assert.match(html, /aucun de ses chemins n’est valide/)
+    assert.equal([...html.matchAll(/<span class="tag tag-alert">never sent<\/span>/g)].length, 2)
+    assert.match(html, /Its title is longer than 200 characters, or its text longer than 4,000 \(an emoji counts as two\)/)
+    assert.match(html, /None of its paths is valid/)
   })
 
   it('never adds a rule to a repository of another org', async () => {
@@ -281,10 +281,10 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.equal(added.headers.get('Location'), `/settings?rules=added&rule=${rule.id}#rule-${rule.id}`)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /<section id="regles"[^>]*class="card config-card"/)
-    assert.match(html, /Règles d’org <span class="count">1<\/span>/)
-    assert.match(html, /<span class="tag tag-quiet mono">tous les chemins<\/span>/)
+    assert.match(html, /Org rules <span class="count">1<\/span>/)
+    assert.match(html, /<span class="tag tag-quiet mono">all paths<\/span>/)
     // The Config screen of a repository counts it.
     let config = await (await request(`/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
-    assert.match(config, /<a href="\/settings#regles">1 règle d’org active<\/a>/)
+    assert.match(config, /<a href="\/settings#regles">1 active org rule<\/a>/)
   })
 })

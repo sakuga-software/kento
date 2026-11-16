@@ -139,8 +139,8 @@ test('dojo#91 replayed: a new P1 on code that the first review read is to consid
     commitUrl: 'https://github.com/o/r/commit/x',
     level: 'balanced',
   });
-  assert.match(block, /<h3>À considérer \(code déjà relu\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/);
-  assert.doesNotMatch(block, /<h3>Constats<\/h3>/);
+  assert.match(block, /<h3>To consider \(code already reviewed\)<\/h3>[\s\S]*STUDIO_HOST n'est ni dans \.env\.example ni documenté/);
+  assert.doesNotMatch(block, /<h3>Findings<\/h3>/);
 });
 
 test('guard: a critical finding on code already read keeps blocking', async () => {

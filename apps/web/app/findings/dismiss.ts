@@ -9,10 +9,21 @@ import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'
 import { REASON_MAX, setFindingStatus, type FindingStatus } from './store.ts'
 
-/** The reasons that the dialog offers; « Autre » takes a reason of the person. */
-export const DISMISS_REASONS = ['Faux positif', 'Hors sujet', 'Déjà connu', 'Style, pas un défaut'] as const
+/** The reasons that the dialog offers; « Other » takes a reason of the person. */
+export const DISMISS_REASONS = ['False positive', 'Off topic', 'Already known', 'Style, not a defect'] as const
 
-/** The value of « Autre » in the form: the reason is then the field `other`. */
+/**
+ * REV-114. The French reasons of the dialog before the deploy, and their English value. A page that
+ * a person opened before the deploy still posts them. Migration 0027 changes the stored rows.
+ */
+export const FRENCH_REASONS: Readonly<Record<string, (typeof DISMISS_REASONS)[number]>> = {
+  'Faux positif': 'False positive',
+  'Hors sujet': 'Off topic',
+  'Déjà connu': 'Already known',
+  'Style, pas un défaut': 'Style, not a defect',
+}
+
+/** The value of « Other » in the form: the reason is then the field `other`. */
 export const OTHER_REASON = 'other'
 
 /** The most findings of one form: two pages of the screen. */
@@ -36,7 +47,7 @@ export function readStatusForm(form: FormData | null | undefined): StatusForm {
   let status = form?.get('status')
   if (status !== 'dismissed' && status !== 'wontfix') return { ok: false, error: 'status' }
   let choice = String(form?.get('reason') ?? '').trim()
-  let reason = choice === OTHER_REASON ? String(form?.get('other') ?? '').trim() : choice
+  let reason = choice === OTHER_REASON ? String(form?.get('other') ?? '').trim() : (Object.hasOwn(FRENCH_REASONS, choice) ? FRENCH_REASONS[choice]! : choice)
   if (reason && choice !== OTHER_REASON && !isOneOf(DISMISS_REASONS, reason)) return { ok: false, error: 'reason' }
   if (reason.length > REASON_MAX) return { ok: false, error: 'reason_long' }
   if (status === 'dismissed' && !reason) return { ok: false, error: 'reason' }
@@ -45,9 +56,9 @@ export function readStatusForm(form: FormData | null | undefined): StatusForm {
 
 /** The reply in the thread of a finding that a person set aside. */
 export function replyText(status: BulkStatus, reason: string | null, login: string): string {
-  let what = status === 'dismissed' ? 'écarté (dismissed)' : 'accepté tel quel (wontfix)'
-  let why = reason ? ` Motif : « ${reason} ».` : ''
-  return `Finding ${what} par @${login} sur Kentō.${why} Les prochaines reviews ne le commenteront plus.`
+  let what = status === 'dismissed' ? 'dismissed' : "kept as is (won't fix)"
+  let why = reason ? ` Reason: "${reason}".` : ''
+  return `Finding ${what} by @${login} on Kentō.${why} The next reviews will not comment on it again.`
 }
 
 /** The thread of a finding on GitHub. */

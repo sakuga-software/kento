@@ -7,6 +7,67 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-114: Kentō writes in English
+
+One migration (`0027_dismiss_reasons_in_english`): `/healthz` gives `"migrations":28`. No new
+variable, no new permission, no change to the protocol of the runners.
+
+**Deploy `web` first, then the runners.** `web` posts every text of Kentō on GitHub and reads the
+old French texts too. The prompts are in the runner image (`packages/engine/prompts`, copied by
+`apps/runner/Dockerfile`): until a runner is updated, the text that its model writes (the title,
+the scenario and the fix of a finding, the summary, the replies of `resolve`) stays in French
+inside the English frame. A runner of either release works with the new `web`.
+
+- Everything that Kentō posts is in English: the review body, the block of the description
+  (`Confidence score`, `Findings`, `To consider (code already reviewed)`, `Summary`, `Diagram`,
+  `Not reviewed`, the line of the commands), the comment of a finding (`**Fix:**`, `Rule:`), the
+  comment on a file outside the diff, the reply to a variant, the replies of `resolve` and `reject`,
+  the hint of `reject`, the errors of a command, the note of the queue, the comment of a failed job,
+  the request for feedback, the check (title and summary), the assignment and force-push notes and
+  the label description. Amounts read `$0.012`, and the cost of a level `about 1 cent`,
+  `10 to 20 cents`.
+- The cap check is now `Kentō · cap` (was `Kentō · plafond`). It never blocks a merge, and nothing
+  requires it by name.
+- The prompts `review.md` and `resolve.md` ask for plain English, even when the code or a thread is
+  in another language, with the same rules of style in English (one idea per sentence, active
+  voice, no em or en dash, no colon between two clauses, a list of banned filler words, no closing
+  formula). The reuse key (REV-89) reads the prompt, so the first push of each pull request after
+  the runners are updated calls the model again. The texts of the pack and of `not_reviewed`
+  (`path: generated or binary file`…) are in English too.
+- The screens of review.sakuga.dev are in English (`<html lang="en">`), with English formats at the
+  hour of Paris: `$12.50`, `27 Oct 2026, 18:02`, `5 min ago`. A money field shows `12.50` and still
+  accepts `12,50`.
+- The page of the commands moves to `/docs/commands`. `/docs/commandes` answers a `301` to it, so
+  the links in the comments posted before the deployment keep working.
+- The reasons of the dismiss dialog are `False positive`, `Off topic`, `Already known` and
+  `Style, not a defect`, and a 👎 gives `no reason, GitHub reaction`. The migration changes the
+  stored French values of these five reasons (`findings.status_reason`, `finding_events.reason`):
+  the Precision screen counts each reason once. A reason that a person typed does not change. A form
+  opened before the deployment still posts a French reason: the service stores its English value.
+  The previous container still serves while the migration runs: a dismissal in that window can store
+  a French reason. The statements of the migration are idempotent; run them again to map it.
+
+What the service still reads in French, for the pull requests opened before the deployment:
+
+- The HTML markers (`<!-- sakuga-review:… -->`, `<!-- kento:… -->`) do not change. Every lookup of
+  a posted comment, review, reply or block uses them, and none reads the visible text.
+- An open thread of an earlier release that has no row: its security badge `sécurité` (an image
+  `alt` or the text badge) still gives the category `security`.
+- A quote of the French request for feedback (« Kentō a relu cette PR », « Ton avis sur ces
+  reviews ») still counts as an answer.
+- The commands and their keywords do not change.
+
+Known limit: the key and the fingerprint of a finding hash its title. An English finding on a
+defect that a French thread already carries is matched by `follows` (REV-99) or by the open thread
+a few lines away on the same file, so it gets no second thread. A French finding that is fixed or
+dismissed and has no open thread is matched only by `follows`. The rejected findings and the
+earlier findings that the pack sends to the model keep their French titles; the model reads them
+as they are.
+
+Check: on a test pull request after the deployment, the review, the threads, the block, the check
+and a `reject` are in English. On a pull request opened before it, a push gives no duplicate thread,
+and `/docs/commandes` opens `/docs/commands`.
+
 ## REV-106, follow-up: the gauge of the score is a bar of five segments; the icons have English names
 
 No migration, no new variable, no new permission, no change to the protocol of the runners: deploy

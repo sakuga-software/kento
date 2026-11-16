@@ -557,7 +557,7 @@ export function wrongModelId(
   })
   if (wrong.length === 0) return null
   let names = wrong.map((w) => w.id).join(', ')
-  return `id de modèle invalide pour ${KIND_LABELS[kind]} : ${names}. ${wrong[0]!.help}`
+  return `invalid model id for ${KIND_LABELS[kind]}: ${names}. ${wrong[0]!.help}`
 }
 
 function json<T>(status: number, body: T, headers: Record<string, string> = {}): Response {

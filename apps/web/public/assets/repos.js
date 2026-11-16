@@ -1,6 +1,6 @@
 // REV-26. While Kentō reads the repositories on GitHub, the Repos screen asks the server again
 // every 3 s, and shows the list as soon as the check is over. Without JavaScript, the link
-// « Recharger » does the same.
+// « Reload » does the same.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   const pending = document.querySelector('[data-recheck]')
@@ -12,7 +12,7 @@
     const timer = setInterval(async () => {
       // A hidden tab asks nothing, and uses none of the tries.
       if (document.visibilityState !== 'visible') return
-      // A check stays under a minute; after 20 reads on screen, the link « Recharger » remains.
+      // A check stays under a minute; after 20 reads on screen, the link « Reload » remains.
       if (++tries > 20) return clearInterval(timer)
       try {
         const response = await fetch(url.href, { headers: { Accept: 'text/html' }, credentials: 'same-origin' })

@@ -26,8 +26,8 @@ async function reset() {
 /** Reads GitHub at once, as an admin, and waits for the list. */
 async function checkNow(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Relire GitHub' }).click()
-  await expect(page.getByText('Liste à jour.')).toBeVisible()
+  await page.getByRole('button', { name: 'Read GitHub again' }).click()
+  await expect(page.getByText('List up to date.')).toBeVisible()
 }
 
 function rowOf(page: Page, name: string) {
@@ -48,35 +48,35 @@ test.describe('the Repos screen', () => {
 
       let orchard = rowOf(page, 'orchard')
       await expect(orchard.getByText('review.yml@stable')).toBeVisible()
-      await expect(rowOf(page, 'fruitback').getByText('copie de review.yml')).toBeVisible()
-      await expect(rowOf(page, 'infra-repo').getByText('aucune', { exact: true })).toBeVisible()
+      await expect(rowOf(page, 'fruitback').getByText('copy of review.yml')).toBeVisible()
+      await expect(rowOf(page, 'infra-repo').getByText('none', { exact: true })).toBeVisible()
       // REV-91: the notes on the switch are folded under the table.
-      await page.getByText('Comment se passe la bascule de review.yml vers Kentō').click()
-      await expect(page.getByRole('heading', { name: 'Critère de bascule' })).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Repli pendant la transition' })).toBeVisible()
-      await expect(page.getByRole('link', { name: /Gérer l’installation/ })).toHaveAttribute(
+      await page.getByText('How the switch from review.yml to Kentō works').click()
+      await expect(page.getByRole('heading', { name: 'Switch criterion' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Fallback during the switch' })).toBeVisible()
+      await expect(page.getByRole('link', { name: /Manage the installation/ })).toHaveAttribute(
         'href',
         /\/organizations\/sakuga-software\/settings\/installations\/4242$/,
       )
       await expectNoAxeViolations(page)
 
-      await orchard.getByRole('button', { name: 'Activer orchard' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
+      await orchard.getByRole('button', { name: 'Enable orchard' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
       await expectNoAxeViolations(page)
 
-      // REV-33: the confirmation opens in the row, at the keyboard; Échap and « Annuler » close it and
+      // REV-33: the confirmation opens in the row, at the keyboard; Escape and « Cancel » close it and
       // give the focus back to its trigger.
       let row = rowOf(page, 'orchard')
-      // REV-91: « Désactiver Kentō… » sits in the menu « … » of the row.
+      // REV-91: « Disable Kentō… » sits in the menu « … » of the row.
       await row.locator('.row-menu > summary').click()
-      let trigger = row.locator('summary', { hasText: 'Désactiver' })
-      let act = row.getByRole('button', { name: 'Désactiver orchard' })
+      let trigger = row.locator('summary', { hasText: 'Disable' })
+      let act = row.getByRole('button', { name: 'Disable orchard' })
       await trigger.focus()
       await page.keyboard.press('Enter')
-      await expect(row).toContainText('Les reviews publiées et le compteur restent')
+      await expect(row).toContainText('The published reviews and the counter stay')
       await expect(act).toBeVisible()
       // The table clips what goes past its bottom: it makes room for the open menu and its confirmation.
       let inside = () =>
@@ -94,9 +94,9 @@ test.describe('the Repos screen', () => {
       await expect(trigger).toBeFocused()
 
       await page.keyboard.press('Enter')
-      await row.getByRole('button', { name: 'Annuler' }).click()
+      await row.getByRole('button', { name: 'Cancel' }).click()
       await expect(act).toBeHidden()
-      // REV-91: « Annuler » also closes the menu « … », and gives the focus back to it.
+      // REV-91: « Cancel » also closes the menu « … », and gives the focus back to it.
       await expect(row.locator('.row-menu')).not.toHaveAttribute('open', '')
       await expect(row.locator('.row-menu > summary')).toBeFocused()
       // The room under the table goes with the menu.
@@ -114,7 +114,7 @@ test.describe('the Repos screen', () => {
 
       await trigger.click()
       await act.click()
-      await expect(page.getByRole('status').filter({ hasText: 'orchard est désactivé.' })).toBeVisible()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is disabled.' })).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
 
       let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
@@ -123,7 +123,7 @@ test.describe('the Repos screen', () => {
     })
   }
 
-  test('the counter: 20 published reviews offer « Retirer review.yml »; a failed job brings it back to 0/20', async ({ page }) => {
+  test('the counter: 20 published reviews offer « Remove review.yml »; a failed job brings it back to 0/20', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let sql = database()
@@ -141,7 +141,7 @@ test.describe('the Repos screen', () => {
       await page.goto('/repos')
       let orchard = rowOf(page, 'orchard')
       await expect(orchard.getByText('20/20')).toBeVisible()
-      await expect(orchard.getByRole('link', { name: /Retirer review\.yml/ })).toHaveAttribute(
+      await expect(orchard.getByRole('link', { name: /Remove review\.yml/ })).toHaveAttribute(
         'href',
         /\/sakuga-software\/orchard\/delete\/main\/\.github\/workflows\/sakuga-review\.yml$/,
       )
@@ -153,15 +153,15 @@ test.describe('the Repos screen', () => {
         values (${repo!.id}, 'lite', 'failed', 21, ${'f'.repeat(40)}, 'main', 'lease expired 2 times', now())`
       await page.reload()
       await expect(orchard.getByText('0/20')).toBeVisible()
-      await expect(orchard.getByText('remis à zéro après un échec sur')).toBeVisible()
+      await expect(orchard.getByText('set back to zero after a failure on')).toBeVisible()
       await expect(orchard.getByRole('link', { name: '#21', exact: true })).toHaveAttribute('href', /\/sakuga-software\/orchard\/pull\/21$/)
-      await expect(orchard.getByRole('link', { name: /Retirer review\.yml/ })).toHaveCount(0)
+      await expect(orchard.getByRole('link', { name: /Remove review\.yml/ })).toHaveCount(0)
     } finally {
       await sql.end()
     }
   })
 
-  test('a repository name of 80 characters: the page does not scroll sideways, and « Désactiver » stays in view (REV-25)', async ({ page }) => {
+  test('a repository name of 80 characters: the page does not scroll sideways, and « Disable » stays in view (REV-25)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let sql = database()
@@ -189,7 +189,7 @@ test.describe('the Repos screen', () => {
       let layout = await page.evaluate(() => {
         let wrap = document.querySelector('.table-wrap')!
         let box = wrap.getBoundingClientRect()
-        // REV-91: a row shows « Activer » and the menu « … »; « Désactiver Kentō… » is in the menu.
+        // REV-91: a row shows « Enable » and the menu « … »; « Disable Kentō… » is in the menu.
         let actions = [...document.querySelectorAll('.row-action > .button, .row-action > .row-menu > summary')].map((button) => {
           let r = button.getBoundingClientRect()
           return r.left >= box.left - 0.5 && r.right <= Math.min(box.right, window.innerWidth) + 0.5
@@ -217,25 +217,25 @@ test.describe('the Repos screen', () => {
       expect(layout.broken, `tags and model ids at ${viewport} px`).toEqual([])
 
       await row.locator('.row-menu > summary').click()
-      let disable = row.locator('summary', { hasText: 'Désactiver' })
+      let disable = row.locator('summary', { hasText: 'Disable' })
       await disable.scrollIntoViewIfNeeded()
       await expect(disable).toBeInViewport({ ratio: 1 })
       let right = await disable.evaluate((el) => el.getBoundingClientRect().right - window.innerWidth)
-      expect(right, `« Désactiver » at ${viewport} px`).toBeLessThanOrEqual(0)
+      expect(right, `« Disable » at ${viewport} px`).toBeLessThanOrEqual(0)
       // The open menu covers the row under it: closed again for axe.
       await row.locator('.row-menu > summary').click()
     }
     await expectNoAxeViolations(page)
   })
 
-  test('a click inside the inner confirmation does not close the menu, and « Annuler » gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
+  test('a click inside the inner confirmation does not close the menu, and « Cancel » gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
-    let enable = row.getByRole('button', { name: 'Activer orchard' })
+    let enable = row.getByRole('button', { name: 'Enable orchard' })
     if (await enable.count()) {
       await enable.click()
-      await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
       row = rowOf(page, 'orchard')
     }
     let menu = row.locator('.row-menu')
@@ -245,11 +245,11 @@ test.describe('the Repos screen', () => {
     // The trigger of the confirmation, then its text: both are clicks inside the menu.
     await confirm.locator('> summary').click()
     await expect(confirm).toHaveAttribute('open', '')
-    await confirm.getByText('Les reviews publiées et le compteur restent').click()
+    await confirm.getByText('The published reviews and the counter stay').click()
     await expect(menu).toHaveAttribute('open', '')
     await expect(confirm).toHaveAttribute('open', '')
-    // « Annuler »: confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
-    await confirm.getByRole('button', { name: 'Annuler' }).click()
+    // « Cancel »: confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
+    await confirm.getByRole('button', { name: 'Cancel' }).click()
     await expect(confirm).not.toHaveAttribute('open', '')
     await expect(menu).not.toHaveAttribute('open', '')
     await expect(summary).toBeFocused()
@@ -262,7 +262,7 @@ test.describe('the Repos screen', () => {
     await expect(row.locator('.row-action')).not.toHaveClass(/row-action-open/)
   })
 
-  test('a menu « … » closes on Échap and on a click outside, one open at a time; « Rechercher » shows at the keyboard (REV-91)', async ({ page }) => {
+  test('a menu « … » closes on Escape and on a click outside, one open at a time; « Search » shows at the keyboard (REV-91)', async ({ page }) => {
     await signIn(page, 'alex')
     await checkNow(page)
     let orchard = rowOf(page, 'orchard').locator('.row-menu')
@@ -285,8 +285,8 @@ test.describe('the Repos screen', () => {
     await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
     await expect(fruitback).not.toHaveAttribute('open', '')
 
-    let search = page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' })
-    let submit = page.getByRole('button', { name: 'Rechercher', exact: true })
+    let search = page.getByRole('searchbox', { name: 'Search a repo by its name' })
+    let submit = page.getByRole('button', { name: 'Search', exact: true })
     expect((await submit.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1)
     await search.focus()
     await page.keyboard.press('Tab')
@@ -299,15 +299,15 @@ test.describe('the Repos screen', () => {
     await signIn(page, 'alex')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
-    let enable = row.getByRole('button', { name: 'Activer orchard' })
+    let enable = row.getByRole('button', { name: 'Enable orchard' })
     if (await enable.count()) {
       await enable.click()
-      await expect(page.getByRole('status').filter({ hasText: 'orchard est activé.' })).toBeVisible()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
       row = rowOf(page, 'orchard')
     }
     await page.setViewportSize({ width: 280, height: 800 })
     await row.locator('.row-menu > summary').click()
-    await row.locator('summary', { hasText: 'Désactiver' }).click()
+    await row.locator('summary', { hasText: 'Disable' }).click()
     let panel = row.locator('.row-menu > div')
     let edges = await panel.evaluate((el) => {
       let box = el.getBoundingClientRect()
@@ -332,32 +332,32 @@ test.describe('the Repos screen', () => {
       let rows = page.locator('tbody tr')
       await expect(rows).toHaveCount(50)
       await expect(rows.first().getByRole('rowheader')).toHaveText(/^orchard/)
-      let total = Number(await page.getByRole('link', { name: /^Tous/ }).locator('.list-filter-count').textContent())
-      await expect(page.locator('.pager-range')).toHaveText(`1 à 50 sur ${total}`)
-      await page.getByRole('link', { name: 'Suivants' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`51 à ${total} sur ${total}`)
-      await page.getByRole('link', { name: 'Précédents' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`1 à 50 sur ${total}`)
+      let total = Number(await page.getByRole('link', { name: /^All/ }).locator('.list-filter-count').textContent())
+      await expect(page.locator('.pager-range')).toHaveText(`1 to 50 of ${total}`)
+      await page.getByRole('link', { name: 'Next' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`51 to ${total} of ${total}`)
+      await page.getByRole('link', { name: 'Previous' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`1 to 50 of ${total}`)
 
-      // REV-91: Entrée sends the search, with no visible button.
-      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('BULK-0')
-      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).press('Enter')
+      // REV-91: Enter sends the search, with no visible button.
+      await page.getByRole('searchbox', { name: 'Search a repo by its name' }).fill('BULK-0')
+      await page.getByRole('searchbox', { name: 'Search a repo by its name' }).press('Enter')
       await expect(rows).toHaveCount(9)
       await expect(page.locator('.pager')).toHaveCount(0)
 
-      await page.getByRole('link', { name: /^Activés/ }).click()
-      await expect(page.getByText('Aucun repo ne correspond')).toBeVisible()
-      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).fill('')
-      await page.getByRole('searchbox', { name: 'Rechercher un repo par son nom' }).press('Enter')
+      await page.getByRole('link', { name: /^Enabled/ }).click()
+      await expect(page.getByText('No repo matches')).toBeVisible()
+      await page.getByRole('searchbox', { name: 'Search a repo by its name' }).fill('')
+      await page.getByRole('searchbox', { name: 'Search a repo by its name' }).press('Enter')
       await expect(page).toHaveURL(/[?&]filter=enabled(&|$)/)
       await expect(rows).toHaveCount(1)
 
-      // Enabled from page 2 of a search in « Non activés », a repository comes back to that page.
+      // Enabled from page 2 of a search in « Not enabled », a repository comes back to that page.
       await page.goto('/repos?filter=disabled&q=bulk')
-      await page.getByRole('link', { name: 'Suivants' }).click()
+      await page.getByRole('link', { name: 'Next' }).click()
       let url = page.url()
-      await page.getByRole('row').filter({ hasText: 'bulk-60' }).getByRole('button', { name: 'Activer bulk-60' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'bulk-60 est activé.' })).toBeVisible()
+      await page.getByRole('row').filter({ hasText: 'bulk-60' }).getByRole('button', { name: 'Enable bulk-60' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'bulk-60 is enabled.' })).toBeVisible()
       expect(page.url().split('#')[0]).toContain(new URL(url).search)
       await expectNoAxeViolations(page)
     } finally {
@@ -366,25 +366,25 @@ test.describe('the Repos screen', () => {
     }
   })
 
-  test('a member reads the list under « Lecture seule », with no action', async ({ page }) => {
+  test('a member reads the list under « Read only », with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')
-    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
+    await expect(page.getByText('Read only', { exact: true })).toBeVisible()
     await expect(page.getByRole('table')).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Activer/ })).toHaveCount(0)
-    await expect(page.locator('summary', { hasText: 'Désactiver' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Relire GitHub' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Enable/ })).toHaveCount(0)
+    await expect(page.locator('summary', { hasText: 'Disable' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Read GitHub again' })).toHaveCount(0)
     // REV-91: a member keeps the menu « … » with the config and the findings; its cell has no label.
     let row = rowOf(page, 'orchard')
     expect(await row.locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
-    // Under 760 px each other cell keeps its label, « Précision 30 j » included for a repo without Kentō.
+    // Under 760 px each other cell keeps its label, « Precision 30 d » included for a repo without Kentō.
     if (page.viewportSize()!.width <= 760) {
       let gh = rowOf(page, 'infra-repo')
-      expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Précision 30 j"')
-      await expect(gh.locator('td').nth(5)).toContainText('Kentō non activé')
+      expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
+      await expect(gh.locator('td').nth(5)).toContainText('Kentō not enabled')
     }
     await row.locator('.row-menu > summary').click()
-    for (let name of ['Ouvrir la config', 'Voir les findings']) {
+    for (let name of ['Open the config', 'See the findings']) {
       await row.getByRole('link', { name }).scrollIntoViewIfNeeded()
       await expect(row.getByRole('link', { name })).toBeInViewport({ ratio: 1 })
     }

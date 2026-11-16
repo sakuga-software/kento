@@ -6,7 +6,7 @@ import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
-// and the screen shows « refusée, 401 » with a banner; the admin replaces the key; a member reads
+// and the screen shows « refused, 401 » with a banner; the admin replaces the key; a member reads
 // and changes nothing.
 
 function sql() {
@@ -17,10 +17,10 @@ function sql() {
 async function trustedRunner(page: Page, request: APIRequestContext, name: string): Promise<string> {
   await page.goto('/runners')
   let form = page.locator('#nouveau-runner')
-  await form.getByLabel('Nom').fill(name)
-  await form.getByRole('radio', { name: /Clé du service/ }).check()
-  await form.getByRole('button', { name: 'Créer le token' }).click()
-  let command = await page.getByLabel('Commande docker run').inputValue()
+  await form.getByLabel('Name').fill(name)
+  await form.getByRole('radio', { name: /Key of the service/ }).check()
+  await form.getByRole('button', { name: 'Create the token' }).click()
+  let command = await page.getByLabel('docker run command').inputValue()
   let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_\S+)/.exec(command)![1]!
   let registered = await request.post('/api/runner/register', {
     headers: { Authorization: `Bearer ${token}` },
@@ -44,22 +44,22 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 
     // 1. The admin adds the provider.
     await page.goto('/settings')
-    await expect(page.getByRole('heading', { name: 'Providers et clés' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Providers and keys' })).toBeVisible()
     await expectNoAxeViolations(page)
     // REV-29: the form is folded; the table of contents opens it.
     let form = page.locator('#nouveau-provider')
     await expect(form.getByLabel('Type')).toBeHidden()
     // REV-91: the button of the section opens it.
-    await form.getByText('Ajouter un provider', { exact: true }).click()
+    await form.getByText('Add a provider', { exact: true }).click()
     await form.getByLabel('Type').selectOption('anthropic')
-    await form.getByLabel('Nom').fill(label)
-    await form.getByLabel('Clé', { exact: true }).fill(key)
-    await form.getByRole('button', { name: 'Ajouter le provider' }).click()
-    await expect(page.getByText('Provider ajouté.')).toBeVisible()
+    await form.getByLabel('Name').fill(label)
+    await form.getByLabel('Key', { exact: true }).fill(key)
+    await form.getByRole('button', { name: 'Add the provider' }).click()
+    await expect(page.getByText('Provider added.')).toBeVisible()
     let card = page.locator('.provider', { hasText: label })
     await expect(card.getByText('••••ABCD')).toBeVisible()
-    await expect(card.getByText('Par défaut', { exact: true })).toBeVisible()
-    await expect(card.getByText('Jamais appelé')).toBeVisible()
+    await expect(card.getByText('Default', { exact: true })).toBeVisible()
+    await expect(card.getByText('Never called')).toBeVisible()
     expect(await page.content()).not.toContain(key)
     await expectNoAxeViolations(page)
 
@@ -97,18 +97,18 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     expect(failed!.failure_reason).toMatch(new RegExp(`^the provider « ${label} » refused its key \\(401\\)`))
 
     await page.goto('/settings')
-    await expect(page.getByRole('alert')).toContainText(`La clé de « ${label} » est refusée (401) depuis`)
-    await expect(card.getByText(/Refusée · 401 depuis/)).toBeVisible()
+    await expect(page.getByRole('alert')).toContainText(`The key of "${label}" is refused (401) since`)
+    await expect(card.getByText(/Refused · 401 since/)).toBeVisible()
     await expectNoAxeViolations(page)
 
     // 5. The admin replaces the key: the refusal goes, the new last 4 characters show.
-    await card.getByLabel('Nouvelle clé Anthropic').fill(`sk-ant-e2e-${project}-replaced-WXYZ`)
+    await card.getByLabel('New Anthropic key').fill(`sk-ant-e2e-${project}-replaced-WXYZ`)
     // Escape in the field keeps the form and what was typed: it closes a destructive confirmation only.
-    await card.getByLabel('Nouvelle clé Anthropic').press('Escape')
-    await expect(card.getByLabel('Nouvelle clé Anthropic')).toBeVisible()
-    await expect(card.getByLabel('Nouvelle clé Anthropic')).toHaveValue(`sk-ant-e2e-${project}-replaced-WXYZ`)
-    await card.getByRole('button', { name: 'Remplacer', exact: true }).click()
-    await expect(page.getByText('Clé remplacée.')).toBeVisible()
+    await card.getByLabel('New Anthropic key').press('Escape')
+    await expect(card.getByLabel('New Anthropic key')).toBeVisible()
+    await expect(card.getByLabel('New Anthropic key')).toHaveValue(`sk-ant-e2e-${project}-replaced-WXYZ`)
+    await card.getByRole('button', { name: 'Replace', exact: true }).click()
+    await expect(page.getByText('Key replaced.')).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(card.getByText('••••WXYZ')).toBeVisible()
 
@@ -117,8 +117,8 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await signIn(page, 'camille')
     await page.goto('/settings')
     await expect(card.getByText('••••WXYZ')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Ajouter le provider' })).toHaveCount(0)
-    await expect(card.getByRole('button', { name: 'Tester' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Add the provider' })).toHaveCount(0)
+    await expect(card.getByRole('button', { name: 'Test' })).toHaveCount(0)
     await expectNoAxeViolations(page)
 
     expect(errors).toEqual([])
@@ -128,7 +128,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 })
 
 // REV-28. A form sent back with its errors opens on its first field in error, in view, with the
-// focus: « Ajouter un provider » is at the bottom of a long page.
+// focus: « Add a provider » is at the bottom of a long page.
 test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'alex')
@@ -145,20 +145,20 @@ test('a provider form with an error opens on its first field in error, in view a
   await page.goto('/settings#nouveau-provider')
   let form = page.locator('#nouveau-provider')
   await form.getByLabel('Type').selectOption('openai_compatible')
-  await form.getByLabel('Nom').fill('vLLM')
-  await form.getByLabel('URL du serveur').fill('http://llm.example.com/v1')
-  await form.getByRole('button', { name: 'Ajouter le provider' }).click()
-  let url = form.getByLabel('URL du serveur')
+  await form.getByLabel('Name').fill('vLLM')
+  await form.getByLabel('Server URL').fill('http://llm.example.com/v1')
+  await form.getByRole('button', { name: 'Add the provider' }).click()
+  let url = form.getByLabel('Server URL')
   await expect(url).toBeFocused()
   await expect(url).toBeInViewport()
-  await expect(form.getByRole('alert')).toContainText('Rien n’est enregistré')
-  await expect(form.getByText('Une URL en https://')).toBeVisible()
+  await expect(form.getByRole('alert')).toContainText('Nothing is saved')
+  await expect(form.getByText('A URL with https://')).toBeVisible()
   await expectNoAxeViolations(page)
 
   // The limits of the org: the same rule.
   await page.goto('/settings')
   await page.locator('#cap-alert').fill('0')
-  await page.getByRole('button', { name: 'Enregistrer le plafond' }).click()
+  await page.getByRole('button', { name: 'Save the cap' }).click()
   await expect(page.locator('#cap-alert')).toBeFocused()
   await expect(page.locator('#cap-alert')).toBeInViewport()
   // The two 422 answers are the only errors of the console.
@@ -180,14 +180,14 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
     await page.goto('/settings#nouveau-provider')
     let form = page.locator('#nouveau-provider')
     await form.getByLabel('Type').selectOption('anthropic')
-    await form.getByLabel('Nom').fill(label)
-    await form.getByLabel('Clé', { exact: true }).fill(key)
+    await form.getByLabel('Name').fill(label)
+    await form.getByLabel('Key', { exact: true }).fill(key)
     await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')
-    await form.getByRole('button', { name: 'Ajouter le provider' }).click()
+    await form.getByRole('button', { name: 'Add the provider' }).click()
 
     // Refused, with what Anthropic expects; nothing is kept, and the typed id stays to be corrected.
     let refused = page.locator('#nouveau-provider')
-    await expect(refused.getByText('heavy : « anthropic/claude-opus-5.5 ». Anthropic attend son propre identifiant')).toBeVisible()
+    await expect(refused.getByText('heavy: "anthropic/claude-opus-5.5". Anthropic expects its own id')).toBeVisible()
     await expect(refused.getByLabel('heavy')).toHaveValue('anthropic/claude-opus-5.5')
     await expect(refused.getByLabel('heavy')).toHaveAttribute('aria-invalid', 'true')
     expect(await db`select id from providers where org_id = ${org!.id}`).toHaveLength(0)
@@ -195,9 +195,9 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
 
     // Corrected: the provider is added with that model.
     await refused.getByLabel('heavy').fill('claude-opus-5-5')
-    await refused.getByLabel('Clé', { exact: true }).fill(key)
-    await refused.getByRole('button', { name: 'Ajouter le provider' }).click()
-    await expect(page.getByText('Provider ajouté.')).toBeVisible()
+    await refused.getByLabel('Key', { exact: true }).fill(key)
+    await refused.getByRole('button', { name: 'Add the provider' }).click()
+    await expect(page.getByText('Provider added.')).toBeVisible()
     let [row] = await db<{ models: unknown }[]>`select models from providers where org_id = ${org!.id}`
     expect(row!.models).toEqual({ heavy: ['claude-opus-5-5'] })
     expect(errors.filter((line) => !line.includes('422'))).toEqual([])

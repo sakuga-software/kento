@@ -3,8 +3,8 @@ import { describe, it } from 'remix/test'
 
 import { reopenText } from './reply.ts'
 
-describe('the reply of the bot after « Rouvrir »', () => {
+describe('the reply of the bot after « Reopen »', () => {
   it('names the person', () => {
-    assert.equal(reopenText('alex'), 'Finding rouvert par @alex sur Kentō. La prochaine review le signalera de nouveau s’il est toujours là.')
+    assert.equal(reopenText('alex'), 'Finding reopened by @alex on Kentō. The next review reports it again if it is still there.')
   })
 })

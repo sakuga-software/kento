@@ -185,7 +185,7 @@ export async function listFindingEvents(
   return page(rows, limit)
 }
 
-/** The statuses that a person sets. `open` is « Rouvrir ». */
+/** The statuses that a person sets. `open` is « Reopen ». */
 export const PERSON_STATUSES = ['dismissed', 'wontfix', 'open'] as const
 export type PersonStatus = (typeof PERSON_STATUSES)[number]
 
@@ -202,7 +202,7 @@ export type StatusChange =
 
 /**
  * A person sets the status of a finding of their org: `dismissed` with a reason, `wontfix` with an
- * optional reason, or `open` again (« Rouvrir »). Each change writes one event with the person's
+ * optional reason, or `open` again (« Reopen »). Each change writes one event with the person's
  * GitHub login. A dismissed finding never gets a comment again, even when a review finds it again.
  */
 export async function setFindingStatus(

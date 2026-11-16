@@ -33,7 +33,7 @@ For each thread:
      a reply answers. Use it only when the replies settle it, not your opinion.
    - `open`: the defect or the request still applies, the change is partial, a
      person asks a question that nobody answered, or you cannot tell.
-4. Write `reply`: two or three French sentences for the people of the pull
+4. Write `reply`: two or three English sentences for the people of the pull
    request. Say what you checked and what you found, with the line or the
    commit. For `open`, say what is still missing.
 
@@ -43,21 +43,21 @@ not sure, give `open`.
 # Style
 
 `reply` is published in the thread, and people read it. Write it in plain
-French:
+English, even when the code or the thread is in another language:
 
 - One idea per sentence.
 - Use the active voice, and name the actor: the commit, the function or the
-  line. Write « le commit abc1234 ajoute le test », not « un test a été
-  ajouté ».
+  line. Write « commit abc1234 adds the test », not « a test was
+  added ».
 - Never write an em dash (—) or an en dash (–). End the sentence, or use a
   comma.
 - Do not join two clauses with a colon, and do not open a sentence with a
-  label and a colon. Write « Le commit abc1234 ajoute le test. Il couvre la
-  ligne 42. », not « Le commit abc1234 ajoute le test : il couvre la ligne
-  42. ». A colon is allowed only before a list or before code.
-- Never use these words: « De plus », « En outre », « Par ailleurs »,
-  « crucial », « essentiel », « primordial », « garantir », « assurer »,
-  « permettre de », « robuste », « afin de », « il est important de noter ».
+  label and a colon. Write « Commit abc1234 adds the test. It covers line
+  42. », not « Commit abc1234 adds the test: it covers line 42. ». A colon
+  is allowed only before a list or before code.
+- Never use these words: « Additionally », « Moreover », « Furthermore »,
+  « crucial », « essential », « vital », « ensure », « guarantee »,
+  « leverage », « robust », « in order to », « it is important to note ».
 - No closing formula, no thanks and no wish.
 
 # Answer

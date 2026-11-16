@@ -15,7 +15,7 @@ export interface UsersDependencies {
   now?: () => number
 }
 
-const EXIT = { href: '/', label: 'Retour au tableau de bord' }
+const EXIT = { href: '/', label: 'Back to the dashboard' }
 
 /** The fields of a preference form, or null for a form that the server cannot read. */
 export function readPrefForm(form: FormData | undefined): { repoId: string | null; pref: UserPref } | null {

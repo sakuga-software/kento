@@ -6,7 +6,7 @@ import { isLevel, isOneOf, LEVELS, type Level, type ProviderKind } from '@sakuga
 // no network.
 //
 // A key that a config does not hold is inherited: the repository takes the value of its org, and
-// the org the value of Kentō. « Revenir à l'org » removes the key from the config of the repository.
+// the org the value of Kentō. « Back to the org value » removes the key from the config of the repository.
 
 /**
  * The provider of a level, its model, and the model of the same provider that takes over when the
@@ -47,7 +47,7 @@ export interface ConfigOverrides {
   monthlyCapUsd?: number | null
 }
 
-/** The keys that « Revenir à l'org » removes one by one. */
+/** The keys that « Back to the org value » removes one by one. */
 export const CONFIG_FIELDS = ['level', 'models.lite', 'models.balanced', 'models.heavy', 'trigger', 'paths', 'monthlyCapUsd'] as const
 export type ConfigField = (typeof CONFIG_FIELDS)[number]
 
@@ -187,7 +187,7 @@ export function readOverrides(json: unknown): ConfigOverrides {
   return out
 }
 
-/** The config without one key: « Revenir à l'org ». */
+/** The config without one key: « Back to the org value ». */
 export function withoutField(config: ConfigOverrides, field: ConfigField): ConfigOverrides {
   let out: ConfigOverrides = { ...config, ...(config.models ? { models: { ...config.models } } : {}) }
   if (field.startsWith('models.')) {
@@ -210,11 +210,11 @@ export function hasField(config: ConfigOverrides, field: ConfigField): boolean {
 
 /** Why a pattern is refused, or null. */
 export function checkPattern(pattern: string): string | null {
-  if (pattern.length === 0) return 'un motif vide'
-  if (pattern.length > MAX_PATH_LENGTH) return `plus de ${MAX_PATH_LENGTH} caractères`
-  if (pattern.startsWith('/')) return 'un chemin commence sans « / », depuis la racine du repo'
-  if (pattern.includes('\\') || [...pattern].some((char) => char.charCodeAt(0) < 0x20)) return 'une barre oblique inverse ou un caractère de contrôle'
-  if (pattern.split('/').includes('..')) return '« .. » ne désigne rien dans un repo'
+  if (pattern.length === 0) return 'an empty pattern'
+  if (pattern.length > MAX_PATH_LENGTH) return `more than ${MAX_PATH_LENGTH} characters`
+  if (pattern.startsWith('/')) return 'a path starts without "/", from the root of the repo'
+  if (pattern.includes('\\') || [...pattern].some((char) => char.charCodeAt(0) < 0x20)) return 'a backslash or a control character'
+  if (pattern.split('/').includes('..')) return '".." names nothing in a repo'
   return null
 }
 
@@ -240,18 +240,18 @@ export function readModelsForm(form: FormData, providers: readonly { id: string;
   let model = field(form, 'model')
   let fallback = field(form, 'fallback')
   let kind = providers.find((p) => p.id === provider)?.kind
-  if (!kind) errors.provider = 'Choisissez un provider de l’organisation.'
-  if (model === '') errors.model = 'Indiquez un modèle.'
+  if (!kind) errors.provider = 'Choose a provider of the organization.'
+  if (model === '') errors.model = 'Enter a model.'
   else if (!MODEL.test(model)) errors.model = MODEL_HELP
   else if (kind && idFormHelp(kind, model)) errors.model = idFormHelp(kind, model)!
   if (fallback !== '' && !MODEL.test(fallback)) errors.fallback = MODEL_HELP
   else if (fallback !== '' && kind && idFormHelp(kind, fallback)) errors.fallback = idFormHelp(kind, fallback)!
-  else if (fallback !== '' && fallback === model) errors.fallback = 'Le repli doit être un autre modèle, ou rester vide.'
+  else if (fallback !== '' && fallback === model) errors.fallback = 'The fallback must be another model, or stay empty.'
   if (Object.keys(errors).length > 0) return { ok: false, errors }
   return { ok: true, value: { provider, model, fallback: fallback === '' ? null : fallback } }
 }
 
-const MODEL_HELP = 'Un identifiant de modèle : lettres, chiffres et « . _ : / @ - », 200 caractères au plus.'
+const MODEL_HELP = 'A model id: letters, digits and ". _ : / @ -", 200 characters at most.'
 
 /**
  * An OpenRouter id names its vendor (`anthropic/claude-sonnet-5.5`); an Anthropic id does not
@@ -268,13 +268,13 @@ export function idFormHelp(kind: ProviderKind, model: string): string | null {
 }
 
 const ID_FORM_HELP = {
-  openrouter: 'OpenRouter attend le fournisseur devant le modèle, par exemple anthropic/claude-sonnet-5.5.',
-  anthropic: 'Anthropic attend son propre identifiant, sans « anthropic/ » : par exemple claude-sonnet-5-5.',
+  openrouter: 'OpenRouter expects the vendor before the model, for example anthropic/claude-sonnet-5.5.',
+  anthropic: 'Anthropic expects its own id, without "anthropic/", for example claude-sonnet-5-5.',
 } as const
 
 export function readTriggerForm(form: FormData): FormResult<Trigger> {
   let value = field(form, 'trigger')
-  if (!isOneOf(TRIGGERS, value)) return { ok: false, errors: { trigger: 'Choisissez un déclenchement.' } }
+  if (!isOneOf(TRIGGERS, value)) return { ok: false, errors: { trigger: 'Choose a trigger.' } }
   return { ok: true, value }
 }
 
@@ -284,10 +284,10 @@ export function readPathsForm(form: FormData): FormResult<string[]> {
     .map((line) => line.trim())
     .filter(Boolean)
   let unique = [...new Set(lines)]
-  if (unique.length > MAX_PATHS) return { ok: false, errors: { paths: `${MAX_PATHS} motifs au plus.` } }
+  if (unique.length > MAX_PATHS) return { ok: false, errors: { paths: `${MAX_PATHS} patterns at most.` } }
   for (let pattern of unique) {
     let problem = checkPattern(pattern)
-    if (problem) return { ok: false, errors: { paths: `« ${pattern.slice(0, 60)} » : ${problem}.` } }
+    if (problem) return { ok: false, errors: { paths: `"${pattern.slice(0, 60)}": ${problem}.` } }
   }
   return { ok: true, value: unique }
 }
@@ -296,15 +296,15 @@ export function readPathsForm(form: FormData): FormResult<string[]> {
 export function readCapForm(form: FormData): FormResult<number | null> {
   let raw = field(form, 'monthlyCapUsd').replace(/\s/g, '').replace(',', '.')
   if (raw === '') return { ok: true, value: null }
-  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return { ok: false, errors: { monthlyCapUsd: 'Un montant en dollars, par exemple 25 ou 12,50 ; vide pour aucun plafond.' } }
+  if (!/^\d+(\.\d{1,2})?$/.test(raw)) return { ok: false, errors: { monthlyCapUsd: 'An amount in dollars, for example 25 or 12.50. Leave it empty for no cap.' } }
   let value = Number(raw)
-  if (value > MAX_CAP_USD) return { ok: false, errors: { monthlyCapUsd: `${MAX_CAP_USD.toLocaleString('fr-FR')} $ au plus.` } }
+  if (value > MAX_CAP_USD) return { ok: false, errors: { monthlyCapUsd: `$${MAX_CAP_USD.toLocaleString('en-US')} at most.` } }
   return { ok: true, value }
 }
 
 export function readLevelForm(form: FormData): FormResult<Level> {
   let value = field(form, 'defaultLevel')
-  if (!isLevel(value)) return { ok: false, errors: { defaultLevel: 'Choisissez un niveau.' } }
+  if (!isLevel(value)) return { ok: false, errors: { defaultLevel: 'Choose a level.' } }
   return { ok: true, value }
 }
 

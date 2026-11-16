@@ -9,7 +9,7 @@ import { pageRoutes } from '../../routes.ts'
 import { findingListQuery, FindingsPage, readFindingList, readFindingsNotice } from '../findings.tsx'
 import { forbidden, isAdmin, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
 
-/** What the tab « Précision » gets in place of the list: it shows neither. */
+/** What the tab « Precision » gets in place of the list: it shows neither. */
 const NO_PAGE: FindingScreenPage = {
   rows: [],
   counts: { open: 0, fixed: 0, dismissed: 0, wontfix: 0, stale: 0, closed: 0, all: 0 },
@@ -31,7 +31,7 @@ export function findingsActions(kit: UiKit) {
       if (!findings) return context.render(<PlaceholderPage frame={page} section="findings" />)
       let orgId = signed.membership.org.id
       let list = readFindingList(context.url.searchParams)
-      // The tab « Précision » shows no row and no filter: no query for them.
+      // The tab « Precision » shows no row and no filter: no query for them.
       let precisionTab = list.tab === 'precision'
       let [result, facets, precision] = await Promise.all([
         precisionTab ? NO_PAGE : findings.store.list(orgId, list),
@@ -52,7 +52,7 @@ export function findingsActions(kit: UiKit) {
       )
     }),
 
-    // « Marquer dismissed » and « Marquer wontfix »: an admin of the org on screen only. cop() and
+    // « Mark dismissed » and « Mark wontfix »: an admin of the org on screen only. cop() and
     // csrf() of the session layer ran before.
     findingsStatus: createAction(pageRoutes.findingsStatus, async (context) => {
       let signed = signedOf(context)
@@ -60,7 +60,7 @@ export function findingsActions(kit: UiKit) {
       if (!setStatus || !isAdmin(signed)) return forbidden()
       let form = context.get(FormData)
       // Back to the list on screen: its query, read again, so that nothing else comes through. Always the
-      // tab « Liste »: the action and its count are there.
+      // tab « List »: the action and its count are there.
       let back = findingListQuery({ ...readFindingList(new URLSearchParams(String(form?.get('back') ?? ''))), tab: 'list' })
       let read = readStatusForm(form)
       if (!read.ok) {

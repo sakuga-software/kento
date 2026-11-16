@@ -7,18 +7,19 @@ import { MAX_RULES, type RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
+import { count, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 
 /** What the list says after a form, from `?rules=`. */
 export const RULE_NOTICES = {
-  added: { tone: 'ok', text: 'Règle ajoutée. Elle part au modèle avec la prochaine review d’une PR qui touche ses chemins.' },
-  saved: { tone: 'ok', text: 'Règle enregistrée. Un job déjà en file lit la nouvelle version quand un runner le prend.' },
-  disabled: { tone: 'ok', text: 'Règle désactivée : elle ne part plus au modèle.' },
-  enabled: { tone: 'ok', text: 'Règle réactivée : elle part de nouveau au modèle.' },
-  removed: { tone: 'info', text: 'Règle supprimée.' },
-  conflict: { tone: 'alert', text: 'Cette règle a changé depuis l’ouverture de la page : rien n’est enregistré. Relisez-la ci-dessous, puis recommencez.' },
-  missing: { tone: 'alert', text: 'Cette règle n’existe plus.' },
-  full: { tone: 'alert', text: `${MAX_RULES} règles au plus ici, désactivées comprises : supprimez-en une d’abord.` },
+  added: { tone: 'ok', text: 'Rule added. It goes to the model with the next review of a PR that changes its paths.' },
+  saved: { tone: 'ok', text: 'Rule saved. A job already in the queue reads the new version when a runner takes it.' },
+  disabled: { tone: 'ok', text: 'Rule disabled. It no longer goes to the model.' },
+  enabled: { tone: 'ok', text: 'Rule enabled again. It goes to the model again.' },
+  removed: { tone: 'info', text: 'Rule deleted.' },
+  conflict: { tone: 'alert', text: 'This rule changed after the page opened. Nothing is saved. Read it again below, then try again.' },
+  missing: { tone: 'alert', text: 'This rule no longer exists.' },
+  full: { tone: 'alert', text: `${MAX_RULES} rules at most here, disabled ones included. Delete one first.` },
 } as const
 export type RuleNotice = keyof typeof RULE_NOTICES
 
@@ -26,7 +27,7 @@ export function isRuleNotice(value: unknown): value is RuleNotice {
   return typeof value === 'string' && Object.hasOwn(RULE_NOTICES, value)
 }
 
-/** A form of a rule sent back with its errors. `ruleId` null: the form « Nouvelle règle ». */
+/** A form of a rule sent back with its errors. `ruleId` null: the form « New rule ». */
 export interface RuleFormState {
   ruleId: string | null
   values: Record<string, string>
@@ -46,24 +47,16 @@ export interface RulesListProps {
   noticeRule: string | null
 }
 
-const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', timeZone: 'Europe/Paris' })
-const TIME = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Paris' })
-
-/** « le 27 oct. à 18:02 ». */
-function when(date: Date): string {
-  return `le ${DATE.format(date)} à ${TIME.format(date)}`
-}
-
-/** « désactivée par alex le 30 oct. à 10:12 ». */
+/** « disabled by alex on 30 Oct at 10:12 ». */
 export function disabledLine(rule: Pick<RuleView, 'disabledBy' | 'disabledAt'>): string {
-  let by = rule.disabledBy ? ` par ${rule.disabledBy}` : ''
+  let by = rule.disabledBy ? ` by ${rule.disabledBy}` : ''
   let at = rule.disabledAt ? ` ${when(rule.disabledAt)}` : ''
-  return `désactivée${by}${at}`
+  return `disabled${by}${at}`
 }
 
-/** « tous les chemins », or the first patterns. */
+/** « all paths », or the first patterns. */
 function pathsSummary(paths: readonly string[]): string {
-  if (paths.length === 0) return 'tous les chemins'
+  if (paths.length === 0) return 'all paths'
   if (paths.length <= 2) return paths.join(', ')
   return `${paths.slice(0, 2).join(', ')} +${paths.length - 2}`
 }
@@ -114,7 +107,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
         <FormErrors errors={errors} />
         <div class="field">
           <label class="field-label" for={id('title')}>
-            Titre
+            Title
           </label>
           <input
             class="input"
@@ -131,7 +124,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
         </div>
         <div class="field">
           <label class="field-label" for={id('body')}>
-            Ce que la règle demande
+            What the rule asks for
           </label>
           <textarea
             class="input rule-body-input"
@@ -147,12 +140,12 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           <Message
             id={id('body')}
             error={errors.body}
-            hint={`Le modèle lit ce texte tel quel, avec le diff. ${RULE_TEXT_MAX.toLocaleString('fr-FR')} caractères au plus.`}
+            hint={`The model reads this text as it is, with the diff. ${count(RULE_TEXT_MAX)} characters at most.`}
           />
         </div>
         <div class="field">
           <label class="field-label" for={id('paths')}>
-            Chemins
+            Paths
           </label>
           <textarea
             class="input mono config-paths rule-paths-input"
@@ -168,12 +161,12 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           <Message
             id={id('paths')}
             error={errors.paths}
-            hint={`Un motif par ligne, ${RULE_PATHS_MAX} au plus, comme les chemins du déclenchement : **/migrations/**, src/*.ts, apps/web (un dossier). Vide : tous les chemins. La règle part seulement si la PR touche l’un d’eux.`}
+            hint={`One pattern per line, ${RULE_PATHS_MAX} at most, like the paths of the trigger: **/migrations/**, src/*.ts, apps/web (a folder). Empty: all paths. The rule goes to the model only if the PR changes one of them.`}
           />
         </div>
         <div class="field">
           <label class="field-label" for={id('severityFloor')}>
-            Priorité minimale d’un constat de cette règle
+            Lowest priority of a finding of this rule
           </label>
           <select
             class="input rule-floor-input"
@@ -184,7 +177,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
             aria-describedby={describedBy(id('severityFloor'), errors.severityFloor, true)}
           >
             <option value="" selected={!values.severityFloor}>
-              Aucun plancher
+              No floor
             </option>
             {(Object.keys(FLOOR_LABELS) as SeverityFloor[]).map((floor) => (
               <option value={floor} selected={values.severityFloor === floor}>
@@ -195,7 +188,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           <Message
             id={id('severityFloor')}
             error={errors.severityFloor}
-            hint="Un constat qui cite la règle ne descend pas sous cette priorité. P1 ou P0 sur une ligne modifiée, avec 70 % de confiance, demande des changements."
+            hint="A finding that cites the rule does not go below this priority. A P1 or P0 on a changed line, with 70% confidence, requests changes."
           />
         </div>
       </>
@@ -222,17 +215,17 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
             <span class="rule-title">{rule.title}</span>
             <span class="rule-tags">
               <span class="tag tag-quiet mono">{pathsSummary(rule.paths)}</span>
-              {rule.severityFloor ? <span class="tag tag-info">au moins {FLOOR_LABELS[rule.severityFloor].split(' · ')[0]}</span> : null}
+              {rule.severityFloor ? <span class="tag tag-info">at least {FLOOR_LABELS[rule.severityFloor].split(' · ')[0]}</span> : null}
               {rule.active ? null : <span class="tag tag-warn">{disabledLine(rule)}</span>}
-              {leftOut ? <span class="tag tag-alert">jamais envoyée</span> : null}
+              {leftOut ? <span class="tag tag-alert">never sent</span> : null}
             </span>
           </summary>
           <div class="rule-content">
             {leftOut ? (
               <p class="hint hint-alert">
                 {leftOut === 'too_long'
-                  ? `Les jobs ne l’envoient pas : son titre dépasse ${RULE_TITLE_MAX} caractères ou son texte ${RULE_TEXT_MAX.toLocaleString('fr-FR')} (un emoji compte pour deux). Raccourcissez-les et enregistrez.`
-                  : 'Les jobs ne l’envoient pas : aucun de ses chemins n’est valide. Corrigez-les et enregistrez.'}
+                  ? `The jobs do not send it. Its title is longer than ${RULE_TITLE_MAX} characters, or its text longer than ${count(RULE_TEXT_MAX)} (an emoji counts as two). Shorten them and save.`
+                  : 'The jobs do not send it. None of its paths is valid. Fix them and save.'}
               </p>
             ) : null}
             {admin ? (
@@ -240,20 +233,20 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
                 <Hidden csrf={csrf} repoId={repoId} version={rule.version} />
                 <RuleFields prefix={prefix} values={mine?.values ?? valuesOf(rule)} errors={mine?.errors ?? {}} />
                 <button class="button button-primary" type="submit">
-                  Enregistrer<span class="visually-hidden"> la règle {rule.title}</span>
+                  Save<span class="visually-hidden"> the rule {rule.title}</span>
                 </button>
               </form>
             ) : (
               <dl class="config-facts">
                 <div>
-                  <dt>Ce que la règle demande</dt>
+                  <dt>What the rule asks for</dt>
                   <dd class="rule-body">{rule.body}</dd>
                 </div>
                 <div>
-                  <dt>Chemins</dt>
+                  <dt>Paths</dt>
                   <dd>
                     {rule.paths.length === 0 ? (
-                      'Tous les chemins.'
+                      'All paths.'
                     ) : (
                       <ul class="config-paths-list">
                         {rule.paths.map((p) => (
@@ -264,14 +257,14 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
                   </dd>
                 </div>
                 <div>
-                  <dt>Priorité minimale</dt>
-                  <dd>{rule.severityFloor ? FLOOR_LABELS[rule.severityFloor] : 'Aucun plancher.'}</dd>
+                  <dt>Lowest priority</dt>
+                  <dd>{rule.severityFloor ? FLOOR_LABELS[rule.severityFloor] : 'No floor.'}</dd>
                 </div>
               </dl>
             )}
             <p class="hint">
-              v{rule.version}, modifiée{rule.updatedBy ? ` par ${rule.updatedBy}` : ''} {when(rule.updatedAt)}
-              {rule.active ? '' : ` · ${disabledLine(rule)} : elle ne part plus au modèle`}.
+              v{rule.version}, changed{rule.updatedBy ? ` by ${rule.updatedBy}` : ''} {when(rule.updatedAt)}
+              {rule.active ? '' : ` · ${disabledLine(rule)}, so it no longer goes to the model`}.
             </p>
             {admin ? (
               <div class="rule-actions">
@@ -279,23 +272,23 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
                   <Hidden csrf={csrf} repoId={repoId} version={rule.version} />
                   <input type="hidden" name="active" value={rule.active ? 'false' : 'true'} />
                   <button class="button" type="submit">
-                    {rule.active ? 'Désactiver' : 'Réactiver'}
-                    <span class="visually-hidden"> la règle {rule.title}</span>
+                    {rule.active ? 'Disable' : 'Enable again'}
+                    <span class="visually-hidden"> the rule {rule.title}</span>
                   </button>
                 </form>
                 <Confirm
                   trigger={
                     <>
-                      Supprimer…<span class="visually-hidden"> la règle {rule.title}</span>
+                      Delete…<span class="visually-hidden"> the rule {rule.title}</span>
                     </>
                   }
                   action={`${routes.ruleRemove.href({ id: rule.id })}?repo=${repoId ?? ''}`}
                   csrf={csrf}
-                  submit={`Supprimer « ${rule.title.length > 40 ? `${rule.title.slice(0, 39)}…` : rule.title} »`}
+                  submit={`Delete "${rule.title.length > 40 ? `${rule.title.slice(0, 39)}…` : rule.title}"`}
                 >
                   <p>
-                    La règle ne part plus au modèle, et son texte est perdu. Pour l’arrêter sans la perdre, désactivez-la. Les
-                    reviews déjà publiées gardent leurs constats.
+                    The rule no longer goes to the model, and its text is lost. To stop it without losing it, disable it. The
+                    reviews already published keep their findings.
                   </p>
                 </Confirm>
               </div>
@@ -308,7 +301,7 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
 }
 
 /**
- * REV-19. The rules of a repository (Config › Règles) or of the org (Réglages › Règles d’org): a
+ * REV-19. The rules of a repository (Config › Rules) or of the org (Settings › Org rules): a
  * list of folded rules, each one open to edit, disable or remove, and the form of a new rule. An
  * admin of the org writes; a member reads.
  */
@@ -331,8 +324,8 @@ export function RulesList(handle: Handle<RulesListProps>) {
           <div class="empty">
             <p>
               {scope === 'org'
-                ? 'Aucune règle d’org. Une règle d’org part avec la review de chaque repo de l’org dont la PR touche ses chemins.'
-                : 'Aucune règle pour ce repo.'}
+                ? 'No org rule. An org rule goes to the model with the review of each repo of the org whose PR changes its paths.'
+                : 'No rule for this repo.'}
             </p>
           </div>
         ) : (
@@ -344,17 +337,17 @@ export function RulesList(handle: Handle<RulesListProps>) {
         )}
         {admin && !full ? (
           <details class="rule-new" id={`${scope}-rule-new`} open={newForm !== null || rules.length === 0}>
-            <summary class="button">Nouvelle règle</summary>
+            <summary class="button">New rule</summary>
             <form method="post" action={routes.ruleAdd.href()} class="rule-form" noValidate>
               <Hidden csrf={csrf} repoId={repoId} />
               <RuleFields prefix={`${scope}-rule-new`} values={newForm?.values ?? {}} errors={newForm?.errors ?? {}} />
               <button class="button button-primary" type="submit">
-                Ajouter la règle
+                Add the rule
               </button>
             </form>
           </details>
         ) : admin ? (
-          <p class="hint">{MAX_RULES} règles au plus ici, désactivées comprises : supprimez-en une pour en ajouter une autre.</p>
+          <p class="hint">{MAX_RULES} rules at most here, disabled ones included. Delete one to add another.</p>
         ) : null}
       </div>
     )

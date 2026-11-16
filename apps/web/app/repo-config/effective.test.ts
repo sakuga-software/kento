@@ -12,10 +12,10 @@ function anthropic(overrides: Partial<ProviderOption> = {}): ProviderOption {
   return {
     id: ANTHROPIC_ID,
     kind: 'anthropic',
-    label: 'Anthropic de Sakuga',
+    label: 'Anthropic of Sakuga',
     hint: '',
     isDefault: false,
-    keyFrom: 'clé du runner',
+    keyFrom: 'key on the runner',
     serviceHoldsKey: false,
     models: {},
     ...overrides,
@@ -24,9 +24,9 @@ function anthropic(overrides: Partial<ProviderOption> = {}): ProviderOption {
 
 describe('a model id of the wrong form, already in the database (REV-62)', () => {
   it('names what each provider expects, and takes the other providers as they are', () => {
-    assert.match(idFormHelp('anthropic', 'anthropic/claude-opus-5.5') ?? '', /sans « anthropic\/ »/)
+    assert.match(idFormHelp('anthropic', 'anthropic/claude-opus-5.5') ?? '', /without "anthropic\/"/)
     assert.equal(idFormHelp('anthropic', 'claude-opus-5-5'), null)
-    assert.match(idFormHelp('openrouter', 'claude-opus-5-5') ?? '', /le fournisseur devant le modèle/)
+    assert.match(idFormHelp('openrouter', 'claude-opus-5-5') ?? '', /the vendor before the model/)
     assert.equal(idFormHelp('openrouter', 'anthropic/claude-opus-5.5'), null)
     assert.equal(idFormHelp('ollama', 'qwen3:32b'), null)
     assert.equal(idFormHelp('openai_compatible', 'meta-llama/Llama-4'), null)
@@ -43,8 +43,8 @@ describe('a model id of the wrong form, already in the database (REV-62)', () =>
       chosen.wrongIds.map((wrong) => wrong.id),
       ['anthropic/claude-opus-5.5'],
     )
-    assert.match(wrongIdAction(chosen, 'repo', 'repo'), /formulaire ci-dessous/)
-    assert.match(wrongIdAction(chosen, 'repo', 'org'), /Réglages de l’organisation/)
+    assert.match(wrongIdAction(chosen, 'repo', 'repo'), /form below/)
+    assert.match(wrongIdAction(chosen, 'repo', 'org'), /Settings of the organization/)
 
     let byDefault = effectiveLevel('lite', { value: kentoDefaults().models.lite, source: 'kento' }, [
       serviceOption(true),
@@ -54,7 +54,7 @@ describe('a model id of the wrong form, already in the database (REV-62)', () =>
       byDefault.wrongIds.map((wrong) => wrong.id),
       ['anthropic/claude-haiku-5.5'],
     )
-    assert.match(wrongIdAction(byDefault, 'org', 'kento'), /Providers et clés/)
+    assert.match(wrongIdAction(byDefault, 'org', 'kento'), /Providers and keys/)
   })
 
   it('shows nothing for ids of the right form, and for the models of Kentō', () => {
@@ -69,7 +69,7 @@ describe('a model id of the wrong form, already in the database (REV-62)', () =>
   it('fails at the claim the ids that the runner would run, and only those', () => {
     let provider = { id: ANTHROPIC_ID, kind: 'anthropic' as const, models: { lite: ['anthropic/claude-haiku-5.5'] } }
     let job = { provider, level: 'lite' as const, config: null }
-    assert.match(wrongModelId(job as never, { wantsModels: true, readsProviders: true }) ?? '', /^id de modèle invalide pour Anthropic : anthropic\/claude-haiku-5\.5\. /)
+    assert.match(wrongModelId(job as never, { wantsModels: true, readsProviders: true }) ?? '', /^invalid model id for Anthropic: anthropic\/claude-haiku-5\.5\. /)
 
     // The config names right ids for this provider, and the runner reads them: the provider's list is not run.
     let config = { models: { provider: ANTHROPIC_ID, model: 'claude-haiku-5-5', fallback: null } }
@@ -79,7 +79,7 @@ describe('a model id of the wrong form, already in the database (REV-62)', () =>
 
     // The OpenRouter of the service, with an Anthropic id in the config.
     let service = { provider: null, level: 'lite' as const, config: { models: { provider: 'service', model: 'claude-haiku-5-5', fallback: null } } }
-    assert.match(wrongModelId(service as never, { wantsModels: true, readsProviders: true }) ?? '', /^id de modèle invalide pour OpenRouter : claude-haiku-5-5\. /)
+    assert.match(wrongModelId(service as never, { wantsModels: true, readsProviders: true }) ?? '', /^invalid model id for OpenRouter: claude-haiku-5-5\. /)
     assert.equal(wrongModelId(service as never, { wantsModels: false, readsProviders: true }), null)
     // A runner of an earlier release, without `providers`, still gets the models of `service`.
     assert.notEqual(wrongModelId(service as never, { wantsModels: true, readsProviders: false }), null)
@@ -91,6 +91,6 @@ describe('a model id of the wrong form, already in the database (REV-62)', () =>
   it('names every id of the wrong form in the reason, not only the first', () => {
     let provider = { id: ANTHROPIC_ID, kind: 'anthropic' as const, models: { lite: ['anthropic/a', 'claude-haiku-5-5', 'anthropic/b'] } }
     let reason = wrongModelId({ provider, level: 'lite', config: null } as never, { wantsModels: true, readsProviders: true })
-    assert.match(reason ?? '', /^id de modèle invalide pour Anthropic : anthropic\/a, anthropic\/b\. Anthropic attend/)
+    assert.match(reason ?? '', /^invalid model id for Anthropic: anthropic\/a, anthropic\/b\. Anthropic expects/)
   })
 })

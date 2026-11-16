@@ -17,7 +17,7 @@ export function precisionCounts(precision: Precision): string {
 }
 
 /**
- * A share, or « n = 9 sur 10 » under 10 closed findings, with what it is made of for a screen reader
+ * A share, or « n = 9 of 10 » under 10 closed findings, with what it is made of for a screen reader
  * and in its title.
  */
 export function PrecisionValue(handle: Handle<{ precision: Precision; large?: boolean }>) {
@@ -30,7 +30,7 @@ export function PrecisionValue(handle: Handle<{ precision: Precision; large?: bo
         <span class="visually-hidden">
           {measured
             ? ` (${precisionCounts(precision)})`
-            : ` : ${precision.closed} ${plural(precision.closed, 'finding clos', 'findings clos')}, la précision s’affiche à partir de ${PRECISION_MIN}`}
+            : `: ${precision.closed} closed ${plural(precision.closed, 'finding')}, the precision shows from ${PRECISION_MIN}`}
         </span>
       </span>
     )
@@ -49,7 +49,7 @@ function GroupRow(handle: Handle<{ name: string; href: string; precision: Precis
         <span class="precision-figures">
           <PrecisionValue precision={precision} />
           <span class="hint precision-n" aria-hidden="true">
-            {precision.closed} {plural(precision.closed, 'clos', 'clos')}
+            {precision.closed} closed
           </span>
         </span>
       </li>
@@ -69,36 +69,36 @@ export function PrecisionSection(handle: Handle<{ report: PrecisionReport; org: 
     return (
       <section class="precision" aria-labelledby="precision-title">
         <h2 id="precision-title" class="section-title">
-          Précision · {PRECISION_DAYS} derniers jours
+          Precision · last {PRECISION_DAYS} days
         </h2>
         <div class="precision-grid">
           <div class="card precision-card">
-            <h3 class="precision-card-title">Organisation</h3>
+            <h3 class="precision-card-title">Organization</h3>
             <PrecisionValue precision={total} large />
             <p class="hint">
               {total.rate === null
-                ? `Elle s’affiche à partir de ${PRECISION_MIN} findings clos (fixed ou dismissed).`
-                : `${precisionCounts(total)} : la part des findings clos qu’un push a corrigés.`}
+                ? `It shows from ${PRECISION_MIN} closed findings (fixed or dismissed).`
+                : `${precisionCounts(total)}: the share of the closed findings that a push fixed.`}
             </p>
-            <h3 class="precision-card-title">Par passe</h3>
+            <h3 class="precision-card-title">By pass</h3>
             <ul class="precision-list">
               <li class="precision-row">
-                <span class="precision-name">Passe unique</span>
+                <span class="precision-name">Single pass</span>
                 <span class="precision-figures">
                   <PrecisionValue precision={total} />
                   <span class="hint precision-n" aria-hidden="true">
-                    {total.closed} clos
+                    {total.closed} closed
                   </span>
                 </span>
               </li>
             </ul>
-            <p class="hint">Une passe par review pour l’instant : les passes multiples auront chacune leur ligne.</p>
+            <p class="hint">One pass per review for now. Each pass will have its own row when a review runs several.</p>
           </div>
 
           <div class="card precision-card">
-            <h3 class="precision-card-title">Par repo</h3>
+            <h3 class="precision-card-title">By repo</h3>
             {report.repos.length === 0 ? (
-              <p class="hint">Aucun finding clos sur {PRECISION_DAYS} jours.</p>
+              <p class="hint">No closed finding over {PRECISION_DAYS} days.</p>
             ) : (
               <ul class="precision-list">
                 {report.repos.map((repo) => (
@@ -113,15 +113,15 @@ export function PrecisionSection(handle: Handle<{ report: PrecisionReport; org: 
             )}
             {more > 0 ? (
               <p class="hint">
-                {more} {plural(more, 'autre repo', 'autres repos')} : <a href={routes.repos.href()}>leur précision est dans Repos</a>.
+                {more} other {plural(more, 'repo')}: <a href={routes.repos.href()}>their precision is in Repos</a>.
               </p>
             ) : null}
           </div>
 
           <div class="card precision-card">
-            <h3 class="precision-card-title">Par règle</h3>
+            <h3 class="precision-card-title">By rule</h3>
             {report.rules.length === 0 ? (
-              <p class="hint">Aucun finding clos ne vient d’une règle sur {PRECISION_DAYS} jours.</p>
+              <p class="hint">No closed finding comes from a rule over {PRECISION_DAYS} days.</p>
             ) : (
               <ul class="precision-list">
                 {report.rules.map((rule) => (
@@ -137,9 +137,9 @@ export function PrecisionSection(handle: Handle<{ report: PrecisionReport; org: 
           </div>
 
           <div class="card precision-card">
-            <h3 class="precision-card-title">Motifs des dismissed</h3>
+            <h3 class="precision-card-title">Dismissal reasons</h3>
             {report.reasons.length === 0 && report.unreasoned === 0 ? (
-              <p class="hint">Aucun finding dismissed sur {PRECISION_DAYS} jours.</p>
+              <p class="hint">No dismissed finding over {PRECISION_DAYS} days.</p>
             ) : (
               <ul class="precision-list">
                 {report.reasons.map((reason) => (
@@ -153,19 +153,19 @@ export function PrecisionSection(handle: Handle<{ report: PrecisionReport; org: 
                 {report.unreasoned > 0 ? (
                   // No link: the list cannot filter on an empty reason.
                   <li class="precision-row">
-                    <span class="precision-name">Sans motif</span>
+                    <span class="precision-name">No reason</span>
                     <span class="precision-value">{report.unreasoned}</span>
                   </li>
                 ) : null}
               </ul>
             )}
             {report.reasons.length > 0 ? (
-              <p class="hint">Compté sur {PRECISION_DAYS} jours ; chaque lien montre tous les findings dismissed de ce motif, sans limite de date.</p>
+              <p class="hint">Counted over {PRECISION_DAYS} days. Each link shows all the dismissed findings with this reason, with no date limit.</p>
             ) : null}
             {report.reasonCount > report.reasons.length ? (
               <p class="hint">
-                Et {report.reasonCount - report.reasons.length} {plural(report.reasonCount - report.reasons.length, 'autre motif', 'autres motifs')} :{' '}
-                <a href={findingsHref({ view: 'dismissed' })}>voir les dismissed</a>.
+                And {report.reasonCount - report.reasons.length} other {plural(report.reasonCount - report.reasons.length, 'reason')}:{' '}
+                <a href={findingsHref({ view: 'dismissed' })}>see the dismissed findings</a>.
               </p>
             ) : null}
           </div>

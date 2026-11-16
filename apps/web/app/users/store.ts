@@ -8,9 +8,9 @@ import { toDate } from '../db/rows.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import { listFindingScreen, type FindingView } from '../findings/screen.ts'
 
-/** The days of « Findings reçus ». The link to the Findings screen carries the same period. */
+/** The days of « Findings received ». The link to the Findings screen carries the same period. */
 export const RECEIVED_DAYS = 30
-/** The pull requests of « Mes PR reviewées » at first, and each « Afficher N PR de plus ». */
+/** The pull requests of « My reviewed PRs » at first, and each « Show N more PRs ». */
 export const PULLS_STEP = 10
 /** The most pull requests that one page shows. */
 export const PULLS_MAX = 200
@@ -46,7 +46,7 @@ export interface UserScreen {
   /** The role in the org on screen, as GitHub gave it at the last check. */
   role: 'admin' | 'member'
   prefs: { global: UserPref | null; repos: RepoPref[] }
-  /** The enabled repositories of the org without a preference of the user: the choices of « Ajouter un repo ». */
+  /** The enabled repositories of the org without a preference of the user: the choices of « Add a repo ». */
   addable: { id: string; fullName: string }[]
   /** The findings of their pull requests over RECEIVED_DAYS days, by status: the counts of the Findings screen. */
   received: Record<FindingView, number>

@@ -161,7 +161,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
 
     let { command } = message
     if (command.verb === 'unknown') {
-      return refuse('unknown command', `@${message.commenter.login} \`${command.text.replaceAll('`', "'")}\` n'est pas une commande de Kentō.\n\n${usage(deps.docsUrl)}`)
+      return refuse('unknown command', `@${message.commenter.login} \`${command.text.replaceAll('`', "'")}\` is not a Kentō command.\n\n${usage(deps.docsUrl)}`)
     }
     if (command.verb === 'reject') {
       let problem = rejectProblem(command, place.kind)
@@ -173,8 +173,8 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       let finding = target.finding
       // The status of the finding first: it costs no call to GitHub.
       if (REJECT_REFUSED.has(finding.status)) {
-        let why = finding.status === 'fixed' ? 'un push l\'a déjà corrigé' : 'il ne vaut plus pour cette PR (stale)'
-        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} Le constat \`#${finding.key.slice(0, 6)}\` n'est plus ouvert : ${why}. Il n'y a rien à écarter.`)
+        let why = finding.status === 'fixed' ? 'a push already fixed it' : 'it no longer applies to this PR (stale)'
+        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} The finding \`#${finding.key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`)
       }
       // As for the other commands: a pull request closed since the comment gets nothing.
       let open: { state?: string } = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
@@ -207,8 +207,8 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         throw error
       })
       if (result.refusedStatus) {
-        let why = result.refusedStatus === 'fixed' ? "un push l'a déjà corrigé" : 'il ne vaut plus pour cette PR (stale)'
-        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} Le constat \`#${finding.key.slice(0, 6)}\` n'est plus ouvert : ${why}. Il n'y a rien à écarter.`)
+        let why = result.refusedStatus === 'fixed' ? 'a push already fixed it' : 'it no longer applies to this PR (stale)'
+        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} The finding \`#${finding.key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`)
       }
       // A redelivery or a second reject reacts again: GitHub keeps one reaction.
       if (result.failed.length) {
@@ -227,7 +227,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
     if (place.kind === 'thread') {
       return refuse(
         'only reject is read in a review thread',
-        `@${message.commenter.login} Dans le fil d'un constat, Kentō ne lit que \`@kento-review reject <cause>\`. Les autres commandes vont dans la conversation de la PR.`,
+        `@${message.commenter.login} In the thread of a finding, Kentō reads only \`@kento-review reject <cause>\`. The other commands go in the conversation of the PR.`,
       )
     }
     let pr: PullRequest = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
@@ -235,7 +235,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
     // The code of a fork is not the code of the repository. GitHub sends `head.repo: null` when the
     // fork was deleted.
     if (pr.head?.repo?.id !== message.repository.githubRepoId) {
-      return refuse('pull request from a fork', `@${message.commenter.login} Kentō ne relit pas une PR qui vient d'un fork.`)
+      return refuse('pull request from a fork', `@${message.commenter.login} Kentō does not review a PR from a fork.`)
     }
     if (typeof pr.head.sha !== 'string' || !SHA.test(pr.head.sha) || typeof pr.base?.ref !== 'string') {
       throw new Error('GitHub gave a pull request without head.sha or base.ref')
@@ -273,13 +273,13 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         if (command.verb === 'resolve') {
           return refuse(
             'a resolve of the pull request is already running',
-            `@${message.commenter.login} Une résolution des fils de cette PR est déjà en file ou en cours : attendez sa fin, puis relancez \`@kento-review resolve\` si des fils restent ouverts.`,
+            `@${message.commenter.login} A thread resolution of this PR is already queued or in progress. Wait for its end, then run \`@kento-review resolve\` again if threads stay open.`,
           )
         }
         return refuse(
           'head already has a review at this level',
-          `@${message.commenter.login} Le commit \`${pr.head.sha.slice(0, 9)}\` a déjà une review \`${command.level}\` (en file, en cours ou publiée) : ` +
-            `elle n'est pas payée deux fois. \`@kento-review ${command.level} force\` en demande une autre.`,
+          `@${message.commenter.login} Commit \`${pr.head.sha.slice(0, 9)}\` already has a \`${command.level}\` review (queued, in progress or published). ` +
+            `Kentō does not pay for it twice. \`@kento-review ${command.level} force\` asks for another one.`,
         )
       case 'skipped':
         return { outcome: 'skipped', reason: result.reason }
@@ -348,13 +348,13 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
 function targetProblemText(target: Exclude<RejectTarget, { kind: 'found' }>, command: RejectCommand): string {
   switch (target.kind) {
     case 'not_a_finding_thread':
-      return "Ce fil n'est pas celui d'un constat de Kentō : `reject` se lance dans le fil d'un constat, ou dans la conversation avec son id."
+      return 'This thread is not the thread of a Kentō finding. Use `reject` in the thread of a finding, or in the conversation with its id.'
     case 'unknown_id':
-      return `Aucun constat de cette PR n'a l'id \`#${command.id}\`. Les ids sont dans la liste des constats de la description.`
+      return `No finding of this PR has the id \`#${command.id}\`. The ids are in the list of findings in the description.`
     case 'ambiguous_id':
       return (
-        `L'id \`#${command.id}\` désigne plusieurs constats de cette PR : ` +
-        `${target.ids.map((key) => `\`#${key}\``).join(', ')}. Donnez plus de caractères de l'id.`
+        `The id \`#${command.id}\` matches several findings of this PR: ` +
+        `${target.ids.map((key) => `\`#${key}\``).join(', ')}. Give more characters of the id.`
       )
   }
 }

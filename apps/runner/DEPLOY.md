@@ -144,18 +144,18 @@ update runners set trusted = true where id = '<id of runners-host>';
 ## Another runner: the Runners screen (REV-10)
 
 From REV-10 on, an admin of the org adds a runner from `https://review.sakuga.dev/runners`, with no
-change to the web service: « Nouveau runner » → a name, labels and the key mode → a registration
+change to the web service: « New runner » → a name, labels and the key mode → a registration
 token shown once, valid one hour and one use, and a `docker run` to copy. The runner gets the name,
 the labels and the trust of the token, and runs the jobs of that org only. The image of the command
 is `ghcr.io/sakuga-software/kento-runner:<version of the service>`: publish that tag (section 1).
 
 The runners registered with `KENTO_RUNNER_REGISTRATION_TOKEN`, like `runners-host`, stay
-« runners du service »: they run the jobs of every org, the screen shows them, and only an operator
+runners of the service (« Runner of the service » on their card): they run the jobs of every org, the screen shows them, and only an operator
 trusts or revokes them, in the database, as below.
 
 ## 5. Revoke a runner
 
-A runner of the screen: « Révoquer… » on its card. Its token stops at the next call, and its
+A runner of the screen: « Revoke… » on its card. Its token stops at the next call, and its
 running job goes back to the queue at once, without spending an attempt.
 
 A runner of the service:

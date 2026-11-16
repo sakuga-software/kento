@@ -215,7 +215,7 @@ export interface RunnerStore {
   recordSentRules(jobId: string, runnerId: string, attempt: number, rules: JobRule[]): Promise<void>
   /**
    * REV-89. The last review on GitHub of the pull request of a review job, when the runner may reuse
-   * it: the job comes from a push (not a command, a « Relancer » or a retry), and that review has a
+   * it: the job comes from a push (not a command, a « Run again » or a retry), and that review has a
    * reuse key. Null otherwise: the runner then reviews the head. A copy that waits for its
    * publication (outcome `unchanged`) is not read yet: its source, still the last review on GitHub,
    * has the same key and the same findings, so the runner compares with the same input.
@@ -614,7 +614,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             let [provider] = await tx<{ label: string }[]>`
               update providers set refused_at = coalesce(refused_at, now()), refused_status = ${result.providerStatus!},
                 refused_message = case when runner_held
-                  then left('runner « ' || coalesce((select name from runners where id = ${runnerId}), '?') || ' » : ' || ${message}, 300)
+                  then left('runner "' || coalesce((select name from runners where id = ${runnerId}), '?') || '": ' || ${message}, 300)
                   else ${message} end
               where id = ${job.providerId} and ${sameKey(tx, jobId)}
                 -- A slow job of a runner with a wrong key never hides a later success on another runner.

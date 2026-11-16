@@ -56,7 +56,7 @@ flowchart LR
 | Installation | All the repositories of the organization. |
 
 Kentō needs Contents read. Contents write serves `resolve` only: GitHub resolves a review thread
-only for a token that can write the contents. **Réglages → App GitHub** compares the permissions
+only for a token that can write the contents. **Settings → GitHub App** compares the permissions
 and the events of the installation with what Kentō needs, and names what is missing.
 
 The sign-in of the screens is the user authorization of the same App. Kentō takes the role from
@@ -64,34 +64,34 @@ GitHub: an admin of the organization edits, a member reads.
 
 ## Turn on Kentō for a repository
 
-1. The App is installed on the repository (**Repos → Gérer l’installation** opens the page on
-   GitHub).
-2. An admin clicks **Activer** on the row of the repository in **Repos**. The next push to a pull
+1. The App is installed on the repository (**Repos → Manage the installation** opens the page
+   on GitHub).
+2. An admin clicks **Enable** on the row of the repository in **Repos**. The next push to a pull
    request creates a job.
 3. A runner of the organization, or a runner of the service, is online. The runners of Sakuga
    serve every organization. To run the reviews on your own machine, see
    [apps/runner/README.md](apps/runner/README.md).
 
-The Config of a repository (**Repos → Config**) sets the level of a push, the trigger (each push,
-« Ready for review » only, or commands only), the paths, the provider and the models of each level,
+The Config of a repository (**Repos → Config**) sets the level of a push, the trigger (« At each push »,
+« When the PR becomes "Ready for review" », or « On request »), the paths, the provider and the models of each level,
 and a monthly cost limit. Each value without a choice comes from the organization, then from Kentō.
 
 The review sends `CLAUDE.md` and `AGENTS.md` of the head commit to the model, up to 400 lines each.
 It also sends the import statements of each changed file at the head, whole: a hunk rarely shows
 the top of its file. A finding that says a name is not imported or not defined is checked against
-its file at the head. It goes away when the file imports the name as a value, and goes to « Non
-relu » when its title names no name to check. The score stays the score of the model.
+its file at the head. It goes away when the file imports the name as a value, and goes to « Not
+reviewed » when its title names no name to check. The score stays the score of the model.
 
 Drafts get no review. Neither do the pull requests, pushes and comments of a bot, except the
-trusted bots of the organization (**Réglages → Bots de confiance**, `sakuga-agent[bot]` by
+trusted bots of the organization (**Settings → Trusted bots**, `sakuga-agent[bot]` by
 default). A trusted bot counts as a person. A newer push cancels the job of the previous one.
 
 ## What a push gets
 
 - **A block at the end of the description of the pull request**, replaced on each push:
-  - `Sakuga Review · Score de confiance : N/5` (Kentō adds a gauge), and one sentence on whether the
+  - `Kentō · Confidence score: N/5` (with a gauge), and one sentence on whether the
     pull request can be merged;
-  - the findings, numbered, each with its priority badge (`P0`, `P1`, `P2`, and `sécurité` for a
+  - the findings, numbered, each with its priority badge (`P0`, `P1`, `P2`, and `security` for a
     security finding) and a link to its thread. A finding with no thread shows its scenario and
     its fix there. A finding on code outside the diff (a caller that the change breaks) links its
     line in the file;
@@ -106,7 +106,7 @@ default). A trusted bot counts as a person. A newer push cancels the job of the 
 - **A check « Sakuga Review »** with the score.
 - **One review** on the head commit: the score, its head and the sentence, the level, the model and
   the cost of the review, and one inline comment per P0 or P1 on a line that the pull request changes,
-  whatever its confidence (REV-103). Below 70 % confidence, the comment has the mark « à vérifier »
+  whatever its confidence (REV-103). Below 70 % confidence, the comment has the mark « to check »
   and does not block. A P2 gets an inline comment from 70 % only, while the review has fewer than 5.
   An inline comment gives the priority badge, the title, the failure scenario and the fix, and a
   GitHub suggestion when the fix is a few changed lines. Each comment is a thread that a person
@@ -119,15 +119,15 @@ read a review (score, level, badges) read the reviews of both.
 
 The head of the review says, in this order (REV-106):
 
-1. `N points bloquants` when a finding blocks;
-2. else `N points à vérifier` when a P0 or P1 has a thread and does not block: below 70 %, outside
+1. `N blocking issues` when a finding blocks;
+2. else `N issues to check` when a P0 or P1 has a thread and does not block: below 70 %, outside
    the diff, or a P1 to consider that gets a thread;
-3. else `Rien de bloquant`, also with P2 findings.
+3. else `Nothing blocking`, also with P2 findings.
 
 Kentō shows its own icons, light and dark, served from `KENTO_PUBLIC_URL/assets/pr/`: the priority
 badges, the marks, the state of the head, the link to a thread, and the states of `resolve`. Each
-image has an alt text that gives its meaning (`P1`, `Bloquant`, `À vérifier`). The warning icon
-means « à vérifier » only: a point to check, the advice of a deeper review, a force-push. Without
+image has an alt text that gives its meaning (`P1`, `Blocking`, `To check`). The warning icon
+means « to check » only: a point to check, the advice of a deeper review, a force-push. Without
 `KENTO_PUBLIC_URL`, Kentō writes the alt texts and no image.
 
 | Priority | Severity | Meaning |
@@ -166,7 +166,7 @@ On the next push:
 
 - Kentō does not post again a finding that an open thread already carries.
 - A thread whose file changed since its comment, and whose finding did not come back, gets
-  resolved. When GitHub refuses, Kentō replies « Le fil peut être résolu » in the thread.
+  resolved. When GitHub refuses, Kentō replies « The thread can be resolved. » in the thread.
 - Kentō dismisses the `REQUEST_CHANGES` of an earlier head. A `COMMENT` alone does not lift it, so
   without the dismissal a fixed pull request would stay blocked.
 
@@ -187,7 +187,7 @@ trusted bot, can give a command, because a command costs money.
 The bot reacts 👀 when it queues the job, 🚀 when the review is published, and 😕 on an error, an
 unknown command (with the list of the commands), a pull request from a fork, or a level that the
 head already has (the reply names `force`). A command still runs when the trigger of the Config is
-« commands only », and when the repository reached its monthly limit. It does not run when the
+« On request », and when the repository reached its monthly limit. It does not run when the
 organization reached its cost limit.
 
 | Level | Model on OpenRouter | Context | Cost a review | Time |
@@ -197,7 +197,7 @@ organization reached its cost limit.
 | `heavy` | Claude Opus 5.5, high reasoning | definitions and callers | 10 to 50 cents; at most about $1.10 for a full pack of 240 kB with the 32,000 output tokens of its cap | 2 to 10 min |
 
 The provider and the models of a level can change per organization and per repository
-(**Réglages → Providers et clés**, the Config of a repository). Without a provider, the jobs run on
+(**Settings → Providers and keys**, the Config of a repository). Without a provider, the jobs run on
 the OpenRouter key of the service.
 
 Everything that the model reads is data. A comment or a line of code that tells it to approve, or
@@ -207,14 +207,14 @@ file changed, whatever the model says.
 ## Budget
 
 Each review costs what its provider charges. The runner sends the cost with the review, and the
-footer of the review shows it. The Tableau de bord shows the cost of the day and the reviews of the
+footer of the review shows it. The Dashboard shows the cost of the day and the reviews of the
 week.
 
 There are three limits:
 
-- **The cost limit of the organization** (**Réglages → Plafond de coût**): a limit per UTC day and
+- **The cost limit of the organization** (**Settings → Cost cap**): a limit per UTC day and
   per UTC month, and an alert threshold (80 % by default). At a limit, Kentō queues no new job. A
-  push gets the neutral check « Kentō · plafond », and a command gets 😕 and a reply. A job already
+  push gets the neutral check « Kentō · cap », and a command gets 😕 and a reply. A job already
   queued or running finishes, so the cost can go a little over the limit. The cost is the sum of
   the reviews and resolutions of every repository of the organization.
 - **The monthly limit of a repository** (its Config). It stops only the automatic reviews of that
@@ -222,7 +222,7 @@ There are three limits:
 - **The daily limit of the OpenRouter key of the service** ($10 a day). When it is reached, every
   review that runs on that key fails, in every organization.
 
-A runner with its own key (« Clé du runner ») bills its provider directly. A review on Ollama costs
+A runner with its own key (« Key on the runner ») bills its provider directly. A review on Ollama costs
 0.
 
 September 2026 had about 1,500 pull request heads that a review would read (atlas about 870,
@@ -235,7 +235,7 @@ worst case, one review per commit (3,200 in September) at 2 cents, is about $70.
 The service and the runner have one version each, in `apps/web/package.json` and
 `apps/runner/package.json` (`0.1.0` today). The Runners screen gives a `docker run` with the image
 tag of the version of the service, and marks a runner of an older version with « X.Y.Z
-disponible ». So a release bumps both versions together, and publishes the runner image with that
+available ». So a release bumps both versions together, and publishes the runner image with that
 tag.
 
 1. **Merge** the change on `main` through a pull request. The CI builds the runner image and starts

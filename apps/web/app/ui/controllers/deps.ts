@@ -30,7 +30,7 @@ export interface AuthDependencies {
   store: AuthStore
   lookupRole: LookupRole
   now?: () => number
-  /** REV-32. The page of GitHub that installs the App on an org, for « Accès refusé ». */
+  /** REV-32. The page of GitHub that installs the App on an org, for « Access refused ». */
   installUrl?: string | null
 }
 
@@ -62,7 +62,7 @@ export interface DashboardDependencies {
   githubUrl: string
   /** Reads the head of a pull request before a retry. Null without the GitHub App: the jobs of the database decide alone. */
   readPullRequest: ReadPullRequest | null
-  /** KENTO_PROVIDER_API_KEY is set: the list « Mise en route » counts it as a provider (REV-26). */
+  /** KENTO_PROVIDER_API_KEY is set: the list « Getting started » counts it as a provider (REV-26). */
   serviceKey?: boolean
 }
 

@@ -4,5 +4,5 @@
 
 /** The reply in the thread of a finding that a person reopened. */
 export function reopenText(login: string): string {
-  return `Finding rouvert par @${login} sur Kentō. La prochaine review le signalera de nouveau s’il est toujours là.`
+  return `Finding reopened by @${login} on Kentō. The next review reports it again if it is still there.`
 }

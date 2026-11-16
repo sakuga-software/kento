@@ -22,7 +22,7 @@ import { localPath, redirect, sessionOf, Signed, signedOf, type SignedIn, type U
 
 const NOTICES: readonly SignInNotice[] = ['not_member', 'failed', 'signed_out', 'expired', 'disabled']
 
-/** A login of GitHub: what the page « Accès refusé » accepts to show from its cookie. */
+/** A login of GitHub: what the page « Access refused » accepts to show from its cookie. */
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
 export function createAuth(kit: UiKit) {
@@ -52,7 +52,7 @@ export function createAuth(kit: UiKit) {
       ]
     : []
 
-  // REV-32. The login of a GitHub account that the sign-in refused, for the page « Accès refusé » that
+  // REV-32. The login of a GitHub account that the sign-in refused, for the page « Access refused » that
   // follows. A signed cookie of 5 minutes, not a session: a refusal writes nothing on the server.
   let refusedCookie = auth
     ? createCookie(secure ? '__Host-kento_refused' : 'kento_refused', {
@@ -213,7 +213,7 @@ export function createAuth(kit: UiKit) {
         let response = await startExternalAuth(auth.provider, context, {
           returnTo: localPath(context.url.searchParams.get('returnTo')),
         })
-        // REV-32. « Changer de compte GitHub »: GitHub shows its account picker instead of signing in
+        // REV-32. « Switch GitHub account »: GitHub shows its account picker instead of signing in
         // the same account again.
         // A new sign-in starts: the login of an earlier refusal has no use now.
         if (hasRefused(context.headers.get('Cookie'))) response.headers.append('Set-Cookie', await clearRefused())

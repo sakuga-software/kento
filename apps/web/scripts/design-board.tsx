@@ -53,11 +53,11 @@ const frames: { file: string; node: unknown }[] = [
       <Shell
         frame={frame('paper', admin, '/')}
         section="dashboard"
-        title="Tableau de bord"
-        lead="Ce qui tourne, ce qui a échoué, et ce que ça coûte."
-        actions={<a class="button button-primary" href="#">Relancer en balanced</a>}
+        title="Dashboard"
+        lead="What runs, what failed, and what it costs."
+        actions={<a class="button button-primary" href="#">Run again at balanced</a>}
       >
-        <section class="empty"><h2>Bientôt ici</h2><p>Les dernières reviews, la file de jobs, le coût du jour et les runners s’afficheront ici.</p></section>
+        <section class="empty"><h2>Soon here</h2><p>The last reviews, the job queue, the cost of the day and the runners will show here.</p></section>
       </Shell>
     ),
   },
@@ -68,26 +68,26 @@ const frames: { file: string; node: unknown }[] = [
         frame={frame('sumi', member, '/repos')}
         section="repos"
         title="Repos"
-        lead="Les repos de l’installation, et où en est chacun dans sa bascule."
-        actions={<a class="button button-primary" href="#">Activer un repo</a>}
+        lead="The repos of the installation, and where each one is in its switch."
+        actions={<a class="button button-primary" href="#">Enable a repo</a>}
       >
-        <section class="empty"><h2>Bientôt ici</h2><p>La liste des repos, leur mode et leur compteur de bascule s’afficheront ici.</p></section>
+        <section class="empty"><h2>Soon here</h2><p>The list of the repos, their mode and their switch counter will show here.</p></section>
       </Shell>
     ),
   },
   {
     file: 'dashboard-member-paper-390.html',
     node: (
-      <Shell frame={frame('paper', member, '/')} section="dashboard" title="Tableau de bord" lead="Ce qui tourne, ce qui a échoué, et ce que ça coûte.">
-        <section class="empty"><h2>Bientôt ici</h2><p>Les dernières reviews, la file de jobs, le coût du jour et les runners s’afficheront ici.</p></section>
+      <Shell frame={frame('paper', member, '/')} section="dashboard" title="Dashboard" lead="What runs, what failed, and what it costs.">
+        <section class="empty"><h2>Soon here</h2><p>The last reviews, the job queue, the cost of the day and the runners will show here.</p></section>
       </Shell>
     ),
   },
   {
     file: 'runners-admin-sumi-390.html',
     node: (
-      <Shell frame={frame('sumi', admin, '/runners')} section="runners" title="Runners" lead="Les machines qui font les reviews." actions={<a class="button button-primary" href="#">Nouveau runner</a>}>
-        <section class="empty"><h2>Bientôt ici</h2><p>Les runners, leur dernier signal et leurs jobs s’afficheront ici.</p></section>
+      <Shell frame={frame('sumi', admin, '/runners')} section="runners" title="Runners" lead="The machines that do the reviews." actions={<a class="button button-primary" href="#">New runner</a>}>
+        <section class="empty"><h2>Soon here</h2><p>The runners, their last signal and their jobs will show here.</p></section>
       </Shell>
     ),
   },
@@ -126,7 +126,7 @@ const runnersFrames: { file: string; node: unknown }[] = [
         screen={{ now, registrations: [], runners: [] }}
         version="0.1.0"
         kentoUrl={kentoUrl}
-        form={{ values: { name: 'mac mini', labels: 'macos', keyMode: 'app' }, errors: { name: 'Lettres, chiffres, points, tirets ou soulignés, 100 au plus.' } }}
+        form={{ values: { name: 'mac mini', labels: 'macos', keyMode: 'app' }, errors: { name: 'Letters, digits, dots, hyphens or underscores, 100 at most.' } }}
       />
     ),
   },
@@ -224,7 +224,7 @@ const reposFrames: { file: string; node: unknown }[] = [
   { file: 'repos-member-sumi-390.html', node: reposPage('sumi', member) },
 ]
 
-// The section « Providers et clés » of the settings (REV-11): a valid provider, a refused key with its
+// The section « Providers and keys » of the settings (REV-11): a valid provider, a refused key with its
 // banner, a provider held by the runner, a server without prices, and the form.
 const PROVIDERS_OUT = new URL('../../../design/providers/frames/', import.meta.url)
 function provider(fields: Partial<ProviderView> & Pick<ProviderView, 'id' | 'label' | 'kind'>): ProviderView {
@@ -234,12 +234,12 @@ function provider(fields: Partial<ProviderView> & Pick<ProviderView, 'id' | 'lab
   }
 }
 const ORG_PROVIDERS: ProviderView[] = [
-  provider({ id: '00000000-0000-4000-8000-000000000020', label: 'Anthropic de Sakuga', kind: 'anthropic', keyLast4: 'Q7xA', keySetAt: minutes(60 * 24 * 3), isDefault: true, lastOkAt: minutes(4) }),
+  provider({ id: '00000000-0000-4000-8000-000000000020', label: 'Anthropic of Sakuga', kind: 'anthropic', keyLast4: 'Q7xA', keySetAt: minutes(60 * 24 * 3), isDefault: true, lastOkAt: minutes(4) }),
   provider({
-    id: '00000000-0000-4000-8000-000000000021', label: 'OpenRouter (ancienne clé)', kind: 'openrouter', keyLast4: '9f2c', keySetAt: minutes(60 * 24 * 40),
+    id: '00000000-0000-4000-8000-000000000021', label: 'OpenRouter (old key)', kind: 'openrouter', keyLast4: '9f2c', keySetAt: minutes(60 * 24 * 40),
     refusedAt: new Date('2026-10-29T08:40:00Z'), refusedStatus: 401, refusedMessage: '401 User not found.',
   }),
-  provider({ id: '00000000-0000-4000-8000-000000000022', label: 'GPU du bureau', kind: 'ollama', runnerHeld: true, baseUrl: 'http://gpu.lan:11434', models: { lite: ['qwen3:32b'], balanced: ['qwen3:32b'], heavy: ['qwen3:235b'] } }),
+  provider({ id: '00000000-0000-4000-8000-000000000022', label: 'Office GPU', kind: 'ollama', runnerHeld: true, baseUrl: 'http://gpu.lan:11434', models: { lite: ['qwen3:32b'], balanced: ['qwen3:32b'], heavy: ['qwen3:235b'] } }),
   provider({ id: '00000000-0000-4000-8000-000000000023', label: 'vLLM interne', kind: 'openai_compatible', keyLast4: 'b81e', keySetAt: minutes(300), baseUrl: 'https://llm.sakuga.dev/v1', models: { lite: ['qwen3-coder'], balanced: ['qwen3-coder'], heavy: ['deepseek-v4'] } }),
 ]
 function settingsPage(theme: Theme, viewer: Viewer, extra: Partial<SettingsPageProps> = {}) {
@@ -256,7 +256,7 @@ const providersFrames: { file: string; node: unknown }[] = [
       secretsConfigured: false,
       form: {
         values: { kind: 'openai_compatible', label: 'vLLM', baseUrl: 'http://llm.lan/v1', runnerHeld: false, models: { lite: '', balanced: '', heavy: '' } },
-        errors: { baseUrl: 'Une URL en https:// : la clé passe dans un en-tête.', models: 'Compatible OpenAI n’a pas de modèle par défaut : nommez au moins un modèle pour chaque niveau.' },
+        errors: { baseUrl: 'A URL with https://. The key goes in a header.', models: 'OpenAI-compatible has no default model. Name at least one model for each level.' },
       },
     }),
   },
@@ -306,7 +306,7 @@ const configFrames: { file: string; node: unknown }[] = [
     file: 'config-conflict-admin-sumi.html',
     node: configPage('sumi', admin, {
       notice: { kind: 'conflict', version: 8, updatedBy: 'camille', updatedAt: new Date('2026-10-27T17:05:00Z') },
-      form: { field: 'models.heavy', values: { provider: 'service', model: 'claude opus', fallback: '' }, errors: { model: 'Un identifiant de modèle : lettres, chiffres et « . _ : / @ - », 200 caractères au plus.' } },
+      form: { field: 'models.heavy', values: { provider: 'service', model: 'claude opus', fallback: '' }, errors: { model: 'A model id: letters, digits and ". _ : / @ -", 200 characters at most.' } },
     }),
   },
   { file: 'config-models-admin-paper-390.html', node: configPage('paper', admin) },
@@ -358,13 +358,13 @@ const DASHBOARD: DashboardScreen = {
     dayUsd: 4.12,
     monthUsd: 61.4,
     dayByProvider: [
-      { providerId: 'p1', label: 'Anthropic (équipe)', usd: 3.6 },
-      { providerId: null, label: 'Clé du service', usd: 0.52 },
+      { providerId: 'p1', label: 'Anthropic (team)', usd: 3.6 },
+      { providerId: null, label: 'Service key', usd: 0.52 },
     ],
     monthByProvider: [
-      { providerId: 'p1', label: 'Anthropic (équipe)', usd: 48.9 },
-      { providerId: null, label: 'Clé du service', usd: 12.5 },
-      { providerId: 'p2', label: 'Ollama du bureau', usd: 0 },
+      { providerId: 'p1', label: 'Anthropic (team)', usd: 48.9 },
+      { providerId: null, label: 'Service key', usd: 12.5 },
+      { providerId: 'p2', label: 'Office Ollama', usd: 0 },
     ],
     monthUnknown: 3,
   },
@@ -404,7 +404,7 @@ const EMPTY_DASHBOARD: DashboardScreen = {
   runnerCounts: { online: 0, late: 0, offline: 0 },
   stall: null,
   workflowRepos: [],
-  // REV-26: a new org, with the list « Mise en route ».
+  // REV-26: a new org, with the list « Getting started ».
   setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },
 }
 
@@ -423,7 +423,7 @@ const dashboardFrames: { file: string; node: unknown }[] = [
   { file: 'dashboard-admin-empty-paper.html', node: dashboardPage('paper', admin, EMPTY_DASHBOARD) },
 ]
 
-// REV-13: the settings of the org, above « Providers et clés ».
+// REV-13: the settings of the org, above « Providers and keys ».
 const ORG_OUT = new URL('../../../design/org-settings/frames/', import.meta.url)
 const ORG_VIEW: OrgSettingsView = {
   login: 'sakuga-software',
@@ -440,8 +440,8 @@ const ORG_VIEW: OrgSettingsView = {
     dayUsd: 6.71,
     monthUsd: 84.2,
     dayByProvider: [
-      { providerId: '00000000-0000-4000-8000-000000000020', label: 'Anthropic de Sakuga', usd: 5.94 },
-      { providerId: null, label: 'Clé du service', usd: 0.77 },
+      { providerId: '00000000-0000-4000-8000-000000000020', label: 'Anthropic of Sakuga', usd: 5.94 },
+      { providerId: null, label: 'Service key', usd: 0.77 },
     ],
   },
   deliveries: {
@@ -468,7 +468,7 @@ const APP_STATUS: AppStatus = {
 }
 const ORG_PROVIDER_OPTIONS = [
   ...PROVIDERS,
-  { id: '00000000-0000-4000-8000-000000000020', kind: 'anthropic' as const, label: 'Anthropic de Sakuga', hint: 'Valide · clé du service chiffrée', isDefault: true, keyFrom: 'clé chiffrée par le service', serviceHoldsKey: true, models: {} },
+  { id: '00000000-0000-4000-8000-000000000020', kind: 'anthropic' as const, label: 'Anthropic of Sakuga', hint: 'Valid · key of the service, encrypted', isDefault: true, keyFrom: 'key encrypted by the service', serviceHoldsKey: true, models: {} },
 ]
 function orgSection(extra: Partial<OrgSectionProps> = {}): OrgSectionProps {
   return {
@@ -495,7 +495,7 @@ const orgFrames: { file: string; node: unknown }[] = [
   {
     file: 'org-errors-admin-paper.html',
     node: orgPage('paper', admin, {
-      form: { field: 'trustedBots', values: { trustedBots: 'renovate[bot]\ngithub.com/renovate' }, errors: { trustedBots: '« github.com/renovate[bot] » n’est pas le login d’un bot : le nom d’une App GitHub suivi de [bot], par exemple renovate[bot].' } },
+      form: { field: 'trustedBots', values: { trustedBots: 'renovate[bot]\ngithub.com/renovate' }, errors: { trustedBots: '"github.com/renovate[bot]" is not the login of a bot. A bot login is the name of a GitHub App followed by [bot], for example renovate[bot].' } },
       app: {
         ok: true,
         status: {

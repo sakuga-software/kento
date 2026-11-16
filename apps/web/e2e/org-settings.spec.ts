@@ -21,8 +21,8 @@ function database() {
 /** orchard enabled with one review that cost 0,02 $ today; the org at the values of a new org. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Relire GitHub' }).click()
-  await expect(page.getByText('Liste à jour.')).toBeVisible()
+  await page.getByRole('button', { name: 'Read GitHub again' }).click()
+  await expect(page.getByText('List up to date.')).toBeVisible()
   let sql = database()
   try {
     await sql`delete from jobs where repo_id in (select id from repos where full_name = ${ORCHARD.full_name})`
@@ -89,40 +89,40 @@ test.describe('the settings of the org', () => {
     await reset(page)
 
     await page.goto('/settings')
-    await expect(page.getByRole('heading', { level: 1, name: 'Réglages' })).toBeVisible()
-    let cap = page.getByRole('region', { name: 'Plafond de coût' })
-    await expect(cap.getByText('0,02 $', { exact: false }).first()).toBeVisible()
-    await expect(page.getByText('réglages v0, les valeurs de Kentō')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+    let cap = page.getByRole('region', { name: 'Cost cap' })
+    await expect(cap.getByText('$0.02', { exact: false }).first()).toBeVisible()
+    await expect(page.getByText('settings v0, the values of Kentō')).toBeVisible()
     await expectNoAxeViolations(page)
 
-    await cap.getByLabel('Plafond par jour ($)').fill('0,01')
-    await cap.getByRole('button', { name: 'Enregistrer le plafond' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Réglages enregistrés (v1)' })).toBeVisible()
-    await expect(page.getByRole('alert').filter({ hasText: 'Plafond du jour atteint' })).toBeVisible()
+    await cap.getByLabel('Daily cap ($)').fill('0,01')
+    await cap.getByRole('button', { name: 'Save the cap' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Settings saved (v1)' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Daily cap reached' })).toBeVisible()
     await expectNoAxeViolations(page)
 
     let stopped = await pullRequest(page, { head: head(run + 1) })
     expect(stopped.outcome).toBe('capped')
     expect(stopped.period).toBe('day')
     let [check] = await checkRunsOf(page, head(run + 1))
-    expect(check!.name).toBe('Kentō · plafond')
+    expect(check!.name).toBe('Kentō · cap')
     expect(check!.conclusion).toBe('neutral')
-    expect(check!.output.summary).toMatch(/le plafond de coût du jour de l’organisation est atteint/)
+    expect(check!.output.summary).toMatch(/the organization reached its daily cost cap/)
 
     await page.reload()
-    await page.getByRole('region', { name: 'Plafond de coût' }).getByLabel('Plafond par jour ($)').fill('8')
-    await page.getByRole('region', { name: 'Plafond de coût' }).getByRole('button', { name: 'Enregistrer le plafond' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Réglages enregistrés (v2)' })).toBeVisible()
-    await expect(page.getByRole('alert').filter({ hasText: 'Plafond du jour atteint' })).toHaveCount(0)
+    await page.getByRole('region', { name: 'Cost cap' }).getByLabel('Daily cap ($)').fill('8')
+    await page.getByRole('region', { name: 'Cost cap' }).getByRole('button', { name: 'Save the cap' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Settings saved (v2)' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: 'Daily cap reached' })).toHaveCount(0)
     expect((await pullRequest(page, { head: head(run + 2) })).outcome).toBe('queued')
     expect(await checkRunsOf(page, head(run + 2))).toEqual([])
 
     // The last event shown is the last push.
     await page.reload()
-    let app = page.getByRole('region', { name: 'App GitHub' })
-    await expect(app.getByText('Tout est en place')).toBeVisible()
+    let app = page.getByRole('region', { name: 'GitHub App' })
+    await expect(app.getByText('Everything is in place')).toBeVisible()
     await expect(app.getByText('pull_request.synchronize · 202 queued').first()).toBeVisible()
-    await expect(app.getByRole('link', { name: 'Rejouer depuis la page de l’App' })).toHaveAttribute(
+    await expect(app.getByRole('link', { name: 'Redeliver from the page of the App' })).toHaveAttribute(
       'href',
       /\/organizations\/sakuga-software\/settings\/apps\/kento-review\/advanced$/,
     )
@@ -139,17 +139,17 @@ test.describe('the settings of the org', () => {
     expect(ignored.outcome).toBe('ignored')
 
     await page.goto('/settings#bots')
-    let bots = page.getByRole('region', { name: /Bots de confiance/ })
-    await bots.getByLabel('Un login par ligne').fill('sakuga-agent[bot]\nrenovate')
-    await bots.getByRole('button', { name: 'Enregistrer les bots' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Réglages enregistrés (v1)' })).toBeVisible()
-    await expect(page.getByRole('region', { name: /Bots de confiance/ }).getByRole('listitem').filter({ hasText: 'renovate[bot]' })).toBeVisible()
+    let bots = page.getByRole('region', { name: /Trusted bots/ })
+    await bots.getByLabel('One login per line').fill('sakuga-agent[bot]\nrenovate')
+    await bots.getByRole('button', { name: 'Save the bots' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Settings saved (v1)' })).toBeVisible()
+    await expect(page.getByRole('region', { name: /Trusted bots/ }).getByRole('listitem').filter({ hasText: 'renovate[bot]' })).toBeVisible()
     expect((await pullRequest(page, { head: head(run + 11), author: renovate })).outcome).toBe('queued')
 
     // A person is not a bot: the form refuses it and keeps what was typed.
-    await page.getByRole('region', { name: /Bots de confiance/ }).getByLabel('Un login par ligne').fill('github.com/renovate')
-    await page.getByRole('region', { name: /Bots de confiance/ }).getByRole('button', { name: 'Enregistrer les bots' }).click()
-    await expect(page.getByText(/n’est pas le login d’un bot/)).toBeVisible()
+    await page.getByRole('region', { name: /Trusted bots/ }).getByLabel('One login per line').fill('github.com/renovate')
+    await page.getByRole('region', { name: /Trusted bots/ }).getByRole('button', { name: 'Save the bots' }).click()
+    await expect(page.getByText(/is not the login of a bot/)).toBeVisible()
     await expectNoAxeViolations(page)
   })
 
@@ -158,11 +158,11 @@ test.describe('the settings of the org', () => {
     await signIn(page, 'alex')
     await reset(page)
     await page.goto('/settings#defauts')
-    let defaults = page.getByRole('region', { name: 'Valeurs par défaut' })
+    let defaults = page.getByRole('region', { name: 'Default values' })
     await defaults.getByRole('radio', { name: /balanced/ }).check()
-    await defaults.getByRole('button', { name: 'Enregistrer le niveau' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Réglages enregistrés (v1)' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Valeurs par défaut' }).getByText('réglé pour l’org')).toBeVisible()
+    await defaults.getByRole('button', { name: 'Save the level' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Settings saved (v1)' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Default values' }).getByText('set for the org')).toBeVisible()
     await expectNoAxeViolations(page)
     expect((await pullRequest(page, { head: head(run + 20) })).outcome).toBe('queued')
     let sql = database()
@@ -179,20 +179,20 @@ test.describe('the settings of the org', () => {
   test('the table of contents leads to each section, and its anchor is the URL', async ({ page }) => {
     await signIn(page, 'alex')
     await page.goto('/settings')
-    let nav = page.getByRole('navigation', { name: 'Sections des réglages' })
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
     for (let [name, id] of [
-      ['App GitHub', 'app'],
-      ['Bots de confiance', 'bots'],
-      ['Niveaux et modèles', 'defauts'],
-      ['Providers et clés', 'providers'],
-      ['Coûts et plafond', 'plafond'],
+      ['GitHub App', 'app'],
+      ['Trusted bots', 'bots'],
+      ['Levels and models', 'defauts'],
+      ['Providers and keys', 'providers'],
+      ['Costs and cap', 'plafond'],
     ] as const) {
       await nav.getByRole('link', { name }).click()
       await expect(page).toHaveURL(new RegExp(`/settings#${id}$`))
       await expect(page.locator(`#${id}`)).toBeInViewport()
     }
     // The table of contents marks the section on screen.
-    await expect(nav.getByRole('link', { name: 'Coûts et plafond' })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.getByRole('link', { name: 'Costs and cap' })).toHaveAttribute('aria-current', 'location')
     for (let section of await page.locator('.settings-content section').all()) {
       expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
     }
@@ -203,10 +203,10 @@ test.describe('the settings of the org', () => {
     let errors = watchConsole(page)
     await signIn(page, 'camille')
     await page.goto('/settings')
-    await expect(page.getByRole('region', { name: 'Plafond de coût' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'App GitHub' }).getByText('Tout est en place')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Cost cap' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'GitHub App' }).getByText('Everything is in place')).toBeVisible()
     await expect(page.getByText('sakuga-agent[bot]').first()).toBeVisible()
-    await expect(page.getByRole('button', { name: /Enregistrer/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Save/ })).toHaveCount(0)
     await expect(page.getByRole('textbox')).toHaveCount(0)
     await expectNoAxeViolations(page)
     let refused = await page.request.post('/settings/org', { form: { version: '0', field: 'caps', dailyCapUsd: '1000', alertPct: '80' } })

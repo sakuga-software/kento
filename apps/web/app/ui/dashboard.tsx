@@ -18,17 +18,17 @@ import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
 
-/** What the dashboard says after « Relancer », from `?notice=`. */
+/** What the dashboard says after « Retry », from `?notice=`. */
 export const DASHBOARD_NOTICES = {
-  retried: 'Review relancée. Le job est en file.',
-  already: 'Une review de ce niveau est déjà en file ou en cours sur ce commit.',
-  stale: 'Un push plus récent a remplacé ce commit. Sa review suit le nouveau commit.',
-  closed: 'La PR est fermée sur GitHub, donc rien n’est relancé.',
-  capped: 'Le plafond de coût de l’organisation est atteint, donc rien n’est relancé. Un admin le change dans Réglages.',
-  github_failed: 'GitHub n’a pas répondu et rien n’est relancé. Réessayez dans un instant.',
-  dismissed: 'Échec masqué. Il reste compté dans « Échecs sur 7 jours ».',
-  dismiss_missing: 'Rien n’est masqué. Cet échec est déjà masqué, ou il a changé depuis votre dernier affichage.',
-  missing: 'Rien n’est relancé. Ce job a changé depuis votre dernier affichage, ou son repo n’est plus activé. Relancez-le depuis la liste ci-dessous, ou activez son repo sur l’écran Repos.',
+  retried: 'Review started again. The job is queued.',
+  already: 'A review of this level is already queued or in progress on this commit.',
+  stale: 'A more recent push replaced this commit. Its review follows the new commit.',
+  closed: 'The pull request is closed on GitHub, so nothing starts again.',
+  capped: 'The organization reached its cost cap, so nothing starts again. An admin changes it in Settings.',
+  github_failed: 'GitHub did not answer, and nothing starts again. Try again in a moment.',
+  dismissed: 'Failure hidden. It still counts in "Failures · 7 d".',
+  dismiss_missing: 'Nothing is hidden. This failure is already hidden, or it changed since you loaded the page.',
+  missing: 'Nothing starts again. This job changed since you loaded the page, or its repo is no longer enabled. Retry it from the list below, or enable its repo on the Repos screen.',
 } as const
 export type DashboardNotice = keyof typeof DASHBOARD_NOTICES
 
@@ -55,16 +55,16 @@ const LEVEL_LABEL: Record<Level, string> = { lite: 'lite', balanced: 'balanced',
 
 /** The verdict of a review: a word on a badge, pine, fallen leaf or vermilion (REV-91). */
 export const VERDICT_LABEL: Record<string, { text: string; tag: string }> = {
-  APPROVE: { text: 'Approuvée', tag: 'tag-ok' },
-  COMMENT: { text: 'Commentaire', tag: 'tag-warn' },
-  REQUEST_CHANGES: { text: 'Changements demandés', tag: 'tag-alert' },
+  APPROVE: { text: 'Approved', tag: 'tag-ok' },
+  COMMENT: { text: 'Comment', tag: 'tag-warn' },
+  REQUEST_CHANGES: { text: 'Changes requested', tag: 'tag-alert' },
 }
 
 const CAP_TEXT: Record<CapState, string> = {
-  none: 'Pas de plafond',
-  ok: 'Sous le seuil d’alerte',
-  alert: 'Seuil d’alerte atteint',
-  reached: 'Plafond atteint',
+  none: 'No cap',
+  ok: 'Under the alert threshold',
+  alert: 'Alert threshold reached',
+  reached: 'Cap reached',
 }
 const CAP_STATUS: Record<CapState, string> = {
   none: 'status-stale',
@@ -76,7 +76,7 @@ const CAP_STATUS: Record<CapState, string> = {
 export interface DashboardPageProps {
   frame: PageFrame
   screen: DashboardScreen
-  /** `https://github.com`, or the GitHub Enterprise Server: the links « Voir la PR ». */
+  /** `https://github.com`, or the GitHub Enterprise Server: the links « Open the PR ». */
   githubUrl: string
   notice?: DashboardNotice | null
   /** KENTO_PROVIDER_API_KEY is set: a trusted runner gets the key of the service without a provider. */
@@ -87,21 +87,21 @@ export interface DashboardPageProps {
   precision?: PrecisionReport | null
 }
 
-/** One step of the list « Mise en route » (REV-26). */
+/** One step of the list « Getting started » (REV-26). */
 export interface SetupStep {
   key: 'app' | 'provider' | 'runner' | 'repo' | 'review'
   title: string
   state: 'done' | 'wait' | 'todo'
   /** What is true now, in one sentence. */
   text: string
-  /** Where the step is done. An admin gets it as a link; a member reads « Demandez à un admin ». */
+  /** Where the step is done. An admin gets it as a link; a member reads « Ask an admin ». */
   action: { label: string; href: string; external?: boolean } | null
 }
 
 const SETUP_STATE: Record<SetupStep['state'], { text: string; status: string }> = {
-  done: { text: 'Fait', status: 'status-online' },
-  wait: { text: 'En cours', status: 'status-wait' },
-  todo: { text: 'À faire', status: 'status-stale' },
+  done: { text: 'Done', status: 'status-online' },
+  wait: { text: 'In progress', status: 'status-wait' },
+  todo: { text: 'To do', status: 'status-stale' },
 }
 
 /**
@@ -118,103 +118,103 @@ export function setupSteps(
   let online = runnerCounts.online
   let registered = runnerCounts.online + runnerCounts.late + runnerCounts.offline
   let jobs = queue.runningCount + queue.queuedCount
-  let install = options.installationUrl ? { label: 'Ouvrir l’installation sur GitHub', href: options.installationUrl, external: true } : null
+  let install = options.installationUrl ? { label: 'Open the installation on GitHub', href: options.installationUrl, external: true } : null
   return [
     setup.suspended
       ? {
           key: 'app',
-          title: 'Installer l’App GitHub',
+          title: 'Install the GitHub App',
           state: 'todo',
-          text: 'L’installation est suspendue sur GitHub, et aucun push ne crée de job. Un propriétaire de l’organisation la réactive.',
+          text: 'The installation is suspended on GitHub, and no push creates a job. An owner of the organization enables it again.',
           action: install,
         }
       : {
           key: 'app',
-          title: 'Installer l’App GitHub',
+          title: 'Install the GitHub App',
           state: 'done',
-          text: 'L’App est installée sur l’organisation. Elle ne voit que les repos choisis sur GitHub.',
-          action: install ? { ...install, label: 'Choisir les repos sur GitHub' } : null,
+          text: 'The App is installed on the organization. It sees only the repos chosen on GitHub.',
+          action: install ? { ...install, label: 'Choose the repos on GitHub' } : null,
         },
     setup.providers > 0
       ? {
           key: 'provider',
-          title: 'Ajouter un provider',
+          title: 'Add a provider',
           state: 'done',
-          text: setup.providers === 1 ? '1 provider dans Réglages.' : `${setup.providers} providers dans Réglages.`,
-          action: { label: 'Voir les providers', href: `${routes.settings.href()}#providers-title` },
+          text: setup.providers === 1 ? '1 provider in Settings.' : `${setup.providers} providers in Settings.`,
+          action: { label: 'See the providers', href: `${routes.settings.href()}#providers-title` },
         }
       : options.serviceKey
         ? {
             key: 'provider',
-            title: 'Ajouter un provider',
+            title: 'Add a provider',
             state: 'done',
-            text: 'Aucun provider. Un runner de confiance reçoit la clé du service. Ajoutez le vôtre pour payer vos propres reviews.',
-            action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
+            text: 'No provider. A trusted runner gets the key of the service. Add your own to pay for your own reviews.',
+            action: { label: 'Add a provider', href: `${routes.settings.href()}#nouveau-provider` },
           }
         : {
             key: 'provider',
-            title: 'Ajouter un provider',
+            title: 'Add a provider',
             state: 'todo',
-            text: 'Aucun provider, et pas de clé du service. Un runner n’a pas de modèle à appeler.',
-            action: { label: 'Ajouter un provider', href: `${routes.settings.href()}#nouveau-provider` },
+            text: 'No provider, and no key of the service. A runner has no model to call.',
+            action: { label: 'Add a provider', href: `${routes.settings.href()}#nouveau-provider` },
           },
     online > 0
       ? {
           key: 'runner',
-          title: 'Enregistrer un runner',
+          title: 'Register a runner',
           state: 'done',
-          text: online === 1 ? '1 runner en ligne.' : `${online} runners en ligne.`,
-          action: { label: 'Voir les runners', href: routes.runners.href() },
+          text: online === 1 ? '1 runner online.' : `${online} runners online.`,
+          action: { label: 'See the runners', href: routes.runners.href() },
         }
       : registered > 0 || setup.pendingRegistrations > 0
         ? {
             key: 'runner',
-            title: 'Enregistrer un runner',
+            title: 'Register a runner',
             state: 'wait',
             text:
               registered > 0
-                ? 'Un runner est enregistré, mais aucun n’est en ligne. Les jobs l’attendent en file.'
-                : 'Un token d’enregistrement attend son runner.',
-            action: { label: 'Voir les runners', href: routes.runners.href() },
+                ? 'A runner is registered, but none is online. The jobs wait for it in the queue.'
+                : 'A registration token waits for its runner.',
+            action: { label: 'See the runners', href: routes.runners.href() },
           }
         : {
             key: 'runner',
-            title: 'Enregistrer un runner',
+            title: 'Register a runner',
             state: 'todo',
-            text: 'Aucun runner. Les jobs attendraient en file.',
-            action: { label: 'Créer un runner', href: routes.runners.href() },
+            text: 'No runner. The jobs would wait in the queue.',
+            action: { label: 'Create a runner', href: routes.runners.href() },
           },
     setup.enabledRepos > 0
       ? {
           key: 'repo',
-          title: 'Activer un repo',
+          title: 'Enable a repo',
           state: 'done',
-          text: setup.enabledRepos === 1 ? '1 repo activé.' : `${setup.enabledRepos} repos activés.`,
-          action: { label: 'Voir les repos', href: routes.repos.href() },
+          text: setup.enabledRepos === 1 ? '1 repo enabled.' : `${setup.enabledRepos} repos enabled.`,
+          action: { label: 'See the repos', href: routes.repos.href() },
         }
       : {
           key: 'repo',
-          title: 'Activer un repo',
+          title: 'Enable a repo',
           state: 'todo',
-          text: 'Aucun repo activé. Un push ne crée aucun job.',
-          action: { label: 'Activer un repo', href: routes.repos.href() },
+          text: 'No repo enabled. A push creates no job.',
+          action: { label: 'Enable a repo', href: routes.repos.href() },
         },
     jobs > 0
       ? {
           key: 'review',
-          title: 'Obtenir la première review',
+          title: 'Get the first review',
           state: 'wait',
           text:
             queue.runningCount > 0
-              ? 'En attente de la première review. Un runner fait le job.'
-              : 'En attente de la première review. Le job est en file, et un runner en ligne le prendra.',
+              ? 'Waiting for the first review. A runner does the job.'
+              : 'Waiting for the first review. The job is queued, and a runner online will take it.',
           action: null,
         }
       : {
           key: 'review',
-          title: 'Obtenir la première review',
+          title: 'Get the first review',
           state: 'todo',
-          text: 'Ouvrez une pull request, ou poussez sur une PR ouverte, dans un repo activé.',
+          text: 'Open a pull request, or push to an open pull request, in an enabled repo.',
           action: null,
         },
   ]
@@ -249,12 +249,12 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
     let org = frame.viewer?.org.login ?? ''
     let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })
     return (
-      <Shell frame={frame} section="dashboard" title="Tableau de bord">
+      <Shell frame={frame} section="dashboard" title="Dashboard">
         <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
           <p class="dash-updated">
-            <span data-updated={screen.now.toISOString()}>Mis à jour à {hourSeconds(screen.now)}</span>
+            <span data-updated={screen.now.toISOString()}>Updated at {hourSeconds(screen.now)}</span>
             {' · '}
-            <a href={routes.home.href()}>Actualiser</a>
+            <a href={routes.home.href()}>Refresh</a>
           </p>
 
           {notice ? (
@@ -298,16 +298,16 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
       <section class="card setup" aria-labelledby="setup-title">
         <div class="dash-section-head">
           <h2 id="setup-title" class="section-title">
-            Mise en route
+            Getting started
           </h2>
           <span class="hint">
-            {done} {plural(done, 'étape')} sur {steps.length}
+            {done} of {steps.length} {plural(steps.length, 'step')}
           </span>
         </div>
         <p class="hint setup-lead">
           {admin
-            ? 'Ce qu’il faut pour obtenir la première review. Cette liste disparaît quand elle est publiée.'
-            : 'Ce qu’il faut pour obtenir la première review. Un admin de l’organisation fait ces étapes ; cette liste disparaît quand la première review est publiée.'}
+            ? 'What it takes to get the first review. This list goes away when the review is published.'
+            : 'What it takes to get the first review. An admin of the organization does these steps. This list goes away when the first review is published.'}
         </p>
         <ol class="setup-steps">
           {steps.map((step, index) => (
@@ -321,7 +321,7 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
                   <span class={`status ${SETUP_STATE[step.state].status}`}>{SETUP_STATE[step.state].text}</span>
                 </div>
                 <p class="hint">{step.text}</p>
-                {step.state !== 'done' && step.action && !admin ? <p class="hint">Demandez à un admin de l’organisation.</p> : null}
+                {step.state !== 'done' && step.action && !admin ? <p class="hint">Ask an admin of the organization.</p> : null}
               </div>
               {step.action && (admin || step.state === 'done') ? (
                 <a
@@ -333,7 +333,7 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
                   {step.action.external ? (
                     <>
                       <ExternalIcon />
-                      <span class="visually-hidden">(GitHub, nouvel onglet)</span>
+                      <span class="visually-hidden">(GitHub, new tab)</span>
                     </>
                   ) : null}
                 </a>
@@ -351,23 +351,23 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
  * requests of these jobs get a comment of the publisher too (app/publish/queued.ts).
  */
 export function stallText(stall: QueueStall, online: number, now: Date): { title: string; cause: string; action: string } {
-  let jobs = stall.count === 1 ? '1 job attend' : `${stall.count} jobs attendent`
-  let title = `${jobs} en file depuis plus de ${QUEUE_STALL_MINUTES} min (le plus ancien depuis ${elapsed(stall.since, now)})`
+  let jobs = stall.count === 1 ? '1 job has waited' : `${stall.count} jobs have waited`
+  let title = `${jobs} in the queue for more than ${QUEUE_STALL_MINUTES} min (the oldest for ${elapsed(stall.since, now)})`
   if (online === 0) {
     let cause = stall.lastRunnerSeenAt
-      ? `Aucun runner en ligne depuis ${elapsed(stall.lastRunnerSeenAt, now)} (dernier signal à ${clock(stall.lastRunnerSeenAt)}).`
-      : 'Aucun runner n’a jamais appelé Kentō.'
-    return { title, cause, action: 'Démarrez un runner, voir l’écran Runners. Les jobs partiront seuls dès son premier appel.' }
+      ? `No runner online for ${elapsed(stall.lastRunnerSeenAt, now)} (last signal at ${clock(stall.lastRunnerSeenAt)}).`
+      : 'No runner ever called Kentō.'
+    return { title, cause, action: 'Start a runner, see the Runners screen. The jobs leave the queue at its first call.' }
   }
   let cause =
     online === 1
-      ? '1 runner est en ligne, mais il ne prend pas ces jobs : il est occupé, ou il ne peut pas appeler le provider de leur repo.'
-      : `${online} runners sont en ligne, mais aucun ne prend ces jobs : ils sont occupés, ou ne peuvent pas appeler le provider de leur repo.`
-  return { title, cause, action: 'Vérifiez leurs labels et leurs providers sur l’écran Runners, ou démarrez un runner de plus.' }
+      ? '1 runner is online, but it does not take these jobs. It is busy, or it cannot call the provider of their repo.'
+      : `${online} runners are online, but none takes these jobs. They are busy, or they cannot call the provider of their repo.`
+  return { title, cause, action: 'Check their labels and their providers on the Runners screen, or start one more runner.' }
 }
 
 /**
- * REV-91. « À traiter »: what asks for a person now, one row each. The failure of the banner, the
+ * REV-91. « To do »: what asks for a person now, one row each. The failure of the banner, the
  * queue that waits, a cost over the alert threshold, the runners with no signal, the repositories
  * still on review.yml. Each row: a mark and a word, what happened, then its actions.
  */
@@ -376,8 +376,8 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
     let { screen, admin, csrf, githubUrl } = handle.props
     let { now } = screen
     let costs = [
-      { id: 'day', usd: screen.costs.dayUsd, cap: screen.caps.dailyCapUsd, when: 'du jour' },
-      { id: 'month', usd: screen.costs.monthUsd, cap: screen.caps.monthlyCapUsd, when: 'du mois' },
+      { id: 'day', usd: screen.costs.dayUsd, cap: screen.caps.dailyCapUsd, when: 'daily' },
+      { id: 'month', usd: screen.costs.monthUsd, cap: screen.caps.monthlyCapUsd, when: 'monthly' },
     ]
       .map((cost) => ({ ...cost, state: capState(cost.usd, cost.cap, screen.caps.alertPct) }))
       .filter((cost) => cost.state === 'alert' || cost.state === 'reached')
@@ -391,10 +391,10 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
     return (
       <section class="dash-todo" aria-labelledby="todo-title">
         <h2 id="todo-title" class="section-title">
-          À traiter <span class="count">{count}</span>
+          To do <span class="count">{count}</span>
         </h2>
         {count === 0 ? (
-          <p class="card todo-empty hint">Rien à traiter : aucun échec en cours, la file avance et les runners répondent.</p>
+          <p class="card todo-empty hint">Nothing to do. No failure is open, the queue moves and the runners answer.</p>
         ) : (
           <ul class="card todo-list">
             {screen.stall ? <StallItem stall={screen.stall} online={screen.runnerCounts.online} now={now} /> : null}
@@ -403,24 +403,24 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
               <li>
                 <section class="todo" aria-labelledby={`todo-cost-${cost.id}`}>
                 <span class="todo-kind">
-                  <span class="status status-cost">Coût</span>
+                  <span class="status status-cost">Cost</span>
                 </span>
                 <div class="todo-body">
                   <h3 id={`todo-cost-${cost.id}`} class="todo-title">
-                    {cost.state === 'reached' ? `Plafond ${cost.when} atteint` : `Seuil d’alerte ${cost.when} atteint`}
+                    {cost.state === 'reached' ? `The ${cost.when} cap is reached` : `The ${cost.when} alert threshold is reached`}
                   </h3>
                   <p class="todo-meter">
                     {/* A limit of 0 is reached at once (capState): no share of it, no bar. */}
                     {cost.cap! > 0 ? <Bar parts={[{ pct: (cost.usd / cost.cap!) * 100, tone: 'kuchiba' }]} /> : null}
                     <span class="mono">
-                      {usdPrecise(cost.usd)} sur {usdPrecise(cost.cap!)}
-                      {cost.cap! > 0 ? ` · ${Math.round((cost.usd / cost.cap!) * 100)} %` : ''}
+                      {usdPrecise(cost.usd)} of {usdPrecise(cost.cap!)}
+                      {cost.cap! > 0 ? ` · ${Math.round((cost.usd / cost.cap!) * 100)}%` : ''}
                     </span>
                   </p>
                 </div>
                 <div class="todo-actions">
                   <a class="button" href={`${routes.settings.href()}#plafond`}>
-                    {admin ? 'Modifier le plafond' : 'Voir le plafond'}
+                    {admin ? 'Change the cap' : 'See the cap'}
                   </a>
                 </div>
                 </section>
@@ -437,35 +437,35 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                     <>
                       <h3 id="todo-runners" class="todo-title">
                         <code>{silent[0]!.name}</code>{' '}
-                        {silent[0]!.lastSeenAt ? `ne donne plus de signal depuis ${elapsed(silent[0]!.lastSeenAt, now)}` : 'n’a jamais donné de signal'}
+                        {silent[0]!.lastSeenAt ? `has given no signal for ${elapsed(silent[0]!.lastSeenAt, now)}` : 'never gave a signal'}
                       </h3>
                       <p class="hint">
                         {silent[0]!.running === 0
-                          ? 'Aucun job ne lui est confié. Il repasse en ligne à son prochain signal.'
-                          : `${silent[0]!.running} ${plural(silent[0]!.running, 'job')} en cours : sans signal, ${silent[0]!.running === 1 ? 'il repart' : 'ils repartent'} en file.`}
+                          ? 'It has no job. It is online again at its next signal.'
+                          : `${silent[0]!.running} ${plural(silent[0]!.running, 'job')} in progress. Without a signal, ${silent[0]!.running === 1 ? 'it goes' : 'they go'} back to the queue.`}
                       </p>
                     </>
                   ) : (
                     <>
                       <h3 id="todo-runners" class="todo-title">
-                        {silentCount === 1 ? '1 runner ne donne plus de signal' : `${silentCount} runners ne donnent plus de signal`}
+                        {silentCount === 1 ? '1 runner gives no signal' : `${silentCount} runners give no signal`}
                       </h3>
                       <p class="hint">
-                        {/* The store bounds the list of runners: the silent ones may not be in it. */}
+                        {/* The store bounds the list of runners: the silent ones can be absent from it. */}
                         {silent.length > 0
                           ? `${silent
                               .slice(0, 3)
                               .map((runner) => runner.name)
-                              .join(', ')}${silentCount > Math.min(3, silent.length) ? ` et ${silentCount - Math.min(3, silent.length)} de plus` : ''}. `
+                              .join(', ')}${silentCount > Math.min(3, silent.length) ? ` and ${silentCount - Math.min(3, silent.length)} more` : ''}. `
                           : ''}
-                        Un runner repasse en ligne à son prochain signal.
+                        A runner is online again at its next signal.
                       </p>
                     </>
                   )}
                 </div>
                 <div class="todo-actions">
                   <a class="button" href={routes.runners.href()}>
-                    Voir les runners
+                    See the runners
                   </a>
                 </div>
                 </section>
@@ -475,18 +475,18 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
               <li>
                 <section class="todo dash-workflow" aria-labelledby="todo-workflow">
                 <span class="todo-kind">
-                  <span class="status status-switch">Bascule</span>
+                  <span class="status status-switch">Switch</span>
                 </span>
                 <div class="todo-body">
                   <h3 id="todo-workflow" class="todo-title">
-                    {screen.workflowRepos.length === 1 ? '1 repo est encore sur' : `${screen.workflowRepos.length} repos sont encore sur`}{' '}
+                    {screen.workflowRepos.length === 1 ? '1 repo is still on' : `${screen.workflowRepos.length} repos are still on`}{' '}
                     <code>review.yml</code>
                   </h3>
-                  <p class="hint">{screen.workflowRepos.join(', ')}. Leurs findings ne sont pas suivis ici.</p>
+                  <p class="hint">{screen.workflowRepos.join(', ')}. Kentō does not track their findings here.</p>
                 </div>
                 <div class="todo-actions">
                   <a class="button" href={routes.repos.href()}>
-                    Voir les repos
+                    See the repos
                   </a>
                 </div>
                 </section>
@@ -499,7 +499,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
   }
 }
 
-/** REV-52, in « À traiter »: jobs wait for more than QUEUE_STALL_MINUTES, the probable cause and what to do. */
+/** REV-52, in « To do »: jobs wait for more than QUEUE_STALL_MINUTES, the probable cause and what to do. */
 function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date }>) {
   return () => {
     let { stall, online, now } = handle.props
@@ -508,7 +508,7 @@ function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date
       <li>
         <section class="todo dash-stall" role="alert" aria-labelledby="todo-stall">
         <span class="todo-kind">
-          <span class="status status-wait">File</span>
+          <span class="status status-wait">Queue</span>
         </span>
         <div class="todo-body">
           <h3 id="todo-stall" class="todo-title">
@@ -516,12 +516,12 @@ function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date
           </h3>
           <p class="hint">{text.cause}</p>
           <p class="hint">
-            {text.action} Les PR concernées portent un commentaire de Kentō.
+            {text.action} Kentō commented on the pull requests of these jobs.
           </p>
         </div>
         <div class="todo-actions">
           <a class="button" href={routes.runners.href()}>
-            Voir les runners
+            See the runners
           </a>
         </div>
         </section>
@@ -538,29 +538,29 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
       <li>
         <section class="todo todo-wide dash-failure" aria-labelledby={`todo-failure-${banner.id}`}>
         <span class="todo-kind">
-          <span class="status status-alert">Échec</span>
+          <span class="status status-alert">Failure</span>
         </span>
         <div class="todo-body">
           <h3 id={`todo-failure-${banner.id}`} class="todo-title">
-            La review {banner.level} de <span class="mono">{banner.repo}#{banner.prNumber}</span> a échoué
+            The {banner.level} review of <span class="mono">{banner.repo}#{banner.prNumber}</span> failed
           </h3>
           <p class="hint">
-            Raison : {reason.text}. {reason.action}{' '}
+            Reason: {reason.text}. {reason.action}{' '}
             {banner.previous
-              ? `La review précédente (${banner.previous.score}/5, publiée le ${clock(banner.previous.publishedAt)}) reste publiée sur la PR.`
-              : 'Aucune review n’est encore publiée sur cette PR.'}
+              ? `The previous review (${banner.previous.score}/5, published on ${clock(banner.previous.publishedAt)}) stays on the pull request.`
+              : 'No review is published on this pull request yet.'}
           </p>
           <TechDetails raw={reason.raw} />
           {banner.retry ? (
             <p class="hint">
               <strong>
-                Relance en {banner.retry.level} {banner.retry.state === 'queued' ? 'en file' : 'en cours'}
+                Retry at {banner.retry.level} {banner.retry.state === 'queued' ? 'queued' : 'in progress'}
               </strong>
-              . Cette ligne disparaît quand sa review est publiée.
+              . This row goes away when its review is published.
             </p>
           ) : null}
           {admin && !banner.retry ? (
-            <p class="hint">L’estimation est la moyenne des dernières reviews de ce niveau sur ce repo.</p>
+            <p class="hint">The estimate is the mean of the last reviews of this level on this repo.</p>
           ) : null}
         </div>
         <div class="todo-actions">
@@ -577,17 +577,17 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
                     <input type="hidden" name="_csrf" value={csrf} />
                     <input type="hidden" name="level" value={level} />
                     <button class={`button ${level === banner.level ? 'button-primary' : ''}`} type="submit">
-                      Relancer en {LEVEL_LABEL[level]}
-                      <span class="dash-estimate">{estimate === null ? ' · coût inconnu' : ` · ≈ ${usdPrecise(estimate)}`}</span>
+                      Run again at {LEVEL_LABEL[level]}
+                      <span class="dash-estimate">{estimate === null ? ' · unknown cost' : ` · ≈ ${usdPrecise(estimate)}`}</span>
                     </button>
                   </form>
                 )
               })
             : null}
           <a class="button button-ghost" href={prUrl(githubUrl, banner.repo, banner.prNumber)}>
-            Voir la PR
+            Open the PR
           </a>
-          {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Masquer l’échec de ${banner.repo}#${banner.prNumber}`} ghost /> : null}
+          {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Hide the failure of ${banner.repo}#${banner.prNumber}`} ghost /> : null}
         </div>
         </section>
       </li>
@@ -608,9 +608,9 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
     let cap = screen.caps.monthlyCapUsd
     let org = precision?.org ?? null
     return (
-      <section class="dash-kpis card" aria-label="En bref">
+      <section class="dash-kpis card" aria-label="At a glance">
         <div class="kpi">
-          <span class="kpi-label">Reviews publiées · 7 j</span>
+          <span class="kpi-label">Published reviews · 7 d</span>
           <span class="kpi-row">
             <span class="kpi-value">{weekPublished}</span>
             <svg class="kpi-bars" viewBox="0 0 76 28" aria-hidden="true" focusable="false">
@@ -621,35 +621,35 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
             </svg>
           </span>
           <span class="kpi-sub">
-            {today ? total(today) : 0} aujourd’hui{mean !== null ? ` · ${duration(mean)} en moyenne` : ''}
+            {today ? total(today) : 0} today{mean !== null ? ` · ${duration(mean)} on average` : ''}
           </span>
         </div>
         <div class="kpi">
-          <span class="kpi-label">Échecs · 7 j</span>
+          <span class="kpi-label">Failures · 7 d</span>
           <span class={`kpi-value ${weekFailed > 0 ? 'kpi-alert' : ''}`}>{weekFailed}</span>
-          <span class="kpi-sub">{weekFailed === 0 ? 'aucun job en échec' : `${plural(weekFailed, 'job')} en échec`}</span>
+          <span class="kpi-sub">{weekFailed === 0 ? 'no failed job' : `failed ${plural(weekFailed, 'job')}`}</span>
         </div>
         <div class="kpi">
-          <span class="kpi-label">Coût du mois</span>
+          <span class="kpi-label">Cost of the month</span>
           <span class="kpi-value">{usdPrecise(month)}</span>
           {cap !== null && cap > 0 ? (
             <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />
           ) : null}
           <span class={`kpi-sub ${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? 'kpi-alert' : ''}`}>
             {cap === null
-              ? 'pas de plafond'
+              ? 'no cap'
               : capState(month, cap, screen.caps.alertPct) === 'reached'
-                ? `plafond atteint · sur ${usdPrecise(cap)}`
-                : `sur ${usdPrecise(cap)} · alerte à ${screen.caps.alertPct} %`}
+                ? `cap reached · of ${usdPrecise(cap)}`
+                : `of ${usdPrecise(cap)} · alert at ${screen.caps.alertPct}%`}
           </span>
         </div>
         <div class="kpi">
-          <span class="kpi-label">Précision · {PRECISION_DAYS} j</span>
+          <span class="kpi-label">Precision · {PRECISION_DAYS} d</span>
           {/* The share needs closed findings: a rate with none would divide by 0. */}
           {org && org.rate !== null && org.closed > 0 ? (
             <>
               <span class="kpi-row">
-                <span class="kpi-value">{Math.round(org.rate * 100)} %</span>
+                <span class="kpi-value">{Math.round(org.rate * 100)}%</span>
                 <span class="kpi-sub">n = {org.closed}</span>
               </span>
               <Bar
@@ -662,17 +662,17 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
             </>
           ) : (
             <>
-              <span class="kpi-value kpi-pending">{org && org.closed > 0 ? `n = ${org.closed} sur ${PRECISION_MIN}` : '—'}</span>
-              <span class="kpi-sub">à partir de {PRECISION_MIN} findings clos</span>
+              <span class="kpi-value kpi-pending">{org && org.closed > 0 ? `n = ${org.closed} of ${PRECISION_MIN}` : '—'}</span>
+              <span class="kpi-sub">from {PRECISION_MIN} closed findings</span>
             </>
           )}
         </div>
         <div class="kpi">
-          <span class="kpi-label">File de jobs</span>
+          <span class="kpi-label">Job queue</span>
           <span class="kpi-value">
             {screen.queue.runningCount} · {screen.queue.queuedCount}
           </span>
-          <span class="kpi-sub">en cours · en attente</span>
+          <span class="kpi-sub">in progress · waiting</span>
         </div>
       </section>
     )
@@ -711,7 +711,7 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
         </div>
         <p class="dash-cost-value">
           {usdPrecise(usd)}
-          {cap !== null ? <span class="dash-cost-cap"> sur {usdPrecise(cap)}</span> : null}
+          {cap !== null ? <span class="dash-cost-cap"> of {usdPrecise(cap)}</span> : null}
         </p>
         {cap !== null && cap > 0 ? (
           <meter
@@ -724,10 +724,10 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
             optimum={0}
             value={Math.min(usd, cap)}
           >
-            {usdPrecise(usd)} sur {usdPrecise(cap)}
+            {usdPrecise(usd)} of {usdPrecise(cap)}
           </meter>
         ) : null}
-        {cap !== null ? <p class="hint">Alerte à {alertPct} % du plafond.</p> : null}
+        {cap !== null ? <p class="hint">Alert at {alertPct}% of the cap.</p> : null}
       </div>
     )
   }
@@ -739,28 +739,28 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
     return (
       <section class="dash-section card" aria-labelledby="cost-title">
         <h2 id="cost-title" class="section-title">
-          Coût
+          Cost
         </h2>
         <div class="dash-costs">
-          <Meter id="cost-day" label="Aujourd’hui (UTC)" usd={costs.dayUsd} cap={caps.dailyCapUsd} alertPct={caps.alertPct} />
-          <Meter id="cost-month" label="Ce mois-ci (UTC)" usd={costs.monthUsd} cap={caps.monthlyCapUsd} alertPct={caps.alertPct} />
+          <Meter id="cost-day" label="Today (UTC)" usd={costs.dayUsd} cap={caps.dailyCapUsd} alertPct={caps.alertPct} />
+          <Meter id="cost-month" label="This month (UTC)" usd={costs.monthUsd} cap={caps.monthlyCapUsd} alertPct={caps.alertPct} />
         </div>
         {caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
           <p class="hint">
-            Aucun plafond pour l’organisation. Un admin le fixe dans <a href={routes.settings.href()}>Réglages</a>.
+            The organization has no cap. An admin sets it in <a href={routes.settings.href()}>Settings</a>.
           </p>
         ) : null}
         {costs.monthByProvider.length > 0 ? (
           <table class="dash-table">
-            <caption class="visually-hidden">Coût par provider</caption>
+            <caption class="visually-hidden">Cost by provider</caption>
             <thead>
               <tr>
                 <th scope="col">Provider</th>
                 <th scope="col" class="num">
-                  Aujourd’hui
+                  Today
                 </th>
                 <th scope="col" class="num">
-                  Ce mois
+                  This month
                 </th>
               </tr>
             </thead>
@@ -775,12 +775,12 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
             </tbody>
           </table>
         ) : (
-          <p class="hint">Aucune dépense ce mois-ci.</p>
+          <p class="hint">No spend this month.</p>
         )}
         {costs.monthUnknown > 0 ? (
           <p class="hint">
-            {costs.monthUnknown === 1 ? '1 review ou résolution' : `${costs.monthUnknown} reviews ou résolutions`} du mois sans coût
-            connu, comptées 0 $.
+            {costs.monthUnknown === 1 ? '1 review or resolution' : `${costs.monthUnknown} reviews or resolutions`} of the month with no known
+            cost, counted as $0.
           </p>
         ) : null}
       </section>
@@ -794,18 +794,18 @@ function WeekSection(handle: Handle<{ week: DayStats[] }>) {
     let { week } = handle.props
     return (
       <details class="dash-week">
-        <summary>Reviews publiées · 7 jours, jour par jour</summary>
+        <summary>Published reviews · 7 days, day by day</summary>
         <table class="dash-table">
-          <caption class="visually-hidden">Reviews publiées par jour (UTC), par niveau, échecs et durée moyenne</caption>
+          <caption class="visually-hidden">Published reviews by day (UTC), by level, failures and mean duration</caption>
           <thead>
             <tr>
-              <th scope="col">Jour</th>
-              <th scope="col">Publiées</th>
+              <th scope="col">Day</th>
+              <th scope="col">Published</th>
               <th scope="col" class="num">
-                Échecs
+                Failures
               </th>
               <th scope="col" class="num">
-                Durée moy.
+                Mean duration
               </th>
             </tr>
           </thead>
@@ -844,23 +844,23 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
       <section class="dash-section dash-recent" aria-labelledby="recent-title">
         <div class="dash-section-head">
           <h2 id="recent-title" class="section-title">
-            Dernières reviews
+            Latest reviews
           </h2>
-          <a href={routes.findings.href()}>Tous les findings</a>
+          <a href={routes.findings.href()}>All findings</a>
         </div>
         {recent.length === 0 ? (
           <div class="empty">
-            <p>Aucune review pour l’instant. Activez un repo dans <a href={routes.repos.href()}>Repos</a>, et son prochain push en lancera une.</p>
+            <p>No review yet. Enable a repo in <a href={routes.repos.href()}>Repos</a>, and its next push starts one.</p>
           </div>
         ) : (
           <div class="card dash-recent-card">
             <table class="dash-reviews">
-              <caption class="visually-hidden">Dernières reviews</caption>
+              <caption class="visually-hidden">Latest reviews</caption>
               <thead>
                 <tr>
                   <th scope="col">Pull request</th>
                   <th scope="col">Verdict</th>
-                  <th scope="col">Niveau</th>
+                  <th scope="col">Level</th>
                   <th scope="col" class="num">
                     Score
                   </th>
@@ -868,13 +868,13 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
                     Findings
                   </th>
                   <th scope="col" class="num">
-                    Coût
+                    Cost
                   </th>
                   <th scope="col" class="num">
-                    Durée
+                    Duration
                   </th>
                   <th scope="col" class="num">
-                    Quand
+                    When
                   </th>
                 </tr>
               </thead>
@@ -890,9 +890,9 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
                       </th>
                       <td class="dash-review-verdict">
                         {verdict ? <span class={`tag ${verdict.tag}`}>{verdict.text}</span> : null}
-                        {review.publishedAt ? null : <span class="status status-stale">Non publiée</span>}
+                        {review.publishedAt ? null : <span class="status status-stale">Not published</span>}
                       </td>
-                      <td class="mono" data-label="Niveau">
+                      <td class="mono" data-label="Level">
                         {review.level}
                       </td>
                       <td class="num mono" data-label="Score">
@@ -902,13 +902,13 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
                         {review.findings}
                         <span class="dash-unit"> {plural(review.findings, 'finding')}</span>
                       </td>
-                      <td class="num mono" data-label="Coût">
-                        {review.costUsd === null ? 'inconnu' : usdPrecise(review.costUsd)}
+                      <td class="num mono" data-label="Cost">
+                        {review.costUsd === null ? 'unknown' : usdPrecise(review.costUsd)}
                       </td>
-                      <td class="num mono" data-label="Durée">
+                      <td class="num mono" data-label="Duration">
                         {review.durationMs === null ? '—' : duration(review.durationMs)}
                       </td>
-                      <td class="num mono" data-label="Quand">
+                      <td class="num mono" data-label="When">
                         <time dateTime={review.createdAt.toISOString()} title={clock(review.createdAt)}>
                           {agoOrDate(review.createdAt, now)}
                         </time>
@@ -938,32 +938,32 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
               {job.repo}#{job.prNumber}
             </a>
           </span>
-          <span class="tag">{job.kind === 'resolve' ? 'résolution' : job.level}</span>
+          <span class="tag">{job.kind === 'resolve' ? 'resolution' : job.level}</span>
         </div>
         <p class="hint">
           {running ? (
             <>
-              Sur <span class="mono">{job.runnerName}</span> depuis{' '}
-              <time dateTime={job.startedAt!.toISOString()}>{elapsed(job.startedAt!, now)}</time> · tentative{' '}
+              On <span class="mono">{job.runnerName}</span> for{' '}
+              <time dateTime={job.startedAt!.toISOString()}>{elapsed(job.startedAt!, now)}</time> · attempt{' '}
               {job.attempts} ·{' '}
-              <span title="Sans signal du runner avant cette heure, le job repart en file.">
-                réservé jusqu’à <time dateTime={job.leaseExpiresAt!.toISOString()}>{hour(job.leaseExpiresAt!)}</time>
+              <span title="Without a signal of the runner before this hour, the job goes back to the queue.">
+                held until <time dateTime={job.leaseExpiresAt!.toISOString()}>{hour(job.leaseExpiresAt!)}</time>
               </span>
               {job.runnerSeenAt ? (
                 <>
                   {' '}
-                  · dernier signal <time dateTime={job.runnerSeenAt.toISOString()}>{agoShort(job.runnerSeenAt, now)}</time>
+                  · last signal <time dateTime={job.runnerSeenAt.toISOString()}>{agoShort(job.runnerSeenAt, now)}</time>
                 </>
               ) : null}
             </>
           ) : (
             <>
-              En file <time dateTime={job.createdAt.toISOString()}>depuis {elapsed(job.createdAt, now)}</time>
-              {job.attempts > 0 ? ` · ${job.attempts} ${plural(job.attempts, 'tentative')} déjà` : ''}
+              Queued <time dateTime={job.createdAt.toISOString()}>for {elapsed(job.createdAt, now)}</time>
+              {job.attempts > 0 ? ` · ${job.attempts} ${plural(job.attempts, 'attempt')} already` : ''}
               {waiting ? (
                 <>
                   {' '}
-                  · reprise à <time dateTime={job.notBefore!.toISOString()}>{hourSeconds(job.notBefore!)}</time>
+                  · resumes at <time dateTime={job.notBefore!.toISOString()}>{hourSeconds(job.notBefore!)}</time>
                 </>
               ) : null}
             </>
@@ -986,18 +986,18 @@ function QueueRunnersSection(
       <section class="dash-section" aria-labelledby="queue-title">
         <div class="dash-section-head">
           <h2 id="queue-title" class="section-title">
-            File et runners
+            Queue and runners
           </h2>
           <a href={routes.runners.href()}>
-            Runners<span class="visually-hidden"> : gérer les runners</span>
+            Runners<span class="visually-hidden">: manage the runners</span>
           </a>
         </div>
         <div class="card dash-queue">
           <h3 class="dash-subtitle">
-            En cours <span class="count">{queue.runningCount}</span>
+            In progress <span class="count">{queue.runningCount}</span>
           </h3>
           {queue.running.length === 0 ? (
-            <p class="hint">Aucun job en cours.</p>
+            <p class="hint">No job in progress.</p>
           ) : (
             <ul class="dash-jobs">
               {queue.running.map((job) => (
@@ -1006,10 +1006,10 @@ function QueueRunnersSection(
             </ul>
           )}
           <h3 class="dash-subtitle">
-            En attente <span class="count">{queue.queuedCount}</span>
+            Waiting <span class="count">{queue.queuedCount}</span>
           </h3>
           {queue.queued.length === 0 ? (
-            <p class="hint">Aucun job en attente.</p>
+            <p class="hint">No job waiting.</p>
           ) : (
             <ul class="dash-jobs">
               {queue.queued.map((job) => (
@@ -1017,13 +1017,13 @@ function QueueRunnersSection(
               ))}
             </ul>
           )}
-          {queue.queuedCount > queue.queued.length ? <p class="hint">et {queue.queuedCount - queue.queued.length} de plus.</p> : null}
+          {queue.queuedCount > queue.queued.length ? <p class="hint">and {queue.queuedCount - queue.queued.length} more.</p> : null}
           <section class="dash-runners" aria-labelledby="dash-runners-title">
             <h3 id="dash-runners-title" class="dash-subtitle">
               Runners
             </h3>
             {total === 0 ? (
-              <p class="hint">Aucun runner. Les jobs attendent en file. Créez-en un dans Runners.</p>
+              <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
             ) : (
               <>
                 <p class="runner-counts">{countsText(counts)}</p>
@@ -1037,12 +1037,12 @@ function QueueRunnersSection(
                         <div class="dash-job-head">
                           <span class="mono">{runner.name}</span>
                           <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
-                          {runner.orgId === null ? <span class="tag">Runner du service</span> : null}
+                          {runner.orgId === null ? <span class="tag">Runner of the service</span> : null}
                         </div>
                         <p class="hint">
-                          {runner.running === 0 ? 'Aucun job en cours' : `${runner.running} ${plural(runner.running, 'job')} en cours`} · dernier
+                          {runner.running === 0 ? 'No job in progress' : `${runner.running} ${plural(runner.running, 'job')} in progress`} · last
                           signal{' '}
-                          {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'jamais'}
+                          {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'never'}
                         </p>
                       </li>
                     )
@@ -1051,7 +1051,7 @@ function QueueRunnersSection(
                 {more > 0 ? (
                   <p class="hint">
                     <a href={routes.runners.href()}>
-                      et {more} de plus<span class="visually-hidden"> sur l’écran Runners</span>
+                      and {more} more<span class="visually-hidden"> on the Runners screen</span>
                     </a>
                   </p>
                 ) : null}
@@ -1065,7 +1065,7 @@ function QueueRunnersSection(
 }
 
 /**
- * REV-59. « Masquer »: the failure leaves the banner and the list, for every member. The counts of
+ * REV-59. « Hide »: the failure leaves the banner and the list, for every member. The counts of
  * the week keep it. A failure of a pull request closed since shows nowhere.
  */
 function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; small?: boolean; ghost?: boolean }>) {
@@ -1075,7 +1075,7 @@ function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; s
       <form method="post" action={routes.jobDismiss.href({ id })}>
         <input type="hidden" name="_csrf" value={csrf} />
         <button class={`button ${small ? 'button-small' : ''} ${ghost ? 'button-ghost' : ''}`} type="submit" aria-label={label}>
-          Masquer
+          Hide
         </button>
       </form>
     )
@@ -1088,10 +1088,10 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
     return (
       <section class="dash-section card" aria-labelledby="failures-title">
         <h2 id="failures-title" class="section-title">
-          Échecs récents
+          Recent failures
         </h2>
         {failures.length === 0 ? (
-          <p class="hint">Aucun échec à traiter sur 7 jours.</p>
+          <p class="hint">No failure to handle over 7 days.</p>
         ) : (
           <ul class="dash-jobs">
             {failures.map((job) => {
@@ -1102,7 +1102,7 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
                   <a class="mono" href={prUrl(githubUrl, job.repo, job.prNumber)}>
                     {job.repo}#{job.prNumber}
                   </a>
-                  <span class="tag">{job.kind === 'resolve' ? 'résolution' : job.level}</span>
+                  <span class="tag">{job.kind === 'resolve' ? 'resolution' : job.level}</span>
                   {job.finishedAt ? (
                     <time class="hint" dateTime={job.finishedAt.toISOString()}>
                       {agoOrDate(job.finishedAt, now)}
@@ -1110,10 +1110,10 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
                   ) : null}
                 </div>
                 <p class="hint">
-                  {job.attempts} {plural(job.attempts, 'tentative')} · {reasonSentence(reason)}
+                  {job.attempts} {plural(job.attempts, 'attempt')} · {reasonSentence(reason)}
                 </p>
                 <TechDetails raw={reason.raw} />
-                {admin ? <DismissForm id={job.id} csrf={csrf} label={`Masquer l’échec de ${job.repo}#${job.prNumber}`} small /> : null}
+                {admin ? <DismissForm id={job.id} csrf={csrf} label={`Hide the failure of ${job.repo}#${job.prNumber}`} small /> : null}
               </li>
               )
             })}
@@ -1131,13 +1131,13 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
     return (
       <section class="dash-section" aria-labelledby="precision-title">
         <h2 id="precision-title" class="section-title">
-          Précision par repo
+          Precision by repo
         </h2>
         {!precision || precision.org.closed === 0 ? (
           <div class="empty">
             <p>
-              Aucun finding clos sur {PRECISION_DAYS} jours. La part des findings qu’un push corrige s’affichera ici à partir de {PRECISION_MIN}{' '}
-              findings clos.
+              No closed finding over {PRECISION_DAYS} days. The share of the findings that a push fixes shows here from {PRECISION_MIN}{' '}
+              closed findings.
             </p>
           </div>
         ) : (
@@ -1145,7 +1145,7 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
             <p class="precision-headline">
               <PrecisionValue precision={precision.org} large />
               <span class="hint">
-                sur {PRECISION_DAYS} jours, toute l’org · {precisionCounts(precision.org)}
+                over {PRECISION_DAYS} days, whole org · {precisionCounts(precision.org)}
               </span>
             </p>
             <ul class="precision-list">
@@ -1158,7 +1158,7 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
                     <span class="precision-figures">
                       <PrecisionValue precision={repo} />
                       <span class="hint precision-n" aria-hidden="true">
-                        {repo.closed} clos
+                        {repo.closed} closed
                       </span>
                     </span>
                   </li>
@@ -1166,7 +1166,7 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
               })}
             </ul>
             <p class="hint">
-              <a href={routes.findings.href()}>Voir les findings et la précision par règle</a>
+              <a href={routes.findings.href()}>See the findings and the precision by rule</a>
             </p>
           </div>
         )}

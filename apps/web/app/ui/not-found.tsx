@@ -15,16 +15,16 @@ export type ErrorKind = 'page' | 'repo' | 'form'
 
 const ERRORS: Record<ErrorKind, { title: string; text: string }> = {
   page: {
-    title: 'Cette page n’existe pas',
-    text: 'L’adresse est peut-être ancienne, ou ce qu’elle montrait a été retiré.',
+    title: 'This page does not exist',
+    text: 'The address can be old, or what it showed was removed.',
   },
   repo: {
-    title: 'Ce repo n’est plus dans l’installation',
-    text: 'L’App Kentō ne le voit pas dans cette organisation : il a été retiré de l’installation sur GitHub, ou le lien est ancien. La liste des repos montre ceux que Kentō voit.',
+    title: 'This repo is no longer in the installation',
+    text: 'The Kentō App does not see it in this organization. It was removed from the installation on GitHub, or the link is old. The list of repos shows the ones that Kentō sees.',
   },
   form: {
-    title: 'Ce formulaire n’a pas pu être lu',
-    text: 'La page a peut-être changé depuis que vous l’avez ouverte. Rechargez-la, puis recommencez.',
+    title: 'Kentō could not read this form',
+    text: 'The page can have changed since you opened it. Reload it, then try again.',
   },
 }
 
@@ -34,8 +34,8 @@ export interface ErrorExit {
   label: string
 }
 
-const HOME: ErrorExit = { href: pageRoutes.home.href(), label: 'Retour au tableau de bord' }
-const REPOS: ErrorExit = { href: pageRoutes.repos.href(), label: 'Voir les repos' }
+const HOME: ErrorExit = { href: pageRoutes.home.href(), label: 'Back to the dashboard' }
+const REPOS: ErrorExit = { href: pageRoutes.repos.href(), label: 'See the repos' }
 
 export interface ErrorPageProps {
   /** `viewer: null`: nobody is signed in; the page then offers the sign-in. */
@@ -67,11 +67,11 @@ export function ErrorPage(handle: Handle<ErrorPageProps>) {
                     <p class="signin-lead">{error.text}</p>
                   </div>
                   <a class="button button-primary button-large" href={authRoutes.signIn.href()}>
-                    Se connecter à Kentō
+                    Sign in to Kentō
                   </a>
                 </div>
               </div>
-              <p class="signin-foot">Kentō {frame.version} · par Sakuga</p>
+              <p class="signin-foot">Kentō {frame.version} · by Sakuga</p>
             </div>
           </main>
         </Document>

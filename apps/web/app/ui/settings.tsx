@@ -18,27 +18,27 @@ import { Shell, type PageFrame } from './shell.tsx'
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openrouter', 'openai_compatible', 'ollama']
 /** REV-28. What each type needs, all shown under the select: right whatever the choice, without JavaScript. */
 const KIND_HINTS: Record<ProviderKind, string> = {
-  anthropic: 'une clé Anthropic (sk-ant-…) ; l’URL et les modèles du type par défaut.',
-  openrouter: 'une clé OpenRouter (sk-or-…) ; l’URL et les modèles du type par défaut.',
-  openai_compatible: 'l’URL du serveur, obligatoire, et au moins un modèle par niveau.',
-  ollama: 'un serveur sur la machine d’un runner ; le service n’a jamais de clé.',
+  anthropic: 'an Anthropic key (sk-ant-…). The URL and the models of the type by default.',
+  openrouter: 'an OpenRouter key (sk-or-…). The URL and the models of the type by default.',
+  openai_compatible: 'the URL of the server, required, and at least one model per level.',
+  ollama: 'a server on the machine of a runner. The service never has a key.',
 }
-/** The order of the fields of « Ajouter un provider »: the first one in error gets the focus. */
+/** The order of the fields of « Add a provider »: the first one in error gets the focus. */
 const PROVIDER_FIELDS: readonly ProviderField[] = ['kind', 'label', 'baseUrl', 'apiKey', 'models']
 
 /** What the section says after a form, from `?notice=`. */
 export const PROVIDER_NOTICES = {
-  added: { tone: 'ok', text: 'Provider ajouté. Testez-le pour vérifier la clé.' },
-  // No « Tester » for these two: the service has no key, and cannot reach the server of a runner.
-  added_runner: { tone: 'ok', text: 'Provider ajouté. Sa clé reste sur le runner, et le premier job d’un runner qui l’a dira si elle marche.' },
-  added_ollama: { tone: 'ok', text: 'Provider ajouté. Son serveur est sur le réseau d’un runner. Le premier job d’un runner avec PROVIDER_KIND=ollama dira s’il répond.' },
-  replaced: { tone: 'ok', text: 'Clé remplacée. L’ancienne n’est plus gardée.' },
-  default: { tone: 'ok', text: 'Ce provider est maintenant « Par défaut ». Les niveaux sans provider choisi l’utilisent.' },
-  removed: { tone: 'info', text: 'Provider retiré, avec sa clé.' },
-  tested_ok: { tone: 'ok', text: 'Le provider a accepté la clé.' },
-  tested_refused: { tone: 'alert', text: 'Le provider a refusé la clé.' },
-  test_failed: { tone: 'alert', text: 'Le test n’a pas abouti, et l’état du provider ne change pas.' },
-  missing: { tone: 'alert', text: 'Rien n’a changé. Ce provider a été modifié ou retiré depuis votre dernier affichage. Voyez son état ci-dessous, puis refaites l’action s’il le faut.' },
+  added: { tone: 'ok', text: 'Provider added. Test it to check the key.' },
+  // No « Test » for these two: the service has no key, and cannot reach the server of a runner.
+  added_runner: { tone: 'ok', text: 'Provider added. Its key stays on the runner, and the first job of a runner that has it tells whether it works.' },
+  added_ollama: { tone: 'ok', text: 'Provider added. Its server is on the network of a runner. The first job of a runner with PROVIDER_KIND=ollama tells whether it answers.' },
+  replaced: { tone: 'ok', text: 'Key replaced. Kentō no longer keeps the old key.' },
+  default: { tone: 'ok', text: 'This provider is now "Default". The levels with no chosen provider use it.' },
+  removed: { tone: 'info', text: 'Provider removed, with its key.' },
+  tested_ok: { tone: 'ok', text: 'The provider accepted the key.' },
+  tested_refused: { tone: 'alert', text: 'The provider refused the key.' },
+  test_failed: { tone: 'alert', text: 'The test did not complete, and the state of the provider does not change.' },
+  missing: { tone: 'alert', text: 'Nothing changed. Someone changed or removed this provider after the page loaded. Read its state below, then do the action again if necessary.' },
 } as const
 export type ProviderNotice = keyof typeof PROVIDER_NOTICES
 
@@ -68,7 +68,7 @@ export interface SettingsPageProps {
   serviceKey: boolean
   notice?: { kind: ProviderNotice; detail?: string | null } | null
   form?: { values: ProviderFormValues; errors: Partial<Record<ProviderField, string>> } | null
-  /** The provider whose « Remplacer la clé » failed, with its message. */
+  /** The provider whose « Replace the key » failed, with its message. */
   keyError?: { id: string; message: string } | null
   /** REV-19. The rules of the org. Null: the service has no rules. */
   rules?: { list: RuleView[]; form: RuleFormState | null; notice: RuleNotice | null; noticeRule: string | null } | null
@@ -80,41 +80,41 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
-    // REV-27. Which levels of the org run on each provider: the same rule as Valeurs par défaut.
+    // REV-27. Which levels of the org run on each provider: the same rule as Default values.
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     return (
       <Shell
         frame={frame}
         section="settings"
-        title="Réglages"
-        // REV-91: the version of the settings goes under the title, after « Pour toute l’organisation ».
-        lead={org ? `Pour toute l’organisation · ${orgVersionLine(org.view)}` : 'Ce qui vaut pour toute l’organisation.'}
+        title="Settings"
+        // REV-91: the version of the settings goes under the title, after « For the whole organization ».
+        lead={org ? `For the whole organization · ${orgVersionLine(org.view)}` : 'What applies to the whole organization.'}
       >
         {refused.map((p) => {
           let levels = usage(p.id)
           let failing =
             levels === null
               ? p.isDefault
-                ? 'Les jobs de l’organisation échouent tant qu’elle n’est pas remplacée.'
-                : 'Ce provider n’est pas celui des jobs.'
+                ? 'The jobs of the organization fail until someone replaces it.'
+                : 'This provider is not the one of the jobs.'
               : levels.length > 0
-                ? `Les jobs ${levels.length > 1 ? 'des niveaux' : 'du niveau'} ${levelList(levels)} échouent tant qu’elle n’est pas remplacée.`
-                : 'Aucun niveau de l’organisation ne l’utilise. Seul un repo qui l’a choisi dans sa Config en est touché.'
+                ? `The jobs of the ${levels.length > 1 ? 'levels' : 'level'} ${levelList(levels)} fail until someone replaces it.`
+                : 'No level of the organization uses it. Only a repo that chose it in its Config is affected.'
           return (
             <div class="banner banner-alert" role="alert">
               <p>
                 <strong>
-                  {p.runnerHeld ? <>Le runner a reçu {p.refusedStatus} pour la clé de « {p.label} » </> : <>La clé de « {p.label} » est refusée ({p.refusedStatus}) </>}
-                  depuis <time dateTime={p.refusedAt!.toISOString()}>{hourOrDate(p.refusedAt!, now)}</time>.
+                  {p.runnerHeld ? <>The runner got {p.refusedStatus} for the key of "{p.label}" </> : <>The key of "{p.label}" is refused ({p.refusedStatus}) </>}
+                  since <time dateTime={p.refusedAt!.toISOString()}>{hourOrDate(p.refusedAt!, now)}</time>.
                 </strong>{' '}
                 {failing}{' '}
                 {p.runnerHeld ? (
-                  <a href={`#provider-${p.id}`}>Que faire</a>
+                  <a href={`#provider-${p.id}`}>What to do</a>
                 ) : admin ? (
-                  <a href={`#provider-${p.id}`}>Remplacer la clé</a>
+                  <a href={`#provider-${p.id}`}>Replace the key</a>
                 ) : (
-                  'Un admin de l’organisation peut la remplacer.'
+                  'An admin of the organization can replace it.'
                 )}
               </p>
             </div>
@@ -137,11 +137,11 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         {rules ? (
           <section class="card config-card" id="regles" aria-labelledby="org-rules-title" tabIndex={-1}>
             <h2 id="org-rules-title" class="section-title">
-              Règles d’org <span class="count">{rules.list.filter((r) => r.active).length}</span>
+              Org rules <span class="count">{rules.list.filter((r) => r.active).length}</span>
             </h2>
             <p class="hint">
-              Elles partent avec la review de chaque repo de l’organisation, après les règles du repo, quand la PR touche l’un de
-              leurs chemins. Les règles d’un seul repo s’écrivent dans sa Config, onglet Règles.
+              They go with the review of each repo of the organization, after the rules of the repo, when the PR changes one of
+              their paths. Write the rules of one repo in its Config, tab Rules.
             </p>
             <RulesList
               scope="org"
@@ -159,18 +159,18 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         {providers ? (
           <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
             <h2 id="providers-title" class="section-title">
-              Providers et clés <span class="count">{providers.length}</span>
+              Providers and keys <span class="count">{providers.length}</span>
             </h2>
             <p class="hint provider-lead">
-              Le provider par défaut fait les reviews de l’organisation. Sa clé est chiffrée au repos (AES-256-GCM) ; l’écran
-              n’en montre que les 4 derniers caractères, et seul un runner de confiance de l’organisation la reçoit, pour un
+              The default provider does the reviews of the organization. Its key is encrypted at rest (AES-256-GCM). The screen
+              shows only its last 4 characters, and only a trusted runner of the organization gets it, for one
               job.
             </p>
             {!secretsConfigured ? (
               <div class="banner banner-info" role="note">
                 <p>
-                  Le chiffrement des clés n’est pas configuré sur le service (<span class="mono">KENTO_SECRETS_KEY</span>) :
-                  seul un provider dont la clé reste sur le runner peut être ajouté.
+                  The encryption of the keys is not configured on the service (<span class="mono">KENTO_SECRETS_KEY</span>).
+                  You can add only a provider whose key stays on the runner.
                 </p>
               </div>
             ) : null}
@@ -178,8 +178,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
               <div class="empty">
                 <p>
                   {serviceKey
-                    ? 'Aucun provider. Les jobs utilisent la clé OpenRouter du service. Ajoutez le vôtre pour payer vos reviews et choisir vos modèles.'
-                    : 'Aucun provider, et le service n’a pas de clé. Seul un runner avec sa propre clé fait les reviews.'}
+                    ? 'No provider. The jobs use the OpenRouter key of the service. Add your own to pay for your reviews and choose your models.'
+                    : 'No provider, and the service has no key. Only a runner with its own key does the reviews.'}
                 </p>
               </div>
             ) : (
@@ -219,18 +219,18 @@ function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: b
     let links: [string, string][] = [
       ...(org
         ? ([
-            ['#plafond', 'Coûts et plafond'],
-            ['#defauts', 'Niveaux et modèles'],
-            ['#bots', 'Bots de confiance'],
-            ['#app', 'App GitHub'],
+            ['#plafond', 'Costs and cap'],
+            ['#defauts', 'Levels and models'],
+            ['#bots', 'Trusted bots'],
+            ['#app', 'GitHub App'],
           ] as [string, string][])
         : []),
-      ...(rules ? ([['#regles', 'Règles d’org']] as [string, string][]) : []),
-      ...(providers ? ([['#providers', 'Providers et clés']] as [string, string][]) : []),
+      ...(rules ? ([['#regles', 'Org rules']] as [string, string][]) : []),
+      ...(providers ? ([['#providers', 'Providers and keys']] as [string, string][]) : []),
     ]
     if (links.length < 2) return null
     return (
-      <nav class="settings-nav" aria-label="Sections des réglages">
+      <nav class="settings-nav" aria-label="Sections of the settings">
         <ul>
           {links.map(([href, label]) => (
             <li>
@@ -244,10 +244,10 @@ function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: b
 }
 
 const STATE_TEXT: Record<ProviderState, string> = {
-  runner: 'Clé sur le runner',
-  refused: 'Clé refusée',
-  valid: 'Valide',
-  unknown: 'Jamais appelé',
+  runner: 'Key on the runner',
+  refused: 'Key refused',
+  valid: 'Valid',
+  unknown: 'Never called',
 }
 const STATE_CLASS: Record<ProviderState, string> = {
   // A key on the runner is a normal state: neutral. The amber of `status-wait` says « attention ».
@@ -257,14 +257,14 @@ const STATE_CLASS: Record<ProviderState, string> = {
   unknown: 'status-stale',
 }
 
-/** « lite », « lite et heavy », « lite, balanced et heavy ». */
+/** « lite », « lite and heavy », « lite, balanced and heavy ». */
 function levelList(levels: readonly Level[]): string {
-  return levels.length <= 1 ? levels.join('') : `${levels.slice(0, -1).join(', ')} et ${levels.at(-1)}`
+  return levels.length <= 1 ? levels.join('') : `${levels.slice(0, -1).join(', ')} and ${levels.at(-1)}`
 }
 
 /**
- * REV-27. The levels of the org that run on this provider, under its name: « Par défaut » and the
- * choices of Valeurs par défaut never say two different things. Null: the service has no settings of
+ * REV-27. The levels of the org that run on this provider, under its name: « Default » and the
+ * choices of Default values never say two different things. Null: the service has no settings of
  * the org.
  */
 function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] | null }>) {
@@ -272,28 +272,28 @@ function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] 
     let { provider, levels } = handle.props
     if (!levels) return null
     let others = LEVELS.filter((level) => !levels.includes(level))
-    let defaults = <a href="#defauts">Valeurs par défaut</a>
+    let defaults = <a href="#defauts">Default values</a>
     if (provider.isDefault) {
       return (
         <p class="hint provider-usage">
           {levels.length === LEVELS.length ? (
-            <>Fait les niveaux {levelList(levels)} de l’organisation.</>
+            <>Does the levels {levelList(levels)} of the organization.</>
           ) : levels.length > 0 ? (
             <>
-              Fait les niveaux {levelList(levels)} de l’organisation. {others.length > 1 ? 'Les niveaux' : 'Le niveau'} {levelList(others)}{' '}
-              {others.length > 1 ? 'ont' : 'a'} un autre provider, choisi
-              dans {defaults}.
+              Does the levels {levelList(levels)} of the organization. {others.length > 1 ? 'The levels' : 'The level'} {levelList(others)}{' '}
+              {others.length > 1 ? 'have' : 'has'} another provider, chosen
+              in {defaults}.
             </>
           ) : (
-            <>Aucun niveau de l’organisation ne l’utilise. Chacun a son provider, choisi dans {defaults}.</>
+            <>No level of the organization uses it. Each level has its provider, chosen in {defaults}.</>
           )}{' '}
-          Un repo peut choisir le sien dans sa Config.
+          A repo can choose its own provider in its Config.
         </p>
       )
     }
     return levels.length > 0 ? (
       <p class="hint provider-usage">
-        Choisi pour {levels.length > 1 ? 'les niveaux' : 'le niveau'} {levelList(levels)} de l’organisation, dans {defaults}.
+        Chosen for the {levels.length > 1 ? 'levels' : 'level'} {levelList(levels)} of the organization, in {defaults}.
       </p>
     ) : null
   }
@@ -311,55 +311,55 @@ function ProviderItem(
         <div class="provider-head">
           <h3 class="provider-name">{provider.label}</h3>
           <span class="tag">{KIND_LABELS[provider.kind]}</span>
-          {provider.isDefault ? <span class="tag tag-ok">Par défaut</span> : null}
+          {provider.isDefault ? <span class="tag tag-ok">Default</span> : null}
           <span class={`status ${STATE_CLASS[state]}`}>
             {state === 'refused' ? (
               <>
-                {provider.runnerHeld ? 'Refusée sur le runner' : 'Refusée'} · {provider.refusedStatus} depuis{' '}
+                {provider.runnerHeld ? 'Refused on the runner' : 'Refused'} · {provider.refusedStatus} since{' '}
                 <time dateTime={provider.refusedAt!.toISOString()}>{hourOrDate(provider.refusedAt!, now)}</time>
               </>
             ) : state === 'valid' ? (
               <>
-                Valide · dernier appel{' '}
+                Valid · last call{' '}
                 <time dateTime={provider.lastOkAt!.toISOString()} title={clock(provider.lastOkAt!)}>
                   {agoShort(provider.lastOkAt!, now)}
                 </time>
               </>
             ) : (
-              state === 'runner' && provider.kind === 'ollama' ? 'Serveur du runner' : STATE_TEXT[state]
+              state === 'runner' && provider.kind === 'ollama' ? 'Server of the runner' : STATE_TEXT[state]
             )}
           </span>
         </div>
         <ProviderUsage provider={provider} levels={levels} />
         <dl class="provider-facts">
           <div>
-            <dt>Clé</dt>
+            <dt>Key</dt>
             <dd>
               {provider.keyLast4 ? (
-                <span class="mono" aria-label={`se termine par ${provider.keyLast4}`}>
+                <span class="mono" aria-label={`ends with ${provider.keyLast4}`}>
                   ••••{provider.keyLast4}
                 </span>
               ) : provider.kind === 'ollama' ? (
-                'aucune, serveur du runner'
+                'none, server of the runner'
               ) : (
-                'sur le runner (PROVIDER_API_KEY)'
+                'on the runner (PROVIDER_API_KEY)'
               )}
             </dd>
           </div>
           <div>
             <dt>URL</dt>
-            <dd class="mono">{provider.baseUrl ?? 'par défaut'}</dd>
+            <dd class="mono">{provider.baseUrl ?? 'default'}</dd>
           </div>
           {LEVELS.map((level) => {
             let models = provider.models[level] ?? defaultModels(provider.kind, level)
             return (
               <div>
-                <dt>Modèles {level}</dt>
+                <dt>Models {level}</dt>
                 <dd>
                   {models.map((model) => (
                     <span class="model">
                       <span class="mono">{model}</span>
-                      {costKnown(provider.kind, model) ? null : <span class="tag tag-warn">sans prix : non compté dans le plafond</span>}
+                      {costKnown(provider.kind, model) ? null : <span class="tag tag-warn">no price: not counted in the cap</span>}
                     </span>
                   ))}
                 </dd>
@@ -368,24 +368,24 @@ function ProviderItem(
           })}
           {provider.keySetAt ? (
             <div>
-              <dt>Clé posée</dt>
+              <dt>Key set</dt>
               <dd>
                 <time dateTime={provider.keySetAt.toISOString()}>{clock(provider.keySetAt)}</time>
               </dd>
             </div>
           ) : null}
         </dl>
-        {state === 'refused' && provider.refusedMessage ? <p class="hint">Dernière réponse : {provider.refusedMessage}</p> : null}
+        {state === 'refused' && provider.refusedMessage ? <p class="hint">Last answer: {provider.refusedMessage}</p> : null}
         {provider.runnerHeld && state === 'refused' ? (
           <p class="hint provider-todo">
-            <strong>Que faire.</strong> Remplacez <span class="mono">PROVIDER_API_KEY</span> sur les runners de l’organisation qui ont{' '}
-            <span class="mono">PROVIDER_KIND={provider.kind}</span>, puis relancez une review. Le premier job qui aboutit efface ce refus.
+            <strong>What to do.</strong> Replace <span class="mono">PROVIDER_API_KEY</span> on the runners of the organization that have{' '}
+            <span class="mono">PROVIDER_KIND={provider.kind}</span>, then run a review again. The first job that completes clears this refusal.
           </p>
         ) : null}
         {state === 'runner' ? (
           <p class="hint">
-            Le service n’a pas cette clé. Un runner de l’organisation avec <span class="mono">PROVIDER_KIND={provider.kind}</span> fait
-            ses jobs, et son état se lit dans ses jobs.
+            The service does not have this key. A runner of the organization with <span class="mono">PROVIDER_KIND={provider.kind}</span> does
+            its jobs, and the jobs show its state.
           </p>
         ) : null}
         {admin ? (
@@ -394,7 +394,7 @@ function ProviderItem(
               <form method="post" action={routes.providerTest.href({ id })}>
                 <input type="hidden" name="_csrf" value={csrf} />
                 <button class="button" type="submit">
-                  Tester
+                  Test
                 </button>
               </form>
             )}
@@ -402,19 +402,19 @@ function ProviderItem(
               <form method="post" action={routes.providerDefault.href({ id })}>
                 <input type="hidden" name="_csrf" value={csrf} />
                 <button class="button" type="submit">
-                  Mettre par défaut
+                  Make default
                 </button>
               </form>
             )}
             {provider.runnerHeld ? null : (
               <details class="confirm replace-key" open={keyError !== null || state === 'refused' ? true : undefined}>
-                <summary class={`button ${state === 'refused' ? 'button-primary' : ''}`}>Remplacer la clé</summary>
+                <summary class={`button ${state === 'refused' ? 'button-primary' : ''}`}>Replace the key</summary>
                 <form class="confirm-body replace-body" method="post" action={routes.providerKey.href({ id })} noValidate>
                   <input type="hidden" name="_csrf" value={csrf} />
                   {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
                     <label class="field-label" for={`key-${id}`}>
-                      Nouvelle clé {KIND_LABELS[provider.kind]}
+                      New {KIND_LABELS[provider.kind]} key
                     </label>
                     <input
                       class="input mono"
@@ -434,22 +434,22 @@ function ProviderItem(
                       </p>
                     ) : (
                       <p class="field-hint" id={`key-${id}-hint`}>
-                        L’ancienne clé est effacée. Les jobs déjà en cours gardent celle qu’ils ont reçue.
+                        Kentō deletes the old key. The jobs already in progress keep the key that they got.
                       </p>
                     )}
                   </div>
                   <button class="button button-primary" type="submit">
-                    Remplacer
+                    Replace
                   </button>
                 </form>
               </details>
             )}
-            <Confirm trigger="Retirer…" action={routes.providerRemove.href({ id })} csrf={csrf} submit={`Retirer ${provider.label}`}>
+            <Confirm trigger="Remove…" action={routes.providerRemove.href({ id })} csrf={csrf} submit={`Remove ${provider.label}`}>
               <p>
-                <strong>{provider.label}</strong> et sa clé seront effacés.{' '}
+                Kentō deletes <strong>{provider.label}</strong> and its key.{' '}
                 {provider.isDefault
-                  ? 'Le plus ancien des autres providers devient celui des jobs ; sans autre provider, les jobs utilisent la clé du service.'
-                  : 'Les jobs n’utilisent pas ce provider.'}
+                  ? 'The oldest of the other providers becomes the one of the jobs. With no other provider, the jobs use the key of the service.'
+                  : 'The jobs do not use this provider.'}
               </p>
             </Confirm>
           </div>
@@ -494,7 +494,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
       <section class="new-provider" id="nouveau-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
         <details class="new-provider-toggle" open={form && Object.keys(form.errors).length > 0 ? true : undefined}>
           <summary class="button">
-            <span id="new-provider-title">Ajouter un provider</span>
+            <span id="new-provider-title">Add a provider</span>
           </summary>
           <div class="card new-provider-card">
         <form method="post" action={routes.providerAdd.href()} noValidate autoComplete="off">
@@ -525,28 +525,28 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             <ul class="field-hint kind-hints" id="provider-kind-hint">
               {KINDS.map((kind) => (
                 <li>
-                  <strong>{KIND_LABELS[kind]}</strong> : {KIND_HINTS[kind]}
+                  <strong>{KIND_LABELS[kind]}</strong>: {KIND_HINTS[kind]}
                 </li>
               ))}
             </ul>
           </div>
           <div class="field">
             <label class="field-label" for="provider-label">
-              Nom
+              Name
             </label>
             <input class="input" id="provider-label" name="label" value={values.label} maxLength={60} required {...field('label')} />
-            {message('label', 'Ce que l’écran affiche, par exemple « Anthropic de Sakuga ».')}
+            {message('label', 'What the screen shows, for example "Anthropic of Sakuga".')}
           </div>
           <div class="field">
             <label class="field-label" for="provider-baseUrl">
-              URL du serveur
+              Server URL
             </label>
             <input class="input mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
-            {message('baseUrl', 'Laissez vide pour l’URL du type. Obligatoire pour un serveur compatible OpenAI. HTTPS, sauf Ollama.')}
+            {message('baseUrl', 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
           </div>
           <div class="field">
             <label class="field-label" for="provider-apiKey">
-              Clé
+              Key
             </label>
             <input
               class="input mono"
@@ -558,17 +558,17 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               disabled={!secretsConfigured ? true : undefined}
               {...field('apiKey')}
             />
-            {message('apiKey', 'Chiffrée dès sa réception ; elle ne revient jamais dans le navigateur.')}
+            {message('apiKey', 'Encrypted when it arrives. It never comes back to the browser.')}
           </div>
           <label class="choice">
             <input type="checkbox" name="runnerHeld" checked={values.runnerHeld ? true : undefined} autoFocus={focusRunnerHeld ? true : undefined} />
             <span>
-              <strong>La clé reste sur le runner.</strong> Un runner de l’organisation l’a dans <span class="mono">PROVIDER_API_KEY</span> ; le
-              service ne l’a jamais.
+              <strong>The key stays on the runner.</strong> A runner of the organization has it in <span class="mono">PROVIDER_API_KEY</span>. The
+              service never has it.
             </span>
           </label>
           <fieldset class="field" aria-describedby={errors.models ? 'provider-models-error' : 'provider-models-hint'}>
-            <legend class="field-label">Modèles par niveau</legend>
+            <legend class="field-label">Models per level</legend>
             {LEVELS.map((level) => (
               <div class="model-field">
                 <label class="field-hint" for={`provider-models-${level}`}>
@@ -580,16 +580,16 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                   name={`models_${level}`}
                   value={values.models[level]}
                   spellCheck={false}
-                  placeholder={defaultModels(values.kind, level).join(', ') || 'à nommer'}
+                  placeholder={defaultModels(values.kind, level).join(', ') || 'to name'}
                   autoFocus={first === 'models' && level === 'lite' ? true : undefined}
                   aria-invalid={errors.models ? 'true' : undefined}
                 />
               </div>
             ))}
-            {message('models', 'Séparés par des virgules, le premier d’abord. Laissez vide pour les modèles par défaut du type (Anthropic, OpenRouter).')}
+            {message('models', 'Separated by commas, the first one first. Leave it empty for the default models of the type (Anthropic, OpenRouter).')}
           </fieldset>
           <button class="button button-primary" type="submit">
-            Ajouter le provider
+            Add the provider
           </button>
         </form>
           </div>

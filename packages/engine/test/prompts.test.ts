@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 // REV-42. The text of the findings and of the replies is published: each prompt asks for plain
-// French, without the tics of generated text.
+// English (REV-114), without the tics of generated text.
 const prompt = (name: string) => readFileSync(join(import.meta.dirname, '..', 'prompts', name), 'utf8').replace(/\s+/g, ' ');
-const BANNED = ['De plus', 'En outre', 'Par ailleurs', 'crucial', 'essentiel', 'primordial', 'garantir', 'assurer', 'permettre de', 'robuste', 'afin de', 'il est important de noter'];
+const BANNED = ['Additionally', 'Moreover', 'Furthermore', 'crucial', 'essential', 'vital', 'ensure', 'guarantee', 'leverage', 'robust', 'in order to', 'it is important to note'];
 
 for (const name of ['review.md', 'resolve.md']) {
   test(`${name} gives the rules of style of the published text`, () => {
@@ -19,6 +19,8 @@ for (const name of ['review.md', 'resolve.md']) {
     assert.match(style, /Do not join two clauses with a colon, and do not open a sentence with a label and a colon\./);
     for (const word of BANNED) assert.ok(style.includes(`« ${word} »`), `${name} bans « ${word} »`);
     assert.match(style, /No closing formula/);
+    assert.match(style, /Write (them|it) in plain English, even when/);
+    assert.doesNotMatch(text, /French/);
   });
 }
 

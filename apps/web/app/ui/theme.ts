@@ -1,14 +1,14 @@
 import { isOneOf } from '@sakuga-review/protocol'
 
-/** Papier (day), Sumi (night), or the theme of the device. */
+/** Paper (day), Sumi (night), or the theme of the device. */
 export type Theme = 'paper' | 'sumi' | 'system'
 
 export const THEMES: readonly Theme[] = ['paper', 'sumi', 'system']
 
 export const THEME_LABELS: Record<Theme, string> = {
-  paper: 'Papier',
+  paper: 'Paper',
   sumi: 'Sumi',
-  system: 'Appareil',
+  system: 'Device',
 }
 
 /** The cookie of this browser that holds the theme. Not a secret: public/assets/theme.js writes it too. */

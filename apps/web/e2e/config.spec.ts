@@ -8,7 +8,7 @@ import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './h
 
 // The Config screen of a repository (REV-12) in a browser, against the server, Postgres and the
 // fake GitHub, with the tests of the ticket: a model replaced on balanced goes into the next job and
-// to the runner; « Revenir à l'org » takes the value back; « Ready for review » leaves the pushes of a
+// to the runner; « Back to the org value » takes the value back; « Ready for review » leaves the pushes of a
 // draft without a job, and its passage to ready creates one.
 
 const ORCHARD = { id: 7001, full_name: 'sakuga-software/orchard', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
@@ -19,12 +19,12 @@ function database() {
 
 /**
  * orchard enabled, at its first config, with no job; the org sets nothing and has no provider. A
- * provider « Par défaut » left by another spec would run the levels without a choice (REV-27).
+ * « Default » provider left by another spec would run the levels without a choice (REV-27).
  */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Relire GitHub' }).click()
-  await expect(page.getByText('Liste à jour.')).toBeVisible()
+  await page.getByRole('button', { name: 'Read GitHub again' }).click()
+  await expect(page.getByText('List up to date.')).toBeVisible()
   let sql = database()
   try {
     await sql`delete from jobs where repo_id in (select id from repos where full_name = ${ORCHARD.full_name})`
@@ -104,7 +104,7 @@ const head = (n: number) => n.toString(16).padStart(40, '0')
 
 test.describe('the Config screen of a repository', () => {
   for (let theme of ['paper', 'sumi'] as const) {
-    test(`an admin replaces the model of balanced, the next push and its runner use it, and « Revenir à l’org » takes it back (${theme})`, async ({
+    test(`an admin replaces the model of balanced, the next push and its runner use it, and « Back to the org value » takes it back (${theme})`, async ({
       page,
       context,
       baseURL,
@@ -115,26 +115,26 @@ test.describe('the Config screen of a repository', () => {
       await reset(page)
 
       await openRepoConfig(page, 'orchard')
-      await expect(page.getByRole('heading', { level: 1, name: 'Config de orchard' })).toBeVisible()
-      await expect(page.getByText('config v0, tout est hérité de l’organisation')).toBeVisible()
+      await expect(page.getByRole('heading', { level: 1, name: 'Config of orchard' })).toBeVisible()
+      await expect(page.getByText('config v0, everything comes from the organization')).toBeVisible()
       let balanced = page.getByRole('region', { name: 'balanced' })
-      await expect(balanced.getByText('hérité de l’org')).toBeVisible()
-      await expect(balanced.getByLabel('Modèle', { exact: true })).toHaveValue('anthropic/claude-sonnet-5.5')
+      await expect(balanced.getByText('from the org', { exact: true })).toBeVisible()
+      await expect(balanced.getByLabel('Model', { exact: true })).toHaveValue('anthropic/claude-sonnet-5.5')
       await expectNoAxeViolations(page)
 
-      await balanced.getByLabel('Modèle', { exact: true }).fill('anthropic/claude-sonnet-5.6')
-      await balanced.getByLabel('Repli si l’appel échoue').fill('anthropic/claude-sonnet-5.5')
-      await balanced.getByRole('button', { name: 'Remplacer ici pour balanced' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v1)' })).toBeVisible()
-      await expect(page.getByText(/config v1, modifiée par alex le/)).toBeVisible()
-      await expect(page.getByRole('region', { name: 'balanced' }).getByText('remplacé ici')).toBeVisible()
+      await balanced.getByLabel('Model', { exact: true }).fill('anthropic/claude-sonnet-5.6')
+      await balanced.getByLabel('Fallback if the call fails').fill('anthropic/claude-sonnet-5.5')
+      await balanced.getByRole('button', { name: 'Set here for balanced' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Config saved (v1)' })).toBeVisible()
+      await expect(page.getByText(/config v1, changed by alex on/)).toBeVisible()
+      await expect(page.getByRole('region', { name: 'balanced' }).getByText('set for this repo')).toBeVisible()
       await expectNoAxeViolations(page)
 
-      await page.getByRole('link', { name: 'Niveaux et passes' }).click()
+      await page.getByRole('link', { name: 'Levels and passes' }).click()
       await page.getByRole('radio', { name: /balanced/ }).check()
-      await page.getByRole('button', { name: 'Remplacer ici le niveau' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v2)' })).toBeVisible()
-      await expect(page.getByText('Une passe')).toBeVisible()
+      await page.getByRole('button', { name: 'Set here the level' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Config saved (v2)' })).toBeVisible()
+      await expect(page.getByText('One pass')).toBeVisible()
       await expectNoAxeViolations(page)
 
       // The next push: a balanced job with the models of the repository, and its runner gets them.
@@ -149,11 +149,11 @@ test.describe('the Config screen of a repository', () => {
       let claimed = await claim(page, job!.id)
       expect(claimed.models).toEqual({ provider: 'service', model: 'anthropic/claude-sonnet-5.6', fallback: 'anthropic/claude-sonnet-5.5' })
 
-      // « Revenir à l'org »: the next push takes the value of the org (here, of Kentō).
-      await page.getByRole('link', { name: 'Provider et modèles' }).click()
-      await page.getByRole('button', { name: 'Revenir à l’org pour balanced' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'Valeur de l’organisation reprise (v3)' })).toBeVisible()
-      await expect(page.getByRole('region', { name: 'balanced' }).getByText('hérité de l’org')).toBeVisible()
+      // « Back to the org value »: the next push takes the value of the org (here, of Kentō).
+      await page.getByRole('link', { name: 'Provider and models' }).click()
+      await page.getByRole('button', { name: 'Back to the org value for balanced' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'Value of the organization restored (v3)' })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'balanced' }).getByText('from the org', { exact: true })).toBeVisible()
       expect((await pullRequest(page, { action: 'synchronize', head: head(2) })).outcome).toBe('queued')
       let last = (await jobsOforchard()).at(-1)!
       expect(last.config.models).toEqual({ provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: null })
@@ -186,18 +186,18 @@ test.describe('the Config screen of a repository', () => {
     await openRepoConfig(page, 'orchard')
     let balanced = page.getByRole('region', { name: 'balanced' })
     let alert = balanced.getByRole('alert')
-    await expect(alert).toContainText('L’id anthropic/claude-opus-5.5 n’a pas la forme d’un id Anthropic.')
-    await expect(alert).toContainText('sans « anthropic/ » : par exemple claude-sonnet-5-5')
-    await expect(alert).toContainText('Le prochain job de ce niveau échoue avant d’appeler le provider.')
-    await expect(alert).toContainText('le modèle de ce niveau dans le formulaire ci-dessous')
+    await expect(alert).toContainText('The id anthropic/claude-opus-5.5 is not in the form that Anthropic expects.')
+    await expect(alert).toContainText('without "anthropic/", for example claude-sonnet-5-5')
+    await expect(alert).toContainText('The next job of this level fails before it calls the provider.')
+    await expect(alert).toContainText('change the model of this level in the form below')
     // The other levels have ids of the right form.
     await expect(page.getByRole('region', { name: 'lite' }).getByRole('alert')).toHaveCount(0)
     await expectNoAxeViolations(page)
 
     // Corrected in the form, the error goes.
-    await balanced.getByLabel('Modèle', { exact: true }).fill('claude-opus-5-5')
-    await balanced.getByRole('button', { name: 'Enregistrer pour balanced' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v2)' })).toBeVisible()
+    await balanced.getByLabel('Model', { exact: true }).fill('claude-opus-5-5')
+    await balanced.getByRole('button', { name: 'Save for balanced' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config saved (v2)' })).toBeVisible()
     await expect(page.getByRole('region', { name: 'balanced' }).getByRole('alert')).toHaveCount(0)
     expect(errors).toEqual([])
   })
@@ -207,13 +207,13 @@ test.describe('the Config screen of a repository', () => {
     await signIn(page, 'alex')
     await reset(page)
     await openRepoConfig(page, 'orchard')
-    await page.getByRole('link', { name: 'Déclenchement' }).click()
+    await page.getByRole('link', { name: 'Trigger' }).click()
     await expectNoAxeViolations(page)
 
-    await page.getByRole('radio', { name: /Au passage en « Ready for review »/ }).check()
-    await page.getByRole('button', { name: 'Remplacer ici le déclenchement' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v1)' })).toBeVisible()
-    await expect(page.getByRole('region', { name: 'Déclenchement' }).getByText('remplacé ici')).toBeVisible()
+    await page.getByRole('radio', { name: /When the PR becomes "Ready for review"/ }).check()
+    await page.getByRole('button', { name: 'Set here the trigger' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config saved (v1)' })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Trigger' }).getByText('set for this repo')).toBeVisible()
 
     expect((await pullRequest(page, { action: 'synchronize', head: head(3), draft: true })).outcome).toBe('ignored')
     expect(await jobsOforchard()).toHaveLength(0)
@@ -222,35 +222,35 @@ test.describe('the Config screen of a repository', () => {
     expect((await jobsOforchard()).map((j) => j.head_sha)).toEqual([head(3)])
 
     // A wrong path and a wrong limit come back with their error, under their field.
-    await page.getByLabel(/Une review automatique seulement si la PR touche/).fill('/etc/passwd')
-    await page.getByRole('button', { name: 'Remplacer ici les chemins' }).click()
-    await expect(page.getByText(/« \/etc\/passwd » : un chemin commence sans « \/ »/)).toBeVisible()
-    await expect(page.getByLabel(/Une review automatique seulement si la PR touche/)).toHaveAttribute('aria-invalid', 'true')
+    await page.getByLabel(/An automatic review only if the PR changes/).fill('/etc/passwd')
+    await page.getByRole('button', { name: 'Set here the paths' }).click()
+    await expect(page.getByText(/"\/etc\/passwd": a path starts without "\/"/)).toBeVisible()
+    await expect(page.getByLabel(/An automatic review only if the PR changes/)).toHaveAttribute('aria-invalid', 'true')
     await expectNoAxeViolations(page)
-    await page.getByLabel(/Plafond des reviews automatiques/).fill('beaucoup')
-    await page.getByRole('button', { name: 'Remplacer ici le plafond' }).click()
-    await expect(page.getByText(/Un montant en dollars/)).toBeVisible()
-    await page.getByLabel(/Plafond des reviews automatiques/).fill('12,50')
-    await page.getByRole('button', { name: 'Remplacer ici le plafond' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Config enregistrée (v2)' })).toBeVisible()
-    await expect(page.getByText(/sur 12,50\s\$/)).toBeVisible()
+    await page.getByLabel(/Cap of the automatic reviews/).fill('beaucoup')
+    await page.getByRole('button', { name: 'Set here the cap' }).click()
+    await expect(page.getByText(/An amount in dollars/)).toBeVisible()
+    await page.getByLabel(/Cap of the automatic reviews/).fill('12,50')
+    await page.getByRole('button', { name: 'Set here the cap' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config saved (v2)' })).toBeVisible()
+    await expect(page.getByText(/of \$12\.50/)).toBeVisible()
     // The two wrong forms answer 422 on purpose; nothing else may fail.
     expect(errors.filter((e) => !e.includes('status of 422'))).toEqual([])
   })
 
-  test('a member reads the config under « Lecture seule », with no form', async ({ page }) => {
+  test('a member reads the config under « Read only », with no form', async ({ page }) => {
     await signIn(page, 'alex')
     await reset(page)
     await page.context().clearCookies()
     await signIn(page, 'camille')
     await page.goto('/repos')
     await openRepoConfig(page, 'orchard')
-    await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
+    await expect(page.getByText('Read only', { exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: 'lite' }).getByText('anthropic/claude-haiku-5.5')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Remplacer ici|Revenir à l’org/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Set here|Back to the org value/ })).toHaveCount(0)
     await expectNoAxeViolations(page)
-    await page.getByRole('link', { name: 'Déclenchement' }).click()
-    await expect(page.getByText('À chaque push')).toBeVisible()
+    await page.getByRole('link', { name: 'Trigger' }).click()
+    await expect(page.getByText('At each push')).toBeVisible()
     await expect(page.getByRole('textbox')).toHaveCount(0)
     await expectNoAxeViolations(page)
   })

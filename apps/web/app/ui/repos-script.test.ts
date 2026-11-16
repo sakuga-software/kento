@@ -52,7 +52,7 @@ describe('the script of the Repos screen (REV-26)', () => {
     assert.equal(page.state.cleared, true)
   })
 
-  it('stops after 20 reads on screen, and leaves the link « Recharger »', async () => {
+  it('stops after 20 reads on screen, and leaves the link « Reload »', async () => {
     let page = load(() => '<span data-recheck="">')
     page.state.visible = 'visible'
     for (let i = 0; i < 25; i++) await page.tick()

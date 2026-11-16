@@ -82,17 +82,17 @@ async function shape(response: Response) {
 }
 
 describe('REV-40: a 404 or a 400 of a screen', () => {
-  it('shows an unknown page in the frame, in French, with a link to the dashboard, as a 404', async () => {
+  it('shows an unknown page in the frame, in English, with a link to the dashboard, as a 404', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn()
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 404)
     assert.match(response.headers.get('Content-Type') ?? '', /^text\/html/)
     let html = await response.text()
-    assert.match(html, /<html lang="fr"/)
-    assert.match(html, /<h1 class="page-title">Cette page n’existe pas<\/h1>/)
-    assert.match(html, /<a href="\/" class="button button-primary">Retour au tableau de bord<\/a>/)
-    assert.match(html, /aria-label="Navigation principale"/)
+    assert.match(html, /<html lang="en"/)
+    assert.match(html, /<h1 class="page-title">This page does not exist<\/h1>/)
+    assert.match(html, /<a href="\/" class="button button-primary">Back to the dashboard<\/a>/)
+    assert.match(html, /aria-label="Main navigation"/)
     assert.doesNotMatch(html, /aria-current="page"/)
   })
 
@@ -101,7 +101,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     let response = await request('/nope', { headers: BROWSER })
     assert.equal(response.status, 404)
     let html = await response.text()
-    assert.match(html, /<h1>Cette page n’existe pas<\/h1>/)
+    assert.match(html, /<h1>This page does not exist<\/h1>/)
     assert.match(html, /href="\/login"/)
   })
 
@@ -112,7 +112,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 404)
     let html = await response.text()
-    assert.match(html, /<h1>Cette page n’existe pas<\/h1>/)
+    assert.match(html, /<h1>This page does not exist<\/h1>/)
     assert.doesNotMatch(html, /alex/)
     assert.equal(cookieOf(response, COOKIE), null, 'an unknown URL does not touch the session')
   })
@@ -124,7 +124,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     auth.clock.now += ROLE_TTL_MS + 1000
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 404)
-    assert.match(await response.text(), /<h1>Cette page n’existe pas<\/h1>/)
+    assert.match(await response.text(), /<h1>This page does not exist<\/h1>/)
     assert.equal(cookieOf(response, COOKIE), null, 'an unknown URL does not touch the session')
     let screen = await request('/', { cookie, headers: BROWSER })
     assert.equal(screen.status, 303)
@@ -138,7 +138,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     auth.clock.now += ROLE_GRACE_MS + 1000
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 503)
-    assert.match(await response.text(), /GitHub ne répond pas\./)
+    assert.match(await response.text(), /GitHub does not answer\./)
     assert.equal(cookieOf(response, COOKIE), null, 'the session is not cleared')
   })
 
@@ -149,8 +149,8 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
       let response = await request(path, { cookie, headers: BROWSER })
       assert.equal(response.status, 404, path)
       let html = await response.text()
-      assert.match(html, /Ce repo n’est plus dans l’installation/, path)
-      assert.match(html, /<a href="\/repos" class="button button-primary">Voir les repos<\/a>/, path)
+      assert.match(html, /This repo is no longer in the installation/, path)
+      assert.match(html, /<a href="\/repos" class="button button-primary">See the repos<\/a>/, path)
       assert.match(html, /<a href="\/repos" aria-current="page" class="bar-link">/, path)
     }
   })
@@ -161,8 +161,8 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     let response = await request(`/repos/${UNKNOWN}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'enabled' } })
     assert.equal(response.status, 400)
     let html = await response.text()
-    assert.match(html, /Ce formulaire n’a pas pu être lu/)
-    assert.match(html, new RegExp(`href="/repos/${UNKNOWN}/config" class="button button-primary">Revenir à la config du repo</a>`))
+    assert.match(html, /Kentō could not read this form/)
+    assert.match(html, new RegExp(`href="/repos/${UNKNOWN}/config" class="button button-primary">Back to the config of the repo</a>`))
   })
 })
 

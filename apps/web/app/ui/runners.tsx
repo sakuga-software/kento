@@ -18,7 +18,7 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 const NAME = /^[A-Za-z0-9._-]{1,100}$/
 const LABEL = /^[A-Za-z0-9._-]{1,64}$/
 
-/** The form « Nouveau runner », as typed, and what is wrong with it. */
+/** The form « New runner », as typed, and what is wrong with it. */
 export interface RegistrationForm {
   name: string
   labels: string
@@ -27,7 +27,7 @@ export interface RegistrationForm {
 
 export type RegistrationInput = { name: string; labels: string[]; trusted: boolean }
 
-/** Checks the form « Nouveau runner ». Returns the input, or a message per field. */
+/** Checks the form « New runner ». Returns the input, or a message per field. */
 export function readRegistrationForm(form: FormData | undefined): {
   values: RegistrationForm
   input: RegistrationInput | null
@@ -38,12 +38,12 @@ export function readRegistrationForm(form: FormData | undefined): {
   let keyModeValue = form?.get('keyMode')
   let keyMode: RegistrationForm['keyMode'] = keyModeValue === 'app' ? 'app' : 'runner'
   let errors: Partial<Record<'name' | 'labels' | 'keyMode', string>> = {}
-  if (!NAME.test(name)) errors.name = 'Lettres, chiffres, points, tirets ou soulignés, 100 au plus.'
+  if (!NAME.test(name)) errors.name = 'Letters, digits, dots, hyphens or underscores, 100 at most.'
   let labels = [...new Set(labelsText.split(/[\s,]+/).filter(Boolean))]
   if (labels.length > 20 || labels.some((label) => !LABEL.test(label))) {
-    errors.labels = '20 labels au plus, séparés par des virgules ; chacun en lettres, chiffres, points, tirets ou soulignés.'
+    errors.labels = '20 labels at most, separated by commas. Each one has letters, digits, dots, hyphens or underscores.'
   }
-  if (keyModeValue !== 'app' && keyModeValue !== 'runner') errors.keyMode = 'Choisissez où est la clé du modèle.'
+  if (keyModeValue !== 'app' && keyModeValue !== 'runner') errors.keyMode = 'Choose where the key of the model is.'
   let values = { name, labels: labelsText, keyMode }
   let ok = Object.keys(errors).length === 0
   return { values, input: ok ? { name, labels, trusted: keyMode === 'app' } : null, errors }
@@ -59,7 +59,7 @@ export function dockerCommand(input: { kentoUrl: string; token: string; name: st
     `-e KENTO_RUNNER_LABELS=${input.labels.join(',')}`,
     '-e PROVIDER_KIND=openrouter',
     `-e PROVIDER_BASE_URL=${OPENROUTER_BASE_URL}`,
-    ...(input.trusted ? [] : ['-e PROVIDER_API_KEY=<votre clé OpenRouter>']),
+    ...(input.trusted ? [] : ['-e PROVIDER_API_KEY=<your OpenRouter key>']),
     '-v kento-runner-state:/var/lib/kento-runner',
     '--tmpfs /tmp:rw,size=2g --read-only --cap-drop ALL --security-opt no-new-privileges',
     `${RUNNER_IMAGE}:${input.version}`,
@@ -81,16 +81,16 @@ export function runnerState(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>
 }
 
 const STATE_LABELS: Record<RunnerState, string> = {
-  revoked: 'Révoqué',
-  online: 'En ligne',
-  late: 'Signal en retard',
-  offline: 'Hors ligne',
+  revoked: 'Revoked',
+  online: 'Online',
+  late: 'Late signal',
+  offline: 'Offline',
 }
 
-/** « En ligne », « Signal en retard », « Hors ligne depuis 3 j »: the word of the state of a runner. */
+/** « Online », « Late signal », « Offline for 3 d »: the word of the state of a runner. */
 export function runnerStateLabel(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>, now: Date): string {
   let state = runnerState(runner, now)
-  if (state === 'offline' && runner.lastSeenAt) return `Hors ligne depuis ${elapsed(runner.lastSeenAt, now)}`
+  if (state === 'offline' && runner.lastSeenAt) return `Offline for ${elapsed(runner.lastSeenAt, now)}`
   return STATE_LABELS[state]
 }
 
@@ -115,7 +115,7 @@ export function isSilent(runner: Pick<RunnerView, 'revokedAt' | 'lastSeenAt' | '
   return now.getTime() - last.getTime() >= SILENT_HOURS * 3_600_000
 }
 
-/** « 1 en ligne · 1 en retard · 27 hors ligne »: the runners in service by state, the empty states left out. */
+/** « 1 online · 1 late · 27 offline »: the runners in service by state, the empty states left out. */
 export function stateCounts(runners: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'>[], now: Date): string {
   let counts = { online: 0, late: 0, offline: 0 }
   for (let runner of runners) {
@@ -125,14 +125,14 @@ export function stateCounts(runners: Pick<RunnerView, 'revokedAt' | 'lastSeenAt'
   return countsText(counts)
 }
 
-/** « 1 en ligne · 27 hors ligne », from counts by state. */
+/** « 1 online · 27 offline », from counts by state. */
 export function countsText(counts: { online: number; late: number; offline: number }): string {
   let parts = [
-    counts.online > 0 ? `${counts.online} en ligne` : null,
-    counts.late > 0 ? `${counts.late} en retard` : null,
-    counts.offline > 0 ? `${counts.offline} hors ligne` : null,
+    counts.online > 0 ? `${counts.online} online` : null,
+    counts.late > 0 ? `${counts.late} late` : null,
+    counts.offline > 0 ? `${counts.offline} offline` : null,
   ].filter(Boolean)
-  return parts.length > 0 ? parts.join(' · ') : 'aucun en service'
+  return parts.length > 0 ? parts.join(' · ') : 'none in service'
 }
 
 /** The release that a runner should run, when `version` is older than it. Null when up to date or unknown. */
@@ -150,12 +150,12 @@ export function newerVersion(version: string | null, latest: string): string | n
 
 /** What the screen says after a form, from `?notice=`. */
 export const RUNNER_NOTICES = {
-  revoked: 'Runner révoqué. Son token ne marche plus, et son job en cours est reparti en file.',
-  trusted: 'Le runner reçoit maintenant la clé du service quand il n’a pas la sienne.',
-  untrusted: 'Le runner ne reçoit plus la clé du service.',
-  discarded: 'Token d’enregistrement annulé.',
-  missing: 'Rien n’a changé. Ce runner ou ce token a été modifié ou supprimé depuis votre dernier affichage. Voyez son état ci-dessous, puis refaites l’action s’il le faut.',
-  revoked_silent: 'Runners muets révoqués. Leurs tokens ne marchent plus, et leurs jobs en cours sont repartis en file.',
+  revoked: 'Runner revoked. Its token no longer works, and its job in progress went back to the queue.',
+  trusted: 'The runner now gets the key of the service when it has no key of its own.',
+  untrusted: 'The runner no longer gets the key of the service.',
+  discarded: 'Registration token cancelled.',
+  missing: 'Nothing changed. Someone changed or deleted this runner or this token after the page loaded. Read its state below, then do the action again if necessary.',
+  revoked_silent: 'Silent runners revoked. Their tokens no longer work, and their jobs in progress went back to the queue.',
 } as const
 export type RunnerNotice = keyof typeof RUNNER_NOTICES
 
@@ -200,10 +200,10 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         frame={frame}
         section="runners"
         title="Runners"
-        lead="Les machines qui font les reviews."
+        lead="The machines that do the reviews."
         actions={
           <a class="button button-primary" href="#nouveau-runner">
-            Nouveau runner
+            New runner
           </a>
         }
       >
@@ -218,7 +218,7 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         {screen.registrations.length > 0 ? (
           <section class="runner-section" aria-labelledby="pending-title">
             <h2 id="pending-title" class="section-title">
-              Tokens en attente
+              Waiting tokens
             </h2>
             <ul class="runner-list">
               {screen.registrations.map((registration) => (
@@ -237,17 +237,17 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
           </div>
           {inService.length === 0 ? (
             <div class="empty">
-              <p>Aucun runner. Créez un token avec « Nouveau runner », puis lancez la commande sur la machine.</p>
+              <p>No runner. Create a token with "New runner", then run the command on the machine.</p>
             </div>
           ) : active.length === 0 ? (
-            <p class="hint">Aucun runner n’a appelé depuis {SILENT_HOURS} h.</p>
+            <p class="hint">No runner called in the last {SILENT_HOURS} h.</p>
           ) : (
-            <RunnersTable runners={active} now={screen.now} version={version} admin={admin} csrf={csrf} caption="Runners en service" />
+            <RunnersTable runners={active} now={screen.now} version={version} admin={admin} csrf={csrf} caption="Runners in service" />
           )}
           {silent.length > 0 ? (
             <details class="runner-silent">
               <summary>
-                {silent.length} {silent.length > 1 ? `runners muets depuis plus de ${SILENT_HOURS} h` : `runner muet depuis plus de ${SILENT_HOURS} h`}
+                {silent.length} {silent.length === 1 ? `runner silent for more than ${SILENT_HOURS} h` : `runners silent for more than ${SILENT_HOURS} h`}
               </summary>
               <div class="runner-silent-body">
                 {admin && silentOfOrg.length > 0 ? (
@@ -261,21 +261,21 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
                       ))}
                     </form>
                     <Confirm
-                      trigger={silentOfOrg.length > 1 ? `Révoquer ces ${silentOfOrg.length} runners…` : 'Révoquer ce runner…'}
+                      trigger={silentOfOrg.length > 1 ? `Revoke these ${silentOfOrg.length} runners…` : 'Revoke this runner…'}
                       action={routes.runnersRevokeSilent.href()}
                       csrf={null}
                       form="revoke-silent"
-                      submit={silentOfOrg.length > 1 ? `Révoquer ${silentOfOrg.length} runners` : `Révoquer ${silentOfOrg[0]!.name}`}
+                      submit={silentOfOrg.length > 1 ? `Revoke ${silentOfOrg.length} runners` : `Revoke ${silentOfOrg[0]!.name}`}
                     >
                       <p>
-                        Leurs tokens cesseront de marcher, et un job qu’ils tiendraient encore repartira en file. Un runner qui
-                        a appelé depuis l’affichage de la page reste en service. Pour remettre l’un d’eux en service, il faudra
-                        un nouveau token.
+                        Their tokens stop working, and a job that they still hold goes back to the queue. A runner that
+                        called after the page loaded stays in service. To put one of them back in service, you need
+                        a new token.
                       </p>
                     </Confirm>
                   </div>
                 ) : null}
-                <RunnersTable runners={silent} now={screen.now} version={version} admin={admin} csrf={csrf} caption={`Runners muets depuis plus de ${SILENT_HOURS} h`} />
+                <RunnersTable runners={silent} now={screen.now} version={version} admin={admin} csrf={csrf} caption={`Runners silent for more than ${SILENT_HOURS} h`} />
               </div>
             </details>
           ) : null}
@@ -284,14 +284,14 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         {revoked.length > 0 ? (
           <section class="runner-section" aria-labelledby="revoked-title">
             <h2 id="revoked-title" class="section-title">
-              Révoqués <span class="count">{revoked.length}</span>
+              Revoked <span class="count">{revoked.length}</span>
             </h2>
-            <RunnersTable runners={revoked} now={screen.now} version={version} admin={false} csrf={csrf} caption="Runners révoqués" />
+            <RunnersTable runners={revoked} now={screen.now} version={version} admin={false} csrf={csrf} caption="Revoked runners" />
           </section>
         ) : null}
 
         <details class="runner-details">
-          <summary>Détails techniques</summary>
+          <summary>Technical details</summary>
           <div class="runner-facts">
             <ProtocolFacts version={version} />
             <LeaseFacts />
@@ -312,25 +312,25 @@ function CreatedToken(handle: Handle<{ created: CreatedRegistration; kentoUrl: s
     return (
       <section class="card token-card" aria-labelledby="token-title">
         <h2 id="token-title" class="section-title">
-          Token de {created.name}
+          Token of {created.name}
         </h2>
         <div class="banner banner-alert" role="status">
           <p>
-            <strong>Copiez-le maintenant.</strong> Il ne sera plus affiché. Il sert une fois, jusqu’à{' '}
+            <strong>Copy it now.</strong> The screen does not show it again. It works once, until{' '}
             <time dateTime={created.expiresAt.toISOString()}>{hour(created.expiresAt)}</time>.
           </p>
         </div>
         <p class="hint">
-          Lancez cette commande sur la machine du runner. Il apparaît ici dès qu’il s’enregistre.
-          {created.trusted ? null : ' Mettez votre clé OpenRouter à la place de <votre clé OpenRouter>.'}
+          Run this command on the machine of the runner. The runner shows here when it registers.
+          {created.trusted ? null : ' Put your OpenRouter key in place of <your OpenRouter key>.'}
         </p>
         <div class="copy-block">
           <label class="field-label" for="docker-command">
-            Commande docker run
+            docker run command
           </label>
           <textarea id="docker-command" class="mono command" readOnly rows={command.split('\n').length} spellCheck={false} value={command}></textarea>
           <button class="button" type="button" data-copy="docker-command" hidden>
-            Copier la commande
+            Copy the command
           </button>
           <span class="copy-status" role="status" aria-live="polite"></span>
         </div>
@@ -347,20 +347,20 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
       <li class={`runner ${expired ? 'runner-expired' : ''}`}>
         <div class="runner-head">
           <h3 class="runner-name mono">{registration.name}</h3>
-          <span class={`status ${expired ? 'status-alert' : 'status-wait'}`}>{expired ? 'Token expiré' : 'En attente du runner'}</span>
+          <span class={`status ${expired ? 'status-alert' : 'status-wait'}`}>{expired ? 'Token expired' : 'Waiting for the runner'}</span>
         </div>
         <Labels labels={registration.labels} />
         <p class="hint">
           {expired ? (
             <>
-              Le token a expiré à <time dateTime={registration.expiresAt.toISOString()}>{clock(registration.expiresAt)}</time>{' '}
-              sans qu’aucun runner ne s’enregistre. Vérifiez que le conteneur atteint {host} en HTTPS sortant, puis
-              créez un nouveau token.
+              The token expired at <time dateTime={registration.expiresAt.toISOString()}>{clock(registration.expiresAt)}</time>{' '}
+              and no runner registered. Check that the container reaches {host} with outbound HTTPS, then
+              create a new token.
             </>
           ) : (
             <>
-              Valable jusqu’à <time dateTime={registration.expiresAt.toISOString()}>{hour(registration.expiresAt)}</time>.{' '}
-              {registration.trusted ? 'Clé du service.' : 'Clé du runner.'}
+              Valid until <time dateTime={registration.expiresAt.toISOString()}>{hour(registration.expiresAt)}</time>.{' '}
+              {registration.trusted ? 'Key of the service.' : 'Key on the runner.'}
             </>
           )}
         </p>
@@ -369,18 +369,18 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
             <form method="post" action={routes.runnerRenew.href({ id: registration.id })}>
               <input type="hidden" name="_csrf" value={csrf} />
               <button class={`button ${expired ? 'button-primary' : ''}`} type="submit">
-                Nouveau token
+                New token
               </button>
             </form>
             <Confirm
-              trigger="Annuler le token…"
+              trigger="Cancel the token…"
               action={routes.runnerDiscard.href({ id: registration.id })}
               csrf={csrf}
-              submit={`Annuler le token de ${registration.name}`}
+              submit={`Cancel the token of ${registration.name}`}
             >
               <p>
-                Le token de <strong class="mono">{registration.name}</strong> cesse de marcher tout de suite. Aucun runner
-                ne pourra s’enregistrer avec. Pour enregistrer ce runner, il faudra un nouveau token.
+                The token of <strong class="mono">{registration.name}</strong> stops working at once. No runner
+                can register with it. To register this runner, you need a new token.
               </p>
             </Confirm>
           </div>
@@ -416,13 +416,13 @@ function RunnersTable(handle: Handle<RunnersTableProps>) {
           <thead>
             <tr>
               <th scope="col">Runner</th>
-              <th scope="col">État</th>
-              <th scope="col">Clé du modèle</th>
+              <th scope="col">State</th>
+              <th scope="col">Model key</th>
               <th scope="col">Version</th>
-              <th scope="col">Dernier signal</th>
-              <th scope="col">Job en cours</th>
-              <th scope="col">Jobs sur 24 h</th>
-              {revoked ? <th scope="col">Révoqué</th> : null}
+              <th scope="col">Last signal</th>
+              <th scope="col">Job in progress</th>
+              <th scope="col">Jobs in 24 h</th>
+              {revoked ? <th scope="col">Revoked</th> : null}
               {actions ? (
                 <th scope="col">
                   <span class="visually-hidden">Actions</span>
@@ -455,46 +455,46 @@ function RunnerRow(
         <th scope="row" data-label="Runner">
           <div class="runner-ident">
             <span class="runner-name mono">{runner.name}</span>
-            {service ? <span class="tag">Runner du service</span> : null}
+            {service ? <span class="tag">Runner of the service</span> : null}
             <Labels labels={runner.labels} />
           </div>
         </th>
-        <td data-label="État">
+        <td data-label="State">
           <span class={`status status-${state}`}>{runnerStateLabel(runner, now)}</span>
         </td>
-        <td data-label="Clé du modèle">{runner.trusted ? 'Clé du service (de confiance)' : 'Clé du runner'}</td>
+        <td data-label="Model key">{runner.trusted ? 'Key of the service (trusted)' : 'Key on the runner'}</td>
         <td data-label="Version">
           <span class="stack">
             <span class="mono">{runner.version ?? '—'}</span>
-            {newer ? <span class="status status-wait">{newer} disponible</span> : null}
+            {newer ? <span class="status status-wait">{newer} available</span> : null}
           </span>
         </td>
-        <td data-label="Dernier signal">
+        <td data-label="Last signal">
           {runner.lastSeenAt ? (
             <time dateTime={runner.lastSeenAt.toISOString()} title={clock(runner.lastSeenAt)}>
               {agoShort(runner.lastSeenAt, now)}
             </time>
           ) : (
-            'jamais'
+            'never'
           )}
         </td>
-        <td data-label="Job en cours">
+        <td data-label="Job in progress">
           {runner.currentJob ? (
             <span class="stack">
               <span class="mono">
                 {runner.currentJob.repo}#{runner.currentJob.prNumber}
               </span>
-              <span class="hint">{runner.currentJob.kind === 'resolve' ? 'résolution' : 'review'}</span>
+              <span class="hint">{runner.currentJob.kind === 'resolve' ? 'resolve' : 'review'}</span>
             </span>
           ) : (
-            'aucun'
+            'none'
           )}
         </td>
-        <td data-label="Jobs sur 24 h" class="num">
+        <td data-label="Jobs in 24 h" class="num">
           {runner.jobs24h}
         </td>
         {revokedColumn ? (
-          <td data-label="Révoqué">
+          <td data-label="Revoked">
             {runner.revokedAt ? <time dateTime={runner.revokedAt.toISOString()}>{clock(runner.revokedAt)}</time> : '–'}
           </td>
         ) : null}
@@ -506,20 +506,20 @@ function RunnerRow(
                   <input type="hidden" name="_csrf" value={csrf} />
                   <input type="hidden" name="trusted" value={runner.trusted ? 'false' : 'true'} />
                   <button class="button button-small" type="submit">
-                    {runner.trusted ? 'Retirer la confiance' : 'Marquer de confiance'}
-                    <span class="visually-hidden"> à {runner.name}</span>
+                    {runner.trusted ? 'Remove the trust' : 'Mark as trusted'}
+                    <span class="visually-hidden"> for {runner.name}</span>
                   </button>
                 </form>
-                <Confirm trigger="Révoquer…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Révoquer ${runner.name}`}>
+                <Confirm trigger="Revoke…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Revoke ${runner.name}`}>
                   <p>
-                    Le token de <strong class="mono">{runner.name}</strong> cessera de marcher à son prochain appel, et son
-                    job en cours repartira en file pour un autre runner. Pour le remettre en service, il faudra un nouveau
+                    The token of <strong class="mono">{runner.name}</strong> stops working at its next call, and its
+                    job in progress goes back to the queue for another runner. To put it back in service, you need a new
                     token.
                   </p>
                 </Confirm>
               </div>
             ) : service && state !== 'revoked' ? (
-              <span class="hint">géré par l’opérateur</span>
+              <span class="hint">managed by the operator</span>
             ) : null}
           </td>
         ) : null}
@@ -531,7 +531,7 @@ function RunnerRow(
 function Labels(handle: Handle<{ labels: string[] }>) {
   return () => {
     let { labels } = handle.props
-    if (labels.length === 0) return <p class="labels labels-none">Aucun label</p>
+    if (labels.length === 0) return <p class="labels labels-none">No label</p>
     return (
       <ul class="labels" aria-label="Labels">
         {labels.map((label) => (
@@ -546,7 +546,7 @@ function ProtocolFacts(handle: Handle<{ version: string }>) {
   return () => (
     <section class="card facts" aria-labelledby="protocol-title">
       <h2 id="protocol-title" class="section-title">
-        Protocole
+        Protocol
       </h2>
       <dl>
         <div>
@@ -556,26 +556,26 @@ function ProtocolFacts(handle: Handle<{ version: string }>) {
           </dd>
         </div>
         <div>
-          <dt>Attente d’un job</dt>
+          <dt>Wait for a job</dt>
           <dd>{CLAIM_WAIT_SECONDS} s</dd>
         </div>
         <div>
-          <dt>Signal pendant un job</dt>
-          <dd>toutes les {HEARTBEAT_SECONDS} s</dd>
+          <dt>Signal during a job</dt>
+          <dd>every {HEARTBEAT_SECONDS} s</dd>
         </div>
         <div>
-          <dt>Taille maximale d’une requête</dt>
-          <dd>{Math.round(MAX_BODY_BYTES / 1000)} ko</dd>
+          <dt>Largest request</dt>
+          <dd>{Math.round(MAX_BODY_BYTES / 1000)} KB</dd>
         </div>
         <div>
-          <dt>Token du runner</dt>
+          <dt>Runner token</dt>
           <dd>
-            <span class="mono">{RUNNER_TOKEN_PREFIX}…</span>, seule son empreinte est gardée
+            <span class="mono">{RUNNER_TOKEN_PREFIX}…</span>, only its hash is kept
           </dd>
         </div>
         <div>
-          <dt>Token d’enregistrement</dt>
-          <dd>un usage, {REGISTRATION_TTL_MINUTES} min</dd>
+          <dt>Registration token</dt>
+          <dd>one use, {REGISTRATION_TTL_MINUTES} min</dd>
         </div>
       </dl>
     </section>
@@ -586,24 +586,24 @@ function LeaseFacts(_handle: Handle<{}>) {
   return () => (
     <section class="card facts" aria-labelledby="lease-title">
       <h2 id="lease-title" class="section-title">
-        Réservation et tentatives
+        Reservation and attempts
       </h2>
       <dl>
         <div>
-          <dt>Réservation d’un job</dt>
-          <dd>{LEASE_SECONDS} s, prolongée à chaque signal du runner</dd>
+          <dt>Reservation of a job</dt>
+          <dd>{LEASE_SECONDS} s, extended at each signal of the runner</dd>
         </div>
         <div>
-          <dt>Tentatives</dt>
-          <dd>{MAX_ATTEMPTS} au plus par job</dd>
+          <dt>Attempts</dt>
+          <dd>{MAX_ATTEMPTS} at most per job</dd>
         </div>
         <div>
-          <dt>Attente avant une nouvelle tentative</dt>
-          <dd>{RETRY_BACKOFF_SECONDS} s, puis le double</dd>
+          <dt>Wait before a new attempt</dt>
+          <dd>{RETRY_BACKOFF_SECONDS} s, then double</dd>
         </div>
         <div>
-          <dt>Runner révoqué</dt>
-          <dd>son job repart en file, sans compter de tentative</dd>
+          <dt>Revoked runner</dt>
+          <dd>its job goes back to the queue, with no attempt counted</dd>
         </div>
       </dl>
     </section>
@@ -619,17 +619,17 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
     return (
       <section class="card new-runner" id="nouveau-runner" aria-labelledby="new-runner-title" tabIndex={-1}>
         <h2 id="new-runner-title" class="section-title">
-          Nouveau runner
+          New runner
         </h2>
         <p class="hint">
-          Le nom, les labels et la clé sont figés dans le token, et le runner ne peut pas les changer. Le token sert une
-          fois, pendant {REGISTRATION_TTL_MINUTES} min.
+          The token holds the name, the labels and the key, and the runner cannot change them. The token works
+          once, for {REGISTRATION_TTL_MINUTES} min.
         </p>
         <form method="post" action={routes.runnerNew.href()} noValidate>
           <input type="hidden" name="_csrf" value={csrf} />
           <div class="field">
             <label class="field-label" for="runner-name">
-              Nom
+              Name
             </label>
             <input
               class="input mono"
@@ -649,7 +649,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
               </p>
             ) : (
               <p class="field-hint" id="runner-name-hint">
-                Par exemple mac-mini.
+                For example mac-mini.
               </p>
             )}
           </div>
@@ -673,23 +673,23 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
               </p>
             ) : (
               <p class="field-hint" id="runner-labels-hint">
-                Séparés par des virgules. Ils s’affichent sur la carte du runner.
+                Separated by commas. They show on the card of the runner.
               </p>
             )}
           </div>
           <fieldset class="field" aria-describedby={errors.keyMode ? 'runner-key-error' : undefined}>
-            <legend class="field-label">Clé du modèle</legend>
+            <legend class="field-label">Model key</legend>
             <label class="choice">
               <input type="radio" name="keyMode" value="runner" checked={values.keyMode === 'runner'} />
               <span>
-                <strong>Clé du runner.</strong> La machine a sa propre clé (PROVIDER_API_KEY), et le service n’envoie
-                jamais la sienne.
+                <strong>Key on the runner.</strong> The machine has its own key (PROVIDER_API_KEY), and the service never
+                sends its key.
               </span>
             </label>
             <label class="choice">
               <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
               <span>
-                <strong>Clé du service.</strong> Le runner est de confiance et reçoit la clé du service avec chaque job.
+                <strong>Key of the service.</strong> The runner is trusted and gets the key of the service with each job.
               </span>
             </label>
             {errors.keyMode ? (
@@ -699,7 +699,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
             ) : null}
           </fieldset>
           <button class="button button-primary" type="submit">
-            Créer le token
+            Create the token
           </button>
         </form>
       </section>

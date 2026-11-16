@@ -54,9 +54,9 @@ export function signedOf(context: { get(key: typeof Signed): SignedIn | undefine
   return signed
 }
 
-export const SETTINGS_EXIT: ErrorExit = { href: pageRoutes.settings.href(), label: 'Revenir aux réglages' }
-export const REPOS_EXIT: ErrorExit = { href: pageRoutes.repos.href(), label: 'Voir les repos' }
-export const RUNNERS_EXIT: ErrorExit = { href: pageRoutes.runners.href(), label: 'Revenir aux runners' }
+export const SETTINGS_EXIT: ErrorExit = { href: pageRoutes.settings.href(), label: 'Back to the settings' }
+export const REPOS_EXIT: ErrorExit = { href: pageRoutes.repos.href(), label: 'See the repos' }
+export const RUNNERS_EXIT: ErrorExit = { href: pageRoutes.runners.href(), label: 'Back to the runners' }
 
 export function forbidden() {
   return new Response('Forbidden', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
@@ -173,34 +173,34 @@ export function createKit(deps: UiDependencies): UiKit {
  */
 const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string }> = {
   dashboard: {
-    title: 'Tableau de bord',
-    lead: 'Ce qui tourne, ce qui a échoué, et ce que ça coûte.',
-    empty: 'Les dernières reviews, la file de jobs, le coût du jour et les runners s’afficheront ici.',
+    title: 'Dashboard',
+    lead: 'What runs, what failed, and what it costs.',
+    empty: 'The latest reviews, the job queue, the cost of the day and the runners will show here.',
   },
   repos: {
     title: 'Repos',
-    lead: 'Les repos de l’installation, et où en est chacun dans sa bascule.',
-    empty: 'La liste des repos, leur mode et leur compteur de bascule s’afficheront ici.',
+    lead: 'The repos of the installation, and where each one stands in its switch.',
+    empty: 'The list of the repos, their mode and their switch counter will show here.',
   },
   findings: {
     title: 'Findings',
-    lead: 'Chaque finding, et la précision des reviews.',
-    empty: 'Les findings filtrables et la précision par repo s’afficheront ici.',
+    lead: 'Each finding, and the precision of the reviews.',
+    empty: 'The findings, with filters, and the precision by repo will show here.',
   },
   feedback: {
-    title: 'Retours',
-    lead: 'Ce que les auteurs des PR disent des reviews de Kentō.',
-    empty: 'Les retours sur les reviews s’afficheront ici.',
+    title: 'Feedback',
+    lead: 'What the authors of the pull requests say about the reviews of Kentō.',
+    empty: 'The feedback on the reviews will show here.',
   },
   runners: {
     title: 'Runners',
-    lead: 'Les machines qui font les reviews.',
-    empty: 'Les runners, leur dernier signal et leurs jobs s’afficheront ici.',
+    lead: 'The machines that do the reviews.',
+    empty: 'The runners, their last signal and their jobs will show here.',
   },
   settings: {
-    title: 'Réglages',
-    lead: 'Ce qui vaut pour toute l’organisation.',
-    empty: 'Le plafond de coût, les valeurs par défaut, les providers et l’état de l’App s’afficheront ici.',
+    title: 'Settings',
+    lead: 'What applies to the whole organization.',
+    empty: 'The cost cap, the default values, the providers and the state of the App will show here.',
   },
 }
 
@@ -212,7 +212,7 @@ export function PlaceholderPage(handle: Handle<{ frame: PageFrame; section: Sect
     return (
       <Shell frame={frame} section={section} title={page.title} lead={page.lead}>
         <section class="empty" aria-labelledby="empty-title">
-          <h2 id="empty-title">Bientôt ici</h2>
+          <h2 id="empty-title">Soon here</h2>
           <p>{page.empty}</p>
         </section>
       </Shell>

@@ -81,8 +81,8 @@ test('a finding that cites a rule gets its id and at least its severity; any oth
 
 test('an inline comment names the rule of its finding, under its title', () => {
   const body = inlineBody(finding({ rule_id: MIGRATION_RULE.id, rule_title: 'Index\n des FK' }), false);
-  assert.match(body, /\*\*FK sans index\*\* `#[0-9a-f]{6}`\n\nRègle : « Index des FK »\n\ns/);
-  assert.doesNotMatch(inlineBody(finding(), false), /Règle/);
+  assert.match(body, /\*\*FK sans index\*\* `#[0-9a-f]{6}`\n\nRule: "Index des FK"\n\ns/);
+  assert.doesNotMatch(inlineBody(finding(), false), /Rule:/);
 });
 
 // --- A review with rules, on a repository ------------------------------------------------------

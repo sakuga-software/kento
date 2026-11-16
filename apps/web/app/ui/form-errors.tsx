@@ -19,7 +19,7 @@ export function focusIf(first: string | null, key: string): { autoFocus?: true }
   return first === key ? { autoFocus: true } : {}
 }
 
-/** « Rien n’est enregistré : 2 champs à corriger. » at the top of a form with errors. */
+/** « Nothing is saved. 2 fields to fix. » at the top of a form with errors. */
 export function FormErrors(handle: Handle<{ errors: Record<string, string | undefined> }>) {
   return () => {
     let count = Object.values(handle.props.errors).filter(Boolean).length
@@ -27,7 +27,7 @@ export function FormErrors(handle: Handle<{ errors: Record<string, string | unde
     return (
       <div class="banner banner-alert form-errors" role="alert">
         <p>
-          <strong>Rien n’est enregistré</strong> : {count === 1 ? 'un champ à corriger' : `${count} champs à corriger`}.
+          <strong>Nothing is saved.</strong> {count === 1 ? 'One field to fix' : `${count} fields to fix`}.
         </p>
       </div>
     )

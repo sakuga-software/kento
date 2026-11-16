@@ -1,4 +1,4 @@
-// REV-96. « Les commandes de Kentō »: a public page, open without a sign-in, so that the link of a
+// REV-96. « Kentō commands »: a public page, open without a sign-in, so that the link of a
 // comment of Kentō on GitHub works for every reader of the pull request. It describes `review`,
 // `force`, `resolve`, `reject` and `feedback` (REV-107): where to write them, who can run them, what they cost, what they do
 // at once and what the next review does with them.
@@ -30,7 +30,7 @@ interface Command {
   examples?: { code: string; why: string }[]
 }
 
-const WRITERS = 'Une personne qui peut écrire dans le repo (write, maintain ou admin), ou un bot que l’org a déclaré de confiance.'
+const WRITERS = 'A person who can write to the repo (write, maintain or admin), or a bot that the org declared as trusted.'
 
 const LEVEL_COSTS = (
   <>
@@ -42,104 +42,104 @@ const COMMANDS: Command[] = [
   {
     id: 'review',
     name: 'review',
-    lead: 'Demander une review de la PR, au niveau choisi.',
+    lead: 'Ask for a review of the PR, at the level that you choose.',
     syntax: [
-      { where: 'Dans la conversation de la PR', code: '@kento-review [lite|balanced|heavy]' },
-      { where: 'Forme longue', code: '@kento-review review balanced' },
+      { where: 'In the conversation of the PR', code: '@kento-review [lite|balanced|heavy]' },
+      { where: 'Long form', code: '@kento-review review balanced' },
     ],
     who: WRITERS,
-    cost: <>Une review au niveau choisi : {LEVEL_COSTS}.</>,
+    cost: <>One review at the chosen level: {LEVEL_COSTS}.</>,
     now: (
       <>
-        Kentō met la review en file et réagit 👀 sur le commentaire, puis 🚀 quand la review est publiée, ou 😕 si elle échoue.
-        Sans niveau, c’est <code>lite</code>.
+        Kentō queues the review and reacts 👀 on the comment, then 🚀 when the review is published, or 😕 if it fails. Without a level,
+        the level is <code>lite</code>.
       </>
     ),
     next: (
       <>
-        La review relit le dernier commit de la PR. Un commit qui a déjà une review à ce niveau n’est pas relu une deuxième fois : il
-        faut <code>force</code>.
+        The review reads the last commit of the PR. Kentō does not review a commit a second time at a level that it already got: use{' '}
+        <code>force</code>.
       </>
     ),
   },
   {
     id: 'force',
     name: 'force',
-    lead: 'Payer une nouvelle review à un niveau que ce commit a déjà reçu.',
-    syntax: [{ where: 'Dans la conversation de la PR', code: '@kento-review heavy force' }],
+    lead: 'Pay for a new review at a level that this commit already got.',
+    syntax: [{ where: 'In the conversation of the PR', code: '@kento-review heavy force' }],
     who: WRITERS,
-    cost: <>Le prix d’une review au niveau choisi ({LEVEL_COSTS}), payé une deuxième fois pour ce commit.</>,
-    now: <>Comme <code>review</code> : la review part même si le commit a déjà une review à ce niveau.</>,
-    next: <>La review est payée une deuxième fois. Elle est publiée comme les autres : son bloc remplace le précédent dans la description de la PR.</>,
+    cost: <>The price of a review at the chosen level ({LEVEL_COSTS}), paid a second time for this commit.</>,
+    now: <>Like <code>review</code>: the review starts even if the commit already has a review at this level.</>,
+    next: <>You pay for the review a second time. Kentō publishes it like the others: its block replaces the earlier one in the description of the PR.</>,
   },
   {
     id: 'resolve',
     name: 'resolve',
-    lead: 'Répondre aux fils ouverts de Kentō, et résoudre ceux que le code règle.',
-    syntax: [{ where: 'Dans la conversation de la PR', code: '@kento-review resolve [lite|balanced|heavy]' }],
+    lead: 'Answer the open threads of Kentō, and resolve those that the code settles.',
+    syntax: [{ where: 'In the conversation of the PR', code: '@kento-review resolve [lite|balanced|heavy]' }],
     who: WRITERS,
     cost: (
       <>
-        Un appel au modèle du niveau choisi (<code>lite</code> par défaut), payé aux tokens comme une review : le prix dépend du nombre de
-        fils et du code lus. Sans fil ouvert à lire, aucun appel au modèle.
+        One call to the model of the chosen level (<code>lite</code> by default), paid by the token like a review: the price depends on
+        the number of threads and on the code that the model reads. With no open thread to read, there is no model call.
       </>
     ),
     now: (
       <>
-        Kentō lit jusqu’à {MAX_RESOLVE_THREADS} fils ouverts, dans une limite de {MAX_RESOLVE_PACK_BYTES / 1000} ko, avec le code du
-        dernier commit : il répond dans chaque fil, et résout ceux que le code corrige. Les fils au-delà attendent : le résumé le dit, et
-        une nouvelle commande les lit.
+        Kentō reads up to {MAX_RESOLVE_THREADS} open threads, within {MAX_RESOLVE_PACK_BYTES / 1000} KB, with the code of the last commit.
+        It answers in each thread, and resolves those that the code fixes. The other threads wait: the summary says so, and a new command
+        reads them.
       </>
     ),
-    next: <>Un fil auquel <code>resolve</code> a déjà répondu sur ce commit attend un nouveau push avant d’être relu.</>,
+    next: <>A thread that <code>resolve</code> already answered on this commit waits for a new push before Kentō reads it again.</>,
   },
   {
     id: 'reject',
     name: 'reject',
-    lead: 'Écarter un constat faux, avec sa cause. Il ne revient pas tant que son fichier ne change pas, et ne compte plus dans la note.',
+    lead: 'Dismiss a wrong finding, with its cause. It does not come back until its file changes, and it no longer counts in the score.',
     syntax: [
-      { where: 'En réponse, dans le fil du constat', code: '@kento-review reject <cause>' },
-      { where: 'Dans la conversation, pour un constat sans fil', code: '@kento-review reject #3cf454 <cause>' },
+      { where: 'As a reply, in the thread of the finding', code: '@kento-review reject <cause>' },
+      { where: 'In the conversation, for a finding without a thread', code: '@kento-review reject #3cf454 <cause>' },
     ],
     who: WRITERS,
-    cost: <>Aucun appel au modèle : la commande ne coûte rien.</>,
+    cost: <>No model call: the command costs nothing.</>,
     now: (
       <>
-        Le constat passe en <code>dismissed</code> avec sa cause. Quand le constat a un fil, Kentō y répond et le résout ; s’il ne peut pas
-        le résoudre, sa réponse le dit, et une personne le résout à la main. Si la dernière review demandait des
-        changements et qu’aucun constat bloquant ne reste ouvert, Kentō retire cette demande. L’id est celui de la liste des constats, à
-        la fin de la description de la PR.
+        The finding becomes <code>dismissed</code> with its cause. When the finding has a thread, Kentō replies in it and resolves it. If
+        Kentō cannot resolve it, its reply says so, and a person resolves it. If the last review requested changes and no blocking finding
+        stays open, Kentō dismisses that request. The id is the one in the list of findings, at the end of the description of the PR.
       </>
     ),
     next: (
       <>
-        La review suivante lit les constats écartés et leur cause : elle ne les écrit plus tant que leur fichier ne change pas, et ils ne
-        comptent plus dans la note.
+        The next review reads the dismissed findings and their cause. It does not write them again until their file changes, and they no
+        longer count in the score.
       </>
     ),
     examples: [
-      { code: '@kento-review reject faux positif : la valeur est validée par le schéma (schema.ts:12)', why: 'Le fait qui réfute le constat, avec où le lire.' },
-      { code: '@kento-review reject risque accepté : le cache est par processus, voulu (doc dans cache.ts)', why: 'Un choix voulu et déjà écrit.' },
-      { code: '@kento-review reject #3cf454 même constat que le fil du dessus, déjà réfuté', why: 'Un constat qui revient avec d’autres mots.' },
+      { code: '@kento-review reject false positive: the schema validates the value (schema.ts:12)', why: 'The fact that refutes the finding, with where to read it.' },
+      { code: '@kento-review reject accepted risk: the cache is per process, on purpose (doc in cache.ts)', why: 'A choice made on purpose and already written down.' },
+      { code: '@kento-review reject #3cf454 same finding as the thread above, already refuted', why: 'A finding that comes back in other words.' },
     ],
   },
   {
     id: 'feedback',
     name: 'feedback',
-    lead: 'Donner un avis sur les reviews de Kentō : ce qui a servi, un faux positif, un fil inutile, un défaut manqué.',
+    lead: 'Give your opinion on the reviews of Kentō: what helped, a false positive, a useless thread, a missed defect.',
     syntax: [
-      { where: 'Dans la conversation de la PR', code: '@kento-review feedback <avis>' },
-      { where: 'En réponse, dans le fil d’un constat', code: '@kento-review feedback ce constat a trouvé le bug' },
+      { where: 'In the conversation of the PR', code: '@kento-review feedback <opinion>' },
+      { where: 'As a reply, in the thread of a finding', code: '@kento-review feedback this finding caught the bug' },
     ],
-    who: 'Toute personne, un bot que l’org a déclaré de confiance, ou le bot qui a ouvert la PR.',
-    cost: <>Aucun appel au modèle et aucun job : la commande ne coûte rien.</>,
+    who: 'Anyone, a bot that the org declared as trusted, or the bot that opened the PR.',
+    cost: <>No model call and no job: the command costs nothing.</>,
     now: (
       <>
-        Kentō garde l’avis, et les lignes sous la commande avec lui, puis réagit ❤️ sur le commentaire. Les avis se lisent dans l’app, sur la page Retours. Après sa troisième review
-        sur une PR, Kentō demande une fois un avis à son auteur : citer ce message, ou réagir 👍 ou 👎 dessus, compte aussi.
+        Kentō keeps the opinion, with the lines under the command, then reacts ❤️ on the comment. The opinions are on the Feedback page of
+        the app. After its third review of a PR, Kentō asks its author for an opinion once: a quote of that message, or a 👍 or 👎 on it,
+        counts too.
       </>
     ),
-    next: <>Rien ne change dans les reviews de la PR : les avis servent à améliorer Kentō.</>,
+    next: <>Nothing changes in the reviews of the PR: the opinions help to make Kentō better.</>,
   },
 ]
 
@@ -148,24 +148,24 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
   return () => {
     let { theme, version, assetVersion } = handle.props
     return (
-      <Document title="Les commandes" theme={theme} assetVersion={assetVersion}>
+      <Document title="Commands" theme={theme} assetVersion={assetVersion}>
         <main class="docs">
           <header class="docs-head">
-            <a class="mark" href={authRoutes.signIn.href()} aria-label="Kentō, se connecter">
+            <a class="mark" href={authRoutes.signIn.href()} aria-label="Kentō, sign in">
               <Logo />
             </a>
           </header>
           <article class="docs-body">
-            <h1>Les commandes de Kentō</h1>
+            <h1>Kentō commands</h1>
             <p class="docs-lead">
-              Kentō lit une commande dans un commentaire d’une pull request, sur une ligne qui commence par <code>@kento-review</code>{' '}
-              (<code>@sakuga-review</code> marche aussi), hors d’une citation et d’un bloc de code. Le reste du commentaire est du texte libre.
+              Kentō reads a command in a comment of a pull request, on a line that starts with <code>@kento-review</code>{' '}
+              (<code>@sakuga-review</code> works too), outside a quote and a code block. The rest of the comment is free text.
             </p>
             <p class="docs-lead">
-              Une commande écrite par un agent (Claude Code, Copilot…) a le même effet et le même coût que celle d’une personne. Kentō
-              vérifie seulement que le compte qui l’écrit peut la lancer.
+              A command that an agent writes (Claude Code, Copilot...) has the same effect and the same cost as the command of a person.
+              Kentō only checks that the account that writes it can run it.
             </p>
-            <nav class="docs-toc" aria-label="Commandes">
+            <nav class="docs-toc" aria-label="Commands">
               <ul>
                 {COMMANDS.map((c) => (
                   <li>
@@ -184,7 +184,7 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
                 <p>{c.lead}</p>
                 <dl class="docs-facts">
                   <div>
-                    <dt>Syntaxe</dt>
+                    <dt>Syntax</dt>
                     <dd>
                       <ul class="docs-syntax">
                         {c.syntax.map((s) => (
@@ -197,24 +197,24 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
                     </dd>
                   </div>
                   <div>
-                    <dt>Qui peut la lancer</dt>
+                    <dt>Who can run it</dt>
                     <dd>{c.who}</dd>
                   </div>
                   <div>
-                    <dt>Coût</dt>
+                    <dt>Cost</dt>
                     <dd>{c.cost}</dd>
                   </div>
                   <div>
-                    <dt>Effet immédiat</dt>
+                    <dt>What happens now</dt>
                     <dd>{c.now}</dd>
                   </div>
                   <div>
-                    <dt>À la review suivante</dt>
+                    <dt>At the next review</dt>
                     <dd>{c.next}</dd>
                   </div>
                   {c.examples ? (
                     <div>
-                      <dt>Exemples de causes</dt>
+                      <dt>Examples of causes</dt>
                       <dd>
                         <ul class="docs-syntax">
                           {c.examples.map((e) => (
@@ -230,20 +230,20 @@ export function CommandsPage(handle: Handle<CommandsPageProps>) {
                 </dl>
               </section>
             ))}
-            <section class="docs-command" id="indice" aria-labelledby="indice-title">
-              <h2 id="indice-title">Quand Kentō suggère <code>reject</code></h2>
+            <section class="docs-command" id="hint" aria-labelledby="hint-title">
+              <h2 id="hint-title">When Kentō suggests <code>reject</code></h2>
               <p>
-                Une réponse dans le fil d’un constat qui semble l’écarter sans la commande (« Not applied », « Non retenu », « Risque
-                accepté »…) reçoit une fois une réponse de Kentō qui donne la commande. Cette réponse ne change rien au constat : seul{' '}
-                <code>reject</code> l’écarte. Elle ne vient jamais dans un fil résolu, ni pour un constat déjà écarté.
+                A reply in the thread of a finding that seems to set it aside without the command ("Not applied", "Won't fix", "Accepted
+                risk"...) gets one reply from Kentō that gives the command. That reply does not change the finding: only <code>reject</code>{' '}
+                dismisses it. It never comes in a resolved thread, or for a finding that is already dismissed.
               </p>
             </section>
             <p class="docs-note">
-              La cause tient sur la ligne de la commande, en {REASON_MAX} caractères au plus. Une commande inconnue reçoit 😕 et la liste des
-              commandes.
+              The cause goes on the line of the command, in {REASON_MAX} characters at most. An unknown command gets 😕 and the list of the
+              commands.
             </p>
           </article>
-          <p class="signin-foot">Kentō {version} · par Sakuga</p>
+          <p class="signin-foot">Kentō {version} · by Sakuga</p>
         </main>
       </Document>
     )

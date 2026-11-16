@@ -43,7 +43,7 @@ export async function renderConfig(
   let view = await configDeps.store.read(orgId, repoId)
   if (!view) return kit.errorPage(context, 404, 'repo', 'repos')
   let providers = await configDeps.providers.list(orgId)
-  // REV-19. The tab Règles reads the rules; the other tabs only need to know that it exists.
+  // REV-19. The tab Rules reads the rules; the other tabs only need to know that it exists.
   let rules = deps.rules
     ? tab === 'rules'
       ? {
@@ -90,7 +90,7 @@ export function configActions(kit: UiKit) {
     let id = context.params.id
     if (!UUID.test(id)) return kit.errorPage(context, 404, 'repo', 'repos')
     let read = readVersionedForm(context.get(FormData), CONFIG_FIELDS)
-    if (!read) return kit.errorPage(context, 400, 'form', 'repos', { href: pageRoutes.repoConfig.href({ id }), label: 'Revenir à la config du repo' })
+    if (!read) return kit.errorPage(context, 400, 'form', 'repos', { href: pageRoutes.repoConfig.href({ id }), label: 'Back to the config of the repo' })
     let { form, field: key, version } = read
     let tab = tabOf(key)
     let page = kit.page(context)
@@ -130,7 +130,7 @@ export function configActions(kit: UiKit) {
     }
 
     let outcome: SaveOutcome = await configDeps.store.save(signed.membership.org.id, id, signed.user.id, version, (current) => {
-      // « Revenir à l'org » on a key that the repository does not set changes nothing, but still
+      // « Back to the org value » on a key that the repository does not set changes nothing, but still
       // writes a version: the person sees which version they are on.
       if (reset && !hasField(current.config, key) && !(key === 'level' && current.defaultLevel !== 'lite')) return current
       return change(current)

@@ -21,10 +21,10 @@ export function watchConsole(page: Page): string[] {
   return errors
 }
 
-/** REV-91: on the Repos screen, opens the menu « … » of a repository and its link « Ouvrir la config ». */
+/** REV-91: on the Repos screen, opens the menu « … » of a repository and its link « Open the config ». */
 export async function openRepoConfig(page: Page, repo: string) {
-  await page.locator(`summary[aria-label="Actions de ${repo}"]`).click()
-  await page.locator(`summary[aria-label="Actions de ${repo}"] + div`).getByRole('link', { name: 'Ouvrir la config' }).click()
+  await page.locator(`summary[aria-label="Actions of ${repo}"]`).click()
+  await page.locator(`summary[aria-label="Actions of ${repo}"] + div`).getByRole('link', { name: 'Open the config' }).click()
 }
 
 /**
@@ -34,7 +34,7 @@ export async function openRepoConfig(page: Page, repo: string) {
 export async function signIn(page: Page, login: 'alex' | 'camille' | 'stranger') {
   await seedOrg()
   await page.goto('/login')
-  await page.getByRole('link', { name: 'Continuer avec GitHub' }).click()
+  await page.getByRole('link', { name: 'Continue with GitHub' }).click()
   await page.getByRole('link', { name: `Authorize as ${login}` }).click()
 }
 

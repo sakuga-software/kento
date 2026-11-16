@@ -130,7 +130,7 @@ export function checkMissingNames<F extends Finding>(
   answer.findings = kept;
   answer.not_reviewed = [
     ...(answer.not_reviewed ?? []),
-    ...unchecked.map((f) => `${f.path} : ${f.title.replace(/\.$/, '')}. Kentō n'a pas pu le vérifier dans le fichier à la tête.`),
+    ...unchecked.map((f) => `${f.path}: ${f.title.replace(/\.$/, '')}. Kentō could not check it in the file at the head.`),
   ];
   return { refuted, unchecked };
 }

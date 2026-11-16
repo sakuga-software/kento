@@ -15,10 +15,10 @@ import { Shell, ThemeSwitch, type PageFrame } from './shell.tsx'
 
 /** What the screen says after a form, from `?fait=`. */
 export const USER_NOTICES = {
-  saved: 'Préférences enregistrées. Elles comptent dès le prochain push de vos PR.',
-  added: 'Repo ajouté à vos préférences.',
-  removed: 'Repo retiré : vos préférences de tous les repos s’y appliquent de nouveau.',
-  missing: 'Ce repo n’est pas un repo activé de l’organisation : rien n’est enregistré.',
+  saved: 'Preferences saved. They apply from the next push of your PRs.',
+  added: 'Repo added to your preferences.',
+  removed: 'Repo removed. Your preferences for all repos apply to it again.',
+  missing: 'This repo is not an enabled repo of the organization. Nothing is saved.',
 } as const
 export type UserNotice = keyof typeof USER_NOTICES
 
@@ -33,8 +33,8 @@ export interface UserPageProps {
   now: Date
 }
 
-const LEVEL_TEXT = (level: Level | null) => (level === null ? 'celui du repo' : level)
-const AUTO_TEXT = (auto: boolean) => (auto ? 'activée' : 'désactivée')
+const LEVEL_TEXT = (level: Level | null) => (level === null ? 'from the repo' : level)
+const AUTO_TEXT = (auto: boolean) => (auto ? 'on' : 'off')
 
 /** `/users/:login`, with the number of pull requests on screen when it is more than the first step. */
 export function userHref(login: string, pulls?: number): string {
@@ -47,13 +47,13 @@ export function UserPage(handle: Handle<UserPageProps>) {
     let { frame, screen, self, pulls, notice, now } = handle.props
     let { user } = screen
     let org = frame.viewer!.org.login
-    let role = screen.role === 'admin' ? 'Admin' : 'Membre'
+    let role = screen.role === 'admin' ? 'Admin' : 'Member'
     return (
       <Shell
         frame={frame}
         title={user.login}
-        lead={`${user.name ? `${user.name} · ` : ''}${role} de ${org}, d’après ses droits sur GitHub.`}
-        memberCan={self ? 'vous réglez les reviews de vos propres PR' : undefined}
+        lead={`${user.name ? `${user.name} · ` : ''}${role} of ${org}, from their rights on GitHub.`}
+        memberCan={self ? 'you set the reviews of your own PRs' : undefined}
       >
         {notice ? (
           <div class={`banner ${notice === 'missing' ? 'banner-info' : 'banner-ok'}`} role="status">
@@ -64,7 +64,7 @@ export function UserPage(handle: Handle<UserPageProps>) {
         {self ? (
           <section class="card user-section" aria-labelledby="user-theme-title">
             <h2 id="user-theme-title" class="section-title">
-              Affichage
+              Display
             </h2>
             <ThemeSwitch frame={frame} />
           </section>
@@ -85,24 +85,24 @@ function PrefFields(handle: Handle<{ id: string; pref: UserPref | null }>) {
       <>
         <div class="field">
           <label class="field-label" for={`${id}-auto`}>
-            Review automatique
+            Automatic review
           </label>
           <select class="input" id={`${id}-auto`} name="auto">
             <option value="on" selected={auto}>
-              Activée : chaque push de mes PR
+              On: each push of my PRs
             </option>
             <option value="off" selected={!auto}>
-              Désactivée : seulement sur commande
+              Off: only on a command
             </option>
           </select>
         </div>
         <div class="field">
           <label class="field-label" for={`${id}-level`}>
-            Niveau par défaut
+            Default level
           </label>
           <select class="input" id={`${id}-level`} name="level">
             <option value="" selected={level === null}>
-              Celui du repo
+              From the repo
             </option>
             {LEVELS.map((l) => (
               <option value={l} selected={level === l}>
@@ -125,41 +125,41 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
     return (
       <section class="card user-section" aria-labelledby="user-prefs-title">
         <h2 id="user-prefs-title" class="section-title">
-          Reviews de {self ? 'mes' : 'ses'} PR
+          Reviews of {self ? 'my' : 'their'} PRs
         </h2>
         <p class="hint">
-          Une règle d’assignation du repo passe avant ces préférences, et elles passent avant le niveau par défaut du repo. Review automatique
-          désactivée : aucun job sur {self ? 'vos' : 'ses'} PR, sauf une commande <code>@kento-review</code>.
+          An assignment rule of the repo comes before these preferences, and they come before the default level of the repo. With the
+          automatic review off, {self ? 'your' : 'their'} PRs get no job, except with a <code>@kento-review</code> command.
         </p>
-        <h3 class="dash-subtitle">Tous les repos</h3>
+        <h3 class="dash-subtitle">All repos</h3>
         {self ? (
           <form class="user-pref-form" method="post" action={action}>
             <input type="hidden" name="_csrf" value={csrf} />
             <input type="hidden" name="repo" value="" />
             <PrefFields id="pref-all" pref={global} />
             <button class="button button-primary" type="submit">
-              Enregistrer
+              Save
             </button>
           </form>
         ) : (
           <p>
-            Review automatique {AUTO_TEXT(global?.autoReview ?? true)} · niveau {LEVEL_TEXT(global?.level ?? null)}
-            {global ? '' : ' (rien de réglé)'}.
+            Automatic review {AUTO_TEXT(global?.autoReview ?? true)} · level {LEVEL_TEXT(global?.level ?? null)}
+            {global ? '' : ' (nothing set)'}.
           </p>
         )}
 
-        <h3 class="dash-subtitle">Par repo</h3>
+        <h3 class="dash-subtitle">Per repo</h3>
         {prefs.repos.length === 0 ? (
-          <p class="hint">Aucun repo réglé à part : les préférences de tous les repos s’appliquent partout.</p>
+          <p class="hint">No repo has its own preferences. The preferences for all repos apply everywhere.</p>
         ) : (
           <div class="table-wrap">
             <table class="table user-prefs-table">
-              <caption class="visually-hidden">Préférences par repo</caption>
+              <caption class="visually-hidden">Preferences per repo</caption>
               <thead>
                 <tr>
                   <th scope="col">Repo</th>
-                  <th scope="col">Review automatique</th>
-                  <th scope="col">Niveau</th>
+                  <th scope="col">Automatic review</th>
+                  <th scope="col">Level</th>
                   {self ? (
                     <th scope="col">
                       <span class="visually-hidden">Action</span>
@@ -180,7 +180,7 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
                         <form method="post" action={userRoutes.userPrefRemove.href({ login: user.login, repoId: pref.repoId })}>
                           <input type="hidden" name="_csrf" value={csrf} />
                           <button class="button button-small" type="submit">
-                            Retirer<span class="visually-hidden"> {pref.fullName}</span>
+                            Remove<span class="visually-hidden"> {pref.fullName}</span>
                           </button>
                         </form>
                       </td>
@@ -206,7 +206,7 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
             </div>
             <PrefFields id="pref-new" pref={null} />
             <button class="button" type="submit">
-              Ajouter un repo
+              Add a repo
             </button>
           </form>
         ) : null}
@@ -231,7 +231,7 @@ function ReceivedSection(handle: Handle<{ screen: UserScreen; self: boolean }>) 
     return (
       <section class="dash-section user-section" aria-labelledby="user-received-title">
         <h2 id="user-received-title" class="section-title">
-          Findings reçus · {RECEIVED_DAYS} jours
+          Findings received · {RECEIVED_DAYS} days
         </h2>
         <dl class="dash-tiles user-received">
           {RECEIVED.map(({ key, label }) => (
@@ -243,7 +243,7 @@ function ReceivedSection(handle: Handle<{ screen: UserScreen; self: boolean }>) 
         </dl>
         <p>
           <a href={findingsHref({ view: 'open', author: user.login, days: RECEIVED_DAYS })}>
-            Voir {self ? 'mes' : 'ses'} {open} {plural(open, 'finding')} open
+            See {self ? 'my' : 'their'} {open} open {plural(open, 'finding')}
           </a>
         </p>
       </section>
@@ -264,10 +264,10 @@ function PullRow(handle: Handle<{ pull: ReviewedPull; now: Date }>) {
           </a>
         </th>
         <td>
-          <span class={`tag ${pull.state === 'open' ? 'tag-ok' : 'tag-quiet'}`}>{pull.state === 'open' ? 'Ouverte' : 'Fermée'}</span>
+          <span class={`tag ${pull.state === 'open' ? 'tag-ok' : 'tag-quiet'}`}>{pull.state === 'open' ? 'Open' : 'Closed'}</span>
         </td>
         <td>{pull.reviews}</td>
-        <td>{parts.length === 0 ? 'aucun' : parts.map(({ key, label }) => `${pull.findings[key]} ${label.toLowerCase()}`).join(' · ')}</td>
+        <td>{parts.length === 0 ? 'none' : parts.map(({ key, label }) => `${pull.findings[key]} ${label.toLowerCase()}`).join(' · ')}</td>
         <td>
           {verdict ? <span class={`tag ${verdict.tag}`}>{verdict.text}</span> : '—'}
           {pull.score !== null ? ` · ${pull.score}/5` : ''}
@@ -288,21 +288,21 @@ function PullsSection(handle: Handle<{ screen: UserScreen; self: boolean; pulls:
     return (
       <section class="dash-section user-section" aria-labelledby="user-pulls-title">
         <h2 id="user-pulls-title" class="section-title">
-          {self ? 'Mes' : 'Ses'} PR reviewées <span class="count">{total}</span>
+          {self ? 'My' : 'Their'} reviewed PRs <span class="count">{total}</span>
         </h2>
         {rows.length === 0 ? (
-          <p class="hint">Aucune PR reviewée par Kentō pour l’instant.</p>
+          <p class="hint">Kentō has reviewed no PR yet.</p>
         ) : (
           <div class="table-wrap">
             <table class="table user-pulls-table">
-              <caption class="visually-hidden">PR de {screen.user.login} reviewées par Kentō, la dernière review d’abord</caption>
+              <caption class="visually-hidden">PRs of {screen.user.login} that Kentō reviewed, the last review first</caption>
               <thead>
                 <tr>
                   <th scope="col">PR</th>
-                  <th scope="col">État</th>
+                  <th scope="col">State</th>
                   <th scope="col">Reviews</th>
                   <th scope="col">Findings</th>
-                  <th scope="col">Dernier verdict</th>
+                  <th scope="col">Last verdict</th>
                   <th scope="col">Date</th>
                 </tr>
               </thead>
@@ -317,7 +317,7 @@ function PullsSection(handle: Handle<{ screen: UserScreen; self: boolean; pulls:
         {more > 0 ? (
           <p>
             <a href={userHref(screen.user.login, pulls + PULLS_STEP)}>
-              Afficher {more} PR de plus
+              Show {more} more {plural(more, 'PR')}
             </a>
           </p>
         ) : null}

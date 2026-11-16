@@ -1,12 +1,12 @@
 // The reasons that the service, the runner and GitHub write in English, as the screens show them:
-// what happened and what to do, in French. The stored reasons and the answers of the webhook and of
+// what happened and what to do, in words that a person reads. The stored reasons and the answers of the webhook and of
 // the runner API stay in English: logs, tests and the runner read them.
 
 import type { Handle } from 'remix/component'
 
 import { sanitizeReason } from '../publish/failure.ts'
 
-/** A reason in words. `raw`: the text of the service, shown under « Détails techniques », or null. */
+/** A reason in words. `raw`: the text of the service, shown under « Technical details », or null. */
 export interface Reason {
   /** What happened, from a lowercase letter, with no final period. */
   text: string
@@ -20,65 +20,65 @@ const PROVIDER_NAMES = 'OpenRouter|Anthropic|Ollama|The OpenAI-compatible server
 /** « ProviderError: <name> <what> », at the start of the error of the model. */
 const PROVIDER_ERROR = (what: string) => new RegExp(`^ProviderError: (?:${PROVIDER_NAMES}) ${what}`)
 
-const TIMES: Record<number, string> = { 1: 'une fois', 2: 'deux fois', 3: 'trois fois' }
+const TIMES: Record<number, string> = { 1: 'once', 2: 'twice', 3: 'three times' }
 
 /** What a provider status means for a job, and what to do. */
 function providerStatus(status: number): Omit<Reason, 'raw'> {
   if (status === 401 || status === 403) {
-    return { text: `le provider a refusé la clé, code ${status}`, action: 'Remplacez la clé dans Réglages, ou PROVIDER_API_KEY sur le runner, puis relancez.' }
+    return { text: `the provider refused the key, code ${status}`, action: 'Replace the key in Settings, or PROVIDER_API_KEY on the runner, then retry.' }
   }
-  if (status === 404) return { text: 'le provider ne connaît pas le modèle demandé, code 404', action: 'Vérifiez l’id du modèle dans la config du repo, puis relancez.' }
-  if (status === 429) return { text: 'le provider limite le nombre d’appels, code 429', action: 'Relancez dans quelques minutes, ou relevez la limite chez le provider.' }
-  if (status >= 500) return { text: `le provider est indisponible ou surchargé, code ${status}`, action: 'Relancez dans quelques minutes.' }
-  return { text: `le provider a refusé la demande, code ${status}`, action: 'Lisez les détails techniques, puis vérifiez le modèle dans la config du repo.' }
+  if (status === 404) return { text: 'the provider does not know the model, code 404', action: 'Check the id of the model in the config of the repo, then retry.' }
+  if (status === 429) return { text: 'the provider limits the number of calls, code 429', action: 'Retry in a few minutes, or raise the limit at the provider.' }
+  if (status >= 500) return { text: `the provider is unavailable or overloaded, code ${status}`, action: 'Retry in a few minutes.' }
+  return { text: `the provider refused the request, code ${status}`, action: 'Read the technical details, then check the model in the config of the repo.' }
 }
 
 /**
  * The reason of a failed job. The service writes « lease expired N times » and « the provider « X »
  * refused its key (N): … »; the runner sends the message of its error (apps/runner/src/job.ts, the
- * engine). Any other reason is unknown, and its text goes under « Détails techniques ».
+ * engine). Any other reason is unknown, and its text goes under « Technical details ».
  */
 export function jobReason(reason: string | null, runnerName: string | null): Reason {
   let trimmed = reason?.trim() ?? ''
-  if (!trimmed) return { text: 'aucune raison enregistrée', action: 'Relancez la review. Si elle échoue encore, lisez les logs du runner.', raw: null }
+  if (!trimmed) return { text: 'no reason recorded', action: 'Retry the review. If it fails again, read the logs of the runner.', raw: null }
   let lease = /^lease expired (\d+) times?$/.exec(trimmed)
   if (lease) {
     let n = Number(lease[1])
     return {
-      text: `le runner a cessé de répondre pendant le job ${TIMES[n] ?? `${n} fois`}${runnerName ? `, en dernier ${runnerName}` : ''}`,
-      action: 'Vérifiez sur l’écran Runners qu’un runner est en ligne, puis relancez.',
+      text: `the runner stopped answering during the job ${TIMES[n] ?? `${n} times`}${runnerName ? `, last ${runnerName}` : ''}`,
+      action: 'Check on the Runners screen that a runner is online, then retry.',
       raw: null,
     }
   }
   let raw = sanitizeReason(trimmed)
   let refused = /^the provider « (.+) » refused its key \((\d{3})\)/.exec(trimmed)
-  if (refused) return { text: `le provider « ${refused[1]} » a refusé sa clé, code ${refused[2]}`, action: 'Remplacez sa clé dans Réglages, puis relancez.', raw }
+  if (refused) return { text: `the provider "${refused[1]}" refused its key, code ${refused[2]}`, action: 'Replace its key in Settings, then retry.', raw }
   let known = ((): Omit<Reason, 'raw'> | null => {
     // The steps of the service at the claim (app/runner/controller.ts).
     if (trimmed.startsWith('installation token: ')) {
-      return { text: 'GitHub n’a pas donné de token pour ce repo', action: 'Vérifiez que l’App GitHub est toujours installée sur ce repo, puis relancez.' }
+      return { text: 'GitHub gave no token for this repo', action: 'Check that the GitHub App is still installed on this repo, then retry.' }
     }
-    if (trimmed.startsWith('review threads: ')) return { text: 'Kentō n’a pas pu lire les fils de la PR sur GitHub', action: 'Relancez dans quelques minutes.' }
-    if (trimmed.startsWith('rules: ')) return { text: 'Kentō n’a pas pu lire les règles du repo', action: 'Relancez dans quelques minutes.' }
+    if (trimmed.startsWith('review threads: ')) return { text: 'Kentō could not read the threads of the pull request on GitHub', action: 'Retry in a few minutes.' }
+    if (trimmed.startsWith('rules: ')) return { text: 'Kentō could not read the rules of the repo', action: 'Retry in a few minutes.' }
     if (/^the provider « .+ » is not of the org of the runner$/.test(trimmed)) {
-      return { text: 'le provider de la config appartient à une autre organisation que le runner', action: 'Choisissez un provider de cette organisation dans la config du repo, puis relancez.' }
+      return { text: 'the provider of the config belongs to another organization than the runner', action: 'Choose a provider of this organization in the config of the repo, then retry.' }
     }
     if (/^the provider « .+ » needs a trusted runner$/.test(trimmed)) {
-      return { text: 'la clé de ce provider ne va qu’à un runner de confiance', action: 'Marquez un runner de confiance sur l’écran Runners, puis relancez.' }
+      return { text: 'the key of this provider goes only to a trusted runner', action: 'Mark a runner as trusted on the Runners screen, then retry.' }
     }
     if (/^the key of the provider « .+ » cannot be decrypted/.test(trimmed)) {
-      return { text: 'la clé du provider ne se déchiffre pas avec la clé maître du service', action: 'Remplacez la clé dans Réglages, ou vérifiez KENTO_SECRETS_KEY sur le service.' }
+      return { text: 'the master key of the service does not decrypt the key of the provider', action: 'Replace the key in Settings, or check KENTO_SECRETS_KEY on the service.' }
     }
     if (/^no model key\b/.test(trimmed)) {
-      return { text: 'le runner n’a pas de clé pour ce provider', action: 'Donnez-lui PROVIDER_KIND et PROVIDER_API_KEY, ou marquez-le de confiance sur l’écran Runners.' }
+      return { text: 'the runner has no key for this provider', action: 'Give it PROVIDER_KIND and PROVIDER_API_KEY, or mark it as trusted on the Runners screen.' }
     }
-    if (/^clone failed\b/.test(trimmed)) return { text: 'le runner n’a pas pu cloner le repo', action: 'Vérifiez que l’App GitHub a toujours accès à ce repo, puis relancez.' }
+    if (/^clone failed\b/.test(trimmed)) return { text: 'the runner could not clone the repo', action: 'Check that the GitHub App still has access to this repo, then retry.' }
     if (/^the service refused the review\b/.test(trimmed)) {
-      return { text: 'le service a refusé le résultat du runner', action: 'Mettez le runner à la version que montre l’écran Runners, puis relancez.' }
+      return { text: 'the service refused the result of the runner', action: 'Update the runner to the version that the Runners screen shows, then retry.' }
     }
-    if (/^the provider \S+ needs a base URL$/.test(trimmed)) return { text: 'le provider n’a pas d’URL', action: 'Ajoutez son URL dans Réglages, puis relancez.' }
+    if (/^the provider \S+ needs a base URL$/.test(trimmed)) return { text: 'the provider has no URL', action: 'Add its URL in Settings, then retry.' }
     if (/^no model is set for the provider \S+ at this level$|^the provider \S+ that the config chose is not in the job$|^the job names no provider$/.test(trimmed)) {
-      return { text: 'la config du repo désigne un provider ou un modèle que le job n’a pas', action: 'Choisissez le provider et les modèles de ce niveau dans la config du repo, puis relancez.' }
+      return { text: 'the config of the repo names a provider or a model that the job does not have', action: 'Choose the provider and the models of this level in the config of the repo, then retry.' }
     }
     // The engine wraps the error of the last model (`askJson` in packages/engine/src/model.ts):
     // « no model gave a usable answer: ProviderError: <name> … » or « …: TimeoutError: … ». Each
@@ -88,52 +88,52 @@ export function jobReason(reason: string | null, runnerName: string | null): Rea
     if (status) return providerStatus(Number(status[1]))
     if (model === null) return null
     if (/^TimeoutError\b/.test(model)) {
-      return { text: 'le modèle n’a pas répondu à temps', action: 'Relancez dans quelques minutes, ou choisissez un modèle plus rapide dans la config du repo.' }
+      return { text: 'the model did not answer in time', action: 'Retry in a few minutes, or choose a faster model in the config of the repo.' }
     }
     if (PROVIDER_ERROR('gave (?:no JSON object|JSON that does not parse)').test(model)) {
-      return { text: 'le modèle a donné une réponse illisible', action: 'Relancez. Si l’échec revient, choisissez un autre modèle dans la config du repo.' }
+      return { text: 'the model gave an answer that Kentō cannot read', action: 'Retry. If the failure comes back, choose another model in the config of the repo.' }
     }
     if (PROVIDER_ERROR('declined the request\\b').test(model)) {
-      return { text: 'le provider a refusé de traiter cette PR', action: 'Relancez avec un autre modèle, choisi dans la config du repo.' }
+      return { text: 'the provider declined to process this pull request', action: 'Retry with another model, chosen in the config of the repo.' }
     }
     return null
   })()
-  return { ...(known ?? { text: 'le runner a renvoyé une erreur que Kentō ne connaît pas', action: 'Lisez les détails techniques, puis relancez.' }), raw }
+  return { ...(known ?? { text: 'the runner sent an error that Kentō does not know', action: 'Read the technical details, then retry.' }), raw }
 }
 
-const COST_PERIOD: Record<string, string> = { daily: 'quotidien', monthly: 'mensuel' }
-const TRIGGER_TEXT: Record<string, string> = { push: 'à chaque push', ready: 'au passage en « Ready for review »', command: 'à la demande' }
-const UNTRUSTED_BOT = 'Ajoutez-le aux bots de confiance pour qu’il déclenche une review.'
-const REPLAY = 'Rejouez-la depuis la page de l’App.'
-const INVALID = 'Ouvrez-la dans « Recent Deliveries », sur la page de l’App, pour lire ce que GitHub a envoyé.'
+const COST_PERIOD: Record<string, string> = { daily: 'daily', monthly: 'monthly' }
+const TRIGGER_TEXT: Record<string, string> = { push: 'on each push', ready: 'when the pull request becomes "Ready for review"', command: 'on request' }
+const UNTRUSTED_BOT = 'Add it to the trusted bots so that it starts a review.'
+const REPLAY = 'Redeliver it from the page of the App.'
+const INVALID = 'Open it in "Recent Deliveries", on the page of the App, to read what GitHub sent.'
 
 /** The reasons of the webhook (app/github/events.ts, app/db/webhook-store.ts, app/commands/handler.ts). */
 const DELIVERY_REASONS: [RegExp, (m: RegExpExecArray) => Omit<Reason, 'raw'>][] = [
-  [/^draft pull request$/, () => ({ text: 'PR en brouillon, sans review avant son passage en « Ready for review »', action: '' })],
-  [/^pushed by an untrusted bot$/, () => ({ text: 'push d’un bot hors des bots de confiance', action: UNTRUSTED_BOT })],
-  [/^opened by an untrusted bot$/, () => ({ text: 'PR ouverte par un bot hors des bots de confiance', action: UNTRUSTED_BOT })],
-  [/^command of an untrusted bot$/, () => ({ text: 'commande d’un bot hors des bots de confiance', action: UNTRUSTED_BOT })],
-  [/^pull request from a fork$/, () => ({ text: 'PR venue d’un fork, sans review automatique', action: 'Une personne qui écrit sur le repo peut lancer @kento-review.' })],
-  [/^pull request (?:is )?closed$/, () => ({ text: 'PR fermée', action: '' })],
-  [/^event (\S+) is not handled$/, (m) => ({ text: `événement ${m[1]}, que Kentō ne traite pas`, action: '' })],
-  [/^pull_request action (\S+) creates no job$/, (m) => ({ text: `action ${m[1]} de la PR, sans review`, action: '' })],
-  [/^issue_comment action (\S+) gives no command$/, (m) => ({ text: `commentaire ${m[1] === 'edited' ? 'modifié' : m[1] === 'deleted' ? 'supprimé' : m[1]}, sans commande`, action: '' })],
-  [/^installation(?:_repositories)? action (\S+) is not handled$/, (m) => ({ text: `action ${m[1]} de l’installation, que Kentō ne traite pas`, action: '' })],
-  [/^comment is not on a pull request$/, () => ({ text: 'commentaire hors d’une PR', action: '' })],
-  [/^comment is not a command$/, () => ({ text: 'commentaire sans commande @kento-review', action: '' })],
-  [/^comment of the App itself$/, () => ({ text: 'commentaire de Kentō lui-même', action: '' })],
-  [/^(?:comment|delivery) already created a job$|^head already had a review job$/, () => ({ text: 'déjà traité, sans second job', action: '' })],
-  [/^repository is not enabled: the workflow keeps the command$/, () => ({ text: 'repo non activé, le workflow GitHub garde la commande', action: '' })],
-  [/^repository is not enabled$/, () => ({ text: 'repo non activé', action: 'Activez-le sur l’écran Repos pour qu’il reçoive des reviews.' })],
-  [/^unknown repository$/, () => ({ text: 'repo inconnu de Kentō', action: 'Ajoutez-le à l’installation de l’App sur GitHub.' })],
-  [/^installation is suspended$/, () => ({ text: 'installation suspendue sur GitHub', action: 'Réactivez-la dans les réglages de l’installation sur GitHub.' })],
-  [/^GitHub App is not configured$/, () => ({ text: 'le service n’a pas d’App GitHub', action: 'Renseignez GITHUB_APP_ID et GITHUB_APP_PRIVATE_KEY sur le service.' })],
-  [/^commands are not configured$/, () => ({ text: 'le service ne lit pas les commandes', action: 'Renseignez GITHUB_APP_ID et GITHUB_APP_PRIVATE_KEY sur le service.' })],
-  [/^commenter cannot write to the repository$/, () => ({ text: 'l’auteur du commentaire n’a pas le droit d’écrire sur le repo', action: '' })],
-  [/^no changed file under the paths of the config$/, () => ({ text: 'aucun fichier modifié sous les chemins de la config', action: '' })],
-  [/^trigger of the config is (\S+)$/, (m) => ({ text: `la config du repo lance ses reviews ${TRIGGER_TEXT[m[1]!] ?? m[1]}`, action: '' })],
-  [/^(daily|monthly) cost limit of the org is reached$/, (m) => ({ text: `plafond ${COST_PERIOD[m[1]!]} de l’organisation atteint`, action: 'Un admin le relève dans « Plafond de coût », plus haut.' })],
-  [/^monthly cost limit of the repository is reached$/, () => ({ text: 'limite mensuelle du repo atteinte', action: 'Un admin la relève dans la config du repo.' })],
+  [/^draft pull request$/, () => ({ text: 'draft pull request, no review before it becomes "Ready for review"', action: '' })],
+  [/^pushed by an untrusted bot$/, () => ({ text: 'push of a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
+  [/^opened by an untrusted bot$/, () => ({ text: 'pull request opened by a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
+  [/^command of an untrusted bot$/, () => ({ text: 'command of a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
+  [/^pull request from a fork$/, () => ({ text: 'pull request from a fork, no automatic review', action: 'A person who can write to the repo can start @kento-review.' })],
+  [/^pull request (?:is )?closed$/, () => ({ text: 'pull request closed', action: '' })],
+  [/^event (\S+) is not handled$/, (m) => ({ text: `event ${m[1]}, which Kentō does not handle`, action: '' })],
+  [/^pull_request action (\S+) creates no job$/, (m) => ({ text: `pull request action ${m[1]}, no review`, action: '' })],
+  [/^issue_comment action (\S+) gives no command$/, (m) => ({ text: `comment ${m[1]}, no command`, action: '' })],
+  [/^installation(?:_repositories)? action (\S+) is not handled$/, (m) => ({ text: `installation action ${m[1]}, which Kentō does not handle`, action: '' })],
+  [/^comment is not on a pull request$/, () => ({ text: 'comment outside a pull request', action: '' })],
+  [/^comment is not a command$/, () => ({ text: 'comment with no @kento-review command', action: '' })],
+  [/^comment of the App itself$/, () => ({ text: 'comment of Kentō itself', action: '' })],
+  [/^(?:comment|delivery) already created a job$|^head already had a review job$/, () => ({ text: 'already handled, no second job', action: '' })],
+  [/^repository is not enabled: the workflow keeps the command$/, () => ({ text: 'repo not enabled, the GitHub workflow keeps the command', action: '' })],
+  [/^repository is not enabled$/, () => ({ text: 'repo not enabled', action: 'Enable it on the Repos screen so that it gets reviews.' })],
+  [/^unknown repository$/, () => ({ text: 'repo unknown to Kentō', action: 'Add it to the installation of the App on GitHub.' })],
+  [/^installation is suspended$/, () => ({ text: 'installation suspended on GitHub', action: 'Enable it again in the settings of the installation on GitHub.' })],
+  [/^GitHub App is not configured$/, () => ({ text: 'the service has no GitHub App', action: 'Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY on the service.' })],
+  [/^commands are not configured$/, () => ({ text: 'the service does not read the commands', action: 'Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY on the service.' })],
+  [/^commenter cannot write to the repository$/, () => ({ text: 'the author of the comment cannot write to the repo', action: '' })],
+  [/^no changed file under the paths of the config$/, () => ({ text: 'no changed file under the paths of the config', action: '' })],
+  [/^trigger of the config is (\S+)$/, (m) => ({ text: `the config of the repo starts its reviews ${TRIGGER_TEXT[m[1]!] ?? m[1]}`, action: '' })],
+  [/^(daily|monthly) cost limit of the org is reached$/, (m) => ({ text: `${COST_PERIOD[m[1]!]} cost cap of the organization reached`, action: 'An admin raises it in "Cost cap", above.' })],
+  [/^monthly cost limit of the repository is reached$/, () => ({ text: 'monthly limit of the repo reached', action: 'An admin raises it in the config of the repo.' })],
 ]
 
 /**
@@ -143,29 +143,29 @@ const DELIVERY_REASONS: [RegExp, (m: RegExpExecArray) => Omit<Reason, 'raw'>][] 
 export function deliveryReason(delivery: { status: number; outcome: string; reason: string | null }): Reason | null {
   let reason = delivery.reason?.trim() ?? ''
   if (delivery.outcome === 'failed' || delivery.status >= 500) {
-    return { text: 'Kentō n’a pas traité la livraison', action: REPLAY, raw: reason ? sanitizeReason(reason) : null }
+    return { text: 'Kentō did not process the delivery', action: REPLAY, raw: reason ? sanitizeReason(reason) : null }
   }
   if (delivery.outcome === 'invalid' || delivery.status === 400) {
     // The same content gets the same 400: a replay changes nothing.
-    return { text: 'GitHub a envoyé un contenu que Kentō ne lit pas', action: INVALID, raw: reason ? sanitizeReason(reason) : null }
+    return { text: 'GitHub sent a content that Kentō cannot read', action: INVALID, raw: reason ? sanitizeReason(reason) : null }
   }
   if (!reason) return null
   for (let [pattern, words] of DELIVERY_REASONS) {
     let match = pattern.exec(reason)
     if (match) return { ...words(match), raw: null }
   }
-  return { text: 'raison que Kentō ne traduit pas', action: '', raw: sanitizeReason(reason) }
+  return { text: 'a reason that Kentō does not translate', action: '', raw: sanitizeReason(reason) }
 }
 
 /** The error of the read of the App on GitHub (app/org-settings/app-status.ts). */
 export function appStatusReason(error: string): Reason {
   let raw = sanitizeReason(error)
   let status = Number(/\banswered (\d{3})\b/.exec(error)?.[1] ?? 0)
-  if (status === 401) return { text: 'GitHub a refusé la clé de l’App, code 401', action: 'Vérifiez GITHUB_APP_ID et GITHUB_APP_PRIVATE_KEY sur le service.', raw }
-  if (status === 403) return { text: 'GitHub refuse l’accès à l’App, code 403', action: 'Vérifiez les permissions de l’App sur GitHub, puis rechargez la page.', raw }
-  if (status === 404) return { text: 'GitHub ne trouve pas l’installation de l’App, code 404', action: 'Réinstallez l’App sur l’organisation, puis rechargez la page.', raw }
-  if (status >= 500) return { text: `GitHub est indisponible, code ${status}`, action: 'Rechargez la page dans quelques minutes.', raw }
-  return { text: 'GitHub ne répond pas sur l’App', action: 'Rechargez la page dans quelques minutes.', raw }
+  if (status === 401) return { text: 'GitHub refused the key of the App, code 401', action: 'Check GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY on the service.', raw }
+  if (status === 403) return { text: 'GitHub refuses the access of the App, code 403', action: 'Check the permissions of the App on GitHub, then reload the page.', raw }
+  if (status === 404) return { text: 'GitHub does not find the installation of the App, code 404', action: 'Install the App on the organization again, then reload the page.', raw }
+  if (status >= 500) return { text: `GitHub is unavailable, code ${status}`, action: 'Reload the page in a few minutes.', raw }
+  return { text: 'GitHub does not answer about the App', action: 'Reload the page in a few minutes.', raw }
 }
 
 /** The reason as one sentence: « Text. Action. » */
@@ -174,12 +174,12 @@ export function reasonSentence(reason: Reason): string {
   return reason.action ? `${text} ${reason.action}` : text
 }
 
-/** The text of the service, folded under « Détails techniques ». Nothing when there is none. */
+/** The text of the service, folded under « Technical details ». Nothing when there is none. */
 export function TechDetails(handle: Handle<{ raw: string | null }>) {
   return () =>
     handle.props.raw ? (
       <details class="tech-details">
-        <summary>Détails techniques</summary>
+        <summary>Technical details</summary>
         <code class="mono">{handle.props.raw}</code>
       </details>
     ) : null

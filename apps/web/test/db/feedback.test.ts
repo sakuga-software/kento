@@ -112,7 +112,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.equal(results[0]?.kind, 'published')
   }
 
-  const requests = () => fake.state.issueComments.filter((c) => c.author === BOT && c.body.includes('Kentō a relu cette PR'))
+  const requests = () => fake.state.issueComments.filter((c) => c.author === BOT && c.body.includes('Kentō reviewed this PR'))
 
   async function feedbackRows() {
     let rows = await database.sql<{ source: string; text: string; authorLogin: string; authorIsBot: boolean; url: string | null }[]>`
@@ -147,7 +147,7 @@ describe('feedback on the reviews (REV-107)', () => {
     await publish(head(3))
     assert.equal(requests().length, 1)
     let [request] = requests()
-    assert.ok(request!.body.startsWith('@camille Kentō a relu cette PR 3 fois.'))
+    assert.ok(request!.body.startsWith('@camille Kentō reviewed this PR 3 times.'))
     let [row] = await database.sql<{ commentId: string | null; author: string }[]>`
       select github_comment_id as "commentId", author_login as author from feedback_requests`
     assert.equal(Number(row!.commentId), request!.id)
@@ -160,7 +160,7 @@ describe('feedback on the reviews (REV-107)', () => {
   it('asks a bot that opened the pull request too, and nobody on a closed pull request', async () => {
     fake.state.pr.author = { login: 'sakuga-agent[bot]', type: 'Bot' }
     for (let n = 1; n <= 3; n++) await publish(head(n))
-    assert.ok(requests()[0]!.body.startsWith('@sakuga-agent[bot] Kentō a relu'))
+    assert.ok(requests()[0]!.body.startsWith('@sakuga-agent[bot] Kentō reviewed'))
 
     await database.sql`delete from feedback_requests`
     fake.state.issueComments = []
@@ -188,7 +188,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.equal((await database.sql`select 1 from feedback_requests`).length, 0)
     await publish(head(4))
     assert.equal(requests().length, 1)
-    assert.match(requests()[0]!.body, /a relu cette PR 4 fois/)
+    assert.match(requests()[0]!.body, /reviewed this PR 4 times/)
   })
 
   it('records `@kento-review feedback`, with ❤️ and no job, once for a redelivery', async () => {
@@ -217,7 +217,7 @@ describe('feedback on the reviews (REV-107)', () => {
     let out = await deliver('issue_comment', issueCommentPayload({ body: '@kento-review feedback', commentId: 9502 }))
     assert.equal(out.body.outcome, 'refused')
     assert.ok(fake.state.reactions.has('9502:confused'))
-    assert.match(fake.state.issueComments.at(-1)!.body, /^@alex La commande `feedback` demande un avis/)
+    assert.match(fake.state.issueComments.at(-1)!.body, /^@alex The `feedback` command needs your opinion/)
     assert.deepEqual(await feedbackRows(), [])
   })
 
@@ -229,7 +229,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.ok(!fake.state.reactions.has('9505:confused'))
     let again = await deliver('issue_comment', payload, first.deliveryId)
     assert.equal(again.body.outcome, 'refused')
-    assert.equal(fake.state.issueComments.filter((c) => c.body.includes('demande un avis')).length, 1)
+    assert.equal(fake.state.issueComments.filter((c) => c.body.includes('needs your opinion')).length, 1)
   })
 
   it('finds the request by its marker when the post got no answer, and reads its reactions', async () => {
@@ -339,9 +339,9 @@ describe('feedback on a pull request reviewed before the deploy (REV-107)', () =
         let mint = createInstallationTokenMinter({ appId: '12345', privateKey: readPrivateKey(pem), apiUrl: fake.apiUrl, fetch: fake.fetch })
         let results = await createPublisher({ sql: database.sql, mintInstallationToken: mint, apiUrl: fake.apiUrl, botLogin: BOT, fetch: fake.fetch }).publishPending()
         assert.equal(results[0]?.kind, 'published')
-        let requests = fake.state.issueComments.filter((c) => c.body.includes('Kentō a relu cette PR'))
+        let requests = fake.state.issueComments.filter((c) => c.body.includes('Kentō reviewed this PR'))
         if (pr === 41) assert.equal(requests.length, 0, 'PR 41: its fourth review asks nothing')
-        else assert.ok(requests[0]?.body.startsWith('@camille Kentō a relu cette PR 3 fois.'), 'PR 42: its third review asks')
+        else assert.ok(requests[0]?.body.startsWith('@camille Kentō reviewed this PR 3 times.'), 'PR 42: its third review asks')
       }
     } finally {
       await database.close()

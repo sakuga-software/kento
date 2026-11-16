@@ -1,5 +1,5 @@
 // The dashboard reads itself again every 10 s while it is on screen, and says how old its numbers
-// are (« Mis à jour il y a 12 s »). Without JavaScript, the link « Actualiser » does the same.
+// are (« Updated 12 s ago »). Without JavaScript, the link « Refresh » does the same.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   const live = document.getElementById('dashboard-live')
@@ -15,7 +15,7 @@
       const stamp = live.querySelector('[data-updated]')
       if (!stamp) return
       const seconds = Math.max(0, Math.round((Date.now() - Date.parse(stamp.dataset.updated)) / 1000))
-      stamp.textContent = seconds < 60 ? `Mis à jour il y a ${seconds} s` : `Mis à jour il y a ${Math.floor(seconds / 60)} min`
+      stamp.textContent = seconds < 60 ? `Updated ${seconds} s ago` : `Updated ${Math.floor(seconds / 60)} min ago`
     }
 
     const refresh = async () => {

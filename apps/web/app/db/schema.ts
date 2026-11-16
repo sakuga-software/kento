@@ -308,15 +308,15 @@ export const jobs = pgTable(
     /**
      * REV-21. What chose the level of the job: `rule` (an assignment rule of the repository),
      * `preference` (the level of the author, REV-22), `repo` (the level of the config), `command` (a
-     * command or « Relancer » on the screen of the pull request), `retry` (a retry from the
+     * command or « Run again » on the screen of the pull request), `retry` (a retry from the
      * dashboard). Null on a job queued before the column.
      */
     levelSource: text('level_source'),
     /** REV-21. The assignment rule that chose the level, with `level_source` `rule`; null once it is removed. */
     assignmentRuleId: uuid('assignment_rule_id').references((): AnyPgColumn => assignmentRules.id, { onDelete: 'set null' }),
     /**
-     * REV-59. An admin hid this failure on the dashboard: it leaves the banner and the list « Échecs
-     * récents ». The counts of the week keep it. Null: shown.
+     * REV-59. An admin hid this failure on the dashboard: it leaves the banner and the list « Recent
+     * failures ». The counts of the week keep it. Null: shown.
      */
     failureDismissedAt: timestamp('failure_dismissed_at', { withTimezone: true }),
     /** REV-59. The login of the admin who hid the failure. */

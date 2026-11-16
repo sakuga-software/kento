@@ -188,7 +188,7 @@ export function buildContext(repo: string, base: string, head: string, paths: st
     // diff that holds the name (a migration of this pull request) is in the diff already.
     const outside = sites.filter((m) => !paths.includes(m.path));
     const best = outside.find((m) => m.path.endsWith('.sql')) ?? outside[0];
-    if (best) add(best.path, best.line, `définition de \`${name}\`, que la PR écrit`, false);
+    if (best) add(best.path, best.line, `definition of \`${name}\`, which the PR writes`, false);
     else if (!sites.length) absent.push(name);
   }
 
@@ -198,7 +198,7 @@ export function buildContext(repo: string, base: string, head: string, paths: st
     // A path to a route file (`routes/api/x/route.ts'`) looks like a request to it.
     const sites = grep(repo, head, ['-E', '-e', route.pattern]).filter((m) => !paths.includes(m.path) && !m.text.includes('routes/api/'));
     for (const site of sites.slice(0, MAX_SITES)) {
-      add(site.path, site.line, `appel de la route \`${route.url}\` que la PR modifie`, false);
+      add(site.path, site.line, `call of the route \`${route.url}\`, which the PR changes`, false);
     }
   }
 
@@ -207,7 +207,7 @@ export function buildContext(repo: string, base: string, head: string, paths: st
     if (new Set(definitionsOf(repo, head, name).map((d) => d.path)).size > 1) continue;
     // A caller in a file of the diff is in the diff already.
     const sites = grep(repo, head, ['-w', '-e', name]).filter((m) => !paths.includes(m.path) && !/^\s*(import|export\s+\{|export\s+\*)/.test(m.text));
-    for (const site of sites.slice(0, MAX_SITES)) add(site.path, site.line, `appel de \`${name}\`, que la PR modifie`, false);
+    for (const site of sites.slice(0, MAX_SITES)) add(site.path, site.line, `call of \`${name}\`, which the PR changes`, false);
   }
 
   for (const { name, from, path } of usedImports(repo, base, head, sources, cache).slice(0, MAX_SYMBOLS)) {
@@ -220,7 +220,7 @@ export function buildContext(repo: string, base: string, head: string, paths: st
     const best = definitionsOf(repo, head, name)
       .filter((d) => d.path.startsWith(root))
       .sort((a, b) => Number(named.test(b.path)) - Number(named.test(a.path)))[0];
-    if (best && !sources.includes(best.path)) add(best.path, best.line, `définition de \`${name}\`, que la PR utilise`, true);
+    if (best && !sources.includes(best.path)) add(best.path, best.line, `definition of \`${name}\`, which the PR uses`, true);
   }
 
   const parts: string[] = [];
@@ -295,9 +295,9 @@ export function buildPack(
   const touched = changes.flatMap(({ path, from }) => (from ? [from, path] : [path]));
   const { section: rulesText, packed, skipped: rulesSkipped } = rulesSection(rulesForPaths(rules, touched));
   for (const { added, removed, path, from } of changes) {
-    if (SKIP.test(path)) skipped.push(`${path} : fichier généré ou binaire`);
+    if (SKIP.test(path)) skipped.push(`${path}: generated or binary file`);
     else if (added !== '-' && Number(added) + Number(removed) > MAX_FILE_CHANGED_LINES)
-      skipped.push(`${path} : plus de ${MAX_FILE_CHANGED_LINES} lignes modifiées`);
+      skipped.push(`${path}: more than ${MAX_FILE_CHANGED_LINES} changed lines`);
     else reviewed.push(path);
     if (from) renamedFrom.set(path, from);
   }
@@ -328,7 +328,7 @@ export function buildPack(
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
-    skipped.push(`${path} : retiré pour tenir dans la taille maximale de la review`);
+    skipped.push(`${path}: removed to fit in the maximum size of the review`);
     hunks.delete(path);
   }
 

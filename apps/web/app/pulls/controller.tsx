@@ -28,12 +28,12 @@ export interface PullsDependencies {
   readCode?: ReadCode | null
   /** Posts the reply of the bot in the thread of a finding (REV-18). Null without the GitHub App. */
   postReply?: ThreadReplier | null
-  /** Reads the state and the head of the pull request before « Relancer ». Null without the GitHub App. */
+  /** Reads the state and the head of the pull request before « Run again ». Null without the GitHub App. */
   readPullRequest?: ReadPullRequest | null
   now?: () => number
 }
 
-const REPOS_EXIT = { href: '/repos', label: 'Voir les repos' }
+const REPOS_EXIT = { href: '/repos', label: 'See the repos' }
 
 type FormContext = { get(key: typeof FormData): FormData | undefined; params: { id: string } }
 
@@ -41,7 +41,7 @@ type Decision = { status: 'dismissed' | 'wontfix' | 'open'; reason: string | nul
 
 /**
  * The decision of a form, or null for a form that the server cannot read. A dismissal reads the
- * fields of the dialog of REV-18 (`readStatusForm`: one of its reasons, or « Autre » with a reason),
+ * fields of the dialog of REV-18 (`readStatusForm`: one of its reasons, or « Other » with a reason),
  * for the finding of the address only.
  */
 function readDecision(status: Decision['status'], id: string, form: FormData | undefined): Decision | null {

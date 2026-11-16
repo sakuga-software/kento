@@ -60,7 +60,7 @@ export function jobDuration(ms: number | null | undefined): number | null {
   return Math.round(ms)
 }
 
-/** A review job of the pull request queued or running: the next column, « R5 en cours… ». */
+/** A review job of the pull request queued or running: the next column, « R5 in progress… ». */
 export interface PullActiveJob {
   id: string
   /** The number that its review will take. */
@@ -136,7 +136,7 @@ export interface PullsStore {
   setStatus(input: { orgId: string; findingId: string; status: PersonStatus; reason: string | null; actor: string }): Promise<StatusChange>
   /** The mean cost of the last reviews of each level on the repository. */
   estimates(repoId: string): Promise<Record<Level, number | null>>
-  /** « Relancer en <niveau> »: a review job of the last head of the pull request. */
+  /** « Run at <level> »: a review job of the last head of the pull request. */
   rerun(input: { orgId: string; repoId: string; prNumber: number; level: Level; githubHead: string | null }): Promise<RerunOutcome>
 }
 

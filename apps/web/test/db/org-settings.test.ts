@@ -116,7 +116,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
   })
 
   describe('the cost limit at the enqueue', () => {
-    it('a limit of 0,01 $ stops the next push, with the check « Kentō · plafond »; 8 $ lets the jobs go again', async () => {
+    it('a limit of $0.01 stops the next push, with the check « Kentō · cap »; $8 lets the jobs go again', async () => {
       await spend(0.02)
       await sql`update orgs set daily_cap_usd = 0.01 where id = ${orgId}`
       let stopped = await push()
@@ -128,8 +128,8 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       let check = fake.state.checkRuns[0]!
       assert.equal(check.name, CAP_CHECK_NAME)
       assert.equal(check.conclusion, 'neutral')
-      assert.match(check.output.title, /Plafond du jour atteint/)
-      assert.match(check.output.summary, /0,02\s\$ dépensés sur 0,01\s\$/)
+      assert.match(check.output.title, /Daily cap reached/)
+      assert.match(check.output.summary, /\$0\.02 spent of \$0\.01/)
 
       await sql`update orgs set daily_cap_usd = 8 where id = ${orgId}`
       let again = await push()
@@ -156,7 +156,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
         view!.costs.dayByProvider.map((p) => [p.label, p.usd]).sort(),
         [
           ['Anthropic du runner', 0.6],
-          ['Clé du service', 0.6],
+          ['Service key', 0.6],
         ],
         'only the split per provider follows jobs.provider_id',
       )
@@ -238,7 +238,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.equal((await queuedJobs()).length, 0)
       assert.ok(fake.state.reactions.has(`${answer.commentId}:confused`))
       let reply = fake.state.issueComments.at(-1)!
-      assert.match(reply.body, /^@alex Kentō ne lance pas de review : le plafond de coût du jour de l’organisation est atteint/)
+      assert.match(reply.body, /^@alex Kentō does not start a review: the organization reached its daily cost cap/)
     })
 
     it('a check that GitHub refuses is logged, and the delivery still answers « capped »', async () => {
@@ -329,7 +329,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
         view!.costs.dayByProvider.map((p) => [p.label, p.usd]),
         [
           ['GPU du bureau', 1.25],
-          ['Clé du service', 0.75],
+          ['Service key', 0.75],
         ],
       )
       assert.deepEqual(view!.repos, { total: 1, enabled: 1 })

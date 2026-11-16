@@ -72,11 +72,11 @@ describe('failureComment', () => {
     assert.equal(
       failureComment(job()),
       [
-        '**Kentō · review en échec** au commit `abcdef012`',
-        'La review `lite` de ce commit a échoué : Kentō ne la relancera pas seul.',
-        `Raison : \`${sanitizeReason(NOT_FOUND)}\``,
-        'Pour relancer : `@kento-review lite`. Si l’erreur vient d’un modèle ou d’un provider, vérifiez la ' +
-          '[config du repo](https://review.sakuga.dev/repos/11111111-1111-4111-8111-111111111111/config).',
+        '**Kentō · review failed** at commit `abcdef012`',
+        'The `lite` review of this commit failed. Kentō will not run it again by itself.',
+        `Reason: \`${sanitizeReason(NOT_FOUND)}\``,
+        'To run it again: `@kento-review lite`. If the error comes from a model or a provider, check the ' +
+          '[config of the repo](https://review.sakuga.dev/repos/11111111-1111-4111-8111-111111111111/config).',
         failureMarker('00000000-0000-4000-8000-000000000001'),
       ].join('\n\n'),
     )
@@ -84,14 +84,14 @@ describe('failureComment', () => {
 
   it('names the author of the command, and has no link without the public URL', () => {
     let body = failureComment(job({ level: 'heavy', commenter: 'alex', configUrl: null }))
-    assert.ok(body.includes('@alex La review `heavy` de ce commit a échoué'))
-    assert.ok(body.includes('Pour relancer : `@kento-review heavy`.\n\n'))
-    assert.ok(!body.includes('config du repo'))
+    assert.ok(body.includes('@alex The `heavy` review of this commit failed'))
+    assert.ok(body.includes('To run it again: `@kento-review heavy`.\n\n'))
+    assert.ok(!body.includes('config of the repo'))
   })
 
   it('words a resolve job as a resolution of the threads', () => {
     let body = failureComment(job({ kind: 'resolve', level: 'balanced' }))
-    assert.ok(body.startsWith('**Kentō · résolution des fils en échec** au commit `abcdef012`'))
+    assert.ok(body.startsWith('**Kentō · thread resolution failed** at commit `abcdef012`'))
     assert.ok(body.includes('`@kento-review resolve balanced`'))
   })
 

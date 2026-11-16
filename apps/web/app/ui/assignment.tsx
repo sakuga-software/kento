@@ -11,11 +11,11 @@ import { AlertIcon, CheckIcon } from './icons.tsx'
 
 /** What the tab says after a form, from `?assign=`. */
 export const ASSIGNMENT_NOTICES = {
-  added: { tone: 'ok', text: 'Règle ajoutée en dernier. Elle s’applique au prochain push.' },
-  moved: { tone: 'ok', text: 'Ordre enregistré. La première règle qui correspond l’emporte.' },
-  removed: { tone: 'info', text: 'Règle supprimée. Les règles suivantes remontent d’une place.' },
-  missing: { tone: 'alert', text: 'Cette règle n’existe plus.' },
-  full: { tone: 'alert', text: `${MAX_ASSIGNMENT_RULES} règles d’assignation au plus : supprimez-en une d’abord.` },
+  added: { tone: 'ok', text: 'Rule added last. It applies from the next push.' },
+  moved: { tone: 'ok', text: 'Order saved. The first rule that matches wins.' },
+  removed: { tone: 'info', text: 'Rule deleted. The rules after it move up one place.' },
+  missing: { tone: 'alert', text: 'This rule no longer exists.' },
+  full: { tone: 'alert', text: `${MAX_ASSIGNMENT_RULES} assignment rules at most. Delete one first.` },
 } as const
 export type AssignmentNotice = keyof typeof ASSIGNMENT_NOTICES
 
@@ -23,7 +23,7 @@ export function isAssignmentNotice(value: unknown): value is AssignmentNotice {
   return typeof value === 'string' && Object.hasOwn(ASSIGNMENT_NOTICES, value)
 }
 
-/** The form « Nouvelle règle » sent back with its errors. */
+/** The form « New rule » sent back with its errors. */
 export interface AssignmentFormState {
   values: Record<string, string>
   errors: Partial<Record<AssignmentField, string>>
@@ -46,22 +46,22 @@ const OUTCOME_LABELS: Record<Outcome, string> = {
   lite: 'lite',
   balanced: 'balanced',
   heavy: 'heavy',
-  command_only: 'Aucune review automatique (commande seulement)',
+  command_only: 'No automatic review (command only)',
 }
 
-/** « l’auteur est sakuga-agent[bot] ou renovate[bot] ». */
+/** « the author is sakuga-agent[bot] or renovate[bot] ». */
 function oneOf(values: readonly string[]): string {
   if (values.length <= 1) return values[0] ?? ''
-  return `${values.slice(0, -1).join(', ')} ou ${values.at(-1)}`
+  return `${values.slice(0, -1).join(', ')} or ${values.at(-1)}`
 }
 
-/** « Si l’auteur est sakuga-agent[bot] et la PR touche **\/migrations/** ». */
+/** « If the author is sakuga-agent[bot] and the PR changes **\/migrations/** ». */
 export function conditionText(rule: Pick<AssignmentView, 'authors' | 'paths' | 'labels'>): string {
   let parts: string[] = []
-  if (rule.authors.length) parts.push(`l’auteur est ${oneOf(rule.authors)}`)
-  if (rule.paths.length) parts.push(`la PR touche ${oneOf(rule.paths)}`)
-  if (rule.labels.length) parts.push(`la PR porte le label ${oneOf(rule.labels.map((l) => `« ${l} »`))}`)
-  return `Si ${parts.join(' et ')}`
+  if (rule.authors.length) parts.push(`the author is ${oneOf(rule.authors)}`)
+  if (rule.paths.length) parts.push(`the PR changes ${oneOf(rule.paths)}`)
+  if (rule.labels.length) parts.push(`the PR has the label ${oneOf(rule.labels.map((l) => `"${l}"`))}`)
+  return `If ${parts.join(' and ')}`
 }
 
 function Hidden(handle: Handle<{ csrf: string | null }>) {
@@ -94,7 +94,7 @@ function RuleRow(handle: Handle<{ rule: AssignmentView; last: boolean; props: As
   return () => {
     let { rule, last, props } = handle.props
     let { admin, csrf, repoId, noticeRule } = props
-    let label = `la règle ${rule.position}`
+    let label = `rule ${rule.position}`
     return (
       <li class={noticeRule === rule.id ? 'assignment-rule assignment-rule-current' : 'assignment-rule'} id={`assignment-${rule.id}`} tabIndex={-1}>
         <span class="assignment-position" aria-hidden="true">
@@ -102,22 +102,22 @@ function RuleRow(handle: Handle<{ rule: AssignmentView; last: boolean; props: As
         </span>
         <div class="assignment-body">
           <p class="assignment-when">
-            <span class="visually-hidden">Règle {rule.position}. </span>
+            <span class="visually-hidden">Rule {rule.position}. </span>
             {conditionText(rule)}
           </p>
           <p class="assignment-then">
-            alors{' '}
+            then{' '}
             {rule.action === 'review' ? (
               <>
                 <strong class="mono">{rule.level}</strong>
                 {rule.mention ? (
                   <>
-                    , et la review mentionne <span class="mono">@{rule.mention}</span>
+                    , and the review mentions <span class="mono">@{rule.mention}</span>
                   </>
                 ) : null}
               </>
             ) : (
-              <strong>aucune review automatique</strong>
+              <strong>no automatic review</strong>
             )}
             .
           </p>
@@ -128,27 +128,27 @@ function RuleRow(handle: Handle<{ rule: AssignmentView; last: boolean; props: As
               <Hidden csrf={csrf} />
               <input type="hidden" name="direction" value="up" />
               <button class="button" type="submit" disabled={rule.position === 1 ? true : undefined}>
-                Monter<span class="visually-hidden"> {label}</span>
+                Move up<span class="visually-hidden"> {label}</span>
               </button>
             </form>
             <form method="post" action={routes.assignmentMove.href({ id: repoId, rule: rule.id })}>
               <Hidden csrf={csrf} />
               <input type="hidden" name="direction" value="down" />
               <button class="button" type="submit" disabled={last ? true : undefined}>
-                Descendre<span class="visually-hidden"> {label}</span>
+                Move down<span class="visually-hidden"> {label}</span>
               </button>
             </form>
             <Confirm
               trigger={
                 <>
-                  Supprimer…<span class="visually-hidden"> {label}</span>
+                  Delete…<span class="visually-hidden"> {label}</span>
                 </>
               }
               action={routes.assignmentRemove.href({ id: repoId, rule: rule.id })}
               csrf={csrf}
-              submit={`Supprimer la règle ${rule.position}`}
+              submit={`Delete rule ${rule.position}`}
             >
-              <p>Les pushs suivants ne la lisent plus. Les règles après elle remontent d’une place ; les jobs déjà en file gardent leur niveau.</p>
+              <p>The next pushes no longer read it. The rules after it move up one place. The jobs already in the queue keep their level.</p>
             </Confirm>
           </div>
         ) : null}
@@ -168,16 +168,16 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
     let outcome = values.outcome ?? 'balanced'
     return (
       <details class="rule-new" id="assignment-new" open={form !== null || rules.length === 0}>
-        <summary class="button">Nouvelle règle</summary>
+        <summary class="button">New rule</summary>
         <form method="post" action={routes.assignmentAdd.href({ id: repoId })} class="rule-form" noValidate>
           <Hidden csrf={csrf} />
           <FormErrors errors={errors} />
           <fieldset class="assignment-condition">
-            <legend class="field-label">Si</legend>
-            <p class="field-hint">Remplissez au moins une ligne. Chaque ligne remplie doit correspondre ; dans une ligne, une seule valeur suffit.</p>
+            <legend class="field-label">If</legend>
+            <p class="field-hint">Fill in at least one line. Each filled line must match. In one line, one value is enough.</p>
             <div class="field">
               <label class="field-label" for={id('authors')}>
-                L’auteur de la PR est
+                The author of the PR is
               </label>
               <input
                 class="input mono"
@@ -190,11 +190,11 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
                 aria-invalid={errors.authors ? 'true' : undefined}
                 aria-describedby={describedBy(id('authors'), errors.authors, true)}
               />
-              <Message id={id('authors')} error={errors.authors} hint={`Des logins GitHub séparés par des virgules, ${MAX_CONDITION_VALUES} au plus : sakuga-agent[bot], camille.`} />
+              <Message id={id('authors')} error={errors.authors} hint={`GitHub logins separated by commas, ${MAX_CONDITION_VALUES} at most: sakuga-agent[bot], camille.`} />
             </div>
             <div class="field">
               <label class="field-label" for={id('paths')}>
-                La PR touche l’un de ces chemins
+                The PR changes one of these paths
               </label>
               <textarea
                 class="input mono config-paths rule-paths-input"
@@ -210,12 +210,12 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               <Message
                 id={id('paths')}
                 error={errors.paths}
-                hint={`Un motif par ligne, ${MAX_CONDITION_VALUES} au plus, comme les chemins du déclenchement : **/migrations/**, src/*.ts.`}
+                hint={`One pattern per line, ${MAX_CONDITION_VALUES} at most, like the paths of the trigger: **/migrations/**, src/*.ts.`}
               />
             </div>
             <div class="field">
               <label class="field-label" for={id('labels')}>
-                La PR porte l’un de ces labels
+                The PR has one of these labels
               </label>
               <input
                 class="input"
@@ -227,12 +227,12 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
                 aria-invalid={errors.labels ? 'true' : undefined}
                 aria-describedby={describedBy(id('labels'), errors.labels, true)}
               />
-              <Message id={id('labels')} error={errors.labels} hint="Des labels séparés par des virgules. Les majuscules ne comptent pas." />
+              <Message id={id('labels')} error={errors.labels} hint="Labels separated by commas. Case does not count." />
             </div>
           </fieldset>
           <div class="field">
             <label class="field-label" for={id('outcome')}>
-              Alors
+              Then
             </label>
             <select
               class="input"
@@ -251,12 +251,12 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             <Message
               id={id('outcome')}
               error={errors.outcome}
-              hint="Le niveau de la review d’un push. Sans review automatique, seule une commande @kento-review en crée une."
+              hint="The level of the review of a push. With no automatic review, only a @kento-review command creates one."
             />
           </div>
           <div class="field">
             <label class="field-label" for={id('mention')}>
-              Mentionner dans la review (facultatif)
+              Mention in the review (optional)
             </label>
             <input
               class="input mono"
@@ -269,10 +269,10 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               aria-invalid={errors.mention ? 'true' : undefined}
               aria-describedby={describedBy(id('mention'), errors.mention, true)}
             />
-            <Message id={id('mention')} error={errors.mention} hint="Le login GitHub d’une personne : la review publiée lui demande de relire, et GitHub la prévient." />
+            <Message id={id('mention')} error={errors.mention} hint="The GitHub login of a person. The published review asks them to review the PR, and GitHub notifies them." />
           </div>
           <button class="button button-primary" type="submit">
-            Ajouter la règle
+            Add the rule
           </button>
         </form>
       </details>
@@ -281,7 +281,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
 }
 
 /**
- * REV-21. « Assignation »: the ordered rules that set the level of the review of a push, from the
+ * REV-21. « Assignment »: the ordered rules that set the level of the review of a push, from the
  * author, the changed paths and the labels of the pull request. The first one that matches wins;
  * the last line says what a push gets when none does. An admin of the org writes; a member reads.
  */
@@ -295,12 +295,12 @@ export function AssignmentTab(handle: Handle<AssignmentTabProps>) {
       <section class="card config-card assignment" id="assignment" aria-labelledby="assignment-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="assignment-title">
-            Assignation <span class="count">{rules.length}</span>
+            Assignment <span class="count">{rules.length}</span>
           </h2>
         </header>
         <p class="hint">
-          Le niveau de la review d’un push selon l’auteur, les chemins touchés et les labels de la PR. Les règles se lisent dans
-          l’ordre, et la première qui correspond l’emporte, avant les préférences de l’auteur. Une commande @kento-review garde le niveau qu’elle demande.
+          The level of the review of a push, from the author, the changed paths and the labels of the PR. Kentō reads the rules in
+          order, and the first one that matches wins, before the preferences of the author. A @kento-review command keeps the level that it asks for.
         </p>
         {notice ? (
           <div class={`banner banner-${tone}`} role={tone === 'alert' ? 'alert' : 'status'}>
@@ -317,10 +317,10 @@ export function AssignmentTab(handle: Handle<AssignmentTabProps>) {
               ·
             </span>
             <div class="assignment-body">
-              <p class="assignment-when">Sinon</p>
+              <p class="assignment-when">Else</p>
               <p class="assignment-then">
-                les préférences de l’auteur s’il en a, puis le niveau par défaut du repo, <strong class="mono">{defaultLevel}</strong> (onglet Niveaux
-                et passes).
+                the preferences of the author if they have some, then the default level of the repo, <strong class="mono">{defaultLevel}</strong> (tab Levels
+                and passes).
               </p>
             </div>
           </li>

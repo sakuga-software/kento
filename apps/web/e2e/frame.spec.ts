@@ -3,18 +3,18 @@ import { expect, test } from '@playwright/test'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 const SCREENS = [
-  { path: '/', title: 'Tableau de bord' },
+  { path: '/', title: 'Dashboard' },
   { path: '/repos', title: 'Repos' },
   { path: '/findings', title: 'Findings' },
-  { path: '/feedback', title: 'Retours' },
+  { path: '/feedback', title: 'Feedback' },
   { path: '/runners', title: 'Runners' },
-  { path: '/settings', title: 'Réglages' },
+  { path: '/settings', title: 'Settings' },
 ]
 
 test.describe('the frame of the screens', () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page, 'alex')
-    await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   })
 
   for (let theme of ['paper', 'sumi'] as const) {
@@ -33,7 +33,7 @@ test.describe('the frame of the screens', () => {
 
   test('the navigation leads to each screen and marks it', async ({ page }, testInfo) => {
     await page.goto('/')
-    let nav = page.getByRole('navigation', { name: 'Navigation principale', exact: true })
+    let nav = page.getByRole('navigation', { name: 'Main navigation', exact: true })
     await expect(nav).toBeVisible()
     // REV-91: under 760 px, « Menu » opens the list of the screens.
     if (testInfo.project.name === 'mobile') await nav.getByRole('button', { name: 'Menu' }).click()
@@ -41,7 +41,7 @@ test.describe('the frame of the screens', () => {
     await expect(page).toHaveURL(/\/runners$/)
     await expect(page.getByRole('heading', { level: 1, name: 'Runners' })).toBeVisible()
     await expect(nav.getByRole('link', { name: 'Runners', includeHidden: true })).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByText(/Kentō \d+\.\d+\.\d+ · par Sakuga/)).toBeVisible()
+    await expect(page.getByText(/Kentō \d+\.\d+\.\d+ · by Sakuga/)).toBeVisible()
   })
 
   // REV-91: the tiles of the screen of a user keep their grid after the redesign of the dashboard.
@@ -58,34 +58,34 @@ test.describe('the frame of the screens', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'system')
     let paper = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
-    let theme = page.getByRole('group', { name: 'Thème' }).locator('visible=true')
+    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
     await theme.getByText('Sumi', { exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(paper)
-    // No « Appliquer » button with JavaScript: the click was enough.
-    await expect(theme.getByRole('button', { name: 'Appliquer' })).toBeHidden()
+    // No « Apply » button with JavaScript: the click was enough.
+    await expect(theme.getByRole('button', { name: 'Apply' })).toBeHidden()
 
     await page.goto('/findings')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
-    await expect(page.getByRole('group', { name: 'Thème' }).locator('visible=true').getByRole('radio', { name: 'Sumi' })).toBeChecked()
+    await expect(page.getByRole('group', { name: 'Theme' }).locator('visible=true').getByRole('radio', { name: 'Sumi' })).toBeChecked()
   })
 
-  test('« Appareil » follows the theme of the device', async ({ page }) => {
+  test('« Device » follows the theme of the device', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.goto('/')
-    let theme = page.getByRole('group', { name: 'Thème' }).locator('visible=true')
-    await theme.getByText('Papier', { exact: true }).click()
+    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
+    await theme.getByText('Paper', { exact: true }).click()
     let light = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
-    await theme.getByText('Appareil', { exact: true }).click()
+    await theme.getByText('Device', { exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'system')
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe('rgb(21, 20, 19)')
     expect(light).toBe('rgb(243, 242, 238)')
   })
 
-  test('the mobile frame folds the screens under « Menu », which Échap closes', async ({ page }, testInfo) => {
+  test('the mobile frame folds the screens under « Menu », which Escape closes', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'mobile only')
     await page.goto('/')
-    let nav = page.getByRole('navigation', { name: 'Navigation principale', exact: true })
+    let nav = page.getByRole('navigation', { name: 'Main navigation', exact: true })
     let menu = nav.getByRole('button', { name: 'Menu' })
     await expect(menu).toHaveAttribute('aria-expanded', 'false')
     await expect(nav.getByRole('link', { name: 'Repos', exact: true })).toBeHidden()
@@ -113,25 +113,25 @@ test.describe('a page that does not exist', () => {
   for (let theme of ['paper', 'sumi'] as const) {
     test(`an unknown repository and an unknown page answer 404 in the frame, and pass axe (${theme})`, async ({ page, context, baseURL }) => {
       await signIn(page, 'alex')
-      await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+      await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
       let errors = watchConsole(page)
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
 
       let config = await page.goto('/repos/00000000-0000-0000-0000-000000000000/config')
       expect(config?.status()).toBe(404)
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
-      await expect(page.getByRole('heading', { level: 1, name: 'Ce repo n’est plus dans l’installation' })).toBeVisible()
+      await expect(page.getByRole('heading', { level: 1, name: 'This repo is no longer in the installation' })).toBeVisible()
       await expectNoAxeViolations(page)
-      await page.getByRole('main').getByRole('link', { name: 'Voir les repos' }).click()
+      await page.getByRole('main').getByRole('link', { name: 'See the repos' }).click()
       await expect(page).toHaveURL(/\/repos$/)
       await expect(page.getByRole('heading', { level: 1, name: 'Repos' })).toBeVisible()
 
       let unknown = await page.goto('/nope')
       expect(unknown?.status()).toBe(404)
-      await expect(page.getByRole('heading', { level: 1, name: 'Cette page n’existe pas' })).toBeVisible()
+      await expect(page.getByRole('heading', { level: 1, name: 'This page does not exist' })).toBeVisible()
       await expectNoAxeViolations(page)
-      await page.getByRole('main').getByRole('link', { name: 'Retour au tableau de bord' }).click()
-      await expect(page.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeVisible()
+      await page.getByRole('main').getByRole('link', { name: 'Back to the dashboard' }).click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
 
       // The two 404 are on purpose; nothing else may fail.
       expect(errors.filter((e) => !e.includes('status of 404'))).toEqual([])
@@ -141,22 +141,22 @@ test.describe('a page that does not exist', () => {
   test('a person who is not signed in gets the 404 too, with the sign-in as the way out', async ({ page }) => {
     let response = await page.goto('/nope')
     expect(response?.status()).toBe(404)
-    await expect(page.getByRole('heading', { level: 1, name: 'Cette page n’existe pas' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'This page does not exist' })).toBeVisible()
     await expectNoAxeViolations(page)
-    await page.getByRole('link', { name: 'Se connecter à Kentō' }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Se connecter à Kentō' })).toBeVisible()
+    await page.getByRole('link', { name: 'Sign in to Kentō' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in to Kentō' })).toBeVisible()
   })
 })
 
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('the theme form applies the choice with « Appliquer »', async ({ page }) => {
+  test('the theme form applies the choice with « Apply »', async ({ page }) => {
     await signIn(page, 'alex')
     await page.goto('/runners')
-    let theme = page.getByRole('group', { name: 'Thème' }).locator('visible=true')
+    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
     await theme.getByText('Sumi', { exact: true }).click()
-    await theme.getByRole('button', { name: 'Appliquer' }).click()
+    await theme.getByRole('button', { name: 'Apply' }).click()
     await expect(page).toHaveURL(/\/runners$/)
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
   })

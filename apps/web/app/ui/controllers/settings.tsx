@@ -187,7 +187,7 @@ export function settingsActions(kit: UiKit) {
     orgSettingsSave: createAction(pageRoutes.orgSettingsSave, (context) => changeOrgSettings(context, false)),
     orgSettingsReset: createAction(pageRoutes.orgSettingsReset, (context) => changeOrgSettings(context, true)),
 
-    // REV-11. The forms of « Providers et clés »: an admin of the org on screen only. cop() and
+    // REV-11. The forms of « Providers and keys »: an admin of the org on screen only. cop() and
     // csrf() of the session layer ran before. A key is read from the form, encrypted, and never
     // written back into a page, a redirect or a log.
     providerAdd: createAction(pageRoutes.providerAdd, async (context) => {
@@ -197,7 +197,7 @@ export function settingsActions(kit: UiKit) {
       let page = kit.page(context)
       let { values, input, errors } = readProviderForm(context.get(FormData))
       if (input && input.apiKey !== null && !providers.secretsConfigured) {
-        errors.apiKey = 'Le service ne peut pas chiffrer de clé (KENTO_SECRETS_KEY) : laissez-la sur le runner.'
+        errors.apiKey = 'The service cannot encrypt a key (KENTO_SECRETS_KEY). Keep the key on the runner.'
       }
       if (!input || errors.apiKey) return renderSettings(kit, context, signed, page, { form: { values, errors } }, 422)
       let added
@@ -233,10 +233,10 @@ export function settingsActions(kit: UiKit) {
       } catch (error) {
         if (!(error instanceof SecretsError)) throw error
         log('error', 'providers.key_unreadable', { providerId: id, error: error.message })
-        return failed('La clé ne se déchiffre pas avec la clé maître du service. Remplacez la clé, ou vérifiez KENTO_SECRETS_KEY sur le service.')
+        return failed('The master key of the service does not decrypt the key. Replace the key, or check KENTO_SECRETS_KEY on the service.')
       }
       if (!found) return toSettings('missing')
-      if (found.apiKey === null) return failed('Ce provider se teste depuis le runner qui le tient.')
+      if (found.apiKey === null) return failed('Test this provider from the runner that holds it.')
       let result = await providers.probe({ kind: found.provider.kind, baseUrl: found.provider.baseUrl, apiKey: found.apiKey })
       log(result.outcome === 'ok' ? 'info' : 'warn', 'providers.tested', {
         providerId: id,

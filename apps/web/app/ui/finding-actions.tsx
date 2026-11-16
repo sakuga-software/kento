@@ -7,19 +7,19 @@ import { DismissDialog } from './dismiss-dialog.tsx'
 
 /** What the detail of a finding says after a decision, from `?fait=` and `?github=`. */
 export const FINDING_NOTICES = {
-  dismissed: 'Finding marqué dismissed.',
-  wontfix: 'Finding marqué wontfix.',
-  open: 'Finding rouvert.',
-  unchanged: 'Ce finding avait déjà ce statut : rien n’a changé.',
-  fixed: 'Ce finding est fixed : un push l’a corrigé, il ne se met pas de côté.',
+  dismissed: 'Finding marked dismissed.',
+  wontfix: 'Finding marked wontfix.',
+  open: 'Finding reopened.',
+  unchanged: 'This finding already had this status. Nothing changed.',
+  fixed: 'This finding is fixed. A push fixed it, so it cannot be set aside.',
 } as const
 export type FindingNotice = keyof typeof FINDING_NOTICES
 
 /** Where the reply of the bot went: posted in the thread, failed, or no thread to post in. */
 export const GITHUB_NOTICES = {
-  posted: 'La réponse est postée sur le fil GitHub.',
-  failed: 'La réponse n’a pas pu être postée sur GitHub : le statut est changé dans Kentō, et le fil n’en dit rien.',
-  none: 'Ce finding n’a pas de fil sur GitHub : rien n’y est posté.',
+  posted: 'Kentō posted the reply in the GitHub thread.',
+  failed: 'Kentō could not post the reply on GitHub. The status changed in Kentō, and the thread says nothing about it.',
+  none: 'This finding has no thread on GitHub, so Kentō posts nothing there.',
 } as const
 export type GithubNotice = keyof typeof GITHUB_NOTICES
 
@@ -38,8 +38,8 @@ export function FindingNoticeView(handle: Handle<{ notice: FindingNotice; github
 }
 
 /**
- * « Marquer dismissed… » (the dialog of REV-18, with its reasons), « Marquer wontfix… » (the one
- * confirmation of REV-33) and « Rouvrir ». A member of the org decides, as an admin does. Each button
+ * « Mark dismissed… » (the dialog of REV-18, with its reasons), « Mark wontfix… » (the one
+ * confirmation of REV-33) and « Reopen ». A member of the org decides, as an admin does. Each button
  * posts the form of the page, which carries the CSRF token and the id of the finding, to its own action.
  */
 export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: string }>) {
@@ -51,7 +51,7 @@ export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: st
     let form = `finding-${finding.id}`
     let replies = finding.githubCommentId !== null
     return (
-      <section class="finding-actions" aria-label="Décider">
+      <section class="finding-actions" aria-label="Decide">
         <form id={form} method="post" action={pullRoutes.findingDismiss.href({ id: finding.id })}>
           <input type="hidden" name="_csrf" value={csrf} />
           <input type="hidden" name="ids" value={finding.id} />
@@ -60,7 +60,7 @@ export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: st
           <form method="post" action={pullRoutes.findingReopen.href({ id: finding.id })}>
             <input type="hidden" name="_csrf" value={csrf} />
             <button class="button" type="submit">
-              Rouvrir
+              Reopen
             </button>
           </form>
         ) : (
@@ -69,12 +69,12 @@ export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: st
               id={form}
               form={form}
               action={pullRoutes.findingDismiss.href({ id: finding.id })}
-              trigger="Marquer dismissed…"
-              submit="Marquer dismissed"
+              trigger="Mark dismissed…"
+              submit="Mark dismissed"
             />
-            <Confirm trigger="Marquer wontfix…" action={pullRoutes.findingWontfix.href({ id: finding.id })} csrf={csrf} form={form} submit="Marquer wontfix">
+            <Confirm trigger="Mark wontfix…" action={pullRoutes.findingWontfix.href({ id: finding.id })} csrf={csrf} form={form} submit="Mark wontfix">
               <p>
-                Le finding est juste, et le code reste tel quel. {replies ? 'Kentō le dit sur le fil GitHub. ' : ''}Il ne le signalera plus sur cette PR.
+                The finding is right, and the code stays as is. {replies ? 'Kentō says so in the GitHub thread. ' : ''}Kentō will not report it again on this pull request.
               </p>
             </Confirm>
           </>

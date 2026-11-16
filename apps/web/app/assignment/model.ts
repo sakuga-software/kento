@@ -119,13 +119,13 @@ export function readUnreadPathRules(config: unknown): number[] {
 }
 
 /**
- * « Assignation : sans la liste des fichiers de la PR, la règle 1 (chemins) n’a pas pu être testée. »
+ * « Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths). »
  * The list is missing when GitHub did not give it, or when the rule came while the push was read.
  */
 export function unreadPathsLine(positions: readonly number[]): string {
   if (positions.length === 0) return ''
-  let rules = positions.length === 1 ? `la règle ${positions[0]} (chemins) n’a pas pu être testée` : `les règles ${positions.join(', ')} (chemins) n’ont pas pu être testées`
-  return `Assignation : sans la liste des fichiers de la PR, ${rules}.`
+  let rules = positions.length === 1 ? `rule ${positions[0]}` : `rules ${positions.join(', ')}`
+  return `Assignment: without the list of the files of the PR, Kentō could not test ${rules} (paths).`
 }
 
 /** Whether a rule needs the changed files of the pull request: GitHub is read only then. */
@@ -134,23 +134,23 @@ export function needsFiles(rules: readonly AssignmentRule[]): boolean {
 }
 
 const TRIGGER_WORDS: Record<Trigger, string> = {
-  push: 'à chaque push',
-  ready: 'au passage en « Ready for review »',
-  command: 'à la demande',
+  push: 'at each push',
+  ready: 'when the PR becomes "Ready for review"',
+  command: 'on request',
 }
 
-/** « l’auteur est sakuga-agent[bot] et la PR touche db/migrations/0002.sql ». */
+/** « the author is sakuga-agent[bot] and the PR changes db/migrations/0002.sql ». */
 export function reasonsText(reasons: AssignmentReasons): string {
   let parts: string[] = []
-  if (reasons.author !== undefined) parts.push(`l’auteur est ${reasons.author}`)
-  if (reasons.path !== undefined) parts.push(`la PR touche ${reasons.path}`)
-  if (reasons.label !== undefined) parts.push(`la PR porte le label « ${reasons.label} »`)
-  return parts.join(' et ')
+  if (reasons.author !== undefined) parts.push(`the author is ${reasons.author}`)
+  if (reasons.path !== undefined) parts.push(`the PR changes ${reasons.path}`)
+  if (reasons.label !== undefined) parts.push(`the PR has the label "${reasons.label}"`)
+  return parts.join(' and ')
 }
 
-/** « Assignation : règle 1, l’auteur est sakuga-agent[bot], donc balanced à chaque push. » */
+/** « Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push. » */
 export function assignmentLine(assignment: JobAssignment): string {
-  return `Assignation : règle ${assignment.position}, ${reasonsText(assignment.reasons)}, donc ${assignment.level} ${TRIGGER_WORDS[assignment.trigger]}.`
+  return `Assignment: rule ${assignment.position}, ${reasonsText(assignment.reasons)}, so ${assignment.level} ${TRIGGER_WORDS[assignment.trigger]}.`
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -217,36 +217,36 @@ export function readAssignmentForm(form: FormData): FormResult<AssignmentValues>
 
   let authors = [...new Set(list(text(form, 'authors')).map((a) => a.replace(/^@/, '')))]
   let badAuthor = authors.find((a) => !LOGIN.test(a))
-  if (authors.length > MAX_CONDITION_VALUES) errors.authors = `${MAX_CONDITION_VALUES} auteurs au plus.`
-  else if (badAuthor !== undefined) errors.authors = `« ${badAuthor.slice(0, 60)} » n’est pas un login GitHub.`
+  if (authors.length > MAX_CONDITION_VALUES) errors.authors = `${MAX_CONDITION_VALUES} authors at most.`
+  else if (badAuthor !== undefined) errors.authors = `"${badAuthor.slice(0, 60)}" is not a GitHub login.`
 
   let paths = list(text(form, 'paths'))
-  if (paths.length > MAX_CONDITION_VALUES) errors.paths = `${MAX_CONDITION_VALUES} motifs au plus.`
+  if (paths.length > MAX_CONDITION_VALUES) errors.paths = `${MAX_CONDITION_VALUES} patterns at most.`
   else {
     for (let pattern of paths) {
       let problem = checkPattern(pattern)
       if (problem) {
-        errors.paths = `« ${pattern.slice(0, 60)} » : ${problem}.`
+        errors.paths = `"${pattern.slice(0, 60)}": ${problem}.`
         break
       }
     }
   }
 
   let labels = list(text(form, 'labels'))
-  if (labels.length > MAX_CONDITION_VALUES) errors.labels = `${MAX_CONDITION_VALUES} labels au plus.`
-  else if (labels.some((l) => l.length > LABEL_MAX)) errors.labels = `Un label de GitHub fait ${LABEL_MAX} caractères au plus.`
+  if (labels.length > MAX_CONDITION_VALUES) errors.labels = `${MAX_CONDITION_VALUES} labels at most.`
+  else if (labels.some((l) => l.length > LABEL_MAX)) errors.labels = `A GitHub label has ${LABEL_MAX} characters at most.`
 
   if (!errors.authors && !errors.paths && !errors.labels && authors.length + paths.length + labels.length === 0) {
-    errors.authors = 'Donnez au moins un auteur, un chemin ou un label : une règle sans condition prendrait toutes les PR.'
+    errors.authors = 'Give at least one author, path or label. A rule without a condition would take every PR.'
   }
 
   let outcome = text(form, 'outcome')
-  if (!isOneOf(OUTCOMES, outcome)) errors.outcome = 'Choisissez un niveau, ou « Aucune review automatique ».'
+  if (!isOneOf(OUTCOMES, outcome)) errors.outcome = 'Choose a level, or "No automatic review".'
 
   let mentionText = text(form, 'mention').trim().replace(/^@/, '')
   let mention: string | null = mentionText || null
-  if (mention !== null && !MENTION.test(mention)) errors.mention = 'Un login GitHub d’une personne, par exemple alex.'
-  else if (mention !== null && outcome === 'command_only') errors.mention = 'Sans review automatique, il n’y a pas de review où mentionner quelqu’un.'
+  if (mention !== null && !MENTION.test(mention)) errors.mention = 'The GitHub login of a person, for example alex.'
+  else if (mention !== null && outcome === 'command_only') errors.mention = 'Without an automatic review, there is no review to mention someone in.'
 
   if (Object.keys(errors).length || !isOneOf(OUTCOMES, outcome)) return { ok: false, errors: errors as Record<string, string> }
   let action: AssignmentAction = outcome === 'command_only' ? 'command_only' : 'review'

@@ -1128,22 +1128,22 @@ select.bar-org-box:hover {
   }
   /* REV-36. The names of the columns of Repos come from here, not from an attribute on each of its cells. */
   .repos-table td:nth-child(2)::before {
-    content: 'Reviews par';
+    content: 'Reviews by';
   }
   .repos-table td:nth-child(3)::before {
-    content: 'Niveau';
+    content: 'Level';
   }
   .repos-table td:nth-child(4)::before {
-    content: 'Modèle';
+    content: 'Model';
   }
   .repos-table td:nth-child(5)::before {
-    content: 'Bascule';
+    content: 'Switch';
   }
   .repos-table td:nth-child(6)::before {
-    content: 'Dernière review';
+    content: 'Last review';
   }
   .repos-table td:nth-child(7)::before {
-    content: 'Précision 30 j';
+    content: 'Precision 30 d';
   }
   .table tbody th,
   .table .row-action {

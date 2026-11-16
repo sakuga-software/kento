@@ -1,10 +1,13 @@
-// REV-18. « Marquer dismissed » on several findings against Postgres: one event each with the login of
+// REV-18. « Mark dismissed » on several findings against Postgres: one event each with the login of
 // the person, one reply in each thread, and the count of the reasons that grows by as many.
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
-import { runMigrations } from '../../app/db/migrate.ts'
+import { migrationsFolder, runMigrations } from '../../app/db/migrate.ts'
 import { applyStatus, type ThreadTarget } from '../../app/findings/dismiss.ts'
 import { precisionReport } from '../../app/findings/precision.ts'
 import { createTestDatabase } from './helpers.ts'
@@ -54,15 +57,15 @@ describe('a change of status of several findings', () => {
     await test?.drop()
   })
 
-  it('dismisses two findings with « Hors sujet »: two events, two replies, and the reason counts two more', async () => {
-    let before = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Hors sujet')?.count ?? 0
+  it('dismisses two findings with « Off topic »: two events, two replies, and the reason counts two more', async () => {
+    let before = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Off topic')?.count ?? 0
     let posted: { target: ThreadTarget; body: string }[] = []
     let outcome = await applyStatus(
       database.sql,
       async (target, body) => {
         posted.push({ target, body })
       },
-      { orgId, ids: [ids[0]!, ids[1]!], status: 'dismissed', reason: 'Hors sujet', actor: 'alex' },
+      { orgId, ids: [ids[0]!, ids[1]!], status: 'dismissed', reason: 'Off topic', actor: 'alex' },
     )
     assert.deepEqual(outcome, { changed: 2, unchanged: 0, fixed: 0, missing: 0, failed: 0, replied: 2, unreplied: 0 })
     assert.deepEqual(
@@ -72,15 +75,15 @@ describe('a change of status of several findings', () => {
         { installationId: 4242, githubRepoId: 7001, fullName: 'sakuga-software/orchard', prNumber: 12, commentId: 900_002 },
       ],
     )
-    assert.match(posted[0]!.body, /par @alex sur Kentō\. Motif : « Hors sujet »/)
+    assert.match(posted[0]!.body, /by @alex on Kentō\. Reason: "Off topic"/)
 
     let events = await database.sql<{ type: string; actor: string; reason: string }[]>`
       select type, actor, reason from finding_events where finding_id = any(${database.sql.array([ids[0]!, ids[1]!])}::uuid[])`
     assert.deepEqual([...events].map((e) => ({ ...e })), [
-      { type: 'dismissed', actor: 'alex', reason: 'Hors sujet' },
-      { type: 'dismissed', actor: 'alex', reason: 'Hors sujet' },
+      { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
+      { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
     ])
-    let after = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Hors sujet')?.count ?? 0
+    let after = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Off topic')?.count ?? 0
     assert.equal(after - before, 2)
   })
 
@@ -91,7 +94,7 @@ describe('a change of status of several findings', () => {
       async () => {
         posted++
       },
-      { orgId, ids: [ids[0]!, ids[2]!], status: 'dismissed', reason: 'Hors sujet', actor: 'camille' },
+      { orgId, ids: [ids[0]!, ids[2]!], status: 'dismissed', reason: 'Off topic', actor: 'camille' },
     )
     assert.deepEqual(outcome, { changed: 1, unchanged: 1, fixed: 0, missing: 0, failed: 0, replied: 0, unreplied: 0 })
     assert.equal(posted, 0)
@@ -124,7 +127,7 @@ describe('a change of status of several findings', () => {
       returning id`
     let posted = 0
     let outcome = await applyStatus(database.sql, async () => void posted++, {
-      orgId, ids: [row!.id], status: 'dismissed', reason: 'Hors sujet', actor: 'alex',
+      orgId, ids: [row!.id], status: 'dismissed', reason: 'Off topic', actor: 'alex',
     })
     assert.deepEqual(outcome, { changed: 0, unchanged: 0, fixed: 1, missing: 0, failed: 0, replied: 0, unreplied: 0 })
     assert.equal(posted, 0)
@@ -177,5 +180,31 @@ describe('a change of status of several findings', () => {
       await impatient.close()
       await database.sql.unsafe(`alter database ${name} reset lock_timeout`)
     }
+  })
+
+  // REV-114. Migration 0027 gives the French reasons of the dialog and of a 👎 their English value.
+  // The test runs its SQL again on rows written as the release before wrote them.
+  it('migration 0027 changes the French reasons of the dialog to English, and keeps a reason of a person', async () => {
+    let sql = database.sql
+    let fresh: string[] = []
+    for (let [n, reason] of ['Faux positif', 'sans motif, réaction GitHub', 'Corrigé ailleurs'].entries()) {
+      let [row] = await sql<{ id: string }[]>`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, status_reason,
+          first_seen_sha, last_seen_sha)
+        select repo_id, 13, ${`fr${n}`}, ${`fr${n}`}, 'a.ts', ${40 + n}, ${`french ${n}`}, 'major', 'bug', 80, 'dismissed', ${reason}, ${HEAD}, ${HEAD}
+        from findings where id = ${ids[0]!}
+        returning id`
+      await sql`insert into finding_events (finding_id, type, actor, reason) values (${row!.id}, 'dismissed', 'alex', ${reason})`
+      fresh.push(row!.id)
+    }
+    let migration = await readFile(path.join(migrationsFolder, '0027_dismiss_reasons_in_english.sql'), 'utf8')
+    for (let statement of migration.split('--> statement-breakpoint')) await sql.unsafe(statement)
+    let rows = await sql<{ statusReason: string; reason: string }[]>`
+      select f.status_reason as "statusReason", e.reason from findings f join finding_events e on e.finding_id = f.id
+      where f.id = any(${sql.array(fresh)}::uuid[]) order by f.line`
+    assert.deepEqual(
+      rows.map((r) => [r.statusReason, r.reason]),
+      [['False positive', 'False positive'], ['no reason, GitHub reaction', 'no reason, GitHub reaction'], ['Corrigé ailleurs', 'Corrigé ailleurs']],
+    )
   })
 })

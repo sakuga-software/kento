@@ -105,7 +105,9 @@ export const fallbackRoutes = route({
 
 /** REV-96. The pages of documentation. Open to anyone, without a sign-in: the comments of Kentō link to them. */
 export const docsRoutes = route({
-  commands: get('/docs/commandes'),
+  commands: get('/docs/commands'),
+  /** REV-114. The French address of the page, in the comments posted before the deploy: a permanent redirect. */
+  commandsFrench: get('/docs/commandes'),
 })
 
 /** The GitHub sign-in. Open to anyone. */

@@ -6,16 +6,16 @@ import type { ProvidersStore, ProviderView } from './store.ts'
 /** The line under the name of a provider on the Config screen: where its key is, and its state. */
 function hint(provider: ProviderView): string {
   let state = providerState(provider)
-  let where = `${KIND_LABELS[provider.kind]}${provider.isDefault ? ', provider par défaut de l’organisation' : ''}`
+  let where = `${KIND_LABELS[provider.kind]}${provider.isDefault ? ', default provider of the organization' : ''}`
   switch (state) {
     case 'runner':
-      return `${where} · clé sur le runner`
+      return `${where} · key on the runner`
     case 'refused':
-      return `${where} · clé refusée (${provider.refusedStatus})`
+      return `${where} · key refused (${provider.refusedStatus})`
     case 'valid':
-      return `${where} · clé valide (••••${provider.keyLast4})`
+      return `${where} · key valid (••••${provider.keyLast4})`
     case 'unknown':
-      return `${where} · jamais appelé (••••${provider.keyLast4})`
+      return `${where} · never called (••••${provider.keyLast4})`
   }
 }
 
@@ -43,8 +43,8 @@ export function createConfigProviders(store: ProvidersStore, options: { serviceK
   }
 }
 
-/** « clé du runner », « serveur du runner » or « clé chiffrée par le service ». */
+/** « key on the runner », « server of the runner » or « key encrypted by the service ». */
 export function keyFrom(provider: Pick<ProviderView, 'runnerHeld' | 'kind'>): string {
-  if (provider.kind === 'ollama') return 'serveur du runner'
-  return provider.runnerHeld ? 'clé du runner' : 'clé chiffrée par le service'
+  if (provider.kind === 'ollama') return 'server of the runner'
+  return provider.runnerHeld ? 'key on the runner' : 'key encrypted by the service'
 }

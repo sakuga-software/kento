@@ -149,7 +149,7 @@ describe('the docker run command', () => {
     }
     assert.ok(!command.includes('PROVIDER_API_KEY'), 'a runner on the key of the app needs no key')
     let own = dockerCommand({ kentoUrl: 'https://review.test', token: 't', name: 'n', labels: [], trusted: false, version: '1.2.3' })
-    assert.ok(own.includes('-e PROVIDER_API_KEY=<votre clé OpenRouter>'))
+    assert.ok(own.includes('-e PROVIDER_API_KEY=<your OpenRouter key>'))
   })
 })
 
@@ -168,12 +168,12 @@ describe('the state of a runner', () => {
 
   it('names the state, and says since when a runner is offline (REV-30)', () => {
     let at = (seconds: number) => new Date(NOW.getTime() - seconds * 1000)
-    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(20) }, NOW), 'En ligne')
-    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(120) }, NOW), 'Signal en retard')
-    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(3 * 86_400) }, NOW), 'Hors ligne depuis 3 j')
-    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(5 * 3600) }, NOW), 'Hors ligne depuis 5 h')
-    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: null }, NOW), 'Hors ligne')
-    assert.equal(runnerStateLabel({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'Révoqué')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(20) }, NOW), 'Online')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(120) }, NOW), 'Late signal')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(3 * 86_400) }, NOW), 'Offline for 3 d')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: at(5 * 3600) }, NOW), 'Offline for 5 h')
+    assert.equal(runnerStateLabel({ revokedAt: null, lastSeenAt: null }, NOW), 'Offline')
+    assert.equal(runnerStateLabel({ revokedAt: NOW, lastSeenAt: at(1) }, NOW), 'Revoked')
   })
 
   it('lists an offline runner first, then a late one, then the online ones in their order (REV-30)', () => {
@@ -207,28 +207,28 @@ describe('the Runners screen', () => {
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/runners', { cookie })).text()
     assert.match(html, /mac-mini/)
-    assert.match(html, /En ligne/)
-    assert.match(html, /1\.2\.3 disponible/)
+    assert.match(html, /Online/)
+    assert.match(html, /1\.2\.3 available/)
     assert.match(html, /sakuga-software\/sakuga-review#57/)
-    assert.match(html, /Clé du service \(de confiance\)/)
+    assert.match(html, /Key of the service \(trusted\)/)
     // REV-43: one name for the key of the service, and no word of the runner protocol.
-    assert.doesNotMatch(html, /Clé de l’app|clé de l’app/)
-    assert.doesNotMatch(html, /claim|Heartbeat|heartbeat|\bBail\b|\bbail\b|en hash|Corps maximal/)
-    assert.match(html, /Attente d’un job/)
-    assert.match(html, /Taille maximale d’une requête/)
-    assert.match(html, /seule son empreinte est gardée/)
+    assert.doesNotMatch(html, /key of the app/i)
+    assert.doesNotMatch(html, /claim|[Hh]eartbeat|\b[Ll]ease\b(?!-title)|[Mm]ax body/)
+    assert.match(html, /Wait for a job/)
+    assert.match(html, /Largest request/)
+    assert.match(html, /only its hash is kept/)
     assert.doesNotMatch(html, / — /)
-    assert.match(html, /Retirer la confiance/)
-    assert.match(html, /Révoquer mac-mini/)
+    assert.match(html, /Remove the trust/)
+    assert.match(html, /Revoke mac-mini/)
     assert.match(html, /action="\/runners\/new"/)
     // A runner of the service shows, with no form: only an operator manages it.
-    assert.match(html, /Runner du service/)
-    assert.doesNotMatch(html, /Révoquer runners-host/)
-    // REV-30: the facts of the protocol fold under « Détails techniques ».
-    assert.match(html, /<details class="runner-details"><summary>Détails techniques<\/summary>/)
-    assert.match(html, /Protocole/)
-    assert.match(html, /Réservation et tentatives/)
-    // REV-30: « Clé du runner » is the choice by default; the key of the app is an explicit choice.
+    assert.match(html, /Runner of the service/)
+    assert.doesNotMatch(html, /Revoke runners-host/)
+    // REV-30: the facts of the protocol fold under « Technical details ».
+    assert.match(html, /<details class="runner-details"><summary>Technical details<\/summary>/)
+    assert.match(html, /Protocol/)
+    assert.match(html, /Reservation and attempts/)
+    // REV-30: « Key on the runner » is the choice by default; the key of the app is an explicit choice.
     assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
     // REV-51: no screen sets the pool of a repository, so the help of the labels does not name it.
@@ -246,21 +246,21 @@ describe('the Runners screen', () => {
     })
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/runners', { cookie })).text()
-    assert.match(html, /<h2 id="runners-title" class="section-title">Runners<\/h2><p class="runner-counts">1 en ligne · 2 hors ligne<\/p>/)
+    assert.match(html, /<h2 id="runners-title" class="section-title">Runners<\/h2><p class="runner-counts">1 online · 2 offline<\/p>/)
     assert.doesNotMatch(html, /Runners actifs/)
     let main = html.slice(html.indexOf('id="runners-title"'), html.indexOf('class="runner-silent"'))
     assert.match(main, /<table class="table runners-table">/)
-    assert.match(main, /<span class="status status-offline">Hors ligne depuis 2 h<\/span>/)
+    assert.match(main, /<span class="status status-offline">Offline for 2 h<\/span>/)
     assert.ok(main.indexOf('hetzner-cx22') < main.indexOf('mac-host'), 'the offline runner comes first')
     assert.doesNotMatch(main, /ci-ephemeral-7/)
     // REV-37: a runner silent for a day is in a folded block, with one action for all of them.
     let silent = html.slice(html.indexOf('class="runner-silent"'), html.indexOf('id="revoked-title"'))
-    assert.match(silent, /^class="runner-silent"><summary>1 runner muet depuis plus de 24 h<\/summary>/)
-    assert.match(silent, /Hors ligne depuis 3 j/)
+    assert.match(silent, /^class="runner-silent"><summary>1 runner silent for more than 24 h<\/summary>/)
+    assert.match(silent, /Offline for 3 d/)
     assert.match(silent, /<form id="revoke-silent" method="post" action="\/runners\/revoke-silent" hidden><input type="hidden" name="_csrf" value="[0-9a-f]+" \/><input type="hidden" name="id" value="33333333-3333-4333-8333-333333333335" \/><\/form>/)
-    assert.match(silent, /<summary class="button button-danger">Révoquer ce runner…<\/summary>/)
-    assert.match(silent, /<button type="submit" form="revoke-silent" formaction="\/runners\/revoke-silent" class="button button-danger-solid">Révoquer ci-ephemeral-7<\/button>/)
-    assert.match(html, /Révoqués <span class="count">1<\/span>/)
+    assert.match(silent, /<summary class="button button-danger">Revoke this runner…<\/summary>/)
+    assert.match(silent, /<button type="submit" form="revoke-silent" formaction="\/runners\/revoke-silent" class="button button-danger-solid">Revoke ci-ephemeral-7<\/button>/)
+    assert.match(html, /Revoked <span class="count">1<\/span>/)
   })
 
   it('counts the silent runners in the action, and leaves a runner of the service out of it (REV-37)', async () => {
@@ -274,13 +274,13 @@ describe('the Runners screen', () => {
       ],
     })
     let admin = await (await request('/runners', { cookie: (await signIn(ALEX)).cookie })).text()
-    assert.match(admin, /<summary>3 runners muets depuis plus de 24 h<\/summary>/)
-    assert.match(admin, /Révoquer ces 2 runners…/)
-    assert.match(admin, />Révoquer 2 runners<\/button>/)
+    assert.match(admin, /<summary>3 runners silent for more than 24 h<\/summary>/)
+    assert.match(admin, /Revoke these 2 runners…/)
+    assert.match(admin, />Revoke 2 runners<\/button>/)
     assert.doesNotMatch(admin, /name="id" value="44444444-4444-4444-8444-444444444443"/)
     assert.doesNotMatch(admin, /name="id" value="44444444-4444-4444-8444-444444444444"/)
     let member = await (await request('/runners', { cookie: (await signIn(CAMILLE)).cookie })).text()
-    assert.match(member, /3 runners muets depuis plus de 24 h/)
+    assert.match(member, /3 runners silent for more than 24 h/)
     assert.doesNotMatch(member, /revoke-silent/)
   })
 
@@ -289,19 +289,19 @@ describe('the Runners screen', () => {
     let { cookie } = await signIn(CAMILLE)
     let html = await (await request('/runners', { cookie })).text()
     assert.match(html, /mac-mini/)
-    assert.match(html, /Lecture seule/)
+    assert.match(html, /Read only/)
     assert.doesNotMatch(html, /method="post" action="\/runners/)
-    assert.doesNotMatch(html, /Nouveau runner<\/a>/)
+    assert.doesNotMatch(html, /New runner<\/a>/)
   })
 
-  it('shows an expired token with the help and « Nouveau token »', async () => {
+  it('shows an expired token with the help and « New token »', async () => {
     let { request, signIn } = setup({
       registrations: [{ id: REGISTRATION_ID, name: 'gpu', labels: ['gpu'], trusted: false, expiresAt: new Date(NOW.getTime() - 1000), createdAt: NOW }],
     })
     let { cookie } = await signIn(ALEX)
     let html = await (await request('/runners', { cookie })).text()
-    assert.match(html, /Token expiré/)
-    assert.match(html, /atteint review\.test en HTTPS sortant/)
+    assert.match(html, /Token expired/)
+    assert.match(html, /reaches review\.test with outbound HTTPS/)
     assert.match(html, new RegExp(`action="/runners/registrations/${REGISTRATION_ID}/renew"`))
   })
 })
@@ -316,7 +316,7 @@ describe('the writes of the Runners screen', () => {
     let html = await response.text()
     let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_[A-Za-z0-9_-]{43})/.exec(html)?.[1]
     assert.ok(token, 'the page shows the token in the command')
-    assert.match(html, /Il ne sera plus affiché/)
+    assert.match(html, /The screen does not show it again/)
     assert.equal(registrations.length, 1)
     assert.deepEqual(registrations[0], { orgId: ORG.id, userId: 'user-1', name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true, tokenHash: hashToken(token) })
     // The next page does not show it again.
@@ -371,7 +371,7 @@ describe('the writes of the Runners screen', () => {
     assert.equal(posted.headers.get('Location'), '/runners?notice=revoked_silent')
     assert.deepEqual(writes, [`revoke-silent ${ORG.id} ${RUNNER_ID},${REGISTRATION_ID}`])
     let html = await (await request('/runners?notice=revoked_silent', { cookie })).text()
-    assert.match(html, /Runners muets révoqués\./)
+    assert.match(html, /Silent runners revoked\./)
 
     let member = await signIn(CAMILLE)
     assert.equal((await request('/runners/revoke-silent', { cookie: member.cookie, form: { _csrf: member.csrf, id: RUNNER_ID } })).status, 403)

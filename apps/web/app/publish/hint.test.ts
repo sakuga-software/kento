@@ -17,7 +17,7 @@ const HEAD1 = '1'.repeat(40)
 const HEAD2 = '2'.repeat(40)
 const HEAD3 = '3'.repeat(40)
 const FILE = 'app/schema.ts'
-const DOCS = 'https://review.sakuga.dev/docs/commandes'
+const DOCS = 'https://review.sakuga.dev/docs/commands'
 
 const bug: ReviewFinding = {
   path: FILE,
@@ -103,7 +103,7 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     let { fake, publish } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    assert.match(thread!.body, /\[Les commandes de Kentō\]\(https:\/\/review\.sakuga\.dev\/docs\/commandes\)/)
+    assert.match(thread!.body, /\[Kentō commands\]\(https:\/\/review\.sakuga\.dev\/docs\/commands\)/)
     assert.match(thread!.body, /`@kento-review reject <cause>`/)
   })
 
@@ -120,8 +120,8 @@ describe('the hint of `reject` at the next review (REV-96)', () => {
     let [hint] = hints(thread!.id)
     assert.equal(
       hint!.body,
-      "Cette réponse semble écarter le constat. Pour qu'il compte comme rejeté (il ne reviendra pas et ne baissera plus la note) : " +
-        `\`@kento-review reject <cause>\`. [Les commandes de Kentō](${DOCS})\n\n${HINT_MARKER}`,
+      'This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ' +
+        `\`@kento-review reject <cause>\`. [Kentō commands](${DOCS})\n\n${HINT_MARKER}`,
     )
     assert.equal(rows[0]!.status, 'open', 'the hint changes no status')
     assert.equal(outcome.inline, 0, 'the open thread still carries the finding: no new thread')

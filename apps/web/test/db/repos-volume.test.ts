@@ -96,8 +96,8 @@ describe('the Repos screen with 300 repositories and 50 000 jobs', () => {
   it(`answers /repos in under ${MAX_MS} ms with under ${MAX_BYTES / 1000} KB of HTML, page after page`, async () => {
     let first = await load('/repos')
     assert.equal(first.status, 200)
-    assert.match(first.html, /300 repos dans l’installation · 120 activés/)
-    assert.match(first.html, /1 à 50 sur 300/)
+    assert.match(first.html, /300 repos in the installation · 120 enabled/)
+    assert.match(first.html, /1 to 50 of 300/)
     assert.equal((first.html.match(/<tr id="repo-/g) ?? []).length, 50)
     assert.ok(first.bytes < MAX_BYTES, `${first.bytes} bytes`)
 

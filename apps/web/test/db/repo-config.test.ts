@@ -180,7 +180,7 @@ describe('the config of a repository against Postgres', () => {
       )
     })
 
-    it('« À la demande »: no push creates a job, and a command still does, with the models of the config', async () => {
+    it('« On request »: no push creates a job, and a command still does, with the models of the config', async () => {
       await setRepoConfig({ trigger: 'command', models: { heavy: OPUS } }, 3)
       for (let action of ['opened', 'synchronize', 'reopened', 'ready_for_review']) {
         assert.equal((await push({ action, head: headSha(1) })).outcome, 'skipped', action)

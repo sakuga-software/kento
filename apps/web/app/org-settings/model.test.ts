@@ -53,9 +53,9 @@ describe('the cost limits of an org', () => {
 
   it('tells the pull request why, until when, and who can change it', () => {
     let text = capSentence({ period: 'day', spentUsd: 8.03, capUsd: 8, resetsAt: new Date('2026-10-30T00:00:00Z') })
-    assert.match(text, /plafond de coût du jour de l’organisation est atteint \(8,03\s\$ dépensés sur 8,00\s\$\)/)
-    assert.match(text, /reprennent le 30 oct\. à 01:00 \(heure de Paris\)/)
-    assert.match(text, /un admin relève le plafond/)
+    assert.match(text, /the organization reached its daily cost cap \(\$8\.03 spent of \$8\.00\)/)
+    assert.match(text, /start again on 30 Oct at 01:00 \(Paris time\)/)
+    assert.match(text, /an admin raises the cap/)
   })
 
   it('reads the numeric of Postgres', () => {

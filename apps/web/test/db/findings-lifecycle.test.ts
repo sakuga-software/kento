@@ -257,13 +257,13 @@ describe('findings from push to push (REV-16)', () => {
     await push(HEADS[3]!, [DIVIDES, TRUNCATES], [])
     rows = await findingRows()
     let divides = rows.find((r) => r.title === 'Division par zéro')!
-    assert.deepEqual([divides.status, divides.statusReason], ['dismissed', 'sans motif, réaction GitHub'])
+    assert.deepEqual([divides.status, divides.statusReason], ['dismissed', 'no reason, GitHub reaction'])
     assert.equal(rows.find((r) => r.title === 'La moyenne tronque')!.status, 'open', 'the 👎 of a bot does not count')
     assert.equal(fake.botThreads().length, 3, 'no new comment')
     assert.doesNotMatch(fake.state.reviews.at(-1)!.body, /Division par zéro/)
     assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reason, e.reviewed]), [
       ['opened', 'kento', null, true],
-      ['dismissed', 'camille', 'sans motif, réaction GitHub', true],
+      ['dismissed', 'camille', 'no reason, GitHub reaction', true],
     ])
 
     // 5. The pull request closes: the open finding left is stale; the others keep their status.
@@ -300,7 +300,7 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual(results, [])
 
     let [after] = await findingRows()
-    assert.deepEqual([after!.status, after!.statusReason], ['dismissed', 'sans motif, réaction GitHub'])
+    assert.deepEqual([after!.status, after!.statusReason], ['dismissed', 'no reason, GitHub reaction'])
     assert.deepEqual((await events('Division par zéro')).map((e) => [e.type, e.actor, e.reviewed]), [
       ['opened', 'kento', true],
       ['dismissed', 'alex', false],
@@ -493,7 +493,7 @@ describe('findings from push to push (REV-16)', () => {
     await push(HEADS[1]!, [], [])
 
     let [row] = await findingRows()
-    assert.deepEqual([row!.title, row!.status, row!.statusReason, row!.githubCommentId], ['Ancien constat', 'dismissed', 'sans motif, réaction GitHub', legacy])
+    assert.deepEqual([row!.title, row!.status, row!.statusReason, row!.githubCommentId], ['Ancien constat', 'dismissed', 'no reason, GitHub reaction', legacy])
     assert.deepEqual((await events('Ancien constat')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
       ['dismissed', 'camille'],

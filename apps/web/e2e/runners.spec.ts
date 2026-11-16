@@ -31,14 +31,14 @@ async function startRunner(request: APIRequestContext, token: string) {
 
 async function createToken(page: Page, name: string, labels: string, keyMode: 'app' | 'runner') {
   await page.goto('/runners')
-  await page.getByRole('link', { name: 'Nouveau runner' }).click()
+  await page.getByRole('link', { name: 'New runner' }).click()
   let form = page.locator('#nouveau-runner')
-  await form.getByLabel('Nom').fill(name)
+  await form.getByLabel('Name').fill(name)
   await form.getByLabel('Labels').fill(labels)
-  await form.getByRole('radio', { name: keyMode === 'app' ? /Clé du service/ : /Clé du runner/ }).check()
-  await form.getByRole('button', { name: 'Créer le token' }).click()
-  await expect(page.getByRole('heading', { name: `Token de ${name}` })).toBeVisible()
-  let command = await page.getByLabel('Commande docker run').inputValue()
+  await form.getByRole('radio', { name: keyMode === 'app' ? /Key of the service/ : /Key on the runner/ }).check()
+  await form.getByRole('button', { name: 'Create the token' }).click()
+  await expect(page.getByRole('heading', { name: `Token of ${name}` })).toBeVisible()
+  let command = await page.getByLabel('docker run command').inputValue()
   let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_\S+)/.exec(command)?.[1]
   expect(token).toBeTruthy()
   return { command, token: token! }
@@ -52,10 +52,10 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   let { command, token } = await createToken(page, name, 'macos, arm64', 'runner')
   expect(command).toContain(`-e KENTO_RUNNER_NAME=${name}`)
   expect(command).toContain('-e KENTO_RUNNER_LABELS=macos,arm64')
-  expect(command).toContain('-e PROVIDER_API_KEY=<votre clé OpenRouter>')
+  expect(command).toContain('-e PROVIDER_API_KEY=<your OpenRouter key>')
   expect(command).toMatch(/ghcr\.io\/sakuga-software\/kento-runner:\d+\.\d+\.\d+$/)
-  await expect(page.getByText('Il ne sera plus affiché')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Copier la commande' })).toBeVisible()
+  await expect(page.getByText('The screen does not show it again')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Copy the command' })).toBeVisible()
   await expectNoAxeViolations(page)
 
   // The database has the hash, never the token.
@@ -71,38 +71,38 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   // The token is pending until the runner starts; the page does not show it again.
   await page.goto('/runners')
   let pending = page.locator('.runner', { hasText: name })
-  await expect(pending.getByText('En attente du runner')).toBeVisible()
+  await expect(pending.getByText('Waiting for the runner')).toBeVisible()
   await expect(page.locator('body')).not.toContainText(token)
 
   let runnerToken = await startRunner(request, token)
   await page.reload()
   // REV-37: a row of the table of the runners (a card under 760 px).
   let card = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(`^${name}`) }) })
-  await expect(card.getByText('En ligne', { exact: true })).toBeVisible()
-  await expect(card.getByText('Clé du runner', { exact: true })).toBeVisible()
-  await expect(card.getByText(/disponible$/)).toBeVisible()
+  await expect(card.getByText('Online', { exact: true })).toBeVisible()
+  await expect(card.getByText('Key on the runner', { exact: true })).toBeVisible()
+  await expect(card.getByText(/available$/)).toBeVisible()
   await expect(card.getByRole('listitem').filter({ hasText: 'arm64' })).toBeVisible()
   // The name and the labels come from the token, not from the runner.
   await expect(page.getByText('what-the-runner-says')).toHaveCount(0)
   // The token works once.
   expect((await request.post('/api/runner/register', { headers: { Authorization: `Bearer ${token}` }, data: { name: 'x', labels: [], version: '0.0.1' } })).status()).toBe(401)
 
-  await card.getByRole('button', { name: 'Marquer de confiance' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'reçoit maintenant la clé du service' })).toBeVisible()
-  await expect(card.getByText('Clé du service (de confiance)')).toBeVisible()
+  await card.getByRole('button', { name: 'Mark as trusted' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'now gets the key of the service' })).toBeVisible()
+  await expect(card.getByText('Key of the service (trusted)')).toBeVisible()
 
-  await card.getByText('Révoquer…').click()
-  await expect(card.getByText('cessera de marcher à son prochain appel')).toBeVisible()
-  // REV-33: Échap closes the confirmation and gives the focus back to « Révoquer… ».
-  await card.getByRole('button', { name: `Révoquer ${name}` }).focus()
+  await card.getByText('Revoke…').click()
+  await expect(card.getByText('stops working at its next call')).toBeVisible()
+  // REV-33: Escape closes the confirmation and gives the focus back to « Revoke… ».
+  await card.getByRole('button', { name: `Revoke ${name}` }).focus()
   await page.keyboard.press('Escape')
-  await expect(card.getByText('cessera de marcher à son prochain appel')).toBeHidden()
-  await expect(card.locator('summary', { hasText: 'Révoquer…' })).toBeFocused()
-  await card.getByText('Révoquer…').click()
+  await expect(card.getByText('stops working at its next call')).toBeHidden()
+  await expect(card.locator('summary', { hasText: 'Revoke…' })).toBeFocused()
+  await card.getByText('Revoke…').click()
   await expectNoAxeViolations(page)
-  await card.getByRole('button', { name: `Révoquer ${name}` }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'Runner révoqué.' })).toBeVisible()
-  let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Révoqués/ }) })
+  await card.getByRole('button', { name: `Revoke ${name}` }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Runner revoked.' })).toBeVisible()
+  let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Revoked/ }) })
   await expect(revoked.getByRole('rowheader', { name: new RegExp(`^${name}`) })).toBeVisible()
 
   // The runner gets 401 at its next call.
@@ -116,7 +116,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   expect(errors).toEqual([])
 })
 
-test('a token that expires without a runner shows the help and « Nouveau token »', async ({ page }, testInfo) => {
+test('a token that expires without a runner shows the help and « New token »', async ({ page }, testInfo) => {
   let name = `gpu-${testInfo.project.name}`
   await signIn(page, 'alex')
   await createToken(page, name, 'gpu', 'app')
@@ -128,26 +128,26 @@ test('a token that expires without a runner shows the help and « Nouveau token 
   }
   await page.goto('/runners')
   let card = page.locator('.runner', { hasText: name })
-  await expect(card.getByText('Token expiré')).toBeVisible()
-  await expect(card).toContainText('Vérifiez que le conteneur atteint 127.0.0.1')
-  await expect(card).toContainText('en HTTPS sortant')
-  await card.getByRole('button', { name: 'Nouveau token' }).click()
-  await expect(page.getByRole('heading', { name: `Token de ${name}` })).toBeVisible()
-  await expect(page.getByLabel('Commande docker run')).toHaveValue(/KENTO_RUNNER_LABELS=gpu/)
+  await expect(card.getByText('Token expired', { exact: true })).toBeVisible()
+  await expect(card).toContainText('Check that the container reaches 127.0.0.1')
+  await expect(card).toContainText('with outbound HTTPS')
+  await card.getByRole('button', { name: 'New token' }).click()
+  await expect(page.getByRole('heading', { name: `Token of ${name}` })).toBeVisible()
+  await expect(page.getByLabel('docker run command')).toHaveValue(/KENTO_RUNNER_LABELS=gpu/)
 })
 
-test('« Annuler le token » asks first: « Annuler » keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
+test('« Cancel the token » asks first: « Cancel » keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
   let name = `spare-${testInfo.project.name}`
   await signIn(page, 'alex')
   await createToken(page, name, 'spare', 'runner')
   await page.goto('/runners')
   let card = page.locator('.runner', { hasText: name })
-  let trigger = card.locator('summary', { hasText: 'Annuler le token…' })
-  let act = card.getByRole('button', { name: `Annuler le token de ${name}` })
+  let trigger = card.locator('summary', { hasText: 'Cancel the token…' })
+  let act = card.getByRole('button', { name: `Cancel the token of ${name}` })
   await trigger.click()
-  await expect(card).toContainText('cesse de marcher tout de suite')
+  await expect(card).toContainText('stops working at once')
   await expectNoAxeViolations(page)
-  await card.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await card.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(act).toBeHidden()
   await expect(trigger).toBeFocused()
   await page.reload()
@@ -155,7 +155,7 @@ test('« Annuler le token » asks first: « Annuler » keeps the token, the conf
 
   await trigger.click()
   await act.click()
-  await expect(page.getByRole('status').filter({ hasText: 'Token d’enregistrement annulé.' })).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'Registration token cancelled.' })).toBeVisible()
   await expect(page.locator('.runner', { hasText: name })).toHaveCount(0)
 })
 
@@ -163,11 +163,11 @@ test('the form says what is wrong, and makes no token', async ({ page }) => {
   await signIn(page, 'alex')
   await page.goto('/runners')
   let form = page.locator('#nouveau-runner')
-  await form.getByLabel('Nom').fill('mac mini')
-  await form.getByRole('button', { name: 'Créer le token' }).click()
-  await expect(form.getByLabel('Nom')).toHaveAttribute('aria-invalid', 'true')
-  await expect(form.getByText('Lettres, chiffres, points, tirets ou soulignés')).toBeVisible()
-  await expect(page.getByRole('heading', { name: /^Token de/ })).toHaveCount(0)
+  await form.getByLabel('Name').fill('mac mini')
+  await form.getByRole('button', { name: 'Create the token' }).click()
+  await expect(form.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
+  await expect(form.getByText('Letters, digits, dots, hyphens or underscores')).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Token of/ })).toHaveCount(0)
   await expectNoAxeViolations(page)
 })
 
@@ -177,18 +177,18 @@ for (let theme of ['paper', 'sumi'] as const) {
     await signIn(page, 'alex')
     await page.goto('/runners')
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
-    // REV-30: the facts of the protocol are folded under « Détails techniques ».
-    await expect(page.getByRole('heading', { name: 'Protocole' })).toBeHidden()
-    await page.getByText('Détails techniques').click()
-    await expect(page.getByRole('heading', { name: 'Protocole' })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Réservation et tentatives' })).toBeVisible()
+    // REV-30: the facts of the protocol are folded under « Technical details ».
+    await expect(page.getByRole('heading', { name: 'Protocol' })).toBeHidden()
+    await page.getByText('Technical details').click()
+    await expect(page.getByRole('heading', { name: 'Protocol' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Reservation and attempts' })).toBeVisible()
     await expectNoAxeViolations(page)
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
   })
 }
 
-test('a runner offline for 2 h is « Hors ligne », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
+test('a runner offline for 2 h is « Offline », in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
   let name = `hetzner-${testInfo.project.name}`
   let db = sql()
   try {
@@ -202,9 +202,9 @@ test('a runner offline for 2 h is « Hors ligne », in red, at the top; a new to
   }
   await signIn(page, 'alex')
   await page.goto('/runners')
-  let first = page.getByRole('table', { name: 'Runners en service' }).locator('tbody tr').first()
+  let first = page.getByRole('table', { name: 'Runners in service' }).locator('tbody tr').first()
   await expect(first.getByRole('rowheader')).toHaveText(new RegExp(`^${name}`))
-  let state = first.getByText('Hors ligne depuis 2 h', { exact: true })
+  let state = first.getByText('Offline for 2 h', { exact: true })
   await expect(state).toBeVisible()
   // The colour repeats the word: the red of an alert, as an expired token.
   let colours = await state.evaluate((el) => {
@@ -218,8 +218,8 @@ test('a runner offline for 2 h is « Hors ligne », in red, at the top; a new to
   expect(colours.state).toBe(colours.alert)
 
   let form = page.locator('#nouveau-runner')
-  await expect(form.getByRole('radio', { name: /Clé du runner/ })).toBeChecked()
-  await expect(form.getByRole('radio', { name: /Clé du service/ })).not.toBeChecked()
+  await expect(form.getByRole('radio', { name: /Key on the runner/ })).toBeChecked()
+  await expect(form.getByRole('radio', { name: /Key of the service/ })).not.toBeChecked()
   await expectNoAxeViolations(page)
 
   db = sql()
@@ -245,25 +245,25 @@ test('the runners silent for a day are folded away, and revoked together after a
   await signIn(page, 'alex')
   await page.goto('/runners')
   await expect(page.getByRole('heading', { level: 2, name: 'Runners', exact: true })).toBeVisible()
-  await expect(page.locator('.runner-counts').first()).toContainText('hors ligne')
+  await expect(page.locator('.runner-counts').first()).toContainText('offline')
   let silent = page.locator('details.runner-silent')
-  await expect(silent.locator('> summary')).toHaveText(/runners? muets? depuis plus de 24 h/)
+  await expect(silent.locator('> summary')).toHaveText(/runners? silent for more than 24 h/)
   await expect(silent.getByRole('rowheader', { name: new RegExp(`^${prefix}1`) })).toBeHidden()
   await silent.locator('> summary').click()
   await expect(silent.getByRole('rowheader', { name: new RegExp(`^${prefix}1`) })).toBeVisible()
-  await expect(silent.getByText('Hors ligne depuis 3 j', { exact: true }).first()).toBeVisible()
+  await expect(silent.getByText('Offline for 3 d', { exact: true }).first()).toBeVisible()
 
-  let trigger = silent.locator('summary', { hasText: /^Révoquer ce/ })
+  let trigger = silent.locator('summary', { hasText: /^Revoke th/ })
   await trigger.click()
-  await expect(silent.getByText('Un runner qui a appelé depuis l’affichage de la page reste en service.')).toBeVisible()
+  await expect(silent.getByText('A runner that called after the page loaded stays in service.')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(trigger).toBeFocused()
   await expectNoAxeViolations(page)
   await trigger.click()
-  await silent.getByRole('button', { name: /^Révoquer \d+ runners$|^Révoquer ci-/ }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'Runners muets révoqués.' })).toBeVisible()
+  await silent.getByRole('button', { name: /^Revoke \d+ runners$|^Revoke ci-/ }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Silent runners revoked.' })).toBeVisible()
   await expect(page.locator('details.runner-silent')).toHaveCount(0)
-  let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Révoqués/ }) })
+  let revoked = page.locator('section', { has: page.getByRole('heading', { name: /Revoked/ }) })
   for (let n = 1; n <= 3; n++) await expect(revoked.getByRole('rowheader', { name: new RegExp(`^${prefix}${n}`) })).toBeVisible()
   let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   expect(overflow).toBeLessThanOrEqual(0)
@@ -280,9 +280,9 @@ test('a member reads the runners and has no form', async ({ page, request }) => 
   await signIn(page, 'camille')
   await page.goto('/runners')
   await expect(page.getByRole('heading', { level: 1, name: 'Runners' })).toBeVisible()
-  await expect(page.getByText('Lecture seule', { exact: true })).toBeVisible()
+  await expect(page.getByText('Read only', { exact: true })).toBeVisible()
   await expect(page.locator('form[action^="/runners"]')).toHaveCount(0)
-  await expect(page.getByText('Révoquer…')).toHaveCount(0)
+  await expect(page.getByText('Revoke…')).toHaveCount(0)
   await expectNoAxeViolations(page)
   // And a forged write without the session gets nothing.
   let forged = await request.post('/runners/new', { form: { name: 'x', keyMode: 'app' } })

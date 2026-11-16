@@ -1,4 +1,4 @@
-// REV-107. « Retours »: the answers about the reviews of the org, for every member.
+// REV-107. « Feedback »: the answers about the reviews of the org, for every member.
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
@@ -32,7 +32,7 @@ function setup() {
             authorLogin: 'sakuga-agent[bot]',
             authorIsBot: true,
             source: 'command',
-            text: 'Le fil sur le cache était inutile.',
+            text: 'The thread about the cache was useless.',
             url: 'https://github.com/sakuga-software/sakuga-review/pull/172#issuecomment-1',
             score: 4,
             createdAt: new Date(NOW.getTime() - 3_600_000),
@@ -82,15 +82,15 @@ describe('the page of the answers about the reviews (REV-107)', () => {
     assert.equal(response.status, 200)
     let html = await response.text()
     assert.equal(asked[0]!.orgId, ORG.id)
-    assert.match(html, /<h1 class="page-title">Retours<\/h1>/)
-    assert.match(html, /<a href="\/feedback" aria-current="page" class="bar-link">Retours<\/a>/)
-    assert.match(html, /Le fil sur le cache était inutile\./)
+    assert.match(html, /<h1 class="page-title">Feedback<\/h1>/)
+    assert.match(html, /<a href="\/feedback" aria-current="page" class="bar-link">Feedback<\/a>/)
+    assert.match(html, /The thread about the cache was useless\./)
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/sakuga-review\/pull\/172#issuecomment-1"/)
     assert.match(html, />sakuga-review#172</)
     assert.match(html, /sakuga-agent\[bot\]<\/span> <span class="tag tag-info">Agent<\/span>/)
-    assert.match(html, /camille<\/span> <span class="tag tag-quiet">Personne<\/span>/)
-    assert.match(html, /<td>Commande<\/td>/)
-    assert.match(html, /<td>Réaction<\/td>/)
+    assert.match(html, /camille<\/span> <span class="tag tag-quiet">Person<\/span>/)
+    assert.match(html, /<td>Command<\/td>/)
+    assert.match(html, /<td>Reaction<\/td>/)
     assert.match(html, /4\/5/)
     assert.ok(html.indexOf('sakuga-review#172') < html.indexOf('sakuga-review#170'), 'the newest first')
   })
@@ -100,7 +100,7 @@ describe('the page of the answers about the reviews (REV-107)', () => {
     let cookie = await signIn()
     let html = await (await request(`/feedback?repo=${REPO}&source=quote&auteur=agent`, cookie)).text()
     assert.deepEqual(asked[0]!.query, { repoId: REPO, source: 'quote', kind: 'agent' })
-    assert.match(html, /<option value="quote" selected="">Citation<\/option>|<option value="quote" selected>Citation<\/option>/)
+    assert.match(html, /<option value="quote" selected="">Quote<\/option>|<option value="quote" selected>Quote<\/option>/)
     assert.deepEqual(readFeedbackQuery(new URLSearchParams('source=other&auteur=robot')), { repoId: null, source: null, kind: null })
   })
 

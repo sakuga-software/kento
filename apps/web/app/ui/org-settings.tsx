@@ -21,7 +21,7 @@ import { appStatusReason, deliveryReason, reasonSentence, TechDetails } from './
 /** The forms of the section, each one a `field` of `POST /settings/org`. */
 export const ORG_FIELDS = ['caps', 'trustedBots', 'level', 'models.lite', 'models.balanced', 'models.heavy'] as const
 export type OrgField = (typeof ORG_FIELDS)[number]
-/** The defaults that « Revenir à Kentō » removes from the config of the org. */
+/** The defaults that « Back to the Kentō value » removes from the config of the org. */
 export const ORG_RESET_FIELDS = ['level', 'models.lite', 'models.balanced', 'models.heavy'] as const satisfies readonly ConfigField[]
 
 /** Where the page goes back after a form: the anchor of its section. */
@@ -59,9 +59,9 @@ export interface OrgSectionProps {
 }
 
 const LEVEL_HINTS: Record<Level, string> = {
-  lite: `Rapide et le moins cher, ${levelCost('lite')} par review.`,
-  balanced: `Lit aussi le code autour du changement, ${levelCost('balanced')}.`,
-  heavy: `Raisonne plus longtemps, ${levelCost('heavy')}.`,
+  lite: `Fast and the cheapest, ${levelCost('lite')} per review.`,
+  balanced: `Also reads the code around the change, ${levelCost('balanced')}.`,
+  heavy: `Reasons for longer, ${levelCost('heavy')}.`,
 }
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -69,20 +69,20 @@ const PERMISSION_LABELS: Record<string, string> = {
   pull_requests: 'Pull requests',
   issues: 'Issues',
   checks: 'Checks',
-  members: 'Members (organisation)',
+  members: 'Members (organization)',
   metadata: 'Metadata',
 }
-const ACCESS: Record<'read' | 'write', string> = { read: 'lecture', write: 'écriture' }
+const ACCESS: Record<'read' | 'write', string> = { read: 'read', write: 'write' }
 
-/** « réglages v3, modifiés par alex le 29 oct. à 15:02 ». */
+/** « settings v3, changed by alex on 29 Oct at 15:02 ». */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  return versionLine({ name: 'réglages', changed: 'modifiés', empty: 'réglages v0, les valeurs de Kentō' }, view)
+  return versionLine({ name: 'settings', changed: 'changed', empty: 'settings v0, the values of Kentō' }, view)
 }
 
-const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'du jour', month: 'du mois' }
+const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'Daily', month: 'Monthly' }
 
 /**
- * The settings of the org (REV-13), above « Providers et clés »: the cost limit, the defaults that
+ * The settings of the org (REV-13), above « Providers and keys »: the cost limit, the defaults that
  * the repositories inherit, the trusted bots, and the state of the GitHub App. An admin edits; a
  * member reads everything.
  */
@@ -100,10 +100,10 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
             <AlertIcon />
             <p>
               <strong>
-                Plafond {PERIOD_TEXT[hit.period]} atteint, {usd(hit.spentUsd)} sur {usd(hit.capUsd)}.
+                {PERIOD_TEXT[hit.period]} cap reached, {usd(hit.spentUsd)} of {usd(hit.capUsd)}.
               </strong>{' '}
-              Aucun nouveau job n’est lancé. Les jobs en cours finissent, et les reviews reprennent {resetWhen(hit.resetsAt)}.{' '}
-              {admin ? <a href="#plafond">Relever le plafond</a> : 'Un admin de l’organisation peut le relever.'}
+              No new job starts. The jobs in progress finish, and the reviews start again {resetWhen(hit.resetsAt)}.{' '}
+              {admin ? <a href="#plafond">Raise the cap</a> : 'An admin of the organization can raise it.'}
             </p>
           </div>
         ) : null}
@@ -111,8 +111,8 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
           <div class="banner banner-info" role="status">
             <AlertIcon />
             <p>
-              <strong>Seuil d’alerte {PERIOD_TEXT[period]} atteint</strong>, {usd(period === 'day' ? spent.dayUsd : spent.monthUsd)} sur{' '}
-              {usd((period === 'day' ? view.caps.dailyCapUsd : view.caps.monthlyCapUsd)!)} ({view.caps.alertPct} %).
+              <strong>{PERIOD_TEXT[period]} alert threshold reached</strong>, {usd(period === 'day' ? spent.dayUsd : spent.monthUsd)} of{' '}
+              {usd((period === 'day' ? view.caps.dailyCapUsd : view.caps.monthlyCapUsd)!)} ({view.caps.alertPct}%).
             </p>
           </div>
         ))}
@@ -141,7 +141,7 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
         <dt>{label}</dt>
         <dd>
           <span class="gauge-value">
-            <strong>{usd(spent)}</strong> {cap === null ? 'sans plafond' : `sur ${usd(cap)} (${pct} %)`}
+            <strong>{usd(spent)}</strong> {cap === null ? 'no cap' : `of ${usd(cap)} (${pct}%)`}
           </span>
           {pct === null ? null : (
             <span class={`gauge-bar gauge-${tone}`} aria-hidden="true">
@@ -155,8 +155,8 @@ function Gauge(handle: Handle<{ label: string; spent: number; cap: number | null
 }
 
 /**
- * REV-27. The next job of each level of the org: the config of the org, else the provider « Par
- * défaut ». A repository may choose another one in its Config.
+ * REV-27. The next job of each level of the org: the config of the org, else the « Default »
+ * provider. A repository may choose another one in its Config.
  */
 export function orgEffectiveLevels(view: Pick<OrgSettingsView, 'config'>, providers: readonly ProviderOption[]): Record<Level, EffectiveLevel> {
   let kento = kentoDefaults()
@@ -188,18 +188,18 @@ function CapSection(handle: Handle<SectionProps>) {
       <section class="card config-card" id="plafond" aria-labelledby="cap-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="cap-title">
-            Plafond de coût
+            Cost cap
           </h2>
         </header>
-        {admin ? <p class="hint">Laissez un champ vide pour ne pas avoir de plafond.</p> : null}
+        {admin ? <p class="hint">Leave a field empty for no cap.</p> : null}
         <dl class="config-facts cap-facts">
-          <Gauge label="Aujourd’hui (UTC)" spent={view.costs.dayUsd} cap={view.caps.dailyCapUsd} alertPct={view.caps.alertPct} />
-          <Gauge label="Ce mois-ci (UTC)" spent={view.costs.monthUsd} cap={view.caps.monthlyCapUsd} alertPct={view.caps.alertPct} />
+          <Gauge label="Today (UTC)" spent={view.costs.dayUsd} cap={view.caps.dailyCapUsd} alertPct={view.caps.alertPct} />
+          <Gauge label="This month (UTC)" spent={view.costs.monthUsd} cap={view.caps.monthlyCapUsd} alertPct={view.caps.alertPct} />
           <div>
-            <dt>Coût du jour par provider</dt>
+            <dt>Cost of the day per provider</dt>
             <dd>
               {view.costs.dayByProvider.length === 0 ? (
-                'Aucune review payée aujourd’hui.'
+                'No paid review today.'
               ) : (
                 <ul class="cost-list">
                   {view.costs.dayByProvider.map((p) => (
@@ -213,9 +213,9 @@ function CapSection(handle: Handle<SectionProps>) {
           </div>
         </dl>
         <p class="hint">
-          Au plafond, aucun nouveau job n’est mis en file. Un push reçoit le check « Kentō · plafond », et une commande reçoit une réponse. Les
-          jobs déjà en file ou en cours finissent.
-          {usesServiceKey(handle.props) ? ' La clé OpenRouter du service a aussi sa propre limite de 10 $ par jour, pour les niveaux qui l’utilisent.' : null}
+          At the cap, no new job enters the queue. A push gets the check "Kentō · cap", and a command gets an answer. The
+          jobs already in the queue or in progress finish.
+          {usesServiceKey(handle.props) ? ' The OpenRouter key of the service also has its own limit of $10 per day, for the levels that use it.' : null}
         </p>
         {admin ? (
           <form method="post" action={routes.orgSettingsSave.href()} noValidate>
@@ -225,7 +225,7 @@ function CapSection(handle: Handle<SectionProps>) {
             <div class="cap-fields">
               <div class="field">
                 <label class="field-label" for="cap-day">
-                  Plafond par jour ($)
+                  Daily cap ($)
                 </label>
                 <input
                   class="input config-cap"
@@ -238,11 +238,11 @@ function CapSection(handle: Handle<SectionProps>) {
                   aria-invalid={errors.dailyCapUsd ? 'true' : undefined}
                   aria-describedby={describedBy('cap-day', errors.dailyCapUsd, true)}
                 />
-                <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Remis à zéro à minuit UTC." />
+                <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Set back to zero at midnight UTC." />
               </div>
               <div class="field">
                 <label class="field-label" for="cap-month">
-                  Plafond par mois ($)
+                  Monthly cap ($)
                 </label>
                 <input
                   class="input config-cap"
@@ -255,11 +255,11 @@ function CapSection(handle: Handle<SectionProps>) {
                   aria-invalid={errors.monthlyCapUsd ? 'true' : undefined}
                   aria-describedby={describedBy('cap-month', errors.monthlyCapUsd, true)}
                 />
-                <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Mois calendaire, en UTC." />
+                <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Calendar month, in UTC." />
               </div>
               <div class="field">
                 <label class="field-label" for="cap-alert">
-                  Seuil d’alerte (%)
+                  Alert threshold (%)
                 </label>
                 <input
                   class="input config-cap"
@@ -272,18 +272,18 @@ function CapSection(handle: Handle<SectionProps>) {
                   aria-invalid={errors.alertPct ? 'true' : undefined}
                   aria-describedby={describedBy('cap-alert', errors.alertPct, true)}
                 />
-                <FieldMessage id="cap-alert" error={errors.alertPct} hint="Prévient avant le plafond." />
+                <FieldMessage id="cap-alert" error={errors.alertPct} hint="Warns before the cap." />
               </div>
             </div>
             <button class="button button-primary" type="submit">
-              Enregistrer le plafond
+              Save the cap
             </button>
           </form>
         ) : (
           <p>
-            {view.caps.dailyCapUsd === null ? 'Aucun plafond par jour' : `${usd(view.caps.dailyCapUsd)} par jour`},{' '}
-            {view.caps.monthlyCapUsd === null ? 'aucun par mois' : `${usd(view.caps.monthlyCapUsd)} par mois`} ; alerte à{' '}
-            {view.caps.alertPct} %.
+            {view.caps.dailyCapUsd === null ? 'No daily cap' : `${usd(view.caps.dailyCapUsd)} per day`},{' '}
+            {view.caps.monthlyCapUsd === null ? 'no monthly cap' : `${usd(view.caps.monthlyCapUsd)} per month`}, alert at{' '}
+            {view.caps.alertPct}%.
           </p>
         )}
       </section>
@@ -302,15 +302,15 @@ function DefaultsSection(handle: Handle<SectionProps>) {
       <section class="card config-card org-defaults" id="defauts" aria-labelledby="defaults-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="defaults-title">
-            Valeurs par défaut
+            Default values
           </h2>
         </header>
         <p class="hint">
-          Chaque repo les hérite dans sa Config, et peut les remplacer ; un repo qui a remplacé une valeur garde la sienne.
+          Each repo takes them in its Config, and can replace them. A repo that replaced a value keeps its own value.
         </p>
         <div class="org-default">
           <div class="config-card-head">
-            <h3 class="org-default-title">Niveau d’un push</h3>
+            <h3 class="org-default-title">Level of a push</h3>
             <OrgSource set={view.config.level !== undefined} />
           </div>
           {admin ? (
@@ -319,7 +319,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                 <VersionFields csrf={csrf} version={view.version} field="level" />
                 <FormErrors errors={mine?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'org-level-error' : undefined}>
-                  <legend class="visually-hidden">Niveau d’un push</legend>
+                  <legend class="visually-hidden">Level of a push</legend>
                   {LEVELS.map((key) => (
                     <label class="choice">
                       <input
@@ -342,10 +342,10 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                 </fieldset>
                 {/* A row of the section: a secondary button (REV-29, one primary action per section at most). */}
                 <button class="button" type="submit">
-                  Enregistrer le niveau
+                  Save the level
                 </button>
               </form>
-              {view.config.level !== undefined ? <OrgReset csrf={csrf} version={view.version} field="level" label="le niveau" /> : null}
+              {view.config.level !== undefined ? <OrgReset csrf={csrf} version={view.version} field="level" label="the level" /> : null}
             </>
           ) : (
             <p>
@@ -371,9 +371,9 @@ function DefaultsSection(handle: Handle<SectionProps>) {
   }
 }
 
-/** « réglé ici » or « valeur de Kentō ». The word carries the meaning. */
+/** « set for the org » or « value of Kentō ». The word carries the meaning. */
 function OrgSource(handle: Handle<{ set: boolean }>) {
-  return () => (handle.props.set ? <span class="tag tag-info">réglé pour l’org</span> : <span class="tag tag-quiet">valeur de Kentō</span>)
+  return () => (handle.props.set ? <span class="tag tag-info">set for the org</span> : <span class="tag tag-quiet">value of Kentō</span>)
 }
 
 function OrgReset(handle: Handle<{ csrf: string; version: number; field: OrgField; label: string }>) {
@@ -397,7 +397,7 @@ function LevelDefault(
     let { level, value, set, effective, providers, admin, csrf, version, form } = handle.props
     let errors = form?.errors ?? {}
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
-    // A level without a choice shows what runs today: the provider « Par défaut » and its models.
+    // A level without a choice shows what runs today: the « Default » provider and its models.
     let shown = set ? value : { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback }
     let values = form?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `org-${level}`
@@ -434,7 +434,7 @@ function LevelDefault(
                     ))}
                     {selected && !providers.some((p) => p.id === selected) ? (
                       <option value={selected} selected>
-                        {selected} (indisponible)
+                        {selected} (not available)
                       </option>
                     ) : null}
                   </select>
@@ -442,7 +442,7 @@ function LevelDefault(
                 </div>
                 <div class="field">
                   <label class="field-label" for={`${id}-model`}>
-                    Modèle
+                    Model
                   </label>
                   <input
                     class="input mono"
@@ -460,7 +460,7 @@ function LevelDefault(
                 </div>
                 <div class="field">
                   <label class="field-label" for={`${id}-fallback`}>
-                    Repli
+                    Fallback
                   </label>
                   <input
                     class="input mono"
@@ -474,16 +474,16 @@ function LevelDefault(
                     aria-invalid={errors.fallback ? 'true' : undefined}
                     aria-describedby={describedBy(`${id}-fallback`, errors.fallback, true)}
                   />
-                  <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Laissez vide pour ne pas avoir de repli." />
+                  <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Leave it empty for no fallback." />
                 </div>
               </div>
               {set ? null : (
                 <p class="hint">
-                  Enregistrer fixe ce choix pour l’organisation, et le niveau ne suivra plus le provider « Par défaut ».
+                  "Save" fixes this choice for the organization, and the level no longer follows the "Default" provider.
                 </p>
               )}
               <button class="button" type="submit">
-                Enregistrer<span class="visually-hidden"> le modèle {level}</span>
+                Save<span class="visually-hidden"> the model {level}</span>
               </button>
             </form>
             {set ? <OrgReset csrf={csrf} version={version} field={`models.${level}`} label={level} /> : null}
@@ -503,15 +503,15 @@ function BotsSection(handle: Handle<SectionProps>) {
       <section class="card config-card" id="bots" aria-labelledby="bots-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="bots-title">
-            Bots de confiance <span class="count">{view.trustedBots.length}</span>
+            Trusted bots <span class="count">{view.trustedBots.length}</span>
           </h2>
         </header>
         <p class="hint">
-          Les PR, les pushs et les commandes <span class="mono">@kento-review</span> de ces bots comptent comme ceux d’une personne qui a le
-          droit d’écriture. Tout autre bot est ignoré.
+          The PRs, the pushes and the <span class="mono">@kento-review</span> commands of these bots count as those of a person with write
+          access. Kentō ignores every other bot.
         </p>
         {view.trustedBots.length === 0 ? (
-          <p>Aucun bot de confiance.</p>
+          <p>No trusted bot.</p>
         ) : (
           <ul class="bot-list">
             {view.trustedBots.map((bot) => (
@@ -525,7 +525,7 @@ function BotsSection(handle: Handle<SectionProps>) {
             <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
               <label class="field-label" for="trusted-bots">
-                Un login par ligne
+                One login per line
               </label>
               <textarea
                 class="input mono config-paths"
@@ -538,10 +538,10 @@ function BotsSection(handle: Handle<SectionProps>) {
                 aria-describedby={describedBy('trusted-bots', mine?.errors.trustedBots, true)}
                 value={value}
               ></textarea>
-              <FieldMessage id="trusted-bots" error={mine?.errors.trustedBots} hint="Par exemple renovate[bot] ; « [bot] » est ajouté s’il manque." />
+              <FieldMessage id="trusted-bots" error={mine?.errors.trustedBots} hint={'For example renovate[bot]. Kentō adds "[bot]" if it is missing.'} />
             </div>
             <button class="button button-primary" type="submit">
-              Enregistrer les bots
+              Save the bots
             </button>
           </form>
         ) : null}
@@ -557,7 +557,7 @@ function deliveryText(delivery: DeliveryView): string {
 function DeliveryLine(handle: Handle<{ delivery: DeliveryView | null; now: Date }>) {
   return () => {
     let { delivery, now } = handle.props
-    if (!delivery) return <>Aucun depuis 30 jours.</>
+    if (!delivery) return <>None in the last 30 days.</>
     let reason = deliveryReason(delivery)
     return (
       <>
@@ -587,20 +587,20 @@ function AppSection(handle: Handle<SectionProps>) {
       <section class="card config-card app-status" id="app" aria-labelledby="app-title" tabIndex={-1}>
         <header class="config-card-head">
           <h2 class="section-title" id="app-title">
-            App GitHub
+            GitHub App
           </h2>
           {status ? (
             problems === 0 ? (
               <span class="status status-online">
-                <CheckIcon /> Tout est en place
+                <CheckIcon /> Everything is in place
               </span>
             ) : (
               <span class="status status-alert">
-                <AlertIcon /> {problems} {plural(problems, 'point')} à corriger
+                <AlertIcon /> {problems} {plural(problems, 'item')} to fix
               </span>
             )
           ) : (
-            <span class="status status-stale">État GitHub inconnu</span>
+            <span class="status status-stale">GitHub state unknown</span>
           )}
         </header>
         {appError ? (
@@ -611,7 +611,7 @@ function AppSection(handle: Handle<SectionProps>) {
         ) : null}
         {!app ? (
           <p class="hint" role="note">
-            Le service n’a pas d’App GitHub (<span class="mono">GITHUB_APP_ID</span>). Il ne lit ni ses permissions ni son webhook.
+            The service has no GitHub App (<span class="mono">GITHUB_APP_ID</span>). It reads neither its permissions nor its webhook.
           </p>
         ) : null}
         <dl class="config-facts">
@@ -620,56 +620,56 @@ function AppSection(handle: Handle<SectionProps>) {
             <dd>
               {status ? (
                 <a href={status.installation.htmlUrl}>
-                  {view.login} · n° {view.githubInstallationId}
+                  {view.login} · no. {view.githubInstallationId}
                 </a>
               ) : (
                 <>
-                  {view.login} · n° {view.githubInstallationId}
+                  {view.login} · no. {view.githubInstallationId}
                 </>
               )}
-              {suspended ? <span class="tag tag-alert">suspendue</span> : null} · {view.repos.total} {plural(view.repos.total, 'repo')} visibles
-              {status ? (status.installation.repositorySelection === 'all' ? ' (tous)' : ' (choisis)') : ''}, {view.repos.enabled} {plural(view.repos.enabled, 'activé')}
+              {suspended ? <span class="tag tag-alert">suspended</span> : null} · {view.repos.total} visible {plural(view.repos.total, 'repo')}
+              {status ? (status.installation.repositorySelection === 'all' ? ' (all)' : ' (chosen)') : ''}, {view.repos.enabled} enabled
             </dd>
           </div>
           <div>
-            <dt>URL du webhook</dt>
+            <dt>Webhook URL</dt>
             <dd>
-              <span class="mono">{status?.webhook?.url ?? webhookUrl ?? 'inconnue'}</span>
+              <span class="mono">{status?.webhook?.url ?? webhookUrl ?? 'unknown'}</span>
               {urlMismatch ? (
                 <span class="field-error">
-                  Kentō attend <span class="mono">{webhookUrl}</span>
+                  Kentō expects <span class="mono">{webhookUrl}</span>
                 </span>
               ) : null}
-              {status?.webhook && !status.webhook.sslVerified ? <span class="tag tag-alert">SSL non vérifié</span> : null}
+              {status?.webhook && !status.webhook.sslVerified ? <span class="tag tag-alert">SSL not verified</span> : null}
             </dd>
           </div>
           <div>
             <dt>Signature</dt>
             <dd>
               {webhookSecret
-                ? 'Vérifiée sur chaque livraison (X-Hub-Signature-256). Une livraison mal signée reçoit 401 et n’est pas gardée.'
-                : 'Non configurée (GITHUB_WEBHOOK_SECRET), et le webhook répond 503.'}
+                ? 'Checked on each delivery (X-Hub-Signature-256). A delivery with a wrong signature gets 401, and Kentō does not keep it.'
+                : 'Not configured (GITHUB_WEBHOOK_SECRET), and the webhook answers 503.'}
             </dd>
           </div>
           <div>
-            <dt>Dernier événement</dt>
+            <dt>Last event</dt>
             <dd>
               <DeliveryLine delivery={view.deliveries.last} now={now} />
             </dd>
           </div>
           <div>
-            <dt>Dernier push ou PR</dt>
+            <dt>Last push or PR</dt>
             <dd>
               <DeliveryLine delivery={view.deliveries.lastPullRequest} now={now} />
             </dd>
           </div>
           <div>
-            <dt>Échecs sur 24 h</dt>
+            <dt>Failures in 24 h</dt>
             <dd>
-              <strong>{view.deliveries.failures24h}</strong> sur {view.deliveries.total24h} {plural(view.deliveries.total24h, 'livraison')}
+              <strong>{view.deliveries.failures24h}</strong> of {view.deliveries.total24h} {plural(view.deliveries.total24h, 'delivery', 'deliveries')}
               {view.deliveries.lastFailure ? (
                 <>
-                  <span class="hint"> · dernier échec </span>
+                  <span class="hint"> · last failure </span>
                   <DeliveryLine delivery={view.deliveries.lastFailure} now={now} />
                 </>
               ) : null}
@@ -682,8 +682,8 @@ function AppSection(handle: Handle<SectionProps>) {
                 <ul class="permission-list">
                   {permissions.map((p) => (
                     <li>
-                      {p.ok ? <CheckIcon /> : <AlertIcon />} {PERMISSION_LABELS[p.name] ?? p.name} : {ACCESS[p.needed]}
-                      {p.ok ? null : <span class="field-error">, accordé : {p.granted ? ACCESS[p.granted] : 'rien'}</span>}
+                      {p.ok ? <CheckIcon /> : <AlertIcon />} {PERMISSION_LABELS[p.name] ?? p.name}: {ACCESS[p.needed]}
+                      {p.ok ? null : <span class="field-error">, granted: {p.granted ? ACCESS[p.granted] : 'nothing'}</span>}
                     </li>
                   ))}
                 </ul>
@@ -692,12 +692,12 @@ function AppSection(handle: Handle<SectionProps>) {
           ) : null}
           {status ? (
             <div>
-              <dt>Événements</dt>
+              <dt>Events</dt>
               <dd>
                 {REQUIRED_EVENTS.map((event) => (
                   <span class={`tag ${missing.includes(event) ? 'tag-alert' : 'tag-ok'}`}>
                     {event}
-                    {missing.includes(event) ? ' : non abonné' : ''}
+                    {missing.includes(event) ? ': not subscribed' : ''}
                   </span>
                 ))}
               </dd>
@@ -706,7 +706,7 @@ function AppSection(handle: Handle<SectionProps>) {
           <div>
             <dt>Service</dt>
             <dd>
-              Dokploy, projet Kentō, application <span class="mono">web</span> · version <span class="mono">{version}</span>
+              Dokploy, project Kentō, application <span class="mono">web</span> · version <span class="mono">{version}</span>
               {commit ? (
                 <>
                   {' '}
@@ -719,9 +719,9 @@ function AppSection(handle: Handle<SectionProps>) {
         {status ? (
           <p>
             <a class="button" href={status.deliveriesUrl}>
-              Rejouer depuis la page de l’App
+              Redeliver from the page of the App
             </a>{' '}
-            <span class="hint">Ouvrez « Recent Deliveries », choisissez une livraison, puis « Redeliver ».</span>
+            <span class="hint">Open "Recent Deliveries", choose a delivery, then "Redeliver".</span>
           </p>
         ) : null}
       </section>
@@ -733,14 +733,14 @@ function Notice(handle: Handle<{ notice: OrgNotice }>) {
   return () => {
     let { notice } = handle.props
     if (notice.kind === 'conflict') {
-      let by = notice.updatedBy ? ` par ${notice.updatedBy}` : ''
+      let by = notice.updatedBy ? ` by ${notice.updatedBy}` : ''
       let at = notice.updatedAt ? ` ${when(notice.updatedAt)}` : ''
       return (
         <div class="banner banner-alert" role="alert">
           <AlertIcon />
           <p>
-            <strong>Les réglages ont changé entre-temps</strong> (v{notice.version}, modifiés{by}
-            {at}). Rien n’a été enregistré. Relisez les valeurs ci-dessous, puis recommencez.
+            <strong>The settings changed in the meantime</strong> (v{notice.version}, changed{by}
+            {at}). Nothing was saved. Read the values below again, then try again.
           </p>
         </div>
       )
@@ -749,8 +749,8 @@ function Notice(handle: Handle<{ notice: OrgNotice }>) {
       <div class="banner banner-ok" role="status">
         <CheckIcon />
         <p>
-          <strong>{notice.kind === 'saved' ? 'Réglages enregistrés' : 'Valeur de Kentō reprise'}</strong> (v{notice.version}). Le
-          prochain job les applique ; un job déjà en file garde les siens.
+          <strong>{notice.kind === 'saved' ? 'Settings saved' : 'Value of Kentō restored'}</strong> (v{notice.version}). The
+          next job applies them. A job already in the queue keeps its own values.
         </p>
       </div>
     )

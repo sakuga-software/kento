@@ -32,11 +32,11 @@ export type ConfigTab = (typeof CONFIG_TABS)[number]
 
 
 const TAB_LABELS: Record<ConfigTab, string> = {
-  models: 'Provider et modèles',
-  levels: 'Niveaux et passes',
-  trigger: 'Déclenchement',
-  rules: 'Règles',
-  assignment: 'Assignation',
+  models: 'Provider and models',
+  levels: 'Levels and passes',
+  trigger: 'Trigger',
+  rules: 'Rules',
+  assignment: 'Assignment',
 }
 
 /** The tab of a form: where the screen goes back after it. */
@@ -63,7 +63,7 @@ export interface ConfigForm {
   errors: Record<string, string>
 }
 
-/** REV-19. The tab Règles: the rules of the repository, and what else goes to the model. */
+/** REV-19. The tab Rules: the rules of the repository, and what else goes to the model. */
 export interface ConfigRules {
   list: RuleView[]
   /** The active rules of the org: they go with the reviews of this repository too. */
@@ -80,15 +80,15 @@ export interface ConfigPageProps {
   tab: ConfigTab
   notice: ConfigNotice | null
   form: ConfigForm | null
-  /** Null: the service has no rules; the tab says « Bientôt ». */
+  /** Null: the service has no rules; the tab says « Soon ». */
   rules?: ConfigRules | null
-  /** REV-21. The tab Assignation. Null: the service has no assignment rules; the tab says « Bientôt ». */
+  /** REV-21. The tab Assignment. Null: the service has no assignment rules; the tab says « Soon ». */
   assignment?: Omit<AssignmentTabProps, 'repoId' | 'defaultLevel' | 'admin' | 'csrf'> | null
 }
 
-/** « config v7, modifiée par alex le 27 oct. à 18:02 ». */
+/** « config v7, changed by alex on 27 Oct at 18:02 ». */
 export function versionLine(view: Pick<RepoConfigView, 'version' | 'updatedBy' | 'updatedAt'>): string {
-  return sharedVersionLine({ name: 'config', changed: 'modifiée', empty: 'config v0, tout est hérité de l’organisation' }, view)
+  return sharedVersionLine({ name: 'config', changed: 'changed', empty: 'config v0, everything comes from the organization' }, view)
 }
 
 function shortName(fullName: string, org: string): string {
@@ -97,29 +97,29 @@ function shortName(fullName: string, org: string): string {
 }
 
 const LEVEL_HINTS: Record<Level, string> = {
-  lite: `Rapide et le moins cher, ${levelCost('lite')} par review.`,
-  balanced: `Lit aussi le code autour du changement, ${levelCost('balanced')}.`,
-  heavy: `Raisonne plus longtemps, ${levelCost('heavy')}.`,
+  lite: `Fast and the cheapest, ${levelCost('lite')} per review.`,
+  balanced: `Also reads the code around the change, ${levelCost('balanced')}.`,
+  heavy: `Reasons for longer, ${levelCost('heavy')}.`,
 }
 
 const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
-  { value: 'push', title: 'À chaque push', text: 'Chaque push d’une PR qui n’est pas un brouillon, et son passage en « Ready for review ».' },
+  { value: 'push', title: 'At each push', text: 'Each push of a PR that is not a draft, and its change to "Ready for review".' },
   {
     value: 'ready',
-    title: 'Au passage en « Ready for review »',
-    text: 'Une review à l’ouverture d’une PR prête, à son passage en « Ready for review » et à sa réouverture. Les pushs suivants n’en créent pas.',
+    title: 'When the PR becomes "Ready for review"',
+    text: 'A review when a ready PR opens, when it becomes "Ready for review", and when it reopens. The later pushes create none.',
   },
-  { value: 'command', title: 'À la demande', text: 'Aucune review automatique. Seule une commande @kento-review en crée une.' },
+  { value: 'command', title: 'On request', text: 'No automatic review. Only a @kento-review command creates one.' },
 ]
 
 /**
- * « Config de orchard » (REV-12): the default level, a provider and a model for each level with their
+ * « Config of orchard » (REV-12): the default level, a provider and a model for each level with their
  * fallback, and what triggers a review. An admin of the org edits; a member reads.
  */
 export function ConfigPage(handle: Handle<ConfigPageProps>) {
   return () => {
     let { frame, view, providers, tab, notice, form, rules, assignment } = handle.props
-    // REV-32. A tab that the service does not have yet: named in the bar, with « Bientôt » and no link.
+    // REV-32. A tab that the service does not have yet: named in the bar, with « Soon » and no link.
     let soon = (key: ConfigTab) => (key === 'rules' && !rules) || (key === 'assignment' && !assignment)
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
@@ -131,11 +131,11 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
       <Shell
         frame={frame}
         section="repos"
-        title={`Config de ${name}`}
+        title={`Config of ${name}`}
         lead={versionLine(view)}
         actions={
           <a class="button" href={`${routes.repos.href()}#repo-${view.id}`}>
-            Retour aux repos
+            Back to the repos
           </a>
         }
       >
@@ -144,22 +144,22 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
           <div class="banner banner-info" role="status">
             <AlertIcon />
             <p>
-              <strong>{name} n’est pas activé.</strong> Cette config s’appliquera aux jobs dès qu’un admin l’activera sur
-              l’écran Repos.
+              <strong>{name} is not enabled.</strong> This config applies to the jobs after an admin enables the repo on
+              the Repos screen.
             </p>
           </div>
         ) : null}
 
-        <nav class="config-tabs" aria-label="Sections de la config">
+        <nav class="config-tabs" aria-label="Sections of the config">
           <ul>
             {CONFIG_TABS.map((key) => (
               <li>
                 {soon(key) && key !== tab ? (
                   <span class="config-tab-soon">
                     {TAB_LABELS[key]}
-                    <span class="tag tag-quiet">Bientôt</span>
+                    <span class="tag tag-quiet">Soon</span>
                     {/* REV-32: a screen reader hears that it is no link yet. */}
-                    <span class="visually-hidden"> : pas encore disponible</span>
+                    <span class="visually-hidden">: not available yet</span>
                   </span>
                 ) : (
                   <a href={`${routes.repoConfig.href({ id: view.id })}?tab=${key}`} aria-current={key === tab ? 'page' : undefined}>
@@ -191,11 +191,11 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
             <AssignmentTab {...assignment} repoId={view.id} defaultLevel={resolved.level.value} admin={admin} csrf={frame.csrfToken} />
           ) : (
             <section class="empty" aria-labelledby="later-title">
-              <h2 id="later-title">Bientôt ici</h2>
+              <h2 id="later-title">Soon here</h2>
               <p>
                 {tab === 'rules'
-                  ? 'Les règles du repo et de l’organisation, envoyées au modèle selon les chemins du diff, arrivent bientôt.'
-                  : 'Les règles d’assignation (qui déclenche quoi, à quel niveau) arrivent bientôt.'}
+                  ? 'The rules of the repo and of the organization, sent to the model by the paths of the diff, come soon.'
+                  : 'The assignment rules (who triggers what, at which level) come soon.'}
               </p>
             </section>
           )}
@@ -217,18 +217,18 @@ function Hidden(handle: Handle<{ ctx: FormContext; field: string }>) {
   return () => <VersionFields csrf={handle.props.ctx.csrf} version={handle.props.ctx.version} field={handle.props.field} />
 }
 
-/** « hérité de l’org » or « remplacé ici ». The word carries the meaning; the colour only repeats it. */
+/** « from the org » or « set for this repo ». The word carries the meaning; the colour only repeats it. */
 function SourceTag(handle: Handle<{ source: Source }>) {
   return () =>
-    handle.props.source === 'repo' ? <span class="tag tag-info">remplacé ici</span> : <span class="tag tag-quiet">hérité de l’org</span>
+    handle.props.source === 'repo' ? <span class="tag tag-info">set for this repo</span> : <span class="tag tag-quiet">from the org</span>
 }
 
-/** « Revenir à l’org »: a form of its own, shown only for a value that the repository sets. */
+/** « Back to the org value »: a form of its own, shown only for a value that the repository sets. */
 function RepoReset(handle: Handle<{ ctx: FormContext; field: ConfigField; label: string }>) {
   return () => {
     let { ctx, field, label } = handle.props
     let action = routes.repoConfigReset.href({ id: ctx.repoId })
-    return <ResetForm action={action} csrf={ctx.csrf} version={ctx.version} field={field} to="l’org" label={label} />
+    return <ResetForm action={action} csrf={ctx.csrf} version={ctx.version} field={field} to="org" label={label} />
   }
 }
 
@@ -238,8 +238,8 @@ function ModelsTab(handle: Handle<{ resolved: Record<Level, Resolved<LevelModels
     return (
       <>
         <p class="hint config-intro">
-          Le modèle de chaque niveau, puis son repli si l’appel échoue. Le runner applique la config du moment où le job est
-          mis en file.
+          The model of each level, then its fallback if the call fails. The runner applies the config of the moment when the job
+          enters the queue.
         </p>
         <div class="config-grid">
           {LEVELS.map((level) => (
@@ -260,7 +260,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
     let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
     let current = value.value
     let effective = effectiveLevel(level, value, providers)
-    // Nothing chosen, in the repository or the org: the form shows what runs, the provider « Par défaut ».
+    // Nothing chosen, in the repository or the org: the form shows what runs, the « Default » provider.
     let shown = value.source === 'kento' ? { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback } : current
     let values = mine?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
     let id = `level-${level}`
@@ -301,15 +301,15 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   ))}
                   {selected && !providers.some((p) => p.id === selected) ? (
                     <option value={selected} selected>
-                      {selected} (indisponible)
+                      {selected} (not available)
                     </option>
                   ) : null}
                 </select>
-                <FieldMessage id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'Ce provider n’est plus dans l’organisation.'} />
+                <FieldMessage id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'This provider is no longer in the organization.'} />
               </div>
               <div class="field">
                 <label class="field-label" for={modelId}>
-                  Modèle
+                  Model
                 </label>
                 <input
                   class="input mono"
@@ -328,7 +328,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
               </div>
               <div class="field">
                 <label class="field-label" for={fallbackId}>
-                  Repli si l’appel échoue
+                  Fallback if the call fails
                 </label>
                 <input
                   class="input mono"
@@ -342,14 +342,14 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                   aria-invalid={errors.fallback ? 'true' : undefined}
                   aria-describedby={describedBy(fallbackId, errors.fallback, true)}
                 />
-                <FieldMessage id={fallbackId} error={errors.fallback} hint="Un autre modèle du même provider. Laissez vide pour ne pas en avoir." />
+                <FieldMessage id={fallbackId} error={errors.fallback} hint="Another model of the same provider. Leave it empty for none." />
               </div>
               {value.source === 'kento' && effective.origin === 'default' ? (
-                <p class="hint">Remplacer ici fixe ce choix pour le repo, et le niveau ne suivra plus le provider « Par défaut ».</p>
+                <p class="hint">"Set here" fixes this choice for the repo, and the level no longer follows the "Default" provider.</p>
               ) : null}
               <button class="button" type="submit">
-                {value.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
-                <span class="visually-hidden"> pour {level}</span>
+                {value.source === 'repo' ? 'Save' : 'Set here'}
+                <span class="visually-hidden"> for {level}</span>
               </button>
             </form>
             {value.source === 'repo' ? <RepoReset ctx={ctx} field={field} label={level} /> : null}
@@ -371,17 +371,17 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
         <section class="card config-card" aria-labelledby="default-level-title">
           <header class="config-card-head">
             <h2 class="section-title" id="default-level-title">
-              Niveau par défaut
+              Default level
             </h2>
             <SourceTag source={resolvedLevel.source} />
           </header>
-          <p class="hint">Le niveau de la review d’un push. Une commande peut en demander un autre.</p>
+          <p class="hint">The level of the review of a push. A command can ask for another one.</p>
           {ctx.admin ? (
             <form method="post" action={routes.repoConfigSave.href({ id: ctx.repoId })}>
               <Hidden ctx={ctx} field="level" />
               <FormErrors errors={mine?.errors ?? {}} />
               <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'default-level-error' : undefined}>
-                <legend class="visually-hidden">Niveau par défaut</legend>
+                <legend class="visually-hidden">Default level</legend>
                 {LEVELS.map((key) => (
                   <label class="choice">
                     <input
@@ -403,12 +403,12 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
                 ) : null}
               </fieldset>
               <button class="button button-primary" type="submit">
-                {resolvedLevel.source === 'repo' ? 'Enregistrer le niveau' : 'Remplacer ici'}
-                {resolvedLevel.source === 'repo' ? null : <span class="visually-hidden"> le niveau</span>}
+                {resolvedLevel.source === 'repo' ? 'Save the level' : 'Set here'}
+                {resolvedLevel.source === 'repo' ? null : <span class="visually-hidden"> the level</span>}
               </button>
             </form>
           ) : null}
-          {ctx.admin && resolvedLevel.source === 'repo' ? <RepoReset ctx={ctx} field="level" label="le niveau" /> : null}
+          {ctx.admin && resolvedLevel.source === 'repo' ? <RepoReset ctx={ctx} field="level" label="the level" /> : null}
           {ctx.admin ? null : (
             <p>
               <strong class="mono">{level}</strong>. {LEVEL_HINTS[level]}
@@ -418,21 +418,21 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
         <section class="card config-card" aria-labelledby="passes-title">
           <header class="config-card-head">
             <h2 class="section-title" id="passes-title">
-              Passes et vérification
+              Passes and check
             </h2>
-            <span class="tag tag-quiet">Bientôt</span>
+            <span class="tag tag-quiet">Soon</span>
           </header>
           <dl class="config-facts">
             <div>
-              <dt>Plan des passes</dt>
-              <dd>Une passe</dd>
+              <dt>Plan of the passes</dt>
+              <dd>One pass</dd>
             </div>
             <div>
-              <dt>Vérification</dt>
-              <dd>Aucune</dd>
+              <dt>Check</dt>
+              <dd>None</dd>
             </div>
           </dl>
-          <p class="hint">Les passes multiples et la vérification des findings arrivent bientôt.</p>
+          <p class="hint">Several passes and the check of the findings come soon.</p>
         </section>
       </div>
     )
@@ -464,7 +464,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
         <section class="card config-card" aria-labelledby="trigger-title">
           <header class="config-card-head">
             <h2 class="section-title" id="trigger-title">
-              Déclenchement
+              Trigger
             </h2>
             <SourceTag source={trigger.source} />
           </header>
@@ -474,7 +474,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <Hidden ctx={ctx} field="trigger" />
                 <FormErrors errors={triggerForm?.errors ?? {}} />
                 <fieldset class="field" aria-describedby={triggerForm?.errors.trigger ? 'trigger-error' : undefined}>
-                  <legend class="visually-hidden">Ce qui crée une review</legend>
+                  <legend class="visually-hidden">What creates a review</legend>
                   {TRIGGER_CHOICES.map((choice) => (
                     <label class="choice">
                       <input
@@ -505,11 +505,11 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   ) : null}
                 </fieldset>
                 <button class="button button-primary" type="submit">
-                  {trigger.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
-                  <span class="visually-hidden"> le déclenchement</span>
+                  {trigger.source === 'repo' ? 'Save' : 'Set here'}
+                  <span class="visually-hidden"> the trigger</span>
                 </button>
               </form>
-              {trigger.source === 'repo' ? <RepoReset ctx={ctx} field="trigger" label="le déclenchement" /> : null}
+              {trigger.source === 'repo' ? <RepoReset ctx={ctx} field="trigger" label="the trigger" /> : null}
             </>
           ) : (
             <p>
@@ -517,13 +517,13 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
               {TRIGGER_CHOICES.find((c) => c.value === trigger.value)!.text}
             </p>
           )}
-          <p class="hint">Un brouillon ne crée jamais de review automatique.</p>
+          <p class="hint">A draft never creates an automatic review.</p>
         </section>
 
         <section class="card config-card" aria-labelledby="paths-title">
           <header class="config-card-head">
             <h2 class="section-title" id="paths-title">
-              Chemins
+              Paths
             </h2>
             <SourceTag source={paths.source} />
           </header>
@@ -534,7 +534,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <FormErrors errors={pathsForm?.errors ?? {}} />
                 <div class="field">
                   <label class="field-label" for="config-paths">
-                    Une review automatique seulement si la PR touche l’un de ces chemins
+                    An automatic review only if the PR changes one of these paths
                   </label>
                   <textarea
                     class="input mono config-paths"
@@ -552,21 +552,21 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     error={pathsForm?.errors.paths}
                     hint={
                       <>
-                        Un motif par ligne depuis la racine, {MAX_PATHS} au plus : <code>apps/web</code> (un dossier),{' '}
-                        <code>**/*.sql</code>, <code>src/*.ts</code>. Laissez vide pour relire tous les chemins.
+                        One pattern per line from the root, {MAX_PATHS} at most: <code>apps/web</code> (a folder),{' '}
+                        <code>**/*.sql</code>, <code>src/*.ts</code>. Leave it empty to review all paths.
                       </>
                     }
                   />
                 </div>
                 <button class="button button-primary" type="submit">
-                  {paths.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
-                  <span class="visually-hidden"> les chemins</span>
+                  {paths.source === 'repo' ? 'Save' : 'Set here'}
+                  <span class="visually-hidden"> the paths</span>
                 </button>
               </form>
-              {paths.source === 'repo' ? <RepoReset ctx={ctx} field="paths" label="les chemins" /> : null}
+              {paths.source === 'repo' ? <RepoReset ctx={ctx} field="paths" label="the paths" /> : null}
             </>
           ) : paths.value.length === 0 ? (
-            <p>Tous les chemins.</p>
+            <p>All paths.</p>
           ) : (
             <ul class="config-paths-list">
               {paths.value.map((pattern) => (
@@ -579,14 +579,14 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
         <section class="card config-card" aria-labelledby="cap-title">
           <header class="config-card-head">
             <h2 class="section-title" id="cap-title">
-              Plafond mensuel
+              Monthly cap
             </h2>
             <SourceTag source={cap.source} />
           </header>
           <p class={reached ? 'hint hint-alert' : 'hint'}>
-            Dépensé ce mois-ci : {usd(spent)}
-            {cap.value !== null ? ` sur ${usd(cap.value)}` : ''}
-            {reached ? ' : plafond atteint, plus de review automatique jusqu’au 1er du mois.' : '.'}
+            Spent this month: {usd(spent)}
+            {cap.value !== null ? ` of ${usd(cap.value)}` : ''}
+            {reached ? '. Cap reached: no automatic review until the 1st of the month.' : '.'}
           </p>
           {ctx.admin ? (
             <>
@@ -595,7 +595,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <FormErrors errors={capForm?.errors ?? {}} />
                 <div class="field">
                   <label class="field-label" for="config-cap">
-                    Plafond des reviews automatiques, en dollars par mois
+                    Cap of the automatic reviews, in dollars per month
                   </label>
                   <input
                     class="input mono config-cap"
@@ -611,48 +611,48 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <FieldMessage
                     id="config-cap"
                     error={capForm?.errors.monthlyCapUsd}
-                    hint="Laissez vide pour n’avoir aucun plafond. Une commande @kento-review passe toujours, car quelqu’un l’a demandée."
+                    hint="Leave it empty for no cap. A @kento-review command always runs, because a person asked for it."
                   />
                 </div>
                 <button class="button button-primary" type="submit">
-                  {cap.source === 'repo' ? 'Enregistrer' : 'Remplacer ici'}
-                  <span class="visually-hidden"> le plafond</span>
+                  {cap.source === 'repo' ? 'Save' : 'Set here'}
+                  <span class="visually-hidden"> the cap</span>
                 </button>
               </form>
-              {cap.source === 'repo' ? <RepoReset ctx={ctx} field="monthlyCapUsd" label="le plafond" /> : null}
+              {cap.source === 'repo' ? <RepoReset ctx={ctx} field="monthlyCapUsd" label="the cap" /> : null}
             </>
           ) : (
-            <p>{cap.value === null ? 'Aucun plafond.' : `${usd(cap.value)} par mois.`}</p>
+            <p>{cap.value === null ? 'No cap.' : `${usd(cap.value)} per month.`}</p>
           )}
         </section>
 
         <section class="card config-card" aria-labelledby="rights-title">
           <header class="config-card-head">
             <h2 class="section-title" id="rights-title">
-              Droits
+              Rights
             </h2>
             <a class="tag tag-quiet" href={`${routes.settings.href()}#bots`}>
-              réglage de l’org
+              org setting
             </a>
           </header>
           <dl class="config-facts">
             <div>
-              <dt>Commande @kento-review</dt>
+              <dt>@kento-review command</dt>
               <dd>
-                Une personne qui a le droit d’écriture sur le repo
+                A person with write access to the repo
                 {trustedBots.length > 0 ? (
                   <>
-                    , ou un bot de confiance : <span class="mono">{trustedBots.join(', ')}</span>
+                    , or a trusted bot: <span class="mono">{trustedBots.join(', ')}</span>
                   </>
                 ) : (
-                  ' ; aucun bot de confiance'
+                  '. No trusted bot'
                 )}
                 .
               </dd>
             </div>
             <div>
-              <dt>PR d’un fork</dt>
-              <dd>Aucun job tant qu’un admin ne l’autorise pas, car le code d’un fork n’est pas celui du repo.</dd>
+              <dt>PR from a fork</dt>
+              <dd>No job until an admin allows it, because the code of a fork is not the code of the repo.</dd>
             </div>
           </dl>
         </section>
@@ -662,7 +662,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
 }
 
 /**
- * REV-19. « Règles »: the rules of the repository, and a reminder of what else goes to the model with
+ * REV-19. « Rules »: the rules of the repository, and a reminder of what else goes to the model with
  * them: the rules of the org, and CLAUDE.md and AGENTS.md of the repository.
  */
 function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: string; admin: boolean; csrf: string | null }>) {
@@ -676,7 +676,7 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
         <section class="card config-card" id="rules" aria-labelledby="rules-title" tabIndex={-1}>
           <header class="config-card-head">
             <h2 class="section-title" id="rules-title">
-              Règles de {name} <span class="count">{active}</span>
+              Rules of {name} <span class="count">{active}</span>
             </h2>
           </header>
           {over > 0 ? (
@@ -684,15 +684,15 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
               <AlertIcon />
               <p>
                 <strong>
-                  Un job envoie {MAX_JOB_RULES} règles au plus : {over === 1 ? 'la dernière règle d’org active ne part pas' : `les ${over} dernières règles d’org actives ne partent pas`}
+                  A job sends {MAX_JOB_RULES} rules at most. {over === 1 ? 'The last active org rule does not go' : `The last ${over} active org rules do not go`}
                 </strong>{' '}
-                avec les reviews de ce repo. Les règles du repo passent d’abord ; désactivez-en ou supprimez-en pour faire de la place.
+                with the reviews of this repo. The rules of the repo go first. Disable or delete some of them to make room.
               </p>
             </div>
           ) : null}
           <p class="hint">
-            Le modèle vérifie chaque règle une par une, seulement quand la PR touche l’un de ses chemins. Un constat qui
-            applique une règle la nomme dans son commentaire.
+            The model checks each rule one by one, only when the PR changes one of its paths. A finding that
+            applies a rule names it in its comment.
           </p>
           <RulesList
             scope="repo"
@@ -707,23 +707,23 @@ function RulesTab(handle: Handle<{ rules: ConfigRules; repoId: string; name: str
         </section>
         <aside class="card config-card rules-also" aria-labelledby="rules-also-title">
           <h2 class="section-title" id="rules-also-title">
-            Part aussi au modèle
+            Also goes to the model
           </h2>
           <ul class="rules-also-list">
             <li>
               <a href={`${routes.settings.href()}#regles`}>
-                {rules.orgActive === 0 ? 'Aucune règle d’org' : rules.orgActive === 1 ? '1 règle d’org active' : `${rules.orgActive} règles d’org actives`}
+                {rules.orgActive === 0 ? 'No org rule' : rules.orgActive === 1 ? '1 active org rule' : `${rules.orgActive} active org rules`}
               </a>
-              , selon les mêmes chemins.
+              , by the same paths.
             </li>
             <li>
-              <span class="mono">CLAUDE.md</span> et <span class="mono">AGENTS.md</span> à la racine du repo, s’ils font 400 lignes
-              au plus.
+              <span class="mono">CLAUDE.md</span> and <span class="mono">AGENTS.md</span> at the root of the repo, if they have 400 lines
+              at most.
             </li>
           </ul>
           <p class="hint">
-            Les règles viennent de cet écran et des réglages de l’org, jamais du code d’une PR : un texte de la PR qui ressemble à
-            une règle reste du code à relire.
+            The rules come from this screen and from the settings of the org, never from the code of a PR. A text of the PR that looks
+            like a rule is still code to review.
           </p>
         </aside>
       </div>
@@ -735,14 +735,14 @@ function Notice(handle: Handle<{ notice: ConfigNotice }>) {
   return () => {
     let { notice } = handle.props
     if (notice.kind === 'conflict') {
-      let by = notice.updatedBy ? ` par ${notice.updatedBy}` : ''
+      let by = notice.updatedBy ? ` by ${notice.updatedBy}` : ''
       let at = notice.updatedAt ? ` ${when(notice.updatedAt)}` : ''
       return (
         <div class="banner banner-alert" role="alert">
           <AlertIcon />
           <p>
-            <strong>La config a changé entre-temps</strong> (v{notice.version}, modifiée{by}
-            {at}). Rien n’a été enregistré. Relisez les valeurs ci-dessous, puis recommencez.
+            <strong>The config changed in the meantime</strong> (v{notice.version}, changed{by}
+            {at}). Nothing was saved. Read the values below again, then try again.
           </p>
         </div>
       )
@@ -751,8 +751,8 @@ function Notice(handle: Handle<{ notice: ConfigNotice }>) {
       <div class="banner banner-ok" role="status">
         <CheckIcon />
         <p>
-          <strong>{notice.kind === 'saved' ? 'Config enregistrée' : 'Valeur de l’organisation reprise'}</strong> (v{notice.version}).
-          Le prochain job l’applique ; un job déjà en file garde la sienne.
+          <strong>{notice.kind === 'saved' ? 'Config saved' : 'Value of the organization restored'}</strong> (v{notice.version}).
+          The next job applies it. A job already in the queue keeps its own config.
         </p>
       </div>
     )

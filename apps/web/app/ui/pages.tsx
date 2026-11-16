@@ -60,7 +60,7 @@ export function createUiControllers(deps: UiDependencies) {
 
   /**
    * REV-40. A page request that no route matches: the router sends it here (see `router.ts`). The
-   * person is signed in or not; either way the 404 stays, in the frame, in French.
+   * person is signed in or not; either way the 404 stays, in the frame, in English.
    */
   let notFound = createController(fallbackRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, optionalViewer],
@@ -92,6 +92,9 @@ export function createUiControllers(deps: UiDependencies) {
       commands(context) {
         let page = <CommandsPage theme={readTheme(context.headers.get('Cookie'))} version={deps.version} assetVersion={kit.assetVersion} />
         return context.render(page)
+      },
+      commandsFrench(context) {
+        return new Response(null, { status: 301, headers: { Location: `${docsRoutes.commands.href()}${context.url.search}` } })
       },
     },
   })

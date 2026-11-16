@@ -6,27 +6,27 @@ import { usd, when } from '../ui/format.ts'
 import type { CapHit } from './model.ts'
 
 /** The name of the check run that tells a pull request that the limit of its org stopped its review. */
-export const CAP_CHECK_NAME = 'Kentō · plafond'
+export const CAP_CHECK_NAME = 'Kentō · cap'
 
 const CHECK_PERMISSIONS: TokenPermissions = { checks: 'write' }
 
-/** « le 30 oct. à 01:00 (heure de Paris) ». */
+/** « on 30 Oct at 01:00 (Paris time) ». */
 export function resetWhen(date: Date): string {
-  return `${when(date)} (heure de Paris)`
+  return `${when(date)} (Paris time)`
 }
 
 /** What the pull request reads: why no review, until when, and who can change it. */
 export function capSentence(hit: CapHit): string {
-  let period = hit.period === 'day' ? 'du jour' : 'du mois'
+  let period = hit.period === 'day' ? 'daily' : 'monthly'
   return (
-    `Kentō ne lance pas de review : le plafond de coût ${period} de l’organisation est atteint ` +
-    `(${usd(hit.spentUsd)} dépensés sur ${usd(hit.capUsd)}). ` +
-    `Les reviews reprennent ${resetWhen(hit.resetsAt)}, ou dès qu’un admin relève le plafond dans les Réglages de Kentō.`
+    `Kentō does not start a review: the organization reached its ${period} cost cap ` +
+    `(${usd(hit.spentUsd)} spent of ${usd(hit.capUsd)}). ` +
+    `The reviews start again ${resetWhen(hit.resetsAt)}, or as soon as an admin raises the cap in the Kentō Settings.`
   )
 }
 
 /**
- * Posts a check run « Kentō · plafond », neutral, on the head of a push that the limit of the org
+ * Posts a check run « Kentō · cap », neutral, on the head of a push that the limit of the org
  * stopped. One per head: GitHub shows it in the checks of the pull request, and it never blocks a
  * merge. It has its own name so that a required check « Sakuga Review » stays missing.
  */
@@ -51,7 +51,7 @@ export function createCapNotice(deps: {
       conclusion: 'neutral',
       details_url: deps.settingsUrl,
       output: {
-        title: hit.period === 'day' ? 'Plafond du jour atteint : pas de review' : 'Plafond du mois atteint : pas de review',
+        title: hit.period === 'day' ? 'Daily cap reached: no review' : 'Monthly cap reached: no review',
         summary: capSentence(hit),
       },
     })

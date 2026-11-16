@@ -63,7 +63,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
           'Le constat numéro ' || g || ' sur une valeur nulle non gérée', (array['critical', 'major', 'minor'])[1 + g % 3],
           (array['bug', 'security', 'data', 'contract', 'test'])[1 + g % 5], 50 + g % 50,
           (array['open', 'open', 'open', 'fixed', 'fixed', 'dismissed', 'wontfix', 'stale'])[1 + g % 8]::finding_status,
-          case when g % 8 in (5, 6) then (array['Hors sujet', 'Faux positif', 'Déjà connu'])[1 + g % 3] end,
+          case when g % 8 in (5, 6) then (array['Off topic', 'False positive', 'Already known'])[1 + g % 3] end,
           md5('s' || g), md5('s' || (g - g % 4)), now() - g * interval '26 seconds', now() - g * interval '20 seconds'
         from generate_series(1, ${FINDINGS}) g, c join r on true where r.n = 1 + g % c.k`
     }
@@ -139,7 +139,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     let first = await load('/findings')
     assert.equal(first.status, 200)
     assert.equal((first.html.match(/<tr id="finding-/g) ?? []).length, 50)
-    assert.match(first.html, /1 à 50 sur 37\s500 findings/)
+    assert.match(first.html, /1 to 50 of 37,500 findings/)
 
     let next = /href="\/findings\?after=([\w-]+)"/.exec(first.html)?.[1]
     assert.ok(next, 'a link to the next page')
@@ -180,7 +180,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     assert.ok(report.repoCount > 200, `${report.repoCount}`)
     assert.equal(report.repos.length, 8)
     assert.ok(report.ruleCount > 10, `${report.ruleCount}`)
-    assert.deepEqual(report.reasons.map((r) => r.reason).sort(), ['Déjà connu', 'Faux positif', 'Hors sujet'])
+    assert.deepEqual(report.reasons.map((r) => r.reason).sort(), ['Already known', 'False positive', 'Off topic'])
     assert.ok(best < limit.ms, line)
   })
 })

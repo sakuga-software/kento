@@ -46,7 +46,7 @@ function sheet(): PullSheet {
     createdAt: NOW,
     publishedAt: NOW,
     verdict: n === 2 ? 'REQUEST_CHANGES' : 'COMMENT',
-    summary: n === 2 ? 'Deux findings restent ouverts, dont un P1 sur l’expiration des jetons. Le reste est corrigé.\n\nDétail plus bas.' : null,
+    summary: n === 2 ? 'Two findings stay open, one of them a P1 on the expiry of the tokens. The rest is fixed.\n\nDetails below.' : null,
     durationMs: 160_000,
   })
   return {
@@ -55,7 +55,7 @@ function sheet(): PullSheet {
       {
         finding: {
           id: 'f1',
-          title: 'Le jeton de session n’expire jamais',
+          title: 'The session token never expires',
           path: 'src/auth/session.ts',
           line: 47,
           severity: 'major',
@@ -82,20 +82,20 @@ function detail(status: FindingDetail['status'] = 'dismissed', considered = fals
   return {
     id: FINDING_ID,
     target: summary().target,
-    title: 'Le jeton de session n’expire jamais',
+    title: 'The session token never expires',
     path: 'src/auth/session.ts',
     line: 47,
     severity: 'major',
     category: 'bug',
     confidence: 88,
     status,
-    statusReason: status === 'dismissed' ? 'Faux positif' : null,
-    rule: { id: 'rule-1', title: 'Pas de jeton sans expiration' },
+    statusReason: status === 'dismissed' ? 'False positive' : null,
+    rule: { id: 'rule-1', title: 'No token without expiry' },
     fingerprint: 'a1',
     firstSeenSha: 'a'.repeat(40),
     lastSeenSha: 'd'.repeat(40),
     githubCommentId: 914201,
-    review: { id: 'r4', number: 4, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'Un jeton volé reste valide.', fix: 'Ajouter exp.', suggestion: '', considered },
+    review: { id: 'r4', number: 4, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'A stolen token stays valid.', fix: 'Add exp.', suggestion: '', considered },
   }
 }
 
@@ -138,13 +138,13 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
       return {
         items: [
           { id: 'e1', type: 'opened', actor: 'kento', reason: null, review: 1, createdAt: NOW },
-          { id: 'e2', type: 'dismissed', actor: 'camille', reason: 'Faux positif', review: null, createdAt: NOW },
+          { id: 'e2', type: 'dismissed', actor: 'camille', reason: 'False positive', review: null, createdAt: NOW },
         ],
         nextCursor: 'next',
       }
     },
   }
-  let header = options.header === undefined ? { title: 'Sessions : expiration', author: 'camille', headRef: 'feat/x', baseRef: 'main', state: 'open' as const, headSha: 'd'.repeat(40) } : options.header
+  let header = options.header === undefined ? { title: 'Sessions: expiry', author: 'camille', headRef: 'feat/x', baseRef: 'main', state: 'open' as const, headSha: 'd'.repeat(40) } : options.header
   let router = createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
     version: '1.2.3',
@@ -223,8 +223,8 @@ describe('the screen of a pull request', () => {
   })
 
   it('says a summary in its first sentence, and a model without its provider (REV-91)', () => {
-    assert.equal(firstSentence('Deux findings restent ouverts. Le reste est corrigé.'), 'Deux findings restent ouverts.')
-    assert.equal(firstSentence('Sans point final\n\nUn autre paragraphe.'), 'Sans point final')
+    assert.equal(firstSentence('Two findings stay open. The rest is fixed.'), 'Two findings stay open.')
+    assert.equal(firstSentence('No final period\n\nAnother paragraph.'), 'No final period')
     assert.equal(firstSentence('  \n '), null)
     assert.equal(firstSentence(null), null)
     assert.equal(firstSentence('v1.2 garde son point. Fin.'), 'v1.2 garde son point.')
@@ -241,20 +241,20 @@ describe('the screen of a pull request', () => {
     let html = await response.text()
     assert.deepEqual(asked, [`${ORG.id} ${REPO_ID} 142`])
     // REV-91: the title of the pull request is the title of the page; « orchard #142 » leads its facts.
-    assert.match(html, /<h1 class="page-title">Sessions : expiration/)
+    assert.match(html, /<h1 class="page-title">Sessions: expiry/)
     assert.match(html, /<span class="mono">orchard #142<\/span>/)
     assert.match(html, /@camille/)
     assert.match(html, /feat\/x → main/)
-    assert.match(html, /Feuille d’exposition/)
-    assert.match(html, /title="déplacé, ligne 47" class="cell cell-moved"><span class="visually-hidden">déplacé l\.47/)
+    assert.match(html, /Exposure sheet/)
+    assert.match(html, /title="moved, line 47" class="cell cell-moved"><span class="visually-hidden">moved l\.47/)
     // The last review: its verdict on a stamp, its facts, the first sentence of its summary.
-    assert.match(html, /Dernière review, R2/)
-    assert.match(html, /<span class="stamp-text">Changements demandés<\/span><span class="stamp-score">3\/5<\/span>/)
-    assert.match(html, /lite · m · bbbbbbb · 0,010\s\$ · 2 min 40 s · /)
-    assert.match(html, /<p class="pull-last-summary">Deux findings restent ouverts, dont un P1 sur l’expiration des jetons\.<\/p>/)
-    assert.match(html, /Une seule passe par review/)
+    assert.match(html, /Last review, R2/)
+    assert.match(html, /<span class="stamp-text">Changes requested<\/span><span class="stamp-score">3\/5<\/span>/)
+    assert.match(html, /lite · m · bbbbbbb · \$0\.010 · 2 min 40 s · /)
+    assert.match(html, /<p class="pull-last-summary">Two findings stay open, one of them a P1 on the expiry of the tokens\.<\/p>/)
+    assert.match(html, /One pass per review/)
     assert.match(html, /data-label="R2 · bbbbbbb"/)
-    assert.match(html, /0,54\s\$/)
+    assert.match(html, /\$0\.54/)
     assert.match(html, /https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142/)
   })
 
@@ -262,7 +262,7 @@ describe('the screen of a pull request', () => {
     let assignment = { ruleId: 'r1', position: 1, level: 'balanced' as const, mention: null, reasons: { author: 'sakuga-agent[bot]' }, trigger: 'push' as const }
     let { request, signIn } = setup({ assignment, levelOrigin: { source: 'rule', level: 'balanced' } })
     let html = await (await request(PATH, await signIn(CAMILLE))).text()
-    assert.match(html, /<p class="pull-assignment">Assignation : règle 1, l’auteur est sakuga-agent\[bot\], donc balanced à chaque push\.<\/p>/)
+    assert.match(html, /<p class="pull-assignment">Assignment: rule 1, the author is sakuga-agent\[bot\], so balanced at each push\.<\/p>/)
     let none = setup()
     assert.doesNotMatch(await (await none.request(PATH, await none.signIn(CAMILLE))).text(), /pull-assignment/)
   })
@@ -270,12 +270,12 @@ describe('the screen of a pull request', () => {
   it('says what else chose the level of the last job: a command, a retry, a preference, the repository (REV-21)', () => {
     let line = (source: 'command' | 'retry' | 'preference' | 'repo' | 'rule', level: 'lite' | 'heavy' = 'heavy') =>
       levelLine({ assignment: null, levelOrigin: { source, level } })
-    assert.equal(line('command'), 'Niveau heavy : demandé par une commande, les règles d’assignation ne s’appliquent pas.')
-    assert.equal(line('retry'), 'Niveau heavy : choisi à la relance depuis le tableau de bord.')
-    assert.equal(line('preference', 'lite'), 'Niveau lite : préférence de l’auteur, aucune règle d’assignation ne correspond.')
-    assert.equal(line('repo', 'lite'), 'Niveau lite : celui du repo, aucune règle d’assignation ne correspond.')
+    assert.equal(line('command'), 'Level heavy: a command asked for it, so the assignment rules do not apply.')
+    assert.equal(line('retry'), 'Level heavy: chosen at the retry from the dashboard.')
+    assert.equal(line('preference', 'lite'), 'Level lite: preference of the author, no assignment rule matches.')
+    assert.equal(line('repo', 'lite'), 'Level lite: the level of the repo, no assignment rule matches.')
     // A job of a rule with no copy of it in its config: the line still says that a rule chose the level.
-    assert.equal(line('rule'), 'Assignation : une règle d’assignation a choisi heavy.')
+    assert.equal(line('rule'), 'Assignment: an assignment rule chose heavy.')
     assert.equal(levelLine({ assignment: null, levelOrigin: null }), null)
   })
 
@@ -292,17 +292,17 @@ describe('the screen of a pull request', () => {
   it('still shows the sheet when GitHub does not answer, and says what is missing', async () => {
     let { request, signIn } = setup({ header: new Error('502') })
     let html = await (await request(PATH, await signIn())).text()
-    assert.match(html, /GitHub n’a pas répondu/)
-    assert.match(html, /Feuille d’exposition/)
-    // REV-91: with no title from GitHub, the title is « orchard #142 », and an admin keeps « Relancer R5… ».
+    assert.match(html, /GitHub did not answer/)
+    assert.match(html, /Exposure sheet/)
+    // REV-91: with no title from GitHub, the title is « orchard #142 », and an admin keeps « Run R5… ».
     assert.match(html, /<h1 class="page-title">orchard #142<\/h1>/)
-    assert.match(html, /<summary class="button">Relancer R\d+…<\/summary>/)
+    assert.match(html, /<summary class="button">Run R\d+…<\/summary>/)
   })
 
   it('drops the cursor of the findings from the links of the status filter', async () => {
     let { request, signIn } = setup()
     let html = await (await request(`${PATH}?avant=old&suite=rows`, await signIn())).text()
-    let filter = /<nav aria-label="Filtrer par statut"[^]*?<\/nav>/.exec(html)![0]
+    let filter = /<nav aria-label="Filter by status"[^]*?<\/nav>/.exec(html)![0]
     assert.match(filter, /\?statut=open&amp;avant=old"/)
     assert.doesNotMatch(filter, /suite=/)
   })
@@ -324,26 +324,26 @@ describe('the detail of a finding', () => {
     assert.equal(response.status, 200)
     let html = await response.text()
     assert.ok(asked.includes(`finding ${ORG.id} ${FINDING_ID}`))
-    assert.match(html, /Règle « Pas de jeton sans expiration »/)
-    assert.match(html, /88 %/)
+    assert.match(html, /Rule &quot;No token without expiry&quot;|Rule "No token without expiry"/)
+    assert.match(html, /88%/)
     assert.match(html, /claude-haiku-4-5 \(R4, lite\)/)
-    assert.match(html, /Un jeton volé reste valide\./)
+    assert.match(html, /A stolen token stays valid\./)
     assert.match(html, /class="code-line code-line-hit"><span aria-hidden="true" class="code-number">47<\/span><code>  return \{ token \}/)
-    assert.match(html, /@camille · « Faux positif »/)
+    assert.match(html, /@camille · (&quot;|")False positive(&quot;|")/)
     assert.match(html, /Kentō · R1/)
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142#discussion_r914201"/)
     assert.match(html, /href="\/findings\/33333333-3333-4333-8333-333333333333\?historique=next"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/pulls\/142"/)
   })
 
-  it('says « À considérer : code déjà relu, non bloquant » for a finding that its last review lists so (REV-102)', async () => {
+  it('says « To consider: code already reviewed, not blocking » for a finding that its last review lists so (REV-102)', async () => {
     let considered = setup({ considered: true, status: 'open' })
     let html = await (await considered.request(DETAIL, await considered.signIn(CAMILLE))).text()
-    assert.match(html, /<span class="tag tag-info">À considérer<\/span>/)
-    assert.match(html, /<span class="hint">À considérer : code déjà relu, non bloquant\.<\/span>/)
+    assert.match(html, /<span class="tag tag-info">To consider<\/span>/)
+    assert.match(html, /<span class="hint">To consider: code already reviewed, not blocking\.<\/span>/)
     let plain = setup({ status: 'open' })
     let other = await (await plain.request(DETAIL, await plain.signIn(CAMILLE))).text()
-    assert.doesNotMatch(other, /À considérer/)
+    assert.doesNotMatch(other, /To consider/)
   })
 
   it('answers 404 for a finding of another org, or an id that is not one', async () => {
@@ -356,8 +356,8 @@ describe('the detail of a finding', () => {
   it('still shows the finding when GitHub does not give its code', async () => {
     let { request, signIn } = setup({ code: new Error('timeout') })
     let html = await (await request(DETAIL, await signIn())).text()
-    assert.match(html, /GitHub n’a pas répondu : le code n’a pas pu être lu\./)
-    assert.match(html, /Scénario/)
+    assert.match(html, /GitHub did not answer, so Kentō could not read the code\./)
+    assert.match(html, /Scenario/)
   })
 
   it('starts the history again for a cursor that it cannot read', async () => {
@@ -379,39 +379,39 @@ describe('the decisions on a finding', () => {
     return { ...t, cookie, csrf, html }
   }
 
-  it('offers a member « Marquer dismissed… » with the reasons of REV-18, and « Marquer wontfix… »', async () => {
+  it('offers a member « Mark dismissed… » with the reasons of REV-18, and « Mark wontfix… »', async () => {
     let { html } = await member({ status: 'open' })
-    assert.doesNotMatch(html, />Rouvrir</)
-    assert.match(html, /Marquer dismissed…/)
-    assert.match(html, /Marquer wontfix…/)
-    // The reasons of the dialog of REV-18, shared with the Findings screen, and « Autre ».
+    assert.doesNotMatch(html, />Reopen</)
+    assert.match(html, /Mark dismissed…/)
+    assert.match(html, /Mark wontfix…/)
+    // The reasons of the dialog of REV-18, shared with the Findings screen, and « Other ».
     for (let reason of DISMISS_REASONS) assert.match(html, new RegExp(`value="${reason}"`))
     assert.match(html, /value="other"/)
     assert.match(html, new RegExp(`name="ids" value="${FINDING_ID}"`))
-    assert.match(html, /vous dismissez, gardez \(wontfix\) ou rouvrez un finding/)
+    assert.match(html, /you can dismiss, keep \(won&#39;t fix\) or reopen a finding|you can dismiss, keep \(won't fix\) or reopen a finding/)
   })
 
   it('a member dismisses with a reason: the status changes, then the bot replies in the thread', async () => {
     let { post, cookie, csrf, decisions, replies } = await member()
-    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'Faux positif' })
+    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'False positive' })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
-    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Faux positif camille`])
-    assert.deepEqual(replies, [`sakuga-software/orchard#142 914201 ${replyText('dismissed', 'Faux positif', 'camille')}`])
+    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed False positive camille`])
+    assert.deepEqual(replies, [`sakuga-software/orchard#142 914201 ${replyText('dismissed', 'False positive', 'camille')}`])
   })
 
-  it('takes « Autre » with a reason of the person', async () => {
+  it('takes « Other » with a reason of the person', async () => {
     let { post, cookie, csrf, decisions } = await member({ status: 'open' })
-    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'other', other: 'Code généré' })
+    let response = await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'other', other: 'Generated code' })
     assert.equal(response.headers.get('Location'), `${DETAIL}?fait=dismissed&github=posted`)
-    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Code généré camille`])
+    assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} dismissed Generated code camille`])
   })
 
   it('refuses an unknown reason, the id of another finding, and a form without its token', async () => {
     let { post, cookie, csrf, decisions } = await member()
-    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'Parce que' })).status, 400)
-    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: '44444444-4444-4444-8444-444444444444', status: 'dismissed', reason: 'Faux positif' })).status, 400)
-    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { ids: FINDING_ID, status: 'dismissed', reason: 'Faux positif' })).status, 403)
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: FINDING_ID, status: 'dismissed', reason: 'Because' })).status, 400)
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { _csrf: csrf, ids: '44444444-4444-4444-8444-444444444444', status: 'dismissed', reason: 'False positive' })).status, 400)
+    assert.equal((await post(`${DETAIL}/dismiss`, cookie, { ids: FINDING_ID, status: 'dismissed', reason: 'False positive' })).status, 403)
     assert.deepEqual(decisions, [])
   })
 
@@ -428,13 +428,13 @@ describe('the decisions on a finding', () => {
     assert.equal(response.headers.get('Location'), `${DETAIL}?fait=open&github=failed`)
     assert.deepEqual(decisions, [`${ORG.id} ${FINDING_ID} open null camille`])
     let html = await (await request(response.headers.get('Location')!, cookie)).text()
-    assert.match(html, /La réponse n’a pas pu être postée sur GitHub/)
+    assert.match(html, /Kentō could not post the reply on GitHub/)
   })
 
   it('posts each button of a confirmation to its own action, through the one form of the page', async () => {
     let { html } = await member({ status: 'open' })
     let form = `finding-${FINDING_ID}`
-    let buttons = [...html.matchAll(/<button[^>]*type="submit"[^>]*>(Marquer dismissed|Marquer wontfix)<\/button>/g)].map((m) => m[0])
+    let buttons = [...html.matchAll(/<button[^>]*type="submit"[^>]*>(Mark dismissed|Mark wontfix)<\/button>/g)].map((m) => m[0])
     assert.equal(buttons.length, 2)
     assert.match(buttons[0]!, new RegExp(`form="${form}"`))
     assert.match(buttons[0]!, new RegExp(`formaction="/findings/${FINDING_ID}/dismiss"`))
@@ -442,10 +442,10 @@ describe('the decisions on a finding', () => {
     assert.match(buttons[1]!, new RegExp(`formaction="/findings/${FINDING_ID}/wontfix"`))
   })
 
-  it('offers « Rouvrir » only for a finding dismissed or kept', async () => {
+  it('offers « Reopen » only for a finding dismissed or kept', async () => {
     let { html } = await member({ status: 'dismissed' })
-    assert.match(html, />Rouvrir</)
-    assert.doesNotMatch(html, /Marquer dismissed…/)
+    assert.match(html, />Reopen</)
+    assert.doesNotMatch(html, /Mark dismissed…/)
   })
 
   it('does not set aside a finding that a push fixed, as the Findings screen does not', async () => {
@@ -462,7 +462,7 @@ describe('the decisions on a finding', () => {
   })
 })
 
-describe('« Relancer en <niveau> »', () => {
+describe('« Run at <level> »', () => {
   async function as(profile: typeof ALEX, options: Parameters<typeof setup>[0] = {}) {
     let t = setup(options)
     let cookie = await t.signIn(profile)
@@ -473,11 +473,11 @@ describe('« Relancer en <niveau> »', () => {
 
   it('offers an admin the three levels with their estimate, and a member none', async () => {
     let admin = await as(ALEX)
-    assert.match(admin.html, /Relancer R5/)
-    assert.match(admin.html, /Relancer en lite<span class="dash-estimate"> · ≈ 0,004\s\$/)
-    assert.match(admin.html, /Relancer en heavy<span class="dash-estimate"> · coût inconnu/)
+    assert.match(admin.html, /Run R5/)
+    assert.match(admin.html, /Run at lite<span class="dash-estimate"> · ≈ \$0\.004/)
+    assert.match(admin.html, /Run at heavy<span class="dash-estimate"> · unknown cost/)
     let member = await as(CAMILLE)
-    assert.doesNotMatch(member.html, /Relancer en/)
+    assert.doesNotMatch(member.html, /Run at/)
   })
 
   it('queues a review of the head that GitHub gives, for an admin', async () => {
@@ -487,7 +487,7 @@ describe('« Relancer en <niveau> »', () => {
     assert.equal(response.headers.get('Location'), `${PATH}?relance=queued`)
     assert.deepEqual(reruns, [`${ORG.id} ${REPO_ID} 142 heavy ${'d'.repeat(40)}`])
     let html = await (await request(response.headers.get('Location')!, cookie)).text()
-    assert.match(html, /Review relancée : elle est en file\. Un nouveau push l’annule\./)
+    assert.match(html, /Review started again\. It is queued\. A new push cancels it\./)
   })
 
   it('refuses a member, an unknown level, a closed pull request, and GitHub down', async () => {
@@ -505,20 +505,20 @@ describe('« Relancer en <niveau> »', () => {
 
 describe('the words of the screen of a pull request', () => {
   it('says how the score moved since the review before', () => {
-    assert.deepEqual(scoreProgress({ lastScores: [4, 2], reviews: 4 }), { value: '4/5', change: '+2 depuis R3' })
-    assert.deepEqual(scoreProgress({ lastScores: [2, 4], reviews: 2 }), { value: '2/5', change: '−2 depuis R1' })
-    assert.deepEqual(scoreProgress({ lastScores: [3, 3], reviews: 5 }), { value: '3/5', change: 'inchangé depuis R4' })
+    assert.deepEqual(scoreProgress({ lastScores: [4, 2], reviews: 4 }), { value: '4/5', change: '+2 since R3' })
+    assert.deepEqual(scoreProgress({ lastScores: [2, 4], reviews: 2 }), { value: '2/5', change: '−2 since R1' })
+    assert.deepEqual(scoreProgress({ lastScores: [3, 3], reviews: 5 }), { value: '3/5', change: 'unchanged since R4' })
     assert.deepEqual(scoreProgress({ lastScores: [3], reviews: 1 }), { value: '3/5', change: null })
   })
 
   it('says why the code of a finding is not there: no App, GitHub down, a file gone, a file too short', () => {
-    assert.equal(codeText(undefined), 'Sans l’App GitHub, Kentō ne lit pas le code.')
-    assert.match(codeText('failed'), /GitHub n’a pas répondu/)
-    assert.match(codeText({ kind: 'missing' }), /n’est plus sur GitHub à ce commit/)
-    assert.equal(codeText({ kind: 'empty' }), 'Le fichier est vide à ce commit.')
-    assert.match(codeText({ kind: 'unreadable' }), /un dossier, ou un fichier de plus de 1 Mo/)
-    assert.equal(codeText({ kind: 'short', length: 1 }), 'Le fichier n’a que 1 ligne à ce commit : la ligne du finding n’y est pas.')
-    assert.equal(codeText({ kind: 'short', length: 12 }), 'Le fichier n’a que 12 lignes à ce commit : la ligne du finding n’y est pas.')
+    assert.equal(codeText(undefined), 'Without the GitHub App, Kentō does not read the code.')
+    assert.match(codeText('failed'), /GitHub did not answer/)
+    assert.match(codeText({ kind: 'missing' }), /is no longer on GitHub at this commit/)
+    assert.equal(codeText({ kind: 'empty' }), 'The file is empty at this commit.')
+    assert.match(codeText({ kind: 'unreadable' }), /a folder, or a file of more than 1 MB/)
+    assert.equal(codeText({ kind: 'short', length: 1 }), 'The file has only 1 line at this commit. The line of the finding is not in it.')
+    assert.equal(codeText({ kind: 'short', length: 12 }), 'The file has only 12 lines at this commit. The line of the finding is not in it.')
   })
 
   it('reads the known statuses of the filter only', () => {

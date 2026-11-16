@@ -162,34 +162,34 @@ export function rejectProblem(command: Extract<CommentCommand, { verb: 'reject' 
 export function rejectProblemText(problem: RejectProblem): string {
   switch (problem) {
     case 'reason_missing':
-      return 'La commande `reject` demande une cause, sur la même ligne : `@kento-review reject <cause>`.'
+      return 'The `reject` command needs a cause, on the same line: `@kento-review reject <cause>`.'
     case 'reason_long':
-      return `La cause d'un \`reject\` fait au plus ${REASON_MAX} caractères.`
+      return `The cause of a \`reject\` has at most ${REASON_MAX} characters.`
     case 'id_missing':
-      return "Dans la conversation de la PR, `reject` demande l'id du constat, affiché dans la liste de la description : `@kento-review reject #3cf454 <cause>`."
+      return 'In the conversation of the PR, `reject` needs the id of the finding, shown in the list of the description: `@kento-review reject #3cf454 <cause>`.'
     case 'id_in_thread':
-      return "Dans le fil d'un constat, `reject` vise ce constat : écrivez la cause sans id, `@kento-review reject <cause>`."
+      return 'In the thread of a finding, `reject` applies to that finding. Write the cause without an id: `@kento-review reject <cause>`.'
   }
 }
 
 /** The answer to a command that the bot does not know: the list of the commands. */
 export const USAGE = [
-  'Commandes de Kentō, dans un commentaire de la PR (`@sakuga-review` marche aussi) :',
+  'Kentō commands, in a comment of the PR (`@sakuga-review` works too):',
   '',
-  '- `@kento-review [lite|balanced|heavy]` : une review de la PR au niveau donné (`lite` par défaut).',
-  "- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).",
-  '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
-  "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
-  "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
-  '- `@kento-review feedback <avis>` : donner un avis sur les reviews de Kentō (gratuit).',
+  '- `@kento-review [lite|balanced|heavy]`: a review of the PR at the given level (`lite` by default).',
+  '- `@kento-review heavy force`: a new review at a level that this commit already got (you pay for it twice).',
+  '- `@kento-review resolve [lite|balanced|heavy]`: answer the open threads, and resolve those that the code settles.',
+  '- `@kento-review reject <cause>`, as a reply in the thread of a finding: dismiss that finding, with its cause.',
+  '- `@kento-review reject #<id> <cause>`, in the conversation: dismiss the finding with this id (shown in the list of the description).',
+  '- `@kento-review feedback <opinion>`: give your opinion on the reviews of Kentō (free).',
   '',
-  `\`lite\` : le diff et les définitions qu'il utilise, ${levelCost('lite')}. ` +
-    `\`balanced\` : en plus, le code qui appelle le changement, ${levelCost('balanced')}. ` +
-    `\`heavy\` : le contexte de \`balanced\` avec plus de réflexion, ${levelCost('heavy')}. ` +
-    'Le modèle de chaque niveau se règle dans la config du repo.',
+  `\`lite\`: the diff and the definitions that it uses, ${levelCost('lite')}. ` +
+    `\`balanced\`: also the code that calls the change, ${levelCost('balanced')}. ` +
+    `\`heavy\`: the context of \`balanced\` with more reasoning, ${levelCost('heavy')}. ` +
+    'The config of the repo sets the model of each level.',
   '',
-  `La cause tient sur la ligne de la commande, en ${REASON_MAX} caractères au plus. ` +
-    'Seule une personne qui peut écrire dans le repo peut lancer une commande, sauf `feedback`.',
+  `The cause goes on the line of the command, in ${REASON_MAX} characters at most. ` +
+    'Only a person who can write to the repo can run a command, except `feedback`.',
 ].join('\n')
 
 /**
@@ -197,5 +197,5 @@ export const USAGE = [
  * URL.
  */
 export function usage(docsUrl: string | null | undefined): string {
-  return docsUrl ? `${USAGE}\n\nToutes les commandes, avec des exemples : [Les commandes de Kentō](${docsUrl}).` : USAGE
+  return docsUrl ? `${USAGE}\n\nAll the commands, with examples: [Kentō commands](${docsUrl}).` : USAGE
 }

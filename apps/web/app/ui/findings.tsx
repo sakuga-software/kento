@@ -17,7 +17,7 @@ import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
 import { decodeCursor, REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { PRECISION_DAYS, PRECISION_MIN, reasonText, type PrecisionReport } from '../findings/precision.ts'
-import { agoOrDate, plural } from './format.ts'
+import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { statusClass } from './pull.tsx'
@@ -28,8 +28,8 @@ import { Shell, type PageFrame } from './shell.tsx'
 export const CONSIDERED = 'a-considerer'
 
 /** REV-102. What the screens say of a finding to consider (REV-100). */
-export const CONSIDERED_LABEL = 'À considérer'
-export const CONSIDERED_HINT = 'Code déjà relu par une review précédente : ce finding ne bloque pas la PR.'
+export const CONSIDERED_LABEL = 'To consider'
+export const CONSIDERED_HINT = 'An earlier review already read this code. This finding does not block the pull request.'
 
 /** The filters, the search and the page of the list, as the query of the screen gives them. */
 export interface FindingList extends FindingQuery {
@@ -39,7 +39,7 @@ export interface FindingList extends FindingQuery {
   ruleId: string | null
   reason: string | null
   search: string
-  /** REV-22. The pull requests of one person: the link « Voir mes N findings open » of their screen. */
+  /** REV-22. The pull requests of one person: the link « See my N open findings » of their screen. */
   author: string | null
   days: number | null
   /** REV-102. The findings to consider only (`?type=a-considerer`). */
@@ -61,7 +61,7 @@ export interface FindingsPageProps {
   githubUrl: string
   /** For the dates of the screen. */
   now: Date
-  /** What the screen says after « Marquer dismissed » or « Marquer wontfix », from the query of the redirect. */
+  /** What the screen says after « Mark dismissed » or « Mark wontfix », from the query of the redirect. */
   notice?: FindingsNotice | null
 }
 
@@ -71,11 +71,11 @@ export type FindingsNotice =
   | { kind: 'error'; error: 'none' | 'too_many' | 'status' | 'reason' | 'reason_long' }
 
 const NOTICE_ERRORS: Record<Extract<FindingsNotice, { kind: 'error' }>['error'], string> = {
-  none: 'Cochez au moins un finding, puis choisissez l’action.',
-  too_many: `Au plus ${BULK_MAX} findings à la fois.`,
-  status: 'Choisissez « Marquer dismissed » ou « Marquer wontfix ».',
-  reason: 'Choisissez un motif, ou écrivez-le dans « Autre ».',
-  reason_long: `Le motif tient en ${REASON_MAX} caractères au plus.`,
+  none: 'Check at least one finding, then choose the action.',
+  too_many: `At most ${BULK_MAX} findings at a time.`,
+  status: 'Choose "Mark dismissed" or "Mark wontfix".',
+  reason: 'Choose a reason, or write it in "Other".',
+  reason_long: `The reason holds ${REASON_MAX} characters at most.`,
 }
 
 /** The notice that a query of the screen carries, after a form. */
@@ -109,22 +109,22 @@ const VIEW_LABELS: Record<FindingView, string> = {
   dismissed: 'dismissed',
   wontfix: 'wontfix',
   stale: 'stale',
-  closed: 'clos',
-  all: 'tous',
+  closed: 'closed',
+  all: 'all',
 }
 
 /** The priority of a severity, as the comments of the bot write it (engine/render.ts). */
 const PRIORITY: Record<Severity, { label: string; tag: string; name: string }> = {
-  critical: { label: 'P0', tag: 'tag-alert', name: 'critique' },
-  major: { label: 'P1', tag: 'tag-warn', name: 'majeur' },
-  minor: { label: 'P2', tag: 'tag-quiet', name: 'mineur' },
+  critical: { label: 'P0', tag: 'tag-alert', name: 'critical' },
+  major: { label: 'P1', tag: 'tag-warn', name: 'major' },
+  minor: { label: 'P2', tag: 'tag-quiet', name: 'minor' },
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
   bug: 'Bug',
-  security: 'Sécurité',
-  data: 'Données',
-  contract: 'Contrat',
+  security: 'Security',
+  data: 'Data',
+  contract: 'Contract',
   test: 'Test',
 }
 
@@ -209,11 +209,11 @@ function hasFilters(list: FindingList): boolean {
  * The Findings screen (REV-18): every finding of the org, filtered by repository, status, priority,
  * rule and a search, a page of 50 at a time.
  */
-/** « Précision sur 30 j : 78 % (n = 40) », or « n = 5 sur 10 » under the minimum, for the lead of the screen. */
+/** « Precision over 30 d: 78% (n = 40) », or « n = 5 of 10 » under the minimum, for the lead of the screen. */
 export function precisionLead(report: PrecisionReport): string {
   let org = report.org
-  let value = org.rate === null ? `n = ${org.closed} sur ${PRECISION_MIN}` : `${Math.round(org.rate * 100)} % (n = ${org.closed})`
-  return `Chaque finding des reviews de Kentō, et ce qu’il est devenu. Précision sur ${PRECISION_DAYS} j : ${value}.`
+  let value = org.rate === null ? `n = ${org.closed} of ${PRECISION_MIN}` : `${Math.round(org.rate * 100)}% (n = ${org.closed})`
+  return `Each finding of the reviews of Kentō, and what became of it. Precision over ${PRECISION_DAYS} d: ${value}.`
 }
 
 export function FindingsPage(handle: Handle<FindingsPageProps>) {
@@ -224,13 +224,13 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
     let admin = frame.viewer!.role === 'admin'
     let none = page.counts.all === 0 && !hasFilters(list)
     let tabs = (
-      <nav class="tabs" aria-label="Vues des findings">
+      <nav class="tabs" aria-label="Views of the findings">
         <a href={findingsHref({ ...filtersOf(list), tab: 'list' })} aria-current={list.tab === 'list' ? 'page' : undefined}>
-          Liste
+          List
         </a>
-        {/* The filters ride along, unused by the precision: « Liste » gives them back. */}
+        {/* The filters ride along, unused by the precision: « List » gives them back. */}
         <a href={findingsHref({ ...filtersOf(list), tab: 'precision' })} aria-current={list.tab === 'precision' ? 'page' : undefined}>
-          Précision
+          Precision
         </a>
       </nav>
     )
@@ -241,10 +241,10 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
           <PrecisionSection report={precision} org={org} />
         ) : none ? (
           <section class="empty" aria-labelledby="empty-title">
-            <h2 id="empty-title">Aucun finding pour l’instant</h2>
+            <h2 id="empty-title">No finding yet</h2>
             <p>
-              Chaque finding d’une review publiée par Kentō s’affichera ici, avec son statut : open, fixed quand un push le corrige,
-              dismissed ou wontfix quand quelqu’un l’écarte. <a href={routes.repos.href()}>Voir les repos</a>
+              Each finding of a review that Kentō publishes will show here, with its status: open, fixed when a push fixes it,
+              dismissed or wontfix when a person sets it aside. <a href={routes.repos.href()}>See the repos</a>
             </p>
           </section>
         ) : (
@@ -252,20 +252,20 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
             <FilterForm list={list} facets={facets} org={org} />
             {list.reason ? (
               <p class="findings-reason">
-                Motif « {list.reason} » · <a href={findingsHref({ ...filtersOf(list), reason: null })}>Retirer ce filtre</a>
+                Reason "{list.reason}" · <a href={findingsHref({ ...filtersOf(list), reason: null })}>Remove this filter</a>
               </p>
             ) : null}
             {list.author || list.days ? (
               <p class="findings-reason">
-                {list.author ? `PR de @${list.author}` : 'Toutes les PR'}
-                {list.days ? ` · ${list.days} derniers jours` : ''} ·{' '}
-                <a href={findingsHref({ ...filtersOf(list), author: null, days: null })}>Retirer ce filtre</a>
+                {list.author ? `Pull requests of @${list.author}` : 'All pull requests'}
+                {list.days ? ` · last ${list.days} days` : ''} ·{' '}
+                <a href={findingsHref({ ...filtersOf(list), author: null, days: null })}>Remove this filter</a>
               </p>
             ) : null}
-            <nav class="segmented-links findings-views" aria-label="Statut des findings">
+            <nav class="segmented-links findings-views" aria-label="Status of the findings">
               {FINDING_VIEWS.map((view) => (
                 <a href={findingsHref({ ...filtersOf(list), view })} aria-current={view === list.view ? 'page' : undefined}>
-                  {VIEW_LABELS[view]} <span class="list-filter-count">{page.counts[view].toLocaleString('fr-FR')}</span>
+                  {VIEW_LABELS[view]} <span class="list-filter-count">{count(page.counts[view])}</span>
                 </a>
               ))}
             </nav>
@@ -275,26 +275,26 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
               <div class="table-wrap findings-wrap">
                 <table class="table findings-table">
                   <caption class="visually-hidden">
-                    Findings {VIEW_LABELS[list.view]} de {org}, du plus récent au plus ancien
+                    {VIEW_LABELS[list.view]} findings of {org}, from the most recent to the oldest
                   </caption>
                   <thead>
                     <tr>
                       {admin ? (
                         <th scope="col" class="finding-check">
                           {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
-                          <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Sélectionner tous les findings de la page" />
+                          <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Select all the findings of the page" />
                         </th>
                       ) : null}
                       <th scope="col">Finding</th>
-                      <th scope="col">Statut</th>
-                      <th scope="col">Retrouvé</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Found again</th>
                       <th scope="col">Pull request</th>
                       <th scope="col">Source</th>
                       <th scope="col" class="num">
-                        Confiance
+                        Confidence
                       </th>
                       <th scope="col" class="num">
-                        Depuis
+                        Since
                       </th>
                     </tr>
                   </thead>
@@ -322,14 +322,14 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
   return () => {
     let { list, facets, org } = handle.props
     return (
-      <form class="findings-filters" method="get" action={routes.findings.href()} role="search" aria-label="Filtrer les findings">
+      <form class="findings-filters" method="get" action={routes.findings.href()} role="search" aria-label="Filter the findings">
         {list.view !== 'open' ? <input type="hidden" name="status" value={list.view} /> : null}
         {list.reason ? <input type="hidden" name="reason" value={list.reason} /> : null}
         {list.author ? <input type="hidden" name="author" value={list.author} /> : null}
         {list.days ? <input type="hidden" name="days" value={String(list.days)} /> : null}
         <div class="findings-filter findings-filter-search">
           <label class="field-label" for="findings-q">
-            Recherche
+            Search
           </label>
           <input
             class="input"
@@ -338,7 +338,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
             name="q"
             value={list.search}
             maxlength={SEARCH_MAX}
-            placeholder="Titre ou chemin"
+            placeholder="Title or path"
             autocomplete="off"
           />
         </div>
@@ -348,7 +348,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </label>
           <select class="input" id="findings-repo" name="repo">
             <option value="" selected={!list.repoId}>
-              Tous les repos
+              All repos
             </option>
             {facets.repos.map((repo) => (
               <option value={repo.id} selected={repo.id === list.repoId}>
@@ -359,11 +359,11 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
         </div>
         <div class="findings-filter">
           <label class="field-label" for="findings-priority">
-            Priorité
+            Priority
           </label>
           <select class="input" id="findings-priority" name="priority">
             <option value="" selected={!list.severity}>
-              Toutes
+              All
             </option>
             {SEVERITIES.map((severity) => (
               <option value={severity} selected={severity === list.severity}>
@@ -376,12 +376,12 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           <label class="field-label" for="findings-rule">
             Source
           </label>
-          {/* With no rule, « Review et règles » is the only choice: the list says so and stays still. */}
+          {/* With no rule, « Review and rules » is the only choice: the list says so and stays still. */}
           {/* A disabled select is not sent: a rule of the URL that the org no longer has stays in the list. */}
           {facets.rules.length === 0 && list.ruleId ? <input type="hidden" name="rule" value={list.ruleId} /> : null}
           <select class="input" id="findings-rule" name="rule" disabled={facets.rules.length === 0}>
             <option value="" selected={!list.ruleId}>
-              Review et règles
+              Review and rules
             </option>
             {facets.rules.map((rule) => (
               <option value={rule.id} selected={rule.id === list.ruleId}>
@@ -394,24 +394,24 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           <label class="field-label" for="findings-type">
             Type
           </label>
-          {/* REV-102: the findings that the last review lists under « À considérer (code déjà relu) ». */}
+          {/* REV-102: the findings that the last review lists under « To consider (code already reviewed) ». */}
           <select class="input" id="findings-type" name="type">
             <option value="" selected={!list.considered}>
-              Tous les findings
+              All findings
             </option>
             <option value={CONSIDERED} selected={list.considered}>
-              À considérer (code déjà relu)
+              To consider (code already reviewed)
             </option>
           </select>
         </div>
         <div class="findings-filter-actions">
-          {/* REV-91: with JavaScript a filter applies on change (findings.js); « Filtrer » serves a browser without it. */}
+          {/* REV-91: with JavaScript a filter applies on change (findings.js); « Filter » serves a browser without it. */}
           <button class="button findings-submit" type="submit">
-            Filtrer
+            Filter
           </button>
           {hasFilters(list) ? (
             <a class="button button-ghost" href={findingsHref({ view: list.view })}>
-              Effacer les filtres
+              Clear the filters
             </a>
           ) : null}
         </div>
@@ -431,28 +431,28 @@ function Empty(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
       <section class="empty" aria-labelledby="empty-title">
         <h2 id="empty-title">
           {list.view === 'all'
-            ? 'Aucun finding pour ces filtres'
+            ? 'No finding for these filters'
             : list.view === 'closed'
-              ? `Aucun finding clos${filtered ? ' pour ces filtres' : ''}`
-              : `Aucun finding ${label}${filtered ? ' pour ces filtres' : ''}`}
+              ? `No closed finding${filtered ? ' for these filters' : ''}`
+              : `No ${label} finding${filtered ? ' for these filters' : ''}`}
         </h2>
         <p>
           {list.view === 'open' && closed > 0 ? (
             <>
               <a href={findingsHref({ ...filtersOf(list), view: 'closed' })}>
-                Voir {closed > 1 ? `les ${closed.toLocaleString('fr-FR')} findings clos` : 'le finding clos'}
+                See {closed > 1 ? `the ${count(closed)} closed findings` : 'the closed finding'}
               </a>
               {filtered ? ' · ' : null}
             </>
           ) : list.view !== 'all' && page.counts.all > 0 ? (
             <>
               <a href={findingsHref({ ...filtersOf(list), view: 'all' })}>
-                Voir {page.counts.all > 1 ? `les ${page.counts.all.toLocaleString('fr-FR')} findings` : 'le finding'} de tous les statuts
+                See {page.counts.all > 1 ? `the ${count(page.counts.all)} findings` : 'the finding'} of all statuses
               </a>
               {filtered ? ' · ' : null}
             </>
           ) : null}
-          {filtered ? <a href={findingsHref({ view: list.view })}>Effacer les filtres</a> : null}
+          {filtered ? <a href={findingsHref({ view: list.view })}>Clear the filters</a> : null}
         </p>
       </section>
     )
@@ -476,14 +476,14 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
                 value={row.id}
                 form={BULK_FORM}
                 id={`select-${row.id}`}
-                aria-label={`Sélectionner « ${row.title} »`}
+                aria-label={`Select "${row.title}"`}
               />
             ) : null}
           </td>
         ) : null}
         <th scope="row">
           <span class="finding-cell">
-            <span class={`pri pri-${row.severity}`} title={`Priorité ${priority.name}`}>
+            <span class={`pri pri-${row.severity}`} title={`Priority ${priority.name}`}>
               {priority.label}
             </span>
             <span class="finding-text">
@@ -508,22 +508,22 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
             </span>
           </span>
         </th>
-        <td data-label="Statut">
+        <td data-label="Status">
           <span class="stack">
             <span class={`status status-mono ${statusClass(row.status)}`}>{row.status}</span>
             {row.statusReason ? <span class="hint">{row.statusReason}</span> : null}
           </span>
         </td>
-        <td data-label="Retrouvé">
+        <td data-label="Found again">
           {seenAgain ? (
             <span class="stack">
-              <span>oui</span>
+              <span>yes</span>
               <span class="hint mono">{row.lastSeenSha.slice(0, 7)}</span>
             </span>
           ) : (
             <>
               <span aria-hidden="true">–</span>
-              <span class="visually-hidden">non</span>
+              <span class="visually-hidden">no</span>
             </>
           )}
         </td>
@@ -538,7 +538,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
         <td data-label="Source">
           {row.ruleTitle ? (
             <span class="stack">
-              <span>Règle</span>
+              <span>Rule</span>
               <span class="hint">{row.ruleTitle}</span>
             </span>
           ) : (
@@ -548,10 +548,10 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
             </span>
           )}
         </td>
-        <td data-label="Confiance" class="num mono">
-          {row.confidence} %
+        <td data-label="Confidence" class="num mono">
+          {row.confidence}%
         </td>
-        <td data-label="Depuis" class="num mono">
+        <td data-label="Since" class="num mono">
           <time datetime={row.createdAt.toISOString()}>{agoOrDate(row.createdAt, now)}</time>
         </td>
       </tr>
@@ -559,7 +559,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
   }
 }
 
-/** « 1 à 50 sur 1 234 findings », and the links to the pages around. Shown when the tab has more than a page. */
+/** « 1 to 50 of 1,234 findings », and the links to the pages around. Shown when the tab has more than a page. */
 function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
   return () => {
     let { page, list } = handle.props
@@ -568,27 +568,27 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
     let to = page.offset + page.rows.length
     let filters = filtersOf(list)
     return (
-      <nav class="pager findings-pager" aria-label="Pages de la liste">
+      <nav class="pager findings-pager" aria-label="Pages of the list">
         <p class="pager-range">
-          {from.toLocaleString('fr-FR')} à {to.toLocaleString('fr-FR')} sur {page.matching.toLocaleString('fr-FR')} {plural(page.matching, 'finding')}
+          {count(from)} to {count(to)} of {count(page.matching)} {plural(page.matching, 'finding')}
         </p>
         <span class="pager-links">
           {page.previous ? (
             <a class="button button-small" href={findingsHref({ ...filters, before: page.previous })} rel="prev">
-              Précédents
+              Previous
             </a>
           ) : (
             <span class="button button-small" aria-disabled="true">
-              Précédents
+              Previous
             </span>
           )}
           {page.next ? (
             <a class="button button-small" href={findingsHref({ ...filters, after: page.next })} rel="next">
-              Suivants
+              Next
             </a>
           ) : (
             <span class="button button-small" aria-disabled="true">
-              Suivants
+              Next
             </span>
           )}
         </span>
@@ -598,10 +598,10 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
 }
 
 /**
- * REV-18. The actions on the findings checked in the table: « Marquer dismissed… » with the dialog of
- * the reason (shared with the screen of a pull request), and « Marquer wontfix ». Each finding
+ * REV-18. The actions on the findings checked in the table: « Mark dismissed… » with the dialog of
+ * the reason (shared with the screen of a pull request), and « Mark wontfix ». Each finding
  * changed gets a reply in its thread on GitHub. REV-91: a bar that floats at the foot of the screen;
- * with JavaScript it shows once a finding is checked, with « Désélectionner ».
+ * with JavaScript it shows once a finding is checked, with « Deselect ».
  */
 function BulkBar(handle: Handle<{ csrf: string | null; back: string }>) {
   return () => {
@@ -612,16 +612,16 @@ function BulkBar(handle: Handle<{ csrf: string | null; back: string }>) {
           {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
           <input type="hidden" name="back" value={back} />
         </form>
-        <div class="findings-bulk" role="group" aria-label="Actions sur les findings cochés" data-bulk>
+        <div class="findings-bulk" role="group" aria-label="Actions on the checked findings" data-bulk>
           <p class="findings-selected" data-selected aria-live="polite">
-            Cochez des findings pour les marquer.
+            Check findings to mark them.
           </p>
-          <DismissDialog id="bulk" form={BULK_FORM} trigger="Marquer dismissed…" submit="Marquer dismissed" />
+          <DismissDialog id="bulk" form={BULK_FORM} trigger="Mark dismissed…" submit="Mark dismissed" />
           <button class="button" type="submit" form={BULK_FORM} name="status" value="wontfix">
-            Marquer wontfix
+            Mark wontfix
           </button>
           <button class="button button-ghost findings-clear" type="button" data-select-none hidden>
-            Désélectionner
+            Deselect
           </button>
         </div>
       </>
@@ -637,7 +637,7 @@ function Notice(handle: Handle<{ notice: FindingsNotice }>) {
         <div class="banner banner-alert" role="alert">
           <AlertIcon />
           <p>
-            <strong>Rien n’a changé.</strong> {NOTICE_ERRORS[notice.error]}
+            <strong>Nothing changed.</strong> {NOTICE_ERRORS[notice.error]}
           </p>
         </div>
       )
@@ -649,18 +649,18 @@ function Notice(handle: Handle<{ notice: FindingsNotice }>) {
         {alert ? <AlertIcon /> : <CheckIcon />}
         <p>
           <strong>
-            {changed} {plural(changed, 'finding marqué', 'findings marqués')} {status}.
+            {changed} {plural(changed, 'finding')} marked {status}.
           </strong>{' '}
-          {replied > 0 ? `${replied} ${plural(replied, 'réponse postée', 'réponses postées')} dans les fils GitHub. ` : ''}
+          {replied > 0 ? `${replied} ${plural(replied, 'reply', 'replies')} posted in the GitHub threads. ` : ''}
           {unreplied > 0
-            ? `${unreplied} ${plural(unreplied, 'fil n’a pas reçu', 'fils n’ont pas reçu')} de réponse : GitHub a refusé ou n’a pas répondu ; le statut est enregistré quand même. `
+            ? `${unreplied} ${plural(unreplied, 'thread', 'threads')} got no reply. GitHub refused or did not answer. Kentō saved the status all the same. `
             : ''}
-          {unchanged > 0 ? `${unchanged} ${plural(unchanged, 'avait', 'avaient')} déjà ce statut et ce motif. ` : ''}
-          {fixed > 0 ? `${fixed} ${plural(fixed, 'finding fixed est resté', 'findings fixed sont restés')} tel quel : un push l’a corrigé. ` : ''}
+          {unchanged > 0 ? `${unchanged} already had this status and this reason. ` : ''}
+          {fixed > 0 ? `${fixed} fixed ${plural(fixed, 'finding stays', 'findings stay')} as is. A push fixed ${plural(fixed, 'it', 'them')}. ` : ''}
           {missing > 0
-            ? `${missing} ${plural(missing, 'finding n’existe plus', 'findings n’existent plus')} dans cette organisation, par exemple parce que son repo a été retiré depuis l’affichage de la page. La liste ci-dessous est à jour. `
+            ? `${missing} ${plural(missing, 'finding no longer exists', 'findings no longer exist')} in this organization, for example because someone removed the repo after the page loaded. The list below is up to date. `
             : ''}
-          {failed > 0 ? `${failed} ${plural(failed, 'finding n’a pas pu', 'findings n’ont pas pu')} être enregistré : réessayez.` : ''}
+          {failed > 0 ? `Kentō could not save ${failed} ${plural(failed, 'finding')}. Try again.` : ''}
         </p>
       </div>
     )

@@ -151,22 +151,22 @@ describe('USAGE', () => {
     assert.equal(
       USAGE,
       [
-        'Commandes de Kentō, dans un commentaire de la PR (`@sakuga-review` marche aussi) :',
+        'Kentō commands, in a comment of the PR (`@sakuga-review` works too):',
         '',
-        '- `@kento-review [lite|balanced|heavy]` : une review de la PR au niveau donné (`lite` par défaut).',
-        '- `@kento-review heavy force` : une nouvelle review à un niveau que ce commit a déjà reçu (elle est payée deux fois).',
-        '- `@kento-review resolve [lite|balanced|heavy]` : répondre aux fils ouverts, et résoudre ceux que le code règle.',
-        "- `@kento-review reject <cause>`, en réponse dans le fil d'un constat : écarter ce constat, avec sa cause.",
-        "- `@kento-review reject #<id> <cause>`, dans la conversation : écarter le constat de cet id (affiché dans la liste de la description).",
-        '- `@kento-review feedback <avis>` : donner un avis sur les reviews de Kentō (gratuit).',
+        '- `@kento-review [lite|balanced|heavy]`: a review of the PR at the given level (`lite` by default).',
+        '- `@kento-review heavy force`: a new review at a level that this commit already got (you pay for it twice).',
+        '- `@kento-review resolve [lite|balanced|heavy]`: answer the open threads, and resolve those that the code settles.',
+        '- `@kento-review reject <cause>`, as a reply in the thread of a finding: dismiss that finding, with its cause.',
+        '- `@kento-review reject #<id> <cause>`, in the conversation: dismiss the finding with this id (shown in the list of the description).',
+        '- `@kento-review feedback <opinion>`: give your opinion on the reviews of Kentō (free).',
         '',
-        "`lite` : le diff et les définitions qu'il utilise, environ 1 centime. " +
-          '`balanced` : en plus, le code qui appelle le changement, de 10 à 20 centimes. ' +
-          '`heavy` : le contexte de `balanced` avec plus de réflexion, de 30 à 50 centimes. ' +
-          'Le modèle de chaque niveau se règle dans la config du repo.',
+        '`lite`: the diff and the definitions that it uses, about 1 cent. ' +
+          '`balanced`: also the code that calls the change, 10 to 20 cents. ' +
+          '`heavy`: the context of `balanced` with more reasoning, 30 to 50 cents. ' +
+          'The config of the repo sets the model of each level.',
         '',
-        'La cause tient sur la ligne de la commande, en 500 caractères au plus. ' +
-          'Seule une personne qui peut écrire dans le repo peut lancer une commande, sauf `feedback`.',
+        'The cause goes on the line of the command, in 500 characters at most. ' +
+          'Only a person who can write to the repo can run a command, except `feedback`.',
       ].join('\n'),
     )
   })
@@ -199,8 +199,8 @@ describe('the account of the App (REV-96)', () => {
 describe('usage (REV-96)', () => {
   it('links the page of the commands when the service knows its public URL', () => {
     assert.equal(usage(null), USAGE)
-    assert.match(usage('https://review.sakuga.dev/docs/commandes'), /\[Les commandes de Kentō\]\(https:\/\/review\.sakuga\.dev\/docs\/commandes\)\.$/)
-    assert.ok(usage('https://review.sakuga.dev/docs/commandes').startsWith(USAGE))
+    assert.match(usage('https://review.sakuga.dev/docs/commands'), /\[Kentō commands\]\(https:\/\/review\.sakuga\.dev\/docs\/commands\)\.$/)
+    assert.ok(usage('https://review.sakuga.dev/docs/commands').startsWith(USAGE))
     assert.match(USAGE, /`@kento-review reject <cause>`/)
   })
 })

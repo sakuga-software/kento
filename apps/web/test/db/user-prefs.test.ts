@@ -119,7 +119,7 @@ describe('the preferences of a user and their screen', () => {
     )
   })
 
-  it('3. the preferences of one repository win over those of every repository; « Retirer » brings those back', async () => {
+  it('3. the preferences of one repository win over those of every repository; « Remove » brings those back', async () => {
     await users.savePref(orgId, alex, null, { autoReview: false, level: null })
     await users.savePref(orgId, alex, reviewId, { autoReview: true, level: 'balanced' })
     assert.equal((await push({ repo: ORCHARD, number: 20, head: headSha(20) })).outcome, 'skipped')
@@ -159,7 +159,7 @@ describe('the preferences of a user and their screen', () => {
     assert.equal(await users.screen(orgId, 'camille'), null)
   })
 
-  it('6. « Findings reçus » are the counts of the Findings screen on his pull requests; « Mes PR reviewées » lists them', async () => {
+  it('6. « Findings received » are the counts of the Findings screen on his pull requests; « My reviewed PRs » lists them', async () => {
     // Pull request 30 of Alex (two reviews), 31 of Camille, 32 of Alex (closed, one review).
     assert.equal((await push({ number: 30, head: headSha(30) })).outcome, 'queued')
     assert.equal((await push({ number: 31, head: headSha(31), author: CAMILLE })).outcome, 'queued')

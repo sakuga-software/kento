@@ -40,36 +40,40 @@ export interface QueuedPull {
 }
 
 /**
- * « 30/10 14:02 UTC ». The body holds no « for N min »: it changes only when the job, the cause or
+ * « 30 Oct 14:02 UTC ». The body holds no « for N min »: it changes only when the job, the cause or
  * the last runner change, so the publisher does not edit the comment at each run.
  */
 export function utcTime(date: Date): string {
   let pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(date.getUTCDate())}/${pad(date.getUTCMonth() + 1)} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())} UTC`
 }
 
-/** « aucun runner de Kentō n'est en ligne depuis … », or why the online ones do not take it. */
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** « no Kentō runner is online … », or why the online ones do not take it. */
 export function causeText(cause: StallCause): string {
   if (cause.kind === 'no_runner') {
     return cause.lastSeenAt
-      ? `aucun runner de Kentō n’est en ligne (dernier signal le ${utcTime(cause.lastSeenAt)})`
-      : 'aucun runner de Kentō n’est en ligne, et aucun n’a jamais appelé Kentō'
+      ? `no Kentō runner is online (last signal on ${utcTime(cause.lastSeenAt)})`
+      : 'no Kentō runner is online, and no runner ever called Kentō'
   }
   return cause.online === 1
-    ? '1 runner est en ligne, mais il ne la prend pas : il est occupé, ou il ne peut pas appeler le provider de ce repo'
-    : `${cause.online} runners sont en ligne, mais aucun ne la prend : ils sont occupés, ou ne peuvent pas appeler le provider de ce repo`
+    ? '1 runner is online, but it does not take the job. It is busy, or it cannot call the provider of this repo'
+    : `${cause.online} runners are online, but none takes the job. They are busy, or they cannot call the provider of this repo`
 }
+
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 /** The body of the comment that tells the pull request that its job waits, and why. */
 export function queuedComment(pull: QueuedPull): string {
-  let what = pull.kind === 'review' ? 'review' : 'résolution des fils'
-  let others = pull.count > 1 ? ` (et ${pull.count - 1} ${pull.count === 2 ? 'autre job' : 'autres jobs'} de cette PR)` : ''
-  let action = pull.cause.kind === 'no_runner' ? 'Pour l’équipe : démarrez un runner' : 'Pour l’équipe : vérifiez les runners'
-  action += pull.runnersUrl ? `, voir l’écran [Runners](${pull.runnersUrl}).` : ', voir l’écran Runners de Kentō.'
+  let what = pull.kind === 'review' ? 'review' : 'thread resolution'
+  let others = pull.count > 1 ? ` (and ${pull.count - 1} other ${pull.count === 2 ? 'job' : 'jobs'} of this PR)` : ''
+  let action = pull.cause.kind === 'no_runner' ? 'For the team: start a runner' : 'For the team: check the runners'
+  action += pull.runnersUrl ? ` on the [Runners](${pull.runnersUrl}) screen.` : ' on the Runners screen of Kentō.'
   return [
-    `**Kentō · ${what} en attente** au commit \`${pull.headSha.slice(0, 9)}\``,
-    `La ${what} \`${pull.level}\` de ce commit attend un runner depuis le ${utcTime(pull.waitingSince)}${others} : ${causeText(pull.cause)}.`,
-    `Elle partira seule dès qu’un runner la prendra : rien à relancer. Ce commentaire disparaît alors. ${action}`,
+    `**Kentō · ${what} waiting** at commit \`${pull.headSha.slice(0, 9)}\``,
+    `The \`${pull.level}\` ${what} of this commit${others} waits for a runner. It entered the queue on ${utcTime(pull.waitingSince)}. ${sentence(causeText(pull.cause))}.`,
+    `It starts by itself when a runner takes it. There is nothing to run again. This comment then goes away. ${action}`,
     queuedMarker(pull.repoId, pull.prNumber),
   ].join('\n\n')
 }

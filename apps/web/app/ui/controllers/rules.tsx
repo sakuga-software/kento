@@ -1,4 +1,4 @@
-// REV-19. The forms of the rules, from the tab Règles of a repository or from the settings: add, save,
+// REV-19. The forms of the rules, from the tab Rules of a repository or from the settings: add, save,
 // disable or enable, remove. An admin of the org only.
 import { createAction } from 'remix/router'
 
@@ -13,7 +13,7 @@ import { renderConfig } from './config.tsx'
 import { forbidden, formValues, isAdmin, readVersion, redirect, signedOf, type FormContext, type RulesExtra, type UiKit } from './kit.tsx'
 import { renderSettings } from './settings.tsx'
 
-/** Where a form of a rule goes back: the tab Règles of its repository, or the section Règles d’org. */
+/** Where a form of a rule goes back: the tab Rules of its repository, or the section Org rules. */
 function rulesBack(repoId: string | null, notice: RuleNotice, ruleId: string | null) {
   let query = new URLSearchParams({ rules: notice })
   if (ruleId) query.set('rule', ruleId)

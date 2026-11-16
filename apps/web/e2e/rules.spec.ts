@@ -7,7 +7,7 @@ import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
 import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The rules of a repository and of the org (REV-19) in a browser, with the test of the ticket: a
-// rule written in Config › Règles goes with the next job to a runner that reads the rules; disabled,
+// rule written in Config › Rules goes with the next job to a runner that reads the rules; disabled,
 // it no longer goes. A rule of the org, written in the settings, goes with it.
 
 const ORCHARD = { id: 7001, full_name: 'sakuga-software/orchard', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
@@ -20,8 +20,8 @@ function database() {
 /** orchard enabled, with no job and no rule. */
 async function reset(page: Page) {
   await page.goto('/repos')
-  await page.getByRole('button', { name: 'Relire GitHub' }).click()
-  await expect(page.getByText('Liste à jour.')).toBeVisible()
+  await page.getByRole('button', { name: 'Read GitHub again' }).click()
+  await expect(page.getByText('List up to date.')).toBeVisible()
   let sql = database()
   try {
     await sql`delete from jobs where repo_id in (select id from repos where full_name = ${ORCHARD.full_name})`
@@ -96,30 +96,30 @@ test.describe('the rules of a repository and of the org', () => {
     await reset(page)
 
     await openRepoConfig(page, 'orchard')
-    await page.getByRole('link', { name: 'Règles', exact: true }).click()
-    await expect(page.getByRole('heading', { name: /Règles de orchard/ })).toBeVisible()
-    await expect(page.getByText('Aucune règle pour ce repo.')).toBeVisible()
-    await expect(page.getByText(/jamais du code d’une PR/)).toBeVisible()
+    await page.getByRole('link', { name: 'Rules', exact: true }).click()
+    await expect(page.getByRole('heading', { name: /Rules of orchard/ })).toBeVisible()
+    await expect(page.getByText('No rule for this repo.')).toBeVisible()
+    await expect(page.getByText(/never from the code of a PR/)).toBeVisible()
     await expectNoAxeViolations(page)
 
     let form = page.locator('#repo-rule-new')
-    await form.getByLabel('Titre').fill(FK_RULE)
-    await form.getByLabel('Ce que la règle demande').fill('Chaque clé étrangère ajoutée par une migration a son index, dans la même migration.')
-    await form.getByLabel('Chemins').fill('**/migrations/**')
-    await form.getByLabel('Priorité minimale d’un constat de cette règle').selectOption('major')
-    await form.getByRole('button', { name: 'Ajouter la règle' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Règle ajoutée.' })).toBeVisible()
+    await form.getByLabel('Title').fill(FK_RULE)
+    await form.getByLabel('What the rule asks for').fill('Chaque clé étrangère ajoutée par une migration a son index, dans la même migration.')
+    await form.getByLabel('Paths').fill('**/migrations/**')
+    await form.getByLabel('Lowest priority of a finding of this rule').selectOption('major')
+    await form.getByRole('button', { name: 'Add the rule' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Rule added.' })).toBeVisible()
     let item = page.getByRole('listitem').filter({ hasText: FK_RULE })
     await expect(item.locator('.rule-tags').getByText('**/migrations/**', { exact: true })).toBeVisible()
-    await expect(item.getByText('au moins P1')).toBeVisible()
+    await expect(item.getByText('at least P1')).toBeVisible()
     await expectNoAxeViolations(page)
 
     let job = await claim(page, await push(page, 1))
     expect(job.rules?.map((r) => [r.title, r.paths, r.severityFloor, r.scope])).toEqual([[FK_RULE, ['**/migrations/**'], 'major', 'repo']])
 
-    await item.getByRole('button', { name: `Désactiver la règle ${FK_RULE}` }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Règle désactivée' })).toBeVisible()
-    await expect(page.getByRole('listitem').filter({ hasText: FK_RULE }).getByText(/désactivée par alex le/).first()).toBeVisible()
+    await item.getByRole('button', { name: `Disable the rule ${FK_RULE}` }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Rule disabled' })).toBeVisible()
+    await expect(page.getByRole('listitem').filter({ hasText: FK_RULE }).getByText(/disabled by alex on/).first()).toBeVisible()
     let after = await claim(page, await push(page, 2))
     expect(after.rules).toEqual([])
 
@@ -134,28 +134,28 @@ test.describe('the rules of a repository and of the org', () => {
     await reset(page)
 
     await page.goto('/settings')
-    await page.getByRole('navigation', { name: 'Sections des réglages' }).getByRole('link', { name: 'Règles d’org' }).click()
+    await page.getByRole('navigation', { name: 'Sections of the settings' }).getByRole('link', { name: 'Org rules' }).click()
     let section = page.locator('#regles')
-    await expect(section.getByRole('heading', { name: /Règles d’org/ })).toBeVisible()
+    await expect(section.getByRole('heading', { name: /Org rules/ })).toBeVisible()
 
-    await section.getByLabel('Titre').fill('Pas de console.log')
-    await section.getByLabel('Chemins').fill('/src/**')
-    await section.getByRole('button', { name: 'Ajouter la règle' }).click()
-    await expect(page.getByText(/« \/src\/\*\* » : un chemin commence sans « \/ »/)).toBeVisible()
-    await expect(page.locator('#regles').getByLabel('Titre')).toHaveValue('Pas de console.log')
+    await section.getByLabel('Title').fill('Pas de console.log')
+    await section.getByLabel('Paths').fill('/src/**')
+    await section.getByRole('button', { name: 'Add the rule' }).click()
+    await expect(page.getByText(/"\/src\/\*\*": a path starts without "\/"/)).toBeVisible()
+    await expect(page.locator('#regles').getByLabel('Title')).toHaveValue('Pas de console.log')
     await expectNoAxeViolations(page)
 
     section = page.locator('#regles')
-    await section.getByLabel('Ce que la règle demande').fill('Aucun console.log dans le code livré.')
-    await section.getByLabel('Chemins').fill('')
-    await section.getByRole('button', { name: 'Ajouter la règle' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Règle ajoutée.' })).toBeVisible()
+    await section.getByLabel('What the rule asks for').fill('Aucun console.log dans le code livré.')
+    await section.getByLabel('Paths').fill('')
+    await section.getByRole('button', { name: 'Add the rule' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Rule added.' })).toBeVisible()
     await expectNoAxeViolations(page)
 
     await page.goto('/repos')
     await openRepoConfig(page, 'orchard')
-    await page.getByRole('link', { name: 'Règles', exact: true }).click()
-    await expect(page.getByRole('link', { name: '1 règle d’org active' })).toBeVisible()
+    await page.getByRole('link', { name: 'Rules', exact: true }).click()
+    await expect(page.getByRole('link', { name: '1 active org rule' })).toBeVisible()
 
     let job = await claim(page, await push(page, 3))
     expect(job.rules?.map((r) => [r.title, r.paths, r.scope])).toEqual([['Pas de console.log', [], 'org']])
@@ -177,10 +177,10 @@ test.describe('the rules of a repository and of the org', () => {
     await signIn(page, 'camille')
     await page.goto('/repos')
     await openRepoConfig(page, 'orchard')
-    await page.getByRole('link', { name: 'Règles', exact: true }).click()
+    await page.getByRole('link', { name: 'Rules', exact: true }).click()
     await page.getByText(FK_RULE).click()
     await expect(page.getByText('Chaque FK a son index.')).toBeVisible()
-    await expect(page.getByRole('button', { name: /Ajouter la règle|Désactiver|Enregistrer/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Add the rule|Disable|Save/ })).toHaveCount(0)
     await expectNoAxeViolations(page)
   })
 })

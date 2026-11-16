@@ -10,9 +10,9 @@ export interface ProviderOption {
   label: string
   /** One line under the name: where its key comes from, or its state. */
   hint: string
-  /** REV-27. The provider « Par défaut » of the org: a level without a choice runs on it. */
+  /** REV-27. The « Default » provider of the org: a level without a choice runs on it. */
   isDefault: boolean
-  /** REV-27. Where the key of a call comes from, in words: « clé du runner », « clé du service »… */
+  /** REV-27. Where the key of a call comes from, in words: « key on the runner », « key of the service »… */
   keyFrom: string
   /** The service holds the key of a call: the OpenRouter key of the service, or a key that it keeps encrypted. */
   serviceHoldsKey: boolean
@@ -35,20 +35,20 @@ export function serviceOption(serviceKey: boolean): ProviderOption {
     ? {
         id: SERVICE_PROVIDER,
         kind: 'openrouter',
-        label: 'OpenRouter · clé du service',
-        hint: 'La clé OpenRouter du service, pour un runner de confiance ; un autre runner utilise la sienne.',
+        label: 'OpenRouter · key of the service',
+        hint: 'The OpenRouter key of the service, for a trusted runner. Another runner uses its own key.',
         isDefault: false,
-        keyFrom: 'clé du service',
+        keyFrom: 'key of the service',
         serviceHoldsKey: true,
         models: {},
       }
     : {
         id: SERVICE_PROVIDER,
         kind: 'openrouter',
-        label: 'OpenRouter · clé du runner',
-        hint: 'La clé OpenRouter du runner. Le service n’en a pas.',
+        label: 'OpenRouter · key on the runner',
+        hint: 'The OpenRouter key of the runner. The service has none.',
         isDefault: false,
-        keyFrom: 'clé du runner',
+        keyFrom: 'key on the runner',
         serviceHoldsKey: false,
         models: {},
       }

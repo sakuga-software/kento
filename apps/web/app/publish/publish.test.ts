@@ -81,8 +81,8 @@ describe('publishReview', () => {
     assert.equal(review!.state, 'CHANGES_REQUESTED')
     assert.equal(review!.commitId, HEAD1)
     // The fields that boo and the scripts read.
-    assert.match(review!.body, /\*\*Score de confiance : 2\/5\*\* · <picture>.*?<img alt="Blocking" src="https:\/\/review\.test\/assets\/pr\/blocking\.v2\.svg" [^>]+><\/picture> 1 point bloquant · Un calcul faux\./)
-    assert.match(review!.body, /<sub>Kentō · Niveau `lite` · `anthropic\/claude-haiku-5\.5` · 0,012 \$ · /)
+    assert.match(review!.body, /\*\*Confidence score: 2\/5\*\* · <picture>.*?<img alt="Blocking" src="https:\/\/review\.test\/assets\/pr\/blocking\.v2\.svg" [^>]+><\/picture> 1 blocking issue · Un calcul faux\./)
+    assert.match(review!.body, /<sub>Kentō · Level `lite` · `anthropic\/claude-haiku-5\.5` · \$0\.012 · /)
 
     let [comment] = fake.botThreads()
     assert.equal(comment!.path, 'src/sum.ts')
@@ -94,15 +94,15 @@ describe('publishReview', () => {
 
     let body = fake.state.pr.body
     assert.ok(body.startsWith('Description de la PR.\n\n<!-- sakuga-review:start -->'), 'the description of the author stays first')
-    assert.match(body, /<h2>Kentō · Score de confiance : 2\/5 <picture>.*?<img alt="2\/5" src="https:\/\/review\.test\/assets\/pr\/gauge-2\.v2\.svg" [^>]+><\/picture><\/h2>/)
+    assert.match(body, /<h2>Kentō · Confidence score: 2\/5 <picture>.*?<img alt="2\/5" src="https:\/\/review\.test\/assets\/pr\/gauge-2\.v2\.svg" [^>]+><\/picture><\/h2>/)
     assert.match(body, new RegExp(`<a href="https://github.com/sakuga-software/sakuga-review/pull/28#discussion_r${comment!.id}"><picture><source [^>]+thread-dark\\.v2\\.svg"><img alt="Thread" [^>]+></picture></a>`))
-    assert.match(body, /Reviews \(1\) · Dernier commit relu : \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Niveau `lite`/)
+    assert.match(body, /Reviews \(1\) · Last reviewed commit: \[fix: sum\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/1{40}\) · Kentō · Level `lite`/)
     assert.match(body, /<!-- sakuga-review:count 1 -->\n<!-- sakuga-review:end -->$/)
 
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
     assert.ok(fake.state.repoLabels.has('review: 2/5'))
     // REV-41: the label names the service that posts the review, as the review does.
-    assert.equal(fake.state.labelDescriptions.get('review: 2/5'), 'Score de confiance de Kentō (5 : prête à fusionner)')
+    assert.equal(fake.state.labelDescriptions.get('review: 2/5'), 'Kentō confidence score (5: ready to merge)')
 
     assert.equal(fake.state.checkRuns.length, 1)
     let [check] = fake.state.checkRuns
@@ -110,7 +110,7 @@ describe('publishReview', () => {
     assert.equal(check!.name, 'Sakuga Review')
     assert.equal(check!.head_sha, HEAD1)
     assert.equal(check!.conclusion, 'success')
-    assert.equal(check!.output.title, 'Score de confiance : 2/5')
+    assert.equal(check!.output.title, 'Confidence score: 2/5')
     assert.equal(check!.token, 'ghs_fake_checks_2', 'the check goes with its own token')
   })
 
@@ -126,7 +126,7 @@ describe('publishReview', () => {
         if (!publicUrl) assert.doesNotMatch(text, /<img|<picture/)
         for (let image of text.match(/<img [^>]*>/g) ?? []) assert.match(image, /^<img alt="[^"]+" src="https:\/\/review\.test\/assets\/pr\/[a-z0-9-]+\.v2\.svg"/)
       }
-      if (!publicUrl) assert.match(fake.state.reviews[0]!.body, /\*\*Score de confiance : 2\/5\*\* · 1 point bloquant · /)
+      if (!publicUrl) assert.match(fake.state.reviews[0]!.body, /\*\*Confidence score: 2\/5\*\* · 1 blocking issue · /)
     }
   })
 
@@ -154,11 +154,11 @@ describe('publishReview', () => {
   })
 
   it('ends the block with one line of the commands and the link to their page, after each review (REV-105)', async () => {
-    let docs = 'https://review.sakuga.dev/docs/commandes'
+    let docs = 'https://review.sakuga.dev/docs/commands'
     let { fake, publish, republish } = setup(HEAD1, true, docs)
     let line =
-      '<sub>Commandes de Kentō : `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · ' +
-      `\`@kento-review reject <cause>\` (dans un fil) ou \`reject #<id> <cause>\` · \`@kento-review feedback <avis>\` · [Les commandes de Kentō](${docs})</sub>`
+      '<sub>Kentō commands: `@kento-review [lite|balanced|heavy]` · `@kento-review resolve` · ' +
+      `\`@kento-review reject <cause>\` (in a thread) or \`reject #<id> <cause>\` · \`@kento-review feedback <opinion>\` · [Kentō commands](${docs})</sub>`
     await publish(payload())
     assert.ok(fake.state.pr.body.includes(`${line}\n\n<!-- sakuga-review:count 1 -->`))
 
@@ -168,14 +168,14 @@ describe('publishReview', () => {
     fake.state.pr.head = HEAD3
     await republish(payload({ head: HEAD3, costUsd: 0 }), HEAD2)
 
-    assert.equal(fake.state.pr.body.split('Commandes de Kentō').length - 1, 1)
+    assert.equal(fake.state.pr.body.split('<sub>Kentō commands:').length - 1, 1)
     assert.ok(fake.state.pr.body.includes(`${line}\n\n<!-- sakuga-review:count 2 -->`))
   })
 
   it('lists no command in the block when the service does not know its public URL (REV-105)', async () => {
     let { fake, publish } = setup()
     await publish(payload())
-    assert.doesNotMatch(fake.state.pr.body, /Commandes de Kentō/)
+    assert.doesNotMatch(fake.state.pr.body, /Kentō commands/)
   })
 
   it('also finds the thread of a finding worded differently a few lines away', async () => {
@@ -203,9 +203,9 @@ describe('publishReview', () => {
     assert.equal(outcome.resolved, 1)
     let replies = fake.repliesTo(thread!.id)
     assert.equal(replies.length, 1)
-    assert.match(replies[0]!.body, /^Ce constat n'apparaît plus au commit `333333333`, et le fichier a changé depuis\. Le fil peut être résolu\./)
+    assert.match(replies[0]!.body, /^This finding does not show anymore at commit `333333333`, and the file changed since\. The thread can be resolved\./)
     assert.match(replies[0]!.body, /<!-- sakuga-review:gone -->/)
-    assert.match(fake.state.pr.body, /1 constat d'une review précédente n'apparait plus : le fil peut être résolu\./)
+    assert.match(fake.state.pr.body, /1 finding of an earlier review does not show anymore\. Its thread can be resolved\./)
     assert.equal(fake.state.reviews.at(-1)!.state, 'APPROVED')
     assert.deepEqual(fake.state.pr.labels, ['review: 5/5'], 'the old score label goes')
 
@@ -281,7 +281,7 @@ describe('publishReview', () => {
     let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
     assert.equal(outcome.resolved, 1)
     assert.ok(fake.state.resolved.has(thread!.id))
-    assert.match(fake.state.pr.body, /1 constat d'une review précédente n'apparait plus/)
+    assert.match(fake.state.pr.body, /1 finding of an earlier review does not show anymore/)
   })
 
   it('resolves the thread when GitHub lets the App do it', async () => {
@@ -324,8 +324,8 @@ describe('publishReview', () => {
 
     assert.deepEqual(fake.repliesTo(thread!.id), [])
     for (let review of fake.state.reviews.slice(1)) {
-      assert.match(review.body, /Un force-push a retiré de l'historique le commit relu par un fil ouvert\./)
-      assert.match(review.body, /depuis la base `aaaaaaaaa`/)
+      assert.match(review.body, /A force-push removed from the history the commit that an open thread reviewed\./)
+      assert.match(review.body, /from the base `aaaaaaaaa`/)
     }
   })
 
@@ -340,7 +340,7 @@ describe('publishReview', () => {
     assert.deepEqual(fake.botThreads(), [])
     assert.deepEqual(warnings.map((w) => w.event), ['publish.inline_refused'])
     // Without a thread, the block shows the scenario of the finding.
-    assert.match(fake.state.pr.body, /sum\(1, 2\) rend -1\. \*\*Correction :\*\* Remettre \+\./)
+    assert.match(fake.state.pr.body, /sum\(1, 2\) rend -1\. \*\*Fix:\*\* Remettre \+\./)
   })
 
   it('keeps the inline comments to the sure P2 findings, five at most; a P1 outside the diff gets a comment on its file', async () => {
@@ -492,9 +492,9 @@ describe('publishReview', () => {
     let usage = usageOf(review)
     let action = reviewBody(answer, lines, 'lite', usage)
     let poster = { by: 'Kentō', handle: '@kento-review', icons: 'emoji' as const }
-    let asAction = (text: string) => text.replace('Kentō · Score', 'Sakuga Review · Score').replace('Kentō · Niveau', 'Niveau').replaceAll('@kento-review ', '@sakuga-review review ')
+    let asAction = (text: string) => text.replace('Kentō · Confidence', 'Sakuga Review · Confidence').replace('Kentō · Level', 'Level').replaceAll('@kento-review ', '@sakuga-review review ')
     let kento = reviewBody(answer, anchorOf, 'lite', usage, poster)
-    assert.match(kento, /Commentez `@kento-review balanced` \(de 10 à 20 centimes\) ou `@kento-review heavy` \(de 30 à 50 centimes\)\./)
+    assert.match(kento, /Comment `@kento-review balanced` \(10 to 20 cents\) or `@kento-review heavy` \(30 to 50 cents\)\./)
     assert.equal(asAction(kento), action)
     assert.equal(verdict(answer, anchorOf, 'lite'), verdict(answer, lines, 'lite'))
     assert.equal(verdict(answer, anchorOf, 'lite'), review.verdict)
@@ -526,14 +526,14 @@ describe('publishUnchanged (REV-89)', () => {
     assert.deepEqual(fake.repliesTo(thread!.id), [])
     let body = fake.state.pr.body
     assert.match(body, new RegExp(`#discussion_r${thread!.id}"><picture><source [^>]+thread-dark\\.v2\\.svg"><img alt="Thread" [^>]+></picture></a>`), 'the finding links to its open thread')
-    assert.match(body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
-    assert.match(body, /Dernier commit relu : \[docs: readme\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/2{40}\)/)
+    assert.match(body, /No reviewed file changed since commit `111111111`/)
+    assert.match(body, /Last reviewed commit: \[docs: readme\]\(https:\/\/github\.com\/sakuga-software\/sakuga-review\/commit\/2{40}\)/)
     assert.match(body, /<!-- sakuga-review:count 1 -->/, 'no new review: the count stays')
     assert.equal((body.match(/sakuga-review:start/g) ?? []).length, 1, 'one block, replaced')
     assert.deepEqual(fake.state.pr.labels, ['review: 2/5'])
     let check = fake.state.checkRuns.at(-1)!
     assert.equal(check.head_sha, HEAD2, 'the new head gets its check')
-    assert.equal(check.output.title, 'Score de confiance : 2/5')
+    assert.equal(check.output.title, 'Confidence score: 2/5')
   })
 
   it('gives the head of the source review when its P1 to consider has a thread (REV-106)', async () => {
@@ -545,13 +545,13 @@ describe('publishUnchanged (REV-89)', () => {
     fake.state.pr.head = HEAD2
     await publish(payload({ head: HEAD2, score: 2, verdict: 'COMMENT', findings: [unsure, considered] }))
     assert.equal(fake.botThreads().length, 2)
-    assert.match(fake.state.reviews.at(-1)!.body, / 2 points à vérifier · /)
+    assert.match(fake.state.reviews.at(-1)!.body, / 2 issues to check · /)
 
     fake.state.pr.head = HEAD3
     await republish(payload({ head: HEAD3, score: 2, verdict: 'COMMENT', findings: [unsure, considered], costUsd: 0 }), HEAD2)
     let check = fake.state.checkRuns.at(-1)!
     assert.equal(check.head_sha, HEAD3)
-    assert.match(check.output.summary, / 2 points à vérifier · /, 'the same count as the review of HEAD2')
+    assert.match(check.output.summary, / 2 issues to check · /, 'the same count as the review of HEAD2')
   })
 
   it('guard: a P1 to consider with a thread does not count when the source score is 4 (REV-106)', async () => {
@@ -561,11 +561,11 @@ describe('publishUnchanged (REV-89)', () => {
     assert.equal(fake.botThreads().length, 1)
     fake.state.pr.head = HEAD2
     await publish(payload({ head: HEAD2, score: 4, verdict: 'APPROVE', findings: [considered] }))
-    assert.match(fake.state.reviews.at(-1)!.body, / Rien de bloquant · /)
+    assert.match(fake.state.reviews.at(-1)!.body, / Nothing blocking · /)
 
     fake.state.pr.head = HEAD3
     await republish(payload({ head: HEAD3, score: 4, verdict: 'APPROVE', findings: [considered], costUsd: 0 }), HEAD2)
-    assert.match(fake.state.checkRuns.at(-1)!.output.summary, / Rien de bloquant · /, 'the head of the review of HEAD2')
+    assert.match(fake.state.checkRuns.at(-1)!.output.summary, / Nothing blocking · /, 'the head of the review of HEAD2')
   })
 
   it('throws when the block cannot be written, so that the publisher tries again', async () => {
@@ -577,7 +577,7 @@ describe('publishUnchanged (REV-89)', () => {
     await assert.rejects(republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1))
     assert.equal(fake.state.checkRuns.length, checks, 'no check before the block')
     await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
-    assert.match(fake.state.pr.body, /Aucun fichier relu n'a changé depuis le commit `111111111`/)
+    assert.match(fake.state.pr.body, /No reviewed file changed since commit `111111111`/)
   })
 
   it('posts its check on the head even when the job « Sakuga Review » of the Action already has one', async () => {
@@ -589,7 +589,7 @@ describe('publishUnchanged (REV-89)', () => {
     await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
     let ours = fake.state.checkRuns.filter((c) => c.head_sha === HEAD2 && c.app === undefined)
     assert.equal(ours.length, 1, 'the check of Kentō is posted')
-    assert.equal(ours[0]!.output.title, 'Score de confiance : 2/5')
+    assert.equal(ours[0]!.output.title, 'Confidence score: 2/5')
   })
 
   it('posts one check on the head, also when it publishes twice', async () => {
@@ -608,10 +608,10 @@ describe('an incremental review (REV-88)', () => {
     await publish(payload())
     fake.state.pr.head = HEAD2
     await publish(payload({ head: HEAD2, delta: { since: HEAD1, files: 2 } }))
-    assert.match(fake.state.pr.body, /Review incrémentale : les 2 fichiers de la PR modifiés depuis le commit `111111111` ont été relus/)
+    assert.match(fake.state.pr.body, /Incremental review: it read the 2 files of the PR that changed since commit `111111111`/)
     assert.match(fake.state.pr.body, /<!-- sakuga-review:count 2 -->/)
     fake.state.pr.head = HEAD3
     await publish(payload({ head: HEAD3, delta: { since: HEAD2, files: 1 } }))
-    assert.match(fake.state.pr.body, /Review incrémentale : le fichier de la PR modifié depuis le commit `222222222` a été relu ;/, 'the singular, for one file')
+    assert.match(fake.state.pr.body, /Incremental review: it read the file of the PR that changed since commit `222222222`\./, 'the singular, for one file')
   })
 })

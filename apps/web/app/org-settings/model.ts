@@ -87,28 +87,28 @@ function money(form: FormData, name: string, errors: Record<string, string>): nu
   let raw = field(form, name).replace(/\s/g, '').replace(',', '.')
   if (raw === '') return null
   if (!/^\d+(\.\d{1,2})?$/.test(raw)) {
-    errors[name] = 'Un montant en dollars, par exemple 8 ou 0,50 ; vide pour aucun plafond.'
+    errors[name] = 'An amount in dollars, for example 8 or 0.50. Leave it empty for no cap.'
     return null
   }
   let value = Number(raw)
-  if (value > MAX_CAP_USD) errors[name] = `${MAX_CAP_USD.toLocaleString('fr-FR')} $ au plus.`
+  if (value > MAX_CAP_USD) errors[name] = `$${MAX_CAP_USD.toLocaleString('en-US')} at most.`
   return value
 }
 
-/** « Plafond de coût »: the two limits (empty: none) and the alert percentage. */
+/** « Cost cap »: the two limits (empty: none) and the alert percentage. */
 export function readCapsForm(form: FormData): FormResult<OrgCaps> {
   let errors: Record<string, string> = {}
   let dailyCapUsd = money(form, 'dailyCapUsd', errors)
   let monthlyCapUsd = money(form, 'monthlyCapUsd', errors)
   let rawPct = field(form, 'alertPct').replace(/\s|%/g, '')
   let alertPct = Number(rawPct)
-  if (!/^\d{1,3}$/.test(rawPct) || alertPct < 1 || alertPct > 100) errors.alertPct = 'Un pourcentage entier, de 1 à 100.'
+  if (!/^\d{1,3}$/.test(rawPct) || alertPct < 1 || alertPct > 100) errors.alertPct = 'A whole percentage, from 1 to 100.'
   if (Object.keys(errors).length > 0) return { ok: false, errors }
   return { ok: true, value: { dailyCapUsd, monthlyCapUsd, alertPct } }
 }
 
 /**
- * « Bots de confiance »: one login per line, or separated by commas. `renovate` becomes
+ * « Trusted bots »: one login per line, or separated by commas. `renovate` becomes
  * `renovate[bot]`: a person is never a trusted bot.
  */
 export function readTrustedBotsForm(form: FormData): FormResult<string[]> {
@@ -118,12 +118,12 @@ export function readTrustedBotsForm(form: FormData): FormResult<string[]> {
     .filter(Boolean)
     .map((login) => (login.endsWith('[bot]') ? login : `${login}[bot]`))
   let unique = [...new Set(logins)]
-  if (unique.length > MAX_TRUSTED_BOTS) return { ok: false, errors: { trustedBots: `${MAX_TRUSTED_BOTS} bots au plus.` } }
+  if (unique.length > MAX_TRUSTED_BOTS) return { ok: false, errors: { trustedBots: `${MAX_TRUSTED_BOTS} bots at most.` } }
   let wrong = unique.find((login) => !BOT_LOGIN.test(login))
   if (wrong) {
     return {
       ok: false,
-      errors: { trustedBots: `« ${wrong.slice(0, 60)} » n’est pas le login d’un bot : le nom d’une App GitHub suivi de [bot], par exemple renovate[bot].` },
+      errors: { trustedBots: `"${wrong.slice(0, 60)}" is not the login of a bot. A bot login is the name of a GitHub App followed by [bot], for example renovate[bot].` },
     }
   }
   return { ok: true, value: unique }

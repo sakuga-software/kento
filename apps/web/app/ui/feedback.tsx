@@ -1,4 +1,4 @@
-// REV-107. « Retours »: the answers about the reviews of Kentō in the org, the newest first. A
+// REV-107. « Feedback »: the answers about the reviews of Kentō in the org, the newest first. A
 // command `feedback`, a comment that quotes the request for feedback, or a 👍 or 👎 on the request.
 import type { Handle } from 'remix/component'
 
@@ -13,19 +13,19 @@ import {
   type FeedbackSource,
 } from '../feedback/store.ts'
 import { feedbackRoutes } from '../routes.ts'
-import { agoOrDate, plural } from './format.ts'
+import { agoOrDate, count, plural } from './format.ts'
 import { shortName } from './precision.tsx'
 import { pullHref } from './pull.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 export const SOURCE_LABELS: Record<FeedbackSource, string> = {
-  command: 'Commande',
-  quote: 'Citation',
-  reaction: 'Réaction',
+  command: 'Command',
+  quote: 'Quote',
+  reaction: 'Reaction',
 }
 
 export const KIND_LABELS: Record<FeedbackKind, string> = {
-  person: 'Personne',
+  person: 'Person',
   agent: 'Agent',
 }
 
@@ -66,15 +66,15 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
       <Shell
         frame={frame}
         section="feedback"
-        title="Retours"
-        lead="Ce que les auteurs des PR disent des reviews de Kentō. Kentō le demande une fois par PR, après sa troisième review."
+        title="Feedback"
+        lead="What the authors of the pull requests say about the reviews of Kentō. Kentō asks once per pull request, after its third review."
       >
         {none ? (
           <section class="empty" aria-labelledby="empty-title">
-            <h2 id="empty-title">Aucun retour pour l’instant</h2>
+            <h2 id="empty-title">No feedback yet</h2>
             <p>
-              Après sa troisième review sur une PR, Kentō demande un avis à son auteur. Les réponses arrivent ici : une commande{' '}
-              <code>@kento-review feedback</code>, un commentaire qui cite la demande, ou un 👍 ou un 👎 sur la demande.
+              After its third review on a pull request, Kentō asks its author for feedback. The answers arrive here: a command{' '}
+              <code>@kento-review feedback</code>, a comment that quotes the request, or a 👍 or a 👎 on the request.
             </p>
           </section>
         ) : (
@@ -82,25 +82,25 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
             <FilterForm screen={screen} query={query} org={org} />
             {screen.rows.length === 0 ? (
               <section class="empty" aria-labelledby="empty-title">
-                <h2 id="empty-title">Aucun retour pour ces filtres</h2>
+                <h2 id="empty-title">No feedback for these filters</h2>
                 <p>
-                  <a href={feedbackHref()}>Voir tous les retours</a>
+                  <a href={feedbackHref()}>See all the feedback</a>
                 </p>
               </section>
             ) : (
               <>
                 <p class="hint">
-                  {screen.total.toLocaleString('fr-FR')} {plural(screen.total, 'retour')}
-                  {screen.total > screen.rows.length ? `, les ${FEEDBACK_PAGE_MAX} plus récents affichés` : ''}.
+                  {count(screen.total)} {plural(screen.total, 'answer')}
+                  {screen.total > screen.rows.length ? `, the ${FEEDBACK_PAGE_MAX} most recent shown` : ''}.
                 </p>
                 <div class="table-wrap">
                   <table class="table feedback-table">
-                    <caption class="visually-hidden">Retours sur les reviews de Kentō dans {org}, du plus récent au plus ancien</caption>
+                    <caption class="visually-hidden">Feedback on the reviews of Kentō in {org}, from the most recent to the oldest</caption>
                     <thead>
                       <tr>
-                        <th scope="col">Retour</th>
+                        <th scope="col">Feedback</th>
                         <th scope="col">PR</th>
-                        <th scope="col">Auteur</th>
+                        <th scope="col">Author</th>
                         <th scope="col">Source</th>
                         <th scope="col" class="num">
                           Score
@@ -135,7 +135,7 @@ function FeedbackLine(handle: Handle<{ row: FeedbackRow; org: string; now: Date 
             <>
               {' '}
               <a class="feedback-link" href={row.url}>
-                Voir sur GitHub
+                Open on GitHub
               </a>
             </>
           ) : null}
@@ -164,14 +164,14 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
   return () => {
     let { screen, query, org } = handle.props
     return (
-      <form class="feedback-filters" method="get" action={feedbackRoutes.feedback.href()} role="search" aria-label="Filtrer les retours">
+      <form class="feedback-filters" method="get" action={feedbackRoutes.feedback.href()} role="search" aria-label="Filter the feedback">
         <div class="findings-filter">
           <label class="field-label" for="feedback-repo">
             Repo
           </label>
           <select class="input" id="feedback-repo" name="repo">
             <option value="" selected={!query.repoId}>
-              Tous les repos
+              All repos
             </option>
             {screen.repos.map((repo) => (
               <option value={repo.id} selected={repo.id === query.repoId}>
@@ -186,7 +186,7 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
           </label>
           <select class="input" id="feedback-source" name="source">
             <option value="" selected={!query.source}>
-              Toutes
+              All
             </option>
             {FEEDBACK_SOURCES.map((source) => (
               <option value={source} selected={source === query.source}>
@@ -197,11 +197,11 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
         </div>
         <div class="findings-filter">
           <label class="field-label" for="feedback-kind">
-            Auteur
+            Author
           </label>
           <select class="input" id="feedback-kind" name="auteur">
             <option value="" selected={!query.kind}>
-              Personnes et agents
+              People and agents
             </option>
             {FEEDBACK_KINDS.map((kind) => (
               <option value={kind} selected={kind === query.kind}>
@@ -212,11 +212,11 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
         </div>
         <div class="findings-filter-actions">
           <button class="button" type="submit">
-            Filtrer
+            Filter
           </button>
           {query.repoId || query.source || query.kind ? (
             <a class="button button-ghost" href={feedbackHref()}>
-              Effacer les filtres
+              Clear the filters
             </a>
           ) : null}
         </div>

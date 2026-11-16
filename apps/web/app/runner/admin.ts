@@ -4,9 +4,9 @@ import { CLAIM_WAIT_SECONDS, type JobKind } from '@sakuga-review/protocol'
 
 import { toDate } from '../db/rows.ts'
 
-/** A runner whose last call is this recent is « En ligne »: it long-polls a claim every 30 s. */
+/** A runner whose last call is this recent is « Online »: it long-polls a claim every 30 s. */
 export const ONLINE_SECONDS = 3 * CLAIM_WAIT_SECONDS
-/** After this with no call, a runner is « Hors ligne »; before it, its signal is « en retard ». */
+/** After this with no call, a runner is « Offline »; before it, its signal is « late ». */
 export const OFFLINE_SECONDS = 60 * 60
 /** A registration token lives this long. */
 export const REGISTRATION_TTL_MINUTES = 60
@@ -15,7 +15,7 @@ export const REVOKED_SHOWN_DAYS = 30
 /** A registration token that expired without a runner stays on the screen this long. */
 export const EXPIRED_SHOWN_DAYS = 7
 /**
- * REV-37. A runner with no call for this long is « muet »: the Runners screen folds it away, and an
+ * REV-37. A runner with no call for this long is « silent »: the Runners screen folds it away, and an
  * admin can revoke all of them at once. Ephemeral runners of a CI end there when nobody revokes them.
  */
 export const SILENT_HOURS = 24
