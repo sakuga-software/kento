@@ -853,8 +853,7 @@ test('a job of a service of an earlier release has no rules: the result has no r
   assert.equal(result.outcome, 'done');
   if (result.outcome !== 'done') return;
   assert.ok(!('rule_id' in result.review.findings[0]!), 'a finding without a rule sends no rule_id');
-  // REV-113. The schema is the same with or without rules: the engine drops the reference R1.
-  assert.ok(JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema keeps rule_id without rules');
+  assert.ok(!JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the answer schema has no rule_id without rules');
 });
 
 // --- answered threads (REV-71) ------------------------------------------------------------------

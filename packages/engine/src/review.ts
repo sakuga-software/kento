@@ -1,7 +1,7 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { anchor, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
+import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
@@ -153,7 +153,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
 
 async function askAndFinish(input: ReviewInput, config: LevelConfig, prepared: PreparedReview): Promise<ReviewResult> {
   const tools = reviewTools(input, config);
-  const { answer, usage } = await askModel(input, config, prepared.parts, undefined, tools);
+  const { answer, usage } = await askModel(input, config, prepared.parts, undefined, tools, undefined, packSchema(prepared));
   return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
 }
 
@@ -174,6 +174,11 @@ export async function reviewUnlessUnchanged(input: ReviewInput): Promise<ReviewR
 /** REV-68. The tools of one review on the head, when the level has a tool budget. */
 export function reviewTools(input: ReviewInput, config: LevelConfig): RepoTools | undefined {
   return config.tools ? new RepoTools(input.repoDir, input.head, config.tools) : undefined;
+}
+
+/** REV-113. The answer schema for the sections that the pack holds, whatever their references. */
+export function packSchema(prepared: Pick<PreparedReview, 'rules' | 'earlier' | 'threads'>): object {
+  return answerSchema({ rules: prepared.rules.length > 0, earlier: prepared.earlier.length > 0, threads: prepared.threads.length > 0 });
 }
 
 /** What a review reads before its model call: the merge base, the pack and the changed lines. */

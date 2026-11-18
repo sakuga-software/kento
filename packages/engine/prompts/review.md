@@ -250,7 +250,6 @@ fence. Write the text fields in English.
       "scenario": "The input or state, and the wrong result it gives, in two or three sentences.",
       "fix": "The change that removes the defect, in one or two sentences.",
       "suggestion": "",
-      "rule_id": null,
       "follows": null
     }
   ],
@@ -259,9 +258,8 @@ fence. Write the text fields in English.
   "threads": [{ "id": "T1", "verdict": "refuted | upheld", "reason": "One English sentence: the fact of the code." }]
 }
 
-Give `threads` only when the message holds an `Answered threads` section,
-`follows` only when it holds an `Earlier findings` section, and `rule_id` only
-when it holds a `Rules` section. Otherwise give `null`.
+Give `threads` only when the message holds an `Answered threads` section, and
+`follows` only when it holds an `Earlier findings` section.
 
 `line` and `start_line` are line numbers in the new version of the file, on
 lines that the diff adds or changes; `start_line` equals `line` for one line. If

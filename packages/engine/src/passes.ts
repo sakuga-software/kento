@@ -4,7 +4,7 @@
 import type { Answer, Finding, Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import { askJson, askModel } from './model.ts';
-import { finishReview, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
+import { finishReview, packSchema, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
 
 /** The angle of a pass: its id, and the text that the prompt of the review gets at its end. */
 export type Pass = { id: string; focus: string };
@@ -95,10 +95,11 @@ export async function reviewInPasses(
   const prepared = prepareReview(input, options.passConfig);
   // REV-68. One budget for the review: the passes share it.
   const tools = reviewTools(input, options.passConfig);
+  const schema = packSchema(prepared);
   // REV-113. The passes send the same pack within seconds: its end carries a cache mark of 5 minutes,
   // and the focus of each pass follows it.
   const pack = prepared.parts.map((part, i, all) => (i === all.length - 1 ? { ...part, cache: '5m' as const } : part));
-  const settled = await afterFirstStart(passes, (pass, onStart) => askModel(input, options.passConfig, pack, pass.focus, tools, onStart));
+  const settled = await afterFirstStart(passes, (pass, onStart) => askModel(input, options.passConfig, pack, pass.focus, tools, onStart, schema));
 
   const reports: PassReport[] = [];
   const answers: { pass: Pass; answer: Answer }[] = [];

@@ -101,7 +101,8 @@ export async function askJson<T>(
 }
 
 /**
- * The review call, with ANSWER_SCHEMA. `pack`: the text of the pack, or its parts (buildPack).
+ * The review call. `pack`: the text of the pack, or its parts (buildPack). `schema`: the answer
+ * schema for the sections of the pack (answerSchema).
  * `focus`: the angle of a pass (REV-20); none for a review in one pass. `tools`: the tools of REV-68;
  * none for the pack alone. The focus and the note of the tools go at the end of the user message,
  * after the pack: the system prompt and the pack stay the same for every pass (REV-113). A level
@@ -114,9 +115,10 @@ export async function askModel(
   focus?: string,
   tools?: RepoTools,
   onStart?: () => void,
+  schema: object = ANSWER_SCHEMA,
 ): Promise<Reply> {
   const patchNote = config.patch ? PATCH_NOTE : undefined;
-  const asked = config.patch ? withPatch(ANSWER_SCHEMA) : ANSWER_SCHEMA;
+  const asked = config.patch ? withPatch(schema) : schema;
   const notes = [focus, tools ? TOOLS_NOTE : undefined].filter(Boolean).join('\n\n');
   const parts: MessagePart[] = typeof pack === 'string' ? [{ text: pack }] : [...pack];
   if (notes) parts.push({ text: `\n\n${notes}\n` });

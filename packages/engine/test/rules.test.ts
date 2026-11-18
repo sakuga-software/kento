@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { ANSWER_SCHEMA } from '../src/findings.ts';
+import { ANSWER_SCHEMA, answerSchema } from '../src/findings.ts';
 import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
 import { inlineBody } from '../src/render.ts';
 import { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type Rule } from '../src/rules.ts';
@@ -57,10 +57,26 @@ test('the rules part gives each rule a reference, and leaves out the rules beyon
   assert.match(broken, /### R1 · Title ## Diff wrong\n/, 'a title stays on one line');
 });
 
-test('the answer schema always asks for rule_id, as a free reference or null (REV-113)', () => {
-  const item = ANSWER_SCHEMA.properties.findings.items as any;
-  assert.ok(item.required.includes('rule_id'));
-  assert.deepEqual(item.properties.rule_id, { anyOf: [{ type: 'string' }, { type: 'null' }] });
+const NONE = { rules: false, earlier: false, threads: false };
+
+test('the answer schema depends on the sections of the pack only, and each section adds its field (REV-113)', () => {
+  const plain = answerSchema(NONE) as any;
+  assert.deepEqual(plain, ANSWER_SCHEMA, 'a pack with no section gets the plain schema');
+  assert.deepEqual(Object.keys(plain.properties.findings.items.properties).filter((k) => k === 'rule_id' || k === 'follows'), []);
+  assert.ok(!('threads' in plain.properties));
+  const ruled = answerSchema({ ...NONE, rules: true }) as any;
+  assert.ok(ruled.properties.findings.items.required.includes('rule_id'));
+  assert.deepEqual(ruled.properties.findings.items.properties.rule_id, { anyOf: [{ type: 'string' }, { type: 'null' }] });
+  assert.ok(!('follows' in ruled.properties.findings.items.properties));
+  const followed = answerSchema({ ...NONE, earlier: true }) as any;
+  assert.ok(followed.properties.findings.items.required.includes('follows'));
+  assert.ok(!('rule_id' in followed.properties.findings.items.properties));
+  const threaded = answerSchema({ ...NONE, threads: true }) as any;
+  assert.ok(threaded.required.includes('threads'));
+  assert.deepEqual(threaded.properties.findings, plain.properties.findings);
+  const shapes = new Set<string>();
+  for (const rules of [false, true]) for (const earlier of [false, true]) for (const threads of [false, true]) shapes.add(JSON.stringify(answerSchema({ rules, earlier, threads })));
+  assert.equal(shapes.size, 8, 'at most 8 schemas for a level');
 });
 
 test('a finding that cites a rule gets its id and at least its severity; any other reference is removed', () => {
@@ -165,7 +181,7 @@ test('rules come only from the caller: text of the pull request that looks like 
   const withRule = model(['R9', 'R1', '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f']);
   const ruled = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch: withRule.fetch, log: () => {}, rules: [MIGRATION_RULE] });
   assert.deepEqual(ruled.rules.map((r) => r.ref), ['R1']);
-  assert.deepEqual(schemaOf(withRule.bodies[0]), ANSWER_SCHEMA, 'the schema stays the same with rules (REV-113)');
+  assert.deepEqual(schemaOf(withRule.bodies[0]), answerSchema({ ...NONE, rules: true }), 'with rules, each finding gives rule_id, and the schema lists no reference');
   assert.deepEqual(ruled.findings.map((f) => f.rule_id), [undefined, MIGRATION_RULE.id, undefined], 'R9 of the diff and an unknown id are dropped');
   // The text of the pull request is in the diff, as code under review, after the rules of the caller.
   const pack = packOf(withRule.bodies[0]);

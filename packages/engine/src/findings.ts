@@ -127,10 +127,8 @@ const FINDING_SCHEMA = {
     scenario: { type: 'string' },
     fix: { type: 'string' },
     suggestion: { type: 'string' },
-    rule_id: REFERENCE,
-    follows: REFERENCE,
   },
-  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion', 'rule_id', 'follows'],
+  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion'],
   additionalProperties: false,
 };
 
@@ -167,12 +165,7 @@ export function withPatch(schema: object): object {
   return { ...answer, properties: { ...answer.properties, findings: { ...answer.properties.findings, items: finding } } };
 }
 
-/**
- * The answer schema. It is the same for every review of a level (REV-113): Anthropic puts the schema
- * in the prompt, so a schema that changes from one review to the next misses the prompt cache. The
- * references of the rules (REV-19), of the earlier findings (REV-99) and of the answered threads
- * (REV-71) are free strings or null, and the engine drops those that the pack does not hold.
- */
+/** The answer schema of a pack with no Rules, no Earlier findings and no Answered threads section. */
 export const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
@@ -188,11 +181,34 @@ export const ANSWER_SCHEMA = {
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
-    threads: THREADS_SCHEMA,
   },
-  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'threads'],
+  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review'],
   additionalProperties: false,
 };
+
+/** The sections of the pack that the model can cite: each one adds its field to the answer schema. */
+export type PackSections = { rules: boolean; earlier: boolean; threads: boolean };
+
+/**
+ * The answer schema for the sections that the pack holds. The schema changes only with the presence
+ * of a section, never with its references: a level has at most 8 schemas, and each one stays in the
+ * prompt cache of Anthropic (REV-113). The references are free strings, and the engine drops those
+ * that the pack does not hold.
+ * - Rules (REV-19): each finding gives `rule_id`.
+ * - Earlier findings (REV-99): each finding gives `follows`.
+ * - Answered threads (REV-71): the answer gives `threads`.
+ * The bench of REV-113 measured almost no applicable suggestion when every finding held `rule_id`
+ * and `follows`. Thus a pack without these sections gets the plain schema.
+ */
+export function answerSchema(sections: PackSections): typeof ANSWER_SCHEMA {
+  const extra: Record<string, unknown> = {};
+  if (sections.rules) extra.rule_id = REFERENCE;
+  if (sections.earlier) extra.follows = REFERENCE;
+  const finding = { ...FINDING_SCHEMA, properties: { ...FINDING_SCHEMA.properties, ...extra }, required: [...FINDING_SCHEMA.required, ...Object.keys(extra)] };
+  const properties = { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } };
+  if (!sections.threads) return { ...ANSWER_SCHEMA, properties } as typeof ANSWER_SCHEMA;
+  return { ...ANSWER_SCHEMA, properties: { ...properties, threads: THREADS_SCHEMA }, required: [...ANSWER_SCHEMA.required, 'threads'] } as typeof ANSWER_SCHEMA;
+}
 
 /** The line numbers, in the new version of each file, that the pull request adds or changes. */
 export function changedLines(repo: string, base: string, head: string): ChangedLines {

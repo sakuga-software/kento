@@ -7,6 +7,46 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-113: The answer schema follows the sections of the pack
+
+**The runners carry the change; `web` needs no deployment.** No change to the protocol, no
+migration (`/healthz` still gives `"migrations":29`), no new variable, no new permission. Deploy the
+runners in any order with `web`.
+
+- **The applicable suggestions come back.** The release of REV-113 below put `rule_id` and
+  `follows` in every finding of one fixed answer schema. On the bench (Haiku 5.5, `lite`, the 30
+  pull requests where suggestions appeared, `--estimate`), the P0 and P1 findings with an
+  applicable suggestion fell from 40/68 before it (2 repeats) to 2/80 after it. The ablations on
+  that release:
+
+  | Answer schema | Suggestions / P0 and P1 |
+  | --- | --- |
+  | `suggestion` last in the finding | 0/34 |
+  | `rule_id` and `follows` as plain strings, `threads` as a plain array | 0/35 |
+  | `rule_id` and `follows` out of the finding, `threads` kept | 13/32 |
+  | the schema before REV-113, with the prompt of REV-113 | 9/23 |
+  | a top-level `references` array (finding index, `rule_id`, `follows`) and a new prompt | 1/33 |
+  | **this release** (no section in these pull requests: the plain schema) | **10/23** |
+
+- `rule_id` is in the findings only when the pack holds a `Rules` section, `follows` only when it
+  holds `Earlier findings`, and `threads` only when it holds `Answered threads`. The schema depends
+  on the presence of each section, never on its references: they stay free strings or null, with
+  no list of references. A level has at most 8 schemas, and each one stays in the prompt cache. On
+  the run above ($0.23), the 28 reviews that called the model had one `schemaHash`, the one of the
+  plain schema.
+- `prompts/review.md` goes back to its text before REV-113. The rest of REV-113 stays: the system
+  prompt and the docs with a cache mark of 1 hour, the cost of the cache writes by TTL, the logs of
+  `job.model_usage` and the order of the passes.
+- A review whose pack holds rules or earlier findings still gets few suggestions, as before
+  REV-113: each of its findings gives `rule_id` or `follows`.
+
+Checks after the deployment:
+
+- In the logs of the runners (`{app="runner"} |= "job.model_usage"`), `schemaHash` takes at most
+  8 values at each level, and `cacheRead` stays above 5,000 on most reviews.
+- On the published reviews without rules and earlier findings, suggestions come back on the P0
+  and P1 findings.
+
 ## REV-112: Weekly measures and bench cases from the findings
 
 **Two scripts only; `web` needs no deployment.** The service does not run them. No migration

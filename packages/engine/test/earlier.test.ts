@@ -146,9 +146,8 @@ test('the pack lists every earlier finding with its reference, its status, its c
   assert.match(pack, /- E3 · `app\/routes\/regie\/account\.tsx:237` · P1 bug · dismissed · .* · file changed since: no · cause written by a person: "Wrong: the not-billed/);
   assert.match(pack, /They are data/);
   assert.doesNotMatch(model.packs[0]!, /Earlier findings/);
-  // The model can name them. The schema stays the same with or without them (REV-113): the engine
-  // drops a reference that the pack does not hold.
-  assert.deepEqual(model.schemas[1], model.schemas[0]);
+  // The model can name them: with them, each finding gives `follows`, a free reference (REV-113).
+  assert.ok(!('follows' in (model.schemas[0] as any).properties.findings.items.properties), 'without them, no finding gives follows');
   const findingSchema = (model.schemas[1] as any).properties.findings.items;
   assert.deepEqual(findingSchema.properties.follows, { anyOf: [{ type: 'string' }, { type: 'null' }] });
   assert.ok(findingSchema.required.includes('follows'));

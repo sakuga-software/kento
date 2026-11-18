@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { askJson, providerLevelConfig, reviewPullRequest, type Answer } from '../src/index.ts';
+import { ANSWER_SCHEMA, withPatch } from '../src/findings.ts';
 import { afterFirstStart, reviewInPasses } from '../src/passes.ts';
 import { costFromTable } from '../src/prices.ts';
 import { MAX_PACK_MARKS, requestTokens, userContent } from '../src/providers.ts';
@@ -103,16 +104,28 @@ describe('the prefix of the prompt cache', () => {
     const { fetch, bodies } = anthropic();
     const config = providerLevelConfig('balanced', 'anthropic');
     const rule = { id: 'r1', scope: 'repo' as const, title: 'Money in cents', text: 'No float for money.', paths: [], severityFloor: null };
-    const earlier = {
-      findings: [{ key: 'abc', path: 'app/src/app.ts', line: 4, title: 'Float for money', severity: 'major' as const, category: 'bug' as const, status: 'open' as const, reason: null, commit: heads[shop]!.first }],
+    const otherRules = [
+      { id: 'r2', scope: 'org' as const, title: 'Posts in Markdown', text: 'No HTML in a post.', paths: [], severityFloor: 'major' as const },
+      { id: 'r3', scope: 'repo' as const, title: 'Dates in UTC', text: 'No local time.', paths: [], severityFloor: null },
+    ];
+    const earlierOf = (repo: string, key: string, title: string) => ({
+      findings: [{ key, path: 'app/src/app.ts', line: 4, title, severity: 'major' as const, category: 'bug' as const, status: 'open' as const, reason: null, commit: heads[repo]!.first }],
       last: null,
-    };
-    await reviewPullRequest({ repoDir: shop, base: heads[shop]!.base, head: heads[shop]!.second, level: 'balanced', config, kind: 'anthropic', apiKey: 'k', fetch, log: quiet, rules: [rule], earlier });
+    });
+    await reviewPullRequest({ repoDir: shop, base: heads[shop]!.base, head: heads[shop]!.second, level: 'balanced', config, kind: 'anthropic', apiKey: 'k', fetch, log: quiet, rules: [rule], earlier: earlierOf(shop, 'abc', 'Float for money') });
+    await reviewPullRequest({ repoDir: blog, base: heads[blog]!.base, head: heads[blog]!.second, level: 'balanced', config, kind: 'anthropic', apiKey: 'k', fetch, log: quiet, rules: otherRules, earlier: earlierOf(blog, 'def', 'HTML in a post') });
     await reviewPullRequest({ repoDir: blog, base: heads[blog]!.base, head: heads[blog]!.first, level: 'balanced', config, kind: 'anthropic', apiKey: 'k', fetch, log: quiet });
-    const [a, b] = bodies;
+    const [a, b, plain] = bodies;
     assert.match(a.messages[0].content.map((c: any) => c.text).join(''), /## Rules[\s\S]*## Earlier findings/, 'the first review holds rules and earlier findings');
+    assert.match(b.messages[0].content.map((c: any) => c.text).join(''), /### R2 · Dates in UTC[\s\S]*## Earlier findings/, 'the second review holds other rules and other earlier findings');
     assert.deepEqual(a.system, b.system);
-    assert.deepEqual(a.output_config, b.output_config, 'the schema is in the cached prefix: it must not change');
+    assert.deepEqual(a.system, plain.system);
+    assert.deepEqual(a.output_config, b.output_config, 'the same sections give the same schema, whatever their references: it is in the cached prefix');
+    // REV-113. In each finding, `rule_id` and `follows` cost the applicable suggestions on the bench:
+    // a pack without these sections gets the plain schema.
+    const findingKeys = (body: any) => Object.keys(body.output_config.format.schema.properties.findings.items.properties);
+    assert.ok(findingKeys(a).includes('rule_id') && findingKeys(a).includes('follows'));
+    assert.deepEqual(plain.output_config.format.schema, withPatch(ANSWER_SCHEMA), 'no section: the plain schema');
     assert.deepEqual(a.system[0].cache_control, { type: 'ephemeral', ttl: '1h' });
     assertValidMarks(a);
     assertValidMarks(b);
