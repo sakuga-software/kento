@@ -13,7 +13,9 @@
     "test": "NODE_ENV=test remix test 'app/**/*.test.ts'",
     "test:db": "NODE_ENV=test remix test 'test/db/**/*.test.ts' --concurrency 1",
     "e2e": "playwright test",
-    "design:board": "node --import remix/node-tsx scripts/design-board.tsx"
+    "design:board": "node --import remix/node-tsx scripts/design-board.tsx",
+    "measures": "node --import remix/node-tsx scripts/measures.ts",
+    "bench:cases": "node --import remix/node-tsx scripts/bench-cases.ts"
   },
   "engines": {
     "node": ">=26"

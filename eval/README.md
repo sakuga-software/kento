@@ -51,6 +51,27 @@ GPT-5.6 Sol ($0.13) cost the most. A run of MiMo on the seven cases costs about 
 [`results.md`](results.md) holds the results of that day. A run writes its answers to `runs/`,
 which git ignores.
 
+## Cases from the findings of Kentō (REV-112)
+
+`apps/web/scripts/bench-cases.ts` reads the statuses of the findings in the database of the web
+service, on a read-only connection, and writes cases for [`martian/run.ts`](martian/run.ts):
+
+- a finding `dismissed` with a reason is a known false positive: a variant must not report it again;
+- a finding `fixed` or `wontfix` is a golden comment: a variant must find it again.
+
+Each case is the last commit where a review found its findings, one commit for each pull request.
+Their source is `kento` and their reviewer is `kento-review[bot]`: they count in the `kento`
+profile of the results, never in the independent recall. Keep them in their own file:
+
+```bash
+DATABASE_URL=... pnpm -F @sakuga-review/web bench:cases ../../eval/internal/subset-kento.json --weeks 12
+node eval/martian/run.ts --subset eval/internal/subset-kento.json ...
+```
+
+`fixed` counts too many defects: a file can change for another reason. A dismissal that has no
+reason (a 👎) gives no case. No status records an applied suggestion yet: its commit makes the
+finding `fixed`.
+
 ## A rejected false positive (REV-95)
 
 [`rejected/run.ts`](rejected/run.ts) builds a small pull request with a false P1 (« the port is not

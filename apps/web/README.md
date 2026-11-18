@@ -209,6 +209,8 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @saku
 | `pnpm -F @sakuga-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
 | `pnpm -F @sakuga-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @sakuga-review/web exec playwright install chromium` once. |
 | `pnpm -F @sakuga-review/web design:board`  | Writes the frames of `design/socle/` from the components. |
+| `pnpm -F @sakuga-review/web measures`      | REV-112. The weekly measures of the findings of every org (handled rate, reject rate, calibration, findings for each pull request), from `DATABASE_URL`, read-only. `--weeks 12`, `--json`. |
+| `pnpm -F @sakuga-review/web bench:cases <out.json>` | REV-112. The cases of the bench from the findings, from `DATABASE_URL`, read-only. See [eval/README.md](../../eval/README.md). |
 
 `test:db` creates one throwaway database per test file on the server of `TEST_DATABASE_URL`, and
 drops it at the end:

@@ -77,7 +77,8 @@ const JUDGE_PROMPT_VERSION = sha256(JUDGE_PROMPT).slice(0, 12);
 
 type Golden = { comment: string; severity: string; category: string; reviewers?: string[] };
 type Pr = {
-  source: 'martian' | 'internal' | 'feedback';
+  /** REV-112: `kento` cases come from the findings of Kentō (apps/web scripts/bench-cases.ts), apart from the recall. */
+  source: 'martian' | 'internal' | 'feedback' | 'kento';
   repo: string;
   url: string;
   owner?: string;
@@ -566,7 +567,7 @@ async function main() {
         const scored = rows.filter((row) => !source || row.source === source);
         return Object.fromEntries(Object.keys(PROFILES).map((name) => [name, profileMetrics(scored, name as Profile)]));
       };
-      const profiles = { all: bySource(), martian: bySource('martian'), internal: bySource('internal'), feedback: bySource('feedback') };
+      const profiles = { all: bySource(), martian: bySource('martian'), internal: bySource('internal'), feedback: bySource('feedback'), kento: bySource('kento') };
       // Core on the golden comments of severity Medium or more: the defects that the prompt aims at.
       const blockingRows = rows.map((row) => ({
         categories: row.categories.map((category, i) => (row.severities[i] === 'Low' ? 'low' : category)),

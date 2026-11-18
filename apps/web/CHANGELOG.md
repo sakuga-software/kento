@@ -7,6 +7,24 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-112: Weekly measures and bench cases from the findings
+
+**Two scripts only; `web` needs no deployment.** The service does not run them. No migration
+(`/healthz` still gives `"migrations":29`), no new variable, no new permission.
+
+- `pnpm -F @sakuga-review/web measures` reads the findings of every org and gives, for each week
+  (Monday, UTC), by repository, severity, category and decile of confidence: the handled rate
+  `(fixed + applied) / closed`, the reject rate `dismissed / closed`, with Wilson intervals at
+  95 %, and the findings for each pull request of a published review. The calibration over all the
+  weeks shows the deciles where the reject rate goes up, and whether the threshold of 70 splits the
+  reject rates. `closed` is `fixed + applied + dismissed + wontfix`; open and stale findings are
+  out. `applied` is 0: no status records an applied suggestion.
+- `pnpm -F @sakuga-review/web bench:cases <out.json>` writes cases of the bench (source `kento`):
+  a finding dismissed with a reason is a known false positive, a fixed or wontfix finding is a
+  case of non-regression. See eval/README.md.
+- Both scripts read `DATABASE_URL` on a connection that Postgres keeps read-only
+  (`default_transaction_read_only`), and never print the URL.
+
 ## REV-113: A prompt cache that the reviews read
 
 **The runners carry the change; `web` needs no deployment.** No change to the protocol: the new
