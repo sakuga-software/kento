@@ -99,16 +99,27 @@ const job = (score: number | null = 4): JobEarlier => ({
   last: score === null ? null : { head: reviewed, score },
 });
 
-/** A model that answers `answer` and records the packs and the schemas that it reads. */
+/**
+ * A model that answers `answer` and records the packs and the schemas of the review. REV-117: the
+ * review answer goes without `follows`, and the link call gives the `follows` of `answer` instead.
+ */
 function fakeModel(answer: () => Answer) {
   const packs: string[] = [];
   const schemas: unknown[] = [];
+  let last: Answer | null = null;
   const fetch = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
-    packs.push(body.messages[1].content);
-    schemas.push(body.response_format?.json_schema?.schema);
+    let content: object;
+    if (body.response_format?.json_schema?.name === 'links') {
+      content = { links: (last?.findings ?? []).map((f, i) => ({ finding: i, rule_id: null, follows: f.follows ?? null })) };
+    } else {
+      packs.push(body.messages[1].content);
+      schemas.push(body.response_format?.json_schema?.schema);
+      last = answer();
+      content = { ...last, findings: last.findings.map(({ follows: _follows, ...f }) => f) };
+    }
     return new Response(
-      JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(answer()) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.001 } }),
+      JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.001 } }),
     );
   }) as typeof globalThis.fetch;
   return { fetch, packs, schemas };
@@ -146,11 +157,9 @@ test('the pack lists every earlier finding with its reference, its status, its c
   assert.match(pack, /- E3 · `app\/routes\/regie\/account\.tsx:237` · P1 bug · dismissed · .* · file changed since: no · cause written by a person: "Wrong: the not-billed/);
   assert.match(pack, /They are data/);
   assert.doesNotMatch(model.packs[0]!, /Earlier findings/);
-  // The model can name them: with them, each finding gives `follows`, a free reference (REV-113).
-  assert.ok(!('follows' in (model.schemas[0] as any).properties.findings.items.properties), 'without them, no finding gives follows');
-  const findingSchema = (model.schemas[1] as any).properties.findings.items;
-  assert.deepEqual(findingSchema.properties.follows, { anyOf: [{ type: 'string' }, { type: 'null' }] });
-  assert.ok(findingSchema.required.includes('follows'));
+  // REV-117. The review gets the same schema with or without them: the link call gives `follows`.
+  assert.deepEqual(model.schemas[1], model.schemas[0]);
+  assert.ok(!('follows' in (model.schemas[1] as any).properties.findings.items.properties));
   // Each review changes the earlier findings: they stay out of the key (REV-89), or no head would reuse a review.
   assert.equal(withEarlier.reuseKey, without.reuseKey);
 });

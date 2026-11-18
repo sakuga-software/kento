@@ -7,6 +7,53 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-117: A separate call links the findings to the rules and the earlier findings
+
+**The runners carry the change; `web` needs no deployment.** No change to the protocol, no
+migration (`/healthz` still gives `"migrations":29`), no new variable, no new permission. Deploy the
+runners in any order with `web`.
+
+- **The applicable suggestions come back on the reviews with rules or earlier findings.** The
+  answer schema of a review never holds `rule_id` or `follows` now: a finding has the plain schema,
+  and only `threads` depends on the pack. A level has at most 2 schemas.
+- After the review, and only when the pack holds a Rules or an Earlier findings section, one small
+  call links the findings: the `lite` model of the provider (Claude Haiku 5.5 at Anthropic and on
+  OpenRouter, the models of the level for a server of the OpenAI API or Ollama), at low effort, with
+  no thinking at Anthropic, and the prompt `prompts/link.md`. It reads the title, the file, the line
+  and the scenario of each finding, and the lists of rules and earlier findings. The engine applies
+  its links before the severity floor of a rule, the anchors, the fingerprint and the link to an
+  earlier finding, as before. A link to an unknown finding or reference is ignored. When the call
+  fails, the review stays valid with no link, and the runner logs `job.link_failed`.
+- Its tokens and its cost count in the review. `job.model_usage` gives `linkStatus`, `linkModel`,
+  `linkPromptTokens`, `linkCompletionTokens`, `linkCostUsd`, `linkedRules` and `linkedFollows`.
+- The intros of the Rules and Earlier findings sections no longer ask for `rule_id` or `follows`.
+  `prompts/review.md` keeps its text: the bench lost the suggestions when its example finding
+  ended with `suggestion`.
+- The bench (`eval/martian/run.ts`) takes `--rules <file>`: the rules of a JSON file go to every
+  review.
+
+The bench: Haiku 5.5, `lite`, the 30 pull requests where suggestions appeared, `--estimate`, one
+run each. The rules: "Errors are handled" and "Values that can be null are checked" on every path,
+"No any in TypeScript" on `*.ts` and `*.tsx`.
+
+| Run | Rules | Suggestions / P0 and P1 | Review cost |
+| --- | --- | --- | --- |
+| REV-113, plain schema (`presence`) | no | 10/23 | $0.234 |
+| this change, `review.md` without the `follows` of its example | yes | 1/48 | $0.219 |
+| the same, without rules | no | 2/31 | $0.201 |
+| **this change** | yes | **14/21** | $0.288 |
+
+On the last run, every review had one `schemaHash` (`c01af5fc6942`, the plain schema). The link
+call cost $0.002 for 23 calls (2 failed), and linked 16 findings to a rule. 4 reviews of 30 found
+no answer (32,000 output tokens, or the time limit), against 2 on the REV-113 run.
+
+Checks after the deployment:
+
+- In the logs of the runners (`{app="runner"} |= "job.model_usage"`), `linkStatus` is `done` on
+  most reviews with rules or earlier findings, and `linkCostUsd` stays near $0.0001.
+- On the published reviews with rules, suggestions come back on the P0 and P1 findings, and the
+  rule of a finding is the right one.
+
 ## REV-113: The answer schema follows the sections of the pack
 
 **The runners carry the change; `web` needs no deployment.** No change to the protocol, no

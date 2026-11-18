@@ -27,15 +27,16 @@ export type Finding = {
    */
   patch?: string;
   /**
-   * REV-19. The rule that the finding applies. The model gives the reference of a rule of the pack
-   * (`R1`) or null; the engine replaces it with the id of the rule, or removes it (rules.ts).
+   * REV-19. The rule that the finding applies. REV-117: the link call gives the reference of a rule
+   * of the pack (`R1`, link.ts); the engine replaces it with the id of the rule, or removes it (rules.ts).
    */
   rule_id?: string | null;
   /** The title of that rule, that the service adds when it stores the review. */
   rule_title?: string;
   /**
-   * REV-99. The earlier finding that this one continues. The model gives the reference of the pack
-   * (`E1`) or null; the engine replaces it with the key of that finding, or removes it (earlier.ts).
+   * REV-99. The earlier finding that this one continues. REV-117: the link call gives the reference
+   * of the pack (`E1`, link.ts); the engine replaces it with the key of that finding, or removes it
+   * (earlier.ts).
    */
   follows?: string | null;
   /**
@@ -111,9 +112,6 @@ export type HunkLines = Map<string, Set<number>>;
  */
 export type Anchors = ChangedLines | ((finding: Finding) => number | null);
 
-/** A reference of the pack (`R1`, `E1`) or null. The engine drops a reference that the pack does not hold. */
-const REFERENCE = { anyOf: [{ type: 'string' }, { type: 'null' }] };
-
 const FINDING_SCHEMA = {
   type: 'object',
   properties: {
@@ -165,7 +163,7 @@ export function withPatch(schema: object): object {
   return { ...answer, properties: { ...answer.properties, findings: { ...answer.properties.findings, items: finding } } };
 }
 
-/** The answer schema of a pack with no Rules, no Earlier findings and no Answered threads section. */
+/** The answer schema of a pack with no Answered threads section. */
 export const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
@@ -186,28 +184,16 @@ export const ANSWER_SCHEMA = {
   additionalProperties: false,
 };
 
-/** The sections of the pack that the model can cite: each one adds its field to the answer schema. */
-export type PackSections = { rules: boolean; earlier: boolean; threads: boolean };
-
 /**
- * The answer schema for the sections that the pack holds. The schema changes only with the presence
- * of a section, never with its references: a level has at most 8 schemas, and each one stays in the
- * prompt cache of Anthropic (REV-113). The references are free strings, and the engine drops those
- * that the pack does not hold.
- * - Rules (REV-19): each finding gives `rule_id`.
- * - Earlier findings (REV-99): each finding gives `follows`.
- * - Answered threads (REV-71): the answer gives `threads`.
- * The bench of REV-113 measured almost no applicable suggestion when every finding held `rule_id`
- * and `follows`. Thus a pack without these sections gets the plain schema.
+ * The answer schema of a review: `threads` only when the pack holds an Answered threads section
+ * (REV-71). A level has at most 2 schemas, and each one stays in the prompt cache of Anthropic (REV-113).
+ * REV-117: a finding never gives `rule_id` or `follows`. On the bench of REV-113, a finding with
+ * these fields almost never gave an applicable suggestion. A separate call links the findings to the
+ * rules and to the earlier findings (link.ts).
  */
-export function answerSchema(sections: PackSections): typeof ANSWER_SCHEMA {
-  const extra: Record<string, unknown> = {};
-  if (sections.rules) extra.rule_id = REFERENCE;
-  if (sections.earlier) extra.follows = REFERENCE;
-  const finding = { ...FINDING_SCHEMA, properties: { ...FINDING_SCHEMA.properties, ...extra }, required: [...FINDING_SCHEMA.required, ...Object.keys(extra)] };
-  const properties = { ...ANSWER_SCHEMA.properties, findings: { type: 'array', items: finding } };
-  if (!sections.threads) return { ...ANSWER_SCHEMA, properties } as typeof ANSWER_SCHEMA;
-  return { ...ANSWER_SCHEMA, properties: { ...properties, threads: THREADS_SCHEMA }, required: [...ANSWER_SCHEMA.required, 'threads'] } as typeof ANSWER_SCHEMA;
+export function answerSchema(sections: { threads: boolean }): typeof ANSWER_SCHEMA {
+  if (!sections.threads) return ANSWER_SCHEMA;
+  return { ...ANSWER_SCHEMA, properties: { ...ANSWER_SCHEMA.properties, threads: THREADS_SCHEMA }, required: [...ANSWER_SCHEMA.required, 'threads'] } as typeof ANSWER_SCHEMA;
 }
 
 /** The line numbers, in the new version of each file, that the pull request adds or changes. */

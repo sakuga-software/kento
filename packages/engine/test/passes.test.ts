@@ -200,3 +200,26 @@ test('two verdicts that disagree keep the finding, and a verdict that names no f
   assert.deepEqual(result.dropped.map((f) => f.title), ['Other']);
   assert.ok(logs.includes('the check named 1 finding(s) that the list does not hold: 7'));
 });
+
+test('REV-117: one link call on the findings that the check kept, before the rules and the score', async () => {
+  const rule = { id: 'rule-sql', scope: 'repo' as const, title: 'Parameters in SQL', text: 'Every query takes its values as parameters.', paths: [], severityFloor: 'critical' as const };
+  const links: string[] = [];
+  const passes = fakeModel(
+    { security: answer([finding('SQL injection')]), data: answer([finding('SQL injection by id')]), contracts: answer([]) },
+    [{ index: 1, keep: false, reason: 'same defect as 0' }],
+  );
+  const fetch = (async (url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    if (body.response_format.json_schema.name !== 'links') return passes.fetch(url, init);
+    links.push(body.messages[1].content);
+    const content = JSON.stringify({ links: [{ finding: 0, rule_id: 'R1', follows: null }] });
+    return new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content } }], usage: { prompt_tokens: 3, completion_tokens: 2, cost: 0.0005 } }));
+  }) as typeof globalThis.fetch;
+  const result = await reviewInPasses({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {}, rules: [rule] }, { passConfig, verifyConfig });
+  assert.equal(links.length, 1);
+  assert.match(links[0]!, /"title": "SQL injection"/);
+  assert.doesNotMatch(links[0]!, /SQL injection by id/, 'the dropped finding is not linked');
+  assert.deepEqual(result.findings.map((f) => [f.title, f.rule_id, f.severity]), [['SQL injection', 'rule-sql', 'critical']]);
+  assert.equal(result.link.status, 'done');
+  assert.ok(Math.abs(result.usage.cost! - (0.003 + 0.01 + 0.0005)) < 1e-9, 'the link call counts in the cost');
+});

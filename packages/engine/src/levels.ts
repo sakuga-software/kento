@@ -9,6 +9,11 @@ export type LevelConfig = {
   /** The time limit of each attempt, in the order of `models`. */
   timeoutsMs: number[];
   effort: 'low' | 'medium' | 'high';
+  /**
+   * REV-117. `false`: the request asks for no thinking, when the model accepts it (thinkingOff in
+   * providers.ts). Anthropic only. Not set: the default thinking of the model.
+   */
+  thinking?: false;
   maxTokens: number;
   /** The most a provider can charge, in dollars a million tokens. */
   maxPrice: { prompt: number; completion: number };

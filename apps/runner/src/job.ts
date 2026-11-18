@@ -334,8 +334,17 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
         effort: u.effort ?? null,
         thinking: u.thinking ?? null,
         costUsd: u.cost ?? null,
+        // REV-117. The call that links the findings to the rules and the earlier findings: its cost is in `costUsd`.
+        linkStatus: result.link.status,
+        linkModel: result.link.usage?.model ?? null,
+        linkPromptTokens: result.link.usage?.prompt_tokens ?? null,
+        linkCompletionTokens: result.link.usage?.completion_tokens ?? null,
+        linkCostUsd: result.link.usage?.cost ?? null,
+        linkedRules: result.link.rules,
+        linkedFollows: result.link.follows,
       });
     }
+    if (result.link.status === 'failed') log('warn', 'job.link_failed', { jobId: job.id, error: result.link.error ?? null });
     const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined);
     // A service that sends `delta` reads it in the result.
     return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;

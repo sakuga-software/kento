@@ -662,7 +662,7 @@ test('REV-113. job.model_usage gives the cache read, the cache writes by TTL, th
   await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY)] }), deps(api, stub));
   const line = logs.find((l) => l.includes('job.model_usage'))!;
   assert.ok(line, 'the runner logs job.model_usage');
-  for (const part of ['"cacheRead":5000', '"cacheWrite5m":0', '"cacheWrite1h":9000', '"promptTokens":16000', '"effort":"medium"', '"thinking":"adaptive"']) {
+  for (const part of ['"cacheRead":5000', '"cacheWrite5m":0', '"cacheWrite1h":9000', '"promptTokens":16000', '"effort":"medium"', '"thinking":"adaptive"', '"linkStatus":"none"']) {
     assert.ok(line.includes(part), `job.model_usage holds ${part}`);
   }
   assert.match(line, /"systemHash":"[0-9a-f]{12}","schemaHash":"[0-9a-f]{12}"/);
@@ -804,17 +804,25 @@ test('a config whose provider is not in the job fails it with the reason, and ca
 const RULE_ID = '5d0e6c1a-8b7f-4e2d-9c3b-1f2a3b4c5d6e';
 const OTHER_RULE_ID = '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f';
 
-/** A model that cites `cite` in its finding, and records the pack and the schema of each call. */
+/**
+ * A model whose link call (REV-117) cites `cite` for each finding. It records the pack and the schema
+ * of each review call in `bodies`, and the link calls in `links`.
+ */
 function stubRuleModel(cite: string | null) {
   const bodies: any[] = [];
+  const links: any[] = [];
   const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
-    bodies.push(body);
-    const content = answer();
-    content.findings = content.findings.map((f) => ({ ...f, severity: 'minor', rule_id: cite }));
-    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+    const linking = body.response_format.json_schema.name === 'links';
+    (linking ? links : bodies).push(body);
+    const review = answer();
+    const content = linking
+      ? { links: review.findings.map((_, i) => ({ finding: i, rule_id: cite, follows: null })) }
+      : { ...review, findings: review.findings.map((f) => ({ ...f, severity: 'minor' })) };
+    const cost = linking ? 0.0001 : 0.0042;
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost } }));
   }) as typeof globalThis.fetch;
-  return { fetch: stub, bodies };
+  return { fetch: stub, bodies, links };
 }
 
 const rule = (overrides: Record<string, unknown> = {}) => ({
@@ -841,8 +849,37 @@ test('a job with rules: the pack holds the rules that the diff touches, and a fi
   if (result.outcome !== 'done') return;
   assert.equal(result.review.findings[0]!.rule_id, RULE_ID);
   assert.equal(result.review.findings[0]!.severity, 'major', 'the floor of the rule raises a minor finding');
+  assert.equal(model.links.length, 1, 'one link call after the review');
+  assert.ok(!JSON.stringify(model.bodies[0].response_format).includes('rule_id'), 'the review schema never has rule_id');
+  assert.equal(result.review.costUsd, 0.0043, 'the cost of the link call counts in the review');
   const trace = logs.map((l) => JSON.parse(l)).find((l) => l.event === 'job.rules');
   assert.deepEqual({ received: trace.received, packed: trace.packed }, { received: [RULE_ID, OTHER_RULE_ID], packed: [RULE_ID] });
+});
+
+test('REV-117. At Anthropic, job.model_usage gives the link call with Haiku, and costUsd counts it', async () => {
+  const { api, results } = fakeApi();
+  const models: string[] = [];
+  const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    models.push(body.model);
+    const linking = 'links' in body.output_config.format.schema.properties;
+    const content = linking ? { links: [{ finding: 0, rule_id: 'R1', follows: null }] } : answer();
+    const usage = linking ? { input_tokens: 400, output_tokens: 30 } : { input_tokens: 2_000, output_tokens: 500 };
+    return new Response(JSON.stringify({ model: body.model, stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(content) }], usage }));
+  }) as typeof globalThis.fetch;
+  await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY, ['claude-sonnet-5-5'])], rules: [rule()] }), deps(api, stub));
+  assert.deepEqual(models, ['claude-sonnet-5-5', 'claude-haiku-5-5']);
+  const line = JSON.parse(logs.find((l) => l.includes('job.model_usage'))!);
+  assert.equal(line.linkStatus, 'done');
+  assert.equal(line.linkModel, 'claude-haiku-5-5');
+  assert.equal(line.linkPromptTokens, 400);
+  assert.equal(line.linkCompletionTokens, 30);
+  assert.equal(line.linkedRules, 1);
+  assert.ok(line.linkCostUsd > 0);
+  assert.equal(line.model, 'claude-sonnet-5-5', 'the model of the review stays');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done' && Math.abs(result.review.costUsd! - line.costUsd) < 1e-9 && line.costUsd > line.linkCostUsd);
+  assertNoSecretInLogs();
 });
 
 test('a job of a service of an earlier release has no rules: the result has no rule_id key', async () => {

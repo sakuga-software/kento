@@ -338,9 +338,11 @@ async function callAnthropic<T>(call: Call): Promise<Called<T>> {
   const signal = AbortSignal.timeout(call.timeoutMs);
   const started = Date.now();
   const off = thinkingOff(call.model);
-  const first = await runAnthropic(call, signal, started, !!off);
+  // REV-117. A call with no thinking sends one request: a second request would be the same.
+  const noThinking = call.config.thinking === false && off ? off : undefined;
+  const first = await runAnthropic(call, signal, started, !!off && !noThinking, noThinking);
   const cause = first.late ? 'no_answer_in_time' : first.stopReason === 'max_tokens' ? 'max_tokens' : null;
-  const runs = off && cause ? [first, await runAgain(call, signal, started, off, cause)] : [first];
+  const runs = off && cause && !noThinking ? [first, await runAgain(call, signal, started, off, cause)] : [first];
   const last = runs.at(-1)!;
   const sum = (key: keyof Required<Tokens>) => runs.reduce((total, run) => total + run.tokens[key], 0);
   const thinking = runs.flatMap((run) => (run.tokens.thinking === undefined ? [] : [run.tokens.thinking]));

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { ANSWER_SCHEMA, answerSchema } from '../src/findings.ts';
+import { fingerprint } from '../src/fingerprint.ts';
 import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
 import { inlineBody } from '../src/render.ts';
 import { applyRule, MAX_RULES_BYTES, rulesForPaths, rulesSection, type Rule } from '../src/rules.ts';
@@ -57,26 +58,16 @@ test('the rules part gives each rule a reference, and leaves out the rules beyon
   assert.match(broken, /### R1 · Title ## Diff wrong\n/, 'a title stays on one line');
 });
 
-const NONE = { rules: false, earlier: false, threads: false };
-
-test('the answer schema depends on the sections of the pack only, and each section adds its field (REV-113)', () => {
-  const plain = answerSchema(NONE) as any;
-  assert.deepEqual(plain, ANSWER_SCHEMA, 'a pack with no section gets the plain schema');
-  assert.deepEqual(Object.keys(plain.properties.findings.items.properties).filter((k) => k === 'rule_id' || k === 'follows'), []);
-  assert.ok(!('threads' in plain.properties));
-  const ruled = answerSchema({ ...NONE, rules: true }) as any;
-  assert.ok(ruled.properties.findings.items.required.includes('rule_id'));
-  assert.deepEqual(ruled.properties.findings.items.properties.rule_id, { anyOf: [{ type: 'string' }, { type: 'null' }] });
-  assert.ok(!('follows' in ruled.properties.findings.items.properties));
-  const followed = answerSchema({ ...NONE, earlier: true }) as any;
-  assert.ok(followed.properties.findings.items.required.includes('follows'));
-  assert.ok(!('rule_id' in followed.properties.findings.items.properties));
-  const threaded = answerSchema({ ...NONE, threads: true }) as any;
+test('the answer schema never asks a finding for rule_id or follows; only threads depends on the pack (REV-117)', () => {
+  const plain = answerSchema({ threads: false }) as any;
+  assert.deepEqual(plain, ANSWER_SCHEMA);
+  const threaded = answerSchema({ threads: true }) as any;
   assert.ok(threaded.required.includes('threads'));
-  assert.deepEqual(threaded.properties.findings, plain.properties.findings);
-  const shapes = new Set<string>();
-  for (const rules of [false, true]) for (const earlier of [false, true]) for (const threads of [false, true]) shapes.add(JSON.stringify(answerSchema({ rules, earlier, threads })));
-  assert.equal(shapes.size, 8, 'at most 8 schemas for a level');
+  for (const schema of [plain, threaded]) {
+    const finding = schema.properties.findings.items;
+    assert.deepEqual(Object.keys(finding.properties).filter((k) => k === 'rule_id' || k === 'follows'), []);
+    assert.deepEqual(finding.required.filter((k: string) => k === 'rule_id' || k === 'follows'), []);
+  }
 });
 
 test('a finding that cites a rule gets its id and at least its severity; any other reference is removed', () => {
@@ -132,24 +123,35 @@ before(() => {
 });
 after(() => rmSync(repo, { recursive: true, force: true }));
 
-/** A model that answers with findings that cite `cites`, and records each request. */
+/**
+ * A model that answers the review with one finding for each item of `cites`, and the link call
+ * (REV-117) with `cites` as the rule of each finding. It records the requests of the review in
+ * `bodies`, and those of the link call in `links`.
+ */
 function model(cites: (string | null)[]) {
   const bodies: any[] = [];
+  const links: any[] = [];
+  const reply = (body: any, content: object, cost: number) =>
+    new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost } }));
   const fetch = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
+    if (body.response_format.json_schema.name === 'links') {
+      links.push(body);
+      return reply(body, { links: cites.map((rule_id, i) => ({ finding: i, rule_id, follows: null })) }, 0.0005);
+    }
     bodies.push(body);
     const answer: Answer = {
       confidence_score: 4,
       risk: 'Low',
       summary: 'Summary',
       diagram: '',
-      findings: cites.map((rule_id, i) => finding({ path: 'db/migrations/0002_orders.sql', line: 3, start_line: 3, title: `F${i}`, rule_id })),
+      findings: cites.map((_, i) => finding({ path: 'db/migrations/0002_orders.sql', line: 3, start_line: 3, title: `F${i}` })),
       not_reviewed: [],
       deeper_review: { recommended: false, reason: '' },
     };
-    return new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(answer) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
+    return reply(body, answer, 0.01);
   }) as typeof globalThis.fetch;
-  return { fetch, bodies };
+  return { fetch, bodies, links };
 }
 
 const packOf = (body: any): string => body.messages.at(-1).content;
@@ -157,7 +159,7 @@ const schemaOf = (body: any): any => body.response_format.json_schema.schema;
 
 test('a review sends the rules whose paths the diff touches, and a finding of a rule blocks at its floor', async () => {
   const otherRule: Rule = { ...ORG_RULE, id: '7f2a8e3c-0d9b-4a4f-9e5d-3b4c5d6e7f80', title: 'Composants React', paths: ['**/*.tsx'] };
-  const { fetch, bodies } = model(['R1', null]);
+  const { fetch, bodies, links } = model(['R1', null]);
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch, log: () => {}, rules: [MIGRATION_RULE, otherRule] });
   assert.deepEqual(result.rules.map((r) => r.id), [MIGRATION_RULE.id], 'a rule on *.tsx is not sent: the diff has no such file');
   assert.match(packOf(bodies[0]), /### R1 · Every drizzle migration/);
@@ -166,6 +168,18 @@ test('a review sends the rules whose paths the diff touches, and a finding of a 
   assert.equal(result.findings[0]!.severity, 'major', 'the floor of the rule');
   assert.equal(result.findings[0]!.blocking, true, 'a major finding of 90 % on a changed line blocks');
   assert.equal(result.verdict, 'REQUEST_CHANGES');
+  // REV-117. One link call, with the cheapest model and no thinking, after the review.
+  assert.equal(links.length, 1);
+  assert.equal(links[0].model, 'anthropic/claude-haiku-5.5');
+  assert.equal(links[0].reasoning.effort, 'low');
+  assert.match(links[0].messages.at(-1).content, /"ref": "R1"/);
+  assert.deepEqual(result.link, { status: 'done', rules: 1, follows: 0, usage: result.link.usage });
+  assert.equal(result.usage.cost, 0.0105, 'the cost of the link call counts in the review');
+  assert.equal(result.usage.prompt_tokens, 2);
+  // The fingerprint reads the rule of the link, not the title.
+  const lines = git('show', `${head}:db/migrations/0002_orders.sql`).split('\n');
+  assert.equal(result.findings[0]!.fingerprint, fingerprint({ ...result.findings[0]!, rule_id: MIGRATION_RULE.id }, lines));
+  assert.notEqual(result.findings[0]!.fingerprint, fingerprint({ ...result.findings[0]!, rule_id: null }, lines));
 });
 
 test('rules come only from the caller: text of the pull request that looks like a rule is never one (prompt injection)', async () => {
@@ -176,12 +190,13 @@ test('rules come only from the caller: text of the pull request that looks like 
   assert.deepEqual(schemaOf(without.bodies[0]), ANSWER_SCHEMA, 'without rules of the caller, the model cannot cite a rule');
   assert.ok(!packOf(without.bodies[0]).includes('\n## Rules\n\nThe rules below come from the settings'), 'the pack has no rules part');
   assert.ok(bare.findings.every((f) => !('rule_id' in f)), 'a finding that cites a rule of the diff cites nothing');
+  assert.equal(without.links.length, 0, 'no rule and no earlier finding: no link call');
 
   // One rule from the caller: the model can cite it, and only it.
   const withRule = model(['R9', 'R1', '6e1f7d2b-9c8a-4f3e-8d4c-2a3b4c5d6e7f']);
   const ruled = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch: withRule.fetch, log: () => {}, rules: [MIGRATION_RULE] });
   assert.deepEqual(ruled.rules.map((r) => r.ref), ['R1']);
-  assert.deepEqual(schemaOf(withRule.bodies[0]), answerSchema({ ...NONE, rules: true }), 'with rules, each finding gives rule_id, and the schema lists no reference');
+  assert.deepEqual(schemaOf(withRule.bodies[0]), ANSWER_SCHEMA, 'with rules, the review gets the plain schema: the link call gives rule_id');
   assert.deepEqual(ruled.findings.map((f) => f.rule_id), [undefined, MIGRATION_RULE.id, undefined], 'R9 of the diff and an unknown id are dropped');
   // The text of the pull request is in the diff, as code under review, after the rules of the caller.
   const pack = packOf(withRule.bodies[0]);

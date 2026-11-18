@@ -3,6 +3,7 @@
 // review in one pass; no level of production uses it yet.
 import type { Answer, Finding, Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
+import { linkFindings, withLinkUsage } from './link.ts';
 import { askJson, askModel } from './model.ts';
 import { finishReview, packSchema, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
 
@@ -120,6 +121,8 @@ export async function reviewInPasses(
   const candidates: PassedFinding[] = answers.flatMap(({ pass, answer }) => answer.findings.map((f) => ({ ...f, pass: pass.id })));
   const checked = await verify(input, options.verifyConfig, prepared.pack, candidates);
   cost += checked.usage?.cost ?? 0;
+  // REV-117. One link call for the findings that the check kept.
+  const linked = await linkFindings(input, options.passConfig, checked.kept, prepared.rules, prepared.earlier);
 
   // The text of the review comes from the pass of contracts and logic, the broadest one, or from the
   // first pass that answered.
@@ -129,18 +132,21 @@ export async function reviewInPasses(
     confidence_score: passesScore(answers, checked.kept),
     not_reviewed: [...new Set(answers.flatMap((a) => a.answer.not_reviewed ?? []))],
     deeper_review: answers.map((a) => a.answer.deeper_review).find((d) => d?.recommended) ?? lead.answer.deeper_review,
-    findings: checked.kept,
+    findings: linked.findings,
     // REV-71. The verdicts of every pass, with their pass: only the pass of a finding can uphold its
     // thread against a refutation (answered.ts).
     threads: answers.flatMap(({ pass, answer }) => (Array.isArray(answer.threads) ? answer.threads : []).map((v) => ({ ...v, pass: pass.id }))),
   };
-  const usage: Usage = {
-    model: `passes(${reports.map((r) => r.model ?? `${r.id} failed`).join(', ')}) + ${checked.usage?.model ?? 'no check'}`,
-    cost,
-    cost_source: 'provider',
-  };
+  const usage: Usage = withLinkUsage(
+    {
+      model: `passes(${reports.map((r) => r.model ?? `${r.id} failed`).join(', ')}) + ${checked.usage?.model ?? 'no check'}`,
+      cost,
+      cost_source: 'provider',
+    },
+    linked.report,
+  );
   return {
-    ...finishReview(input, prepared, answer, usage),
+    ...finishReview(input, prepared, answer, usage, linked.report),
     passes: reports,
     dropped: checked.dropped,
     verification: checked.status,

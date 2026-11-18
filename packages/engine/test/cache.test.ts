@@ -121,10 +121,9 @@ describe('the prefix of the prompt cache', () => {
     assert.deepEqual(a.system, b.system);
     assert.deepEqual(a.system, plain.system);
     assert.deepEqual(a.output_config, b.output_config, 'the same sections give the same schema, whatever their references: it is in the cached prefix');
-    // REV-113. In each finding, `rule_id` and `follows` cost the applicable suggestions on the bench:
-    // a pack without these sections gets the plain schema.
-    const findingKeys = (body: any) => Object.keys(body.output_config.format.schema.properties.findings.items.properties);
-    assert.ok(findingKeys(a).includes('rule_id') && findingKeys(a).includes('follows'));
+    // REV-117. In each finding, `rule_id` and `follows` cost the applicable suggestions on the bench:
+    // every review gets the plain finding schema, with rules and earlier findings or without.
+    assert.deepEqual(a.output_config.format.schema, withPatch(ANSWER_SCHEMA));
     assert.deepEqual(plain.output_config.format.schema, withPatch(ANSWER_SCHEMA), 'no section: the plain schema');
     assert.deepEqual(a.system[0].cache_control, { type: 'ephemeral', ttl: '1h' });
     assertValidMarks(a);

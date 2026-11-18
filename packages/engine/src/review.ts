@@ -10,6 +10,7 @@ import { inHistory } from './history.ts';
 import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type MessagePart, type ModelClient } from './model.ts';
+import { linkFindings, NO_LINK, withLinkUsage, type LinkReport } from './link.ts';
 import { buildPack } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
@@ -132,6 +133,8 @@ export type ReviewResult = {
   seenSince: string | null;
   /** REV-113. A short hash of the rules, the imports and the context of the pack (pack.ts). */
   contextHash: string;
+  /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
+  link: LinkReport;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -154,7 +157,9 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewResul
 async function askAndFinish(input: ReviewInput, config: LevelConfig, prepared: PreparedReview): Promise<ReviewResult> {
   const tools = reviewTools(input, config);
   const { answer, usage } = await askModel(input, config, prepared.parts, undefined, tools, undefined, packSchema(prepared));
-  return { ...finishReview(input, prepared, answer, usage), ...(tools ? { toolUse: tools.used } : {}) };
+  const linked = await linkFindings(input, config, answer.findings, prepared.rules, prepared.earlier);
+  answer.findings = linked.findings;
+  return { ...finishReview(input, prepared, answer, withLinkUsage(usage, linked.report), linked.report), ...(tools ? { toolUse: tools.used } : {}) };
 }
 
 /**
@@ -177,8 +182,8 @@ export function reviewTools(input: ReviewInput, config: LevelConfig): RepoTools 
 }
 
 /** REV-113. The answer schema for the sections that the pack holds, whatever their references. */
-export function packSchema(prepared: Pick<PreparedReview, 'rules' | 'earlier' | 'threads'>): object {
-  return answerSchema({ rules: prepared.rules.length > 0, earlier: prepared.earlier.length > 0, threads: prepared.threads.length > 0 });
+export function packSchema(prepared: Pick<PreparedReview, 'threads'>): object {
+  return answerSchema({ threads: prepared.threads.length > 0 });
 }
 
 /** What a review reads before its model call: the merge base, the pack and the changed lines. */
@@ -250,12 +255,17 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   };
 }
 
-/** The review from the answer of the model: the rules, the anchors, the fingerprints, the score and the verdict. */
+/**
+ * The review from the answer of the model: the rules, the anchors, the fingerprints, the score and
+ * the verdict. REV-117: the findings carry the references of the link call (linkFindings), and
+ * `link` reports that call.
+ */
 export function finishReview<F extends Finding>(
   input: ReviewInput,
   prepared: PreparedReview,
   answer: Answer & { findings: F[] },
   usage: Usage,
+  link: LinkReport = NO_LINK,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
   const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
@@ -364,6 +374,7 @@ export function finishReview<F extends Finding>(
     droppedAsSettled: linked.dropped,
     seenSince: seen?.since ?? null,
     contextHash,
+    link,
   };
 }
 

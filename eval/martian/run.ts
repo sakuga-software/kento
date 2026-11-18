@@ -15,6 +15,9 @@
  * Message Batches API of Anthropic, at half the price. `--prefilter` skips the pairs of a golden
  * comment that names a file with the findings on another file (prefilter.ts). `--estimate` stops
  * after the reviews and gives the number of judge calls left, and their cost.
+ *
+ * REV-117: `--rules <file>` gives the rules of a JSON file (an array of rules, as rules.ts reads
+ * them) to every review: the pack then holds a Rules section, and the link call runs.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +25,7 @@ import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { isLevel, levelConfig, providerLevelConfig, reviewInPasses, reviewPullRequest, type Level } from '../../packages/engine/src/index.ts';
 import type { Usage } from '../../packages/engine/src/findings.ts';
+import type { Rule } from '../../packages/engine/src/rules.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
 import { requestTokens } from '../../packages/engine/src/providers.ts';
 import { failureCounts, failureKind } from './failures.ts';
@@ -39,6 +43,7 @@ let JUDGE_MODEL = process.env.JUDGE_MODEL ?? 'anthropic/claude-sonnet-5.5';
 let REVIEWS_AT_ONCE = 6;
 let PREFILTER = false;
 let PROMPTS: Record<string, string> | undefined;
+let RULES: Rule[] | undefined;
 const KENTO_REVIEWERS = /^(kento-review|sakuga-claude-review)\[bot\]$/;
 const JUDGE_CALLS_AT_ONCE = 12;
 /**
@@ -118,6 +123,11 @@ type Review = {
    * thinking. REV-113: the hashes of the system prompt and of the schema, the effort and the thinking.
    */
   stop?: Pick<Usage, 'stop_reason' | 'thinking_tokens' | 'first_token_ms' | 'first_text_ms' | 'retried_without_thinking' | 'system_hash' | 'schema_hash' | 'effort' | 'thinking'>;
+  /**
+   * REV-117, in one pass: the link call, and the findings that it linked to a rule or to an earlier
+   * finding, with the title of the rule.
+   */
+  link?: { status: string; model?: string; cost: number; tokens: { prompt: number; completion: number }; error?: string; linked: string[] };
 };
 type Fixes = { p01: number; suggestions: number; patches: number };
 
@@ -139,6 +149,23 @@ function tokensOf(usage: Usage): NonNullable<Review['tokens']> {
     cacheRead: usage.cache_read_tokens ?? 0,
     ...(usage.cache_write_5m_tokens !== undefined ? { cacheWrite5m: usage.cache_write_5m_tokens } : {}),
     ...(usage.cache_write_1h_tokens !== undefined ? { cacheWrite1h: usage.cache_write_1h_tokens } : {}),
+  };
+}
+
+/** REV-117. The link call of a review, and its linked findings as `candidate [rule: title] [follows: key]`. */
+function linkOf(out: Awaited<ReturnType<typeof reviewPullRequest>>): NonNullable<Review['link']> {
+  const usage = out.link.usage;
+  const titles = new Map(out.rules.map((r) => [r.id, r.title]));
+  const linked = out.findings
+    .filter((f) => f.rule_id || f.follows)
+    .map((f) => `${f.path}:${f.line} [${f.severity}] ${f.title}${f.rule_id ? ` [rule: ${titles.get(f.rule_id) ?? f.rule_id}]` : ''}${f.follows ? ` [follows: ${f.follows}]` : ''}`);
+  return {
+    status: out.link.status,
+    ...(usage?.model ? { model: usage.model } : {}),
+    cost: usage?.cost ?? 0,
+    tokens: { prompt: usage?.prompt_tokens ?? 0, completion: usage?.completion_tokens ?? 0 },
+    ...(out.link.error ? { error: out.link.error } : {}),
+    linked,
   };
 }
 
@@ -170,6 +197,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
     level: mode.level,
     ...(ANTHROPIC ? { kind: 'anthropic' as const, apiKey: process.env.ANTHROPIC_API_KEY } : { apiKey: process.env.OPENROUTER_API_KEY }),
     ...(PROMPTS ? { prompts: PROMPTS } : {}),
+    ...(RULES ? { rules: RULES } : {}),
     log: (message: string) => failures.push(message),
   };
   try {
@@ -214,6 +242,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       fixes: fixesOf(out.findings),
       ...(out.usage.stop_reason ? { stop: pickStop(out.usage) } : {}),
       ...(out.toolUse ? { tools: out.toolUse } : {}),
+      ...(out.link.status !== 'none' ? { link: linkOf(out) } : {}),
     };
   } catch (error) {
     const message = [...failures, String(error)].join('\n').slice(-600);
@@ -474,6 +503,14 @@ function judgeEstimate(pairs: Pair[], batch: boolean): number {
   return pairs.reduce((total, pair) => total + anthropicCost({ input_tokens: Math.ceil(judgeMessage(pair).length / 3.5), output_tokens: 250 }, factor), 0);
 }
 
+/** REV-117. The rules of `--rules`: an array of rules, each with an id, a title, a text and its paths. */
+function readRules(file: string): Rule[] {
+  const rules: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  const valid = (r: any) => typeof r?.id === 'string' && typeof r.title === 'string' && typeof r.text === 'string' && Array.isArray(r.paths);
+  if (!Array.isArray(rules) || !rules.every(valid)) throw new Error(`--rules must name a JSON array of rules with id, title, text and paths: ${file}`);
+  return rules.map((r) => ({ scope: 'repo', severityFloor: null, ...r }));
+}
+
 async function main() {
   const { values } = parseArgs({
     options: {
@@ -492,6 +529,7 @@ async function main() {
       'judge-batch': { type: 'boolean', default: false },
       prefilter: { type: 'boolean', default: false },
       estimate: { type: 'boolean', default: false },
+      rules: { type: 'string' },
     },
   });
   if (values.provider !== 'openrouter' && values.provider !== 'anthropic') throw new Error(`--provider must be openrouter or anthropic, not "${values.provider}"`);
@@ -512,6 +550,7 @@ async function main() {
   const mode: Mode = { level: values.level, passes: values.passes === true, samples };
   const promptText = values.prompt ? readFileSync(values.prompt, 'utf8') : undefined;
   if (promptText) PROMPTS = { 'review.md': promptText };
+  if (values.rules) RULES = readRules(values.rules);
   const promptId = sha256(promptText ?? readFileSync(join(import.meta.dirname, '..', '..', 'packages', 'engine', 'prompts', 'review.md'), 'utf8')).slice(0, 12);
   const prs: Pr[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
   const out = values.out!;
