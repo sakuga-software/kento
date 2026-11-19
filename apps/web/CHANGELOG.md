@@ -31,6 +31,8 @@ Each entry says, when it applies:
   a runner of the organization with its own OpenRouter key. On the Runners screen, the mode "Key of
   the service" is now "Keys stored in Kentō". An instance whose runners are all runners of the
   service sees no change.
+- On the Settings screen, the text that confirms the removal of the default provider says what
+  the jobs use next, with and without the OpenRouter key of the service.
 - The Dashboard says why a job with no provider waits: after 10 min, "To do" says that it waits for
   a runner with an OpenRouter key. "Getting started" counts the key of the service only while the
   service has a trusted runner.
@@ -43,6 +45,16 @@ Each entry says, when it applies:
   2 GB of the runner in 3 s, now makes git stop with "Memory exhausted" in 0.2 s, and the model gets
   that cause. `grep` also refuses a back reference (`\1` to `\9`) and a pattern whose repetitions
   make more than 1,000 copies, as a first filter.
+- What the memory limit costs. `ulimit -v` counts the address space, so the maps of the pack files
+  count in full: with maps of up to 256 MB, 5 to 10 % of the greps with no glob failed on a pack of
+  288 MB, and every grep failed on a pack of three files of 99 MB. git now maps at most 96 MB of the
+  pack files at once, keeps at most 16 MB of delta bases, and uses one malloc arena. Measured on the
+  same packs: no failure, and a peak of 240 MB and 317 MB. The price is time: the median grep with
+  no glob on the pack of 288 MB takes 2.4 s instead of 2.2 s (7 % more). A grep that holds several
+  files of close to 100 MB rebuilt from deltas still comes near the limit (500 MB at most, no
+  failure in 30). When git runs out of memory, `grep` now says why: a pattern that git cannot
+  compile gets "use a simpler pattern", and files that git cannot map or read get "narrow the
+  glob". The cause comes from the error of git, not from the words of the pattern that git quotes.
 - The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
   judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
   are refused.

@@ -2,12 +2,13 @@
 // Run with `pnpm test`, or `node --test packages/engine/test/`.
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { GIT_TIMEOUT_MS, gitFailure, MAX_FILE_BYTES, MAX_GREP_COPIES, MAX_GREP_LINES, MAX_READ_LINES, RepoTools, safePath, TOOL_BUDGETS, TOOL_DEFINITIONS, unsafeGrepPattern } from '../src/tools.ts';
+import { GIT_MEMORY_KB, GIT_TIMEOUT_MS, gitFailure, MAX_FILE_BYTES, MAX_GREP_COPIES, MAX_GREP_LINES, MAX_READ_LINES, RepoTools, safePath, TOOL_BUDGETS, TOOL_DEFINITIONS, unsafeGrepPattern } from '../src/tools.ts';
 
 const git = (repo: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'init.defaultBranch=main', ...args], {
@@ -199,7 +200,7 @@ describe('the tools of a review', () => {
     // it ends at the time limit of the call, under the memory limit.
     const start = performance.now();
     const answer = await new RepoTools(repo, head, big, { callMs: 2000 }).run({ name: 'grep', input: { pattern: '(.*a.{30}){20}z|(.*b.{20}){14}y', glob: 'ab-*.txt' } });
-    assert.match(answer, /^(grep took too long and was stopped|grep stopped: the pattern needs more memory|No match\.)/);
+    assert.equal(answer, 'grep took too long and was stopped: use a simpler pattern or a narrower glob.');
     assert.ok(performance.now() - start < 5000);
     // The runner goes on: the next call answers.
     assert.match(await unchecked.run({ name: 'grep', input: { pattern: 'sendEmail\\(' } }), /^src\//);
@@ -209,15 +210,42 @@ describe('the tools of a review', () => {
     for (const signal of ['SIGKILL', 'SIGSEGV', 'SIGABRT', 'SIGBUS']) assert.equal(gitFailure({ signal }, ''), 'memory', signal);
     // The runner stops: git gets a SIGTERM or a SIGINT, which says nothing of the pattern.
     for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) assert.equal(gitFailure({ signal }, ''), 'other', signal);
-    assert.equal(gitFailure({ code: 128 }, "fatal: -e option, 'x': Memory exhausted"), 'memory');
     assert.equal(gitFailure({ signal: 'SIGKILL', killed: true }, ''), 'time', 'node stopped it at the time limit');
     assert.equal(gitFailure({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, ''), 'output');
     assert.equal(gitFailure({ code: 128 }, 'fatal: bad revision'), 'other');
   });
 
+  test('a memory failure blames the pattern or the size of the files from the error of git, not from the quoted pattern (REV-135)', () => {
+    // The errors of git 2.39 in the runner image, under the memory limit.
+    const cases: [string, string][] = [
+      ["fatal: -e option, '((a{1,100}){1,100}){1,100}b': Memory exhausted", 'pattern'],
+      // U+2028 and U+2029 end no line of stderr: the pattern that holds one is still the cause.
+      ["fatal: -e option, '\u2028((((){1,60}){1,60}){1,60}){1,60}\u2029': Memory exhausted", 'pattern'],
+      // git cannot allocate a file: an `error:` line first, then a `fatal:` line on another cause.
+      ['error: Out of memory, malloc failed (tried to allocate 545259521 bytes)\nfatal: packed object 70ab4f64 (stored in ./objects/pack/pack-1.pack) is corrupt', 'size'],
+      ['error: Out of memory, malloc failed (tried to allocate 103809025 bytes)', 'size'],
+      ['fatal: Out of memory, malloc failed (tried to allocate 103809025 bytes)', 'size'],
+      ['fatal: packfile ./objects/pack/pack-1.pack cannot be mapped, check sys.vm.max_map_count and/or RLIMIT_DATA: Cannot allocate memory', 'size'],
+      ['fatal: mmap failed: Cannot allocate memory', 'size'],
+      ['fatal: inflateInit: out of memory (no message)', 'size'],
+      ['fatal: grep: failed to create thread: Resource temporarily unavailable', 'size'],
+      // An invalid pattern that holds the words of a memory error: git quotes it, then gives its own error.
+      ["fatal: -e option, 'cannot allocate(': Unmatched ( or \\(", 'other'],
+      ["fatal: -e option, 'out of memory[': Invalid regular expression", 'other'],
+      ["fatal: -e option, 'malloc failed{2,1}': Invalid content of \\{\\}", 'other'],
+      ["fatal: -e option, 'x': Memory exhausted(': Unmatched ( or \\(", 'other'],
+      ["fatal: -e option, 'fatal: Out of memory(': Unmatched ( or \\(", 'other'],
+    ];
+    for (const [stderr, failure] of cases) assert.equal(gitFailure({ code: 128 }, `${stderr}\n`), failure, stderr);
+    // The error of git wins over the signal that follows it.
+    assert.equal(gitFailure({ signal: 'SIGABRT' }, 'fatal: Out of memory, malloc failed (tried to allocate 1 bytes)'), 'size');
+  });
+
   test('grep gives the cause of a failure (REV-130)', async () => {
     const tools = new RepoTools(repo, head, big);
     assert.match(await tools.run({ name: 'grep', input: { pattern: '(' } }), /^grep failed: .+/);
+    // The words of a memory error in an invalid pattern: the cause is the syntax (REV-135).
+    assert.match(await tools.run({ name: 'grep', input: { pattern: 'cannot allocate(' } }), /^grep failed: fatal: -e option, 'cannot allocate\(': /);
     assert.match(await new RepoTools(join(root, 'missing'), head, big).run({ name: 'grep', input: { pattern: 'x' } }), /^grep failed: .+/);
   });
 
@@ -285,5 +313,49 @@ describe('the tools of a review', () => {
     assert.ok(TOOL_BUDGETS.lite.bytes <= TOOL_BUDGETS.balanced.bytes && TOOL_BUDGETS.balanced.bytes <= TOOL_BUDGETS.heavy.bytes);
     assert.deepEqual(TOOL_DEFINITIONS.map((t) => t.name), ['read_file', 'grep']);
     assert.equal(safePath('a/b.ts'), 'a/b.ts');
+  });
+});
+
+describe('grep on a large pack (REV-135)', { skip: process.platform !== 'linux' && 'RLIMIT_AS works on Linux only, as in the runner image' }, () => {
+  let root = '';
+  let repo = '';
+  // At half the limit of the runner, half the files: 3 files of 40 MB of random data, in one pack of
+  // 120 MB, more than the 96 MB that git maps at once. With the settings of #197 (maps of up to 256 MB,
+  // 2 malloc arenas), each grep failed (15 of 15 in the runner image), at 199 MB with these (REV-135).
+  // At the full limit, 3 files of 99 MB gave the same result, but took 21 s to write on a CI runner.
+  const FILES = 3;
+  const MB = 40;
+  const MEMORY_KB = GIT_MEMORY_KB / 2;
+
+  before(async () => {
+    root = mkdtempSync(join(process.env.SAKUGA_TEST_TMP ?? tmpdir(), 'sakuga-review-pack-'));
+    repo = join(root, 'repo.git');
+    git(root, 'init', '-q', '--bare', repo);
+    // fast-import writes one pack, with no compression and no delta: random data does not compress.
+    const stream = spawn('git', ['-c', 'core.compression=0', '-c', 'fastimport.unpackLimit=0', 'fast-import', '--quiet', '--big-file-threshold=1m'], { cwd: repo, stdio: ['pipe', 'ignore', 'inherit'] });
+    const done = new Promise<number | null>((resolve) => stream.on('close', resolve));
+    const write = (data: string | Buffer) => new Promise<void>((resolve) => (stream.stdin.write(data) ? resolve() : stream.stdin.once('drain', resolve)));
+    const source = Buffer.from("export function sendEmail(to: string) {\n  return to;\n}\n");
+    await write(`blob\nmark :1\ndata ${source.length}\n`);
+    await write(source);
+    for (let k = 0; k < FILES; k++) {
+      await write(`\nblob\nmark :${k + 2}\ndata ${MB * 1024 * 1024}\n`);
+      for (let i = 0; i < MB; i++) await write(randomBytes(1024 * 1024));
+    }
+    let commit = '\ncommit refs/heads/main\ncommitter t <t@t> 0 +0000\ndata 4\nhead\nM 100644 :1 src/mail.ts\n';
+    for (let k = 0; k < FILES; k++) commit += `M 100644 :${k + 2} data-${k}.bin\n`;
+    await write(commit);
+    stream.stdin.end();
+    assert.equal(await done, 0);
+    // A stuck write fails here, not at the timeout of the job.
+  }, { timeout: 60_000 });
+  after(() => root && rmSync(root, { recursive: true, force: true }));
+
+  test('a grep with no glob reads a pack of half the memory limit of git', { timeout: GIT_TIMEOUT_MS * 3 }, async () => {
+    const packs = execFileSync('git', ['count-objects', '-v'], { cwd: repo, encoding: 'utf8' });
+    assert.ok(Number(/size-pack: (\d+)/.exec(packs)?.[1]) > 0.45 * MEMORY_KB, packs);
+    const head = git(repo, 'rev-parse', 'main');
+    const tools = new RepoTools(repo, head, big, { memoryKb: MEMORY_KB });
+    for (let i = 0; i < 3; i++) assert.equal(await tools.run({ name: 'grep', input: { pattern: 'sendEmail\\(' } }), 'src/mail.ts:1:export function sendEmail(to: string) {');
   });
 });

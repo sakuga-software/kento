@@ -60,16 +60,21 @@ export const MAX_GREP_COPIES = 1_000;
  */
 export const GIT_MEMORY_KB = 512 * 1024;
 /**
- * The settings that keep git under GIT_MEMORY_KB: small windows on the pack files, and 2 grep threads,
- * because each thread compiles its own copy of the pattern.
+ * The settings that keep git under GIT_MEMORY_KB. `ulimit -v` counts the address space that git
+ * reserves, not the memory that it uses: the maps of the pack files count in full.
+ * - `core.packedGitLimit=96m` and `core.packedGitWindowSize=16m`: the pack files that git maps at
+ *   once. With 256m, a grep of a pack of more than about 256 MB failed by chance (REV-135).
+ * - `core.deltaBaseCacheLimit=16m`: the objects that git keeps to rebuild the next deltas.
+ * - `grep.threads=2`: each thread compiles its own copy of the pattern, and holds one file.
  */
-const GIT_LIMITS = ['-c', 'core.packedGitWindowSize=32m', '-c', 'core.packedGitLimit=256m', '-c', 'grep.threads=2'];
+const GIT_LIMITS = ['-c', 'core.packedGitLimit=96m', '-c', 'core.packedGitWindowSize=16m', '-c', 'core.deltaBaseCacheLimit=16m', '-c', 'grep.threads=2'];
 /**
  * Sets the memory limit, then runs git with the arguments as they are: they never go through the
  * text of the script. Where the system refuses the limit (macOS), git runs without it.
- * MALLOC_ARENA_MAX keeps the memory that glibc reserves for each thread small.
+ * MALLOC_ARENA_MAX=1: the threads share the one arena of glibc. Each other arena reserves 64 MB of
+ * address space, which the limit counts (REV-135).
  */
-const LIMITED_GIT = 'ulimit -v "$1" 2>/dev/null; shift; MALLOC_ARENA_MAX=2 exec git "$@"';
+const LIMITED_GIT = 'ulimit -v "$1" 2>/dev/null; shift; MALLOC_ARENA_MAX=1 exec git "$@"';
 const CUT_NOTE = '\n[cut: the tool budget of this review is used]';
 /** Below this room, no call runs: a cut result always has room for its note and some text. */
 const MIN_ROOM = 100;
@@ -123,14 +128,45 @@ const MAX_GIT_OUTPUT = 64 * 1024 * 1024;
 export type GitFailure =
   /** The time limit of the call stopped it. */
   | 'time'
-  /** It ran out of memory: an error of git, or a signal (the kernel, or a crash on a failed allocation). */
+  /** The pattern needs too much memory: git could not compile it ("Memory exhausted"). */
+  | 'pattern'
+  /** The files need too much memory: git could not map a pack file or allocate a buffer. */
+  | 'size'
+  /** A signal of a process out of memory (the kernel, or a crash on a failed allocation): the cause is not known. */
   | 'memory'
   /** It wrote more than MAX_GIT_OUTPUT. */
   | 'output'
   /** Another error: its exit code and its stderr. */
   | 'other';
 
-const OUT_OF_MEMORY = /out of memory|memory exhausted|cannot allocate|malloc failed|mmap failed|unable to create thread/i;
+/**
+ * The error of git on a pattern that it cannot compile: `fatal: -e option, '<pattern>': <error>`.
+ * The pattern is in the line, so only the text after the last `': ` is the error. git splits a
+ * pattern at each newline, so a part of the pattern never starts a line of stderr.
+ */
+const PATTERN_ERROR = /^fatal: -e option, '.*': ([^']*)$/s;
+/** The errors of git itself when an allocation or a map fails. Each one starts a line. */
+const SIZE_ERRORS = [
+  // git cannot allocate a file: an `error:` line, then a `fatal:` line on another cause (a "corrupt" object).
+  /^error: Out of memory/,
+  /^fatal: Out of memory/,
+  /^fatal: mmap failed/,
+  /^fatal: packfile .* cannot be mapped/,
+  /^fatal: inflate(Init)?: out of memory/,
+  /^fatal: (grep: failed to|unable to) create thread/,
+];
+
+/** The line of stderr that says that git ran out of memory, and why: the pattern or the size of the files. */
+function memoryError(stderr: string): { failure: 'pattern' | 'size'; line: string } | null {
+  for (const line of stderr.split('\n')) {
+    const pattern = PATTERN_ERROR.exec(line);
+    if (pattern) {
+      if (pattern[1] === 'Memory exhausted') return { failure: 'pattern', line };
+    } else if (SIZE_ERRORS.some((error) => error.test(line))) return { failure: 'size', line };
+  }
+  return null;
+}
+
 /**
  * The signals of a process that ran out of memory: the kernel kills it (SIGKILL), or it crashes on a
  * failed allocation. Another signal, such as a SIGTERM when the runner stops, is no memory failure.
@@ -144,7 +180,9 @@ const MEMORY_SIGNALS = new Set(['SIGKILL', 'SIGSEGV', 'SIGABRT', 'SIGBUS']);
 export function gitFailure(error: { code?: number | string; killed?: boolean; signal?: string | null }, stderr: string): GitFailure {
   if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'output';
   if (error.killed === true) return 'time';
-  if ((error.signal && MEMORY_SIGNALS.has(error.signal)) || OUT_OF_MEMORY.test(stderr)) return 'memory';
+  const memory = memoryError(stderr);
+  if (memory) return memory.failure;
+  if (error.signal && MEMORY_SIGNALS.has(error.signal)) return 'memory';
   return 'other';
 }
 
@@ -160,11 +198,13 @@ class GitError extends Error {
     super(
       failure === 'time'
         ? 'git took too long'
-        : failure === 'memory'
-          ? first || `git stopped with ${signal ?? 'an error'}`
-          : failure === 'output'
-            ? `git wrote more than ${MAX_GIT_OUTPUT / 1024 / 1024} MB`
-            : first || (signal ? `git stopped with ${signal}` : `git exited with ${status}`),
+        : failure === 'pattern' || failure === 'size'
+          ? (memoryError(stderr)?.line ?? first)
+          : failure === 'memory'
+            ? first || `git stopped with ${signal ?? 'an error'}`
+            : failure === 'output'
+              ? `git wrote more than ${MAX_GIT_OUTPUT / 1024 / 1024} MB`
+              : first || (signal ? `git stopped with ${signal}` : `git exited with ${status}`),
     );
     this.failure = failure;
     this.status = status;
@@ -173,12 +213,12 @@ class GitError extends Error {
   }
 }
 
-/** Runs git without blocking the event loop, under GIT_MEMORY_KB. `timeoutMs` stops it with SIGKILL. */
-function git(repo: string, args: string[], timeoutMs: number): Promise<string> {
+/** Runs git without blocking the event loop, under `memoryKb`. `timeoutMs` stops it with SIGKILL. */
+function git(repo: string, args: string[], timeoutMs: number, memoryKb: number): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       '/bin/sh',
-      ['-c', LIMITED_GIT, 'sh', String(GIT_MEMORY_KB), ...GIT_LIMITS, ...args],
+      ['-c', LIMITED_GIT, 'sh', String(memoryKb), ...GIT_LIMITS, ...args],
       {
         cwd: repo,
         encoding: 'utf8',
@@ -303,17 +343,20 @@ export class RepoTools {
   private readonly time: { callMs: number; totalMs: number };
   /** Whether grep checks its pattern first. Tests turn it off to reach the memory limit of git. */
   private readonly checkPattern: boolean;
+  /** The memory limit of git, in kB. Tests make it small, so that a small pack reaches it. */
+  private readonly memoryKb: number;
   /** The milliseconds that the git calls of this review used. */
   private spentMs = 0;
   /** The calls run one at a time: the passes of a review run at once, and two git greps would use twice the memory. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(repo: string, head: string, budget: ToolBudget, options: { callMs?: number; totalMs?: number; checkPattern?: boolean } = {}) {
+  constructor(repo: string, head: string, budget: ToolBudget, options: { callMs?: number; totalMs?: number; checkPattern?: boolean; memoryKb?: number } = {}) {
     this.repo = repo;
     this.head = head;
     this.budget = budget;
     this.time = { callMs: options.callMs ?? GIT_TIMEOUT_MS, totalMs: options.totalMs ?? TOOLS_TIME_MS };
     this.checkPattern = options.checkPattern ?? true;
+    this.memoryKb = options.memoryKb ?? GIT_MEMORY_KB;
   }
 
   /**
@@ -340,7 +383,7 @@ export class RepoTools {
   private async git(args: string[]): Promise<string> {
     const start = performance.now();
     try {
-      return await git(this.repo, args, Math.min(this.time.callMs, this.time.totalMs - this.spentMs));
+      return await git(this.repo, args, Math.min(this.time.callMs, this.time.totalMs - this.spentMs), this.memoryKb);
     } finally {
       this.spentMs += performance.now() - start;
     }
@@ -429,7 +472,9 @@ export class RepoTools {
     } catch (error) {
       if (!(error instanceof GitError)) throw error;
       if (error.failure === 'time') return 'grep took too long and was stopped: use a simpler pattern or a narrower glob.';
-      if (error.failure === 'memory') return `grep stopped: the pattern needs more memory than git may use (${error.message}). Use a simpler pattern, or plain text with no repetition.`;
+      if (error.failure === 'pattern') return `grep stopped: the pattern needs more memory than git may use (${error.message}). Use a simpler pattern, or plain text with no repetition.`;
+      if (error.failure === 'size') return `grep stopped: the files to search need more memory than git may use (${error.message}). Narrow the glob, for example to one folder.`;
+      if (error.failure === 'memory') return `grep stopped: git ran out of memory (${error.message}). Narrow the glob, or use a simpler pattern.`;
       if (error.failure === 'output') return `grep failed: ${error.message}. Narrow the pattern or the glob.`;
       // git grep exits 1 when nothing matches.
       if (error.status === 1 && !error.stderr) return 'No match.';

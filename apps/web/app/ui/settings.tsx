@@ -192,6 +192,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
                     csrf={csrf}
                     keyError={keyError?.id === provider.id ? keyError.message : null}
                     levels={usage(provider.id)}
+                    serviceKey={serviceKey}
                   />
                 ))}
               </ul>
@@ -300,10 +301,10 @@ function ProviderUsage(handle: Handle<{ provider: ProviderView; levels: Level[] 
 }
 
 function ProviderItem(
-  handle: Handle<{ provider: ProviderView; now: Date; admin: boolean; csrf: string; keyError: string | null; levels: Level[] | null }>,
+  handle: Handle<{ provider: ProviderView; now: Date; admin: boolean; csrf: string; keyError: string | null; levels: Level[] | null; serviceKey: boolean }>,
 ) {
   return () => {
-    let { provider, now, admin, csrf, keyError, levels } = handle.props
+    let { provider, now, admin, csrf, keyError, levels, serviceKey } = handle.props
     let state = providerState(provider)
     let id = provider.id
     return (
@@ -447,9 +448,11 @@ function ProviderItem(
             <Confirm trigger="Remove…" action={routes.providerRemove.href({ id })} csrf={csrf} submit={`Remove ${provider.label}`}>
               <p>
                 Kentō deletes <strong>{provider.label}</strong> and its key.{' '}
-                {provider.isDefault
-                  ? 'The oldest of the other providers becomes the one of the jobs. With no other provider, the jobs need a runner of the service, or a runner with its own OpenRouter key.'
-                  : 'The jobs do not use this provider.'}
+                {!provider.isDefault
+                  ? 'The jobs do not use this provider.'
+                  : serviceKey
+                    ? 'The oldest of the other providers becomes the one of the jobs. With no other provider, the runners of the service review with the OpenRouter key of the service, and a runner of your organization needs its own OpenRouter key.'
+                    : 'The oldest of the other providers becomes the one of the jobs. With no other provider, only a runner with its own key does the reviews.'}
               </p>
             </Confirm>
           </div>

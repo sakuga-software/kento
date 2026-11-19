@@ -155,6 +155,19 @@ describe('the section "Providers and keys"', () => {
     assert.match(html, /type="password"/)
   })
 
+  it('says what the jobs use once the default provider is gone, with and without the key of the service (REV-135)', async () => {
+    for (let serviceKey of [true, false]) {
+      let { request, signIn } = setup([provider()], { serviceKey })
+      let { cookie } = await signIn()
+      let html = await (await request('/settings', { cookie })).text()
+      if (serviceKey) assert.match(html, /With no other provider, the runners of the service review with the OpenRouter key of the service, and a runner of your organization needs its own OpenRouter key\./)
+      else {
+        assert.match(html, /With no other provider, only a runner with its own key does the reviews\./)
+        assert.doesNotMatch(html, /runner of the service/, 'with no key of the service, a runner of the service takes no job')
+      }
+    }
+  })
+
   it('shows a refused key with its status, its hour and a banner', async () => {
     let refusedAt = new Date('2026-10-29T08:40:00Z')
     let { request, signIn } = setup([provider({ refusedAt, refusedStatus: 401, refusedMessage: '401 invalid x-api-key' })])
