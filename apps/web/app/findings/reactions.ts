@@ -117,7 +117,7 @@ export async function sweepReactions(
     } catch (error) {
       log('warn', 'findings.reaction_sweep_failed', { repo: first.fullName, error: errorMessage(error) })
       // Read last next time, so that one repository never holds the others back.
-      await sql`update findings set reactions_checked_at = now() where id = any(${sql.array(rows.map((r) => r.id))}::uuid[])`
+      await sql`update findings set reactions_checked_at = now() where id = any(${rows.map((r) => r.id)}::uuid[])`
       continue
     }
     let writers = new Map<string, boolean>()

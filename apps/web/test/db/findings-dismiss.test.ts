@@ -78,7 +78,7 @@ describe('a change of status of several findings', () => {
     assert.match(posted[0]!.body, /by @alex on Kentō\. Reason: "Off topic"/)
 
     let events = await database.sql<{ type: string; actor: string; reason: string }[]>`
-      select type, actor, reason from finding_events where finding_id = any(${database.sql.array([ids[0]!, ids[1]!])}::uuid[])`
+      select type, actor, reason from finding_events where finding_id = any(${[ids[0]!, ids[1]!]}::uuid[])`
     assert.deepEqual([...events].map((e) => ({ ...e })), [
       { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
       { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
@@ -201,7 +201,7 @@ describe('a change of status of several findings', () => {
     for (let statement of migration.split('--> statement-breakpoint')) await sql.unsafe(statement)
     let rows = await sql<{ statusReason: string; reason: string }[]>`
       select f.status_reason as "statusReason", e.reason from findings f join finding_events e on e.finding_id = f.id
-      where f.id = any(${sql.array(fresh)}::uuid[]) order by f.line`
+      where f.id = any(${fresh}::uuid[]) order by f.line`
     assert.deepEqual(
       rows.map((r) => [r.statusReason, r.reason]),
       [['False positive', 'False positive'], ['no reason, GitHub reaction', 'no reason, GitHub reaction'], ['Corrigé ailleurs', 'Corrigé ailleurs']],

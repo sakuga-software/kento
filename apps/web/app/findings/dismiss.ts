@@ -115,7 +115,7 @@ export async function applyStatus(
         from findings
         join repos on repos.id = findings.repo_id
         join orgs on orgs.id = repos.org_id
-        where findings.id = any(${sql.array(input.ids)}::uuid[]) and orgs.id = ${input.orgId}`
+        where findings.id = any(${input.ids}::uuid[]) and orgs.id = ${input.orgId}`
     ).map((t) => [t.id, t]),
   )
   let body = replyText(input.status, input.reason, input.actor)

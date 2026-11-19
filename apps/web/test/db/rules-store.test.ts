@@ -92,6 +92,23 @@ describe('the store of the rules (REV-19)', () => {
     assert.deepEqual(await store.list(otherOrgId, null), [])
   })
 
+  // postgres.js 4 writes a JavaScript array as an array literal for the type that the server names.
+  // Each element is quoted, so a comma, a brace, a quote or a backslash stays in its element.
+  it('keeps each pattern as it was written, with commas, braces, quotes and backslashes', async () => {
+    let paths = ['src/{a,b}/**', 'docs/*.{md,mdx}', 'say "hi".ts', "it's.ts", 'back\\slash', 'a,b', '{}', 'NULL', 'é/日本/*.ts']
+    let added = await store.create(orgId, repoId, userId, { ...VALUES, paths })
+    if (added.kind !== 'saved') return assert.fail(added.kind)
+    assert.deepEqual((await store.list(orgId, repoId))[0]!.paths, paths)
+    let [stored] = await database.sql<{ n: number; second: string }[]>`select cardinality(paths) as n, paths[2] as second from rules where id = ${added.id}`
+    assert.deepEqual(stored, { n: paths.length, second: 'docs/*.{md,mdx}' })
+
+    let next = ['{x,y}/"z"', '\\']
+    assert.equal((await store.update(orgId, added.id, userId, 1, { ...VALUES, paths: next })).kind, 'saved')
+    assert.deepEqual((await store.list(orgId, repoId))[0]!.paths, next)
+    assert.equal((await store.update(orgId, added.id, userId, 2, { ...VALUES, paths: [] })).kind, 'saved')
+    assert.deepEqual((await store.list(orgId, repoId))[0]!.paths, [])
+  })
+
   it(`holds ${MAX_RULES} rules at most for a repository, even with additions at the same time`, async () => {
     await database.sql`
       insert into rules (org_id, repo_id, title, body)

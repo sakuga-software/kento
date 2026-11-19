@@ -367,7 +367,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
    * failure in the middle (a restart, an outage of GitHub) never posts the replies twice. The
    * comment of the command gets 🚀 after the summary, or 😕 when the publication stops.
    */
-  async function publishResolutions(connection: postgres.Sql) {
+  async function publishResolutions(connection: postgres.ReservedSql) {
     let rows = await connection<PendingResolution[]>`
       with taken as (
         update resolutions set published_at = now()
@@ -448,7 +448,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
    * 😕 on the comment of each command whose job ended without a review: failed after its last
    * attempt, or cancelled by a newer push, a close or the installation. Once per job.
    */
-  async function answerEndedCommands(connection: postgres.Sql) {
+  async function answerEndedCommands(connection: postgres.ReservedSql) {
     let rows = await connection<EndedCommand[]>`
       select jobs.id, jobs.state, jobs.github_comment_id as "commentId", repos.full_name as "fullName",
         repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
@@ -483,7 +483,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
    * run it again. The row is marked before the comment, so a failure in the middle never posts it
    * twice. No comment when the pull request is closed or a newer push moved its head.
    */
-  async function noticeFailedJobs(connection: postgres.Sql) {
+  async function noticeFailedJobs(connection: postgres.ReservedSql) {
     let rows = await connection<FailedJobRow[]>`
       with taken as (
         update jobs set failure_noticed_at = now()
@@ -570,7 +570,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
    * marker before any new post, and a delete that GitHub answers 404 is done. A failure of GitHub
    * leaves the row as it was, and the next run (30 s) tries again.
    */
-  async function syncQueueNotices(connection: postgres.Sql) {
+  async function syncQueueNotices(connection: postgres.ReservedSql) {
     // First the comments of the pull requests where no job waits for too long any more.
     let ended = await connection<QueueNotice[]>`
       select qn.repo_id as "repoId", qn.pr_number as "prNumber", qn.github_comment_id as "commentId", qn.body,
@@ -712,8 +712,8 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           join repos on repos.id = reviews.repo_id
           join orgs on orgs.id = repos.org_id
           where reviews.published_at is null and reviews.created_at > now() - ${MAX_AGE}::interval
-            -- The rows that this process gave up on do not hold the limit (2950: the type uuid).
-            and not (reviews.id = any(${connection.array(exhausted(), 2950)}))
+            -- The rows that this process gave up on do not hold the limit.
+            and not (reviews.id = any(${exhausted()}::uuid[]))
           order by reviews.created_at
           limit 20`
         let results: PublishResult[] = []
@@ -812,7 +812,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
 }
 
 /** REV-116. The hints of a resolution: the findings of its pull request, and their claims. */
-function resolveHints(sql: postgres.Sql, row: { githubRepoId: number | string; prNumber: number }, docsUrl: string | null): ResolveHints {
+function resolveHints(sql: postgres.ISql, row: { githubRepoId: number | string; prNumber: number }, docsUrl: string | null): ResolveHints {
   return {
     docsUrl,
     async findingOf(commentId) {

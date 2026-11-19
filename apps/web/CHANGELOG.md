@@ -21,6 +21,19 @@ Each entry says, when it applies:
 
 - **Migrations**: none (still 29).
 - **Order**: the service, then the runners (the engine changes).
+- **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
+  `DATABASE_URL`, the service connects as before. Version 4 reads more of the environment:
+  - `PGSSLMODE`, which version 3 ignored. `require` uses TLS, and fails against a server without
+    it. `prefer` and `allow` use TLS when the server offers it. `verify-ca` and `verify-full` check
+    the certificate against the CAs of Node, not `PGSSLROOTCERT` or `~/.postgresql/root.crt`: with
+    a private CA, the migrations fail and the service does not start.
+  - `sslrootcert`, `sslcert` and `sslkey` in `DATABASE_URL` are read as files. Version 3 sent them
+    to the server, which refused the connection (`42704`).
+  - `PGCHANNELBINDING`, and `PGPASSFILE` or `~/.pgpass` when `DATABASE_URL` has no password.
+  - `PGQUERY_TIMEOUT`, `PGQUEUE_TIMEOUT`, `PGCANCEL_TIMEOUT`, `PGMIN`, `PGINFER`, `PGSCHEDULER` and
+    `PGSSLNEGOTIATION`, new options of version 4.
+
+  Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
 
 ### Security
 

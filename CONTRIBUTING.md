@@ -59,6 +59,12 @@ type(scope): imperative lowercase summary
 
 - **TypeScript without a build step.** Node runs the source as is. Keep to erasable syntax: no
   `enum`, no `namespace`, no parameter properties.
+- **Cast the parameters that Postgres cannot type.** postgres.js 4 sends a parameter without a
+  type, and the server decides it from the query. In `set col =`, in `values` and in a comparison
+  with a column, the column gives the type. Elsewhere, cast a boolean, a date, a `bigint`, a
+  `Buffer` or an array: `${flag}::boolean`, `${at}::timestamptz`, `${ids}::uuid[]`. Without the cast,
+  `select ${false} as x` gives the string `'false'`. Write a date as `toISOString()`, and pass an
+  array as it is: `sql.array()` is gone.
 - **Migrations only add.** The previous release runs on the new schema during a deployment: add a
   column with a default or as nullable, and never drop or rename a column that the running release
   still reads. See [apps/web/README.md](apps/web/README.md#migrations).

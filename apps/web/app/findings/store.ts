@@ -144,7 +144,7 @@ export async function listFindings(
     where repos.org_id = ${filter.orgId}
       ${filter.repoId ? sql`and findings.repo_id = ${filter.repoId}` : sql``}
       ${filter.prNumber !== undefined ? sql`and findings.pr_number = ${filter.prNumber}` : sql``}
-      and findings.status = any(${sql.array(statusesOf(filter.statuses))}::finding_status[])
+      and findings.status = any(${statusesOf(filter.statuses)}::finding_status[])
       ${cursor ? sql`and (findings.created_at, findings.id) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)` : sql``}
     order by findings.created_at desc, findings.id desc
     limit ${limit + 1}`

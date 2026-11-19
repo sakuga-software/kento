@@ -277,7 +277,7 @@ async function dismissBlockingReview(input: RejectInput): Promise<number | null>
   let rows = await input.sql<{ key: string; status: string }[]>`
     select key, status::text as status from findings
     where repo_id = (select repo_id from findings where id = ${input.finding.id}) and pr_number = ${prNumber}
-      and key = any(${input.sql.array(keys)})`
+      and key = any(${keys}::text[])`
   let setAside = (key: string) => {
     let of = rows.filter((r) => r.key === key)
     // As the ticket says: no blocking finding stays *open*. Dismissed, wontfix, fixed or stale: it

@@ -272,7 +272,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
           ${sql.unsafe(cursorAt('created_at'))} as "cursorAt"
         from findings
         where repo_id = ${repoId} and pr_number = ${prNumber}
-          ${statuses.length ? sql`and status = any(${sql.array(statuses)}::finding_status[])` : sql``}
+          ${statuses.length ? sql`and status = any(${statuses}::finding_status[])` : sql``}
           ${rowsCursor ? sql`and (created_at, id) > (${rowsCursor.at}::timestamptz, ${rowsCursor.id}::uuid)` : sql``}
         order by created_at, id
         limit ${ROWS_PAGE + 1}`
@@ -291,7 +291,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
             case when coalesce(f->>'anchor', f->>'line') ~ '^[0-9]{1,9}$' then coalesce(f->>'anchor', f->>'line')::int end as line
           from reviews r
           cross join lateral jsonb_array_elements(case when jsonb_typeof(r.result->'findings') = 'array' then r.result->'findings' else '[]'::jsonb end) f
-          where r.id = any(${sql.array(reviewIds)}::uuid[])`
+          where r.id = any(${reviewIds}::uuid[])`
         results = resultRows.flatMap((r) =>
           typeof r.path === 'string' && typeof r.title === 'string'
             ? [{ reviewId: r.reviewId, fingerprint: r.fingerprint, key: findingKey({ path: r.path, title: r.title } as never), path: r.path, line: r.line ?? 0 }]
@@ -301,10 +301,10 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
         let read = await sql<SheetEvent[]>`
           select finding_id as "findingId", review_id as "reviewId", type, created_at as at
           from finding_events
-          where finding_id = any(${sql.array(rows.map((r) => r.id))}::uuid[])
+          where finding_id = any(${rows.map((r) => r.id)}::uuid[])
             -- The events of the reviews of the page, whenever they were written (a review that was not
             -- marked as published has its events after its result), and the others up to the newest column.
-            and (created_at <= ${new Date(newest).toISOString()} or review_id = any(${sql.array(shown.map((r) => r.id))}::uuid[]))
+            and (created_at <= ${new Date(newest).toISOString()} or review_id = any(${shown.map((r) => r.id)}::uuid[]))
           order by created_at, id`
         events = read.map((e) => ({ ...e, at: toDate(e.at) }))
       }

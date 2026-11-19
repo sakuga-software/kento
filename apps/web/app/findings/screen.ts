@@ -190,7 +190,7 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${author ? sql`and exists (select 1 from pull_authors where pull_authors.repo_id = findings.repo_id and pull_authors.pr_number = findings.pr_number and lower(pull_authors.login) = lower(${author}))` : sql``}
     ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}
     ${query.considered ? sql`and ${consideredSql(sql)}` : sql``}`
-  let inView = sql`findings.status = any(${sql.array([...statusesOf(view)])}::finding_status[])`
+  let inView = sql`findings.status = any(${[...statusesOf(view)]}::finding_status[])`
   let key = sql`(findings.created_at, findings.id)`
 
   let fetched = await sql<Row[]>`

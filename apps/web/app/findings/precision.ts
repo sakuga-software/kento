@@ -91,7 +91,7 @@ function closedFindings(sql: postgres.Sql, orgId: string, repoIds?: string[]) {
     left join rules on rules.id = findings.rule_id
     left join repos rule_repos on rule_repos.id = rules.repo_id
     where repos.org_id = ${orgId}
-      ${repoIds ? sql`and findings.repo_id = any(${sql.array(repoIds)}::uuid[])` : sql``}
+      ${repoIds ? sql`and findings.repo_id = any(${repoIds}::uuid[])` : sql``}
       and findings.status in ('fixed', 'dismissed')
       -- The event that set the status is in the window, and no event came after it.
       and exists (

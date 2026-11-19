@@ -179,7 +179,7 @@ export function createOrgSettingsStore({ sql, db }: Pick<Database, 'sql' | 'db'>
             daily_cap_usd = ${next.caps.dailyCapUsd},
             monthly_cap_usd = ${next.caps.monthlyCapUsd},
             cap_alert_pct = ${next.caps.alertPct},
-            trusted_bots = ${tx.array(next.trustedBots)}::text[],
+            trusted_bots = ${next.trustedBots}::text[],
             config = ${JSON.stringify(next.config)}::jsonb,
             settings_version = settings_version + 1,
             settings_updated_by = ${userId},
