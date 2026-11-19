@@ -330,6 +330,38 @@ of today come from the later bench of [`eval/martian/`](eval/martian/README.md))
   it found fewer defects than one call, and its GitHub action can push commits.
 - **Scaleway has no prompt cache**, so an agent there pays the whole context at each step.
 
+## Run it yourself
+
+Kentō needs Node 26 or later and pnpm 11 to develop, Postgres 18, Docker for the images, and a
+GitHub App of your own. [`compose.yaml`](compose.yaml) runs the web service, its database and one
+runner on one machine:
+
+```sh
+cp .env.example .env    # fill it in
+docker compose up -d --build
+curl -s localhost:3000/healthz
+```
+
+1. Create the GitHub App first: [apps/web/DEPLOY.md, section 3](apps/web/DEPLOY.md#3-the-github-app)
+   gives its permissions, its events and its URLs. Put its id, its private key, its client id and
+   secret, and the webhook secret in `.env`.
+2. GitHub sends the webhook over HTTPS only. Put a TLS reverse proxy in front of port 3000, and set
+   `KENTO_PUBLIC_URL` to its origin.
+3. Set `KENTO_ALLOWED_ORGS` to the accounts that you serve. Empty, any account that installs your
+   App gets reviews on your runner.
+4. The runner of `compose.yaml` registers itself as a runner of the service with
+   `KENTO_RUNNER_REGISTRATION_TOKEN`. It calls the model with its own key (`PROVIDER_KIND`,
+   `PROVIDER_API_KEY`). The log of the web service then gives `runner.registered`, and `/healthz`
+   gives `"status":"ok"`.
+5. Install the App on a repository, sign in on `KENTO_PUBLIC_URL` as an admin of its account, and
+   click **Enable** on its row in **Repos** ([Turn on Kentō for a repository](#turn-on-kentō-for-a-repository)).
+   Until then, a pull request of that repository gets no job: the log gives
+   `"reason":"repository is not enabled"`.
+
+[apps/web/DEPLOY.md](apps/web/DEPLOY.md) describes the deployment of Sakuga, with its variables
+(section 4), the checks after a deployment and the operations.
+[apps/runner/README.md](apps/runner/README.md) describes the other runners and their providers.
+
 ## Develop
 
 The repository is a pnpm workspace, on Node 26 or later. Node runs the TypeScript as is: there is

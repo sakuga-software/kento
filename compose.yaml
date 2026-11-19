@@ -1,0 +1,69 @@
+# Kentō on one machine: the web service, its Postgres and one runner.
+#
+#   cp .env.example .env    # then fill it in: see apps/web/DEPLOY.md, section 4
+#   docker compose up -d --build
+#
+# GitHub must reach the webhook over HTTPS. Put a TLS reverse proxy in front of port 3000 and set
+# KENTO_PUBLIC_URL to its origin. The runner shares the network of `web` and calls it on
+# http://localhost:3000: the runner accepts plain HTTP only on localhost.
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kento
+      POSTGRES_DB: kento
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U kento -d kento']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://kento:${POSTGRES_PASSWORD}@postgres:5432/kento
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  runner:
+    build:
+      context: .
+      dockerfile: apps/runner/Dockerfile
+    restart: unless-stopped
+    network_mode: service:web
+    environment:
+      KENTO_URL: http://localhost:3000
+      KENTO_REGISTRATION_TOKEN: ${KENTO_RUNNER_REGISTRATION_TOKEN:?set KENTO_RUNNER_REGISTRATION_TOKEN in .env}
+      KENTO_RUNNER_NAME: ${KENTO_RUNNER_NAME:-compose}
+      PROVIDER_KIND: ${PROVIDER_KIND:-openrouter}
+      PROVIDER_BASE_URL: ${PROVIDER_BASE_URL-https://openrouter.ai/api/v1}
+      PROVIDER_API_KEY: ${PROVIDER_API_KEY:-}
+    volumes:
+      - runner-state:/var/lib/kento-runner
+    tmpfs:
+      - /tmp:rw,size=2g
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 2
+    stop_grace_period: 30s
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  runner-state:

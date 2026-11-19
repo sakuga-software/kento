@@ -38,6 +38,12 @@ named `Kentō`. The runners are a separate service: [apps/runner/DEPLOY.md](../r
 Kentō uses the existing App "Sakuga Review". Its settings are under GitHub > organization
 `sakuga-software` > **Settings > Developer settings > GitHub Apps > Sakuga Review**.
 
+For an installation of your own, create a new App under **Settings > Developer settings > GitHub
+Apps > New GitHub App** of your own account or organization, with the permissions, the events, the
+webhook and the callback below, on your own domain. Then set `KENTO_BOT_LOGIN` to
+`<slug of your App>[bot]`. For **Where can this GitHub App be installed?**, choose **Only on this account**, unless other
+accounts must install it. In that case, set `KENTO_ALLOWED_ORGS` (section 4).
+
 ### Permissions
 
 **Permissions & events**:
