@@ -43,13 +43,13 @@ test.describe('the Repos screen', () => {
     test(`an admin enables orchard, then disables it after a confirmation (${theme})`, async ({ page, context, baseURL }) => {
       let errors = watchConsole(page)
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
-      await signIn(page, 'alex')
+      await signIn(page, 'octocat')
       await checkNow(page)
 
       let orchard = rowOf(page, 'orchard')
       await expect(orchard.getByText('review.yml@stable')).toBeVisible()
       await expect(rowOf(page, 'fruitback').getByText('copy of review.yml')).toBeVisible()
-      await expect(rowOf(page, 'infra-repo').getByText('none', { exact: true })).toBeVisible()
+      await expect(rowOf(page, 'garden').getByText('none', { exact: true })).toBeVisible()
       // REV-91: the notes on the switch are folded under the table.
       await page.getByText('How the switch from review.yml to Kentō works').click()
       await expect(page.getByRole('heading', { name: 'Switch criterion' })).toBeVisible()
@@ -124,7 +124,7 @@ test.describe('the Repos screen', () => {
   }
 
   test('the counter: 20 published reviews offer "Remove review.yml"; a failed job brings it back to 0/20', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
     try {
@@ -162,7 +162,7 @@ test.describe('the Repos screen', () => {
   })
 
   test('a repository name of 80 characters: the page does not scroll sideways, and "Disable" stays in view (REV-25)', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
     try {
@@ -229,7 +229,7 @@ test.describe('the Repos screen', () => {
   })
 
   test('a click inside the inner confirmation does not close the menu, and "Cancel" gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
     let enable = row.getByRole('button', { name: 'Enable orchard' })
@@ -263,7 +263,7 @@ test.describe('the Repos screen', () => {
   })
 
   test('a menu "…" closes on Escape and on a click outside, one open at a time; "Search" shows at the keyboard (REV-91)', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let orchard = rowOf(page, 'orchard').locator('.row-menu')
     let fruitback = rowOf(page, 'fruitback').locator('.row-menu')
@@ -296,7 +296,7 @@ test.describe('the Repos screen', () => {
   })
 
   test('on a screen of 280 px, the menu "…" and its confirmation stay inside the screen (REV-91)', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
     let enable = row.getByRole('button', { name: 'Enable orchard' })
@@ -318,7 +318,7 @@ test.describe('the Repos screen', () => {
   })
 
   test('a long list: 50 rows a page, the enabled ones first, a search and the filters (REV-36)', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
     try {
@@ -379,7 +379,7 @@ test.describe('the Repos screen', () => {
     expect(await row.locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
     // Under 760 px each other cell keeps its label, "Precision 30 d" included for a repo without Kentō.
     if (page.viewportSize()!.width <= 760) {
-      let gh = rowOf(page, 'infra-repo')
+      let gh = rowOf(page, 'garden')
       expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
       await expect(gh.locator('td').nth(5)).toContainText('Kentō not enabled')
     }
@@ -399,11 +399,11 @@ test.describe('the Repos screen without JavaScript', () => {
     // The list comes from GitHub: read once in a browser with JavaScript, which waits for it.
     let reader = await browser.newContext({ baseURL, javaScriptEnabled: true })
     let readerPage = await reader.newPage()
-    await signIn(readerPage, 'alex')
+    await signIn(readerPage, 'octocat')
     await checkNow(readerPage)
     await reader.close()
 
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await page.goto('/repos')
     await expect(page.locator('html')).not.toHaveClass(/\bjs\b/)
     let last = page.locator('.repos-table tbody tr').last()

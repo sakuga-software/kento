@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import type { BulkStatus, StatusOutcome } from '../findings/dismiss.ts'
 import type { FindingRow } from '../findings/screen.ts'
 import { EMPTY_PAGE, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
@@ -27,7 +27,7 @@ function finding(id: string, title: string): FindingRow {
 
 function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, missing: 0, failed: 0, replied: 2, unreplied: 0 }, empty = false) {
   let auth = fakeAuth({ orgs: [ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let rows = [finding(A, 'Key read with no expiry'), { ...finding(B, 'Error swallowed'), considered: true }, { ...finding(C, 'Already fixed'), status: 'fixed' as const }]
   let { store, lists } = fakeFindingsScreenStore({ page: empty ? EMPTY_PAGE : { ...EMPTY_PAGE, rows, counts: { ...EMPTY_PAGE.counts, open: 2, all: 2 }, matching: 2 } })
@@ -53,7 +53,7 @@ function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, mi
     let body = init.form ? new URLSearchParams(init.form) : undefined
     return router.fetch(new Request(new URL(path, 'http://localhost'), { method: init.form ? 'POST' : 'GET', headers, body }))
   }
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -205,7 +205,7 @@ describe('the Findings screen, its selection and its actions', () => {
     })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/findings?status=all&priority=major&done=dismissed&n=2&replied=2')
-    assert.deepEqual(calls, [{ orgId: ORG.id, ids: [A, B], status: 'dismissed', reason: 'Off topic', actor: 'alex' }])
+    assert.deepEqual(calls, [{ orgId: ORG.id, ids: [A, B], status: 'dismissed', reason: 'Off topic', actor: 'octocat' }])
 
     let html = await (await request(response.headers.get('Location')!, { cookie })).text()
     assert.match(html, /2 findings marked dismissed\.<\/strong> 2 replies posted in the GitHub threads\./)

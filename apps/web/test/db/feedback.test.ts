@@ -206,7 +206,7 @@ describe('feedback on the reviews (REV-107)', () => {
       {
         source: 'command',
         text: 'it found the bug',
-        authorLogin: 'alex',
+        authorLogin: 'octocat',
         authorIsBot: false,
         url: 'https://github.com/sakuga-software/sakuga-review/pull/28#issuecomment-9501',
       },
@@ -217,7 +217,7 @@ describe('feedback on the reviews (REV-107)', () => {
     let out = await deliver('issue_comment', issueCommentPayload({ body: '@kento-review feedback', commentId: 9502 }))
     assert.equal(out.body.outcome, 'refused')
     assert.ok(fake.state.reactions.has('9502:confused'))
-    assert.match(fake.state.issueComments.at(-1)!.body, /^@alex The `feedback` command needs your opinion/)
+    assert.match(fake.state.issueComments.at(-1)!.body, /^@octocat The `feedback` command needs your opinion/)
     assert.deepEqual(await feedbackRows(), [])
   })
 

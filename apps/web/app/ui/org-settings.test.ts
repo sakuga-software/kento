@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { AppStatus, ReadAppStatus } from '../org-settings/app-status.ts'
 import type { OrgSettingsStore, OrgSettingsValues, OrgSettingsView } from '../org-settings/store.ts'
@@ -63,7 +63,7 @@ function fakeStore() {
       if (!row) return { kind: 'not_found' }
       if (row.version !== expectedVersion) return { kind: 'conflict', version: row.version, updatedBy: row.updatedBy, updatedAt: row.updatedAt }
       let next = change({ caps: { ...row.caps }, trustedBots: [...row.trustedBots], config: structuredClone(row.config) })
-      Object.assign(row, next, { version: row.version + 1, updatedBy: 'alex', updatedAt: NOW })
+      Object.assign(row, next, { version: row.version + 1, updatedBy: 'octocat', updatedAt: NOW })
       saves.push({ orgId, values: next })
       return { kind: 'saved', version: row.version }
     },
@@ -77,7 +77,7 @@ function fakeStore() {
 
 function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, status: APP }, providers: ProviderCatalog = serviceProviders) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let fake = fakeStore()
   let router = createAppRouter({
@@ -103,7 +103,7 @@ function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, stat
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -126,7 +126,7 @@ function autofocused(html: string): string[] {
 describe('the settings of the org (REV-13)', () => {
   it('shows an admin the cost, the forms, the trusted bots and the state of the App', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /Cost cap/)
     assert.match(html, /\$1\.50/)
@@ -148,7 +148,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('leads to each section from the top in one click, with one primary button per section at most (REV-29)', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     let nav = /<nav aria-label="Sections of the settings" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
     let anchors = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
@@ -162,7 +162,7 @@ describe('the settings of the org (REV-13)', () => {
   })
 
   it('has the four sections of its table of contents for a member, and without the state of the App (REV-29)', async () => {
-    for (let [app, profile] of [[null, ALEX], [null, CAMILLE], [undefined, CAMILLE]] as const) {
+    for (let [app, profile] of [[null, OCTOCAT], [null, CAMILLE], [undefined, CAMILLE]] as const) {
       let { request, signIn } = app === null ? setup(null) : setup()
       let { cookie } = await signIn(profile)
       let html = await (await request('/settings', { cookie })).text()
@@ -201,7 +201,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('refuses a form without the CSRF token, or from another site', async () => {
     let { request, signIn, saves } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let response = await request('/settings/org', { cookie, form: { version: '0', field: 'caps', dailyCapUsd: '1', alertPct: '80' } })
     assert.equal(response.status, 403)
     assert.deepEqual(saves, [])
@@ -209,7 +209,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('saves the limits, and the page says so', async () => {
     let { request, signIn, rows } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'caps', dailyCapUsd: '0,01', monthlyCapUsd: '', alertPct: '75' } })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/settings?org=saved&v=1#cap')
@@ -218,13 +218,13 @@ describe('the settings of the org (REV-13)', () => {
     let html = await (await request('/settings?org=saved&v=1', { cookie })).text()
     assert.match(html, /Settings saved/)
     assert.match(html, /Daily cap reached, \$1\.50 of \$0\.01/)
-    assert.match(html, /settings v1, changed by alex/)
+    assert.match(html, /settings v1, changed by octocat/)
   })
 
   it('warns from the alert percentage, under the limit', async () => {
     let { request, signIn, rows } = setup()
     rows[ORG.id]!.caps = { dailyCapUsd: 1.8, monthlyCapUsd: null, alertPct: 80 }
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /Daily alert threshold reached/)
     assert.doesNotMatch(html, /Daily cap reached/)
@@ -232,7 +232,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('shows the errors of the limits with the values typed, and writes nothing', async () => {
     let { request, signIn, saves } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'caps', dailyCapUsd: 'beaucoup', monthlyCapUsd: '-1', alertPct: '0' } })
     assert.equal(response.status, 422)
     let html = await response.text()
@@ -248,7 +248,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('focuses the first field in error of each form of the settings (REV-28)', async () => {
     let { request, signIn } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let send = async (form: Record<string, string>) => autofocused(await (await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', ...form } })).text())
     assert.deepEqual(await send({ field: 'caps', dailyCapUsd: '', monthlyCapUsd: '', alertPct: '0' }), ['cap-alert'])
     assert.deepEqual(await send({ field: 'trustedBots', trustedBots: 'github.com/renovate' }), ['trusted-bots'])
@@ -258,7 +258,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('saves the trusted bots in lowercase, and refuses a person', async () => {
     let { request, signIn, rows } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let refused = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'trustedBots', trustedBots: 'renovate[bot]\ngithub.com/renovate' } })
     assert.equal(refused.status, 422)
     assert.match(await refused.text(), /is not the login of a bot/)
@@ -270,7 +270,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('saves a default level and the models of a level, then "Back to the Kentō value" removes one', async () => {
     let { request, signIn, rows } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     assert.equal((await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'level', defaultLevel: 'balanced' } })).status, 303)
     assert.equal(
       (await request('/settings/org', { cookie, form: { _csrf: csrf, version: '1', field: 'models.heavy', provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: '' } })).status,
@@ -288,7 +288,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('refuses a model of a provider that the org does not have', async () => {
     let { request, signIn, saves } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'models.lite', provider: 'not-ours', model: 'x', fallback: '' } })
     assert.equal(response.status, 422)
     assert.match(await response.text(), /Choose a provider of the organization/)
@@ -299,7 +299,7 @@ describe('the settings of the org (REV-13)', () => {
     let { request, signIn, rows, saves } = setup()
     rows[ORG.id]!.version = 4
     rows[ORG.id]!.updatedBy = 'camille'
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/org', { cookie, form: { _csrf: csrf, version: '3', field: 'caps', dailyCapUsd: '8', alertPct: '80' } })
     assert.equal(response.status, 409)
     assert.match(await response.text(), /The settings changed in the meantime<\/strong> \(v4, changed by camille/)
@@ -308,7 +308,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('answers 400 to an unknown field, and to a reset of the limits', async () => {
     let { request, signIn } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     assert.equal((await request('/settings/org', { cookie, form: { _csrf: csrf, version: '0', field: 'suspendedAt' } })).status, 400)
     assert.equal((await request('/settings/org/reset', { cookie, form: { _csrf: csrf, version: '0', field: 'caps' } })).status, 400)
     assert.equal((await request('/settings/org', { cookie, form: { _csrf: csrf, version: 'x', field: 'caps' } })).status, 400)
@@ -334,7 +334,7 @@ describe('the settings of the org (REV-13)', () => {
 
   it('says when GitHub does not answer about the App', async () => {
     let { request, signIn } = setup({ ok: false, error: 'GET /app answered 401' })
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /GitHub refused the key of the App, code 401\. Check GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY on the service\./)
     assert.match(html, /<summary>Technical details<\/summary><code class="mono">GET \/app answered 401<\/code>/)
@@ -359,7 +359,7 @@ describe('one rule for the provider of a level (REV-27)', () => {
 
   it('a level without a choice shows the "Default" provider, its key and its models, never "key of the service"', async () => {
     let { request, signIn } = setup(undefined, catalog(false))
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     let lite = html.slice(html.indexOf('id="org-lite"'), html.indexOf('id="org-balanced"'))
     assert.match(lite, /Next job<\/span> <strong>Anthropic of Sakuga · key on the runner<\/strong> · <span class="mono">claude-haiku-4-5<\/span>/)
@@ -375,7 +375,7 @@ describe('one rule for the provider of a level (REV-27)', () => {
   it('a level that chose OpenRouter says so, and the limit of the key of the service shows', async () => {
     let { request, signIn, rows } = setup(undefined, catalog(true))
     rows[ORG.id]!.config = { models: { heavy: { provider: 'service', model: 'anthropic/claude-opus-5.5', fallback: null } } }
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     let heavy = html.slice(html.indexOf('id="org-heavy"'))
     assert.match(heavy, /<strong>OpenRouter · key of the service<\/strong> · <span class="mono">anthropic\/claude-opus-5.5<\/span>/)

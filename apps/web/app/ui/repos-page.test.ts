@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { RepoCheck } from '../repos/check.ts'
 import type { RepoListQuery, RepoPage, RepoView, ReposStore } from '../repos/store.ts'
@@ -37,7 +37,7 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
 /** The screens with the fake sign-in, and a store of repositories in memory, per org. */
 function setup(findings: FindingsScreenStore | null = null) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let rows: Record<string, RepoView[]> = {
     [ORG.id]: [
@@ -123,7 +123,7 @@ function setup(findings: FindingsScreenStore | null = null) {
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -181,7 +181,7 @@ describe('the Repos screen', () => {
 
   it('gives an admin "Enable", "Disable" and "Read GitHub again", and a member none of them', async () => {
     let { signIn } = setup()
-    let admin = (await signIn(ALEX)).html
+    let admin = (await signIn(OCTOCAT)).html
     assert.match(admin, new RegExp(`action="/repos/${ORCHARD}/enable"`))
     assert.match(admin, new RegExp(`action="/repos/${FRUITBACK}/disable"`))
     assert.match(admin, /action="\/repos\/check"/)
@@ -236,7 +236,7 @@ describe('the Repos screen', () => {
     // A member gets no confirmation either.
     assert.doesNotMatch(await (await request('/repos', { cookie: member.cookie })).text(), /data-confirm|\/disable"/)
 
-    let admin = await signIn(ALEX)
+    let admin = await signIn(OCTOCAT)
     assert.equal((await request(`/repos/${ORCHARD}/enable`, { cookie: admin.cookie, form: {} })).status, 403)
     assert.equal(
       (await request(`/repos/${ORCHARD}/enable`, { cookie: admin.cookie, headers: { 'Sec-Fetch-Site': 'cross-site' }, form: { _csrf: admin.csrf } })).status,

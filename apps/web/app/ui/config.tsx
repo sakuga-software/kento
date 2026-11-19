@@ -87,7 +87,7 @@ export interface ConfigPageProps {
   assignment?: Omit<AssignmentTabProps, 'repoId' | 'defaultLevel' | 'admin' | 'csrf'> | null
 }
 
-/** "config v7, changed by alex on 27 Oct at 18:02". */
+/** "config v7, changed by octocat on 27 Oct at 18:02". */
 export function versionLine(view: Pick<RepoConfigView, 'version' | 'updatedBy' | 'updatedAt'>): string {
   return sharedVersionLine({ name: 'config', changed: 'changed', empty: 'config v0, everything comes from the organization' }, view)
 }

@@ -50,7 +50,7 @@ describe('comment of a pull request whose job waits in the queue', () => {
   async function runner(input: { seenAgo: string | null; orgId?: string | null }) {
     let [row] = await database.sql<{ id: string }[]>`
       insert into runners (org_id, name, token_hash, last_seen_at)
-      values (${input.orgId === undefined ? orgId : input.orgId}, 'runners-host', ${`hash-${Math.random()}`},
+      values (${input.orgId === undefined ? orgId : input.orgId}, 'shared-01', ${`hash-${Math.random()}`},
         case when ${input.seenAgo}::text is null then null else now() - ${input.seenAgo ?? '0 s'}::interval end)
       returning id`
     return row!.id

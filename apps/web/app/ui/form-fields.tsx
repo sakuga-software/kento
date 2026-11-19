@@ -62,7 +62,7 @@ export function ResetForm(handle: Handle<{ action: string; csrf: string | null; 
 }
 
 /**
- * The line of the version of a versioned form: "config v7, changed by alex on 27 Oct at 18:02".
+ * The line of the version of a versioned form: "config v7, changed by octocat on 27 Oct at 18:02".
  * `empty` is the line of version 0, before any change.
  */
 export function versionLine(

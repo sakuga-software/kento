@@ -2,7 +2,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import type { FeedbackQuery, FeedbackStore } from '../feedback/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
@@ -14,7 +14,7 @@ const REPO = '44444444-4444-4444-8444-444444444444'
 
 function setup() {
   let auth = fakeAuth({ orgs: [ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let asked: { orgId: string; query: FeedbackQuery | undefined }[] = []
   let store: FeedbackStore = {

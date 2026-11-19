@@ -1,4 +1,4 @@
-// REV-22. The screen of a user ("alex · Kentō"): the preferences of the reviews of their own pull
+// REV-22. The screen of a user ("octocat · Kentō"): the preferences of the reviews of their own pull
 // requests, the findings that those pull requests received, and the pull requests that Kentō
 // reviewed. Every member of the org reads it; only the user changes it.
 import type { Handle } from 'remix/component'

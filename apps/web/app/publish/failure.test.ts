@@ -83,8 +83,8 @@ describe('failureComment', () => {
   })
 
   it('names the author of the command, and has no link without the public URL', () => {
-    let body = failureComment(job({ level: 'heavy', commenter: 'alex', configUrl: null }))
-    assert.ok(body.includes('@alex The `heavy` review of this commit failed'))
+    let body = failureComment(job({ level: 'heavy', commenter: 'octocat', configUrl: null }))
+    assert.ok(body.includes('@octocat The `heavy` review of this commit failed'))
     assert.ok(body.includes('To run it again: `@kento-review heavy`.\n\n'))
     assert.ok(!body.includes('config of the repo'))
   })

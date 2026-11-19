@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
@@ -95,7 +95,7 @@ function fakeStore(initial: ProviderView[] = []) {
 
 function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; secretsConfigured?: boolean; serviceKey?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let fake = fakeStore(initial)
   let probed: { kind: string; apiKey: string }[] = []
@@ -120,7 +120,7 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -137,7 +137,7 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
 describe('the section "Providers and keys"', () => {
   it('shows the last 4 characters of a key, never the key, and the forms to an admin', async () => {
     let { request, signIn } = setup([provider({ lastOkAt: new Date(NOW.getTime() - 5 * 60_000) })])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /Providers and keys/)
     assert.match(html, /Anthropic of Sakuga/)
@@ -171,7 +171,7 @@ describe('the section "Providers and keys"', () => {
   it('shows a refused key with its status, its hour and a banner', async () => {
     let refusedAt = new Date('2026-10-29T08:40:00Z')
     let { request, signIn } = setup([provider({ refusedAt, refusedStatus: 401, refusedMessage: '401 invalid x-api-key' })])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.equal(hour(refusedAt), '09:40')
     assert.match(html, /The key of (&quot;|")Anthropic of Sakuga(&quot;|") is refused \(401\) since <time[^>]*>09:40<\/time>/)
@@ -182,7 +182,7 @@ describe('the section "Providers and keys"', () => {
 
   it('shows a provider that the runner holds as "Key on the runner", neutral, with no test', async () => {
     let { request, signIn } = setup([provider({ kind: 'ollama', runnerHeld: true, keyLast4: null, models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } })])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /class="status status-neutral">Server of the runner/, 'a normal state is not amber (REV-31)')
     assert.match(html, /none, server of the runner/)
@@ -207,7 +207,7 @@ describe('the section "Providers and keys"', () => {
       }),
     ])
     assert.equal(providerState({ runnerHeld: true, refusedAt, lastOkAt: null }), 'refused')
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /role="alert"[^>]*><p><strong>The runner got 401 for the key of (&quot;|")Internal vLLM(&quot;|") since <time datetime="2026-10-29T08:00:00.000Z">09:00<\/time>/)
     assert.match(html, /class="status status-alert">Refused on the runner · 401 since/)
@@ -220,7 +220,7 @@ describe('the section "Providers and keys"', () => {
     let { request, signIn } = setup([
       provider({ kind: 'openai_compatible', baseUrl: 'https://llm.example.com/v1', models: { lite: ['qwen3'], balanced: ['qwen3'], heavy: ['qwen3'] } }),
     ])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /<span class="tag tag-warn">no price: not counted in the cap<\/span>/)
   })
@@ -246,7 +246,7 @@ describe('the section "Providers and keys"', () => {
 
   it('refuses a form without the CSRF token of the session', async () => {
     let { request, signIn, writes } = setup([provider()])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let response = await request(`/settings/providers/${ID}/remove`, { cookie, form: {} })
     assert.equal(response.status, 403)
     assert.deepEqual(writes, [])
@@ -254,7 +254,7 @@ describe('the section "Providers and keys"', () => {
 
   it('adds a provider, and never writes the key in the redirect', async () => {
     let { request, signIn, writes } = setup([])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'Anthropic', apiKey: KEY } })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/settings?notice=added#provider-8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f')
@@ -263,7 +263,7 @@ describe('the section "Providers and keys"', () => {
 
   it('asks to test only a provider that "Test" can test: not a key on the runner, not Ollama (REV-51)', async () => {
     let { request, signIn } = setup([])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let held = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'Anthropic', runnerHeld: 'on' } })
     assert.match(held.headers.get('Location') ?? '', /^\/settings\?notice=added_runner#provider-/)
     let ollama = await request('/settings/providers', {
@@ -280,7 +280,7 @@ describe('the section "Providers and keys"', () => {
 
   it('folds "Add a provider" behind a button, and opens it on an error (REV-29)', async () => {
     let { request, signIn } = setup([])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let page = await (await request('/settings', { cookie })).text()
     let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
@@ -294,7 +294,7 @@ describe('the section "Providers and keys"', () => {
 
   it('gives a form with an error back without the key it held', async () => {
     let { request, signIn } = setup([])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     assert.equal(response.status, 422)
     let html = await response.text()
@@ -304,7 +304,7 @@ describe('the section "Providers and keys"', () => {
 
   it('focuses the first field in error of "Add a provider", and announces that nothing was saved (REV-28)', async () => {
     let { request, signIn } = setup([])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'openai_compatible', label: 'x', baseUrl: 'http://llm.example.com', apiKey: '' } })
     assert.equal(response.status, 422)
     let html = await response.text()
@@ -317,7 +317,7 @@ describe('the section "Providers and keys"', () => {
 
   it('focuses the key of "Replace the key" after an error (REV-28)', async () => {
     let { request, signIn } = setup([provider()])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'short' } })
     assert.equal(response.status, 422)
     assert.deepEqual(autofocused(await response.text()), [`key-${ID}`])
@@ -325,7 +325,7 @@ describe('the section "Providers and keys"', () => {
 
   it('says under "Type" what each type needs, not only Ollama (REV-28)', async () => {
     let { request, signIn } = setup([])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     for (let kind of ['Anthropic', 'OpenRouter', 'OpenAI-compatible', 'Ollama']) assert.match(html, new RegExp(`<li><strong>${kind}</strong>: `))
     assert.match(html, /aria-describedby="provider-kind-hint"/)
@@ -333,7 +333,7 @@ describe('the section "Providers and keys"', () => {
 
   it('refuses a key when the service has no master key', async () => {
     let { request, signIn, writes } = setup([], { secretsConfigured: false })
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, /KENTO_SECRETS_KEY/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: 'A', apiKey: KEY } })
@@ -345,19 +345,19 @@ describe('the section "Providers and keys"', () => {
 
   it('tests a provider with its key, and records the answer', async () => {
     let ok = setup([provider()])
-    let admin = await ok.signIn(ALEX)
+    let admin = await ok.signIn(OCTOCAT)
     let response = await ok.request(`/settings/providers/${ID}/test`, { cookie: admin.cookie, form: { _csrf: admin.csrf } })
     assert.equal(response.headers.get('Location'), `/settings?notice=tested_ok#provider-${ID}`)
     assert.deepEqual(ok.probed, [{ kind: 'anthropic', baseUrl: null, apiKey: KEY }])
     assert.deepEqual(ok.writes, [`ok ${ID}`])
 
     let refused = setup([provider()], { probe: { outcome: 'refused', status: 401, message: '401 invalid x-api-key' } })
-    let second = await refused.signIn(ALEX)
+    let second = await refused.signIn(OCTOCAT)
     await refused.request(`/settings/providers/${ID}/test`, { cookie: second.cookie, form: { _csrf: second.csrf } })
     assert.deepEqual(refused.writes, [`refused ${ID} 401`])
 
     let failed = setup([provider()], { probe: { outcome: 'failed', message: 'llm.example.com is on a private network, and the service does not call it.' } })
-    let third = await failed.signIn(ALEX)
+    let third = await failed.signIn(OCTOCAT)
     let page = await failed.request(`/settings/providers/${ID}/test`, { cookie: third.cookie, form: { _csrf: third.csrf } })
     assert.equal(page.status, 200)
     assert.match(await page.text(), /private network/)
@@ -366,7 +366,7 @@ describe('the section "Providers and keys"', () => {
 
   it('replaces a key, and a provider of another org is "missing"', async () => {
     let { request, signIn, writes } = setup([provider(), provider({ id: '9f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', orgId: OTHER_ORG.id })])
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/settings/providers/${ID}/key`, { cookie, form: { _csrf: csrf, apiKey: 'sk-ant-new-key-0123456789-wxyz' } })
     assert.equal(response.headers.get('Location'), `/settings?notice=replaced#provider-${ID}`)
     let other = await request('/settings/providers/9f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f/key', { cookie, form: { _csrf: csrf, apiKey: 'sk-ant-new-key-0123456789-wxyz' } })
@@ -378,7 +378,7 @@ describe('the section "Providers and keys"', () => {
 
   it('says nothing that the URL writes, only a known notice', async () => {
     let { request, signIn } = setup([provider()])
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings?notice=<script>&detail=Pirate', { cookie })).text()
     // The URL is only in the escaped `returnTo` of the theme form; no banner says it.
     assert.doesNotMatch(html, /role="status"/)

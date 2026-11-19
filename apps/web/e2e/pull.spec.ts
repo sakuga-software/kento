@@ -164,7 +164,7 @@ test('an admin re-runs the review in heavy: a column R5 waits, then shows the pu
   let errors = watchConsole(page)
   // beforeEach signed camille in: the admin signs in from a fresh session.
   await page.context().clearCookies()
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await page.goto(`/repos/${repoId}/pulls/${PULL_NUMBER}`)
   // REV-91: "Run R5…" beside the title opens the three levels.
   await page.getByText('Run R5…').click()

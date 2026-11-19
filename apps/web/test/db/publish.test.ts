@@ -471,13 +471,13 @@ describe('publication of a review', () => {
   })
 
   it('says in the review which assignment rule set its level, and mentions the person of the rule (REV-21)', async () => {
-    let assignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'alex', reasons: { path: 'db/migrations/0002.sql' }, trigger: 'push' }
+    let assignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'octocat', reasons: { path: 'db/migrations/0002.sql' }, trigger: 'push' }
     await runJob(HEAD1, review(), { repoConfigVersion: 0, models: null, source: 'kento', assignment })
     await publisher.stop()
     let [posted] = fake.state.reviews
-    assert.match(posted!.body, /<sub>Assignment: rule 2, the PR changes db\/migrations\/0002\.sql, so heavy at each push\.<\/sub>\n\nReview requested by the rule: @alex/)
+    assert.match(posted!.body, /<sub>Assignment: rule 2, the PR changes db\/migrations\/0002\.sql, so heavy at each push\.<\/sub>\n\nReview requested by the rule: @octocat/)
     // The hidden marker of the review stays last.
-    assert.match(posted!.body, /@alex\n\n<!-- kento:review [0-9a-f-]+ -->$/)
+    assert.match(posted!.body, /@octocat\n\n<!-- kento:review [0-9a-f-]+ -->$/)
   })
 
   it('says in the review which rules with paths GitHub kept from being tested (REV-21)', async () => {

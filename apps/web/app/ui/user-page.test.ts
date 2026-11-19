@@ -2,7 +2,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { readPrefForm } from '../users/controller.tsx'
@@ -26,7 +26,7 @@ function screen(pulls = 12): UserScreen {
     lastReviewAt: new Date(NOW.getTime() - 3_600_000),
   }))
   return {
-    user: { id: 'u-1', githubId: 1, login: 'alex', name: 'Alex', avatarUrl: null },
+    user: { id: 'u-1', githubId: 1, login: 'octocat', name: 'Octocat', avatarUrl: null },
     role: 'admin',
     prefs: { global: { autoReview: true, level: null }, repos: [{ repoId: ORCHARD, fullName: 'sakuga-software/orchard', autoReview: false, level: 'heavy' }] },
     addable: [{ id: REVIEW, fullName: 'sakuga-software/sakuga-review' }],
@@ -37,17 +37,17 @@ function screen(pulls = 12): UserScreen {
 
 function setup() {
   let auth = fakeAuth({ orgs: [ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let saved: string[] = []
   let asked: string[] = []
   let store: UsersStore = {
     async member(orgId, login) {
-      return orgId === ORG.id && login.toLowerCase() === 'alex' ? { id: 'u-1', login: 'alex' } : orgId === ORG.id && login === 'camille' ? { id: 'u-2', login: 'camille' } : null
+      return orgId === ORG.id && login.toLowerCase() === 'octocat' ? { id: 'u-1', login: 'octocat' } : orgId === ORG.id && login === 'camille' ? { id: 'u-2', login: 'camille' } : null
     },
     async screen(orgId, login, pulls) {
       asked.push(`${orgId} ${login} ${pulls}`)
-      return login.toLowerCase() === 'alex' ? screen() : null
+      return login.toLowerCase() === 'octocat' ? screen() : null
     },
     async savePref(orgId, userId, repoId, pref) {
       saved.push(`${orgId} ${userId} ${repoId} ${pref.autoReview} ${pref.level}`)
@@ -67,13 +67,13 @@ function setup() {
   })
   let request = (path: string, cookie?: string | null) =>
     router.fetch(new Request(new URL(path, 'http://localhost'), { headers: cookie ? { Cookie: cookie } : {} }))
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookieOf(start, COOKIE))
     let cookie = cookieOf(callback, COOKIE)!
-    let html = await (await request('/users/alex', cookie)).text()
+    let html = await (await request('/users/octocat', cookie)).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''
     return { cookie, csrf, html }
   }
@@ -91,34 +91,34 @@ function setup() {
 describe('the screen of a user', () => {
   it('shows a user their preferences with the forms, the theme, the findings received and their pull requests', async () => {
     let { signIn } = setup()
-    let { html } = await signIn(ALEX)
-    assert.match(html, /<h1 class="page-title">alex<\/h1>/)
-    assert.match(html, /Alex · Admin of sakuga-software, from their rights on GitHub\./)
+    let { html } = await signIn(OCTOCAT)
+    assert.match(html, /<h1 class="page-title">octocat<\/h1>/)
+    assert.match(html, /Octocat · Admin of sakuga-software, from their rights on GitHub\./)
     assert.match(html, /Reviews of my PRs/)
-    assert.match(html, /action="\/users\/alex\/prefs"/)
+    assert.match(html, /action="\/users\/octocat\/prefs"/)
     assert.match(html, /<option value="off">Off: only on a command<\/option>/)
     assert.match(html, /sakuga-software\/orchard<\/th><td>off<\/td><td>heavy<\/td>/)
-    assert.match(html, new RegExp(`action="/users/alex/prefs/${ORCHARD}/remove"`))
+    assert.match(html, new RegExp(`action="/users/octocat/prefs/${ORCHARD}/remove"`))
     assert.match(html, /Add a repo/)
     assert.match(html, /id="user-theme-title"/)
     assert.match(html, /Findings received · 30 days/)
-    assert.match(html, /<a href="\/findings\?author=alex&amp;days=30">See my 4 open findings<\/a>/)
+    assert.match(html, /<a href="\/findings\?author=octocat&amp;days=30">See my 4 open findings<\/a>/)
     assert.match(html, /My reviewed PRs <span class="count">12<\/span>/)
     assert.match(html, /sakuga-software\/sakuga-review#100/)
     assert.match(html, /Changes requested<\/span> · 3\/5/)
     assert.match(html, /1 open · 2 fixed/)
     assert.match(html, /Closed/)
-    assert.match(html, /<a href="\/users\/alex\?prs=20">Show 2 more PRs<\/a>/)
+    assert.match(html, /<a href="\/users\/octocat\?prs=20">Show 2 more PRs<\/a>/)
     // The avatar of the bar leads to this screen, and marks it.
-    assert.match(html, /<a href="\/users\/alex" aria-current="page" title="alex" class="bar-avatar">/)
+    assert.match(html, /<a href="\/users\/octocat" aria-current="page" title="octocat" class="bar-avatar">/)
   })
 
   it('shows another member the same screen to read, with no form', async () => {
     let { signIn, request } = setup()
     let { cookie } = await signIn(CAMILLE)
-    let html = await (await request('/users/alex', cookie)).text()
+    let html = await (await request('/users/octocat', cookie)).text()
     assert.match(html, /Reviews of their PRs/)
-    assert.doesNotMatch(html, /action="\/users\/alex\/prefs/)
+    assert.doesNotMatch(html, /action="\/users\/octocat\/prefs/)
     assert.doesNotMatch(html, /id="user-theme-title"/)
     assert.match(html, /Automatic review on · level from the repo\./)
     assert.match(html, /See their 4 open findings/)
@@ -126,28 +126,28 @@ describe('the screen of a user', () => {
 
   it('answers 404 for a login that is no member of the org', async () => {
     let { signIn, request } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     assert.equal((await request('/users/stranger', cookie)).status, 404)
   })
 
   it('saves the preferences of the user, for every repository or for one, and says so', async () => {
     let { signIn, post, saved } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
-    let all = await post('/users/alex/prefs', cookie, { _csrf: csrf, repo: '', auto: 'off', level: 'heavy' })
+    let { cookie, csrf } = await signIn(OCTOCAT)
+    let all = await post('/users/octocat/prefs', cookie, { _csrf: csrf, repo: '', auto: 'off', level: 'heavy' })
     assert.equal(all.status, 303)
-    assert.equal(all.headers.get('Location'), '/users/alex?done=saved')
-    let one = await post('/users/alex/prefs', cookie, { _csrf: csrf, repo: REVIEW, auto: 'on', level: '' })
-    assert.equal(one.headers.get('Location'), '/users/alex?done=added')
-    let gone = await post(`/users/alex/prefs/${ORCHARD}/remove`, cookie, { _csrf: csrf })
-    assert.equal(gone.headers.get('Location'), '/users/alex?done=removed')
+    assert.equal(all.headers.get('Location'), '/users/octocat?done=saved')
+    let one = await post('/users/octocat/prefs', cookie, { _csrf: csrf, repo: REVIEW, auto: 'on', level: '' })
+    assert.equal(one.headers.get('Location'), '/users/octocat?done=added')
+    let gone = await post(`/users/octocat/prefs/${ORCHARD}/remove`, cookie, { _csrf: csrf })
+    assert.equal(gone.headers.get('Location'), '/users/octocat?done=removed')
     assert.deepEqual(saved, [`${ORG.id} u-1 null false heavy`, `${ORG.id} u-1 ${REVIEW} true null`, `remove u-1 ${ORCHARD}`])
   })
 
   it('refuses the forms of another member, a form without CSRF token, and a value it does not know', async () => {
     let { signIn, post, saved } = setup()
     let { cookie, csrf } = await signIn(CAMILLE)
-    assert.equal((await post('/users/alex/prefs', cookie, { _csrf: csrf, repo: '', auto: 'off', level: '' })).status, 403)
-    assert.equal((await post(`/users/alex/prefs/${ORCHARD}/remove`, cookie, { _csrf: csrf })).status, 403)
+    assert.equal((await post('/users/octocat/prefs', cookie, { _csrf: csrf, repo: '', auto: 'off', level: '' })).status, 403)
+    assert.equal((await post(`/users/octocat/prefs/${ORCHARD}/remove`, cookie, { _csrf: csrf })).status, 403)
     assert.equal((await post('/users/camille/prefs', cookie, { repo: '', auto: 'off', level: '' })).status, 403)
     assert.equal((await post('/users/camille/prefs', cookie, { _csrf: csrf, repo: '', auto: 'maybe', level: '' })).status, 400)
     assert.deepEqual(saved, [])

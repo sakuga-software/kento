@@ -65,7 +65,7 @@ describe('a change of status of several findings', () => {
       async (target, body) => {
         posted.push({ target, body })
       },
-      { orgId, ids: [ids[0]!, ids[1]!], status: 'dismissed', reason: 'Off topic', actor: 'alex' },
+      { orgId, ids: [ids[0]!, ids[1]!], status: 'dismissed', reason: 'Off topic', actor: 'octocat' },
     )
     assert.deepEqual(outcome, { changed: 2, unchanged: 0, fixed: 0, missing: 0, failed: 0, replied: 2, unreplied: 0 })
     assert.deepEqual(
@@ -75,13 +75,13 @@ describe('a change of status of several findings', () => {
         { installationId: 4242, githubRepoId: 7001, fullName: 'sakuga-software/orchard', prNumber: 12, commentId: 900_002 },
       ],
     )
-    assert.match(posted[0]!.body, /by @alex on Kentō\. Reason: "Off topic"/)
+    assert.match(posted[0]!.body, /by @octocat on Kentō\. Reason: "Off topic"/)
 
     let events = await database.sql<{ type: string; actor: string; reason: string }[]>`
       select type, actor, reason from finding_events where finding_id = any(${[ids[0]!, ids[1]!]}::uuid[])`
     assert.deepEqual([...events].map((e) => ({ ...e })), [
-      { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
-      { type: 'dismissed', actor: 'alex', reason: 'Off topic' },
+      { type: 'dismissed', actor: 'octocat', reason: 'Off topic' },
+      { type: 'dismissed', actor: 'octocat', reason: 'Off topic' },
     ])
     let after = (await precisionReport(database.sql, orgId)).reasons.find((r) => r.reason === 'Off topic')?.count ?? 0
     assert.equal(after - before, 2)
@@ -107,7 +107,7 @@ describe('a change of status of several findings', () => {
       async () => {
         throw new Error('POST … answered 403')
       },
-      { orgId, ids: [ids[1]!, theirs], status: 'wontfix', reason: null, actor: 'alex' },
+      { orgId, ids: [ids[1]!, theirs], status: 'wontfix', reason: null, actor: 'octocat' },
       (event) => warned.push(event),
     )
     assert.deepEqual(outcome, { changed: 1, unchanged: 0, fixed: 0, missing: 1, failed: 0, replied: 0, unreplied: 1 })
@@ -127,7 +127,7 @@ describe('a change of status of several findings', () => {
       returning id`
     let posted = 0
     let outcome = await applyStatus(database.sql, async () => void posted++, {
-      orgId, ids: [row!.id], status: 'dismissed', reason: 'Off topic', actor: 'alex',
+      orgId, ids: [row!.id], status: 'dismissed', reason: 'Off topic', actor: 'octocat',
     })
     assert.deepEqual(outcome, { changed: 0, unchanged: 0, fixed: 1, missing: 0, failed: 0, replied: 0, unreplied: 0 })
     assert.equal(posted, 0)
@@ -169,7 +169,7 @@ describe('a change of status of several findings', () => {
       let outcome = await applyStatus(
         impatient.sql,
         async (target) => void posted.push(target.commentId),
-        { orgId, ids: fresh, status: 'wontfix', reason: null, actor: 'alex' },
+        { orgId, ids: fresh, status: 'wontfix', reason: null, actor: 'octocat' },
         (event) => warned.push(event),
       )
       assert.deepEqual(outcome, { changed: 1, unchanged: 0, fixed: 0, missing: 0, failed: 1, replied: 1, unreplied: 0 })
@@ -194,7 +194,7 @@ describe('a change of status of several findings', () => {
         select repo_id, 13, ${`fr${n}`}, ${`fr${n}`}, 'a.ts', ${40 + n}, ${`french ${n}`}, 'major', 'bug', 80, 'dismissed', ${reason}, ${HEAD}, ${HEAD}
         from findings where id = ${ids[0]!}
         returning id`
-      await sql`insert into finding_events (finding_id, type, actor, reason) values (${row!.id}, 'dismissed', 'alex', ${reason})`
+      await sql`insert into finding_events (finding_id, type, actor, reason) values (${row!.id}, 'dismissed', 'octocat', ${reason})`
       fresh.push(row!.id)
     }
     let migration = await readFile(path.join(migrationsFolder, '0027_dismiss_reasons_in_english.sql'), 'utf8')

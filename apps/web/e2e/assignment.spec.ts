@@ -8,7 +8,7 @@ import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './h
 
 // The assignment rules of a repository (REV-21) in a browser, with the test of the ticket on orchard:
 // rule 1 gives the pull requests of the agent balanced; rule 2 gives a pull request that touches a
-// migration heavy, and mentions alex; a pull request that matches none gets the default level.
+// migration heavy, and mentions octocat; a pull request that matches none gets the default level.
 
 const ORCHARD = { id: 7001, full_name: 'sakuga-software/orchard', owner: { id: FAKE_ORG.accountId, login: FAKE_ORG.login } }
 
@@ -86,7 +86,7 @@ test.describe('the assignment rules of a repository', () => {
 
   test('an admin writes two rules on orchard; the agent gets balanced, a migration heavy and a mention, the rest the default', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
 
     await openRepoConfig(page, 'orchard')
@@ -104,11 +104,11 @@ test.describe('the assignment rules of a repository', () => {
     await page.locator('#assignment-new > summary').click()
     await form.getByLabel('The PR changes one of these paths').fill('**/migrations/**')
     await form.getByLabel('Then').selectOption('heavy')
-    await form.getByLabel('Mention in the review (optional)').fill('alex')
+    await form.getByLabel('Mention in the review (optional)').fill('octocat')
     await form.getByRole('button', { name: 'Add the rule' }).click()
     let list = page.locator('.assignment-list')
     await expect(list.getByText('If the PR changes **/migrations/**')).toBeVisible()
-    await expect(list.getByText(/then heavy, and the review mentions @alex\./)).toBeVisible()
+    await expect(list.getByText(/then heavy, and the review mentions @octocat\./)).toBeVisible()
     await expectNoAxeViolations(page)
 
     // 1. A pull request of the agent: balanced. 2. A person touches a migration: heavy. 3. Neither: lite.

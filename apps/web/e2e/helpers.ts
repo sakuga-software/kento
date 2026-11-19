@@ -31,7 +31,7 @@ export async function openRepoConfig(page: Page, repo: string) {
  * Signs in through the sign-in page and the fake GitHub, as one of its accounts
  * (e2e/fake-github.ts), and puts the org of the fake in the database first.
  */
-export async function signIn(page: Page, login: 'alex' | 'camille' | 'stranger') {
+export async function signIn(page: Page, login: 'octocat' | 'camille' | 'stranger') {
   await seedOrg()
   await page.goto('/login')
   await page.getByRole('link', { name: 'Continue with GitHub' }).click()

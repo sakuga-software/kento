@@ -44,7 +44,7 @@ let delivery = 0
 
 /** A `pull_request` event of orchard, signed as GitHub signs it. */
 async function pullRequest(page: Page, options: { head: string; author?: { login: string; type: string } }) {
-  let author = options.author ?? { login: 'alex', type: 'User' }
+  let author = options.author ?? { login: 'octocat', type: 'User' }
   let body = JSON.stringify({
     action: 'synchronize',
     number: 32,
@@ -85,7 +85,7 @@ test.describe('the settings of the org', () => {
   test('an admin sets the limit to 0,01 $: the next push gets no review and the reason; 8 $ lets the jobs go again', async ({ page }, info) => {
     let errors = watchConsole(page)
     let run = info.project.name === 'mobile' ? 100 : 0
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
 
     await page.goto('/settings')
@@ -132,7 +132,7 @@ test.describe('the settings of the org', () => {
 
   test('renovate[bot] in the trusted bots: its pull request on orchard gets a review', async ({ page }, info) => {
     let run = info.project.name === 'mobile' ? 100 : 0
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     let renovate = { login: 'renovate[bot]', type: 'Bot' }
     let ignored = await pullRequest(page, { head: head(run + 10), author: renovate })
@@ -155,7 +155,7 @@ test.describe('the settings of the org', () => {
 
   test('the defaults of the org: the level of a push that orchard inherits', async ({ page }, info) => {
     let run = info.project.name === 'mobile' ? 100 : 0
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     await page.goto('/settings#defaults')
     let defaults = page.getByRole('region', { name: 'Default values' })
@@ -177,7 +177,7 @@ test.describe('the settings of the org', () => {
   // REV-29. Every section is one click from the top, has a URL, and the page stays under one
   // primary button per section.
   test('the table of contents leads to each section, and its anchor is the URL', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await page.goto('/settings')
     let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
     for (let [name, id] of [
@@ -200,7 +200,7 @@ test.describe('the settings of the org', () => {
   })
 
   test('an old anchor of the settings leads to its section under the new anchor', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await page.goto('/settings#plafond')
     await expect(page).toHaveURL(/\/settings#cap$/)
     await expect(page.locator('#cap')).toBeInViewport()

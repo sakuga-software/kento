@@ -84,7 +84,7 @@ describe('the dashboard of an org', () => {
     repo = r1!.id
     otherRepo = r2!.id
     let [r] = await database.sql<{ id: string }[]>`
-      insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'runners-host', 'hash-1', now()) returning id`
+      insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'shared-01', 'hash-1', now()) returning id`
     runner = r!.id
     await database.sql`insert into runners (org_id, name, token_hash, last_seen_at) values (${otherOrg}, 'not-mine', 'hash-2', now())`
   })
@@ -139,7 +139,7 @@ describe('the dashboard of an org', () => {
 
     let screen = await store.screen(org)
     assert.equal(screen.banner?.id, failed)
-    assert.equal(screen.banner?.runnerName, 'runners-host')
+    assert.equal(screen.banner?.runnerName, 'shared-01')
     assert.equal(screen.banner?.reason, 'lease expired 2 times')
     assert.equal(screen.banner?.previous?.score, 3)
     assert.equal(screen.banner?.retry, null)
@@ -148,7 +148,7 @@ describe('the dashboard of an org', () => {
     assert.equal(screen.banner?.estimates.heavy, null)
     assert.deepEqual(screen.failures.map((f) => f.id), [failed])
     assert.deepEqual(screen.workflowRepos, ['sakuga-software/app'])
-    assert.deepEqual(screen.runners.map((r) => r.name), ['runners-host'])
+    assert.deepEqual(screen.runners.map((r) => r.name), ['shared-01'])
   })
 
   it('"Hide" hides a failure from the banner and the list, and the week still counts it (REV-59)', async () => {
@@ -161,26 +161,26 @@ describe('the dashboard of an org', () => {
     assert.equal(before.banner?.id, newer)
     assert.deepEqual(before.failures.map((f) => f.id), [newer, older])
 
-    assert.equal(await store.dismissFailure(org, newer, 'alex'), true)
+    assert.equal(await store.dismissFailure(org, newer, 'octocat'), true)
     let after = await store.screen(org)
     assert.equal(after.banner?.id, older)
     assert.deepEqual(after.failures.map((f) => f.id), [older])
     assert.equal(failedOfWeek(after), failedOfWeek(before))
     let [row] = await database.sql<{ by: string; at: Date | null; finishedAt: Date }[]>`
       select failure_dismissed_by as by, failure_dismissed_at as at, finished_at as "finishedAt" from jobs where id = ${newer}`
-    assert.equal(row!.by, 'alex')
+    assert.equal(row!.by, 'octocat')
     assert.ok(row!.at)
 
     // Hidden once; a job of another org, or one that did not fail, is not hidden.
-    assert.equal(await store.dismissFailure(org, newer, 'alex'), false)
-    assert.equal(await store.dismissFailure(org, theirs, 'alex'), false)
-    assert.equal(await store.dismissFailure(org, done, 'alex'), false)
+    assert.equal(await store.dismissFailure(org, newer, 'octocat'), false)
+    assert.equal(await store.dismissFailure(org, theirs, 'octocat'), false)
+    assert.equal(await store.dismissFailure(org, done, 'octocat'), false)
     let [kept] = await database.sql<{ n: number }[]>`select count(*)::int as n from jobs where failure_dismissed_at is not null`
     assert.equal(kept!.n, 1)
 
     // A failure that a close already hides can still be hidden: the notice "Failure hidden" is true.
     await database.sql`insert into pull_closures (repo_id, pr_number) values (${repo}, 20)`
-    assert.equal(await store.dismissFailure(org, older, 'alex'), true)
+    assert.equal(await store.dismissFailure(org, older, 'octocat'), true)
     await database.sql`delete from pull_closures`
   })
 
@@ -228,7 +228,7 @@ describe('the dashboard of an org', () => {
     await database.sql`update jobs set state = 'running', started_at = now(), runner_id = ${runner}, attempts = 1, lease_expires_at = now() + interval '2 minutes' where id = ${jobId}`
     let running = await store.screen(org)
     assert.equal(running.queue.runningCount, 1)
-    assert.equal(running.queue.running[0]!.runnerName, 'runners-host')
+    assert.equal(running.queue.running[0]!.runnerName, 'shared-01')
     assert.equal(running.runners[0]!.running, 1)
     await database.sql`update jobs set state = 'done', finished_at = now(), lease_expires_at = null where id = ${jobId}`
     await review(jobId, { publishedAgo: '0 seconds', createdAgo: '0 seconds' })
@@ -503,7 +503,7 @@ describe('the dashboard of an org', () => {
       await sql`insert into runners (org_id, name, token_hash, last_seen_at, revoked_at) values (${org}, 'gone', 'hash-gone', now(), now())`
       await sql`insert into runners (name, token_hash, last_seen_at) values ('em-service', 'hash-service', null)`
       let screen = await store.screen(org)
-      // runners-host online, late-one late, 27 ci runners and the service runner never seen offline.
+      // shared-01 online, late-one late, 27 ci runners and the service runner never seen offline.
       assert.deepEqual(screen.runnerCounts, { online: 1, late: 1, offline: 28 })
       // The same states as the screen: runnerState() of each runner of the list gives its group.
       let { runnerState } = await import('../../app/ui/runners.tsx')
@@ -517,7 +517,7 @@ describe('the dashboard of an org', () => {
       assert.deepEqual(screen.runnerCounts, byScreen)
       assert.deepEqual(
         screen.runners.map((r) => r.name),
-        ['late-one', 'runners-host', 'ci-01', 'ci-02', 'ci-03', 'ci-04', 'ci-05'],
+        ['late-one', 'shared-01', 'ci-01', 'ci-02', 'ci-03', 'ci-04', 'ci-05'],
       )
     } finally {
       await sql`delete from runners where name like 'ci-%' or name in ('late-one', 'gone', 'em-service')`

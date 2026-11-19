@@ -152,7 +152,7 @@ describe('loadConfig', () => {
 
   it('reads the login of the App, and refuses a login that is not one of an App', () => {
     assert.equal(loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'kento[bot]' }).botLogin, 'kento[bot]')
-    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'alex' }), /KENTO_BOT_LOGIN must be the login of an App/)
+    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_BOT_LOGIN: 'octocat' }), /KENTO_BOT_LOGIN must be the login of an App/)
   })
 
   it('reads the slug of the App, or takes it from the login of its bot (REV-32)', () => {

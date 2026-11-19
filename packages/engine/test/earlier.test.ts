@@ -1,5 +1,5 @@
 // REV-99. The review reads every finding of the pull request, links a finding that continues one of
-// them, and counts that defect once in the score. The cases replay gallery-app#62 (2026-11-08), where
+// them, and counts that defect once in the score. The cases replay example-repo#62 (2026-11-08), where
 // Kentō wrote the same defect again in other words at each review and the score stayed at 3/5.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -82,7 +82,7 @@ const earlier = (f: Finding, status: EarlierFinding['status'], reason: string | 
   commit,
 });
 
-// The findings of gallery-app#62, with their ids on GitHub. The titles are translated.
+// The findings of example-repo#62, with their ids on GitHub. The titles are translated.
 /** #dbf9b7, P2, open at d579956. */
 const startDate = finding(BILLING, 386, '`start_date` of the current phase taken from a newly created schedule');
 /** #1109d6, P2, at a9ac01a: the same defect, one word apart. Its key is another one. */
@@ -164,7 +164,7 @@ test('the pack lists every earlier finding with its reference, its status, its c
   assert.equal(withEarlier.reuseKey, without.reuseKey);
 });
 
-test('gallery-app#62 replayed: the rewordings follow their earlier finding, and the score of the last review stays', async () => {
+test('example-repo#62 replayed: the rewordings follow their earlier finding, and the score of the last review stays', async () => {
   // At a9ac01a the model wrote #dbf9b7 again with one word changed (no `follows`), and #c7f3ec in
   // other words (`follows: E2`). It said 3, as at each review of that night.
   const model = fakeModel(() => answer(3, [startDateAgain, rowNotUndone]));

@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { SESSION_TTL_MS } from '../auth/session-storage.ts'
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { ICON_FILES, ICON_VERSION } from '@sakuga-review/engine/render'
@@ -16,7 +16,7 @@ const INSTALL_URL = 'https://github.com/apps/kento-review/installations/new'
 
 function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
   let auth = fakeAuth(options)
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let router = createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
@@ -39,7 +39,7 @@ function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
   }
 
   /** Signs in through the GitHub flow; returns the session cookie, or the refusal. */
-  async function signIn(profile = ALEX, returnTo?: string) {
+  async function signIn(profile = OCTOCAT, returnTo?: string) {
     auth.as(profile)
     let start = await request(`/login/github${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`)
     assert.equal(start.status, 302)
@@ -89,7 +89,7 @@ describe('the GitHub sign-in', () => {
     assert.equal(cookieOf(page, COOKIE), null)
     assert.match(await page.text(), /href="\/login\/github\?returnTo=%2Frunners"/)
 
-    let { callback, cookie } = await signIn(ALEX, '/runners')
+    let { callback, cookie } = await signIn(OCTOCAT, '/runners')
     assert.equal(callback.status, 303)
     assert.equal(callback.headers.get('Location'), '/runners')
     assert.ok(cookie)
@@ -97,10 +97,10 @@ describe('the GitHub sign-in', () => {
 
   it('gives an admin of the org the full frame, with no "Read only"', async () => {
     let { request, signIn, auth } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
 
     let html = await (await request('/', { cookie })).text()
-    assert.match(html, /<a href="\/users\/alex" title="alex" class="bar-avatar"><span aria-hidden="true">MA<\/span>/)
+    assert.match(html, /<a href="\/users\/octocat" title="octocat" class="bar-avatar"><span aria-hidden="true">OC<\/span>/)
     assert.match(html, /<span class="who-role">Admin<\/span>/)
     assert.match(html, /<span class="bar-org-box">sakuga-software<\/span>/)
     assert.doesNotMatch(html, /Read only/)
@@ -164,7 +164,7 @@ describe('the GitHub sign-in', () => {
 
   it('a sign-in that works empties the cookie of an earlier refusal (REV-32)', async () => {
     let { signIn, request } = setup()
-    let { callback } = await signIn(ALEX)
+    let { callback } = await signIn(OCTOCAT)
     // A signed-in visit of /login goes back to the screens, and empties a leftover cookie on its way.
     let session = cookieOf(callback, COOKIE)!
     let back = await request('/login', { cookie: `${session}; __Host-kento_refused=leftover` })
@@ -198,7 +198,7 @@ describe('the GitHub sign-in', () => {
 
   it('links Findings in the bar, with no "Soon" left (REV-18)', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/', { cookie })).text()
     assert.equal(html.match(/href="\/findings"/g)?.length, 1)
     assert.doesNotMatch(html, /class="bar-link">[^<]*<span class="tag tag-quiet">Soon/)
@@ -206,9 +206,9 @@ describe('the GitHub sign-in', () => {
 
   it('says the sign-in failed when GitHub cannot tell, and lets nobody in', async () => {
     let { signIn, auth } = setup()
-    auth.setRole(ORG, ALEX, 'error')
+    auth.setRole(ORG, OCTOCAT, 'error')
 
-    let { callback } = await signIn(ALEX)
+    let { callback } = await signIn(OCTOCAT)
 
     assert.equal(callback.headers.get('Location'), '/login?notice=failed')
     assert.equal(auth.users.size, 0)
@@ -216,7 +216,7 @@ describe('the GitHub sign-in', () => {
 
   it('refuses a callback with a wrong state or a refused code', async () => {
     let { request, auth } = setup()
-    auth.as(ALEX)
+    auth.as(OCTOCAT)
     let start = await request('/login/github')
     let pending = cookieOf(start, COOKIE)!
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -235,7 +235,7 @@ describe('the GitHub sign-in', () => {
 
   it('a sign-in from a signed-in session keeps nothing of the previous one', async () => {
     let { request, signIn, auth, csrfOf } = setup()
-    let first = await signIn(ALEX)
+    let first = await signIn(OCTOCAT)
     let oldToken = await csrfOf(first.cookie!)
 
     auth.as(CAMILLE)
@@ -254,13 +254,13 @@ describe('the GitHub sign-in', () => {
 
   it('gives a new session id at the sign-in', async () => {
     let { signIn } = setup()
-    let { pending, cookie } = await signIn(ALEX)
+    let { pending, cookie } = await signIn(OCTOCAT)
     assert.notEqual(cookie, pending)
   })
 
   it('sets a hardened session cookie', async () => {
     let { auth, request } = setup()
-    auth.as(ALEX)
+    auth.as(OCTOCAT)
     let start = await request('/login/github')
     let header = start.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
     assert.match(header, /; Path=\//)
@@ -273,7 +273,7 @@ describe('the GitHub sign-in', () => {
 
   it('sends a signed-in person from the sign-in page to the screens', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let page = await request('/login?returnTo=%2Frepos', { cookie })
     assert.equal(page.status, 303)
     assert.equal(page.headers.get('Location'), '/repos')
@@ -308,8 +308,8 @@ describe('the role, from GitHub', () => {
 
   it('keeps a role while GitHub fails, asks GitHub again on each request, and after an hour refuses without signing out', async () => {
     let { request, signIn, auth } = setup()
-    let { cookie } = await signIn(ALEX)
-    auth.setRole(ORG, ALEX, 'error')
+    let { cookie } = await signIn(OCTOCAT)
+    auth.setRole(ORG, OCTOCAT, 'error')
     let signedInAt = auth.clock.now
 
     auth.clock.now = signedInAt + ROLE_TTL_MS + 1000
@@ -325,14 +325,14 @@ describe('the role, from GitHub', () => {
     assert.match(await down.text(), /GitHub does not answer\./)
     assert.equal(cookieOf(down, COOKIE), null, 'the session is not cleared')
 
-    auth.setRole(ORG, ALEX, 'admin')
+    auth.setRole(ORG, OCTOCAT, 'admin')
     assert.equal((await request('/', { cookie })).status, 200)
   })
 
   it('logs a role that GitHub has not confirmed for over an hour', async () => {
     let { request, signIn, auth } = setup()
-    let { cookie } = await signIn(ALEX)
-    auth.setRole(ORG, ALEX, 'error')
+    let { cookie } = await signIn(OCTOCAT)
+    auth.setRole(ORG, OCTOCAT, 'error')
     auth.clock.now += ROLE_GRACE_MS + 1000
 
     let lines: string[] = []
@@ -347,7 +347,7 @@ describe('the role, from GitHub', () => {
       process.stderr.write = write
     }
     let events = lines.map((line) => JSON.parse(line) as { event: string; login?: string; orgs?: number })
-    assert.ok(events.some((e) => e.event === 'auth.role_unconfirmed' && e.login === 'alex' && e.orgs === 1), lines.join(''))
+    assert.ok(events.some((e) => e.event === 'auth.role_unconfirmed' && e.login === 'octocat' && e.orgs === 1), lines.join(''))
   })
 
   it('moves the session to a remaining org when its org is gone, and keeps it there', async () => {
@@ -371,8 +371,8 @@ describe('the role, from GitHub', () => {
 
   it('ends the session seven days after the sign-in', async () => {
     let { request, signIn, auth } = setup()
-    let { cookie } = await signIn(ALEX)
-    auth.setRole(ORG, ALEX, 'admin')
+    let { cookie } = await signIn(OCTOCAT)
+    auth.setRole(ORG, OCTOCAT, 'admin')
 
     auth.clock.now += SESSION_TTL_MS
     let after = await request('/', { cookie })
@@ -423,7 +423,7 @@ describe('the role, from GitHub', () => {
 describe('the forms of the frame', () => {
   it('refuse a form without the CSRF token of the session', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
 
     let response = await request('/logout', { cookie, form: {} })
     assert.equal(response.status, 403)
@@ -434,7 +434,7 @@ describe('the forms of the frame', () => {
 
   it('refuse a form that another site sent, even with the token', async () => {
     let { request, signIn, csrfOf } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let token = await csrfOf(cookie!)
 
     for (let headers of [{ 'Sec-Fetch-Site': 'cross-site' }, { Origin: 'https://evil.example' }] as Record<string, string>[]) {
@@ -446,7 +446,7 @@ describe('the forms of the frame', () => {
 
   it('sign out: the session ends, and the screens need a new sign-in', async () => {
     let { request, signIn, csrfOf } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
 
     let response = await request('/logout', { cookie, form: { _csrf: await csrfOf(cookie!) } })
     assert.equal(response.status, 303)
@@ -456,7 +456,7 @@ describe('the forms of the frame', () => {
 
   it('the theme form sets a Secure cookie on an https service, and goes back to the page', async () => {
     let { request, signIn, csrfOf } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
 
     let response = await request('/preferences/theme', {
       cookie,
@@ -469,7 +469,7 @@ describe('the forms of the frame', () => {
 
   it('the theme form ignores a theme it does not know, and never goes to another site', async () => {
     let { request, signIn, csrfOf } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let token = await csrfOf(cookie!)
 
     let response = await request('/preferences/theme', { cookie, form: { _csrf: token, theme: 'neon', returnTo: '//evil.example/x' } })
@@ -481,7 +481,7 @@ describe('the forms of the frame', () => {
 describe('the frame of a screen', () => {
   it('renders the navigation, the title, and the footer with the version', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let response = await request('/', { cookie })
 
     assert.equal(response.status, 200)
@@ -497,7 +497,7 @@ describe('the frame of a screen', () => {
 
   it('marks the screen on display as the current page, in the bar', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/runners', { cookie })).text()
 
     let current = [...html.matchAll(/<a href="([^"]+)" aria-current="page"/g)].map((match) => match[1])
@@ -506,7 +506,7 @@ describe('the frame of a screen', () => {
 
   it('sends the security headers, and no cache, on the screens and the sign-in page', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     for (let response of [await request('/settings', { cookie }), await request('/login')]) {
       let csp = response.headers.get('Content-Security-Policy') ?? ''
       assert.match(csp, /script-src 'self'/)
@@ -519,7 +519,7 @@ describe('the frame of a screen', () => {
 
   it('renders the theme of the cookie, and checks it in the switch', async () => {
     let { request, signIn } = setup()
-    let { cookie } = await signIn(ALEX)
+    let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/', { cookie: `${cookie}; kento_theme=sumi` })).text()
 
     assert.match(html, /data-theme="sumi"/)

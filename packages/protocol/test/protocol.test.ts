@@ -69,7 +69,7 @@ const review = (): ReviewPayload => ({
 
 test('a valid job, register, claim and result pass', () => {
   assert.deepEqual(parseJob(job()), { ok: true, value: job() });
-  assert.equal(parseRegisterRequest({ name: 'runners-host', labels: ['linux', 'x64'], version: '0.1.0' }).ok, true);
+  assert.equal(parseRegisterRequest({ name: 'shared-01', labels: ['linux', 'x64'], version: '0.1.0' }).ok, true);
   assert.equal(parseClaimRequest({ hasProviderKey: false }).ok, true);
   assert.deepEqual(parseResultRequest({ outcome: 'done', attempt: 1, review: review() }), { ok: true, value: { outcome: 'done', attempt: 1, review: review() } });
   assert.equal(parseResultRequest({ outcome: 'failed', attempt: 2, reason: 'clone failed' }).ok, true);

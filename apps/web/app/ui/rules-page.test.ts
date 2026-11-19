@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { serviceProviders } from '../repo-config/providers.ts'
 import type { RepoConfigStore, RepoConfigView } from '../repo-config/store.ts'
@@ -34,7 +34,7 @@ function memoryRules(repoOrg: Record<string, string>) {
     async create(orgId, repoId, _userId, values: RuleValues): Promise<RuleOutcome> {
       if (repoId !== null && repoOrg[repoId] !== orgId) return { kind: 'not_found' }
       if (rows.filter((r) => r.orgId === orgId && r.repoId === repoId).length >= MAX_RULES) return { kind: 'full' }
-      let rule = { id: id(), orgId, repoId, ...values, active: true, disabledBy: null, disabledAt: null, version: 1, updatedBy: 'alex', updatedAt: new Date('2026-10-30T09:00:00Z') }
+      let rule = { id: id(), orgId, repoId, ...values, active: true, disabledBy: null, disabledAt: null, version: 1, updatedBy: 'octocat', updatedAt: new Date('2026-10-30T09:00:00Z') }
       rows.push(rule)
       return { kind: 'saved', id: rule.id, title: rule.title, version: 1, repoId }
     },
@@ -49,7 +49,7 @@ function memoryRules(repoOrg: Record<string, string>) {
       let rule = find(orgId, ruleId)
       if (!rule) return { kind: 'not_found' }
       if (rule.version !== version) return { kind: 'conflict', id: ruleId, version: rule.version, updatedBy: rule.updatedBy, updatedAt: rule.updatedAt }
-      Object.assign(rule, { active, disabledBy: active ? null : 'alex', disabledAt: active ? null : new Date('2026-10-30T09:12:00Z'), version: rule.version + 1 })
+      Object.assign(rule, { active, disabledBy: active ? null : 'octocat', disabledAt: active ? null : new Date('2026-10-30T09:12:00Z'), version: rule.version + 1 })
       return { kind: 'saved', id: ruleId, title: rule.title, version: rule.version, repoId: rule.repoId }
     },
     async remove(orgId, ruleId) {
@@ -64,7 +64,7 @@ function memoryRules(repoOrg: Record<string, string>) {
 
 function setup(options: { config?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let repo = (id: string, orgId: string, fullName: string): RepoConfigView & { orgId: string } => ({
     orgId,
@@ -113,7 +113,7 @@ function setup(options: { config?: boolean } = {}) {
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -172,7 +172,7 @@ describe('the rules of a repository and of the org (REV-19)', () => {
     assert.equal(disabled.status, 303)
     html = await (await request(disabled.headers.get('Location')!, { cookie })).text()
     assert.match(html, /Rule disabled\. It no longer goes to the model\./)
-    assert.match(html, /<span class="tag tag-warn">disabled by alex on 30 Oct at 10:12<\/span>/)
+    assert.match(html, /<span class="tag tag-warn">disabled by octocat on 30 Oct at 10:12<\/span>/)
     assert.match(html, />Enable again<span class="visually-hidden"> the rule FK indexes<\/span>/)
 
     let removed = await request(`/rules/${rule.id}/remove?repo=${ORCHARD}`, { cookie, form: { _csrf: csrf } })

@@ -110,10 +110,10 @@ describe('the settings of an org against Postgres (REV-13)', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, runners, jobs, reviews, resolutions, users, webhook_deliveries cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'alex') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
     userId = user!.id
     fake = createFakeGitHub({ head: HEAD, pr: 28, repoId: REPO.id })
-    fake.state.permissions.set('alex', 'admin')
+    fake.state.permissions.set('octocat', 'admin')
   })
 
   describe('the cost limit at the enqueue', () => {
@@ -239,7 +239,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.equal((await queuedJobs()).length, 0)
       assert.ok(fake.state.reactions.has(`${answer.commentId}:confused`))
       let reply = fake.state.issueComments.at(-1)!
-      assert.match(reply.body, /^@alex Kentō does not start a review: the organization reached its daily cost cap/)
+      assert.match(reply.body, /^@octocat Kentō does not start a review: the organization reached its daily cost cap/)
     })
 
     it('a check that GitHub refuses is logged, and the delivery still answers "capped"', async () => {
@@ -362,7 +362,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       assert.equal(stale.kind, 'conflict')
       let view = await store.read(orgId)
       assert.deepEqual(view!.caps, { dailyCapUsd: 8, monthlyCapUsd: 150.5, alertPct: 75 })
-      assert.equal(view!.updatedBy, 'alex')
+      assert.equal(view!.updatedBy, 'octocat')
       assert.deepEqual(await store.save('00000000-0000-4000-8000-000000000000', userId, 0, (c) => c), { kind: 'not_found' })
     })
 

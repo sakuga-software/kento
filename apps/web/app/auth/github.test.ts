@@ -55,7 +55,7 @@ describe('createGitHubSignIn', () => {
     let { calls, fetch } = fakeFetch((url) =>
       url.endsWith('/access_token')
         ? Response.json({ access_token: 'ghu_user_token', token_type: 'bearer' })
-        : Response.json({ id: 42, login: 'alex', name: 'Alex', avatar_url: 'https://avatars.githubusercontent.com/u/42' }),
+        : Response.json({ id: 42, login: 'octocat', name: 'Octocat', avatar_url: 'https://avatars.githubusercontent.com/u/42' }),
     )
     let session = createSession()
     session.set('__auth', transaction)
@@ -66,7 +66,7 @@ describe('createGitHubSignIn', () => {
 
     let { result } = await finishExternalAuth(provider(fetch), context as never)
 
-    assert.deepEqual(result.profile, { id: 42, login: 'alex', name: 'Alex', avatarUrl: 'https://avatars.githubusercontent.com/u/42' })
+    assert.deepEqual(result.profile, { id: 42, login: 'octocat', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/42' })
     assert.equal(calls[0]!.url, 'https://github.com/login/oauth/access_token')
     assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), {
       client_id: 'Iv23li',
@@ -112,15 +112,15 @@ describe('createRoleLookup', () => {
 
   it('reads the role with a token of the installation limited to members: read', async () => {
     let { calls, lookupRole } = lookup((login) =>
-      login === 'alex' ? Response.json({ state: 'active', role: 'admin' }) : Response.json({ state: 'active', role: 'member' }),
+      login === 'octocat' ? Response.json({ state: 'active', role: 'admin' }) : Response.json({ state: 'active', role: 'member' }),
     )
 
-    assert.equal(await lookupRole(org, { githubId: 1, login: 'alex' }), 'admin')
+    assert.equal(await lookupRole(org, { githubId: 1, login: 'octocat' }), 'admin')
     assert.equal(await lookupRole(org, { githubId: 2, login: 'camille' }), 'member')
 
     assert.equal(calls[0]!.url, 'https://api.github.com/app/installations/77/access_tokens')
     assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { permissions: { members: 'read' } })
-    assert.equal(calls[1]!.url, 'https://api.github.com/orgs/sakuga-software/memberships/alex')
+    assert.equal(calls[1]!.url, 'https://api.github.com/orgs/sakuga-software/memberships/octocat')
     assert.equal((calls[1]!.init.headers as Record<string, string>).Authorization, 'Bearer ghs_members')
     // One token for both lookups, until it nears its end.
     assert.equal(calls.filter((c) => c.url.endsWith('/access_tokens')).length, 1)
@@ -139,7 +139,7 @@ describe('createRoleLookup', () => {
 
   it('makes the owner of a personal account its admin, with no call', async () => {
     let { calls, lookupRole } = lookup(() => Response.json({}, { status: 500 }))
-    assert.equal(await lookupRole({ ...org, githubAccountId: 42 }, { githubId: 42, login: 'alex' }), 'admin')
+    assert.equal(await lookupRole({ ...org, githubAccountId: 42 }, { githubId: 42, login: 'octocat' }), 'admin')
     assert.equal(calls.length, 0)
   })
 

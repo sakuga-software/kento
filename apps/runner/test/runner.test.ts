@@ -440,7 +440,7 @@ test('registers once, keeps the token in runner.json with mode 600, and reads it
     calls.push({ url, auth: (init.headers as Record<string, string>).Authorization! });
     return Response.json({ runnerId: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b12', token: RUNNER_TOKEN }, { status: 201 });
   }) as typeof fetch;
-  const config = { stateDir, kentoUrl: 'https://review.example', registrationToken: 'registration-secret', name: 'runners-host', labels: ['linux'] };
+  const config = { stateDir, kentoUrl: 'https://review.example', registrationToken: 'registration-secret', name: 'shared-01', labels: ['linux'] };
 
   const first = await runnerToken(config, doFetch);
   const second = await runnerToken({ ...config, registrationToken: null }, doFetch);
@@ -456,7 +456,7 @@ test('a start with no token says where to get one, and calls nothing', async () 
   const stateDir = join(root, 'state-empty');
   let calls = 0;
   const doFetch = (async () => (calls++, Response.json({}, { status: 201 }))) as unknown as typeof fetch;
-  const config = { stateDir, kentoUrl: 'https://review.example', registrationToken: null, name: 'runners-host', labels: [] };
+  const config = { stateDir, kentoUrl: 'https://review.example', registrationToken: null, name: 'shared-01', labels: [] };
   await assert.rejects(runnerToken(config, doFetch), /KENTO_REGISTRATION_TOKEN is not set: set it to a token from the Runners screen/);
   assert.equal(calls, 0);
 });
@@ -467,14 +467,14 @@ test('an answer that is not the protocol tells which runner to run; the request 
     sent.push({ url, body: JSON.parse(String(init.body)) });
     return Response.json({ id: 42 }, { status: 201 });
   }) as typeof fetch;
-  const config = { stateDir: join(root, 'state-bad'), kentoUrl: 'https://review.example', registrationToken: 'registration-secret', name: 'runners-host', labels: ['linux'] };
+  const config = { stateDir: join(root, 'state-bad'), kentoUrl: 'https://review.example', registrationToken: 'registration-secret', name: 'shared-01', labels: ['linux'] };
   await assert.rejects(runnerToken(config, doFetch), /^Error: register: the service answer does not match the runner protocol \(.+\); run the runner version that the Runners screen shows$/);
   assert.deepEqual(sent.map((s) => s.url), ['https://review.example/api/runner/register']);
   assert.deepEqual(Object.keys(sent[0]!.body as object).sort(), ['labels', 'name', 'version']);
 });
 
 test('the configuration wants an https service and a known provider, and never prints a value', () => {
-  const config = loadConfig({ KENTO_URL: 'https://review.sakuga.dev/', KENTO_RUNNER_LABELS: 'linux, x64', KENTO_RUNNER_NAME: 'runners-host', PROVIDER_API_KEY: RUNNER_KEY });
+  const config = loadConfig({ KENTO_URL: 'https://review.sakuga.dev/', KENTO_RUNNER_LABELS: 'linux, x64', KENTO_RUNNER_NAME: 'shared-01', PROVIDER_API_KEY: RUNNER_KEY });
   assert.equal(config.kentoUrl, 'https://review.sakuga.dev');
   assert.deepEqual(config.labels, ['linux', 'x64']);
   assert.equal(config.provider.kind, 'openrouter');
@@ -911,14 +911,14 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
       line: 2,
       comments: [
         { id: 1, author: 'kento-review', isBot: true, body: '**Subtraction**', commit: head },
-        { id: 2, author: 'alex', isBot: false, body: 'Intended: `sum` subtracts in this module.', commit: head },
+        { id: 2, author: 'octocat', isBot: false, body: 'Intended: `sum` subtracts in this module.', commit: head },
       ],
     },
   ];
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, threads }), deps(api, model));
 
   const pack = bodies[0].messages.at(-1).content as string;
-  assert.match(pack, /## Answered threads[\s\S]*\*\*alex\*\* \(person\):\n\nIntended: `sum` subtracts in this module\./);
+  assert.match(pack, /## Answered threads[\s\S]*\*\*octocat\*\* \(person\):\n\nIntended: `sum` subtracts in this module\./);
   assert.ok(JSON.stringify(bodies[0].response_format).includes('"threads"'));
   const result = results[0]!;
   assert.equal(result.outcome, 'done');

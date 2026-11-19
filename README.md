@@ -251,6 +251,15 @@ The workflows are in `.github/workflows`: Test (the packages), Web (`apps/web`),
   token in `.git/config`.
 - **Secrets.** gitleaks scans the history of each commit with its default rules. `.gitleaks.toml`
   lists the fake values of the tests that it must not report.
+- **Private names.** `.github/scripts/check-names.sh` fails when a tracked file, binary files
+  included, or a tracked path holds a name of a list: a private repository, an internal host, a
+  person. A name of 6 characters or more matches anywhere; a shorter one only as a whole word. The
+  list is the secret `PRIVATE_NAMES` of the environment `names-check`, one name per line, and never
+  in the repository. Only `main` can use that environment, so the code of a pull request never runs
+  with the list: the check runs on each push to `main` and fails when the secret is missing, and a
+  pull request runs only the test of the script. The log gives the path and the line of a match,
+  never the name. Fixtures, tests and examples use neutral names: `octocat`, `alice` or `bob` for a
+  login, `example-org/example-repo` for a repository, `runner-1` or `example.com` for a host.
 - **CodeQL.** Code scanning of a private repository needs paid GitHub Code Security, so the CodeQL
   job runs only once the repository is public. `codeql.yml` is the advanced setup of code scanning:
   keep the default setup off, or GitHub refuses its results.

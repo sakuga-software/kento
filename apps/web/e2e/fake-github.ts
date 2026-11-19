@@ -12,7 +12,7 @@ export const E2E_WEBHOOK_SECRET = 'e2e-webhook-secret-0123456789abcdef'
 
 /** The accounts of the fake, and their role in the org: `null` is not a member. */
 export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' | 'member' | null }> = {
-  alex: { id: 101, name: 'Alex Martin', role: 'admin' },
+  octocat: { id: 101, name: 'Alex Martin', role: 'admin' },
   camille: { id: 102, name: 'Camille', role: 'member' },
   stranger: { id: 103, name: 'Someone Else', role: null },
 }
@@ -24,7 +24,7 @@ export const LONG_REPO_NAME = 'sakuga-review-very-long-repository-name-for-monor
 export const FAKE_REPOS = [
   { id: 7001, full_name: 'sakuga-software/orchard', private: true, default_branch: 'main' },
   { id: 7002, full_name: 'sakuga-software/fruitback', private: false, default_branch: 'main' },
-  { id: 7003, full_name: 'sakuga-software/infra-repo', private: true, default_branch: 'main' },
+  { id: 7003, full_name: 'sakuga-software/garden', private: true, default_branch: 'main' },
   // REV-25: a name of 80 characters, for the width of the Repos table.
   { id: 7004, full_name: `sakuga-software/${LONG_REPO_NAME}`, private: true, default_branch: 'main' },
 ]

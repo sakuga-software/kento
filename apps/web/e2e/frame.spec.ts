@@ -13,7 +13,7 @@ const SCREENS = [
 
 test.describe('the frame of the screens', () => {
   test.beforeEach(async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   })
 
@@ -46,7 +46,7 @@ test.describe('the frame of the screens', () => {
 
   // REV-91: the tiles of the screen of a user keep their grid after the redesign of the dashboard.
   test('the screen of a user lays its tiles out as a grid', async ({ page }) => {
-    await page.goto('/users/alex')
+    await page.goto('/users/octocat')
     let tiles = page.locator('.dash-tiles').first()
     await expect(tiles).toBeVisible()
     expect(await tiles.evaluate((el) => getComputedStyle(el).display)).toBe('grid')
@@ -112,7 +112,7 @@ test.describe('the frame of the screens', () => {
 test.describe('a page that does not exist', () => {
   for (let theme of ['paper', 'sumi'] as const) {
     test(`an unknown repository and an unknown page answer 404 in the frame, and pass axe (${theme})`, async ({ page, context, baseURL }) => {
-      await signIn(page, 'alex')
+      await signIn(page, 'octocat')
       await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
       let errors = watchConsole(page)
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
@@ -152,7 +152,7 @@ test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
   test('the theme form applies the choice with "Apply"', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await page.goto('/runners')
     let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
     await theme.getByText('Sumi', { exact: true }).click()

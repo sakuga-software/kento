@@ -5,7 +5,7 @@ import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
-import { cookieOf, fakeAuth, ALEX, ORG } from '../../app/auth/test-helpers.ts'
+import { cookieOf, fakeAuth, OCTOCAT, ORG } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { precisionReport } from '../../app/findings/precision.ts'
@@ -77,7 +77,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     repoId = repo!.id
 
     let auth = fakeAuth({ orgs: [{ ...ORG, id: org!.id }] })
-    auth.setRole({ ...ORG, id: org!.id }, ALEX, 'admin')
+    auth.setRole({ ...ORG, id: org!.id }, OCTOCAT, 'admin')
     router = createAppRouter({
       checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
       version: '0.1.0',
@@ -86,7 +86,7 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
       auth: auth.deps,
       findings: { store: createFindingsScreenStore(sql), githubUrl: 'https://github.com' },
     })
-    auth.as(ALEX)
+    auth.as(OCTOCAT)
     let start = await router.fetch(new Request('http://localhost/login/github'))
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
     let callback = await router.fetch(

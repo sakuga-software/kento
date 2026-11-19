@@ -79,7 +79,7 @@ describe('sessions and people in Postgres', () => {
 
     it('keeps a signed-in session seven days from the sign-in, with its user, then forgets it', async () => {
       let store = createAuthStore(database.sql)
-      let user = await store.upsertUser({ id: 1, login: 'alex', name: null, avatarUrl: null })
+      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
       let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
       let session = await storage.read(null)
       session.set('auth', { userId: user.id, signedInAt: clock.now })
@@ -100,7 +100,7 @@ describe('sessions and people in Postgres', () => {
 
     it('deletes the row of the old id when the sign-in gives a new one, and at sign-out', async () => {
       let store = createAuthStore(database.sql)
-      let user = await store.upsertUser({ id: 1, login: 'alex', name: null, avatarUrl: null })
+      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
       let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
       let pending = await storage.read(null)
       pending.set('__auth', { provider: 'github', state: 's', codeVerifier: 'v' })
@@ -145,15 +145,15 @@ describe('sessions and people in Postgres', () => {
   describe('the store of people', () => {
     it('creates a user once per GitHub account, and follows a new login', async () => {
       let store = createAuthStore(database.sql)
-      let first = await store.upsertUser({ id: 77, login: 'old-login', name: 'Alex', avatarUrl: null })
-      let second = await store.upsertUser({ id: 77, login: 'new-login', name: 'Alex', avatarUrl: 'https://avatars.githubusercontent.com/u/77' })
+      let first = await store.upsertUser({ id: 77, login: 'old-login', name: 'Octocat', avatarUrl: null })
+      let second = await store.upsertUser({ id: 77, login: 'new-login', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/77' })
 
       assert.equal(second.id, first.id)
       assert.deepEqual(await store.findUser(first.id), {
         id: first.id,
         githubId: 77,
         login: 'new-login',
-        name: 'Alex',
+        name: 'Octocat',
         avatarUrl: 'https://avatars.githubusercontent.com/u/77',
       })
     })
@@ -162,7 +162,7 @@ describe('sessions and people in Postgres', () => {
       let store = createAuthStore(database.sql)
       let active = await insertOrg('sakuga-software', 11)
       let suspended = await insertOrg('orchard', 12, true)
-      let user = await store.upsertUser({ id: 1, login: 'alex', name: null, avatarUrl: null })
+      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
       await store.saveMembership(user.id, active, 'admin')
       await store.saveMembership(user.id, suspended, 'member')
       await store.saveMembership(user.id, active, 'member')

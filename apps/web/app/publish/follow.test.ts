@@ -1,7 +1,7 @@
 // REV-99. A finding that the runner linked to an earlier finding (`follows`) goes in the thread of
 // that finding: Kentō answers in it, opens it again when it was resolved, and opens no new thread. A
 // defect that no earlier finding names still gets its own thread. The titles translate those of
-// gallery-app#62 (2026-11-08).
+// example-repo#62 (2026-11-08).
 import { findingKey } from '@sakuga-review/engine/findings'
 import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'

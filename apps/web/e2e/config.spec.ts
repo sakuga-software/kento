@@ -48,12 +48,12 @@ async function pullRequest(page: Page, options: { action: string; head: string; 
     pull_request: {
       number,
       draft: options.draft ?? false,
-      user: { login: 'alex', type: 'User' },
+      user: { login: 'octocat', type: 'User' },
       head: { sha: options.head, ref: 'feature', repo: { id: ORCHARD.id } },
       base: { sha: 'f'.repeat(40), ref: 'main', repo: { id: ORCHARD.id } },
     },
     repository: ORCHARD,
-    sender: { login: 'alex', type: 'User' },
+    sender: { login: 'octocat', type: 'User' },
     installation: { id: FAKE_ORG.installationId },
   })
   let signature = `sha256=${createHmac('sha256', E2E_WEBHOOK_SECRET).update(body).digest('hex')}`
@@ -111,7 +111,7 @@ test.describe('the Config screen of a repository', () => {
     }) => {
       let errors = watchConsole(page)
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
-      await signIn(page, 'alex')
+      await signIn(page, 'octocat')
       await reset(page)
 
       await openRepoConfig(page, 'orchard')
@@ -126,7 +126,7 @@ test.describe('the Config screen of a repository', () => {
       await balanced.getByLabel('Fallback if the call fails').fill('anthropic/claude-sonnet-5.5')
       await balanced.getByRole('button', { name: 'Set here for balanced' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'Config saved (v1)' })).toBeVisible()
-      await expect(page.getByText(/config v1, changed by alex on/)).toBeVisible()
+      await expect(page.getByText(/config v1, changed by octocat on/)).toBeVisible()
       await expect(page.getByRole('region', { name: 'balanced' }).getByText('set for this repo')).toBeVisible()
       await expectNoAxeViolations(page)
 
@@ -167,7 +167,7 @@ test.describe('the Config screen of a repository', () => {
 
   test('a model id of the wrong form already in the database shows in error, with what to do (REV-62)', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     // As `sakuga-review` on 2026-10-29: an OpenRouter id on an Anthropic provider, kept before the
     // form refused it (#66). Written in the database, since the form refuses it now.
@@ -204,7 +204,7 @@ test.describe('the Config screen of a repository', () => {
 
   test('"Ready for review": a push of a draft creates no job, its passage to ready creates one, a later push none', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     await openRepoConfig(page, 'orchard')
     await page.getByRole('link', { name: 'Trigger' }).click()
@@ -239,7 +239,7 @@ test.describe('the Config screen of a repository', () => {
   })
 
   test('a member reads the config under "Read only", with no form', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     await page.context().clearCookies()
     await signIn(page, 'camille')

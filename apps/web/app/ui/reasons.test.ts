@@ -45,8 +45,8 @@ describe('the reason of a failed job (REV-44)', () => {
   })
 
   it('says how many times the runner went silent, with no technical details', () => {
-    assert.deepEqual(jobReason('lease expired 2 times', 'runners-host'), {
-      text: 'the runner stopped answering during the job twice, last runners-host',
+    assert.deepEqual(jobReason('lease expired 2 times', 'shared-01'), {
+      text: 'the runner stopped answering during the job twice, last shared-01',
       action: 'Check on the Runners screen that a runner is online, then retry.',
       raw: null,
     })

@@ -7,7 +7,7 @@
 // - C "List with no stable key": posted by R1, found again by R2, dismissed by camille (False positive)
 //   before R3. R3 and R4 leave it out.
 // - D "SQL query built by concatenation": posted by R2, absent from R3 (its file did not
-//   change), kept by alex (wontfix) before R4.
+//   change), kept by octocat (wontfix) before R4.
 import { findingKey } from '@sakuga-review/engine/findings'
 import type postgres from 'postgres'
 
@@ -115,6 +115,6 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
   await event('B', 1, 'fixed', 'kento', null, 120.4)
   await event('D', 1, 'opened', 'kento', null, 120.5)
   await event('C', null, 'dismissed', 'camille', 'False positive', 90)
-  await event('D', null, 'wontfix', 'alex', 'Off topic for this PR', 30)
+  await event('D', null, 'wontfix', 'octocat', 'Off topic for this PR', 30)
   return { orgId: org!.id, repoId, findings: ids, reviews }
 }

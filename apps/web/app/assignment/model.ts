@@ -245,7 +245,7 @@ export function readAssignmentForm(form: FormData): FormResult<AssignmentValues>
 
   let mentionText = text(form, 'mention').trim().replace(/^@/, '')
   let mention: string | null = mentionText || null
-  if (mention !== null && !MENTION.test(mention)) errors.mention = 'The GitHub login of a person, for example alex.'
+  if (mention !== null && !MENTION.test(mention)) errors.mention = 'The GitHub login of a person, for example octocat.'
   else if (mention !== null && outcome === 'command_only') errors.mention = 'Without an automatic review, there is no review to mention someone in.'
 
   if (Object.keys(errors).length || !isOneOf(OUTCOMES, outcome)) return { ok: false, errors: errors as Record<string, string> }

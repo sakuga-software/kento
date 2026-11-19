@@ -46,8 +46,8 @@ async function createToken(page: Page, name: string, labels: string, keyMode: 'a
 
 test('an admin registers a runner, sees it online, trusts it and revokes it', async ({ page, request }, testInfo) => {
   let errors = watchConsole(page)
-  let name = `mac-mini-${testInfo.project.name}`
-  await signIn(page, 'alex')
+  let name = `runner-1-${testInfo.project.name}`
+  await signIn(page, 'octocat')
 
   let { command, token } = await createToken(page, name, 'macos, arm64', 'runner')
   expect(command).toContain(`-e KENTO_RUNNER_NAME=${name}`)
@@ -118,7 +118,7 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
 
 test('a token that expires without a runner shows the help and "New token"', async ({ page }, testInfo) => {
   let name = `gpu-${testInfo.project.name}`
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await createToken(page, name, 'gpu', 'app')
   let db = sql()
   try {
@@ -138,7 +138,7 @@ test('a token that expires without a runner shows the help and "New token"', asy
 
 test('"Cancel the token" asks first: "Cancel" keeps the token, the confirmation deletes it', async ({ page }, testInfo) => {
   let name = `spare-${testInfo.project.name}`
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await createToken(page, name, 'spare', 'runner')
   await page.goto('/runners')
   let card = page.locator('.runner', { hasText: name })
@@ -160,10 +160,10 @@ test('"Cancel the token" asks first: "Cancel" keeps the token, the confirmation 
 })
 
 test('the form says what is wrong, and makes no token', async ({ page }) => {
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await page.goto('/runners')
   let form = page.locator('#new-runner')
-  await form.getByLabel('Name').fill('mac mini')
+  await form.getByLabel('Name').fill('runner 1')
   await form.getByRole('button', { name: 'Create the token' }).click()
   await expect(form.getByLabel('Name')).toHaveAttribute('aria-invalid', 'true')
   await expect(form.getByText('Letters, digits, dots, hyphens or underscores')).toBeVisible()
@@ -174,7 +174,7 @@ test('the form says what is wrong, and makes no token', async ({ page }) => {
 for (let theme of ['paper', 'sumi'] as const) {
   test(`the Runners screen passes axe in the theme ${theme} for an admin, and fits the screen`, async ({ page, context, baseURL }) => {
     await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await page.goto('/runners')
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
     // REV-30: the facts of the protocol are folded under "Technical details".
@@ -189,7 +189,7 @@ for (let theme of ['paper', 'sumi'] as const) {
 }
 
 test('a runner offline for 2 h is "Offline", in red, at the top; a new token keeps the key on the runner by default (REV-30)', async ({ page }, testInfo) => {
-  let name = `hetzner-${testInfo.project.name}`
+  let name = `runner-cloud-${testInfo.project.name}`
   let db = sql()
   try {
     await db`delete from runners where name = ${name}`
@@ -200,7 +200,7 @@ test('a runner offline for 2 h is "Offline", in red, at the top; a new token kee
   } finally {
     await db.end()
   }
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await page.goto('/runners')
   let first = page.getByRole('table', { name: 'Runners in service' }).locator('tbody tr').first()
   await expect(first.getByRole('rowheader')).toHaveText(new RegExp(`^${name}`))
@@ -242,7 +242,7 @@ test('the runners silent for a day are folded away, and revoked together after a
   } finally {
     await db.end()
   }
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await page.goto('/runners')
   await expect(page.getByRole('heading', { level: 2, name: 'Runners', exact: true })).toBeVisible()
   await expect(page.locator('.runner-counts').first()).toContainText('offline')

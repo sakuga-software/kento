@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import { InvalidCursorError } from '../findings/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
@@ -101,7 +101,7 @@ function detail(status: FindingDetail['status'] = 'dismissed', considered = fals
 
 function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error; considered?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let asked: string[] = []
   let decisions: string[] = []
@@ -184,7 +184,7 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
   })
   let request = (path: string, cookie?: string | null) =>
     router.fetch(new Request(new URL(path, 'http://localhost'), { headers: cookie ? { Cookie: cookie } : {} }))
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -470,7 +470,7 @@ describe('the decisions on a finding', () => {
 })
 
 describe('"Run at <level>"', () => {
-  async function as(profile: typeof ALEX, options: Parameters<typeof setup>[0] = {}) {
+  async function as(profile: typeof OCTOCAT, options: Parameters<typeof setup>[0] = {}) {
     let t = setup(options)
     let cookie = await t.signIn(profile)
     let html = await (await t.request(PATH, cookie)).text()
@@ -479,7 +479,7 @@ describe('"Run at <level>"', () => {
   }
 
   it('offers an admin the three levels with their estimate, and a member none', async () => {
-    let admin = await as(ALEX)
+    let admin = await as(OCTOCAT)
     assert.match(admin.html, /Run R5/)
     assert.match(admin.html, /Run at lite<span class="dash-estimate"> · ≈ \$0\.004/)
     assert.match(admin.html, /Run at heavy<span class="dash-estimate"> · unknown cost/)
@@ -488,7 +488,7 @@ describe('"Run at <level>"', () => {
   })
 
   it('queues a review of the head that GitHub gives, for an admin', async () => {
-    let { post, cookie, csrf, reruns, request } = await as(ALEX)
+    let { post, cookie, csrf, reruns, request } = await as(OCTOCAT)
     let response = await post(`${PATH}/rerun`, cookie, { _csrf: csrf, level: 'heavy' })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), `${PATH}?rerun=queued`)
@@ -500,11 +500,11 @@ describe('"Run at <level>"', () => {
   it('refuses a member, an unknown level, a closed pull request, and GitHub down', async () => {
     let member = await as(CAMILLE)
     assert.equal((await member.post(`${PATH}/rerun`, member.cookie, { _csrf: member.csrf, level: 'lite' })).status, 403)
-    let admin = await as(ALEX)
+    let admin = await as(OCTOCAT)
     assert.equal((await admin.post(`${PATH}/rerun`, admin.cookie, { _csrf: admin.csrf, level: 'ultra' })).status, 400)
-    let closed = await as(ALEX, { github: { open: false, headSha: 'd'.repeat(40) } })
+    let closed = await as(OCTOCAT, { github: { open: false, headSha: 'd'.repeat(40) } })
     assert.equal((await closed.post(`${PATH}/rerun`, closed.cookie, { _csrf: closed.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?rerun=closed`)
-    let down = await as(ALEX, { github: new Error('502') })
+    let down = await as(OCTOCAT, { github: new Error('502') })
     assert.equal((await down.post(`${PATH}/rerun`, down.cookie, { _csrf: down.csrf, level: 'lite' })).headers.get('Location'), `${PATH}?rerun=github_failed`)
     assert.deepEqual([...member.reruns, ...admin.reruns, ...closed.reruns, ...down.reruns], [])
   })

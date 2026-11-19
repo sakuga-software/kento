@@ -140,7 +140,7 @@ describe('pulls store', () => {
     )
     assert.ok(history.items[0]!.createdAt instanceof Date)
     for (let n = 0; n < 25; n++) {
-      await database.sql`insert into finding_events (finding_id, type, actor) values (${seeded.findings.C}, 'wontfix', 'alex')`
+      await database.sql`insert into finding_events (finding_id, type, actor) values (${seeded.findings.C}, 'wontfix', 'octocat')`
     }
     let first = await store.history(seeded.orgId, seeded.findings.C, null)
     assert.equal(first.items.length, 20)

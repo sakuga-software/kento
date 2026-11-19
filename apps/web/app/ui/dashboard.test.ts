@@ -2,7 +2,7 @@ import type { Level } from '@sakuga-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import type { PullRequestNow, ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } from '../dashboard/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
@@ -37,7 +37,7 @@ function banner(overrides: Partial<FailureBanner> = {}): FailureBanner {
     level: 'lite',
     attempts: 3,
     reason: 'lease expired 2 times',
-    runnerName: 'runners-host',
+    runnerName: 'shared-01',
     finishedAt: NOW,
     previous: { score: 3, publishedAt: new Date('2026-10-29T08:00:00Z') },
     retry: null,
@@ -48,7 +48,7 @@ function banner(overrides: Partial<FailureBanner> = {}): FailureBanner {
 
 /** The runners of the default screen. */
 function runnersOf(): DashboardScreen['runners'] {
-  return [{ id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }]
+  return [{ id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }]
 }
 
 /** The counts that the store reads in SQL, from the runners of a screen. */
@@ -104,7 +104,7 @@ function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
           startedAt: new Date(NOW.getTime() - 90_000),
           leaseExpiresAt: new Date(NOW.getTime() + 60_000),
           notBefore: null,
-          runnerName: 'mac-mini',
+          runnerName: 'runner-1',
           runnerSeenAt: new Date(NOW.getTime() - 5_000),
         },
       ],
@@ -131,7 +131,7 @@ function setup(
   findings: FindingsScreenStore | null = null,
 ) {
   let auth = fakeAuth({ orgs: [ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let retries: string[] = []
   let dismissals: string[] = []
@@ -185,7 +185,7 @@ function setup(
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -201,8 +201,8 @@ function setup(
 
 describe('the words of the dashboard', () => {
   it('says why a job failed and what to do, in plain words (app/ui/reasons.test.ts has the whole table)', () => {
-    assert.deepEqual(failureText({ reason: 'lease expired 2 times', runnerName: 'runners-host' }), {
-      text: 'the runner stopped answering during the job twice, last runners-host',
+    assert.deepEqual(failureText({ reason: 'lease expired 2 times', runnerName: 'shared-01' }), {
+      text: 'the runner stopped answering during the job twice, last shared-01',
       action: 'Check on the Runners screen that a runner is online, then retry.',
       raw: null,
     })
@@ -263,7 +263,7 @@ describe('the list "Getting started" (REV-26)', () => {
   it('marks each step from what the org has, and the first review as waiting while a job is in the queue', () => {
     let view = fresh({
       setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, serviceRunners: 1, pendingRegistrations: 0 },
-      runners: [{ id: 'r', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
+      runners: [{ id: 'r', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
       queue: { running: [], queued: [], runningCount: 0, queuedCount: 1 },
     })
     assert.deepEqual(states(view), ['app:done', 'provider:done', 'runner:done', 'repo:done', 'review:wait'])
@@ -287,7 +287,7 @@ describe('the list "Getting started" (REV-26)', () => {
 
   it('leads a new admin to each step in one click', async () => {
     let { signIn } = setup(fresh())
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.match(html, /<h2 id="setup-title" class="section-title">Getting started<\/h2>/)
     assert.match(html, /1 of 5 steps/)
     assert.match(html, /href="https:\/\/github.com\/organizations\/sakuga-software\/settings\/installations\/\d+"[^>]*>Choose the repos on GitHub/)
@@ -310,7 +310,7 @@ describe('the list "Getting started" (REV-26)', () => {
 
   it('is not on the dashboard of an org with a published review', async () => {
     let { signIn } = setup()
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.doesNotMatch(html, /Mise en route/)
   })
 })
@@ -327,16 +327,16 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     let { signIn } = setup(
       screen({
         banner: null,
-        runners: [{ id: 'run9', name: 'portable-alex', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0 }],
+        runners: [{ id: 'run9', name: 'runner-laptop', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0 }],
       }),
     )
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</ul>', html.indexOf('id="todo-title"')))
     assert.match(todo, /To do <span class="count">3<\/span>/)
     assert.match(todo, /The daily alert threshold is reached/)
     assert.match(todo, /\$4\.50 of \$5\.00 · 90%/)
     assert.match(todo, /href="\/settings#cap"[^>]*>Change the cap/)
-    assert.match(todo, /<code>portable-alex<\/code> has given no signal for 47 min/)
+    assert.match(todo, /<code>runner-laptop<\/code> has given no signal for 47 min/)
     assert.match(todo, /It has no job/)
     assert.match(todo, /still on\s*<code>review.yml<\/code>/)
     // A member reads where the limit is, and cannot change it.
@@ -346,19 +346,19 @@ describe('"To do" and the band of numbers (REV-91)', () => {
 
   it('counts the silent runners that the bounded list leaves out, with no empty names (REV-91)', async () => {
     let { signIn } = setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 4 } }))
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</section>', html.indexOf('id="todo-runners"')))
     assert.match(todo, /<h3 id="todo-runners" class="todo-title">5 runners give no signal<\/h3>/)
     assert.match(todo, /<p class="hint">A runner is online again at its next signal\.<\/p>/)
     // Each row is a region named by its title, inside an item of the list.
     assert.match(html, /<li><section aria-labelledby="todo-runners" class="todo">/)
-    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0 } })).signIn(ALEX)).html
+    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0 } })).signIn(OCTOCAT)).html
     assert.match(one, /1 runner gives no signal/)
   })
 
   it('says a limit of 0 is reached with no share and no bar, never "NaN%" (REV-91)', async () => {
     let { signIn } = setup(screen({ banner: null, workflowRepos: [], caps: { dailyCapUsd: 0, monthlyCapUsd: null, alertPct: 80 } }))
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</ul>', html.indexOf('id="todo-title"')))
     assert.match(todo, /The daily cap is reached/)
     assert.match(todo, /\$4\.50 of \$0\.00<\/span>/)
@@ -369,20 +369,20 @@ describe('"To do" and the band of numbers (REV-91)', () => {
   it('says in the band that the limit of the month is reached, 0 included (REV-91)', async () => {
     for (let monthlyCapUsd of [0, 20]) {
       let { signIn } = setup(screen({ caps: { dailyCapUsd: null, monthlyCapUsd, alertPct: 80 } }))
-      let { html } = await signIn(ALEX)
+      let { html } = await signIn(OCTOCAT)
       let kpis = html.slice(html.indexOf('class="dash-kpis'), html.indexOf('</section>', html.indexOf('class="dash-kpis')))
       assert.match(kpis, new RegExp(`cap reached · of \\$${monthlyCapUsd}\\.00`))
       assert.doesNotMatch(kpis, /alert at 80/)
     }
     let { signIn } = setup(screen({ caps: { dailyCapUsd: null, monthlyCapUsd: 150, alertPct: 80 } }))
-    assert.match((await signIn(ALEX)).html, /of \$150\.00 · alert at 80%/)
+    assert.match((await signIn(OCTOCAT)).html, /of \$150\.00 · alert at 80%/)
   })
 
   it('says that nothing is to do when nothing is', async () => {
     let { signIn } = setup(
       screen({ banner: null, workflowRepos: [], runners: [], caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } }),
     )
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.match(html, /To do <span class="count">0<\/span>/)
     assert.match(html, /Nothing to do/)
   })
@@ -391,10 +391,10 @@ describe('"To do" and the band of numbers (REV-91)', () => {
 describe('the dashboard', () => {
   it('shows the failure, the week, the last reviews, the cost, the queue and the runners to an admin', async () => {
     let { signIn, reads } = setup()
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.deepEqual([...new Set(reads)], [ORG.id])
     assert.match(html, /The lite review of <span class="mono">sakuga-software\/orchard#128<\/span> failed/)
-    assert.match(html, /the runner stopped answering during the job twice, last runners-host/)
+    assert.match(html, /the runner stopped answering during the job twice, last shared-01/)
     assert.match(html, /The previous review \(3\/5, published on/)
     assert.match(html, /href="https:\/\/github.com\/sakuga-software\/orchard\/pull\/128"/)
     assert.match(html, /action="\/jobs\/11111111-1111-4111-8111-111111111111\/retry"/)
@@ -405,7 +405,7 @@ describe('the dashboard', () => {
     assert.match(html, /2\/5/)
     assert.match(html, /Alert threshold reached/)
     assert.match(html, /2 reviews or resolutions of the month with no known/)
-    assert.match(html, /On <span class="mono">mac-mini<\/span>/)
+    assert.match(html, /On <span class="mono">runner-1<\/span>/)
     assert.match(html, /attempt 2/)
     // REV-43: the queue says "held until" with a hint, never the "bail" of the runner protocol.
     assert.match(html, /<span title="Without a signal of the runner before this hour, the job goes back to the queue.">\s*held until <time/)
@@ -465,7 +465,7 @@ describe('the dashboard', () => {
 
   it('says that a retry is under way, with no button, until its review is published', async () => {
     let { signIn } = setup(screen({ banner: banner({ retry: { id: 'j9', level: 'balanced', state: 'queued' } }) }))
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.match(html, /Retry at balanced queued/)
     assert.doesNotMatch(html, /Run again at/)
   })
@@ -474,17 +474,17 @@ describe('the dashboard', () => {
     let { signIn } = setup(
       screen({
         runners: [
-          { id: 'run1', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
-          { id: 'run2', name: 'hetzner-cx22', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
+          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
+          { id: 'run2', name: 'runner-0', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
         ],
         runnerCounts: { online: 1, late: 0, offline: 23 },
       }),
     )
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="dash-runners-title"'))
     assert.match(section, /<p class="runner-counts">1 online · 23 offline<\/p>/)
     assert.match(section, /<span class="status status-offline">Offline for 3 d<\/span>/)
-    assert.ok(section.indexOf('mac-mini') < section.indexOf('hetzner-cx22'), 'the store order stays: the online runner first')
+    assert.ok(section.indexOf('runner-1') < section.indexOf('runner-0'), 'the store order stays: the online runner first')
     assert.match(section, /<a href="\/runners">and 22 more<span class="visually-hidden"> on the Runners screen<\/span><\/a>/)
   })
 
@@ -492,7 +492,7 @@ describe('the dashboard', () => {
     let since = new Date(NOW.getTime() - 14 * 60_000)
     let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)
     let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /2 jobs have waited in the queue for more than 10 min \(the oldest for 14 min\)/)
     assert.match(section, /No runner online for 2 h/)
@@ -530,7 +530,7 @@ describe('the dashboard', () => {
     assert.match(stallText({ count: 2, since, lastRunnerSeenAt: null, serviceKeyJobs: 2, serviceRunnersOnline: 0 }, 0, NOW).cause, /^No runner ever called Kentō/)
 
     let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /These jobs have no provider: they wait for a runner with an OpenRouter key\./)
     assert.match(section, /Give your runner its own OpenRouter key \(PROVIDER_KIND=openrouter and PROVIDER_API_KEY\), or add a provider in Settings\./)
@@ -538,7 +538,7 @@ describe('the dashboard', () => {
 
   it('has no banner of the queue while no job waits for too long', async () => {
     let { signIn } = setup()
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.doesNotMatch(html, /todo-stall/)
   })
 
@@ -555,7 +555,7 @@ describe('the dashboard', () => {
         queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
       }),
     )
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.doesNotMatch(html, /<\/span> failed/)
     assert.match(html, /No review yet/)
     assert.match(html, /No failure to handle over 7 days/)
@@ -566,7 +566,7 @@ describe('the dashboard', () => {
 
   it('lets an admin retry a failed job, with a CSRF token, and says what happened', async () => {
     let { signIn, request, retries } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'balanced' } })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/?notice=retried')
@@ -579,7 +579,7 @@ describe('the dashboard', () => {
     let { signIn, request, retries } = setup()
     let member = await signIn(CAMILLE)
     assert.equal((await request(`/jobs/${JOB_ID}/retry`, { cookie: member.cookie, form: { _csrf: member.csrf, level: 'lite' } })).status, 403)
-    let admin = await signIn(ALEX)
+    let admin = await signIn(OCTOCAT)
     assert.notEqual((await request(`/jobs/${JOB_ID}/retry`, { cookie: admin.cookie, form: { level: 'lite' } })).status, 303)
     assert.equal((await request(`/jobs/${JOB_ID}/retry`, { cookie: admin.cookie, form: { _csrf: admin.csrf, level: 'ultra' } })).status, 400)
     assert.deepEqual(retries, [])
@@ -587,7 +587,7 @@ describe('the dashboard', () => {
 
   it('sends a bad id to "missing" without asking the store', async () => {
     let { signIn, request, retries } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/jobs/not-a-uuid/retry', { cookie, form: { _csrf: csrf, level: 'lite' } })
     assert.equal(response.headers.get('Location'), '/?notice=missing')
     assert.deepEqual(retries, [])
@@ -595,7 +595,7 @@ describe('the dashboard', () => {
 
   it('asks GitHub for the head of the pull request before a retry', async () => {
     let { signIn, request, retries, asked } = setup(screen(), { kind: 'queued', jobId: 'new' }, { open: true, headSha: 'b'.repeat(40) })
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'lite' } })
     assert.deepEqual(asked, ['42 7 sakuga-software/orchard#128'])
     assert.deepEqual(retries, [`${ORG.id} ${JOB_ID} lite ${'b'.repeat(40)}`])
@@ -608,7 +608,7 @@ describe('the dashboard', () => {
       [new Error('502'), 'github_failed'],
     ] as const) {
       let { signIn, request, retries } = setup(screen(), { kind: 'queued', jobId: 'new' }, github)
-      let { cookie, csrf } = await signIn(ALEX)
+      let { cookie, csrf } = await signIn(OCTOCAT)
       let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'lite' } })
       assert.equal(response.headers.get('Location'), `/?notice=${notice}`)
       assert.deepEqual(retries, [])
@@ -617,7 +617,7 @@ describe('the dashboard', () => {
 
   it('without the GitHub App, lets the jobs of the database decide', async () => {
     let { signIn, request, retries } = setup(screen(), { kind: 'queued', jobId: 'new' }, null)
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'heavy' } })
     assert.equal(response.headers.get('Location'), '/?notice=retried')
     assert.deepEqual(retries, [`${ORG.id} ${JOB_ID} heavy null`])
@@ -625,7 +625,7 @@ describe('the dashboard', () => {
 
   it('logs a retry at level info, with the review level in its own field', async () => {
     let { signIn, request } = setup(screen(), { kind: 'queued', jobId: 'new' }, null)
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let out = ''
     let write = process.stdout.write.bind(process.stdout)
     process.stdout.write = ((chunk: string) => {
@@ -648,18 +648,18 @@ describe('the dashboard', () => {
 
   it('gives an admin "Hide" on the banner and on each failure of the list (REV-59)', async () => {
     let { signIn } = setup()
-    let { html } = await signIn(ALEX)
+    let { html } = await signIn(OCTOCAT)
     assert.match(html, new RegExp(`action="/jobs/${JOB_ID}/dismiss"`))
     assert.match(html, /aria-label="Hide the failure of sakuga-software\/orchard#128"/)
   })
 
   it('lets an admin hide a failure, with a CSRF token, and says that the week still counts it (REV-59)', async () => {
     let { signIn, request, dismissals } = setup()
-    let { cookie, csrf } = await signIn(ALEX)
+    let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request(`/jobs/${JOB_ID}/dismiss`, { cookie, form: { _csrf: csrf } })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/?notice=dismissed')
-    assert.deepEqual(dismissals, [`${ORG.id} ${JOB_ID} ${ALEX.login}`])
+    assert.deepEqual(dismissals, [`${ORG.id} ${JOB_ID} ${OCTOCAT.login}`])
     let html = await (await request('/?notice=dismissed', { cookie })).text()
     assert.match(html, /Failure hidden\. It still counts in "Failures · 7 d"/)
   })
@@ -668,7 +668,7 @@ describe('the dashboard', () => {
     let { signIn, request, dismissals } = setup()
     let member = await signIn(CAMILLE)
     assert.equal((await request(`/jobs/${JOB_ID}/dismiss`, { cookie: member.cookie, form: { _csrf: member.csrf } })).status, 403)
-    let admin = await signIn(ALEX)
+    let admin = await signIn(OCTOCAT)
     assert.notEqual((await request(`/jobs/${JOB_ID}/dismiss`, { cookie: admin.cookie, form: {} })).status, 303)
     assert.deepEqual(dismissals, [])
     let bad = await request('/jobs/not-a-uuid/dismiss', { cookie: admin.cookie, form: { _csrf: admin.csrf } })
@@ -686,7 +686,7 @@ describe('the dashboard', () => {
       ['capped', 'capped'],
     ] as const) {
       let { signIn, request } = setup(screen(), kind === 'already' ? { kind, jobId: 'x' } : kind === 'capped' ? { kind, period: 'day' } : { kind })
-      let { cookie, csrf } = await signIn(ALEX)
+      let { cookie, csrf } = await signIn(OCTOCAT)
       let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'lite' } })
       assert.equal(response.headers.get('Location'), `/?notice=${notice}`)
     }

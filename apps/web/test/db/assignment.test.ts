@@ -17,7 +17,7 @@ import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 // job of a push. The end-to-end test of the ticket, on the repository of the seed.
 
 const AGENT = { authors: ['sakuga-agent[bot]'], paths: [], labels: [], action: 'review' as const, level: 'balanced' as const, mention: null }
-const MIGRATIONS = { authors: [], paths: ['**/migrations/**'], labels: [], action: 'review' as const, level: 'heavy' as const, mention: 'alex' }
+const MIGRATIONS = { authors: [], paths: ['**/migrations/**'], labels: [], action: 'review' as const, level: 'heavy' as const, mention: 'octocat' }
 /** The author of the pull requests of a person; REV-22 needs the GitHub id. */
 const CAMILLE = { login: 'camille', type: 'User', id: 2 }
 const WIP = { authors: [], paths: [], labels: ['wip'], action: 'command_only' as const, level: null, mention: null }
@@ -80,7 +80,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews, users cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'alex') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
     userId = user!.id
     changedFiles = null
     listed = 0
@@ -104,7 +104,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
       assert.deepEqual(await store.remove(orgId, repoId, ids[0]!), { kind: 'removed', position: 1 })
       let left = await store.list(orgId, repoId)
       assert.deepEqual(left.map((r) => [r.id, r.position]), [[ids[2], 1], [ids[1], 2]])
-      assert.deepEqual({ ...left[1]!, id: '' }, { ...MIGRATIONS, id: '', position: 2, createdBy: 'alex' })
+      assert.deepEqual({ ...left[1]!, id: '' }, { ...MIGRATIONS, id: '', position: 2, createdBy: 'octocat' })
     })
 
     it('keeps the places dense and unique: a removal then an addition, a move down, two additions at once', async () => {
@@ -191,7 +191,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
       assert.equal(job.level, 'heavy')
       assert.deepEqual({ position: job.assignment!.position, mention: job.assignment!.mention, reasons: job.assignment!.reasons }, {
         position: 2,
-        mention: 'alex',
+        mention: 'octocat',
         reasons: { path: 'apps/web/drizzle/migrations/0016.sql' },
       })
       // The screen of the pull request says it.

@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { ConfigOverrides } from '../repo-config/model.ts'
 import { serviceOption, serviceProviders, type ProviderCatalog } from '../repo-config/providers.ts'
@@ -15,7 +15,7 @@ const ELSEWHERE = '00000000-0000-4000-8000-000000000009'
 /** The Config screen with the fake sign-in, and the configs in memory. */
 function setup(orgConfig: ConfigOverrides = {}, providers: ProviderCatalog = serviceProviders) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let rows: Record<string, RepoConfigView & { orgId: string }> = {
     [ORCHARD]: {
@@ -61,7 +61,7 @@ function setup(orgConfig: ConfigOverrides = {}, providers: ProviderCatalog = ser
       row.config = next.config
       row.defaultLevel = next.defaultLevel
       row.version += 1
-      row.updatedBy = userId ? 'alex' : null
+      row.updatedBy = userId ? 'octocat' : null
       row.updatedAt = new Date('2026-10-27T17:02:00Z')
       saves.push({ field: JSON.stringify(next), version: row.version })
       return { kind: 'saved', version: row.version, fullName: row.fullName }
@@ -88,7 +88,7 @@ function setup(orgConfig: ConfigOverrides = {}, providers: ProviderCatalog = ser
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -135,7 +135,7 @@ describe('the Config screen of a repository', () => {
 
     let html = await (await request(response.headers.get('Location')!, { cookie })).text()
     assert.match(html, /Config saved<\/strong> \(v1\)/)
-    assert.match(html, /config v1, changed by alex on 27 Oct at 18:02/)
+    assert.match(html, /config v1, changed by octocat on 27 Oct at 18:02/)
     assert.match(html, /set for this repo/)
     assert.match(html, /Back to the org value<span class="visually-hidden"> for balanced/)
 
@@ -209,7 +209,7 @@ describe('the Config screen of a repository', () => {
     assert.equal((await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', field: 'trigger', trigger: 'command' } })).status, 303)
     let stale = await request(`/repos/${ORCHARD}/config`, { cookie, form: { _csrf: csrf, version: '0', ...BALANCED } })
     assert.equal(stale.status, 409)
-    assert.match(await stale.text(), /The config changed in the meantime<\/strong> \(v1, changed by alex/)
+    assert.match(await stale.text(), /The config changed in the meantime<\/strong> \(v1, changed by octocat/)
     assert.deepEqual(rows[ORCHARD]!.config, { trigger: 'command' })
   })
 

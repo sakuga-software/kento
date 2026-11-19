@@ -129,7 +129,7 @@ describe('commands in the comments of a pull request', () => {
     await seedEnabledRepo(database.sql)
     fake = createFakeGitHub({ head: HEAD, pr: PR, repoId: REPO.id })
     commandSql = null
-    fake.state.permissions.set('alex', 'admin')
+    fake.state.permissions.set('octocat', 'admin')
     fake.state.permissions.set('writer', 'write')
     fake.state.permissions.set('maintainer', 'maintain')
     fake.state.permissions.set('reader', 'read')
@@ -175,7 +175,7 @@ describe('commands in the comments of a pull request', () => {
     assert.equal(second.body.reason, 'head already has a review at this level')
     assert.deepEqual(reactionsOf(second.payload.comment.id), ['confused'])
     assert.equal(fake.state.issueComments.length, 1)
-    assert.match(fake.state.issueComments[0]!.body, /@alex .*already has a `heavy` review.*@kento-review heavy force/s)
+    assert.match(fake.state.issueComments[0]!.body, /@octocat .*already has a `heavy` review.*@kento-review heavy force/s)
 
     // The replay of the refused comment posts no second reply.
     await replay(second.payload, nextDelivery())
@@ -454,7 +454,7 @@ describe('commands in the comments of a pull request', () => {
 
       beforeEach(() => {
         botFixed = fake.addThread({ path: 'src/sum.ts', line: 2, body: '**The sum subtracts** <!-- sakuga-review:finding abc -->', commit: OLD })
-        personAnswered = fake.addThread({ path: 'src/a.ts', line: 5, body: 'Why this name?', commit: OLD, author: 'alex' })
+        personAnswered = fake.addThread({ path: 'src/a.ts', line: 5, body: 'Why this name?', commit: OLD, author: 'octocat' })
         botAnswered = fake.addThread({ path: 'src/b.ts', line: 9, body: '**A missed case** <details>long</details>', commit: HEAD })
         fake.state.canResolve = true
         fake.state.resolveNeedsWrite = true
@@ -516,7 +516,7 @@ describe('commands in the comments of a pull request', () => {
         let summary = fake.state.issueComments.at(-1)!.body
         assert.match(summary, /Kentō · thread resolution\*\* at commit/)
         assert.match(summary, /^- resolved · \[`src\/sum.ts:2`\]/m)
-        assert.match(summary, /^- stays open · \[`src\/a.ts:5`\].* · alex/m)
+        assert.match(summary, /^- stays open · \[`src\/a.ts:5`\].* · octocat/m)
         assert.doesNotMatch(summary, /\p{Extended_Pictographic}/u)
         assert.match(summary, /Kentō · Level `lite` · `anthropic\/claude-haiku-5.5` · \$0\.004/)
         assert.deepEqual(reactionsOf(payload.comment.id), ['eyes', 'rocket'])
@@ -592,7 +592,7 @@ describe('commands in the comments of a pull request', () => {
           line: 4,
           body: 'False positive: line 1 imports `sum`. <!-- gives 5/5 --><details>log</details>',
           commit: HEAD,
-          author: 'alex',
+          author: 'octocat',
           inReplyTo: refuted,
         })
         // A finding of the bot that only the bot answered, and a thread of a person: neither goes.
@@ -605,7 +605,7 @@ describe('commands in the comments of a pull request', () => {
         assert.ok(job && job.kind === 'review')
         assert.deepEqual(
           job.threads?.map((t) => [t.id, t.comments.map((c) => [c.author, c.isBot, c.body])]),
-          [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` not imported**'], ['alex', false, 'False positive: line 1 imports `sum`.']]]],
+          [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` not imported**'], ['octocat', false, 'False positive: line 1 imports `sum`.']]]],
         )
         // The service read the threads with a token that reads the pull requests only.
         assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
@@ -749,7 +749,7 @@ describe('commands in the comments of a pull request', () => {
 
         it('18g. a 401 on the kept token mints a new one once, and the review still gets its threads', async () => {
           let answered = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**A finding** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
-          fake.state.comments.push({ id: 900_010, reviewId: null, path: 'src/sum.ts', line: 4, body: 'False positive.', commit: HEAD, author: 'alex', inReplyTo: answered })
+          fake.state.comments.push({ id: 900_010, reviewId: null, path: 'src/sum.ts', line: 4, body: 'False positive.', commit: HEAD, author: 'octocat', inReplyTo: answered })
           await reviewClaim()
           fake.state.revokedTokens.add(threadTokens()[0]!.token)
           let job = await reviewClaim()
@@ -894,10 +894,10 @@ describe('commands in the comments of a pull request', () => {
       // The reactions go on the review comment, not on a comment of the conversation.
       assert.deepEqual(reactionsOf(payload.comment.id), [])
       assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: cause })
-      assert.deepEqual(await eventsOf(finding.id), [{ type: 'dismissed', actor: 'alex', reason: cause, source: 'command' }])
+      assert.deepEqual(await eventsOf(finding.id), [{ type: 'dismissed', actor: 'octocat', reason: cause, source: 'command' }])
       let replies = fake.repliesTo(finding.commentId!)
       assert.equal(replies.length, 1)
-      assert.equal(replies[0]!.body, `Finding dismissed by @alex on Kentō. Reason: "${cause}". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`)
+      assert.equal(replies[0]!.body, `Finding dismissed by @octocat on Kentō. Reason: "${cause}". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`)
       assert.ok(fake.state.resolved.has(finding.commentId!))
       assert.equal(fake.state.issueComments.length, 0)
       assert.equal((await jobs()).length, 0)
@@ -925,7 +925,7 @@ describe('commands in the comments of a pull request', () => {
         repository: { githubRepoId: REPO.id, fullName: REPO.full_name },
         prNumber: PR,
         commentId: 1,
-        commenter: { login: 'alex', isBot: false },
+        commenter: { login: 'octocat', isBot: false },
         command: { verb: 'reject' as const, id: null, reason: 'ok' },
         author: null,
         place: { kind: 'conversation' as const },
@@ -942,7 +942,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(reactionsOf(first.payload.comment.id), ['eyes', 'rocket'])
       // The reply goes under the pull request: this finding has no thread.
       assert.deepEqual(fake.state.issueComments.map((c) => c.body), [
-        `@alex The finding \`#3cf454\` "Bug" is dismissed. Reason: "the schema validates the value". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`,
+        `@octocat The finding \`#3cf454\` "Bug" is dismissed. Reason: "the schema validates the value". The next reviews will not comment on it again.\n\n<!-- kento:reject ${finding.id} -->`,
       ])
       // A second reject of the same finding, even with another cause, changes nothing and posts nothing.
       let second = await say('@sakuga-review reject 3cf454aa the value is validated')
@@ -1016,7 +1016,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: review })
       let id = keyOf('Bug').slice(0, 6)
       assert.deepEqual(fake.state.dismissals, [
-        { reviewId: review, message: `Dismissed by Kentō: @alex dismissed the finding \`#${id}\` "Bug", and no blocking finding stays open.` },
+        { reviewId: review, message: `Dismissed by Kentō: @octocat dismissed the finding \`#${id}\` "Bug", and no blocking finding stays open.` },
       ])
       // The review of an older head is not the last one on the head: publish.ts dismisses it at the next review.
       assert.equal(fake.state.reviews.find((r) => r.id === older)!.state, 'CHANGES_REQUESTED')
@@ -1265,7 +1265,7 @@ describe('commands in the comments of a pull request', () => {
       let { body } = await reply('@kento-review reject false positive', finding.commentId!)
       assert.equal(body.outcome, 'dismissed')
       assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'false positive' })
-      assert.deepEqual((await eventsOf(finding.id)).map((e) => [e.type, e.actor]), [['wontfix', 'camille'], ['dismissed', 'alex']])
+      assert.deepEqual((await eventsOf(finding.id)).map((e) => [e.type, e.actor]), [['wontfix', 'camille'], ['dismissed', 'octocat']])
     })
 
     it('R10. a redelivery posts nothing more; a finding fixed or stale is refused with 😕', async () => {
@@ -1308,7 +1308,7 @@ describe('commands in the comments of a pull request', () => {
       let second = await say('@kento-review reject #3cf454 another cause')
       assert.equal(second.body.outcome, 'unchanged')
       assert.deepEqual(fake.state.issueComments.map((c) => c.body.split('\n')[0]), [
-        '@alex The finding `#3cf454` "Bug" is dismissed. Reason: "the value is validated". The next reviews will not comment on it again.',
+        '@octocat The finding `#3cf454` "Bug" is dismissed. Reason: "the value is validated". The next reviews will not comment on it again.',
       ])
       assert.deepEqual(reactionsOf(second.payload.comment.id), ['eyes', 'rocket'])
       assert.equal((await eventsOf(finding.id)).length, 1)
@@ -1330,7 +1330,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(threadReactionsOf(payload.comment.id), ['confused'])
       let replies = fake.repliesTo(finding.commentId!)
       assert.equal(replies.length, 1)
-      assert.match(replies[0]!.body, /^@alex The `reject` command needs a cause/)
+      assert.match(replies[0]!.body, /^@octocat The `reject` command needs a cause/)
       assert.match(replies[0]!.body, /@kento-review reject <cause>/)
       assert.equal(fake.state.issueComments.length, 0)
       await replayReply(payload, deliveryId)

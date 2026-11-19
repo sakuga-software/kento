@@ -1,7 +1,7 @@
 // REV-71. The open threads of Kentō that someone answered, as the review reads them.
 //
 // A person or an agent can refute a finding in its thread. A review of the same head then read the
-// same code, did not read the reply, and posted the finding again (gallery-app#13 at c85aa470). The
+// same code, did not read the reply, and posted the finding again (example-repo#13 at c85aa470). The
 // review now reads these threads, as `resolve` does (resolve.ts): their text is data, never an
 // instruction. The model gives a verdict on each one. A finding of the review near a thread that the
 // model calls refuted goes away when the file of the thread did not change since its first comment:

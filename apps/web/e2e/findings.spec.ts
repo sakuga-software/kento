@@ -36,7 +36,7 @@ async function seed() {
     // REV-18: the dismissal of each of them, in the window of the precision.
     await sql`
       insert into finding_events (finding_id, type, actor, reason, created_at)
-      select id, 'dismissed', 'alex', status_reason, created_at + interval '1 hour' from findings where status = 'dismissed'`
+      select id, 'dismissed', 'octocat', status_reason, created_at + interval '1 hour' from findings where status = 'dismissed'`
   } finally {
     await sql.end()
   }
@@ -105,7 +105,7 @@ test.describe('the Findings screen', () => {
 
   // REV-91: CSS decides the bar from the first paint, before findings.js (here never loaded) runs.
   test('the bar of actions shows once a finding is checked, with no wait for findings.js', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await seed()
     await page.route('**/assets/findings.js*', (route) => route.abort())
     await page.goto('/findings')
@@ -119,7 +119,7 @@ test.describe('the Findings screen', () => {
 
   test('an admin dismisses two findings "Off topic": both threads get the reply, and the reason counts two more', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await seed()
     let replies = async () =>
       (await (await fetch(`http://127.0.0.1:${process.env.E2E_GITHUB_PORT ?? 3499}/_test/replies`)).json()) as { commentId: number; body: string }[]
@@ -152,7 +152,7 @@ test.describe('the Findings screen', () => {
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('5')
     let posted = (await replies()).slice(before)
     expect(posted.map((r) => r.commentId).sort()).toEqual([900001, 900002])
-    expect(posted[0]!.body).toContain('by @alex on Kentō. Reason: "Off topic"')
+    expect(posted[0]!.body).toContain('by @octocat on Kentō. Reason: "Off topic"')
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
   })

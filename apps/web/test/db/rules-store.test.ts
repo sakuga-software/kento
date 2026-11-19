@@ -36,7 +36,7 @@ describe('the store of the rules (REV-19)', () => {
     repoId = repo!.id
     otherRepoId = otherRepo!.id
     let [user] = await database.sql<{ id: string }[]>`
-      insert into users (github_id, login) values (1, 'alex') returning id`
+      insert into users (github_id, login) values (1, 'octocat') returning id`
     userId = user!.id
   })
 
@@ -56,7 +56,7 @@ describe('the store of the rules (REV-19)', () => {
     let [rule] = await store.list(orgId, repoId)
     assert.deepEqual(
       { title: rule!.title, paths: rule!.paths, floor: rule!.severityFloor, active: rule!.active, version: rule!.version, by: rule!.updatedBy },
-      { title: 'FK indexes', paths: ['**/migrations/**'], floor: 'major', active: true, version: 1, by: 'alex' },
+      { title: 'FK indexes', paths: ['**/migrations/**'], floor: 'major', active: true, version: 1, by: 'octocat' },
     )
     assert.deepEqual(await store.list(orgId, null), [], 'a rule of a repository is not a rule of the org')
 
@@ -69,7 +69,7 @@ describe('the store of the rules (REV-19)', () => {
     await store.setActive(orgId, added.id, userId, 2, false)
     let [off] = await store.list(orgId, repoId)
     assert.equal(off!.active, false)
-    assert.equal(off!.disabledBy, 'alex')
+    assert.equal(off!.disabledBy, 'octocat')
     assert.ok(off!.disabledAt instanceof Date)
 
     await store.setActive(orgId, added.id, userId, 3, true)

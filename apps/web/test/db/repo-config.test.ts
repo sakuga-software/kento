@@ -71,7 +71,7 @@ describe('the config of a repository against Postgres', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews, resolutions, users, runners cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'alex') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
     userId = user!.id
     changedFiles = null
     listed = 0
@@ -94,7 +94,7 @@ describe('the config of a repository against Postgres', () => {
       assert.equal(view!.version, 2)
       assert.deepEqual(view!.config, { models: { balanced: SONNET } })
       assert.equal(view!.defaultLevel, 'heavy')
-      assert.equal(view!.updatedBy, 'alex')
+      assert.equal(view!.updatedBy, 'octocat')
       assert.ok(view!.updatedAt && Date.now() - view!.updatedAt.getTime() < 60_000)
     })
 
@@ -104,7 +104,7 @@ describe('the config of a repository against Postgres', () => {
       let stale = await store.save(orgId, repoId, userId, 0, (current) => ({ ...current, config: { trigger: 'push' } }))
       assert.equal(stale.kind, 'conflict')
       assert.equal(stale.kind === 'conflict' && stale.version, 1)
-      assert.equal(stale.kind === 'conflict' && stale.updatedBy, 'alex')
+      assert.equal(stale.kind === 'conflict' && stale.updatedBy, 'octocat')
       assert.deepEqual((await store.read(orgId, repoId))!.config, { trigger: 'command' })
     })
 

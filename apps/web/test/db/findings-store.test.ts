@@ -99,8 +99,8 @@ describe('findings store', () => {
     let id = await insertFinding({ repoId, prNumber: 10, title: 'with events' })
     for (let [type, actor] of [
       ['opened', 'kento'],
-      ['dismissed', 'alex'],
-      ['reopened', 'alex'],
+      ['dismissed', 'octocat'],
+      ['reopened', 'octocat'],
     ]) {
       await database.sql`insert into finding_events (finding_id, type, actor) values (${id}, ${type!}, ${actor!})`
     }
@@ -108,8 +108,8 @@ describe('findings store', () => {
     let second = await listFindingEvents(database.sql, { orgId, findingId: id, limit: 2, cursor: first.nextCursor })
     assert.deepEqual([...first.items, ...second.items].map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
-      ['dismissed', 'alex'],
-      ['reopened', 'alex'],
+      ['dismissed', 'octocat'],
+      ['reopened', 'octocat'],
     ])
     assert.equal(second.nextCursor, null)
     assert.deepEqual((await listFindingEvents(database.sql, { orgId: otherOrgId, findingId: id })).items, [])
@@ -118,7 +118,7 @@ describe('findings store', () => {
   it('REV-94: with keepDismissed, a finding fixed or stale, read under the lock, is not dismissed', async () => {
     for (let status of ['fixed', 'stale']) {
       let id = await insertFinding({ repoId, prNumber: 77, title: `race ${status}`, status })
-      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'alex', source: 'command', keepDismissed: true })
+      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'octocat', source: 'command', keepDismissed: true })
       assert.equal(change.outcome, 'unchanged')
       assert.equal(change.outcome === 'unchanged' && change.finding.status, status)
       assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 0)

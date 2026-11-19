@@ -25,7 +25,7 @@ async function seed(): Promise<{ failedJobId: string }> {
     let [repo] = await sql<{ id: string }[]>`
       insert into repos (org_id, github_repo_id, full_name, enabled) values (${org!.id}, ${REPO.id}, ${REPO.full_name}, true) returning id`
     let [runner] = await sql<{ id: string }[]>`
-      insert into runners (name, token_hash, last_seen_at) values ('runners-host', ${`e2e-dash-${Date.now()}`}, now()) returning id`
+      insert into runners (name, token_hash, last_seen_at) values ('shared-01', ${`e2e-dash-${Date.now()}`}, now()) returning id`
     // An earlier review of the pull request, published, at a known cost.
     let [done] = await sql<{ id: string }[]>`
       insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, attempts, created_at, started_at, finished_at)
@@ -52,7 +52,7 @@ async function cleanUp() {
   let sql = database()
   try {
     await sql`delete from repos where github_repo_id = ${REPO.id}`
-    await sql`delete from runners where name = 'runners-host' and org_id is null`
+    await sql`delete from runners where name = 'shared-01' and org_id is null`
   } finally {
     await sql.end()
   }
@@ -66,12 +66,12 @@ async function push(page: Page, head: string, action = 'synchronize', number = 4
     pull_request: {
       number,
       draft: false,
-      user: { login: 'alex', type: 'User' },
+      user: { login: 'octocat', type: 'User' },
       head: { sha: head, ref: 'feature', repo: { id: REPO.id } },
       base: { sha: 'f'.repeat(40), ref: 'main', repo: { id: REPO.id } },
     },
     repository: REPO,
-    sender: { login: 'alex', type: 'User' },
+    sender: { login: 'octocat', type: 'User' },
     installation: { id: FAKE_ORG.installationId },
   })
   let response = await page.request.post('/webhooks/github', {
@@ -89,7 +89,7 @@ async function push(page: Page, head: string, action = 'synchronize', number = 4
 test.describe('the dashboard', () => {
   test.beforeEach(async ({ page }) => {
     // The org exists once someone signed in.
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
   })
   test.afterEach(async () => {
     await cleanUp()
@@ -102,7 +102,7 @@ test.describe('the dashboard', () => {
 
     let banner = page.getByRole('region', { name: /The lite review of sakuga-software\/dash-e2e#41 failed/ })
     await expect(banner).toBeVisible()
-    await expect(banner.getByText('Reason: the runner stopped answering during the job twice, last runners-host. Check on the Runners screen that a runner is online, then retry.')).toBeVisible()
+    await expect(banner.getByText('Reason: the runner stopped answering during the job twice, last shared-01. Check on the Runners screen that a runner is online, then retry.')).toBeVisible()
     await expect(banner.getByText(/The previous review \(3\/5, published on .*\) stays on the pull request\./)).toBeVisible()
     await expect(banner.getByRole('link', { name: 'Open the PR' })).toHaveAttribute('href', /\/sakuga-software\/dash-e2e\/pull\/41$/)
     // The estimate of balanced: the mean of the balanced reviews of the repository.
@@ -162,7 +162,7 @@ test.describe('the dashboard', () => {
     }
     await page.goto('/')
     await expect(page.getByRole('region', { name: /review of .* failed/ })).toHaveCount(0)
-    await expect(page.getByRole('region', { name: 'Recent failures' }).getByText('the runner stopped answering during the job twice, last runners-host')).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Recent failures' }).getByText('the runner stopped answering during the job twice, last shared-01')).toBeVisible()
     expect(errors).toEqual([])
   })
 
@@ -187,7 +187,7 @@ test.describe('the dashboard', () => {
     let sql = database()
     try {
       let [hidden] = await sql<{ by: string }[]>`select failure_dismissed_by as by from jobs where id = ${failedJobId}`
-      expect(hidden!.by).toBe('alex')
+      expect(hidden!.by).toBe('octocat')
       await sql`
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, attempts, failure_reason, created_at, finished_at)
         select repo_id, 'lite', 'failed', 43, ${'e'.repeat(40)}, 'main', 1, 'clone failed', now() - interval '5 minutes', now() - interval '1 minute'

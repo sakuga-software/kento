@@ -8,7 +8,7 @@ import { reviewPullRequest, type Answer, type Finding } from '../src/index.ts';
 import { buildPack } from '../src/pack.ts';
 import { checkMissingNames, importStatements } from '../src/imports.ts';
 
-// REV-70. The replay of gallery-app#13 at c85aa470: `app/routes/regie/account.tsx` imports `data` on
+// REV-70. The replay of example-repo#13 at c85aa470: `app/routes/regie/account.tsx` imports `data` on
 // line 3, far from the hunks of the pull request. The diff showed a hunk of the imports (line 19) and
 // the new branch of the action that calls `data(...)`. Kentō reported that `data` had no import
 // as a P1, and the score went from 4/5 to 2/5.
@@ -117,7 +117,7 @@ function fakeModel(reply: Answer) {
   return { fetch, packs };
 }
 
-test('gallery-app#13: the pack shows the imports of the file, line 3 included, though no hunk holds it', async () => {
+test('example-repo#13: the pack shows the imports of the file, line 3 included, though no hunk holds it', async () => {
   const { fetch } = fakeModel(answer([]));
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {} });
   const diff = /## Diff\n([\s\S]*?)\n```\n/.exec(result.pack)![1]!;
@@ -130,8 +130,8 @@ test('gallery-app#13: the pack shows the imports of the file, line 3 included, t
   assert.match(imports, /\n5\| import \{\n6\|   Avatar,\n7\|   Breadcrumbs,\n8\|   Button,\n9\| \} from "~\/components\/ui";\n/);
 });
 
-test('gallery-app#13: a P1 "`data` used without an import" goes away, and no longer caps the score at 2', async () => {
-  // The model scores 4/5, as on gallery-app#13 before the false P1. Without the check, the P1 blocks and caps the score at 2.
+test('example-repo#13: a P1 "`data` used without an import" goes away, and no longer caps the score at 2', async () => {
+  // The model scores 4/5, as on example-repo#13 before the false P1. Without the check, the P1 blocks and caps the score at 2.
   const { fetch } = fakeModel(answer([finding({})], 4));
   const logs: string[] = [];
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: (m) => logs.push(m) });
@@ -152,7 +152,7 @@ test('a name that the file does not import stays a blocking finding', async () =
   assert.equal(result.verdict, 'REQUEST_CHANGES');
 });
 
-test('gallery-app#12: `and` and `isNull` imported on line 1 refute "maybe not imported"', () => {
+test('example-repo#12: `and` and `isNull` imported on line 1 refute "maybe not imported"', () => {
   const lines = ['import { and, eq, isNull } from "drizzle-orm";', 'export const where = and(eq(a, b), isNull(c));'];
   const reply = answer([finding({ path: 'team.tsx', title: '`and` and `isNull` maybe not imported' })], 3);
   const { refuted, unchecked } = checkMissingNames(reply, () => lines);

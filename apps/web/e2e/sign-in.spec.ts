@@ -6,12 +6,12 @@ import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 test('an admin of the org gets the full frame, with no "Read only"', async ({ page }) => {
   let errors = watchConsole(page)
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
 
   await expect(page).toHaveURL(/\/$/)
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   let who = page.locator('.who').locator('visible=true')
-  await expect(who).toContainText('alex')
+  await expect(who).toContainText('octocat')
   await expect(who).toContainText('Admin')
   await expect(page.getByText('Read only', { exact: true })).toHaveCount(0)
   await expect(page.locator('.bar-org-box')).toHaveText('sakuga-software')
@@ -53,12 +53,12 @@ test('a screen asked before the sign-in opens after it', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name: 'Sign in to Kentō' })).toBeVisible()
   await expectNoAxeViolations(page)
   await page.getByRole('link', { name: 'Continue with GitHub' }).click()
-  await page.getByRole('link', { name: 'Authorize as alex' }).click()
+  await page.getByRole('link', { name: 'Authorize as octocat' }).click()
   await expect(page).toHaveURL(/\/runners$/)
 })
 
 test('sign out ends the session', async ({ page }) => {
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   await page.locator('.who').getByRole('button', { name: 'Sign out' }).click()
 
   await expect(page).toHaveURL(/\/login\?notice=signed_out$/)

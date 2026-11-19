@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { SESSION_TTL_MS } from '../auth/session-storage.ts'
-import { cookieOf, fakeAuth, ALEX, ORG } from '../auth/test-helpers.ts'
+import { cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import { spyStore, webhookDeps } from '../github/test-helpers.ts'
 import type { RepoConfigStore } from '../repo-config/store.ts'
 import { serviceProviders } from '../repo-config/providers.ts'
@@ -32,7 +32,7 @@ const noRepo: RepoConfigStore = {
 
 function setup(overrides: Partial<AppDependencies> = {}) {
   let auth = fakeAuth()
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   let router = createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
     version: '1.2.3',
@@ -57,7 +57,7 @@ function setup(overrides: Partial<AppDependencies> = {}) {
   }
 
   async function signIn() {
-    auth.as(ALEX)
+    auth.as(OCTOCAT)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
@@ -113,14 +113,14 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     assert.equal(response.status, 404)
     let html = await response.text()
     assert.match(html, /<h1>This page does not exist<\/h1>/)
-    assert.doesNotMatch(html, /alex/)
+    assert.doesNotMatch(html, /octocat/)
     assert.equal(cookieOf(response, COOKIE), null, 'an unknown URL does not touch the session')
   })
 
   it('never signs out a person who left the org on an unknown URL: the screens do', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn()
-    auth.setRole(ORG, ALEX, null)
+    auth.setRole(ORG, OCTOCAT, null)
     auth.clock.now += ROLE_TTL_MS + 1000
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 404)
@@ -134,7 +134,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
   it('answers the 503 of the screens when GitHub has not confirmed the role for over an hour, and keeps the session', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn()
-    auth.setRole(ORG, ALEX, 'error')
+    auth.setRole(ORG, OCTOCAT, 'error')
     auth.clock.now += ROLE_GRACE_MS + 1000
     let response = await request('/nope', { cookie, headers: BROWSER })
     assert.equal(response.status, 503)

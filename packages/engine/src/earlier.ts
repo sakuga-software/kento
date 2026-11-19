@@ -2,7 +2,7 @@
 //
 // Before, a review read the whole diff and knew only the answered threads (REV-71) and the rejected
 // findings (REV-95). It wrote the same defect again in other words, or the part of it that a fix
-// left, as a new finding. On gallery-app#62, three findings gave the same Stripe defect:
+// left, as a new finding. On example-repo#62, three findings gave the same Stripe defect:
 //
 // - #c7f3ec: a row written before the Stripe call.
 // - #ad9b57: Stripe writes not undone when the commit fails.

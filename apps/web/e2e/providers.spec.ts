@@ -37,7 +37,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
   let label = `Anthropic ${project}`
   let db = sql()
   try {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     let [org] = await db<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
     await db`delete from providers where org_id = ${org!.id}`
@@ -131,7 +131,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
 // focus: "Add a provider" is at the bottom of a long page.
 test('a provider form with an error opens on its first field in error, in view and focused', async ({ page }) => {
   let errors = watchConsole(page)
-  await signIn(page, 'alex')
+  await signIn(page, 'octocat')
   // A malformed hash stops nothing: settings.js still opens the form on a later change of the hash.
   await page.goto('/settings#%E0%A4%A')
   // A link to #new-provider in the page (the home screen has one) changes the hash: settings.js opens the form.
@@ -172,7 +172,7 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
   let label = `Anthropic form ${project}`
   let db = sql()
   try {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     let [org] = await db<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
     await db`delete from providers where org_id = ${org!.id}`

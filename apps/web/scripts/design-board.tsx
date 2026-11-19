@@ -31,7 +31,7 @@ const OUT = new URL('../../../design/socle/frames/', import.meta.url)
 // From design/socle/frames/ to the assets of the app.
 const ASSETS = '../../../apps/web/public/assets/'
 
-const admin: Viewer = { login: 'alex', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', login: 'sakuga-software' }, orgs: [{ id: 'org-1', login: 'sakuga-software' }] }
+const admin: Viewer = { login: 'octocat', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', login: 'sakuga-software' }, orgs: [{ id: 'org-1', login: 'sakuga-software' }] }
 const member: Viewer = { ...admin, login: 'camille', name: 'Camille', role: 'member' }
 
 function frame(theme: Theme, viewer: Viewer | null, path: string): PageFrame {
@@ -100,19 +100,19 @@ const minutes = (n: number) => new Date(now.getTime() - n * 60_000)
 const runnersScreen: RunnersScreen = {
   now,
   registrations: [
-    { id: '00000000-0000-4000-8000-000000000001', name: 'gpu-scaleway', labels: ['gpu', 'linux'], trusted: false, expiresAt: new Date(now.getTime() + 42 * 60_000), createdAt: minutes(18) },
+    { id: '00000000-0000-4000-8000-000000000001', name: 'gpu-runner', labels: ['gpu', 'linux'], trusted: false, expiresAt: new Date(now.getTime() + 42 * 60_000), createdAt: minutes(18) },
     { id: '00000000-0000-4000-8000-000000000002', name: 'poste-camille', labels: ['local'], trusted: true, expiresAt: minutes(95), createdAt: minutes(155) },
   ],
   runners: [
-    { id: '00000000-0000-4000-8000-000000000010', name: 'mac-mini', labels: ['macos', 'arm64'], version: '0.1.0', trusted: true, orgId: 'org-1', revokedAt: null, lastSeenAt: new Date(now.getTime() - 12_000), createdAt: minutes(3000), currentJob: { kind: 'review', repo: 'sakuga-software/sakuga-review', prNumber: 57, startedAt: minutes(2) }, jobs24h: 14 },
-    { id: '00000000-0000-4000-8000-000000000011', name: 'runners-host', labels: ['linux', 'x64'], version: '0.1.0', trusted: true, orgId: null, revokedAt: null, lastSeenAt: new Date(now.getTime() - 25_000), createdAt: minutes(9000), currentJob: null, jobs24h: 31 },
-    { id: '00000000-0000-4000-8000-000000000012', name: 'portable-alex', labels: ['local'], version: '0.0.9', trusted: false, orgId: 'org-1', revokedAt: null, lastSeenAt: minutes(47), createdAt: minutes(6000), currentJob: null, jobs24h: 2 },
+    { id: '00000000-0000-4000-8000-000000000010', name: 'runner-1', labels: ['macos', 'arm64'], version: '0.1.0', trusted: true, orgId: 'org-1', revokedAt: null, lastSeenAt: new Date(now.getTime() - 12_000), createdAt: minutes(3000), currentJob: { kind: 'review', repo: 'sakuga-software/sakuga-review', prNumber: 57, startedAt: minutes(2) }, jobs24h: 14 },
+    { id: '00000000-0000-4000-8000-000000000011', name: 'shared-01', labels: ['linux', 'x64'], version: '0.1.0', trusted: true, orgId: null, revokedAt: null, lastSeenAt: new Date(now.getTime() - 25_000), createdAt: minutes(9000), currentJob: null, jobs24h: 31 },
+    { id: '00000000-0000-4000-8000-000000000012', name: 'runner-laptop', labels: ['local'], version: '0.0.9', trusted: false, orgId: 'org-1', revokedAt: null, lastSeenAt: minutes(47), createdAt: minutes(6000), currentJob: null, jobs24h: 2 },
     { id: '00000000-0000-4000-8000-000000000013', name: 'gpu-test', labels: ['gpu'], version: '0.1.0', trusted: false, orgId: 'org-1', revokedAt: null, lastSeenAt: minutes(60 * 24 * 4), createdAt: minutes(60 * 24 * 9), currentJob: null, jobs24h: 0 },
     { id: '00000000-0000-4000-8000-000000000014', name: 'old-mac', labels: ['macos'], version: '0.0.8', trusted: false, orgId: 'org-1', revokedAt: minutes(60 * 30), lastSeenAt: minutes(60 * 31), createdAt: minutes(60 * 24 * 20), currentJob: null, jobs24h: 0 },
   ],
 }
 const kentoUrl = 'https://review.sakuga.dev'
-const created = { name: 'mac-mini-2', labels: ['macos', 'arm64'], trusted: true, token: 'kento_reg_EXAMPLE-not-a-real-token-0000000000000', expiresAt: new Date(now.getTime() + 60 * 60_000) }
+const created = { name: 'runner-2', labels: ['macos', 'arm64'], trusted: true, token: 'kento_reg_EXAMPLE-not-a-real-token-0000000000000', expiresAt: new Date(now.getTime() + 60 * 60_000) }
 const runnersFrames: { file: string; node: unknown }[] = [
   { file: 'runners-admin-paper.html', node: <RunnersPage frame={frame('paper', admin, '/runners')} screen={runnersScreen} version="0.1.0" kentoUrl={kentoUrl} /> },
   { file: 'runners-admin-token-sumi.html', node: <RunnersPage frame={frame('sumi', admin, '/runners')} screen={{ ...runnersScreen, registrations: [] }} version="0.1.0" kentoUrl={kentoUrl} created={created} /> },
@@ -126,7 +126,7 @@ const runnersFrames: { file: string; node: unknown }[] = [
         screen={{ now, registrations: [], runners: [] }}
         version="0.1.0"
         kentoUrl={kentoUrl}
-        form={{ values: { name: 'mac mini', labels: 'macos', keyMode: 'app' }, errors: { name: 'Letters, digits, dots, hyphens or underscores, 100 at most.' } }}
+        form={{ values: { name: 'runner 1', labels: 'macos', keyMode: 'app' }, errors: { name: 'Letters, digits, dots, hyphens or underscores, 100 at most.' } }}
       />
     ),
   },
@@ -181,7 +181,7 @@ const REPOS: RepoView[] = [
     workflowPath: '.github/workflows/sakuga-review.yml', streak: 7,
     lastReview: { prNumber: 1204, score: 4, model: 'anthropic/claude-sonnet-5.5', publishedAt: minutesAgo(2900) },
   }),
-  repo({ id: 'r-tofu', fullName: 'sakuga-software/infra-repo', workflow: 'none' }),
+  repo({ id: 'r-garden', fullName: 'sakuga-software/garden', workflow: 'none' }),
 ]
 
 function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> = {}) {
@@ -240,7 +240,7 @@ const ORG_PROVIDERS: ProviderView[] = [
     refusedAt: new Date('2026-10-29T08:40:00Z'), refusedStatus: 401, refusedMessage: '401 User not found.',
   }),
   provider({ id: '00000000-0000-4000-8000-000000000022', label: 'Office GPU', kind: 'ollama', runnerHeld: true, baseUrl: 'http://gpu.lan:11434', models: { lite: ['qwen3:32b'], balanced: ['qwen3:32b'], heavy: ['qwen3:235b'] } }),
-  provider({ id: '00000000-0000-4000-8000-000000000023', label: 'vLLM interne', kind: 'openai_compatible', keyLast4: 'b81e', keySetAt: minutes(300), baseUrl: 'https://llm.sakuga.dev/v1', models: { lite: ['qwen3-coder'], balanced: ['qwen3-coder'], heavy: ['deepseek-v4'] } }),
+  provider({ id: '00000000-0000-4000-8000-000000000023', label: 'vLLM interne', kind: 'openai_compatible', keyLast4: 'b81e', keySetAt: minutes(300), baseUrl: 'https://llm.example.com/v1', models: { lite: ['qwen3-coder'], balanced: ['qwen3-coder'], heavy: ['deepseek-v4'] } }),
 ]
 function settingsPage(theme: Theme, viewer: Viewer, extra: Partial<SettingsPageProps> = {}) {
   return <SettingsPage frame={frame(theme, viewer, '/settings')} providers={ORG_PROVIDERS} now={now} secretsConfigured serviceKey {...extra} />
@@ -277,7 +277,7 @@ const ORCHARD_CONFIG: RepoConfigView = {
   },
   orgConfig: {},
   version: 7,
-  updatedBy: 'alex',
+  updatedBy: 'octocat',
   updatedAt: new Date('2026-10-27T17:02:00Z'),
   spentThisMonthUsd: 3.42,
   trustedBots: ['sakuga-agent[bot]', 'renovate[bot]'],
@@ -328,16 +328,16 @@ const DASHBOARD: DashboardScreen = {
     level: 'lite',
     attempts: 2,
     reason: 'lease expired 2 times',
-    runnerName: 'runners-host',
+    runnerName: 'shared-01',
     finishedAt: dAgo(240),
     previous: { score: 3, publishedAt: new Date('2026-10-29T08:12:00Z') },
     retry: null,
     estimates: { lite: 0.004, balanced: 0.118, heavy: 0.36 },
   },
   failures: [
-    { id: 'f1', repoId: 'r-orchard', repo: 'sakuga-software/orchard', prNumber: 128, kind: 'review', level: 'lite', attempts: 2, reason: 'lease expired 2 times', runnerName: 'runners-host', finishedAt: dAgo(240) },
-    { id: 'f2', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 676, kind: 'review', level: 'balanced', attempts: 1, reason: 'the provider "Anthropic" refused its key (401): invalid x-api-key', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 26) },
-    { id: 'f3', repoId: 'r-dojo', repo: 'sakuga-software/dojo', prNumber: 702, kind: 'resolve', level: 'lite', attempts: 1, reason: 'clone failed: repository not found', runnerName: 'mac-mini', finishedAt: dAgo(60 * 60 * 50) },
+    { id: 'f1', repoId: 'r-orchard', repo: 'sakuga-software/orchard', prNumber: 128, kind: 'review', level: 'lite', attempts: 2, reason: 'lease expired 2 times', runnerName: 'shared-01', finishedAt: dAgo(240) },
+    { id: 'f2', repoId: 'r-fruitback', repo: 'sakuga-software/fruitback', prNumber: 676, kind: 'review', level: 'balanced', attempts: 1, reason: 'the provider "Anthropic" refused its key (401): invalid x-api-key', runnerName: 'runner-1', finishedAt: dAgo(60 * 60 * 26) },
+    { id: 'f3', repoId: 'r-dojo', repo: 'sakuga-software/dojo', prNumber: 702, kind: 'resolve', level: 'lite', attempts: 1, reason: 'clone failed: repository not found', runnerName: 'runner-1', finishedAt: dAgo(60 * 60 * 50) },
   ],
   week: [
     { day: '2026-10-23', published: { lite: 9, balanced: 1, heavy: 0 }, failed: 0, meanDurationMs: 84_000 },
@@ -371,8 +371,8 @@ const DASHBOARD: DashboardScreen = {
   caps: { dailyCapUsd: 5, monthlyCapUsd: 150, alertPct: 80 },
   queue: {
     running: [
-      { id: 'j1', repo: 'sakuga-software/fruitback', prNumber: 677, kind: 'review', level: 'balanced', attempts: 1, createdAt: dAgo(140), startedAt: dAgo(95), leaseExpiresAt: new Date(D_NOW.getTime() + 85_000), notBefore: null, runnerName: 'mac-mini', runnerSeenAt: dAgo(4) },
-      { id: 'j2', repo: 'sakuga-software/orchard', prNumber: 129, kind: 'resolve', level: 'lite', attempts: 2, createdAt: dAgo(400), startedAt: dAgo(30), leaseExpiresAt: new Date(D_NOW.getTime() + 150_000), notBefore: null, runnerName: 'runners-host', runnerSeenAt: dAgo(9) },
+      { id: 'j1', repo: 'sakuga-software/fruitback', prNumber: 677, kind: 'review', level: 'balanced', attempts: 1, createdAt: dAgo(140), startedAt: dAgo(95), leaseExpiresAt: new Date(D_NOW.getTime() + 85_000), notBefore: null, runnerName: 'runner-1', runnerSeenAt: dAgo(4) },
+      { id: 'j2', repo: 'sakuga-software/orchard', prNumber: 129, kind: 'resolve', level: 'lite', attempts: 2, createdAt: dAgo(400), startedAt: dAgo(30), leaseExpiresAt: new Date(D_NOW.getTime() + 150_000), notBefore: null, runnerName: 'shared-01', runnerSeenAt: dAgo(9) },
     ],
     queued: [
       { id: 'j3', repo: 'sakuga-software/dojo', prNumber: 703, kind: 'review', level: 'lite', attempts: 0, createdAt: dAgo(20), startedAt: null, leaseExpiresAt: null, notBefore: null, runnerName: null, runnerSeenAt: null },
@@ -382,9 +382,9 @@ const DASHBOARD: DashboardScreen = {
     queuedCount: 2,
   },
   runners: [
-    { id: 'u1', name: 'mac-mini', orgId: 'org-1', lastSeenAt: dAgo(4), running: 1 },
-    { id: 'u2', name: 'runners-host', orgId: null, lastSeenAt: dAgo(9), running: 1 },
-    { id: 'u3', name: 'portable-alex', orgId: 'org-1', lastSeenAt: dAgo(60 * 47), running: 0 },
+    { id: 'u1', name: 'runner-1', orgId: 'org-1', lastSeenAt: dAgo(4), running: 1 },
+    { id: 'u2', name: 'shared-01', orgId: null, lastSeenAt: dAgo(9), running: 1 },
+    { id: 'u3', name: 'runner-laptop', orgId: 'org-1', lastSeenAt: dAgo(60 * 47), running: 0 },
   ],
   runnerCounts: { online: 2, late: 0, offline: 1 },
   stall: null,
@@ -433,7 +433,7 @@ const ORG_VIEW: OrgSettingsView = {
   trustedBots: ['sakuga-agent[bot]', 'renovate[bot]'],
   config: { level: 'lite', models: { balanced: { provider: '00000000-0000-4000-8000-000000000020', model: 'claude-sonnet-5-5', fallback: 'claude-haiku-5-5' } } },
   version: 3,
-  updatedBy: 'alex',
+  updatedBy: 'octocat',
   updatedAt: new Date('2026-10-29T13:02:00Z'),
   repos: { total: 14, enabled: 3 },
   costs: {

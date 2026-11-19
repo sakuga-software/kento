@@ -48,12 +48,12 @@ async function push(page: Page, n: number): Promise<string> {
     pull_request: {
       number: 41,
       draft: false,
-      user: { login: 'alex', type: 'User' },
+      user: { login: 'octocat', type: 'User' },
       head: { sha: head(n), ref: 'feature', repo: { id: ORCHARD.id } },
       base: { sha: 'f'.repeat(40), ref: 'main', repo: { id: ORCHARD.id } },
     },
     repository: ORCHARD,
-    sender: { login: 'alex', type: 'User' },
+    sender: { login: 'octocat', type: 'User' },
     installation: { id: FAKE_ORG.installationId },
   })
   delivery++
@@ -92,7 +92,7 @@ async function claim(page: Page, jobId: string) {
 test.describe('the rules of a repository and of the org', () => {
   test('an admin writes a rule of orchard, the next job carries it, and once disabled it no longer goes', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
 
     await openRepoConfig(page, 'orchard')
@@ -119,7 +119,7 @@ test.describe('the rules of a repository and of the org', () => {
 
     await item.getByRole('button', { name: `Disable the rule ${FK_RULE}` }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Rule disabled' })).toBeVisible()
-    await expect(page.getByRole('listitem').filter({ hasText: FK_RULE }).getByText(/disabled by alex on/).first()).toBeVisible()
+    await expect(page.getByRole('listitem').filter({ hasText: FK_RULE }).getByText(/disabled by octocat on/).first()).toBeVisible()
     let after = await claim(page, await push(page, 2))
     expect(after.rules).toEqual([])
 
@@ -130,7 +130,7 @@ test.describe('the rules of a repository and of the org', () => {
 
   test('a rule of the org, written in the settings, goes with the jobs of orchard; a wrong form keeps its values', async ({ page }) => {
     let errors = watchConsole(page)
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
 
     await page.goto('/settings')
@@ -164,7 +164,7 @@ test.describe('the rules of a repository and of the org', () => {
   })
 
   test('a member reads the rules, with no form', async ({ page }) => {
-    await signIn(page, 'alex')
+    await signIn(page, 'octocat')
     await reset(page)
     let sql = database()
     try {

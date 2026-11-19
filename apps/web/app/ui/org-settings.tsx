@@ -75,7 +75,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 }
 const ACCESS: Record<'read' | 'write', string> = { read: 'read', write: 'write' }
 
-/** "settings v3, changed by alex on 29 Oct at 15:02". */
+/** "settings v3, changed by octocat on 29 Oct at 15:02". */
 export function orgVersionLine(view: Pick<OrgSettingsView, 'version' | 'updatedBy' | 'updatedAt'>): string {
   return versionLine({ name: 'settings', changed: 'changed', empty: 'settings v0, the values of Kentō' }, view)
 }

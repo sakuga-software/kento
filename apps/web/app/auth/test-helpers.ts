@@ -10,7 +10,7 @@ import type { AuthStore, MembershipRow, OrgRow, UserRow } from './store.ts'
 export const ORG: OrgRow = { id: 'org-1', githubInstallationId: 11, githubAccountId: 900, login: 'sakuga-software' }
 export const OTHER_ORG: OrgRow = { id: 'org-2', githubInstallationId: 12, githubAccountId: 901, login: 'orchard' }
 
-export const ALEX: GitHubProfile = { id: 1, login: 'alex', name: 'Alex', avatarUrl: null }
+export const OCTOCAT: GitHubProfile = { id: 1, login: 'octocat', name: 'Octocat', avatarUrl: null }
 export const CAMILLE: GitHubProfile = { id: 2, login: 'camille', name: null, avatarUrl: null }
 export const STRANGER: GitHubProfile = { id: 3, login: 'stranger', name: null, avatarUrl: null }
 
@@ -25,7 +25,7 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let users = new Map<string, UserRow>()
   let memberships = new Map<string, { role: OrgRole; checkedAt: Date }>()
   let lookups: string[] = []
-  let profile: GitHubProfile = ALEX
+  let profile: GitHubProfile = OCTOCAT
 
   let store: AuthStore = {
     async upsertUser(p) {

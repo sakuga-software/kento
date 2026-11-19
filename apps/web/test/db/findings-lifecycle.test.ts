@@ -200,7 +200,7 @@ describe('findings from push to push (REV-16)', () => {
     fake = createFakeGitHub({ head: HEADS[0]!, pr: PR, commits: {} })
     // The people who can write to the repository: only their 👎 dismisses a finding.
     fake.state.permissions.set('camille', 'write')
-    fake.state.permissions.set('alex', 'admin')
+    fake.state.permissions.set('octocat', 'admin')
     fake.state.permissions.set('reader', 'read')
   })
 
@@ -293,7 +293,7 @@ describe('findings from push to push (REV-16)', () => {
   it('dismisses an open finding on a 👎 between two pushes, by the sweep of the publisher', async () => {
     await push(HEADS[0]!, [DIVIDES], ['src/div.ts'])
     let [row] = await findingRows()
-    fake.react(row!.githubCommentId!, 'alex')
+    fake.react(row!.githubCommentId!, 'octocat')
 
     // No review is waiting: the run of the publisher only sweeps the reactions.
     let results = await newPublisher().publishPending()
@@ -303,7 +303,7 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual([after!.status, after!.statusReason], ['dismissed', 'no reason, GitHub reaction'])
     assert.deepEqual((await events('Division by zero')).map((e) => [e.type, e.actor, e.reviewed]), [
       ['opened', 'kento', true],
-      ['dismissed', 'alex', false],
+      ['dismissed', 'octocat', false],
     ])
     // The sweep read with a token that can only read the pull requests of this repository.
     let token = fake.state.tokens.at(-1)!
@@ -313,7 +313,7 @@ describe('findings from push to push (REV-16)', () => {
   it('never comments again on a finding that a person dismissed, and leaves it out of the review', async () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
     let [row] = await findingRows()
-    let change = await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Intended: sum subtracts here.', actor: 'alex' })
+    let change = await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Intended: sum subtracts here.', actor: 'octocat' })
     assert.equal(change.outcome, 'changed')
     // The person resolves the thread on GitHub; the next review finds the finding again.
     fake.state.resolved.add(fake.botThreads()[0]!.id)
@@ -328,11 +328,11 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'Intended: sum subtracts here.', 5])
     assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor, e.reason]), [
       ['opened', 'kento', null],
-      ['dismissed', 'alex', 'Intended: sum subtracts here.'],
+      ['dismissed', 'octocat', 'Intended: sum subtracts here.'],
     ])
 
     // "Reopen": the next review comments on it again.
-    assert.equal((await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'open', actor: 'alex' })).outcome, 'changed')
+    assert.equal((await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'open', actor: 'octocat' })).outcome, 'changed')
     await push(HEADS[2]!, [SUBTRACTS(5, SUM_V2)], [])
     assert.equal(fake.botThreads().length, 2, 'a new comment: its old thread is resolved')
   })
@@ -525,7 +525,7 @@ describe('findings from push to push (REV-16)', () => {
     // The next review reads the finding open; a person dismisses it while GitHub takes the review.
     fake.state.onReview = async () => {
       fake.state.onReview = null
-      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'False positive.', actor: 'alex' })
+      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'False positive.', actor: 'octocat' })
     }
     await push(HEADS[1]!, [SUBTRACTS(5, SUM_V2)], ['src/sum.ts'])
 
@@ -533,7 +533,7 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual([after!.status, after!.statusReason, after!.line], ['dismissed', 'False positive.', 5])
     assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor]), [
       ['opened', 'kento'],
-      ['dismissed', 'alex'],
+      ['dismissed', 'octocat'],
     ])
   })
 

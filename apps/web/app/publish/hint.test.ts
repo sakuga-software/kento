@@ -63,7 +63,7 @@ function payload(overrides: Partial<ReviewPayload> = {}): ReviewPayload {
 
 function setup() {
   let fake = createFakeGitHub({ head: HEAD1, commits: { [HEAD1]: 'feat: form', [HEAD2]: 'docs: form', [HEAD3]: 'docs: form again' } })
-  fake.state.permissions.set('alex', 'write')
+  fake.state.permissions.set('octocat', 'write')
   fake.state.permissions.set('visitor', 'read')
   let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: (input, init) => fake.fetch(input, init) })
   let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com', docsUrl: DOCS }
@@ -133,9 +133,9 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     let { fake, publish, reply, hints } = setup()
     await publish(payload({ findings: [bug, other, third] }))
     let [french, english, upheld] = fake.botThreads()
-    reply(french!.id, 'alex', FRENCH)
-    reply(english!.id, 'alex', ENGLISH)
-    reply(upheld!.id, 'alex', 'Not applied: the loop is right.')
+    reply(french!.id, 'octocat', FRENCH)
+    reply(english!.id, 'octocat', ENGLISH)
+    reply(upheld!.id, 'octocat', 'Not applied: the loop is right.')
 
     let outcome = await publish(payload({ head: HEAD2, findings: [bug, other, third], refutedThreads: [`PRRT_${french!.id}`, `PRRT_${english!.id}`] }))
 
@@ -158,7 +158,7 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     await publish(payload())
     let [thread] = fake.botThreads()
     // The reply says it in words that the pattern of the webhook does not read.
-    reply(thread!.id, 'alex', 'I would not keep this finding: the schema already validates the value.')
+    reply(thread!.id, 'octocat', 'I would not keep this finding: the schema already validates the value.')
 
     let outcome = await publish(payload({ head: HEAD2, refutedThreads: [`PRRT_${thread!.id}`] }))
 
@@ -191,7 +191,7 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     assert.equal(byReader.hinted, 0)
 
     // A writer replied, but the thread is resolved.
-    reply(thread!.id, 'alex', 'Same here.')
+    reply(thread!.id, 'octocat', 'Same here.')
     fake.state.resolved.add(thread!.id)
     let resolved = await publish(payload({ head: HEAD3, refutedThreads: [`PRRT_${thread!.id}`] }))
     assert.equal(resolved.hinted, 0)
@@ -208,14 +208,14 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     let { fake, publish, reply, hints, rows, claimed } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    reply(thread!.id, 'alex', 'Not applied. To set it aside:\n\n```\n@kento-review reject the schema validates it\n```')
+    reply(thread!.id, 'octocat', 'Not applied. To set it aside:\n\n```\n@kento-review reject the schema validates it\n```')
     let named = await publish(payload({ head: HEAD2, refutedThreads: [`PRRT_${thread!.id}`] }))
     assert.equal(named.hinted, 0)
 
     let { fake: other, publish: publishOther, reply: replyOther, hints: hintsOther, rows: rowsOther, claimed: claimedOther } = setup()
     await publishOther(payload())
     let [second] = other.botThreads()
-    replyOther(second!.id, 'alex', 'I would not keep this finding.')
+    replyOther(second!.id, 'octocat', 'I would not keep this finding.')
     claimedOther.add(rowsOther[0]!.id!)
     let taken = await publishOther(payload({ head: HEAD2, refutedThreads: [`PRRT_${second!.id}`] }))
     assert.equal(taken.hinted, 0, 'a `resolve` posted it, or is posting it')
@@ -228,7 +228,7 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     let { fake, publish, reply, hints, rows } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    reply(thread!.id, 'alex', 'I would not keep this finding.')
+    reply(thread!.id, 'octocat', 'I would not keep this finding.')
     // The ledger forgets the row: the thread is one of an earlier release.
     rows.length = 0
     let outcome = await publish(payload({ head: HEAD2, findings: [], refutedThreads: [`PRRT_${thread!.id}`] }))
@@ -240,7 +240,7 @@ describe('the hint of `reject` at the next review (REV-96, REV-116)', () => {
     let { fake, publish, reply, hints } = setup()
     await publish(payload())
     let [thread] = fake.botThreads()
-    reply(thread!.id, 'alex', 'Not applied: the schema validates it.')
+    reply(thread!.id, 'octocat', 'Not applied: the schema validates it.')
     let outcome = await publish(payload({ head: HEAD2 }))
     assert.equal(outcome.hinted, 0)
     assert.deepEqual(hints(thread!.id), [])
@@ -252,9 +252,9 @@ describe('the hint of `reject` at a `resolve` command (REV-116)', () => {
     let { fake, publish, resolve, reply, hints, rows } = setup()
     await publish(payload({ findings: [bug, other, third] }))
     let [french, english, open] = fake.botThreads()
-    reply(french!.id, 'alex', FRENCH)
-    reply(english!.id, 'alex', ENGLISH)
-    reply(open!.id, 'alex', 'Not applied: the loop is right.')
+    reply(french!.id, 'octocat', FRENCH)
+    reply(english!.id, 'octocat', ENGLISH)
+    reply(open!.id, 'octocat', 'Not applied: the loop is right.')
 
     let outcome = await resolve(HEAD2, [[french!.id, 'answered'], [english!.id, 'answered'], [open!.id, 'open']])
 
@@ -281,9 +281,9 @@ describe('the hint of `reject` at a `resolve` command (REV-116)', () => {
     await publish(payload({ findings: [bug, other] }))
     let [byReader, named] = fake.botThreads()
     reply(byReader!.id, 'visitor', FRENCH)
-    reply(named!.id, 'alex', 'Not applied. To set it aside:\n\n```\n@kento-review reject the schema validates it\n```')
+    reply(named!.id, 'octocat', 'Not applied. To set it aside:\n\n```\n@kento-review reject the schema validates it\n```')
     let personal = fake.addThread({ path: FILE, line: 3, body: 'Why this name?', commit: HEAD1, author: 'camille' })
-    reply(personal, 'alex', 'It follows the module.')
+    reply(personal, 'octocat', 'It follows the module.')
 
     let outcome = await resolve(HEAD2, [[byReader!.id, 'answered'], [named!.id, 'answered'], [personal, 'answered']])
 
@@ -295,8 +295,8 @@ describe('the hint of `reject` at a `resolve` command (REV-116)', () => {
     let { fake, publish, resolve, reply, hints } = setup()
     await publish(payload({ findings: [bug, other] }))
     let [first, second] = fake.botThreads()
-    reply(first!.id, 'alex', FRENCH)
-    reply(second!.id, 'alex', ENGLISH)
+    reply(first!.id, 'octocat', FRENCH)
+    reply(second!.id, 'octocat', ENGLISH)
 
     let review = await publish(payload({ head: HEAD2, findings: [bug, other], refutedThreads: [`PRRT_${first!.id}`] }))
     assert.equal(review.hinted, 1)
@@ -315,7 +315,7 @@ describe('the hint of `reject` at a `resolve` command (REV-116)', () => {
     fake.state.canResolve = true
     await publish(payload())
     let [thread] = fake.botThreads()
-    reply(thread!.id, 'alex', FRENCH)
+    reply(thread!.id, 'octocat', FRENCH)
 
     let warnings: string[] = []
     let real = fake.fetch

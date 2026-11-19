@@ -57,7 +57,7 @@ describe('the runners of the Runners screen', () => {
     let created = await admin.createRegistration({
       orgId: input.orgId ?? org,
       userId: null,
-      name: input.name ?? 'mac-mini',
+      name: input.name ?? 'runner-1',
       labels: input.labels ?? ['macos'],
       trusted: input.trusted ?? false,
       tokenHash: hashToken(token),
@@ -120,7 +120,7 @@ describe('the runners of the Runners screen', () => {
 
   describe('a registration token', () => {
     it('is kept only as a hash, and gives the runner the org, name, labels and trust of the token', async () => {
-      let { token, id } = await makeToken({ name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true })
+      let { token, id } = await makeToken({ name: 'runner-1', labels: ['macos', 'arm64'], trusted: true })
       let [row] = await database.sql<{ token_hash: string }[]>`select token_hash from runner_registrations where id = ${id}`
       assert.equal(row!.token_hash, hashToken(token))
       let all = JSON.stringify(await database.sql`select * from runner_registrations`)
@@ -132,7 +132,7 @@ describe('the runners of the Runners screen', () => {
       assert.ok(body.token.startsWith(RUNNER_TOKEN_PREFIX))
       let [runner] = await database.sql<{ org_id: string; name: string; labels: string[]; trusted: boolean; version: string }[]>`
         select org_id, name, labels, trusted, version from runners where id = ${body.runnerId}`
-      assert.deepEqual({ ...runner }, { org_id: org, name: 'mac-mini', labels: ['macos', 'arm64'], trusted: true, version: '0.1.0' })
+      assert.deepEqual({ ...runner }, { org_id: org, name: 'runner-1', labels: ['macos', 'arm64'], trusted: true, version: '0.1.0' })
       let [used] = await database.sql<{ used_at: Date | null; runner_id: string }[]>`
         select used_at, runner_id from runner_registrations where id = ${id}`
       assert.ok(used!.used_at)
@@ -174,7 +174,7 @@ describe('the runners of the Runners screen', () => {
     })
 
     it('leaves the token of the environment as it was: a runner of the service, with no org', async () => {
-      let response = await register(SERVICE_TOKEN, { name: 'runners-host', labels: ['linux'], version: '0.1.0' })
+      let response = await register(SERVICE_TOKEN, { name: 'shared-01', labels: ['linux'], version: '0.1.0' })
       assert.equal(response.status, 201)
       let [runner] = await database.sql<{ org_id: string | null; trusted: boolean }[]>`select org_id, trusted from runners`
       assert.deepEqual({ ...runner }, { org_id: null, trusted: false })
@@ -192,7 +192,7 @@ describe('the runners of the Runners screen', () => {
       let job = await (await claim(mine.token)).json()
       assert.equal(job.id, ours)
 
-      let service = await (await register(SERVICE_TOKEN, { name: 'runners-host', labels: [], version: '0.1.0' })).json()
+      let service = await (await register(SERVICE_TOKEN, { name: 'shared-01', labels: [], version: '0.1.0' })).json()
       assert.equal((await (await claim(service.token)).json()).id, theirs)
     })
 
@@ -226,7 +226,7 @@ describe('the runners of the Runners screen', () => {
     })
 
     it('a runner of the service cannot be trusted or revoked from the screen', async () => {
-      let service = await (await register(SERVICE_TOKEN, { name: 'runners-host', labels: [], version: '0.1.0' })).json()
+      let service = await (await register(SERVICE_TOKEN, { name: 'shared-01', labels: [], version: '0.1.0' })).json()
       assert.equal(await admin.setTrusted(org, service.runnerId, true), false)
       assert.equal(await admin.revoke(org, service.runnerId), null)
     })
@@ -234,14 +234,14 @@ describe('the runners of the Runners screen', () => {
 
   describe('a revocation', () => {
     it('refuses the token at once, and puts the running job back in the queue without spending an attempt', async () => {
-      let mac = await registered({ name: 'mac-mini' })
+      let mac = await registered({ name: 'runner-1' })
       let jobId = await queueJob()
       let job = await (await claim(mac.token)).json()
       assert.equal(job.attempt, 1)
 
       assert.equal(await admin.revoke(otherOrg, mac.runnerId), null, 'another org cannot revoke it')
       let revoked = await admin.revoke(org, mac.runnerId)
-      assert.deepEqual(revoked, { name: 'mac-mini', requeued: [jobId] })
+      assert.deepEqual(revoked, { name: 'runner-1', requeued: [jobId] })
       assert.equal(await admin.revoke(org, mac.runnerId), null, 'twice is nothing')
 
       // The revoked runner: 401 on claim, heartbeat and result.
@@ -250,7 +250,7 @@ describe('the runners of the Runners screen', () => {
       assert.equal((await call(`/api/runner/jobs/${jobId}/result`, mac.token, { attempt: 1, outcome: 'failed', reason: 'x' })).status, 401)
 
       // Another runner takes the job at once, as its first attempt.
-      let em = await (await register(SERVICE_TOKEN, { name: 'runners-host', labels: [], version: '0.1.0' })).json()
+      let em = await (await register(SERVICE_TOKEN, { name: 'shared-01', labels: [], version: '0.1.0' })).json()
       let again = await (await claim(em.token)).json()
       assert.equal(again.id, jobId)
       assert.equal(again.attempt, 1)
@@ -296,9 +296,9 @@ describe('the runners of the Runners screen', () => {
 
   describe('the screen', () => {
     it('lists the runners of the org and of the service, with the current job of the org only', async () => {
-      let mine = await registered({ name: 'mac-mini' })
+      let mine = await registered({ name: 'runner-1' })
       await registered({ orgId: otherOrg, name: 'their-runner' })
-      let service = await (await register(SERVICE_TOKEN, { name: 'runners-host', labels: [], version: '0.1.0' })).json()
+      let service = await (await register(SERVICE_TOKEN, { name: 'shared-01', labels: [], version: '0.1.0' })).json()
       await queueJob(repo)
       await claim(mine.token)
       await queueJob(otherRepo)
@@ -306,11 +306,11 @@ describe('the runners of the Runners screen', () => {
       await makeToken({ name: 'pending' })
 
       let screen = await admin.screen(org)
-      assert.deepEqual(screen.runners.map((r) => r.name).sort(), ['runners-host', 'mac-mini'])
-      let mac = screen.runners.find((r) => r.name === 'mac-mini')!
+      assert.deepEqual(screen.runners.map((r) => r.name).sort(), ['runner-1', 'shared-01'])
+      let mac = screen.runners.find((r) => r.name === 'runner-1')!
       assert.deepEqual(mac.currentJob && { repo: mac.currentJob.repo, pr: mac.currentJob.prNumber }, { repo: 'sakuga-software/sakuga-review', pr: 28 })
       assert.ok(mac.lastSeenAt)
-      let em = screen.runners.find((r) => r.name === 'runners-host')!
+      let em = screen.runners.find((r) => r.name === 'shared-01')!
       assert.equal(em.orgId, null)
       assert.equal(em.currentJob, null, 'the job of another org does not show')
       assert.deepEqual(screen.registrations.map((r) => r.name), ['pending'])

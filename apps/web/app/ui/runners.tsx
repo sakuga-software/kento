@@ -649,7 +649,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
               </p>
             ) : (
               <p class="field-hint" id="runner-name-hint">
-                For example mac-mini.
+                For example runner-1.
               </p>
             )}
           </div>

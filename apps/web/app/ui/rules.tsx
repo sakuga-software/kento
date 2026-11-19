@@ -47,7 +47,7 @@ export interface RulesListProps {
   noticeRule: string | null
 }
 
-/** "disabled by alex on 30 Oct at 10:12". */
+/** "disabled by octocat on 30 Oct at 10:12". */
 export function disabledLine(rule: Pick<RuleView, 'disabledBy' | 'disabledAt'>): string {
   let by = rule.disabledBy ? ` by ${rule.disabledBy}` : ''
   let at = rule.disabledAt ? ` ${when(rule.disabledAt)}` : ''

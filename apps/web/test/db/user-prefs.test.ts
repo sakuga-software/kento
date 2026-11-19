@@ -15,7 +15,7 @@ import { createUsersStore, type UsersStore } from '../../app/users/store.ts'
 import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 
 const ORCHARD = { id: 3002, full_name: 'sakuga-software/orchard', owner: REPO.owner }
-const ALEX = { login: 'alex', type: 'User', id: 101 }
+const OCTOCAT = { login: 'octocat', type: 'User', id: 101 }
 const CAMILLE = { login: 'camille', type: 'User', id: 102 }
 
 describe('the preferences of a user and their screen', () => {
@@ -28,7 +28,7 @@ describe('the preferences of a user and their screen', () => {
   let orgId: string
   let reviewId: string
   let orchardId: string
-  let alex: string
+  let octocat: string
 
   before(async () => {
     test = await createTestDatabase()
@@ -56,9 +56,9 @@ describe('the preferences of a user and their screen', () => {
       insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, ${ORCHARD.id}, ${ORCHARD.full_name}, true) returning id`
     orchardId = orchard!.id
     let [user] = await sql<{ id: string }[]>`
-      insert into users (github_id, login, name) values (101, 'alex', 'Alex Martin') returning id`
-    alex = user!.id
-    await sql`insert into memberships (user_id, org_id, role) values (${alex}, ${orgId}, 'admin')`
+      insert into users (github_id, login, name) values (101, 'octocat', 'Alex Martin') returning id`
+    octocat = user!.id
+    await sql`insert into memberships (user_id, org_id, role) values (${octocat}, ${orgId}, 'admin')`
   })
 
   function nextDelivery(): string {
@@ -67,7 +67,7 @@ describe('the preferences of a user and their screen', () => {
   }
 
   async function push(options: Parameters<typeof pullRequestPayload>[0] = {}) {
-    let response = await router.fetch(signedRequest(pullRequestPayload({ author: ALEX, ...options }), { deliveryId: nextDelivery() }))
+    let response = await router.fetch(signedRequest(pullRequestPayload({ author: OCTOCAT, ...options }), { deliveryId: nextDelivery() }))
     return (await response.json()) as { outcome: string; reason?: string }
   }
 
@@ -83,12 +83,12 @@ describe('the preferences of a user and their screen', () => {
       force: false,
       commentId: 9000 + number,
       deliveryId: `command-${number}`,
-      author: { githubId: ALEX.id, login: ALEX.login },
+      author: { githubId: OCTOCAT.id, login: OCTOCAT.login },
     })
   }
 
   it('1. auto-review off on orchard: a push of his pull request there queues nothing, a command does, and other repos are reviewed', async () => {
-    assert.deepEqual(await users.savePref(orgId, alex, orchardId, { autoReview: false, level: null }), { outcome: 'saved' })
+    assert.deepEqual(await users.savePref(orgId, octocat, orchardId, { autoReview: false, level: null }), { outcome: 'saved' })
 
     let skipped = await push({ repo: ORCHARD, number: 7, head: headSha(7) })
     assert.equal(skipped.outcome, 'skipped')
@@ -98,13 +98,13 @@ describe('the preferences of a user and their screen', () => {
     assert.equal((await command(ORCHARD, 7)).outcome, 'queued')
     assert.equal((await sql`select 1 from jobs where pr_number = 7`).length, 1)
 
-    // Another author on orchard, and Alex on another repository, still get their review.
+    // Another author on orchard, and Octocat on another repository, still get their review.
     assert.equal((await push({ repo: ORCHARD, number: 8, head: headSha(8), author: CAMILLE })).outcome, 'queued')
     assert.equal((await push({ number: 9, head: headSha(9) })).outcome, 'queued')
   })
 
   it('2. a default level heavy on sakuga-review: his push gets heavy; the level of another repo, and of another author, stays the repo one', async () => {
-    await users.savePref(orgId, alex, reviewId, { autoReview: true, level: 'heavy' })
+    await users.savePref(orgId, octocat, reviewId, { autoReview: true, level: 'heavy' })
     assert.equal((await push({ number: 10, head: headSha(10) })).outcome, 'queued')
     assert.equal((await push({ repo: ORCHARD, number: 11, head: headSha(11) })).outcome, 'queued')
     assert.equal((await push({ number: 12, head: headSha(12), author: CAMILLE })).outcome, 'queued')
@@ -120,18 +120,18 @@ describe('the preferences of a user and their screen', () => {
   })
 
   it('3. the preferences of one repository win over those of every repository; "Remove" brings those back', async () => {
-    await users.savePref(orgId, alex, null, { autoReview: false, level: null })
-    await users.savePref(orgId, alex, reviewId, { autoReview: true, level: 'balanced' })
+    await users.savePref(orgId, octocat, null, { autoReview: false, level: null })
+    await users.savePref(orgId, octocat, reviewId, { autoReview: true, level: 'balanced' })
     assert.equal((await push({ repo: ORCHARD, number: 20, head: headSha(20) })).outcome, 'skipped')
     assert.equal((await push({ number: 21, head: headSha(21) })).outcome, 'queued')
     let [job] = await sql<{ level: string }[]>`select level from jobs where pr_number = 21`
     assert.equal(job!.level, 'balanced')
 
-    await users.removePref(alex, reviewId)
+    await users.removePref(octocat, reviewId)
     assert.equal((await push({ number: 22, head: headSha(22) })).outcome, 'skipped')
     // Saving twice keeps one row per scope.
-    await users.savePref(orgId, alex, null, { autoReview: true, level: 'lite' })
-    assert.equal((await sql`select 1 from user_prefs where user_id = ${alex}`).length, 1)
+    await users.savePref(orgId, octocat, null, { autoReview: true, level: 'lite' })
+    assert.equal((await sql`select 1 from user_prefs where user_id = ${octocat}`).length, 1)
   })
 
   it('4. a repository of another org, or a disabled one, is no choice', async () => {
@@ -139,10 +139,10 @@ describe('the preferences of a user and their screen', () => {
       insert into orgs (github_installation_id, github_account_id, login) values (2002, 3003, 'orchard') returning id`
     let [foreign] = await sql<{ id: string }[]>`
       insert into repos (org_id, github_repo_id, full_name, enabled) values (${other!.id}, 4004, 'orchard/app', true) returning id`
-    assert.deepEqual(await users.savePref(orgId, alex, foreign!.id, { autoReview: false, level: null }), { outcome: 'not_found' })
+    assert.deepEqual(await users.savePref(orgId, octocat, foreign!.id, { autoReview: false, level: null }), { outcome: 'not_found' })
     await sql`update repos set enabled = false where id = ${orchardId}`
-    assert.deepEqual(await users.savePref(orgId, alex, orchardId, { autoReview: false, level: null }), { outcome: 'not_found' })
-    let screen = await users.screen(orgId, 'ALEX')
+    assert.deepEqual(await users.savePref(orgId, octocat, orchardId, { autoReview: false, level: null }), { outcome: 'not_found' })
+    let screen = await users.screen(orgId, 'OCTOCAT')
     assert.deepEqual(
       screen!.addable.map((r) => r.fullName),
       ['sakuga-software/sakuga-review'],
@@ -150,9 +150,9 @@ describe('the preferences of a user and their screen', () => {
   })
 
   it('5. the screen: the member, the role, the preferences; a person outside the org is no screen', async () => {
-    await users.savePref(orgId, alex, orchardId, { autoReview: false, level: 'heavy' })
-    let screen = await users.screen(orgId, 'Alex')
-    assert.equal(screen!.user.login, 'alex')
+    await users.savePref(orgId, octocat, orchardId, { autoReview: false, level: 'heavy' })
+    let screen = await users.screen(orgId, 'Octocat')
+    assert.equal(screen!.user.login, 'octocat')
     assert.equal(screen!.role, 'admin')
     assert.equal(screen!.prefs.global, null)
     assert.deepEqual(screen!.prefs.repos, [{ repoId: orchardId, fullName: ORCHARD.full_name, autoReview: false, level: 'heavy' }])
@@ -160,7 +160,7 @@ describe('the preferences of a user and their screen', () => {
   })
 
   it('6. "Findings received" are the counts of the Findings screen on his pull requests; "My reviewed PRs" lists them', async () => {
-    // Pull request 30 of Alex (two reviews), 31 of Camille, 32 of Alex (closed, one review).
+    // Pull request 30 of Octocat (two reviews), 31 of Camille, 32 of Octocat (closed, one review).
     assert.equal((await push({ number: 30, head: headSha(30) })).outcome, 'queued')
     assert.equal((await push({ number: 31, head: headSha(31), author: CAMILLE })).outcome, 'queued')
     assert.equal((await push({ number: 32, head: headSha(32) })).outcome, 'queued')
@@ -200,8 +200,8 @@ describe('the preferences of a user and their screen', () => {
     await finding(31, 'open')
     await push({ action: 'closed', number: 32, head: headSha(32) })
 
-    let screen = await users.screen(orgId, 'alex')
-    let viaScreen = await listFindingScreen(sql, orgId, { author: 'alex', days: 30 })
+    let screen = await users.screen(orgId, 'octocat')
+    let viaScreen = await listFindingScreen(sql, orgId, { author: 'octocat', days: 30 })
     assert.deepEqual(screen!.received, viaScreen.counts)
     assert.equal(screen!.received.open, 2, 'the open finding of 40 days ago and the one of Camille are not his')
     assert.equal(screen!.received.fixed, 1)

@@ -132,13 +132,13 @@ describe('comment of a failed job', () => {
   })
 
   it('7. a failed command names its author, and its comment keeps 😕', async () => {
-    fake.state.commentAuthors.set(9001, 'alex')
+    fake.state.commentAuthors.set(9001, 'octocat')
     let id = await failedJob({ level: 'heavy', commentId: 9001 })
     await publisher().publishPending()
     assert.deepEqual([...fake.state.reactions], ['9001:confused'])
     assert.equal(failureComments().length, 1)
     let body = failureComments()[0]!.body
-    assert.ok(body.includes('@alex The `heavy` review of this commit failed'), body)
+    assert.ok(body.includes('@octocat The `heavy` review of this commit failed'), body)
     assert.ok(body.endsWith(`<!-- kento:failure ${id} -->`), body)
   })
 

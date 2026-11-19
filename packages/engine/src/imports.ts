@@ -2,7 +2,7 @@
 //
 // The diff shows the whole function around a change, but often not the imports at the top of the file.
 // The model then saw a call to `data` with no import in view, and reported a missing import that line 3
-// of the file held (gallery-app#13). The pack now gives the imports of each changed file at the head, and
+// of the file held (example-repo#13). The pack now gives the imports of each changed file at the head, and
 // the engine checks each finding of that kind against the file before it counts.
 import type { Answer, Finding } from './findings.ts';
 

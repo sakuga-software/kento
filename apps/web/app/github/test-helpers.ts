@@ -65,14 +65,14 @@ export function pullRequestPayload(
     pull_request: {
       number: options.number ?? 24,
       draft: options.draft ?? false,
-      user: options.author ?? { login: 'alex', type: 'User', id: 101 },
+      user: options.author ?? { login: 'octocat', type: 'User', id: 101 },
       labels: (options.labels ?? []).map((name, i) => ({ id: i + 1, name, color: 'ededed' })),
       head: { sha: options.head ?? headSha(1), ref: 'feature', repo: headRepoId === null ? null : { id: headRepoId } },
       base: { sha: headSha(999), ref: options.baseRef ?? 'main', repo: { id: repo.id } },
     },
     ...(options.changes ? { changes: options.changes } : {}),
     repository: repo,
-    sender: options.sender ?? { login: 'alex', type: 'User' },
+    sender: options.sender ?? { login: 'octocat', type: 'User' },
     installation: { id: 1001, node_id: 'MDIz' },
   }
 }
@@ -112,7 +112,7 @@ export function issueCommentPayload(
     author?: { login: string; id: number; type: string }
   } = {},
 ) {
-  let user = options.user ?? { login: 'alex', type: 'User' }
+  let user = options.user ?? { login: 'octocat', type: 'User' }
   return {
     action: options.action ?? 'created',
     issue: {
@@ -144,7 +144,7 @@ export function reviewCommentPayload(
     repo?: typeof REPO
   } = {},
 ) {
-  let user = options.user ?? { login: 'alex', type: 'User' }
+  let user = options.user ?? { login: 'octocat', type: 'User' }
   let inReplyTo = options.inReplyTo === undefined ? 7001 : options.inReplyTo
   return {
     action: options.action ?? 'created',

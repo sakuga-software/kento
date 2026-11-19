@@ -22,7 +22,7 @@ const MIGRATIONS: AssignmentRule = {
   labels: [],
   action: 'review',
   level: 'heavy',
-  mention: 'alex',
+  mention: 'octocat',
 }
 const WIP: AssignmentRule = { id: 'r3', position: 3, authors: [], paths: [], labels: ['wip'], action: 'command_only', level: null, mention: null }
 const RULES = [AGENT, MIGRATIONS, WIP]
@@ -95,10 +95,10 @@ describe('the rules with paths that GitHub kept from being tested (REV-21)', () 
     assert.deepEqual(readUnreadPathRules({ assignmentUnread: [1, 'x', 0, 3] }), [1, 3])
     assert.deepEqual(readUnreadPathRules(null), [])
     // With a rule that applied: its line first, then the rules that could not be tested, then the mention.
-    let applied: JobAssignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'alex', reasons: { author: 'camille' }, trigger: 'push' }
+    let applied: JobAssignment = { ruleId: 'r2', position: 2, level: 'heavy', mention: 'octocat', reasons: { author: 'camille' }, trigger: 'push' }
     assert.equal(
       assignmentNote(applied, [1]),
-      '\n\n<sub>Assignment: rule 2, the author is camille, so heavy at each push.</sub>\n\n<sub>Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths).</sub>\n\nReview requested by the rule: @alex',
+      '\n\n<sub>Assignment: rule 2, the author is camille, so heavy at each push.</sub>\n\n<sub>Assignment: without the list of the files of the PR, Kentō could not test rule 1 (paths).</sub>\n\nReview requested by the rule: @octocat',
     )
   })
 })
@@ -117,7 +117,7 @@ describe('what the review and the screen of the pull request say (REV-21)', () =
   it('adds the line to the body of the review, and the mention of the rule', () => {
     assert.equal(assignmentNote(null), '')
     assert.equal(assignmentNote(assignment), '\n\n<sub>Assignment: rule 1, the author is sakuga-agent[bot], so balanced at each push.</sub>')
-    assert.match(assignmentNote({ ...assignment, mention: 'alex' }), /\n\nReview requested by the rule: @alex$/)
+    assert.match(assignmentNote({ ...assignment, mention: 'octocat' }), /\n\nReview requested by the rule: @octocat$/)
   })
 
   it('reads the assignment of jobs.config back, and nothing from a job without one', () => {
@@ -135,7 +135,7 @@ describe('what the review and the screen of the pull request say (REV-21)', () =
 describe('the form of an assignment rule (REV-21)', () => {
   it('reads the authors, the paths, the labels, the level and the mention', () => {
     let result = readAssignmentForm(
-      form({ authors: '@sakuga-agent[bot], renovate[bot], sakuga-agent[bot]', paths: '**/migrations/**\n\nsrc/*.ts', labels: 'risky, db', outcome: 'heavy', mention: '@alex' }),
+      form({ authors: '@sakuga-agent[bot], renovate[bot], sakuga-agent[bot]', paths: '**/migrations/**\n\nsrc/*.ts', labels: 'risky, db', outcome: 'heavy', mention: '@octocat' }),
     )
     assert.deepEqual(result, {
       ok: true,
@@ -145,7 +145,7 @@ describe('the form of an assignment rule (REV-21)', () => {
         labels: ['risky', 'db'],
         action: 'review',
         level: 'heavy',
-        mention: 'alex',
+        mention: 'octocat',
       },
     })
   })
@@ -156,7 +156,7 @@ describe('the form of an assignment rule (REV-21)', () => {
     form.set('outcome', 'command_only')
     form.set('mention', 'renovate[bot]')
     let read = readAssignmentForm(form)
-    assert.deepEqual(read.ok ? null : read.errors.mention, 'The GitHub login of a person, for example alex.')
+    assert.deepEqual(read.ok ? null : read.errors.mention, 'The GitHub login of a person, for example octocat.')
   })
 
   it('reads "No automatic review" as a rule with no level', () => {
@@ -172,7 +172,7 @@ describe('the form of an assignment rule (REV-21)', () => {
     assert.match(String(!empty.ok && empty.errors.authors), /at least one author, path or label/)
     let bad = readAssignmentForm(form({ authors: 'not a login', paths: '/abs', outcome: 'ultra', mention: 'a b' }))
     assert.deepEqual(Object.keys(!bad.ok ? bad.errors : {}).sort(), ['authors', 'mention', 'outcome', 'paths'])
-    let silent = readAssignmentForm(form({ labels: 'wip', outcome: 'command_only', mention: 'alex' }))
+    let silent = readAssignmentForm(form({ labels: 'wip', outcome: 'command_only', mention: 'octocat' }))
     assert.match(String(!silent.ok && silent.errors.mention), /no review to mention someone in/)
   })
 })

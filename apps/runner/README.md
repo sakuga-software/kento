@@ -49,7 +49,7 @@ The operator of a Kentō service publishes the image and runs the runners of the
 ## 1. Create the runner in the Runners screen
 
 1. Open `https://review.sakuga.dev/runners`, then click **New runner**.
-2. **Name**: the name of the machine, for example `mac-mini`. Letters, digits, dots, dashes or
+2. **Name**: the name of the machine, for example `runner-1`. Letters, digits, dots, dashes or
    underscores, 100 at most.
 3. **Labels**: optional, separated by commas, for example `macos`. A repository with a pool sends
    its jobs only to the runners that have the label of the pool. No screen sets a pool today: the
@@ -74,7 +74,7 @@ Run the command of the screen on the machine. It looks like this:
 docker run -d --name kento-runner --restart unless-stopped \
   -e KENTO_URL=https://review.sakuga.dev \
   -e KENTO_REGISTRATION_TOKEN=kento_reg_… \
-  -e KENTO_RUNNER_NAME=mac-mini \
+  -e KENTO_RUNNER_NAME=runner-1 \
   -e KENTO_RUNNER_LABELS=macos \
   -e PROVIDER_KIND=openrouter \
   -e PROVIDER_BASE_URL=https://openrouter.ai/api/v1 \
@@ -104,7 +104,7 @@ docker logs kento-runner
 ```
 
 ```json
-{"time":"…","level":"info","event":"runner.registered","runnerId":"…","name":"mac-mini","labels":["macos"]}
+{"time":"…","level":"info","event":"runner.registered","runnerId":"…","name":"runner-1","labels":["macos"]}
 {"time":"…","level":"info","event":"startup.ready","runnerId":"…","version":"0.1.0","url":"https://review.sakuga.dev","ownKey":true}
 ```
 
@@ -167,7 +167,7 @@ cost of 0.
 
 1. In Kentō, **Settings → Add a provider**:
    - **Type**: Ollama;
-   - **Name**: for example "Ollama of the Mac mini";
+   - **Name**: for example "Ollama of the office machine";
    - **Server URL**: leave it empty, the runner gives it;
    - **Models per level**: Ollama has no default model, so name one for each of `lite`,
      `balanced` and `heavy`, for example `qwen3`. Pull them first on the Ollama server

@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { MAX_ASSIGNMENT_RULES, type AssignmentValues } from '../assignment/model.ts'
 import type { AssignmentOutcome, AssignmentStore, AssignmentView } from '../assignment/store.ts'
-import { CAMILLE, cookieOf, fakeAuth, ALEX, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { serviceProviders } from '../repo-config/providers.ts'
 import type { RepoConfigStore, RepoConfigView } from '../repo-config/store.ts'
@@ -32,7 +32,7 @@ function memoryAssignment(repoOrg: Record<string, string>) {
       let position = ofRepo(repoId).length + 1
       if (position > MAX_ASSIGNMENT_RULES) return { kind: 'full' }
       let id = `20000000-0000-4000-8000-${String(next++).padStart(12, '0')}`
-      rows.push({ id, repoId, position, ...values, createdBy: 'alex' })
+      rows.push({ id, repoId, position, ...values, createdBy: 'octocat' })
       return { kind: 'saved', id, position }
     },
     async move(orgId, repoId, ruleId, direction) {
@@ -57,7 +57,7 @@ function memoryAssignment(repoOrg: Record<string, string>) {
 
 function setup(options: { assignment?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
-  auth.setRole(ORG, ALEX, 'admin')
+  auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let repo = (id: string, orgId: string, fullName: string): RepoConfigView & { orgId: string } => ({
     orgId,
@@ -106,7 +106,7 @@ function setup(options: { assignment?: boolean } = {}) {
     )
   }
 
-  async function signIn(profile = ALEX) {
+  async function signIn(profile = OCTOCAT) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
@@ -121,7 +121,7 @@ function setup(options: { assignment?: boolean } = {}) {
 }
 
 const AGENT = { authors: 'sakuga-agent[bot]', paths: '', labels: '', outcome: 'balanced', mention: '' }
-const MIGRATIONS = { authors: '', paths: '**/migrations/**', labels: '', outcome: 'heavy', mention: 'alex' }
+const MIGRATIONS = { authors: '', paths: '**/migrations/**', labels: '', outcome: 'heavy', mention: 'octocat' }
 
 describe('the tab Assignment of the Config screen (REV-21)', () => {
   it('opens the tab, with the default level of the repository as its last line and the form of a first rule', async () => {
@@ -142,12 +142,12 @@ describe('the tab Assignment of the Config screen (REV-21)', () => {
     assert.equal(added.headers.get('Location'), `/repos/${ORCHARD}/config?tab=assignment&assign=added&rule=${first.id}#assignment-${first.id}`)
     await request(`/repos/${ORCHARD}/assignment`, { cookie, form: { _csrf: csrf, ...MIGRATIONS } })
     let second = rows()[1]!
-    assert.deepEqual({ level: second.level, mention: second.mention, paths: second.paths }, { level: 'heavy', mention: 'alex', paths: ['**/migrations/**'] })
+    assert.deepEqual({ level: second.level, mention: second.mention, paths: second.paths }, { level: 'heavy', mention: 'octocat', paths: ['**/migrations/**'] })
 
     let html = await (await request(added.headers.get('Location')!, { cookie })).text()
     assert.match(html, /Rule added last\./)
     assert.match(html, /If the author is sakuga-agent\[bot\]<\/p><p class="assignment-then">then <strong class="mono">balanced<\/strong>\.<\/p>/)
-    assert.match(html, /If the PR changes \*\*\/migrations\/\*\*<\/p><p class="assignment-then">then <strong class="mono">heavy<\/strong>, and the review mentions <span class="mono">@alex<\/span>\./)
+    assert.match(html, /If the PR changes \*\*\/migrations\/\*\*<\/p><p class="assignment-then">then <strong class="mono">heavy<\/strong>, and the review mentions <span class="mono">@octocat<\/span>\./)
     // The first rule cannot go up, the last one cannot go down.
     assert.match(html, /<button type="submit" disabled class="button">Move up<span class="visually-hidden"> rule 1<\/span>/)
     assert.match(html, /<button type="submit" disabled class="button">Move down<span class="visually-hidden"> rule 2<\/span>/)

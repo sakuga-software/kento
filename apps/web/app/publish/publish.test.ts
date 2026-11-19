@@ -412,9 +412,9 @@ describe('publishReview', () => {
 
   it('dismisses a REQUEST_CHANGES of the bot past the first page of reviews', async () => {
     let { fake, publish } = setup()
-    for (let i = 0; i < 104; i++) fake.addReview({ user: i % 2 ? 'alex' : BOT, state: 'COMMENTED' })
+    for (let i = 0; i < 104; i++) fake.addReview({ user: i % 2 ? 'octocat' : BOT, state: 'COMMENTED' })
     let old = fake.addReview({ state: 'CHANGES_REQUESTED' })
-    let person = fake.addReview({ user: 'alex', state: 'CHANGES_REQUESTED' })
+    let person = fake.addReview({ user: 'octocat', state: 'CHANGES_REQUESTED' })
 
     await publish(payload({ score: 5, verdict: 'APPROVE', findings: [] }))
 

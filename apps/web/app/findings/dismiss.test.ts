@@ -51,8 +51,8 @@ describe('the form of a change of status', () => {
 
   it('writes the reply of the thread with the person and the reason', () => {
     assert.equal(
-      replyText('dismissed', 'Off topic', 'alex'),
-      'Finding dismissed by @alex on Kentō. Reason: "Off topic". The next reviews will not comment on it again.',
+      replyText('dismissed', 'Off topic', 'octocat'),
+      'Finding dismissed by @octocat on Kentō. Reason: "Off topic". The next reviews will not comment on it again.',
     )
     assert.equal(replyText('wontfix', null, 'camille'), "Finding kept as is (won't fix) by @camille on Kentō. The next reviews will not comment on it again.")
   })
