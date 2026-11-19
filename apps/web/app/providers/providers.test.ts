@@ -254,8 +254,16 @@ describe('"Test" a provider', () => {
 
   it('answers "ok" from the status alone, without reading the body of the answer', async () => {
     // A body that gives one byte a second: reading 4 KB of it would take over an hour.
+    // The probe cancels the body: the cancel stops the timer, else it writes to a closed stream.
+    let timer: ReturnType<typeof setTimeout> | undefined
     let fetch = (async () =>
-      new Response(new ReadableStream({ pull: (c) => new Promise<void>((r) => setTimeout(() => (c.enqueue(new Uint8Array(1)), r()), 1000)) }), { status: 200 })) as typeof globalThis.fetch
+      new Response(
+        new ReadableStream({
+          pull: (c) => new Promise<void>((r) => (timer = setTimeout(() => (c.enqueue(new Uint8Array(1)), r()), 1000))),
+          cancel: () => clearTimeout(timer),
+        }),
+        { status: 200 },
+      )) as typeof globalThis.fetch
     let started = Date.now()
     let result = await createProbe({ fetch, resolve: async () => ['104.18.0.1'] })({ kind: 'anthropic', baseUrl: null, apiKey: KEY })
     assert.deepEqual(result, { outcome: 'ok' })

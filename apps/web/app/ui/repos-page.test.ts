@@ -209,11 +209,12 @@ describe('the Repos screen', () => {
     let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
     // REV-91: "Disable Kentō…" sits in the menu "…" of its row.
     assert.match(row, /<details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
-    assert.match(row, /<details data-confirm class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
+    // Remix 3.2 renders a boolean data-* attribute as "true". confirm.js selects it by presence.
+    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
     assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Disable fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
-    assert.match(row, /<button type="button" data-confirm-cancel hidden class="button">Cancel<\/button>/)
+    assert.match(row, /<button type="button" data-confirm-cancel="true" hidden class="button">Cancel<\/button>/)
     assert.match(row, /The published reviews and the counter stay/)
     // No destructive button has the style of the main action.
     assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
