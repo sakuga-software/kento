@@ -70,7 +70,7 @@ async function pullRequest(page: Page, options: { action: string; head: string; 
   return (await response.json()) as { outcome: string; reason?: string; jobId?: string }
 }
 
-async function jobsOforchard() {
+async function jobsOfOrchard() {
   let sql = database()
   try {
     return await sql<{ id: string; head_sha: string; level: string; config: any }[]>`
@@ -139,7 +139,7 @@ test.describe('the Config screen of a repository', () => {
 
       // The next push: a balanced job with the models of the repository, and its runner gets them.
       expect((await pullRequest(page, { action: 'synchronize', head: head(1) })).outcome).toBe('queued')
-      let [job] = await jobsOforchard()
+      let [job] = await jobsOfOrchard()
       expect(job!.level).toBe('balanced')
       expect(job!.config).toEqual({
         repoConfigVersion: 2,
@@ -155,7 +155,7 @@ test.describe('the Config screen of a repository', () => {
       await expect(page.getByRole('status').filter({ hasText: 'Value of the organization restored (v3)' })).toBeVisible()
       await expect(page.getByRole('region', { name: 'balanced' }).getByText('from the org', { exact: true })).toBeVisible()
       expect((await pullRequest(page, { action: 'synchronize', head: head(2) })).outcome).toBe('queued')
-      let last = (await jobsOforchard()).at(-1)!
+      let last = (await jobsOfOrchard()).at(-1)!
       expect(last.config.models).toEqual({ provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: null })
       expect(last.config.source).toBe('kento')
 
@@ -216,10 +216,10 @@ test.describe('the Config screen of a repository', () => {
     await expect(page.getByRole('region', { name: 'Trigger' }).getByText('set for this repo')).toBeVisible()
 
     expect((await pullRequest(page, { action: 'synchronize', head: head(3), draft: true })).outcome).toBe('ignored')
-    expect(await jobsOforchard()).toHaveLength(0)
+    expect(await jobsOfOrchard()).toHaveLength(0)
     expect((await pullRequest(page, { action: 'ready_for_review', head: head(3) })).outcome).toBe('queued')
     expect(await pullRequest(page, { action: 'synchronize', head: head(4) })).toEqual({ outcome: 'skipped', reason: 'trigger of the config is ready' })
-    expect((await jobsOforchard()).map((j) => j.head_sha)).toEqual([head(3)])
+    expect((await jobsOfOrchard()).map((j) => j.head_sha)).toEqual([head(3)])
 
     // A wrong path and a wrong limit come back with their error, under their field.
     await page.getByLabel(/An automatic review only if the PR changes/).fill('/etc/passwd')

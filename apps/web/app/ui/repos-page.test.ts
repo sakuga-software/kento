@@ -300,12 +300,12 @@ describe('the Repos screen', () => {
   it('gives "Enable" the secondary style, and brings the admin back to the page of the list after it (REV-36)', async () => {
     let { request, signIn } = setup()
     let { cookie, csrf } = await signIn()
-    let html = await (await request('/repos?filter=disabled&q=key', { cookie })).text()
-    let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=key`
+    let html = await (await request('/repos?filter=disabled&q=orch', { cookie })).text()
+    let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=orch`
     assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button-small">Enable`))
     assert.doesNotMatch(html, /button-primary/)
-    let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=key&after=x&evil=1`, { cookie, form: { _csrf: csrf } })
-    assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=key&after=x&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
+    let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=orch&after=x&evil=1`, { cookie, form: { _csrf: csrf } })
+    assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=orch&after=x&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
     // The repository left the filter: the notice still names it.
     let after = await (await request(response.headers.get('Location')!, { cookie })).text()
     assert.match(after, /orchard is enabled\./)

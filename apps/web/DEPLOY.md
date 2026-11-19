@@ -327,7 +327,7 @@ select count(*) filter (where created_at < now() - interval '180 days') as older
    note the labels of the line.
 3. If the line has no `project` / `app` labels, the Alloy collector of the host does not know the
    service yet. Add it as the monitoring runbook of the host describes
-   (`/home/mheos/monitoring/README.md` on `prod-host`): a rule on the name of the Swarm service
+   (`~/monitoring/README.md` of the admin account on `prod-host`): a rule on the name of the Swarm service
    that sets `project="Kentō"` and `app="web"` (and `app="postgres"` for the database), then reload
    Alloy.
 4. Check: `{project="Kentō", app="web"}` shows the `startup.*` lines.

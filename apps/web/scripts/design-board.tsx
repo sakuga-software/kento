@@ -160,7 +160,7 @@ const REPOS: RepoView[] = [
   repo({
     id: 'r-boo', fullName: 'sakuga-software/boo', private: false, workflow: 'copy', workflowPath: '.github/workflows/sakuga-review.yml',
   }),
-  repo({ id: 'r-detective', fullName: 'sakuga-software/web-front', workflow: null, workflowCheckedAt: null }),
+  repo({ id: 'r-web-front', fullName: 'sakuga-software/web-front', workflow: null, workflowCheckedAt: null }),
   repo({
     id: 'r-fruitback', fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
     workflowPath: '.github/workflows/sakuga-review.yml', streak: 20,
@@ -177,7 +177,7 @@ const REPOS: RepoView[] = [
     lastReview: { prNumber: 54, score: 5, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(12) },
   }),
   repo({
-    id: 'r-atlas', fullName: 'sakuga-software/atlas', enabled: true, defaultLevel: 'balanced', workflow: 'reusable', workflowRef: 'stable',
+    id: 'r-api', fullName: 'sakuga-software/api', enabled: true, defaultLevel: 'balanced', workflow: 'reusable', workflowRef: 'stable',
     workflowPath: '.github/workflows/sakuga-review.yml', streak: 7,
     lastReview: { prNumber: 1204, score: 4, model: 'anthropic/claude-sonnet-5.5', publishedAt: minutesAgo(2900) },
   }),
@@ -264,7 +264,7 @@ const providersFrames: { file: string; node: unknown }[] = [
 
 // REV-12: the Config screen of orchard.
 const CONFIG_OUT = new URL('../../../design/config/frames/', import.meta.url)
-const orchard_CONFIG: RepoConfigView = {
+const ORCHARD_CONFIG: RepoConfigView = {
   id: 'r-orchard',
   fullName: 'sakuga-software/orchard',
   enabled: true,
@@ -288,7 +288,7 @@ function configPage(theme: Theme, viewer: Viewer, extra: Partial<ConfigPageProps
   return (
     <ConfigPage
       frame={frame(theme, viewer, '/repos/r-orchard/config')}
-      view={orchard_CONFIG}
+      view={ORCHARD_CONFIG}
       providers={PROVIDERS}
       tab="models"
       notice={null}

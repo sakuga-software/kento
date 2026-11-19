@@ -225,8 +225,7 @@ There are three limits:
 A runner with its own key ("Key on the runner") bills its provider directly. A review on Ollama costs
 0.
 
-September 2026 had about 1,500 pull request heads that a review would read (atlas about 870,
-web-front 236, fruitback 201, pantry 173, the others about 10). At 0.3 to 2 cents a `lite`
+September 2026 had about 1,500 pull request heads that a review would read. At 0.3 to 2 cents a `lite`
 review, plus the 5.5 % that OpenRouter takes on a top-up, that is about $15 to $30 a month. The
 worst case, one review per commit (3,200 in September) at 2 cents, is about $70.
 
@@ -310,7 +309,7 @@ providers answered `429` and timeouts under load.
 ## Why this model, and not an agent
 
 [`eval/`](eval/) holds the bench, and [`eval/results.md`](eval/results.md) its detailed results:
-seven pull requests of pantry, atlas and web-front, with the ten defects that an earlier
+seven pull requests of three private repositories of the org, with the ten defects that an earlier
 reviewer (Claude Opus, exploring the repository) found and that the authors then fixed, and one
 clean pull request. On 2026-10-02 (the bench measures the defects found, not the time; the models
 of today come from the later bench of [`eval/martian/`](eval/martian/README.md)):
@@ -324,8 +323,8 @@ of today come from the later bench of [`eval/martian/`](eval/martian/README.md))
 | The same four as agents (4 rounds of read-only tools) | about 0.5 | 0 | $0.016 to $0.125 |
 | Five models of Scaleway Generative APIs, one call | 0 to 1 | 1 of 5 | €0.001 to €0.13 |
 
-- **No model found the hard defects** at this budget: the endpoint of pantry#549 reachable through the
-  relay, the unique violation that drizzle wraps on pantry#565. They need a reading of another
+- **No model found the hard defects** at this budget: the endpoint of one pull request reachable through the
+  relay, the unique violation that drizzle wraps on another. They need a reading of another
   service or of a library.
 - **OpenCode was dropped.** Its step limit ends a run inside a tool call with no answer. As an agent
   it found fewer defects than one call, and its GitHub action can push commits.

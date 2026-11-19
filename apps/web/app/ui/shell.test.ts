@@ -5,7 +5,7 @@ import { initials } from './shell.tsx'
 
 describe('the initials of the avatar (REV-91)', () => {
   it('takes the first letter of the first and the last word of the name', () => {
-    assert.equal(initials({ login: 'alex', name: 'Alex Martin' }), 'MA')
+    assert.equal(initials({ login: 'alex', name: 'Alex Martin' }), 'AM')
     assert.equal(initials({ login: 'camille', name: 'Camille de la Tour' }), 'CT')
   })
 
