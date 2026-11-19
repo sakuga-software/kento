@@ -84,6 +84,19 @@ export interface StoreOptions {
    * runs after the commit; its failure is logged and never fails the delivery.
    */
   onCapReached?: (command: Extract<StoreCommand, { type: 'enqueue_review' }>, hit: CapHit) => Promise<void>
+  /**
+   * REV-118. The lowercase logins of the accounts that Kentō serves. An event of another
+   * installation writes nothing: no org, no repository, no job. An event that only removes or
+   * cancels still applies. Without it, every installation is served.
+   */
+  allowedOrgs?: ReadonlySet<string> | null
+}
+
+/** The events that only remove or cancel: they apply to an account that is not allowed too. */
+const REMOVALS: ReadonlySet<StoreCommand['type']> = new Set(['delete_installation', 'remove_repositories', 'cancel_pull_request'])
+
+export function isOrgAllowed(allowedOrgs: ReadonlySet<string> | null | undefined, login: string): boolean {
+  return !allowedOrgs || allowedOrgs.has(login.toLowerCase())
 }
 
 /** The `pull_request` actions that create a job, for each trigger of the config. */
@@ -100,6 +113,10 @@ export function triggerAllows(trigger: Trigger, action: ReviewAction): boolean {
 /** Applies each command in one transaction. A command of a comment goes to its handler. */
 export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWebhook {
   return async (command, deliveryId) => {
+    if (!REMOVALS.has(command.type) && !isOrgAllowed(options.allowedOrgs, command.installation.login)) {
+      log('warn', 'webhook.org_not_allowed', { login: command.installation.login, type: command.type, deliveryId })
+      return { outcome: 'skipped', reason: 'organization is not allowed' }
+    }
     if (command.type === 'comment_command') {
       if (!options.handleCommentCommand) return { outcome: 'skipped', reason: 'commands are not configured' }
       return options.handleCommentCommand(command, deliveryId)

@@ -127,6 +127,7 @@ Without them, every screen says "Sign-in unavailable." and nobody gets in.
 | `GITHUB_URL` | the server of `GITHUB_API_URL` | The server where the runners clone, HTTPS only, on the server of `GITHUB_API_URL`. |
 | `KENTO_BOT_LOGIN` | `kento-review[bot]` | The login of the App: the publisher finds its threads and reviews with it. |
 | `KENTO_APP_SLUG` | `KENTO_BOT_LOGIN` without `[bot]` | The slug of the App, for the install link of the page "Access refused.". |
+| `KENTO_ALLOWED_ORGS` | none: every account | The GitHub logins that Kentō serves, comma-separated. The webhook ignores every event of another installation: no org, no repository, no job, and so no call with the key of the service. A removal (uninstall, removed repository, closed pull request) still applies. The log at startup gives `startup.allowed_orgs`, and each ignored event `webhook.org_not_allowed`. Set it while the App is public. |
 
 `KENTO_REPOS` and `KENTO_TRUSTED_BOTS` are not read any more: the Repos screen and the settings of
 the org replaced them. When one is still set, the log at startup says `startup.kento_repos_ignored`

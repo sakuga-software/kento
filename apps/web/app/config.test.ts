@@ -28,7 +28,15 @@ describe('loadConfig', () => {
       botLogin: 'kento-review[bot]',
       appSlug: 'kento-review',
       signIn: null,
+      allowedOrgs: null,
     })
+  })
+
+  it('reads KENTO_ALLOWED_ORGS as lowercase GitHub logins', () => {
+    assert.deepEqual(loadConfig({ DATABASE_URL: url, KENTO_ALLOWED_ORGS: ' Sakuga-Software, acme ,' }).allowedOrgs, new Set(['sakuga-software', 'acme']))
+    assert.equal(loadConfig({ DATABASE_URL: url, KENTO_ALLOWED_ORGS: ' ' }).allowedOrgs, null)
+    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_ALLOWED_ORGS: 'acme, not an org' }), /KENTO_ALLOWED_ORGS must be GitHub logins/)
+    assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_ALLOWED_ORGS: ',' }), /KENTO_ALLOWED_ORGS must be GitHub logins/)
   })
 
   describe('the GitHub sign-in', () => {

@@ -7,6 +7,24 @@ entries since the deployed release before a deployment or a rollback.
 
 The number of migrations that `/healthz` gives after a release is in its entry.
 
+## REV-118: Only the allowed accounts are served
+
+**`web` carries the change; the runners need no deployment.** No migration (`/healthz` still gives
+`"migrations":29`), no new permission. One new optional variable.
+
+- **`KENTO_ALLOWED_ORGS`**: the GitHub logins that Kentō serves, comma-separated, in any case. The
+  webhook ignores every event of another installation and answers `skipped: organization is not
+  allowed`: it writes no org, no repository and no job, so no runner calls a model with the key of
+  the service for that account. An uninstall, a removed repository or a closed pull request still
+  applies. Unset: every installation is served, as before.
+- The log at startup gives `startup.allowed_orgs` (`all`, or the list), and each ignored event
+  `webhook.org_not_allowed` with the login.
+- **Deployment for Sakuga:** set `KENTO_ALLOWED_ORGS=sakuga-software` on `web`, then redeploy. Today
+  the only org in the database is `sakuga-software`, so nothing else changes. Check: the log at
+  startup gives `"orgs":["sakuga-software"]`, and a push on a repository of the org still gets its
+  review.
+- The App can be made private too (its settings, "Advanced"): then no other account can install it.
+
 ## REV-117: A separate call links the findings to the rules and the earlier findings
 
 **The runners carry the change; `web` needs no deployment.** No change to the protocol, no

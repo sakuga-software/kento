@@ -139,6 +139,7 @@ let repos = {
 // The providers of the orgs and their encrypted keys (REV-11). Without KENTO_SECRETS_KEY, the
 // screen stores no key and no job of a provider with a key runs.
 let secrets = config.secretsKeys ? createSecretBox(config.secretsKeys.current, config.secretsKeys.previous) : null
+log('info', 'startup.allowed_orgs', { orgs: config.allowedOrgs ? [...config.allowedOrgs] : 'all' })
 if (!secrets) log('warn', 'startup.secrets_disabled', { reason: 'KENTO_SECRETS_KEY is not set: the keys of the providers cannot be stored' })
 else log('info', 'startup.secrets', { keyId: secrets.keyId, previousKeys: config.secretsKeys!.previous.length })
 
@@ -233,6 +234,7 @@ let router = createAppRouter({
     recordDelivery: (record) => orgSettingsStore.recordDelivery(record),
     botLogin: config.botLogin,
     apply: createWebhookStore(database.db, {
+      allowedOrgs: config.allowedOrgs,
       // REV-12: the paths of the config of a repository read the files of the pull request.
       listChangedFiles:
         mintInstallationToken && config.githubApp

@@ -56,6 +56,11 @@ export interface Config {
    * one of its variables is missing: every screen then shows "Sign-in unavailable".
    */
   signIn: SignInConfig | null
+  /**
+   * REV-118. The lowercase logins of the accounts that Kentō serves (KENTO_ALLOWED_ORGS). The
+   * webhook ignores the events of every other installation. Null: every installation is served.
+   */
+  allowedOrgs: ReadonlySet<string> | null
 }
 
 export interface SignInConfig {
@@ -134,6 +139,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (!/^[A-Za-z0-9-]+\[bot\]$/.test(botLogin)) problems.push('KENTO_BOT_LOGIN must be the login of an App, name[bot]')
   let appSlug = env.KENTO_APP_SLUG?.trim() || botLogin.replace(/\[bot\]$/, '').toLowerCase()
   if (!/^[a-z0-9][a-z0-9-]*$/.test(appSlug)) problems.push('KENTO_APP_SLUG must be the slug of the GitHub App, as in github.com/apps/<slug>')
+  let allowedOrgs = readAllowedOrgs(env, problems)
+
   // The runners clone from this server with the installation token of GITHUB_API_URL, so both must
   // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
   // Server (https://<host>/api/v3 and https://<host>). Without GITHUB_URL, it is the server of
@@ -183,7 +190,22 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     botLogin,
     appSlug,
     signIn,
+    allowedOrgs,
   }
+}
+
+/** A GitHub login: letters, digits and single hyphens, 39 characters or fewer. */
+const GITHUB_LOGIN = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$/
+
+function readAllowedOrgs(env: Record<string, string | undefined>, problems: string[]): ReadonlySet<string> | null {
+  let raw = env.KENTO_ALLOWED_ORGS?.trim() ?? ''
+  if (raw === '') return null
+  let logins = raw.split(',').map((login) => login.trim().toLowerCase()).filter((login) => login !== '')
+  if (logins.length === 0 || logins.some((login) => !GITHUB_LOGIN.test(login))) {
+    problems.push('KENTO_ALLOWED_ORGS must be GitHub logins, comma-separated')
+    return null
+  }
+  return new Set(logins)
 }
 
 const SIGN_IN_VARIABLES = ['KENTO_PUBLIC_URL', 'GITHUB_APP_CLIENT_ID', 'GITHUB_APP_CLIENT_SECRET', 'KENTO_SESSION_SECRET'] as const
