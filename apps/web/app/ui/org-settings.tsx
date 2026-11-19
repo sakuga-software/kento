@@ -3,6 +3,7 @@ import type { Handle } from 'remix/component'
 import { levelCost } from '@sakuga-review/engine/levels'
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 
+import { mention } from '../instance.ts'
 import type { AppStatus } from '../org-settings/app-status.ts'
 import { capAlerts, capReached, checkPermissions, missingEvents, REQUIRED_EVENTS, type CapPeriod } from '../org-settings/model.ts'
 import { resetWhen } from '../org-settings/notice.ts'
@@ -507,7 +508,7 @@ function BotsSection(handle: Handle<SectionProps>) {
           </h2>
         </header>
         <p class="hint">
-          The PRs, the pushes and the <span class="mono">@kento-review</span> commands of these bots count as those of a person with write
+          The PRs, the pushes and the <span class="mono">{mention()}</span> commands of these bots count as those of a person with write
           access. Kentō ignores every other bot.
         </p>
         {view.trustedBots.length === 0 ? (

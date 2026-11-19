@@ -10,16 +10,19 @@
 // One hint per finding: `findings.reject_hint_at` holds the claim before the post.
 
 import { canWrite } from '../findings/reactions.ts'
-import { COMMAND_NAMES } from '../github/comment-command.ts'
+import { namesPattern } from '../github/comment-command.ts'
+import { mention } from '../instance.ts'
 import { GitHubError, type GitHub } from '../publish/github.ts'
 import { docsRoutes } from '../routes.ts'
 
 /** The command `reject`, anywhere in a reply: in a quote or a block of code too. */
-const REJECT_WRITTEN = new RegExp(`@(?:${COMMAND_NAMES.join('|')})\\s+reject\\b`, 'i')
+function rejectWritten(): RegExp {
+  return new RegExp(`@(?:${namesPattern()})\\s+reject\\b`, 'i')
+}
 
 /** Whether a reply names the command `reject`, anywhere: its author knows the command. */
 export function namesReject(body: string): boolean {
-  return REJECT_WRITTEN.test(body)
+  return rejectWritten().test(body)
 }
 
 /** The hidden marker of a hint. A thread that holds it gets no second hint. */
@@ -33,7 +36,7 @@ export function hintText(docsUrl: string | null): string {
   let link = docsUrl ? ` [Kentō commands](${docsUrl})` : ''
   return (
     `This reply seems to set the finding aside. To count it as rejected (it will not come back and will not lower the score again), comment ` +
-    `\`@${COMMAND_NAMES[0]} reject <cause>\`.${link}\n\n${HINT_MARKER}`
+    `\`${mention('reject <cause>')}\`.${link}\n\n${HINT_MARKER}`
   )
 }
 

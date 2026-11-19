@@ -1,47 +1,46 @@
 # Deploy apps/web
 
-The installation guide of the Kentō web service on `review.sakuga.dev`, as it is today. It describes
-the end state: follow it from the top for a new installation, and use sections 8 and 9 for each
-later deployment. What each release changed, with its migration and its checks, is in
-[CHANGELOG.md](CHANGELOG.md).
+How to run the Kentō web service on your own infrastructure. Follow it from the top for a new
+installation, and use sections 8 and 9 for each later deployment. What each release changed, with
+its migration and its checks, is in [CHANGELOG.md](CHANGELOG.md).
 
-The agents do not touch Dokploy or production. A person with access to Dokploy, to the DNS and to the
-settings of the GitHub App runs these steps.
+The examples use `https://kento.example.com` for the service: put your own domain in its place.
 
-Target: Dokploy on `prod-host`, one application `web` and one database `postgres`, in a project
-named `Kentō`. The runners are a separate service: [apps/runner/DEPLOY.md](../runner/DEPLOY.md).
+The service is one container (`apps/web/Dockerfile`) and one Postgres database. The runners, which
+call the model, are separate containers: [apps/runner/README.md](../runner/README.md) for a runner of
+an organization, [apps/runner/DEPLOY.md](../runner/DEPLOY.md) for the runners of the service. To
+run the service, its database and one runner on a single machine, the root of the repository has a
+`compose.yaml` and a `.env.example`: copy `.env.example` to `.env`, fill it in with sections 3 and
+4, then `docker compose up -d --build`.
 
 ## 1. Prerequisites
 
-- Access to Dokploy on `prod-host`, and to the zone `sakuga.dev` at Gandi.
-- An owner of the GitHub organization `sakuga-software`: the GitHub App "Sakuga Review" (client id
-  `Iv23liesB1xzywavcnv2`, bot `kento-review[bot]`) belongs to it, and its owners accept each change of
-  its permissions.
-- `openssl` on your machine, to make the secrets.
-- A password manager. Each secret below lives there and in Dokploy, and nowhere else: never in a
-  ticket, a chat, a commit or a log.
-- For the reviews: an OpenRouter key of the service, or a provider of the org added on the Settings
-  screen after the installation (section 7, step 6).
+- A host that runs containers, and a domain whose HTTPS reaches port 3000 of the service: a reverse
+  proxy with TLS, or a platform that gives one. GitHub sends the webhook over HTTPS only.
+- Postgres 18.
+- A GitHub account or organization that owns the GitHub App of section 3.
+- `openssl`, to make the secrets.
+- A secret store. Each secret below lives there and in the environment of the service, and nowhere
+  else: never in a ticket, a chat, a commit or a log.
+- For the reviews: a key of the service for a model provider (OpenRouter by default), or a provider
+  of the org added on the Settings screen after the installation (section 7, step 6).
 
 ## 2. Postgres
 
-1. Dokploy > project `Kentō` (create it if needed) > **Create service > Database > PostgreSQL**.
-2. Name `postgres`, image `postgres:18`, database `kento`, user `kento`. Let Dokploy generate the
-   password, and keep it only in Dokploy.
-3. No external port. The application reaches the database on the internal network of Dokploy.
-4. Deploy it. Note the **internal host** that Dokploy shows on the database page.
-5. Turn on the daily backup of the database (Dokploy > database > **Backups**) to the S3 destination
-   of the other projects.
+1. Create a database `kento` and a user `kento` that owns it, with a generated password.
+2. Do not publish its port: the service reaches it on a private network.
+3. Back it up every day. The database holds the settings, the jobs, the reviews, the findings and
+   the encrypted keys of the providers.
 
 ## 3. The GitHub App
 
-Kentō uses the existing App "Sakuga Review". Its settings are under GitHub > organization
-`sakuga-software` > **Settings > Developer settings > GitHub Apps > Sakuga Review**.
+Kentō posts on GitHub as a GitHub App. Create one under **Settings > Developer settings > GitHub
+Apps > New GitHub App** of your account or organization, with the permissions, the events, the
+webhook and the callback below. Then set `KENTO_BOT_LOGIN` to `<slug of your App>[bot]` (section 4).
+`KENTO_COMMAND_NAMES` does not follow `KENTO_BOT_LOGIN`: set it to the slug of your App too, or the
+commands stay `@kento-review`.
 
-For an installation of your own, create a new App under **Settings > Developer settings > GitHub
-Apps > New GitHub App** of your own account or organization, with the permissions, the events, the
-webhook and the callback below, on your own domain. Then set `KENTO_BOT_LOGIN` to
-`<slug of your App>[bot]`. For **Where can this GitHub App be installed?**, choose **Only on this account**, unless other
+For **Where can this GitHub App be installed?**, choose **Only on this account**, unless other
 accounts must install it. In that case, set `KENTO_ALLOWED_ORGS` (section 4).
 
 ### Permissions
@@ -53,24 +52,24 @@ accounts must install it. In that case, set `KENTO_ALLOWED_ORGS` (section 4).
 | Repository: Contents | Read and write | Read: the clone of a job, the files of `.github/workflows` on the Repos screen. Write: a resolve job resolves the threads that the code settled. With Read only, it answers in each thread and resolves none. |
 | Repository: Pull requests | Read and write | The review, its inline comments and threads, the block of the description, the files of a pull request for the paths of a config. |
 | Repository: Issues | Read and write | The label `review: N/5`, the reactions and the replies to a command, the comment of a failed job. |
-| Repository: Checks | Read and write | The check "Sakuga Review", and "Kentō · cap" at the cost limit. Without it, the review is published without its check (`review.check_token_refused`). |
+| Repository: Checks | Read and write | The check of a review (`KENTO_CHECK_NAME`), and "Kentō · cap" at the cost limit. Without it, the review is published without its check (`review.check_token_refused`). |
 | Organization: Members | Read-only | The role of a person who signs in (`admin` or `member`). Without it, nobody but the owner of a personal account can sign in (`auth.sign_in_refused`). |
 
-Save. GitHub then asks the owners of the organization to accept the change: accept it
-(**Settings > GitHub Apps > Sakuga Review > Review request**).
+Save. When the App is installed on an organization, GitHub asks its owners to accept each change of
+the permissions: accept it (**Settings > GitHub Apps > your App > Review request**).
 
 ### Events
 
-**Subscribe to events**: `Pull request`, `Issue comment` and `Pull request review comment` (REV-93:
-the `reject` command in the thread of a finding). Save. `Installation` and
-`Installation repositories` need no box: GitHub always sends them to an App.
+**Subscribe to events**: `Pull request`, `Issue comment` and `Pull request review comment` (the
+`reject` command in the thread of a finding). Save. `Installation` and `Installation repositories`
+need no box: GitHub always sends them to an App.
 
 ### Webhook
 
 **General > Webhook**:
 
 - **Active**: on.
-- **Webhook URL**: `https://review.sakuga.dev/webhooks/github`.
+- **Webhook URL**: `https://kento.example.com/webhooks/github`.
 - **Webhook secret**: the value of `GITHUB_WEBHOOK_SECRET` (section 4).
 - **SSL verification**: enabled.
 
@@ -78,38 +77,39 @@ the `reject` command in the thread of a finding). Save. `Installation` and
 
 The screens sign in with the user authorization of this App (no OAuth App). **General**:
 
-- **Callback URL**: `https://review.sakuga.dev/auth/github/callback`.
+- **Callback URL**: `https://kento.example.com/auth/github/callback`.
 - **Expire user authorization tokens**: on (the default). Kentō uses the user token once and keeps
   none.
 - **Request user authorization (OAuth) during installation**: off.
+- **Client ID**: the value of `GITHUB_APP_CLIENT_ID`.
 - **Client secrets > Generate a new client secret**: the value of `GITHUB_APP_CLIENT_SECRET`. GitHub
   shows it once.
 
 ### Private key
 
 **General > Private keys > Generate a private key**: the downloaded PEM is the value of
-`GITHUB_APP_PRIVATE_KEY`. Put it in Dokploy, then delete the file. Note the **App ID** at the top of
-the page: the value of `GITHUB_APP_ID`.
+`GITHUB_APP_PRIVATE_KEY`. Put it in your secret store, then delete the file. Note the **App ID** at
+the top of the page: the value of `GITHUB_APP_ID`.
 
 ## 4. Environment variables
 
-Dokploy > `web` > **Environment**. The service reads them once at startup. A missing or invalid
-value stops the process before it listens, with `startup.config_invalid` and the name of the
-variable, never its value; the previous container keeps serving.
+The service reads them once at startup. A missing or invalid value stops the process before it
+listens, with `startup.config_invalid` and the name of the variable, never its value; a platform
+that waits for the health check keeps the previous container.
 
-Make each secret on your machine: `openssl rand -hex 32` for the webhook, registration and session
-secrets, `openssl rand -base64 32` for `KENTO_SECRETS_KEY`.
+Make each secret with `openssl rand -hex 32` for the webhook, registration and session secrets, and
+`openssl rand -base64 32` for `KENTO_SECRETS_KEY`.
 
 ### For a working service
 
 | Variable | Required | Example | Effect |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | yes | `postgresql://kento:<password>@<internal host>:5432/kento` | The database. A secret. |
+| `DATABASE_URL` | yes | `postgresql://kento:<password>@<database host>:5432/kento` | The database. A secret. |
 | `GITHUB_WEBHOOK_SECRET` | for the webhook | 64 hex characters | Checks the signature of each delivery; 32 characters or more. Without it, `/webhooks/github` answers 503 and nothing is queued. A secret. |
 | `GITHUB_APP_ID` | for the jobs | `1234567` | With the private key: the installation token of each job, the publication of the reviews, the role of a person, the state of the App. Without them, a claim gives no job and nothing is published. |
 | `GITHUB_APP_PRIVATE_KEY` | for the jobs | the PEM on one line, each new line written `\n` | The private key of the App. It never leaves the service. An invalid key stops the start. A secret. |
-| `KENTO_PUBLIC_URL` | for the sign-in | `https://review.sakuga.dev` | The origin as the browser sees it: the callback URL, the expected `Origin` of a form, the `Secure` cookie. `http://` only on `localhost` or `127.0.0.1`. Also the link to the Config screen in the comment of a failed job. |
-| `GITHUB_APP_CLIENT_ID` | for the sign-in | `Iv23liesB1xzywavcnv2` | The client of the user authorization. |
+| `KENTO_PUBLIC_URL` | for the sign-in | `https://kento.example.com` | The origin as the browser sees it: the callback URL, the expected `Origin` of a form, the `Secure` cookie. `http://` only on `localhost` or `127.0.0.1`. Also the link to the Config screen in the comment of a failed job, the page of the commands and the icons of the texts on GitHub. |
+| `GITHUB_APP_CLIENT_ID` | for the sign-in | `Iv23li…` | The client of the user authorization. |
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | from section 3 | A secret. |
 | `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | Signs the session cookie; 32 characters or more. Comma-separated during a rotation (section 9). A secret. |
 | `KENTO_SECRETS_KEY` | to store provider keys | 44 base64 characters | The master key of the keys of the providers (AES-256-GCM). Without it, the Settings screen stores no key (`startup.secrets_disabled`). See [SECURITY.md](../../SECURITY.md#the-master-key). A secret. |
@@ -124,7 +124,7 @@ Without them, every screen says "Sign-in unavailable." and nobody gets in.
 | --- | --- | --- |
 | `DATABASE_POOL_MAX` | `10` | The connections of the pool, 1 to 100. The migrations at startup use one more, closed before the server listens. |
 | `HOST` | `0.0.0.0` | The address the server listens on. |
-| `PORT` | `3000` | The port the server listens on. Keep 3000: the domain of section 5 points to it. |
+| `PORT` | `3000` | The port the server listens on. |
 | `MIGRATE_ON_START` | `true` | Apply the pending migrations before listening. Keep `true`. |
 | `APP_COMMIT` | none | The commit shown by `/healthz`. Set it with the build argument of the same name (section 5). |
 | `KENTO_RUNNER_REGISTRATION_TOKEN` | none | Registers a runner of the service with `POST /api/runner/register`; 32 characters or more. Not needed when the runners are made on the Runners screen. A secret. |
@@ -135,26 +135,42 @@ Without them, every screen says "Sign-in unavailable." and nobody gets in.
 | `KENTO_APP_SLUG` | `KENTO_BOT_LOGIN` without `[bot]` | The slug of the App, for the install link of the page "Access refused.". |
 | `KENTO_ALLOWED_ORGS` | none: every account | The GitHub logins that Kentō serves, comma-separated. The webhook ignores every event of another installation: no org, no repository, no job, and so no call with the key of the service. A removal (uninstall, removed repository, closed pull request) still applies. The log at startup gives `startup.allowed_orgs`, and each ignored event `webhook.org_not_allowed`. Set it while the App is public. |
 
+### The names of the instance
+
+The command of the comments, the check of a review, the image of the runners and the bots that a
+new org trusts. Their defaults are the names of the first instance of Kentō: set them to the names
+of yours. The log at startup gives them in `startup.instance`.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `KENTO_COMMAND_NAMES` | `kento-review,sakuga-review` | The names that start a command in a comment (`@kento-review heavy`), comma-separated, 5 at most. Each one is a GitHub login, without `@` and without `[bot]`; the case does not count. The first one is the name that the bot, the review and the screens show; the others are aliases. Usually the slug of your App, so that the mention is also the account of the App. |
+| `KENTO_CHECK_NAME` | `Sakuga Review` | The name of the check run of a review, 100 characters at most, never `Kentō · cap`. A branch rule that requires the check names it. When you change it, change the required check too: GitHub waits for the old name. A head that already has the check under the old name gets a second one under the new name at its next publication. |
+| `KENTO_RUNNER_IMAGE` | `ghcr.io/sakuga-software/kento-runner` | The image of the runner, without a tag, in the `docker run` that the Runners screen gives. The screen adds the version of the service as the tag: publish that tag to this image ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)). |
+| `KENTO_DEFAULT_TRUSTED_BOTS` | `sakuga-agent[bot]` | The bots that a new org trusts, comma-separated, 20 at most: their pull requests, pushes and commands count as those of a person with write access. `renovate` reads as `renovate[bot]`; the case does not count. Set and empty, a new org trusts no bot. An org that Kentō already knows keeps its own list, which an admin edits on `/settings` > "Trusted bots". |
+
 `KENTO_REPOS` and `KENTO_TRUSTED_BOTS` are not read any more: the Repos screen and the settings of
 the org replaced them. When one is still set, the log at startup says `startup.kento_repos_ignored`
 or `startup.kento_trusted_bots_ignored`: remove it.
 
 ## 5. The application
 
-1. Project `Kentō` > **Create service > Application**, name `web`.
-2. **Provider**: GitHub, repository `sakuga-software/sakuga-review`, branch `main`.
-3. **Build type**: Dockerfile. Dockerfile path `apps/web/Dockerfile`, Docker context path `.` (the
-   root of the repository: the pnpm workspace and its lockfile live there).
-4. **Build arguments** (optional): `APP_COMMIT=<commit>` puts the commit in `/healthz`. Without it,
-   `/healthz` gives `"commit": null` and only the version.
-5. **Environment**: the variables of section 4.
-6. **Domains**: `review.sakuga.dev`, container port `3000`, HTTPS with Let's Encrypt.
-7. **DNS** (Gandi, zone `sakuga.dev`): a record `review` to `prod-host`, the same way as the other
-   services of that host. Wait until `dig +short review.sakuga.dev` gives the address of the host.
-8. Deploy.
+1. Build the image from the root of the repository (the pnpm workspace and its lockfile live
+   there):
 
-The image has a `HEALTHCHECK` on `/healthz` (every 30 s, 3 failures). Swarm replaces a container that
-stays unhealthy, and a new container that does not become healthy does not replace the old one.
+   ```sh
+   docker build -f apps/web/Dockerfile --build-arg APP_COMMIT=$(git rev-parse HEAD) -t kento-web:<version> .
+   ```
+
+   `APP_COMMIT` is optional: it puts the commit in `/healthz`. Without it, `/healthz` gives
+   `"commit": null` and only the version.
+2. Run it with the variables of section 4, on the private network of the database, with no other
+   port published than 3000 to the reverse proxy.
+3. Point the domain to the reverse proxy, with HTTPS, and the proxy to port 3000 of the container.
+   Wait until `https://kento.example.com/healthz` answers.
+
+The image has a `HEALTHCHECK` on `/healthz` (every 30 s, 3 failures). A platform that follows it
+replaces a container that stays unhealthy, and keeps the old container while a new one is not
+healthy.
 
 ## 6. Migrations
 
@@ -163,23 +179,23 @@ transaction, under an advisory lock (two instances that start together migrate o
 A migration already applied is skipped, and a redeploy applies nothing twice.
 
 - `/healthz` gives `database.migrations`, the number of applied migrations. It equals the number of
-  `.sql` files in `apps/web/drizzle/` of the deployed commit (23 with REV-65, `0000_init` to
-  `0022_drop_jobs_runner_id_idx`).
+  `.sql` files in `apps/web/drizzle/` of the deployed commit.
 - A migration runs while the previous container still serves, so each one only adds: a column with
   a default or nullable, a table, an index. A rollback does not undo a migration, and the previous
   release still runs on the newer schema.
-- The one removal allowed is an index that another index covers (REV-65): no query reads an index
-  by its name, so the previous release gets the same rows. `DROP INDEX` waits for each transaction
-  that uses the table, and each query on the table waits behind it: deploy when no long query runs.
+- The one removal allowed is an index that another index covers: no query reads an index by its
+  name, so the previous release gets the same rows. `DROP INDEX` waits for each transaction that
+  uses the table, and each query on the table waits behind it: deploy when no long query runs.
 - `startup.migrations_failed` gives the error of the database. The process stops before it listens,
   and the previous container keeps serving.
 - How to write one: [README.md](README.md#migrations).
 
 ## 7. Checks after a deployment
 
-1. **Logs**, Dokploy > `web` > **Logs**, in order:
+1. **Logs** of the container, in order:
 
    ```json
+   {"level":"info","event":"startup.instance","commandNames":["kento-review","sakuga-review"],"checkName":"Sakuga Review",…}
    {"level":"info","event":"startup.migrations_applied","durationMs":…}
    {"level":"info","event":"startup.listening","host":"0.0.0.0","port":3000,"version":"…","publisher":true,"signIn":true,…}
    ```
@@ -188,24 +204,24 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
 2. **Health**:
 
    ```sh
-   curl -sS https://review.sakuga.dev/healthz
-   # 200 {"status":"ok","version":"…","commit":…,"database":{"status":"ok","latencyMs":…,"migrations":23}}
+   curl -sS https://kento.example.com/healthz
+   # 200 {"status":"ok","version":"…","commit":…,"database":{"status":"ok","latencyMs":…,"migrations":…}}
    ```
 
 3. **Webhook**: the App > **Advanced > Recent Deliveries**. The `ping` has the answer 200
    `{"outcome":"pong"}`. A wrong signature is refused:
 
    ```sh
-   curl -i -X POST https://review.sakuga.dev/webhooks/github -H 'X-GitHub-Event: ping' \
+   curl -i -X POST https://kento.example.com/webhooks/github -H 'X-GitHub-Event: ping' \
      -H 'X-GitHub-Delivery: manual-1' -H 'X-Hub-Signature-256: sha256=00' -d '{}'
    # 401 invalid signature
    ```
 
 4. **Sign-in**, in a private window:
-   - `https://review.sakuga.dev/` goes to "Sign in to Kentō".
-   - "Continue with GitHub" opens GitHub, which asks once to authorize "Sakuga Review". It then
-     comes back to the dashboard, with your login and "Admin" at the bottom of the sidebar. The log
-     has `auth.signed_in`.
+   - `https://kento.example.com/` goes to "Sign in to Kentō".
+   - "Continue with GitHub" opens GitHub, which asks once to authorize the App. It then comes back
+     to the dashboard, with your login and "Admin" at the bottom of the sidebar. The log has
+     `auth.signed_in`.
    - A member of the org who is not an owner sees "Read only" on every screen. An account
      outside the org gets "Access refused.", and `users` has no row for it.
 5. **State of the App**: `/settings` > "GitHub App" says "Everything is in place". Otherwise it names
@@ -213,16 +229,16 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
    webhook URL.
 6. **A provider** (once): `/settings` > "Add a provider", its key, then "Test": "The
    provider accepted the key." An org with no provider runs on `KENTO_PROVIDER_API_KEY`.
-7. **A runner**: start one as [apps/runner/DEPLOY.md](../runner/DEPLOY.md) says. The Runners screen
-   shows it "Online" within 30 s.
+7. **A runner**: `/runners` > "New runner", then the `docker run` that the screen gives
+   ([apps/runner/README.md](../runner/README.md)). The Runners screen shows it "Online" within 30 s.
 8. **A repository**: `/repos` lists the repositories of the installation. "Enable" on one of them.
 9. **A review, end to end**: push a commit on an open pull request of that repository. The logs show
    `job.claimed`, `job.result`, then `review.published` with `"check":true`. On the pull request: a
-   review of `kento-review[bot]` whose footer starts with `Kentō · Level`, its inline comments, the
-   block of the description, the label `review: N/5` and the check "Sakuga Review".
-10. **A command**: `@kento-review heavy` in a comment of the pull request gets 👀, then a review
-    "Level `heavy`", then 🚀. `@kento-review resolve` answers in the open threads and posts
-    "Kentō · thread resolution".
+   review of the bot of the App whose footer starts with `Kentō · Level`, its inline comments, the
+   block of the description, the label `review: N/5` and the check `KENTO_CHECK_NAME`.
+10. **A command**: `@kento-review heavy` (the first name of `KENTO_COMMAND_NAMES`) in a comment of
+    the pull request gets 👀, then a review "Level `heavy`", then 🚀. `@kento-review resolve`
+    answers in the open threads and posts "Kentō · thread resolution".
 
 The state of the queue, from the database:
 
@@ -235,34 +251,32 @@ select pr_number, left(head_sha, 8), score, published_at, github_review_id from 
 
 1. Read the entries of [CHANGELOG.md](CHANGELOG.md) since the deployed release: a release that adds
    a variable, a permission of the App or a step before the runners says so there.
-2. Deploy `web` (Dokploy > `web` > **Deploy**). Automatic deployment on a push to `main` is a choice
-   for Alex (Dokploy > `web` > **Auto Deploy**). Without it, deploy by hand after each merge that
-   touches `apps/web`.
+2. Build and run the image of the new release (section 5).
 3. Check steps 1 and 2 of section 7: the version, and the number of migrations.
 4. **The service before the runners.** A runner of a new release can send a claim that an older
    service refuses (400). A runner of the previous release keeps working with the new service. Then
    publish the runner image of the same commit and update the runners
    ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
 
-**Roll back**: Dokploy > `web` > **Deployments**, redeploy the previous one. It does not undo a
-migration, and the previous release runs on the newer schema. Read the entry of the release in
+**Roll back**: run the image of the previous release again. It does not undo a migration, and the
+previous release runs on the newer schema. Read the entry of the release in
 [CHANGELOG.md](CHANGELOG.md) first: a release that removed a variable may need it back.
 
 ## 9. Operations
 
 ### Rotate a secret
 
-- **Webhook secret**: a new value in Dokploy, deploy, then the same value in the App settings, one
-  right after the other. The deliveries in between get 401: redeliver them from **Recent
-  Deliveries**.
+- **Webhook secret**: a new value in the environment, deploy, then the same value in the App
+  settings, one right after the other. The deliveries in between get 401: redeliver them from
+  **Recent Deliveries**.
 - **Session secret**: put the new one first and keep the old one after a comma
   (`KENTO_SESSION_SECRET=<new>,<old>`), deploy, and remove the old one 7 days later. Removing it at
   once signs everybody out: that is the way to end every session now.
 - **Master key of the provider keys**: [SECURITY.md](../../SECURITY.md#the-master-key)
   (`KENTO_SECRETS_PREVIOUS_KEYS`, then `node app/providers/rotate-keys.ts --apply`).
-- **Private key of the App**: generate a new key in the App settings, put it in Dokploy, deploy, then
-  delete the old key in the App settings.
-- **OpenRouter key of the service**: replace `KENTO_PROVIDER_API_KEY` and deploy. The key of a
+- **Private key of the App**: generate a new key in the App settings, put it in the environment,
+  deploy, then delete the old key in the App settings.
+- **Provider key of the service**: replace `KENTO_PROVIDER_API_KEY` and deploy. The key of a
   provider of an org is replaced on the Settings screen ("Replace the key").
 
 ### Cost limit
@@ -271,16 +285,16 @@ The limits of an org are on `/settings` > "Cost cap", for an admin: per UTC day,
 month, and an alert threshold. At a limit, a push queues nothing (202 `capped`) and its head gets the
 neutral check "Kentō · cap"; a command gets 😕 and a reply. A job already queued or running
 finishes. A repository can also have a monthly limit of its automatic reviews on its Config screen.
-The daily limit of the OpenRouter key stays a second guard.
+A spending limit on the key of the provider stays a second guard.
 
 ### Repositories, runners and people
 
 - **Enable or disable a repository**: `/repos`, "Enable" or "Disable Kentō…". A disabled repository
   gets no job; its queued jobs are cancelled.
 - **Trusted bots** (bots whose pull requests and commands count as a person's): `/settings` > "Trusted
-  bots".
+  bots". A new org starts with `KENTO_DEFAULT_TRUSTED_BOTS`.
 - **A new runner**: `/runners` > "New runner" gives a token that works once, for one hour. See
-  [apps/runner/DEPLOY.md](../runner/DEPLOY.md).
+  [apps/runner/README.md](../runner/README.md).
 - **Revoke a runner**: `/runners` > "Revoke…". Its token stops at the next call, and its running
   job goes back to the queue without spending an attempt.
 - **Remove a person**: remove them from the org on GitHub. Their access ends within 10 minutes;
@@ -326,26 +340,11 @@ next run tries again.
 select count(*) filter (where created_at < now() - interval '180 days') as older, count(*) from jobs;
 ```
 
-## 10. Logs in Grafana
+## 10. Logs
 
-1. <https://grafana.sakuga.dev> > **Explore** > the Loki source.
-2. Look for the lines of the service, for example `{host="prod-host"} |= "startup.listening"`, and
-   note the labels of the line.
-3. If the line has no `project` / `app` labels, the Alloy collector of the host does not know the
-   service yet. Add it as the monitoring runbook of the host describes
-   (`~/monitoring/README.md` of the admin account on `prod-host`): a rule on the name of the Swarm service
-   that sets `project="Kentō"` and `app="web"` (and `app="postgres"` for the database), then reload
-   Alloy.
-4. Check: `{project="Kentō", app="web"}` shows the `startup.*` lines.
-
-Useful queries:
-
-```logql
-{project="Kentō", app="web"} | json | level="error"
-{project="Kentō", app="web"} | json | event="http.request" | status >= 500
-{project="Kentō", app="web"} | json | event=~"review.publication_failed|job.failure_notice_failed|jobs.purge_failed"
-{project="Kentō", app="web"} | json | event="job.queue_noticed"
-```
+The service writes one JSON object per line on its standard output: `time`, `level`, `event` and
+the fields of the event. It never writes a secret or a token. Send these lines to the log store of
+your platform, and alert on `level="error"` and on the events below.
 
 The events that need a person:
 
@@ -357,9 +356,10 @@ The events that need a person:
 | `auth.sign_in_refused` | The App lacks **Members: Read-only**, or the person is not in the org. |
 | `review.publication_failed` | GitHub refused the publication; tried again three times per process, for 30 minutes. |
 | `job.failure_notice_failed` | The comment of a failed job could not be posted. |
-| `job.queue_noticed` (warn) | A job of a pull request waits for more than 10 min: `cause` `no_runner` or `not_taken`. The alert of the team can be a rule on it. |
+| `job.queue_noticed` (warn) | A job of a pull request waits for more than 10 min: `cause` `no_runner` or `not_taken`. An alert can be a rule on it. |
 | `job.queue_notice_failed`, `job.queue_notice_remove_failed` | GitHub refused the comment of the queue; the next run tries again. |
 | `job.queue_notice_search_capped` | The marker of the comment was looked for in the first 1000 comments only. |
 | `job.lease_expired` with `"state":"failed"` | A job lost its runner twice. |
-| `job.model_id_refused` | REV-62. A model id of the job has the wrong form for its provider (`anthropic/…` on Anthropic, no vendor on OpenRouter), kept before the form refused it. The job fails at the claim, before any call, and its pull request gets the comment of a failed job. Correct the id that Config or Settings shows in red. |
+| `job.model_id_refused` | A model id of the job has the wrong form for its provider (`anthropic/…` on Anthropic, no vendor on OpenRouter), kept before the form refused it. The job fails at the claim, before any call, and its pull request gets the comment of a failed job. Correct the id that Config or Settings shows in red. |
 | `jobs.purge_failed` | The database refused the purge of the old jobs. |
+| `http.request` with `status` 500 or more | A request failed on the side of the service. |

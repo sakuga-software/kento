@@ -2,6 +2,7 @@ import type { Handle } from 'remix/component'
 
 import type { Level } from '@sakuga-review/protocol'
 
+import { mention } from '../instance.ts'
 import { ASSIGNMENT_FIELDS, MAX_ASSIGNMENT_RULES, MAX_CONDITION_VALUES, OUTCOMES, type AssignmentField, type Outcome } from '../assignment/model.ts'
 import type { AssignmentView } from '../assignment/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
@@ -251,7 +252,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             <Message
               id={id('outcome')}
               error={errors.outcome}
-              hint="The level of the review of a push. With no automatic review, only a @kento-review command creates one."
+              hint={`The level of the review of a push. With no automatic review, only a ${mention()} command creates one.`}
             />
           </div>
           <div class="field">
@@ -300,7 +301,7 @@ export function AssignmentTab(handle: Handle<AssignmentTabProps>) {
         </header>
         <p class="hint">
           The level of the review of a push, from the author, the changed paths and the labels of the PR. Kentō reads the rules in
-          order, and the first one that matches wins, before the preferences of the author. A @kento-review command keeps the level that it asks for.
+          order, and the first one that matches wins, before the preferences of the author. A {mention()} command keeps the level that it asks for.
         </p>
         {notice ? (
           <div class={`banner banner-${tone}`} role={tone === 'alert' ? 'alert' : 'status'}>

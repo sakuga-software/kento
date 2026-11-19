@@ -12,6 +12,7 @@ import {
   type FeedbackScreen,
   type FeedbackSource,
 } from '../feedback/store.ts'
+import { mention } from '../instance.ts'
 import { feedbackRoutes } from '../routes.ts'
 import { agoOrDate, count, plural } from './format.ts'
 import { shortName } from './precision.tsx'
@@ -74,7 +75,7 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
             <h2 id="empty-title">No feedback yet</h2>
             <p>
               After its third review on a pull request, Kentō asks its author for feedback. The answers arrive here: a command{' '}
-              <code>@kento-review feedback</code>, a comment that quotes the request, or a 👍 or a 👎 on the request.
+              <code>{mention('feedback')}</code>, a comment that quotes the request, or a 👍 or a 👎 on the request.
             </p>
           </section>
         ) : (

@@ -1,5 +1,6 @@
 import type { Handle } from 'remix/component'
 
+import { commandNames } from '../github/comment-command.ts'
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
@@ -93,6 +94,31 @@ function shortName(fullName: string, org: string): string {
  * model of their last review, the switch counter and their last review. An admin enables and
  * disables a repository; a member reads.
  */
+/** The command of the Action of review.yml. When it is also a name of Kentō, both answer it. */
+const ACTION_COMMAND = 'sakuga-review'
+
+/** Which command gets two answers during the switch, with the names of the instance (KENTO_COMMAND_NAMES). */
+function SwitchCommands() {
+  return () => {
+    let names = commandNames()
+    let own = names.find((name) => name !== ACTION_COMMAND)
+    return (
+      <li>
+        {names.includes(ACTION_COMMAND) ? (
+          <>
+            A <code>@{ACTION_COMMAND}</code> command then gets two answers.{own ? ' ' : ''}
+          </>
+        ) : null}
+        {own ? (
+          <>
+            <code>@{own}</code> speaks to Kentō only.
+          </>
+        ) : null}
+      </li>
+    )
+  }
+}
+
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
     let { frame, page, list, installationUrl, githubUrl, checking, precisions, notice, now } = handle.props
@@ -239,9 +265,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                   While review.yml stays in the repo, the Action also reviews each push. The PR then gets two reviews, and the one of
                   the Action is the fallback if Kentō fails.
                 </li>
-                <li>
-                  A <code>@sakuga-review</code> command then gets two answers. <code>@kento-review</code> speaks to Kentō only.
-                </li>
+                <SwitchCommands />
                 <li>If you disable the repo, review.yml alone reviews from the next push. The published reviews stay.</li>
               </ul>
             </section>

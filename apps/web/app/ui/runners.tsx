@@ -2,6 +2,7 @@ import type { Handle } from 'remix/component'
 
 import { CLAIM_WAIT_SECONDS, HEARTBEAT_SECONDS, LEASE_SECONDS, MAX_ATTEMPTS, MAX_BODY_BYTES, RUNNER_TOKEN_PREFIX } from '@sakuga-review/protocol'
 
+import { instance } from '../instance.ts'
 import { OFFLINE_SECONDS, ONLINE_SECONDS, REGISTRATION_TTL_MINUTES, SILENT_HOURS, type RegistrationView, type RunnersScreen, type RunnerView } from '../runner/admin.ts'
 import { RETRY_BACKOFF_SECONDS } from '../runner/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
@@ -12,7 +13,6 @@ import { Shell, type PageFrame } from './shell.tsx'
 // The dashboard store counts the runners by state in SQL with the same limits (REV-37).
 export { OFFLINE_SECONDS, ONLINE_SECONDS } from '../runner/admin.ts'
 
-export const RUNNER_IMAGE = 'ghcr.io/sakuga-software/kento-runner'
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
 const NAME = /^[A-Za-z0-9._-]{1,100}$/
@@ -62,7 +62,7 @@ export function dockerCommand(input: { kentoUrl: string; token: string; name: st
     ...(input.trusted ? [] : ['-e PROVIDER_API_KEY=<your OpenRouter key>']),
     '-v kento-runner-state:/var/lib/kento-runner',
     '--tmpfs /tmp:rw,size=2g --read-only --cap-drop ALL --security-opt no-new-privileges',
-    `${RUNNER_IMAGE}:${input.version}`,
+    `${instance().runnerImage}:${input.version}`,
   ]
   return lines.join(' \\\n  ')
 }
@@ -552,7 +552,7 @@ function ProtocolFacts(handle: Handle<{ version: string }>) {
         <div>
           <dt>Image</dt>
           <dd class="mono">
-            {RUNNER_IMAGE}:{handle.props.version}
+            {instance().runnerImage}:{handle.props.version}
           </dd>
         </div>
         <div>

@@ -4,6 +4,7 @@
 
 import type { Handle } from 'remix/component'
 
+import { mention } from '../instance.ts'
 import { sanitizeReason } from '../publish/failure.ts'
 
 /** A reason in words. `raw`: the text of the service, shown under "Technical details", or null. */
@@ -113,14 +114,14 @@ const DELIVERY_REASONS: [RegExp, (m: RegExpExecArray) => Omit<Reason, 'raw'>][] 
   [/^pushed by an untrusted bot$/, () => ({ text: 'push of a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
   [/^opened by an untrusted bot$/, () => ({ text: 'pull request opened by a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
   [/^command of an untrusted bot$/, () => ({ text: 'command of a bot that is not a trusted bot', action: UNTRUSTED_BOT })],
-  [/^pull request from a fork$/, () => ({ text: 'pull request from a fork, no automatic review', action: 'A person who can write to the repo can start @kento-review.' })],
+  [/^pull request from a fork$/, () => ({ text: 'pull request from a fork, no automatic review', action: `A person who can write to the repo can start ${mention()}.` })],
   [/^pull request (?:is )?closed$/, () => ({ text: 'pull request closed', action: '' })],
   [/^event (\S+) is not handled$/, (m) => ({ text: `event ${m[1]}, which Kentō does not handle`, action: '' })],
   [/^pull_request action (\S+) creates no job$/, (m) => ({ text: `pull request action ${m[1]}, no review`, action: '' })],
   [/^issue_comment action (\S+) gives no command$/, (m) => ({ text: `comment ${m[1]}, no command`, action: '' })],
   [/^installation(?:_repositories)? action (\S+) is not handled$/, (m) => ({ text: `installation action ${m[1]}, which Kentō does not handle`, action: '' })],
   [/^comment is not on a pull request$/, () => ({ text: 'comment outside a pull request', action: '' })],
-  [/^comment is not a command$/, () => ({ text: 'comment with no @kento-review command', action: '' })],
+  [/^comment is not a command$/, () => ({ text: `comment with no ${mention()} command`, action: '' })],
   [/^comment of the App itself$/, () => ({ text: 'comment of Kentō itself', action: '' })],
   [/^(?:comment|delivery) already created a job$|^head already had a review job$/, () => ({ text: 'already handled, no second job', action: '' })],
   [/^repository is not enabled: the workflow keeps the command$/, () => ({ text: 'repo not enabled, the GitHub workflow keeps the command', action: '' })],

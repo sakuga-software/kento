@@ -5,6 +5,7 @@ import { describe, it } from 'remix/test'
 
 import packageJson from '../package.json' with { type: 'json' }
 import { ConfigError, loadConfig } from './config.ts'
+import { DEFAULT_INSTANCE } from './instance.ts'
 
 const url = 'postgres://kento:secret@db.internal:5432/kento'
 
@@ -29,6 +30,68 @@ describe('loadConfig', () => {
       appSlug: 'kento-review',
       signIn: null,
       allowedOrgs: null,
+      instance: DEFAULT_INSTANCE,
+    })
+  })
+
+  describe('the names of the instance (REV-127)', () => {
+    it('keeps the names of the first instance without a variable', () => {
+      // Literal values: a change of DEFAULT_INSTANCE changes what every instance without a variable shows.
+      let { instance } = loadConfig({ DATABASE_URL: url })
+      assert.deepEqual(instance.commandNames, ['kento-review', 'sakuga-review'])
+      assert.equal(instance.checkName, 'Sakuga Review')
+      assert.equal(instance.runnerImage, 'ghcr.io/sakuga-software/kento-runner')
+      assert.deepEqual(instance.defaultTrustedBots, ['sakuga-agent[bot]'])
+      let blank = loadConfig({ DATABASE_URL: url, KENTO_COMMAND_NAMES: ' ', KENTO_CHECK_NAME: '', KENTO_RUNNER_IMAGE: '  ' }).instance
+      assert.deepEqual(blank, DEFAULT_INSTANCE)
+    })
+
+    it('reads KENTO_COMMAND_NAMES: lowercase, without @, the first one shown, no duplicate', () => {
+      let { instance } = loadConfig({ DATABASE_URL: url, KENTO_COMMAND_NAMES: ' @Acme-Review , acme,ACME-review,' })
+      assert.deepEqual(instance.commandNames, ['acme-review', 'acme'])
+      assert.deepEqual(loadConfig({ DATABASE_URL: url, KENTO_COMMAND_NAMES: 'acme-review' }).instance.commandNames, ['acme-review'])
+    })
+
+    it('refuses a command name that is no GitHub login, the login of an App, or too many names', () => {
+      for (let value of ['acme review', 'acme-review[bot]', 'acme_review', '-acme', ',', 'a,b,c,d,e,f']) {
+        assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_COMMAND_NAMES: value }), /KENTO_COMMAND_NAMES must be 1 to 5 names/, value)
+      }
+    })
+
+    it('reads KENTO_CHECK_NAME, and refuses the name of the check of the cost limit and a second line', () => {
+      assert.equal(loadConfig({ DATABASE_URL: url, KENTO_CHECK_NAME: ' Acme Review ' }).instance.checkName, 'Acme Review')
+      assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_CHECK_NAME: 'kentō · CAP' }), /KENTO_CHECK_NAME must not be "Kentō · cap"/)
+      assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_CHECK_NAME: 'Acme\nReview' }), /KENTO_CHECK_NAME must be one line/)
+      assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_CHECK_NAME: 'x'.repeat(101) }), /KENTO_CHECK_NAME must be one line/)
+    })
+
+    it('reads KENTO_RUNNER_IMAGE without a tag', () => {
+      for (let image of ['registry.example.com:5000/team/kento-runner', 'kento-runner', 'docker.io/acme/kento_runner']) {
+        assert.equal(loadConfig({ DATABASE_URL: url, KENTO_RUNNER_IMAGE: image }).instance.runnerImage, image)
+      }
+      for (let image of ['ghcr.io/acme/kento-runner:1.0.0', 'ghcr.io/acme/kento-runner@sha256:abc', 'GHCR.io/Acme/Runner', 'ghcr.io/acme/kento runner']) {
+        assert.throws(() => loadConfig({ DATABASE_URL: url, KENTO_RUNNER_IMAGE: image }), /KENTO_RUNNER_IMAGE must be a Docker image without a tag/, image)
+      }
+    })
+
+    it('reads KENTO_DEFAULT_TRUSTED_BOTS as lowercase bot logins; set and empty, no bot', () => {
+      let read = (value: string) => loadConfig({ DATABASE_URL: url, KENTO_DEFAULT_TRUSTED_BOTS: value }).instance.defaultTrustedBots
+      assert.deepEqual(read('Renovate, acme-agent[bot],renovate[bot]'), ['renovate[bot]', 'acme-agent[bot]'])
+      assert.deepEqual(read(''), [])
+      assert.deepEqual(read(' '), [])
+      assert.throws(() => read('acme<agent'), /KENTO_DEFAULT_TRUSTED_BOTS must be at most 20 bot logins/)
+      assert.throws(() => read(Array.from({ length: 21 }, (_, i) => `bot${i}`).join(',')), /KENTO_DEFAULT_TRUSTED_BOTS must be at most 20/)
+    })
+
+    it('never prints the value of a wrong name', () => {
+      let error: unknown
+      try {
+        loadConfig({ DATABASE_URL: url, KENTO_COMMAND_NAMES: 'secret-ish value', KENTO_DEFAULT_TRUSTED_BOTS: 'other<value>' })
+      } catch (caught) {
+        error = caught
+      }
+      assert.ok(error instanceof ConfigError)
+      assert.ok(!error.message.includes('secret-ish') && !error.message.includes('other<value>'), error.message)
     })
   })
 

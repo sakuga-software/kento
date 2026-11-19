@@ -4,8 +4,9 @@ import type { Database } from '../db/client.ts'
 import { readOrgCosts, type OrgCosts } from '../db/costs.ts'
 import { toDate } from '../db/rows.ts'
 import type { DeliveryRecord } from '../github/webhook.ts'
+import { instance } from '../instance.ts'
 import { readOverrides, type ConfigOverrides } from '../repo-config/model.ts'
-import { DEFAULT_TRUSTED_BOTS, readMoney, readTrustedBots, type OrgCaps } from './model.ts'
+import { readMoney, readTrustedBots, type OrgCaps } from './model.ts'
 
 /** A delivery of the webhook, as the section "App GitHub" shows it. */
 export interface DeliveryView {
@@ -191,10 +192,10 @@ export function createOrgSettingsStore({ sql, db }: Pick<Database, 'sql' | 'db'>
     },
 
     async trustedBotsFor(githubInstallationId) {
-      if (githubInstallationId === null) return new Set(DEFAULT_TRUSTED_BOTS)
+      if (githubInstallationId === null) return new Set(instance().defaultTrustedBots)
       let [row] = await sql<{ trustedBots: string[] }[]>`
         select trusted_bots as "trustedBots" from orgs where github_installation_id = ${githubInstallationId}`
-      return new Set(row ? readTrustedBots(row.trustedBots) : DEFAULT_TRUSTED_BOTS)
+      return new Set(row ? readTrustedBots(row.trustedBots) : instance().defaultTrustedBots)
     },
 
     async recordDelivery(record) {

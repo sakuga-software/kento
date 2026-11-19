@@ -1,13 +1,11 @@
 // The settings of an org (REV-13): its cost limits, its trusted bots, and what the App must hold on
 // GitHub. No database, no network.
 
+import { instance } from '../instance.ts'
 import { MAX_CAP_USD, type FormResult } from '../repo-config/model.ts'
+import { BOT_LOGIN, parseBotLogins } from './bot-logins.ts'
 
-/** The bot that the earlier variable KENTO_TRUSTED_BOTS trusted by default, and a new org trusts. */
-export const DEFAULT_TRUSTED_BOTS: readonly string[] = ['sakuga-agent[bot]']
-export const MAX_TRUSTED_BOTS = 20
-/** A login of a GitHub App bot: the slug of the App (39 characters at most), then `[bot]`. */
-const BOT_LOGIN = /^[a-z0-9](?:[a-z0-9-]{0,38})\[bot\]$/
+export { MAX_TRUSTED_BOTS, parseBotLogins } from './bot-logins.ts'
 
 export type CapPeriod = 'day' | 'month'
 
@@ -72,7 +70,7 @@ export function readMoney(value: unknown): number | null {
 
 /** The trusted bots of a row, lowercase. A value that is not a login of a bot is dropped. */
 export function readTrustedBots(value: unknown): string[] {
-  if (!Array.isArray(value)) return [...DEFAULT_TRUSTED_BOTS]
+  if (!Array.isArray(value)) return [...instance().defaultTrustedBots]
   return [...new Set(value.filter((v): v is string => typeof v === 'string').map((v) => v.trim().toLowerCase()))].filter((v) => BOT_LOGIN.test(v))
 }
 
@@ -107,26 +105,10 @@ export function readCapsForm(form: FormData): FormResult<OrgCaps> {
   return { ok: true, value: { dailyCapUsd, monthlyCapUsd, alertPct } }
 }
 
-/**
- * "Trusted bots": one login per line, or separated by commas. `renovate` becomes
- * `renovate[bot]`: a person is never a trusted bot.
- */
+/** "Trusted bots" of the settings of the org: the logins of `parseBotLogins`. */
 export function readTrustedBotsForm(form: FormData): FormResult<string[]> {
-  let logins = field(form, 'trustedBots')
-    .split(/[\s,]+/)
-    .map((login) => login.trim().toLowerCase())
-    .filter(Boolean)
-    .map((login) => (login.endsWith('[bot]') ? login : `${login}[bot]`))
-  let unique = [...new Set(logins)]
-  if (unique.length > MAX_TRUSTED_BOTS) return { ok: false, errors: { trustedBots: `${MAX_TRUSTED_BOTS} bots at most.` } }
-  let wrong = unique.find((login) => !BOT_LOGIN.test(login))
-  if (wrong) {
-    return {
-      ok: false,
-      errors: { trustedBots: `"${wrong.slice(0, 60)}" is not the login of a bot. A bot login is the name of a GitHub App followed by [bot], for example renovate[bot].` },
-    }
-  }
-  return { ok: true, value: unique }
+  let parsed = parseBotLogins(field(form, 'trustedBots'))
+  return parsed.ok ? parsed : { ok: false, errors: { trustedBots: parsed.error } }
 }
 
 // --- The GitHub App ---------------------------------------------------------------------------

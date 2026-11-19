@@ -29,6 +29,7 @@ import type { MintInstallationToken, TokenPermissions } from '../github/installa
 import { rejectProblem, rejectProblemText, usage, type CommentCommand } from '../github/comment-command.ts'
 import type { CommandPlace } from '../github/events.ts'
 import { WRITERS } from '../github/permissions.ts'
+import { mention } from '../instance.ts'
 import { applyReject, REJECT_REFUSED, REJECT_THREAD_PERMISSIONS, type RejectTarget as RejectFinding } from './reject.ts'
 import { errorMessage, log } from '../log.ts'
 import { capSentence } from '../org-settings/notice.ts'
@@ -227,7 +228,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
     if (place.kind === 'thread') {
       return refuse(
         'only reject is read in a review thread',
-        `@${message.commenter.login} In the thread of a finding, Kentō reads only \`@kento-review reject <cause>\`. The other commands go in the conversation of the PR.`,
+        `@${message.commenter.login} In the thread of a finding, Kentō reads only \`${mention('reject <cause>')}\`. The other commands go in the conversation of the PR.`,
       )
     }
     let pr: PullRequest = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
@@ -273,13 +274,13 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         if (command.verb === 'resolve') {
           return refuse(
             'a resolve of the pull request is already running',
-            `@${message.commenter.login} A thread resolution of this PR is already queued or in progress. Wait for its end, then run \`@kento-review resolve\` again if threads stay open.`,
+            `@${message.commenter.login} A thread resolution of this PR is already queued or in progress. Wait for its end, then run \`${mention('resolve')}\` again if threads stay open.`,
           )
         }
         return refuse(
           'head already has a review at this level',
           `@${message.commenter.login} Commit \`${pr.head.sha.slice(0, 9)}\` already has a \`${command.level}\` review (queued, in progress or published). ` +
-            `Kentō does not pay for it twice. \`@kento-review ${command.level} force\` asks for another one.`,
+            `Kentō does not pay for it twice. \`${mention(`${command.level} force`)}\` asks for another one.`,
         )
       case 'skipped':
         return { outcome: 'skipped', reason: result.reason }

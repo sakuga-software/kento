@@ -1,14 +1,15 @@
 // The text of a command in a comment of a pull request: `@kento-review [review] [lite|balanced|heavy] [force]`,
 // `@kento-review resolve [lite|balanced|heavy]`, `@kento-review reject [<id>] <reason>` (REV-93) or
 // `@kento-review feedback <text>` (REV-107).
-// `@sakuga-review` is the old name of the bot, and stays an alias. Pure functions: no database, no
-// network.
+// The names come from the instance (KENTO_COMMAND_NAMES): by default `kento-review`, and
+// `sakuga-review`, the old name of the bot, as an alias. Pure functions: no database, no network.
 import { levelCost } from '@sakuga-review/engine/levels'
 import { SHORT_ID_LENGTH } from '@sakuga-review/engine/render'
 import { isLevel, type Level } from '@sakuga-review/protocol'
 
 import { FEEDBACK_TEXT_MAX } from '../feedback/request.ts'
 import { REASON_MAX } from '../findings/store.ts'
+import { instance, mention } from '../instance.ts'
 
 export type CommentCommand =
   | {
@@ -44,13 +45,24 @@ const SHORT_ID_MAX = 12
 // An id with `#` (`#3cf454`), or without `#` when it has a digit: `facade` is a word of a reason.
 const SHORT_ID = new RegExp(`^(?:#([0-9a-f]{${SHORT_ID_MIN},${SHORT_ID_MAX}})|(?=[a-f]*[0-9])([0-9a-f]{${SHORT_ID_MIN},${SHORT_ID_MAX}}))$`, 'i')
 
-/** The names that start a command. The first one is the name of the bot in the answers. */
-export const COMMAND_NAMES = ['kento-review', 'sakuga-review'] as const
+/** The names that start a command, from the instance. The first one is the name of the bot in the answers. */
+export function commandNames(): readonly [string, ...string[]] {
+  return instance().commandNames
+}
+
+/** The names of `commandNames`, as alternatives of a regular expression. */
+export function namesPattern(): string {
+  return commandNames()
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+}
 
 // At the start of a line, after at most three spaces (four make a block of code): the name, then
 // the end of the word. `@kentobot` and `@sakuga-review-ci` are other accounts. REV-96: so is
 // `@kento-review[bot]`, the account of the App: a reply that names it gives no command.
-const MENTION = new RegExp(`^ {0,3}@(${COMMAND_NAMES.join('|')})(?![\\w-]|\\[bot\\])`, 'i')
+function mentionPattern(): RegExp {
+  return new RegExp(`^ {0,3}@(${namesPattern()})(?![\\w-]|\\[bot\\])`, 'i')
+}
 // A fence of code: three backticks or tildes or more, after at most three spaces.
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
 // A line of a quote: `>` after at most three spaces.
@@ -69,6 +81,7 @@ const QUOTE = /^ {0,3}>/
 function commandLine(body: string): { name: string; rest: string; after: string } | null {
   let fence: { char: string; length: number } | null = null
   let inQuote = false
+  let MENTION = mentionPattern()
   let lines = body.split(/\r?\n/)
   for (let [index, line] of lines.entries()) {
     let open = FENCE.exec(line)
@@ -162,40 +175,46 @@ export function rejectProblem(command: Extract<CommentCommand, { verb: 'reject' 
 export function rejectProblemText(problem: RejectProblem): string {
   switch (problem) {
     case 'reason_missing':
-      return 'The `reject` command needs a cause, on the same line: `@kento-review reject <cause>`.'
+      return `The \`reject\` command needs a cause, on the same line: \`${mention('reject <cause>')}\`.`
     case 'reason_long':
       return `The cause of a \`reject\` has at most ${REASON_MAX} characters.`
     case 'id_missing':
-      return 'In the conversation of the PR, `reject` needs the id of the finding, shown in the list of the description: `@kento-review reject #3cf454 <cause>`.'
+      return `In the conversation of the PR, \`reject\` needs the id of the finding, shown in the list of the description: \`${mention('reject #3cf454 <cause>')}\`.`
     case 'id_in_thread':
-      return 'In the thread of a finding, `reject` applies to that finding. Write the cause without an id: `@kento-review reject <cause>`.'
+      return `In the thread of a finding, \`reject\` applies to that finding. Write the cause without an id: \`${mention('reject <cause>')}\`.`
   }
 }
 
-/** The answer to a command that the bot does not know: the list of the commands. */
-export const USAGE = [
-  'Kentō commands, in a comment of the PR (`@sakuga-review` works too):',
-  '',
-  '- `@kento-review [lite|balanced|heavy]`: a review of the PR at the given level (`lite` by default).',
-  '- `@kento-review heavy force`: a new review at a level that this commit already got (you pay for it twice).',
-  '- `@kento-review resolve [lite|balanced|heavy]`: answer the open threads, and resolve those that the code settles.',
-  '- `@kento-review reject <cause>`, as a reply in the thread of a finding: dismiss that finding, with its cause.',
-  '- `@kento-review reject #<id> <cause>`, in the conversation: dismiss the finding with this id (shown in the list of the description).',
-  '- `@kento-review feedback <opinion>`: give your opinion on the reviews of Kentō (free).',
-  '',
-  `\`lite\`: the diff and the definitions that it uses, ${levelCost('lite')}. ` +
-    `\`balanced\`: also the code that calls the change, ${levelCost('balanced')}. ` +
-    `\`heavy\`: the context of \`balanced\` with more reasoning, ${levelCost('heavy')}. ` +
-    'The config of the repo sets the model of each level.',
-  '',
-  `The cause goes on the line of the command, in ${REASON_MAX} characters at most. ` +
-    'Only a person who can write to the repo can run a command, except `feedback`.',
-].join('\n')
+/** The answer to a command that the bot does not know: the list of the commands, with the names of the instance. */
+export function usageText(): string {
+  let aliases = commandNames()
+    .slice(1)
+    .map((name) => `\`@${name}\``)
+  return [
+    `Kentō commands, in a comment of the PR${aliases.length > 0 ? ` (${aliases.join(', ')} ${aliases.length === 1 ? 'works' : 'work'} too)` : ''}:`,
+    '',
+    `- \`${mention('[lite|balanced|heavy]')}\`: a review of the PR at the given level (\`lite\` by default).`,
+    `- \`${mention('heavy force')}\`: a new review at a level that this commit already got (you pay for it twice).`,
+    `- \`${mention('resolve [lite|balanced|heavy]')}\`: answer the open threads, and resolve those that the code settles.`,
+    `- \`${mention('reject <cause>')}\`, as a reply in the thread of a finding: dismiss that finding, with its cause.`,
+    `- \`${mention('reject #<id> <cause>')}\`, in the conversation: dismiss the finding with this id (shown in the list of the description).`,
+    `- \`${mention('feedback <opinion>')}\`: give your opinion on the reviews of Kentō (free).`,
+    '',
+    `\`lite\`: the diff and the definitions that it uses, ${levelCost('lite')}. ` +
+      `\`balanced\`: also the code that calls the change, ${levelCost('balanced')}. ` +
+      `\`heavy\`: the context of \`balanced\` with more reasoning, ${levelCost('heavy')}. ` +
+      'The config of the repo sets the model of each level.',
+    '',
+    `The cause goes on the line of the command, in ${REASON_MAX} characters at most. ` +
+      'Only a person who can write to the repo can run a command, except `feedback`.',
+  ].join('\n')
+}
 
 /**
  * REV-96. The list of the commands, with the link to their page when the service knows its public
  * URL.
  */
 export function usage(docsUrl: string | null | undefined): string {
-  return docsUrl ? `${USAGE}\n\nAll the commands, with examples: [Kentō commands](${docsUrl}).` : USAGE
+  let text = usageText()
+  return docsUrl ? `${text}\n\nAll the commands, with examples: [Kentō commands](${docsUrl}).` : text
 }

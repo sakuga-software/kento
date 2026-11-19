@@ -3,6 +3,8 @@ import type { KeyObject } from 'node:crypto'
 import packageJson from '../package.json' with { type: 'json' }
 
 import { GITHUB_API_URL, readPrivateKey } from './github/installation-token.ts'
+import { CAP_CHECK_NAME, DEFAULT_INSTANCE, type Instance } from './instance.ts'
+import { MAX_TRUSTED_BOTS, parseBotLogins } from './org-settings/bot-logins.ts'
 import { readMasterKeys, SecretsError } from './providers/secrets.ts'
 
 /** The settings of the service. `loadConfig` reads them once, at startup. */
@@ -61,6 +63,11 @@ export interface Config {
    * webhook ignores the events of every other installation. Null: every installation is served.
    */
   allowedOrgs: ReadonlySet<string> | null
+  /**
+   * REV-127. The names of this instance: KENTO_COMMAND_NAMES, KENTO_CHECK_NAME, KENTO_RUNNER_IMAGE
+   * and KENTO_DEFAULT_TRUSTED_BOTS. `server.ts` installs them with `setInstance`.
+   */
+  instance: Instance
 }
 
 export interface SignInConfig {
@@ -140,6 +147,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   let appSlug = env.KENTO_APP_SLUG?.trim() || botLogin.replace(/\[bot\]$/, '').toLowerCase()
   if (!/^[a-z0-9][a-z0-9-]*$/.test(appSlug)) problems.push('KENTO_APP_SLUG must be the slug of the GitHub App, as in github.com/apps/<slug>')
   let allowedOrgs = readAllowedOrgs(env, problems)
+  let instance = readInstance(env, problems)
 
   // The runners clone from this server with the installation token of GITHUB_API_URL, so both must
   // name the same server: GitHub.com (api.github.com and github.com), or one GitHub Enterprise
@@ -191,7 +199,61 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     appSlug,
     signIn,
     allowedOrgs,
+    instance,
   }
+}
+
+/** The most names of KENTO_COMMAND_NAMES: one name and its aliases. */
+const MAX_COMMAND_NAMES = 5
+/** The longest KENTO_CHECK_NAME. */
+const MAX_CHECK_NAME = 100
+/**
+ * A Docker image without a tag or a digest: an optional registry (`ghcr.io`, `localhost:5000`), then
+ * lowercase path components. The Runners screen adds `:<version>`.
+ */
+const IMAGE_NAME =
+  /^(?:[a-z0-9]+(?:[.-][a-z0-9]+)*(?::\d+)?\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$/
+
+/**
+ * The names of the instance. Each variable that is unset or empty keeps the default of
+ * `DEFAULT_INSTANCE`, except KENTO_DEFAULT_TRUSTED_BOTS: set and empty, a new org trusts no bot.
+ */
+function readInstance(env: Record<string, string | undefined>, problems: string[]): Instance {
+  let commandNames = DEFAULT_INSTANCE.commandNames
+  let rawNames = env.KENTO_COMMAND_NAMES?.trim() ?? ''
+  if (rawNames !== '') {
+    // `@kento-review` and `Kento-Review` name the same command: GitHub logins ignore the case.
+    let names = [...new Set(rawNames.split(',').map((name) => name.trim().replace(/^@/, '').toLowerCase()).filter((name) => name !== ''))]
+    if (names.length === 0 || names.length > MAX_COMMAND_NAMES || names.some((name) => !GITHUB_LOGIN.test(name))) {
+      problems.push(`KENTO_COMMAND_NAMES must be 1 to ${MAX_COMMAND_NAMES} names, comma-separated, each one a GitHub login without [bot]`)
+    } else {
+      commandNames = names as [string, ...string[]]
+    }
+  }
+
+  let checkName = env.KENTO_CHECK_NAME?.trim() || DEFAULT_INSTANCE.checkName
+  // oxlint-disable-next-line no-control-regex -- a check name is one line of printable text.
+  if (checkName.length > MAX_CHECK_NAME || /[\u0000-\u001f\u007f]/.test(checkName)) {
+    problems.push(`KENTO_CHECK_NAME must be one line of ${MAX_CHECK_NAME} characters at most`)
+  } else if (checkName.toLowerCase() === CAP_CHECK_NAME.toLowerCase()) {
+    // The check of the cost limit keeps its own name, so that a required review check stays missing.
+    problems.push(`KENTO_CHECK_NAME must not be "${CAP_CHECK_NAME}", the check of the cost limit`)
+  }
+
+  let runnerImage = env.KENTO_RUNNER_IMAGE?.trim() || DEFAULT_INSTANCE.runnerImage
+  if (runnerImage.length > 255 || !IMAGE_NAME.test(runnerImage)) {
+    problems.push('KENTO_RUNNER_IMAGE must be a Docker image without a tag, for example ghcr.io/<owner>/kento-runner')
+  }
+
+  let defaultTrustedBots = DEFAULT_INSTANCE.defaultTrustedBots
+  let rawBots = env.KENTO_DEFAULT_TRUSTED_BOTS
+  if (rawBots !== undefined) {
+    let parsed = parseBotLogins(rawBots)
+    if (parsed.ok) defaultTrustedBots = parsed.value
+    else problems.push(`KENTO_DEFAULT_TRUSTED_BOTS must be at most ${MAX_TRUSTED_BOTS} bot logins (name[bot]), comma-separated`)
+  }
+
+  return { commandNames, checkName, runnerImage, defaultTrustedBots }
 }
 
 /** A GitHub login: letters, digits and single hyphens, 39 characters or fewer. */

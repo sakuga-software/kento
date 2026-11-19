@@ -13,6 +13,7 @@ import { startJobsPurge } from './app/db/retention.ts'
 import { createWebhookStore } from './app/db/webhook-store.ts'
 import { runMigrations } from './app/db/migrate.ts'
 import { createInstallationTokenMinter, GITHUB_API_URL } from './app/github/installation-token.ts'
+import { setInstance } from './app/instance.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
 import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
@@ -56,6 +57,14 @@ try {
   log('error', 'startup.config_invalid', { error: errorMessage(error) })
   process.exit(1)
 }
+// The names of the instance, before any module builds a text with them.
+setInstance(config.instance)
+log('info', 'startup.instance', {
+  commandNames: config.instance.commandNames,
+  checkName: config.instance.checkName,
+  runnerImage: config.instance.runnerImage,
+  defaultTrustedBots: config.instance.defaultTrustedBots,
+})
 
 let database = createDatabase(config.databaseUrl, { max: config.databasePoolMax })
 

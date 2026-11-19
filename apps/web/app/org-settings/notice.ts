@@ -1,12 +1,12 @@
 import type { StoreCommand } from '../db/webhook-store.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
+import { CAP_CHECK_NAME } from '../instance.ts'
 import { log } from '../log.ts'
 import { createGitHub } from '../publish/github.ts'
 import { usd, when } from '../ui/format.ts'
 import type { CapHit } from './model.ts'
 
-/** The name of the check run that tells a pull request that the limit of its org stopped its review. */
-export const CAP_CHECK_NAME = 'Kentō · cap'
+export { CAP_CHECK_NAME }
 
 const CHECK_PERMISSIONS: TokenPermissions = { checks: 'write' }
 
@@ -28,7 +28,7 @@ export function capSentence(hit: CapHit): string {
 /**
  * Posts a check run "Kentō · cap", neutral, on the head of a push that the limit of the org
  * stopped. One per head: GitHub shows it in the checks of the pull request, and it never blocks a
- * merge. It has its own name so that a required check "Sakuga Review" stays missing.
+ * merge. It has its own name so that a required review check (KENTO_CHECK_NAME) stays missing.
  */
 export function createCapNotice(deps: {
   mintInstallationToken: MintInstallationToken

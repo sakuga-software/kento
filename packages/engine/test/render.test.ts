@@ -117,6 +117,15 @@ test('the comment on a file links the lines of its finding, then gives the comme
   assert.ok(body.endsWith(inlineBody({ ...finding, start_line: 10 }, false)));
 });
 
+test('the comment of a finding names the `reject` command of the service that posts it (REV-127)', () => {
+  const docs = 'https://kento.example.com/docs/commands';
+  assert.match(inlineBody(finding, false, docs), /Reply `@kento-review reject <cause>` in this thread/);
+  assert.match(inlineBody(finding, false, docs, 'emoji', '@acme-review'), /Reply `@acme-review reject <cause>` in this thread/);
+  const onFile = fileCommentBody(finding, 'https://github.com/o/n/blob/abc/src/auth.ts#L12', docs, 'emoji', '@acme-review');
+  assert.match(onFile, /Reply `@acme-review reject <cause>`/);
+  assert.doesNotMatch(onFile, /kento-review/);
+});
+
 test('the cost of a level reads as a range of cents', () => {
   assert.equal(levelCost('lite'), 'about 1 cent');
   assert.equal(levelCost('balanced'), '10 to 20 cents');

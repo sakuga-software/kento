@@ -52,19 +52,21 @@ import { assignmentLine, unreadPathsLine, type JobAssignment } from '../assignme
 import { REACTION_REASON, thumbsDownBy } from '../findings/reactions.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
 import { HINT_MARKER, namesReject, postRejectHint } from '../commands/hint.ts'
-import { COMMAND_NAMES } from '../github/comment-command.ts'
+import { instance, mention } from '../instance.ts'
 import { resolveReviewThread, reviewThreadPages, unresolveReviewThread } from '../github/graphql.ts'
 import { GitHubError, type GitHub } from './github.ts'
 
-/** The name of the check run, as the job of review.yml names it. */
-export const CHECK_NAME = 'Sakuga Review'
+/** The name of the check run of a review: KENTO_CHECK_NAME, `Sakuga Review` by default, as the job of the old workflow named it. */
+export function checkName(): string {
+  return instance().checkName
+}
 /** The service that posts the review, in its footer. */
 export const BY = 'Kentō'
 /** REV-106. Where the service serves the icons of the texts on GitHub: public/assets/pr. */
 export const PR_ICONS_PATH = '/assets/pr/'
 /** Kentō, the mention that asks it for another review, and its icons on `target` (text without a public URL). */
 function posterOf(target: PublishTarget): Poster {
-  return { by: BY, handle: `@${COMMAND_NAMES[0]}`, icons: iconsOf(target) }
+  return { by: BY, handle: mention(), icons: iconsOf(target) }
 }
 
 function iconsOf(target: PublishTarget): Icons {
@@ -268,7 +270,7 @@ export async function publishReview(
       }
     } else if (line === null || f.confidence < INLINE_CONFIDENCE || inline.length >= MAX_INLINE) continue
     let range = line === f.line ? (f as ReviewFinding).suggestion_range : null
-    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl, iconsOf(target)) }
+    let comment: InlineComment = { path: f.path.replace(/^\/+/, ''), line, side: 'RIGHT', body: inlineBody(f, range !== null, target.docsUrl, iconsOf(target), mention()) }
     if (range && range[0] < range[1]) Object.assign(comment, { start_line: range[0], start_side: 'RIGHT' })
     inline.push(f)
     comments.push(comment)
@@ -375,7 +377,7 @@ export async function publishReview(
     let lineUrl = `${target.webUrl}/${owner}/${name}/blob/${head}/${path}#${lines}`
     try {
       let out: { id: number } = await github.rest('POST', `${repo}/pulls/${pr}/comments`, {
-        body: fileCommentBody(f, lineUrl, target.docsUrl, iconsOf(target)),
+        body: fileCommentBody(f, lineUrl, target.docsUrl, iconsOf(target), mention()),
         commit_id: head,
         path,
         subject_type: 'file',
@@ -518,7 +520,7 @@ export async function publishReview(
     let checks = options.checks
     await step('check', async () => {
       await checks.rest('POST', `${repo}/check-runs`, {
-        name: CHECK_NAME,
+        name: checkName(),
         head_sha: head,
         status: 'completed',
         conclusion: 'success',
@@ -598,11 +600,12 @@ export function sameScoreLine(reusedFrom: string): string {
  */
 async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
   let slug = botLogin.replace(/\[bot\]$/, '')
+  let name = checkName()
   let out: { check_runs?: { name: string; app?: { slug?: string } | null }[] } = await checks.rest(
     'GET',
-    `${repo}/commits/${head}/check-runs?check_name=${encodeURIComponent(CHECK_NAME)}`,
+    `${repo}/commits/${head}/check-runs?check_name=${encodeURIComponent(name)}`,
   )
-  return (out?.check_runs ?? []).some((c) => c.name === CHECK_NAME && c.app?.slug === slug)
+  return (out?.check_runs ?? []).some((c) => c.name === name && c.app?.slug === slug)
 }
 
 /**
@@ -745,7 +748,7 @@ export async function postReusedCheck(
     reviewBody(answer, anchorOf, review.level, usageOf(review), posterOf(target), raised) +
     `\n\nNo reviewed file changed since commit \`${reusedFrom.slice(0, 9)}\`. Its review applies to this commit.`
   await checks.rest('POST', `${repo}/check-runs`, {
-    name: CHECK_NAME,
+    name: checkName(),
     head_sha: review.head,
     status: 'completed',
     conclusion: 'success',

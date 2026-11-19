@@ -5,8 +5,9 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
+import { withInstance } from '../../test/instance.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, CHECK_NAME, LABEL_DESCRIPTION, publishReview, publishUnchanged, usageOf } from './publish.ts'
+import { anchorOf, answerOf, checkName, LABEL_DESCRIPTION, publishReview, publishUnchanged, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -106,7 +107,7 @@ describe('publishReview', () => {
 
     assert.equal(fake.state.checkRuns.length, 1)
     let [check] = fake.state.checkRuns
-    assert.equal(check!.name, CHECK_NAME)
+    assert.equal(check!.name, checkName())
     assert.equal(check!.name, 'Sakuga Review')
     assert.equal(check!.head_sha, HEAD1)
     assert.equal(check!.conclusion, 'success')
@@ -599,12 +600,31 @@ describe('publishUnchanged (REV-89)', () => {
     await publish(payload())
     fake.state.pr.head = HEAD2
     // The workflow of the Action names its job "Sakuga Review" too.
-    fake.state.checkRuns.push({ name: CHECK_NAME, head_sha: HEAD2, conclusion: 'success', output: { title: '', summary: '' }, token: 'actions', app: 'github-actions' })
+    fake.state.checkRuns.push({ name: checkName(), head_sha: HEAD2, conclusion: 'success', output: { title: '', summary: '' }, token: 'actions', app: 'github-actions' })
     await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
     let ours = fake.state.checkRuns.filter((c) => c.head_sha === HEAD2 && c.app === undefined)
     assert.equal(ours.length, 1, 'the check of Kentō is posted')
     assert.equal(ours[0]!.output.title, 'Confidence score: 2/5')
   })
+
+  it('names its check KENTO_CHECK_NAME, and finds it again by that name (REV-127)', () =>
+    withInstance({ checkName: 'Acme Review' }, async () => {
+      let { fake, publish, republish } = setup()
+      await publish(payload())
+      assert.deepEqual(
+        fake.state.checkRuns.map((c) => c.name),
+        ['Acme Review'],
+      )
+      fake.state.pr.head = HEAD2
+      await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+      await republish(payload({ head: HEAD2, costUsd: 0 }), HEAD1)
+      assert.deepEqual(
+        fake.state.checkRuns.filter((c) => c.head_sha === HEAD2).map((c) => c.name),
+        ['Acme Review'],
+        'the second publication finds the check of the first one',
+      )
+      assert.ok(fake.state.calls.some((c) => c.path.endsWith(`/commits/${HEAD2}/check-runs?check_name=Acme%20Review`)))
+    }))
 
   it('posts one check on the head, also when it publishes twice', async () => {
     let { fake, publish, republish } = setup()

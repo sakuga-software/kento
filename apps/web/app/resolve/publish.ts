@@ -11,6 +11,7 @@ import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS, type ResolvePayload } from
 
 import { HINT_MARKER, namesReject, postRejectHint, type HintClaims } from '../commands/hint.ts'
 import { resolveReviewThread } from '../github/graphql.ts'
+import { mention } from '../instance.ts'
 import type { GitHub } from '../publish/github.ts'
 import { BY } from '../publish/publish.ts'
 import { plural } from '../ui/format.ts'
@@ -102,7 +103,7 @@ export async function publishResolution(
       verdict.verdict === 'fixed' && verdict.changed === null
         ? 'The commit of this thread is unknown or gone from the history (a force-push). The change since that commit is unknown, and the thread stays open.'
         : hintFailed
-          ? 'Kentō could not post the `reject` command in this thread. The thread stays open, and the next `@kento-review resolve` command after a push tries again. To close it now, comment `@kento-review reject <cause>` or resolve it.'
+          ? `Kentō could not post the \`reject\` command in this thread. The thread stays open, and the next \`${mention('resolve')}\` command after a push tries again. To close it now, comment \`${mention('reject <cause>')}\` or resolve it.`
           : ''
     let resolved = false
     if (close) {
@@ -151,15 +152,15 @@ export async function publishResolution(
       ...(unanswered
         ? [
             unanswered > 1
-              ? `${unanswered} threads got no answer from the model. They stay open, and the next \`@kento-review resolve\` command reads them again.`
-              : 'One thread got no answer from the model. It stays open, and the next `@kento-review resolve` command reads it again.',
+              ? `${unanswered} threads got no answer from the model. They stay open, and the next \`${mention('resolve')}\` command reads them again.`
+              : `One thread got no answer from the model. It stays open, and the next \`${mention('resolve')}\` command reads it again.`,
             '',
           ]
         : []),
       ...(skipped
         ? [
             `${skipped} other open ${plural(skipped, 'thread')} ${plural(skipped, 'waits', 'wait')}. ` +
-              `One command reads at most ${MAX_RESOLVE_THREADS} threads and ${MAX_PACK_KB} KB. Run \`@kento-review resolve\` again.`,
+              `One command reads at most ${MAX_RESOLVE_THREADS} threads and ${MAX_PACK_KB} KB. Run \`${mention('resolve')}\` again.`,
             '',
           ]
         : []),

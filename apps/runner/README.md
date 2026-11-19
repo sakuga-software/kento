@@ -7,8 +7,8 @@ organization to run on a machine of their own.
 
 The runner only makes outbound calls. It needs no open port, no public address and no domain.
 
-The operator runbook of the runners of Sakuga (`runners-host`, the publication of the image, the
-runners of the service) is [DEPLOY.md](DEPLOY.md).
+The operator of a Kentō service publishes the image and runs the runners of the service with
+[DEPLOY.md](DEPLOY.md).
 
 ## Requirements
 
@@ -22,19 +22,21 @@ runners of the service) is [DEPLOY.md](DEPLOY.md).
 - **An admin account of the organization in Kentō.** Kentō reads the role from GitHub. An admin of
   the GitHub organization is an admin in Kentō. A member sees the Runners screen but cannot create
   a runner.
-- **The image** `ghcr.io/sakuga-software/kento-runner`. The package is private. Ask Sakuga for read
-  access, then log in once with a GitHub token that has the `read:packages` scope:
+- **The image** that the Runners screen names in its command: `KENTO_RUNNER_IMAGE` of the service
+  (`ghcr.io/sakuga-software/kento-runner` by default), with the version of the service as its tag.
+  When its registry is private, ask the operator of the service for read access, then log in once,
+  for example on ghcr.io with a GitHub token that has the `read:packages` scope:
 
   ```sh
   echo <token> | docker login ghcr.io -u <your GitHub login> --password-stdin
   ```
 
-  With access to this repository, you can build the image instead, from the root of a checkout at
-  the release of the service:
+  You can build the image instead, from the root of a checkout at the release of the service, with
+  the name and the tag of the command:
 
   ```sh
   docker build -f apps/runner/Dockerfile --build-arg APP_COMMIT=$(git rev-parse HEAD) \
-    -t ghcr.io/sakuga-software/kento-runner:<version> .
+    -t <image of the command>:<version> .
   ```
 
   `<version>` is the version that the Runners screen shows in its command (`0.1.0` today).

@@ -118,18 +118,27 @@ export function shortId(finding: Finding): string {
   return `#${findingKey(finding).slice(0, SHORT_ID_LENGTH)}`;
 }
 
+/** The mention that starts a command when the caller gives none: the first name of the service. */
+const DEFAULT_HANDLE = '@kento-review';
+
 /**
  * The comment of a finding. `docsUrl`: the page of the commands of the service (REV-96), linked in
- * the footer; the Action gives none.
+ * the footer with the `reject` command of `handle`; the Action gives none.
  */
-export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: string | null, icons: Icons = 'emoji'): string {
+export function inlineBody(
+  finding: Finding,
+  withSuggestion: boolean,
+  docsUrl?: string | null,
+  icons: Icons = 'emoji',
+  handle: string = DEFAULT_HANDLE,
+): string {
   const out = [`${badges(finding, icons)}${threadMark(finding, icons)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Fix:** ${finding.fix}`];
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Rule: "${finding.rule_title.replace(/\s+/g, ' ').trim()}"`);
   const patch = shownPatch(finding);
   if (withSuggestion) out.push('', '```suggestion', finding.suggestion.replace(/\n$/, ''), '```');
   else if (patch) out.push('', '```diff', patch, '```');
-  if (docsUrl) out.push('', `<sub>Wrong finding? Reply \`@kento-review reject <cause>\` in this thread. [Kentō commands](${docsUrl})</sub>`);
+  if (docsUrl) out.push('', `<sub>Wrong finding? Reply \`${handle} reject <cause>\` in this thread. [Kentō commands](${docsUrl})</sub>`);
   out.push('', `<!-- sakuga-review:finding ${findingKey(finding)} -->`);
   return out.join('\n');
 }
@@ -138,9 +147,15 @@ export function inlineBody(finding: Finding, withSuggestion: boolean, docsUrl?: 
  * REV-103. The comment at the level of the file of a P0 or P1 outside the diff: GitHub has no line
  * of the diff for it. `lineUrl` links the lines of the finding at the reviewed commit.
  */
-export function fileCommentBody(finding: Finding, lineUrl: string, docsUrl?: string | null, icons: Icons = 'emoji'): string {
+export function fileCommentBody(
+  finding: Finding,
+  lineUrl: string,
+  docsUrl?: string | null,
+  icons: Icons = 'emoji',
+  handle: string = DEFAULT_HANDLE,
+): string {
   const lines = finding.start_line && finding.start_line < finding.line ? `${finding.start_line}-${finding.line}` : `${finding.line}`;
-  return `Outside the diff of the PR: [\`${finding.path.replace(/^\/+/, '')}:${lines}\`](${lineUrl})\n\n${inlineBody(finding, false, docsUrl, icons)}`;
+  return `Outside the diff of the PR: [\`${finding.path.replace(/^\/+/, '')}:${lines}\`](${lineUrl})\n\n${inlineBody(finding, false, docsUrl, icons, handle)}`;
 }
 
 /**

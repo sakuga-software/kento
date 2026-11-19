@@ -18,6 +18,7 @@ import { CAP_CHECK_NAME, createCapNotice } from '../../app/org-settings/notice.t
 import { createOrgSettingsStore } from '../../app/org-settings/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createFakeGitHub, type FakeGitHub } from '../fake-github.ts'
+import { withInstance } from '../instance.ts'
 import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
@@ -271,6 +272,24 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       await sql`insert into orgs (github_installation_id, github_account_id, login, trusted_bots) values (1002, 2002, 'orchard', '{renovate[bot]}')`
       let renovate = { login: 'renovate[bot]', type: 'Bot' }
       assert.equal((await push({ sender: renovate, author: renovate })).body.outcome, 'ignored')
+    })
+
+    it('a new org trusts KENTO_DEFAULT_TRUSTED_BOTS; an event keeps the bots of a known org (REV-127)', async () => {
+      let apply = createWebhookStore(database.db)
+      let installation = { githubInstallationId: 5005, githubAccountId: 6006, login: 'acme' }
+      let trustedOf = async () => (await sql<{ trustedBots: string[] }[]>`select trusted_bots as "trustedBots" from orgs where github_installation_id = 5005`)[0]!.trustedBots
+      await withInstance({ defaultTrustedBots: ['acme-agent[bot]'] }, async () => {
+        assert.deepEqual([...(await createOrgSettingsStore(database).trustedBotsFor(5005))], ['acme-agent[bot]'], 'an installation that Kentō does not know yet')
+        await apply({ type: 'upsert_installation', installation, repositories: [], suspended: false }, nextDelivery())
+        assert.deepEqual(await trustedOf(), ['acme-agent[bot]'])
+      })
+      // The default changes: the org keeps the bots it got, and an admin's choice is never reset.
+      await apply({ type: 'add_repositories', installation, repositories: [] }, nextDelivery())
+      assert.deepEqual(await trustedOf(), ['acme-agent[bot]'])
+      await withInstance({ defaultTrustedBots: [] }, async () => {
+        await apply({ type: 'upsert_installation', installation: { ...installation, githubInstallationId: 5006, githubAccountId: 6007, login: 'bare' }, repositories: [], suspended: false }, nextDelivery())
+      })
+      assert.deepEqual((await sql<{ trustedBots: string[] }[]>`select trusted_bots as "trustedBots" from orgs where github_installation_id = 5006`)[0]!.trustedBots, [])
     })
   })
 

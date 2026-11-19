@@ -9,6 +9,7 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
+import { withInstance } from '../../test/instance.ts'
 
 const COOKIE = '__Host-kento_session'
 const ORCHARD = '00000000-0000-4000-8000-000000000001'
@@ -137,6 +138,15 @@ function setup(findings: FindingsScreenStore | null = null) {
 }
 
 describe('the Repos screen', () => {
+  it('names the commands of the instance in the note on the switch (REV-127)', async () => {
+    let fallback = async () => /<h2 id="fallback-title">.*?<\/ul>/s.exec((await setup().signIn()).html)![0]
+    let own = await withInstance({ commandNames: ['acme-review'] }, fallback)
+    assert.match(own, /<li><code>@acme-review<\/code> speaks to Kentō only\.<\/li>/)
+    assert.doesNotMatch(own, /two answers|kento-review/)
+    let shared = await withInstance({ commandNames: ['acme-review', 'sakuga-review'] }, fallback)
+    assert.match(shared, /<li>A <code>@sakuga-review<\/code> command then gets two answers\. <code>@acme-review<\/code> speaks to Kentō only\.<\/li>/)
+  })
+
   it('shows the precision of each repository of the page over 30 days, linked to its closed findings (REV-18)', async () => {
     let { store } = fakeFindingsScreenStore({ precisions: { [FRUITBACK]: precisionOf(12, 3), [ORCHARD]: precisionOf(2, 1) } })
     let { html } = await setup(store).signIn()
@@ -162,6 +172,7 @@ describe('the Repos screen', () => {
     assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
     assert.match(html, /Switch criterion/)
     assert.match(html, /Fallback during the switch/)
+    assert.match(html, /<li>A <code>@sakuga-review<\/code> command then gets two answers\. <code>@kento-review<\/code> speaks to Kentō only\.<\/li>/)
     // "Manage the installation" leads to the page of the App on GitHub.
     assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"/)
     // The repositories of another org of the person are not on screen.

@@ -1,6 +1,8 @@
 // REV-107. The request for feedback that Kentō posts on a pull request after its third published
 // review, and how a reply that quotes it is found. Pure functions: no database, no network.
 
+import { mention } from '../instance.ts'
+
 /** The published reviews of a pull request that start the request. */
 export const FEEDBACK_AFTER_REVIEWS = 3
 
@@ -19,7 +21,7 @@ export const FEEDBACK_MARKER = '<!-- kento:feedback-request -->'
 export function requestText(author: string, reviews: number): string {
   return (
     `@${author} ${OPENING} ${reviews} times. ${ASK} helps us make it better: what helped you, a false positive, a useless thread, ` +
-    'a missed defect. To answer, write `@kento-review feedback <your opinion>`, quote this message, or react with 👍 or 👎. ' +
+    `a missed defect. To answer, write \`${mention('feedback <your opinion>')}\`, quote this message, or react with 👍 or 👎. ` +
     `Kentō will not ask again on this PR.\n\n${FEEDBACK_MARKER}`
   )
 }

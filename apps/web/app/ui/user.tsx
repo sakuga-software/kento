@@ -5,6 +5,7 @@ import type { Handle } from 'remix/component'
 
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 
+import { mention } from '../instance.ts'
 import { userRoutes } from '../routes.ts'
 import { PULLS_STEP, RECEIVED_DAYS, type ReviewedPull, type UserPref, type UserScreen } from '../users/store.ts'
 import { VERDICT_LABEL } from './dashboard.tsx'
@@ -129,7 +130,7 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
         </h2>
         <p class="hint">
           An assignment rule of the repo comes before these preferences, and they come before the default level of the repo. With the
-          automatic review off, {self ? 'your' : 'their'} PRs get no job, except with a <code>@kento-review</code> command.
+          automatic review off, {self ? 'your' : 'their'} PRs get no job, except with a <code>{mention()}</code> command.
         </p>
         <h3 class="dash-subtitle">All repos</h3>
         {self ? (

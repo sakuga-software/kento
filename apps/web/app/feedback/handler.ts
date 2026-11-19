@@ -9,6 +9,7 @@ import type { Db } from '../db/client.ts'
 import { repos } from '../db/schema.ts'
 import { isRepoEnabled, type StoreCommand, type WebhookResult } from '../db/webhook-store.ts'
 import type { MintInstallationToken } from '../github/installation-token.ts'
+import { mention } from '../instance.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub, type GitHub } from '../publish/github.ts'
 import { collectReactions } from './github.ts'
@@ -31,7 +32,9 @@ export interface FeedbackHandlerDependencies {
 }
 
 /** The reply to a `feedback` without a text, after the mention of the person. */
-export const FEEDBACK_EMPTY = 'The `feedback` command needs your opinion, on the same line or below it: `@kento-review feedback <your opinion>`.'
+export function feedbackEmptyText(): string {
+  return `The \`feedback\` command needs your opinion, on the same line or below it: \`${mention('feedback <your opinion>')}\`.`
+}
 
 export function createFeedbackHandler(deps: FeedbackHandlerDependencies) {
   async function githubFor(installationId: number, githubRepoId: number): Promise<GitHub> {
@@ -61,7 +64,7 @@ export function createFeedbackHandler(deps: FeedbackHandlerDependencies) {
       // A redelivery finds the reaction already there, and posts no second reply. When the reply
       // fails, the reaction goes away before the delivery fails: a redelivery then replies.
       if (reaction.created) {
-        let body = `@${reply.commenter.login} ${FEEDBACK_EMPTY}`
+        let body = `@${reply.commenter.login} ${feedbackEmptyText()}`
         try {
           await (reply.place.kind === 'thread'
             ? github.rest('POST', `/repos/${fullName}/pulls/${reply.prNumber}/comments/${reply.place.rootCommentId}/replies`, { body })

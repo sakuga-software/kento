@@ -30,6 +30,7 @@ describe('the page of the commands (REV-96)', () => {
       assert.match(html, /<title>Commands · Kentō<\/title>/)
       assert.match(html, /<h1>Kentō commands<\/h1>/)
       for (let id of ['review', 'force', 'resolve', 'reject', 'feedback']) assert.match(html, new RegExp(`<section id="${id}"[^>]*class="docs-command"`))
+      assert.match(html, /starts with <code>@kento-review<\/code> \(<code>@sakuga-review<\/code> works too\), outside a quote and a code block\./)
       assert.match(html, /@kento-review reject &lt;cause&gt;|@kento-review reject <cause>/)
       assert.match(html, /@kento-review reject #3cf454 &lt;cause&gt;|@kento-review reject #3cf454 <cause>/)
       // REV-105. The cost of each command, and the same cost for an agent and for a person.

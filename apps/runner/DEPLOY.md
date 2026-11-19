@@ -1,87 +1,68 @@
 # Deploy the Kentō runner
 
-Runbook for the first runner, `runners-host`, then for each later one. The agents do not publish
-images, register real runners or touch a host: a person with access to GitHub Packages, to the
-database of the web service and to `runners-host` runs these steps.
+How the operator of a Kentō service publishes the runner image and runs the **runners of the
+service**: the runners that take the jobs of every organization, and that can use the provider key
+of the service. An admin of an organization who runs a runner for that organization only, on their
+own machine, follows [README.md](README.md) instead.
 
-The runner speaks to `https://review.sakuga.dev` in HTTPS, outbound only. It needs no open port.
+The examples use `https://kento.example.com` for the service and `registry.example.com/kento-runner`
+for the image: put your own in their place.
 
-An admin of an organization who runs a runner on their own machine follows [README.md](README.md)
-instead.
+The runner speaks to the service in HTTPS, outbound only. It needs no open port.
 
 ## 0. Before: the web service (once)
 
-Deploy the release with REV-4 first. Its migration `0001_runners` adds the table `runners` and the
-columns `jobs.base_ref` and `jobs.runner_id`. Then, in Dokploy → `web` → **Environment**, add and
-**Deploy** (details in [apps/web/DEPLOY.md](../web/DEPLOY.md#4-environment-variables)):
+Deploy the web service first ([apps/web/DEPLOY.md](../web/DEPLOY.md)). For the runners of the
+service, add these variables to its environment and deploy (details in
+[apps/web/DEPLOY.md](../web/DEPLOY.md#4-environment-variables)):
 
 ```sh
 KENTO_RUNNER_REGISTRATION_TOKEN=<openssl rand -hex 32>
-GITHUB_APP_ID=<App ID of "Sakuga Review">
+GITHUB_APP_ID=<the App ID of your GitHub App>
 GITHUB_APP_PRIVATE_KEY=<the PEM of the App, on one line with \n>
-KENTO_PROVIDER_API_KEY=<the OpenRouter key of the service>
+KENTO_PROVIDER_API_KEY=<the provider key of the service, for a trusted runner>
+KENTO_RUNNER_IMAGE=registry.example.com/kento-runner
 ```
+
+`KENTO_RUNNER_IMAGE` is the image that the Runners screen puts in its `docker run`, with the version
+of the service as the tag.
 
 ## 1. Publish the image
 
-From a checkout of `main` at the commit to publish, on a machine logged in to `ghcr.io` with a token
-that has `write:packages` on `sakuga-software`:
+From a checkout of the release to publish, on a machine logged in to your registry:
 
 ```sh
+IMAGE=registry.example.com/kento-runner
 COMMIT=$(git rev-parse HEAD)
 docker buildx build --platform linux/amd64,linux/arm64 \
   -f apps/runner/Dockerfile --build-arg APP_COMMIT=$COMMIT \
-  -t ghcr.io/sakuga-software/kento-runner:$COMMIT \
-  -t ghcr.io/sakuga-software/kento-runner:$(node -p "require('./apps/runner/package.json').version") \
-  -t ghcr.io/sakuga-software/kento-runner:latest \
+  -t $IMAGE:$COMMIT \
+  -t $IMAGE:$(node -p "require('./apps/runner/package.json').version") \
+  -t $IMAGE:latest \
   --push .
 ```
 
-The package is private by default: keep it private. `runners-host` pulls it with a token that has
-`read:packages` only.
+The Runners screen gives `<KENTO_RUNNER_IMAGE>:<version of the service>`: publish that tag for each
+release of the service. Whoever runs a runner of your service pulls this image, so give them read
+access to it, or make it public.
 
-## 2. Start the runner on runners-host
+## 2. Start a runner of the service
 
-**The runner never runs in the Docker of the CI jobs.** On `runners-host`, the GitHub Actions
-runners run as `ghrunner`, and every CI job can call its rootless Docker. A job there could
-`docker exec` into a Kentō runner, or mount its volume, and read its token. A trusted runner gets the
-key of the provider and an installation token with each job. So Kentō has its own user, `kento`,
-with its own rootless Docker and a home in mode 700 (REV-60). `ghrunner` has no sudo and gets
-"permission denied" on the socket of `kento`.
-
-Create the user once, as `ubuntu` (the same steps as `~/setup.sh` for `ghrunner`):
-
-```sh
-sudo useradd -m -s /bin/bash kento && sudo chmod 700 /home/kento
-echo "kento:231072:65536" | sudo tee -a /etc/subuid /etc/subgid
-sudo loginctl enable-linger kento
-# Wait for the session bus. As ubuntu, test it with sudo: /run/user/<uid> is in mode 700.
-until sudo test -S /run/user/$(id -u kento)/bus; do sleep 1; done
-k() { sudo -n -u kento env XDG_RUNTIME_DIR=/run/user/$(id -u kento) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u kento)/bus "$@"; }
-k dockerd-rootless-setuptool.sh install
-k systemctl --user enable --now docker
-```
-
-Every command below runs as `kento`, with
-`XDG_RUNTIME_DIR=/run/user/$(id -u kento) DOCKER_HOST=unix:///run/user/$(id -u kento)/docker.sock`.
-Without a token `read:packages`, build the image in that Docker from `git archive origin/main`
-(section 1, without `--push`), with the tag `kento-runner:latest`.
-
-Log in once, if the image comes from ghcr.io:
-
-```sh
-echo <token read:packages> | docker login ghcr.io -u <github user> --password-stdin
-```
+**Never run the runner in a Docker that CI jobs can reach.** On a host that also runs CI jobs, a
+job could `docker exec` into the runner, or mount its volume, and read its token. A trusted runner
+gets the provider key and an installation token with each job. Give the runner its own user, with
+its own rootless Docker and a home that only this user can read, and keep the users of the CI out
+of its Docker socket.
 
 Write the environment in a file that only this user can read, `~/kento-runner/env` (`chmod 600`):
 
 ```sh
-KENTO_URL=https://review.sakuga.dev
+KENTO_URL=https://kento.example.com
 KENTO_REGISTRATION_TOKEN=<the value of KENTO_RUNNER_REGISTRATION_TOKEN of the web service>
-KENTO_RUNNER_NAME=runners-host
+KENTO_RUNNER_NAME=runner-1
 KENTO_RUNNER_LABELS=linux,x64
 PROVIDER_KIND=openrouter
-# M2: the key stays on the service (key mode "app"). For a runner with its own key, set
+# Key mode "app": the key stays on the service. For a runner with its own key, set
 # PROVIDER_API_KEY here instead, and the service never sends its key to this runner.
 ```
 
@@ -95,7 +76,7 @@ docker run -d --name kento-runner --restart unless-stopped \
   --read-only --cap-drop ALL --security-opt no-new-privileges \
   --memory 2g --cpus 2 \
   --stop-timeout 30 \
-  ghcr.io/sakuga-software/kento-runner:latest
+  registry.example.com/kento-runner:latest
 ```
 
 - The volume `kento-runner-state` keeps `runner.json`, the runner token (mode 600). Without the
@@ -107,18 +88,18 @@ docker run -d --name kento-runner --restart unless-stopped \
 
 ## 3. Trust the runner (key mode "app")
 
-A registration never makes a trusted runner. In M2, `runners-host` has no key of its own and uses
-the OpenRouter key of the service, so mark it trusted in the database of the web service. Until
-then it takes no job: the jobs stay queued for it, they do not fail:
+A registration never makes a trusted runner. A runner with no key of its own uses the provider key
+of the service, so mark it trusted in the database of the web service. Until then it takes no job:
+the jobs stay queued for it, they do not fail:
 
 ```sql
 select id, name, labels, trusted, created_at, last_seen_at from runners order by created_at;
-update runners set trusted = true where id = '<id of runners-host>';
+update runners set trusted = true where id = '<id of the runner>';
 ```
 
-## 4. Check the test of the ticket
+## 4. Check the runner
 
-1. Push a commit on an open pull request of `sakuga-software/sakuga-review`. Within 30 s,
+1. Push a commit on an open pull request of an enabled repository. Within 30 s,
    `docker logs kento-runner` shows `job.started`, then `job.finished` with `"outcome":"done"`, the
    score, the model and the cost. In the database:
 
@@ -136,22 +117,22 @@ update runners set trusted = true where id = '<id of runners-host>';
 3. A runner without a valid token gets 401:
 
    ```sh
-   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://review.sakuga.dev/api/runner/jobs/claim \
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://kento.example.com/api/runner/jobs/claim \
      -H 'Authorization: Bearer kento_rt_wrong' -H 'Content-Type: application/json' -d '{"hasProviderKey":false}'
    # 401
    ```
 
-## Another runner: the Runners screen (REV-10)
+## Another runner: the Runners screen
 
-From REV-10 on, an admin of the org adds a runner from `https://review.sakuga.dev/runners`, with no
-change to the web service: "New runner" → a name, labels and the key mode → a registration
-token shown once, valid one hour and one use, and a `docker run` to copy. The runner gets the name,
-the labels and the trust of the token, and runs the jobs of that org only. The image of the command
-is `ghcr.io/sakuga-software/kento-runner:<version of the service>`: publish that tag (section 1).
+An admin of an org adds a runner from `https://kento.example.com/runners`, with no change to the web
+service: "New runner" → a name, labels and the key mode → a registration token shown once, valid
+one hour and one use, and a `docker run` to copy. The runner gets the name, the labels and the trust
+of the token, and runs the jobs of that org only. The image of the command is
+`<KENTO_RUNNER_IMAGE>:<version of the service>`: publish that tag (section 1).
 
-The runners registered with `KENTO_RUNNER_REGISTRATION_TOKEN`, like `runners-host`, stay
-runners of the service ("Runner of the service" on their card): they run the jobs of every org, the screen shows them, and only an operator
-trusts or revokes them, in the database, as below.
+The runners registered with `KENTO_RUNNER_REGISTRATION_TOKEN` stay runners of the service ("Runner
+of the service" on their card): they run the jobs of every org, the screen shows them, and only an
+operator trusts or revokes them, in the database, as below.
 
 ## 5. Revoke a runner
 
@@ -166,9 +147,8 @@ update runners set revoked_at = now() where id = '<id>';
 
 The next call of the runner gets 401 (a claim in progress ends within 30 s). The runner logs
 `runner.token_refused` and waits until it is stopped; it does not register again on its own, and a
-restart policy does not start it in a loop. A job that it held goes
-back to the queue when its lease ends (at most 2 min after the last heartbeat, see
-[Leases and attempts](#leases-and-attempts)).
+restart policy does not start it in a loop. A job that it held goes back to the queue when its lease
+ends (at most 2 min after the last heartbeat, see [Leases and attempts](#leases-and-attempts)).
 
 To start it again as a new runner: remove the volume (`docker volume rm kento-runner-state`), put
 `KENTO_REGISTRATION_TOKEN` back in the env file, recreate the container, and trust the new row if
@@ -185,11 +165,11 @@ needed.
 | `PROVIDER_KIND` | no | `openrouter` | The provider of the runner's own key or server: `openrouter`, `anthropic`, `openai_compatible` or `ollama`. The runner calls it for the jobs whose provider has this kind; for the others it needs the key of the job (a trusted runner). |
 | `PROVIDER_BASE_URL` | no | the URL of the kind | Another server with the same API. HTTPS only, except for `ollama` (HTTP allowed: a server on this machine or the private network; default `http://localhost:11434`). Required with `openai_compatible`. |
 | `PROVIDER_API_KEY` | no | | The key of the runner (key mode "runner"). With it, the service never sends its key for this kind. Ollama needs none. A secret. |
-
-The service must be deployed before a runner of this release: the runner sends `features` and
-`ownProvider` with each claim, and an earlier service refuses them (400).
 | `KENTO_STATE_DIR` | no | `/var/lib/kento-runner` | Holds `runner.json`. |
 | `KENTO_WORK_DIR` | no | `/tmp/kento-runner` | Where the jobs clone. |
+
+The service must be deployed before a runner of the same release: the runner sends `features` and
+`ownProvider` with each claim, and an earlier service refuses them (400).
 
 ## What the runner does with the code
 
@@ -230,13 +210,13 @@ select left(head_sha, 8), state, attempts, failure_reason, not_before, lease_exp
 from jobs order by created_at desc limit 10;
 ```
 
-## Resolve jobs (REV-7)
+## Resolve jobs
 
-A runner of this release claims `review` and `resolve` jobs (`kinds` in the claim). A resolve job
-holds the open review threads, which the service read on GitHub: the runner clones the pull request
-as for a review, builds the pack of the threads, calls the model, and tells for each thread whether
-its file changed since the thread. It never calls GitHub, and its token stays `contents: read`. With
-no thread to answer, it clones nothing and calls no model.
+A runner claims `review` and `resolve` jobs (`kinds` in the claim). A resolve job holds the open
+review threads, which the service read on GitHub: the runner clones the pull request as for a
+review, builds the pack of the threads, calls the model, and tells for each thread whether its file
+changed since the thread. It never calls GitHub, and its token stays `contents: read`. With no
+thread to answer, it clones nothing and calls no model.
 
-A runner of an earlier release keeps working: it sends no `kinds`, and gets review jobs only. Deploy
-`web` first, then this runner; the resolve jobs wait in the queue meanwhile.
+A runner of an earlier release that sends no `kinds` gets review jobs only. Deploy `web` first, then
+the runners; the resolve jobs wait in the queue meanwhile.

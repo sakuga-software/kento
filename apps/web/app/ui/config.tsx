@@ -12,6 +12,7 @@ import {
   type Source,
   type Trigger,
 } from '../repo-config/model.ts'
+import { mention } from '../instance.ts'
 import { effectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import type { RepoConfigView } from '../repo-config/store.ts'
@@ -109,7 +110,7 @@ const TRIGGER_CHOICES: { value: Trigger; title: string; text: string }[] = [
     title: 'When the PR becomes "Ready for review"',
     text: 'A review when a ready PR opens, when it becomes "Ready for review", and when it reopens. The later pushes create none.',
   },
-  { value: 'command', title: 'On request', text: 'No automatic review. Only a @kento-review command creates one.' },
+  { value: 'command', title: 'On request', get text() { return `No automatic review. Only a ${mention()} command creates one.` } },
 ]
 
 /**
@@ -611,7 +612,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                   <FieldMessage
                     id="config-cap"
                     error={capForm?.errors.monthlyCapUsd}
-                    hint="Leave it empty for no cap. A @kento-review command always runs, because a person asked for it."
+                    hint={`Leave it empty for no cap. A ${mention()} command always runs, because a person asked for it.`}
                   />
                 </div>
                 <button class="button button-primary" type="submit">
@@ -637,7 +638,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
           </header>
           <dl class="config-facts">
             <div>
-              <dt>@kento-review command</dt>
+              <dt>{mention()} command</dt>
               <dd>
                 A person with write access to the repo
                 {trustedBots.length > 0 ? (

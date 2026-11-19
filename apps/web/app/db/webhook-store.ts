@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import { matchAssignment, needsFiles, unreadPathRules, type AssignmentRule, type JobAssignment } from '../assignment/model.ts'
 import type { Installation, PullAuthor, Repository, ReviewAction, WebhookCommand } from '../github/events.ts'
 import { KENTO_ACTOR } from '../findings/store.ts'
+import { instance } from '../instance.ts'
 import { errorMessage, log } from '../log.ts'
 import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
@@ -674,13 +675,15 @@ function cancelOrgJobs(tx: Tx, orgId: string, reason: CancelReason): Promise<num
 
 /**
  * Inserts or updates the org of an installation. `suspended`: true sets `suspended_at`, false clears
- * it, null keeps it (an event that says nothing about the state of the installation).
+ * it, null keeps it (an event that says nothing about the state of the installation). A new org
+ * trusts the default bots of the instance (KENTO_DEFAULT_TRUSTED_BOTS); an update keeps the trusted
+ * bots that an admin set.
  */
 async function upsertOrg(tx: Tx, installation: Installation, suspended: boolean | null) {
   let suspendedAt = suspended === null ? undefined : suspended ? new Date() : null
   let [org] = await tx
     .insert(orgs)
-    .values({ ...installation, suspendedAt: suspendedAt ?? null })
+    .values({ ...installation, suspendedAt: suspendedAt ?? null, trustedBots: [...instance().defaultTrustedBots] })
     .onConflictDoUpdate({
       target: orgs.githubInstallationId,
       set: {

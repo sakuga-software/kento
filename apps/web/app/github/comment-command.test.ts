@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { parseCommentCommand, rejectProblem, usage, USAGE } from './comment-command.ts'
+import { parseCommentCommand, rejectProblem, usage, usageText } from './comment-command.ts'
 import { REASON_MAX } from '../findings/store.ts'
 import { inlineBody, shortId } from '@sakuga-review/engine/render'
 
@@ -146,10 +146,10 @@ describe('reject (REV-93)', () => {
   })
 })
 
-describe('USAGE', () => {
+describe('usageText', () => {
   it('lists the commands, and the cost of each level without the name of a model', () => {
     assert.equal(
-      USAGE,
+      usageText(),
       [
         'Kentō commands, in a comment of the PR (`@sakuga-review` works too):',
         '',
@@ -198,9 +198,9 @@ describe('the account of the App (REV-96)', () => {
 
 describe('usage (REV-96)', () => {
   it('links the page of the commands when the service knows its public URL', () => {
-    assert.equal(usage(null), USAGE)
+    assert.equal(usage(null), usageText())
     assert.match(usage('https://review.sakuga.dev/docs/commands'), /\[Kentō commands\]\(https:\/\/review\.sakuga\.dev\/docs\/commands\)\.$/)
-    assert.ok(usage('https://review.sakuga.dev/docs/commands').startsWith(USAGE))
-    assert.match(USAGE, /`@kento-review reject <cause>`/)
+    assert.ok(usage('https://review.sakuga.dev/docs/commands').startsWith(usageText()))
+    assert.match(usageText(), /`@kento-review reject <cause>`/)
   })
 })

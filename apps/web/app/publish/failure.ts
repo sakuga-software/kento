@@ -1,6 +1,8 @@
 // The comment that a job failed for good: no review and no resolution will come. The publisher
 // posts it once on the pull request (`jobs.failure_noticed_at`).
 
+import { mention } from '../instance.ts'
+
 /** The longest reason that the comment shows. */
 const MAX_REASON = 300
 
@@ -43,13 +45,13 @@ export const failureMarker = (jobId: string) => `<!-- kento:failure ${jobId} -->
 export function failureComment(job: FailedJob): string {
   let review = job.kind === 'review'
   let what = review ? 'review' : 'thread resolution'
-  let command = review ? `@kento-review ${job.level}` : `@kento-review resolve ${job.level}`
-  let mention = job.commenter ? `@${job.commenter} ` : ''
+  let command = review ? mention(job.level) : mention(`resolve ${job.level}`)
+  let commenter = job.commenter ? `@${job.commenter} ` : ''
   let retry = `To run it again: \`${command}\`.`
   if (job.configUrl) retry += ` If the error comes from a model or a provider, check the [config of the repo](${job.configUrl}).`
   return [
     `**Kentō · ${what} failed** at commit \`${job.headSha.slice(0, 9)}\``,
-    `${mention}The \`${job.level}\` ${what} of this commit failed. Kentō will not run it again by itself.`,
+    `${commenter}The \`${job.level}\` ${what} of this commit failed. Kentō will not run it again by itself.`,
     `Reason: \`${sanitizeReason(job.failureReason)}\``,
     retry,
     failureMarker(job.id),

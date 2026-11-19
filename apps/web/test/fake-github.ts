@@ -115,6 +115,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     /** `resolveReviewThread` asks for a token minted with `contents: write`, as GitHub does. */
     resolveNeedsWrite: false,
     calls: [] as { method: string; path: string; token: string }[],
+    /** The body of each request that writes, as JSON: what the bot posts on GitHub. */
+    sent: [] as string[],
   }
 
   /** A comment of a person or of the bot, as an earlier review left it. */
@@ -150,6 +152,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
   async function handle(method: string, url: URL, body: any, token: string): Promise<Response> {
     let path = url.pathname
     state.calls.push({ method, path: path + url.search, token })
+    if (method !== 'GET' && body !== undefined && body !== null) state.sent.push(JSON.stringify(body))
     let m: RegExpExecArray | null
 
     if ((m = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path)) && method === 'POST') {
