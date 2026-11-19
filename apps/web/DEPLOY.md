@@ -113,7 +113,7 @@ Make each secret with `openssl rand -hex 32` for the webhook, registration and s
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | from section 3 | A secret. |
 | `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | Signs the session cookie; 32 characters or more. Comma-separated during a rotation (section 9). A secret. |
 | `KENTO_SECRETS_KEY` | to store provider keys | 44 base64 characters | The master key of the keys of the providers (AES-256-GCM). Without it, the Settings screen stores no key (`startup.secrets_disabled`). See [SECURITY.md](../../SECURITY.md#the-master-key). A secret. |
-| `KENTO_PROVIDER_API_KEY` | no | an OpenRouter key | The key of the service, for the jobs of an org that has no provider. Sent with a job only to a trusted runner with no key of its own. A secret. |
+| `KENTO_PROVIDER_API_KEY` | no | an OpenRouter key | The key of the service, for the jobs of an org that has no provider. Sent with a job only to a trusted runner of the service with no key of its own, never to a runner of an org. A secret. |
 
 The sign-in needs its four variables together, plus `GITHUB_APP_ID` and `GITHUB_APP_PRIVATE_KEY`.
 Without them, every screen says "Sign-in unavailable." and nobody gets in.

@@ -109,7 +109,9 @@ export function localPath(value: unknown): string {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return '/'
   try {
     let url = new URL(value, 'http://kento.invalid')
-    return url.origin === 'http://kento.invalid' ? `${url.pathname}${url.search}` : '/'
+    let path = `${url.pathname}${url.search}`
+    // The parse can turn `/.//host` into `//host`, which a browser reads as another origin.
+    return url.origin === 'http://kento.invalid' && !path.startsWith('//') ? path : '/'
   } catch {
     return '/'
   }

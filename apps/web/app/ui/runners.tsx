@@ -151,8 +151,8 @@ export function newerVersion(version: string | null, latest: string): string | n
 /** What the screen says after a form, from `?notice=`. */
 export const RUNNER_NOTICES = {
   revoked: 'Runner revoked. Its token no longer works, and its job in progress went back to the queue.',
-  trusted: 'The runner now gets the key of the service when it has no key of its own.',
-  untrusted: 'The runner no longer gets the key of the service.',
+  trusted: 'The runner now gets the keys that Kentō stores for the providers of the org.',
+  untrusted: 'The runner no longer gets the keys that Kentō stores.',
   discarded: 'Registration token cancelled.',
   missing: 'Nothing changed. Someone changed or deleted this runner or this token after the page loaded. Read its state below, then do the action again if necessary.',
   revoked_silent: 'Silent runners revoked. Their tokens no longer work, and their jobs in progress went back to the queue.',
@@ -360,7 +360,7 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
           ) : (
             <>
               Valid until <time dateTime={registration.expiresAt.toISOString()}>{hour(registration.expiresAt)}</time>.{' '}
-              {registration.trusted ? 'Key of the service.' : 'Key on the runner.'}
+              {registration.trusted ? 'Keys stored in Kentō.' : 'Key on the runner.'}
             </>
           )}
         </p>
@@ -462,7 +462,7 @@ function RunnerRow(
         <td data-label="State">
           <span class={`status status-${state}`}>{runnerStateLabel(runner, now)}</span>
         </td>
-        <td data-label="Model key">{runner.trusted ? 'Key of the service (trusted)' : 'Key on the runner'}</td>
+        <td data-label="Model key">{runner.trusted ? 'Keys stored in Kentō (trusted)' : 'Key on the runner'}</td>
         <td data-label="Version">
           <span class="stack">
             <span class="mono">{runner.version ?? '—'}</span>
@@ -613,7 +613,7 @@ function LeaseFacts(_handle: Handle<{}>) {
 function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['form'] }>) {
   return () => {
     let { csrf, form } = handle.props
-    // The runner keeps its own key unless an admin chooses to trust it with the key of the service.
+    // The runner keeps its own key unless an admin chooses to trust it with the keys that Kentō stores.
     let values = form?.values ?? { name: '', labels: '', keyMode: 'runner' as const }
     let errors = form?.errors ?? {}
     return (
@@ -689,7 +689,8 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
             <label class="choice">
               <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
               <span>
-                <strong>Key of the service.</strong> The runner is trusted and gets the key of the service with each job.
+                <strong>Keys stored in Kentō.</strong> The runner is trusted and gets, with each job, the key of the provider
+                that the org added in Settings. The OpenRouter key of the service stays on the runners of the service.
               </span>
             </label>
             {errors.keyMode ? (

@@ -79,7 +79,7 @@ export interface DashboardPageProps {
   /** `https://github.com`, or the GitHub Enterprise Server: the links "Open the PR". */
   githubUrl: string
   notice?: DashboardNotice | null
-  /** KENTO_PROVIDER_API_KEY is set: a trusted runner gets the key of the service without a provider. */
+  /** KENTO_PROVIDER_API_KEY is set: a trusted runner of the service gets the key of the service without a provider. */
   serviceKey?: boolean
   /** The page of the installation of the App on GitHub, where an owner picks the repositories. */
   installationUrl?: string | null
@@ -143,15 +143,24 @@ export function setupSteps(
           text: setup.providers === 1 ? '1 provider in Settings.' : `${setup.providers} providers in Settings.`,
           action: { label: 'See the providers', href: `${routes.settings.href()}#providers-title` },
         }
-      : options.serviceKey
+      : options.serviceKey && setup.serviceRunners > 0
         ? {
             key: 'provider',
             title: 'Add a provider',
             state: 'done',
-            text: 'No provider. A trusted runner gets the key of the service. Add your own to pay for your own reviews.',
+            text: 'No provider. The runners of the service review with the key of the service. A runner of your organization needs its own OpenRouter key. Add a provider to pay for your own reviews.',
             action: { label: 'Add a provider', href: `${routes.settings.href()}#new-provider` },
           }
-        : {
+        : options.serviceKey
+          ? {
+              key: 'provider',
+              title: 'Add a provider',
+              state: 'todo',
+              // REV-130: the key of the service never goes to a runner of an org.
+              text: 'No provider. The key of the service goes only to a runner of the service, and there is none. A runner of your organization needs its own OpenRouter key, or add a provider.',
+              action: { label: 'Add a provider', href: `${routes.settings.href()}#new-provider` },
+            }
+          : {
             key: 'provider',
             title: 'Add a provider',
             state: 'todo',
@@ -358,6 +367,20 @@ export function stallText(stall: QueueStall, online: number, now: Date): { title
       ? `No runner online for ${elapsed(stall.lastRunnerSeenAt, now)} (last signal at ${clock(stall.lastRunnerSeenAt)}).`
       : 'No runner ever called Kentō.'
     return { title, cause, action: 'Start a runner, see the Runners screen. The jobs leave the queue at its first call.' }
+  }
+  if (stall.serviceKeyJobs > 0 && stall.serviceRunnersOnline === 0) {
+    // REV-130: a job with no provider waits for a runner with an OpenRouter key: a runner of the
+    // service, which gets the key of the service, or a runner with its own key. While a trusted
+    // runner of the service is online, the jobs only wait for it to be free: the cause below.
+    let which =
+      stall.serviceKeyJobs === stall.count
+        ? stall.count === 1 ? 'This job has' : 'These jobs have'
+        : `${stall.serviceKeyJobs} of these jobs ${stall.serviceKeyJobs === 1 ? 'has' : 'have'}`
+    return {
+      title,
+      cause: `${which} no provider: ${stall.serviceKeyJobs === 1 ? 'it waits' : 'they wait'} for a runner with an OpenRouter key. The key of the service goes only to a runner of the service, never to a runner of your organization.`,
+      action: 'Give your runner its own OpenRouter key (PROVIDER_KIND=openrouter and PROVIDER_API_KEY), or add a provider in Settings.',
+    }
   }
   let cause =
     online === 1

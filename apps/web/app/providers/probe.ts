@@ -45,10 +45,12 @@ function ipv6Bytes(address: string): number[] | null {
   return groups.flatMap((g) => [parseInt(g, 16) >> 8, parseInt(g, 16) & 0xff])
 }
 
-function privateIpv4(a: number, b: number): boolean {
+function privateIpv4(a: number, b: number, c: number): boolean {
   return (
     a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224
+    (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224 ||
+    // 192.0.0.0/24: the protocol assignments of the IETF (REV-130).
+    (a === 192 && b === 0 && c === 0)
   )
 }
 
@@ -61,17 +63,24 @@ function privateIpv4(a: number, b: number): boolean {
  */
 export function privateAddress(address: string): boolean {
   if (isIP(address) === 4) {
-    let [a, b] = address.split('.').map(Number) as [number, number]
-    return privateIpv4(a, b)
+    let [a, b, c] = address.split('.').map(Number) as [number, number, number]
+    return privateIpv4(a, b, c)
   }
   let bytes = ipv6Bytes(address)
   if (!bytes || bytes.length !== 16) return true
   let zeros = (from: number, to: number) => bytes!.slice(from, to).every((x) => x === 0)
   let v4 = bytes.slice(12) as [number, number, number, number]
   // ::ffff:a.b.c.d, ::a.b.c.d, 64:ff9b::a.b.c.d
-  if (zeros(0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) return privateIpv4(v4[0], v4[1])
-  if (zeros(0, 12)) return zeros(12, 15) ? true : privateIpv4(v4[0], v4[1])
-  if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && zeros(4, 12)) return privateIpv4(v4[0], v4[1])
+  if (zeros(0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) return privateIpv4(v4[0], v4[1], v4[2])
+  if (zeros(0, 12)) return zeros(12, 15) ? true : privateIpv4(v4[0], v4[1], v4[2])
+  if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && zeros(4, 12)) return privateIpv4(v4[0], v4[1], v4[2])
+  // ::ffff:0:a.b.c.d (translated IPv4) is judged by its IPv4.
+  if (zeros(0, 8) && bytes[8] === 0xff && bytes[9] === 0xff && zeros(10, 12)) return privateIpv4(v4[0], v4[1], v4[2])
+  // 2002::/16 (6to4) carries an IPv4 in its bytes 2 to 5.
+  if (bytes[0] === 0x20 && bytes[1] === 0x02) return privateIpv4(bytes[2]!, bytes[3]!, bytes[4]!)
+  // 64:ff9b:1::/48 (local NAT64) and 2001::/32 (Teredo) can reach any IPv4: refuse them.
+  if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && bytes[4] === 0x00 && bytes[5] === 0x01) return true
+  if (bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0x00 && bytes[3] === 0x00) return true
   let first = bytes[0]!
   // fc00::/7 unique local, fe80::/10 link-local, fec0::/10 site-local, ff00::/8 multicast.
   return (first & 0xfe) === 0xfc || (first === 0xfe && (bytes[1]! & 0xc0) >= 0x80) || first === 0xff

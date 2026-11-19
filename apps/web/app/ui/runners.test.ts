@@ -210,7 +210,7 @@ describe('the Runners screen', () => {
     assert.match(html, /Online/)
     assert.match(html, /1\.2\.3 available/)
     assert.match(html, /sakuga-software\/sakuga-review#57/)
-    assert.match(html, /Key of the service \(trusted\)/)
+    assert.match(html, /Keys stored in Kentō \(trusted\)/)
     // REV-43: one name for the key of the service, and no word of the runner protocol.
     assert.doesNotMatch(html, /key of the app/i)
     assert.doesNotMatch(html, /claim|[Hh]eartbeat|\b[Ll]ease\b(?!-title)|[Mm]ax body/)

@@ -19,6 +19,34 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Migrations**: none (still 29).
+- **Order**: the service, then the runners (the engine changes).
+
+### Security
+
+- The OpenRouter key of the service (`KENTO_PROVIDER_API_KEY`) goes only to a trusted runner of the
+  service, never to a runner of an organization: its admin could read the key and spend it outside
+  Kentō. A trusted runner of an organization still gets the keys of the providers of its
+  organization. A job of an organization with no provider now runs on a runner of the service, or on
+  a runner of the organization with its own OpenRouter key. On the Runners screen, the mode "Key of
+  the service" is now "Keys stored in Kentō". An instance whose runners are all runners of the
+  service sees no change.
+- The Dashboard says why a job with no provider waits: after 10 min, "To do" says that it waits for
+  a runner with an OpenRouter key. "Getting started" counts the key of the service only while the
+  service has a trusted runner.
+- `returnTo` can no longer send a signed-in member to another site: `/.//host` became `//host` after
+  the parse. The path is now checked after the parse.
+- The tools of the engine can no longer block the runner or fill its memory. git runs
+  asynchronously, so the heartbeat goes on during a call. One call stops after 10 s, and the calls
+  of one review after 60 s in all. Each git process has at most 512 MB of virtual memory
+  (`ulimit -v`) and 2 grep threads: a pattern such as `((a{1,100}){1,100}){1,100}b`, which filled the
+  2 GB of the runner in 3 s, now makes git stop with "Memory exhausted" in 0.2 s, and the model gets
+  that cause. `grep` also refuses a back reference (`\1` to `\9`) and a pattern whose repetitions
+  make more than 1,000 copies, as a first filter.
+- The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
+  judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
+  are refused.
+
 ## 0.1.0
 
 The state of Kentō before its first public release. The earlier changes are in the history of

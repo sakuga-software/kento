@@ -40,8 +40,9 @@ The operator of a Kentō service publishes the image and runs the runners of the
   ```
 
   `<version>` is the version that the Runners screen shows in its command (`0.1.0` today).
-- **A model key**, unless an admin of Sakuga gives your runner the key of the service (see
-  [Key modes](#key-modes)). An OpenRouter key works with no other setting.
+- **A model key**, unless your organization added a provider whose key Kentō stores (see
+  [Key modes](#key-modes)). The key of the service never goes to a runner of an organization. An
+  OpenRouter key works with no other setting.
 - **Room for the clones.** Each job clones into a `tmpfs` of 2 GB, and removes the clone at the
   end. The runner runs one job at a time.
 
@@ -55,7 +56,7 @@ The operator of a Kentō service publishes the image and runs the runners of the
    operator of Kentō sets it in the database. Without a pool, which is the default, the labels
    change nothing.
 4. **Model key**: where the model key is. See [Key modes](#key-modes). Keep "Key on the runner"
-   unless the runner is a machine of Sakuga.
+   unless the organization stores its provider keys in Kentō and the runner is a machine you control.
 5. Click **Create the token**.
 
 The screen shows a registration token (`kento_reg_…`) and a `docker run` command that contains it.
@@ -119,13 +120,15 @@ the same machine, change both.
 
 ## Key modes
 
-The model key is on the runner, or the service sends its own key with each job. The admin chooses
-when creating the token, and can change it later on the runner's card.
+The model key is on the runner, or the service sends the key that the organization stored in
+Kentō with each job. The admin chooses when creating the token, and can change it later on the
+runner's card. The OpenRouter key of the service goes only to the runners of the service, never to
+a runner of an organization (REV-130).
 
 | Mode on the screen | Card | What happens |
 | --- | --- | --- |
 | **Key on the runner** (recommended for a machine outside Sakuga) | "Key on the runner" | The runner calls the model with `PROVIDER_API_KEY`. The service never sends a key to this runner. You pay the provider directly. |
-| **Key of the service** | "Key of the service (trusted)" | The runner is trusted: when it has no key of the kind that a job needs, the service sends its key with the job. The key is in the memory of the runner for the length of the job. |
+| **Keys stored in Kentō** | "Keys stored in Kentō (trusted)" | The runner is trusted: when it has no key of the kind that a job needs, the service sends the key of the provider of the organization with the job. The key is in the memory of the runner for the length of the job. |
 
 "Mark as trusted" and "Remove the trust" on the card switch between the two. The
 service reads the trust again at each claim.
@@ -135,7 +138,7 @@ Which jobs a runner takes depends on the provider of the job, which the organiza
 
 | Provider of the job | The runner takes it when |
 | --- | --- |
-| None (the organization has no provider) | `PROVIDER_KIND=openrouter` with `PROVIDER_API_KEY`, or the runner is trusted and the service has its OpenRouter key. |
+| None (the organization has no provider) | `PROVIDER_KIND=openrouter` with `PROVIDER_API_KEY`. A runner of the service also takes it when it is trusted and the service has its OpenRouter key. A runner of the organization without its own OpenRouter key never takes it: the Dashboard says that the job waits for a runner with an OpenRouter key. |
 | A provider whose key the service holds | The runner has its own key of that kind (`PROVIDER_KIND` and `PROVIDER_API_KEY`), or it is trusted. |
 | A provider with "The key stays on the runner" | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
 | Ollama | The runner has `PROVIDER_KIND=ollama`. |

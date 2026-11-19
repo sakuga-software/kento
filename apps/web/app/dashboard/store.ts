@@ -108,6 +108,13 @@ export interface QueueStall {
   since: Date
   /** The last call of a runner of the org or of the service, revoked ones aside. Null: never. */
   lastRunnerSeenAt: Date | null
+  /**
+   * REV-130. Those of them that no provider of the org runs: they need the OpenRouter key of the
+   * service, which goes only to a trusted runner of the service, or a runner with its own OpenRouter key.
+   */
+  serviceKeyJobs: number
+  /** The trusted runners of the service that are online: they run those jobs, so a wait means that they are busy. */
+  serviceRunnersOnline: number
 }
 
 export interface DashboardRunner {
@@ -141,6 +148,8 @@ export interface SetupState {
   enabledRepos: number
   /** The providers of the org (REV-11). */
   providers: number
+  /** REV-130. The trusted runners of the service, revoked ones aside: the only ones that get the key of the service. */
+  serviceRunners: number
   /** The registration tokens of the org that are not used and not expired: a runner is on its way. */
   pendingRegistrations: number
 }
@@ -511,8 +520,28 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
   }
 
   async function stall(orgId: string): Promise<QueueStall | null> {
-    let [row] = await sql<{ count: string; since: Date | string | null; lastRunnerSeenAt: Date | string | null }[]>`
+    let [row] = await sql<
+      {
+        count: string
+        since: Date | string | null
+        lastRunnerSeenAt: Date | string | null
+        serviceKeyJobs: string
+        serviceRunnersOnline: string
+      }[]
+    >`
       select count(*) as count, min(coalesce(jobs.not_before, jobs.created_at)) as since,
+        -- The provider of the job as claimJob (app/runner/store.ts) finds it: none means the key of the service.
+        count(*) filter (where not exists (
+          select 1 from providers prov where prov.org_id = repos.org_id and case
+            when jobs.config->'models'->>'provider' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              then prov.id = (jobs.config->'models'->>'provider')::uuid
+            when jobs.config->>'source' in ('repo', 'org') then false
+            else prov.is_default
+          end
+        )) as "serviceKeyJobs",
+        (select count(*) from runners
+          where runners.org_id is null and runners.trusted and runners.revoked_at is null
+            and runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval) as "serviceRunnersOnline",
         (select max(last_seen_at) from runners
           where (runners.org_id = ${orgId} or runners.org_id is null) and runners.revoked_at is null) as "lastRunnerSeenAt"
       from jobs
@@ -521,7 +550,13 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       where repos.org_id = ${orgId} and jobs.state = 'queued' and jobs.base_ref is not null
         and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval`
     if (!row || Number(row.count) === 0 || row.since === null) return null
-    return { count: Number(row.count), since: toDate(row.since), lastRunnerSeenAt: toDate(row.lastRunnerSeenAt) }
+    return {
+      count: Number(row.count),
+      since: toDate(row.since),
+      lastRunnerSeenAt: toDate(row.lastRunnerSeenAt),
+      serviceKeyJobs: Number(row.serviceKeyJobs),
+      serviceRunnersOnline: Number(row.serviceRunnersOnline),
+    }
   }
 
   /** The cost limits of the org (REV-13). */
@@ -533,7 +568,14 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
 
   async function setup(orgId: string): Promise<SetupState> {
     let [row] = await sql<
-      { published: boolean; suspended: boolean; enabledRepos: string; providers: string; pendingRegistrations: string }[]
+      {
+        published: boolean
+        suspended: boolean
+        enabledRepos: string
+        providers: string
+        serviceRunners: string
+        pendingRegistrations: string
+      }[]
     >`
       select
         exists (
@@ -543,6 +585,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
         (select suspended_at is not null from orgs where id = ${orgId}) as suspended,
         (select count(*) from repos where org_id = ${orgId} and enabled) as "enabledRepos",
         (select count(*) from providers where org_id = ${orgId}) as providers,
+        (select count(*) from runners where org_id is null and trusted and revoked_at is null) as "serviceRunners",
         (select count(*) from runner_registrations
           where org_id = ${orgId} and used_at is null and expires_at > now()) as "pendingRegistrations"`
     return {
@@ -550,6 +593,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       suspended: Boolean(row?.suspended),
       enabledRepos: Number(row?.enabledRepos ?? 0),
       providers: Number(row?.providers ?? 0),
+      serviceRunners: Number(row?.serviceRunners ?? 0),
       pendingRegistrations: Number(row?.pendingRegistrations ?? 0),
     }
   }

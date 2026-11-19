@@ -18,7 +18,7 @@ async function trustedRunner(page: Page, request: APIRequestContext, name: strin
   await page.goto('/runners')
   let form = page.locator('#new-runner')
   await form.getByLabel('Name').fill(name)
-  await form.getByRole('radio', { name: /Key of the service/ }).check()
+  await form.getByRole('radio', { name: /Keys stored in Kentō/ }).check()
   await form.getByRole('button', { name: 'Create the token' }).click()
   let command = await page.getByLabel('docker run command').inputValue()
   let token = /KENTO_REGISTRATION_TOKEN=(kento_reg_\S+)/.exec(command)![1]!

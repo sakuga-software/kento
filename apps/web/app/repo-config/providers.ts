@@ -26,9 +26,9 @@ export interface ProviderCatalog {
 }
 
 /**
- * The OpenRouter provider of the service. With KENTO_PROVIDER_API_KEY, a trusted runner gets the key
- * of the service, and an untrusted one uses its own; without it, only a runner with its own OpenRouter
- * key runs the job. The label says which, so that it never contradicts its hint (REV-27).
+ * The OpenRouter provider of the service. With KENTO_PROVIDER_API_KEY, a trusted runner of the
+ * service gets the key of the service, and another runner uses its own (REV-130); without it, only a
+ * runner with its own OpenRouter key runs the job. The label says which, so that it never contradicts its hint (REV-27).
  */
 export function serviceOption(serviceKey: boolean): ProviderOption {
   return serviceKey
@@ -36,7 +36,7 @@ export function serviceOption(serviceKey: boolean): ProviderOption {
         id: SERVICE_PROVIDER,
         kind: 'openrouter',
         label: 'OpenRouter · key of the service',
-        hint: 'The OpenRouter key of the service, for a trusted runner. Another runner uses its own key.',
+        hint: 'The OpenRouter key of the service, for a trusted runner of the service. A runner of the org uses its own key.',
         isDefault: false,
         keyFrom: 'key of the service',
         serviceHoldsKey: true,

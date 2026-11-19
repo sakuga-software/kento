@@ -178,7 +178,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
               <div class="empty">
                 <p>
                   {serviceKey
-                    ? 'No provider. The jobs use the OpenRouter key of the service. Add your own to pay for your reviews and choose your models.'
+                    ? 'No provider. The runners of the service review with the OpenRouter key of the service; a runner of your organization needs its own OpenRouter key. Add your own provider to pay for your reviews and choose your models.'
                     : 'No provider, and the service has no key. Only a runner with its own key does the reviews.'}
                 </p>
               </div>
@@ -448,7 +448,7 @@ function ProviderItem(
               <p>
                 Kentō deletes <strong>{provider.label}</strong> and its key.{' '}
                 {provider.isDefault
-                  ? 'The oldest of the other providers becomes the one of the jobs. With no other provider, the jobs use the key of the service.'
+                  ? 'The oldest of the other providers becomes the one of the jobs. With no other provider, the jobs need a runner of the service, or a runner with its own OpenRouter key.'
                   : 'The jobs do not use this provider.'}
               </p>
             </Confirm>

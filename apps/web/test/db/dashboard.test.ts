@@ -101,7 +101,7 @@ describe('the dashboard of an org', () => {
 
   it('reads the steps of "Getting started" for the org only, until a review of the org is published (REV-26)', async () => {
     let setup = async () => (await store.screen(org)).setup
-    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 0, pendingRegistrations: 0 })
+    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 0, serviceRunners: 0, pendingRegistrations: 0 })
 
     await database.sql`
       insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${org}, 'anthropic', 'Anthropic', true),
@@ -115,7 +115,7 @@ describe('the dashboard of an org', () => {
     await review(await job({ repoId: otherRepo }))
     await review(await job({}), { publishedAgo: null })
     await database.sql`update orgs set suspended_at = now() where id = ${otherOrg}`
-    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 1, pendingRegistrations: 1 })
+    assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 1, serviceRunners: 0, pendingRegistrations: 1 })
 
     await review(await job({ pr: 13 }))
     await database.sql`update orgs set suspended_at = now() where id = ${org}`
@@ -454,6 +454,42 @@ describe('the dashboard of an org', () => {
     let waited = (now.getTime() - stall!.since.getTime()) / 60_000
     assert.ok(waited > 24 && waited < 26, `the oldest waits since 25 min, not ${waited}`)
     assert.ok(stall!.lastRunnerSeenAt, 'the last call of a runner of the org')
+    assert.equal(stall!.serviceKeyJobs, 2, 'the org has no provider: both jobs need the key of the service')
+  })
+
+  it('counts the waiting jobs that need the key of the service, and the trusted runners of the service (REV-130)', async () => {
+    await job({ state: 'queued', pr: 40, createdAgo: '20 minutes' })
+    await job({ state: 'queued', pr: 41, createdAgo: '20 minutes' })
+    await job({ state: 'queued', pr: 42, createdAgo: '20 minutes' })
+    let provider = '22222222-2222-4222-8222-222222222222'
+    await database.sql`
+      insert into providers (id, org_id, kind, label, runner_held, is_default) values (${provider}, ${org}, 'anthropic', 'Anthropic', true, true)`
+    // pr 40: the default provider of the org. pr 41: a config that chose the provider by its id.
+    // pr 42: a config of the repo with no choice, which runs with the key of the service.
+    await database.sql`update jobs set config = ${JSON.stringify({ source: 'repo', models: { provider } })}::text::jsonb where pr_number = 41`
+    await database.sql`update jobs set config = ${JSON.stringify({ source: 'repo', models: {} })}::text::jsonb where pr_number = 42`
+    let { stall } = await store.screen(org)
+    assert.equal(stall!.count, 3)
+    assert.equal(stall!.serviceKeyJobs, 1)
+
+    assert.equal(stall!.serviceRunnersOnline, 0)
+    let setup = async () => (await store.screen(org)).setup.serviceRunners
+    assert.equal(await setup(), 0, 'a runner of an org is no runner of the service')
+    await database.sql`
+      insert into runners (org_id, name, token_hash, trusted, revoked_at) values
+        (null, 'service-1', 'hash-service-1', true, null),
+        (null, 'service-untrusted', 'hash-service-2', false, null),
+        (null, 'service-revoked', 'hash-service-3', true, now()),
+        (${org}, 'org-trusted', 'hash-org-trusted', true, null)`
+    try {
+      assert.equal(await setup(), 1, 'only the trusted runner of the service that is not revoked')
+      // Never seen: not online. Seen now: online.
+      assert.equal((await store.screen(org)).stall!.serviceRunnersOnline, 0)
+      await database.sql`update runners set last_seen_at = now() where token_hash in ('hash-service-1', 'hash-service-2', 'hash-service-3', 'hash-org-trusted')`
+      assert.equal((await store.screen(org)).stall!.serviceRunnersOnline, 1)
+    } finally {
+      await database.sql`delete from runners where token_hash in ('hash-service-1', 'hash-service-2', 'hash-service-3', 'hash-org-trusted')`
+    }
   })
 
   it('bounds the card "Runners" in SQL and counts all the runners in service of the org and of the service (REV-37)', async () => {

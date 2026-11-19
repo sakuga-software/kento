@@ -174,8 +174,8 @@ fails keeps the reviews of the earlier heads: nothing is removed.
 
 Each job carries a GitHub installation token that the service asks for the one repository of the
 job, with `contents: read`; GitHub makes it valid one hour. The private key of the App never leaves
-the service. The OpenRouter key of the service goes with a job only to a `trusted` runner that says
-it has no key of its own.
+the service. The OpenRouter key of the service goes with a job only to a `trusted` runner of the
+service that says it has no key of its own, never to a runner of an org (REV-130).
 
 A wrong, missing or revoked runner token gets 401 with no reason. Revoke a runner with
 `update runners set revoked_at = now() where id = …`: its next call gets 401.

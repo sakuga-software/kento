@@ -153,9 +153,10 @@ export const runners = pgTable(
     /** SHA-256 of the runner token, in hex. The token itself is never stored. */
     tokenHash: text('token_hash').notNull().unique(),
     /**
-     * A trusted runner without its own model key gets the key of the service with each job. An
-     * admin of its org sets it in the Runners screen, or its registration token sets it (key mode
-     * "app"). A runner of the service: only an operator sets it, in the database.
+     * A trusted runner without its own model key gets the key that Kentō stores for the provider of
+     * the job. A trusted runner of the service also gets the key of the service; a runner of an org
+     * never does (REV-130). An admin of its org sets it in the Runners screen, or its registration
+     * token sets it (key mode "app"). A runner of the service: only an operator sets it, in the database.
      */
     trusted: boolean('trusted').notNull().default(false),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
@@ -180,7 +181,7 @@ export const runnerRegistrations = pgTable(
       .references(() => orgs.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     labels: text('labels').array().notNull().default(sql`'{}'::text[]`),
-    /** Key mode "app": the runner is trusted, and gets the model key of the service. */
+    /** Key mode "app": the runner is trusted, and gets the keys that Kentō stores for the providers of the org. */
     trusted: boolean('trusted').notNull(),
     /** SHA-256 of the registration token, in hex. The token itself is never stored. */
     tokenHash: text('token_hash').notNull().unique(),

@@ -219,6 +219,23 @@ describe('"Test" a provider', () => {
     assert.ok(!privateAddress('2606:4700::1'))
   })
 
+  it('judges the IPv6 forms that carry an IPv4 by that IPv4, and refuses NAT64 local and Teredo (REV-130)', () => {
+    for (let address of ['::ffff:0:7f00:1', '::ffff:0:a00:1', '2002:7f00:1::', '2002:a9fe:a9fe::', '64:ff9b:1::7f00:1', '64:ff9b:1::6812:1', '2001:0:4136:e378::1']) {
+      assert.ok(privateAddress(address), address)
+    }
+    assert.ok(!privateAddress('2002:6812:1::'), '6to4 of 104.18.0.1')
+    assert.ok(!privateAddress('2001:4860:4860::8888'), 'a global address in 2001::/16, out of Teredo')
+  })
+
+  it('refuses 192.0.0.0/24, the protocol assignments of the IETF, in each form (REV-130)', () => {
+    for (let address of ['192.0.0.1', '192.0.0.170', '192.0.0.255', '::ffff:192.0.0.9', '::ffff:c000:9', '2002:c000:9::', '64:ff9b::c000:9']) {
+      assert.ok(privateAddress(address), address)
+    }
+    // Its neighbours stay public: 192.0.1.0/24 is routed.
+    assert.ok(!privateAddress('192.0.1.1'))
+    assert.ok(!privateAddress('192.1.0.1'))
+  })
+
   it('reads at most the head of the body of an answer, and cancels the rest', async () => {
     let pulled = 0
     let endless = new ReadableStream<Uint8Array>({

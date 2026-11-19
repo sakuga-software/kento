@@ -44,7 +44,7 @@ export interface RunnerApiDependencies {
   registrationToken: string | null
   /** Null when the GitHub App is not configured: a claim then gives no job. */
   mintInstallationToken: MintInstallationToken | null
-  /** The OpenRouter key of the service, for a trusted runner without its own key, when the org has no provider. */
+  /** The OpenRouter key of the service, for a trusted runner of the service without its own key, when the org has no provider. */
   providerApiKey: string | null
   /**
    * Decrypts the key of a provider of an org (REV-11), for a trusted runner of that org or of the
@@ -238,9 +238,11 @@ export function createRunnerController(deps: RunnerApiDependencies) {
   async function prepareJobKey(job: ClaimedJob, claim: Claim): Promise<Keys | null> {
     let { runner, ownProvider, ownKey, readsProviders, secrets } = claim
     if (!job.provider) {
-      // The OpenRouter key of the service, for a trusted runner without its own OpenRouter
-      // key. A runner of this release reads it in `providers`; an earlier one, in `provider`.
-      let serviceKey = job.runnerTrusted && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
+      // The OpenRouter key of the service, for a trusted runner of the service without its own
+      // OpenRouter key. A runner of an org never gets it (REV-130): its admin could read the key
+      // and spend it outside Kentō. A runner of this release reads it in `providers`; an earlier
+      // one, in `provider`.
+      let serviceKey = job.runnerTrusted && job.runnerOrgId === null && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
       return {
         provider: !readsProviders && serviceKey ? { kind: 'openrouter', apiKey: serviceKey } : null,
         providers: readsProviders ? [{ id: 'service', kind: 'openrouter', apiKey: serviceKey, baseUrl: null, models: [] }] : undefined,

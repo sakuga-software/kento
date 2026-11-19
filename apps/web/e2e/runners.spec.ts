@@ -35,7 +35,7 @@ async function createToken(page: Page, name: string, labels: string, keyMode: 'a
   let form = page.locator('#new-runner')
   await form.getByLabel('Name').fill(name)
   await form.getByLabel('Labels').fill(labels)
-  await form.getByRole('radio', { name: keyMode === 'app' ? /Key of the service/ : /Key on the runner/ }).check()
+  await form.getByRole('radio', { name: keyMode === 'app' ? /Keys stored in Kentō/ : /Key on the runner/ }).check()
   await form.getByRole('button', { name: 'Create the token' }).click()
   await expect(page.getByRole('heading', { name: `Token of ${name}` })).toBeVisible()
   let command = await page.getByLabel('docker run command').inputValue()
@@ -88,8 +88,8 @@ test('an admin registers a runner, sees it online, trusts it and revokes it', as
   expect((await request.post('/api/runner/register', { headers: { Authorization: `Bearer ${token}` }, data: { name: 'x', labels: [], version: '0.0.1' } })).status()).toBe(401)
 
   await card.getByRole('button', { name: 'Mark as trusted' }).click()
-  await expect(page.getByRole('status').filter({ hasText: 'now gets the key of the service' })).toBeVisible()
-  await expect(card.getByText('Key of the service (trusted)')).toBeVisible()
+  await expect(page.getByRole('status').filter({ hasText: 'now gets the keys that Kentō stores' })).toBeVisible()
+  await expect(card.getByText('Keys stored in Kentō (trusted)')).toBeVisible()
 
   await card.getByText('Revoke…').click()
   await expect(card.getByText('stops working at its next call')).toBeVisible()
@@ -219,7 +219,7 @@ test('a runner offline for 2 h is "Offline", in red, at the top; a new token kee
 
   let form = page.locator('#new-runner')
   await expect(form.getByRole('radio', { name: /Key on the runner/ })).toBeChecked()
-  await expect(form.getByRole('radio', { name: /Key of the service/ })).not.toBeChecked()
+  await expect(form.getByRole('radio', { name: /Keys stored in Kentō/ })).not.toBeChecked()
   await expectNoAxeViolations(page)
 
   db = sql()

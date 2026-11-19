@@ -219,7 +219,7 @@ async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
         } catch {
           // The tool answers that its input is missing, and the model can call again.
         }
-        messages.push({ role: 'tool', tool_call_id: c.id, content: call.tools.run({ name: c.function?.name ?? '', input }) });
+        messages.push({ role: 'tool', tool_call_id: c.id, content: await call.tools.run({ name: c.function?.name ?? '', input }) });
       }
       continue;
     }
@@ -481,10 +481,9 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
       call.tools.ranRound();
       // The answer goes back whole, thinking blocks included, as the API asks.
       messages.push({ role: 'assistant', content });
-      messages.push({
-        role: 'user',
-        content: uses.map((use) => ({ type: 'tool_result', tool_use_id: use.id, content: call.tools!.run({ name: String(use.name), input: use.input }) })),
-      });
+      const results: Block[] = [];
+      for (const use of uses) results.push({ type: 'tool_result', tool_use_id: use.id, content: await call.tools.run({ name: String(use.name), input: use.input }) });
+      messages.push({ role: 'user', content: results });
       continue;
     }
     if (message.stop_reason === 'tool_use') throw toolAfterLastRound('Anthropic');

@@ -346,6 +346,27 @@ describe('providers and their encrypted keys', () => {
       assert.deepEqual({ ...row }, { state: 'queued', attempts: 1 })
     })
 
+    it('never sends the key of the service to a runner of an org, even if the claim gave it the job (REV-130)', async () => {
+      let real = createRunnerStore(database.sql)
+      // A claim that would be wrong: a trusted runner, read as a runner of the org. The check of the
+      // controller is the second line of defence after the one of claimJob.
+      let wrong = { ...real, claimJob: async (...args: Parameters<typeof real.claimJob>) => {
+        let job = await real.claimJob(...args)
+        return job && { ...job, runnerOrgId: orgId }
+      } }
+      let token = await runner({ orgId: null, trusted: true })
+      for (let body of [NEW_RUNNER, { hasProviderKey: false }]) {
+        await queueJob()
+        let response = await call('/api/runner/jobs/claim', token, body, router({ store: wrong }))
+        let text = await response.text()
+        assert.ok(!text.includes('sk-or-service-key'), `the key of the service stays on the service: ${text}`)
+      }
+      // The same runner, read as a runner of the service, gets it.
+      await queueJob()
+      let { job } = await claim(token, { hasProviderKey: false })
+      assert.deepEqual(job!.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
+    })
+
     it('without its master key, the service gives no job that needs the key of a provider', async () => {
       await store.add({ orgId, userId: null, kind: 'anthropic', label: 'A', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueJob()
@@ -386,7 +407,7 @@ describe('providers and their encrypted keys', () => {
     it('a config that chose "service" runs on the key of the service, even with a default provider', async () => {
       await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueWithConfig({ repoConfigVersion: 1, source: 'org', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } })
-      let token = await runner({ trusted: true })
+      let token = await runner({ orgId: null, trusted: true })
       let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })
       assert.deepEqual(job!.providers, [{ id: 'service', kind: 'openrouter', apiKey: 'sk-or-service-key', baseUrl: null, models: [] }])
       assert.equal(job!.models!.provider, 'service')
@@ -395,7 +416,7 @@ describe('providers and their encrypted keys', () => {
     it('with no choice in the config (the values of Kentō), the default provider of the org, and its own models', async () => {
       let def = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueWithConfig({ repoConfigVersion: 0, source: 'kento', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: 'z-ai/glm-5.3' } })
-      let token = await runner({ trusted: true })
+      let token = await runner({ orgId: null, trusted: true })
       let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })
       assert.equal(job!.providers![0]!.id, def.id)
       assert.equal('models' in job!, false, 'the OpenRouter models of Kentō never go to Anthropic')
@@ -404,7 +425,7 @@ describe('providers and their encrypted keys', () => {
     it('a provider of another org named in a config is never given', async () => {
       let other = await store.add({ orgId: otherOrgId, userId: null, kind: 'anthropic', label: 'Other org', baseUrl: null, apiKey: 'sk-ant-orchard-0123456789', models: {} })
       await queueWithConfig({ repoConfigVersion: 1, source: 'repo', models: { provider: other.id, model: 'claude-opus-5-5', fallback: null } })
-      let token = await runner({ trusted: true })
+      let token = await runner({ orgId: null, trusted: true })
       let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })
       assert.equal(job!.providers![0]!.id, 'service')
       assert.ok(!JSON.stringify(job).includes('sk-ant-orchard'))

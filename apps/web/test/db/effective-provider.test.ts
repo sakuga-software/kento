@@ -72,7 +72,8 @@ describe('"Next job" is the provider and the model of the claim (REV-27)', () =>
       values (${repoId}, 'lite', 28, ${HEAD}, 'main', ${JSON.stringify(jobConfig(resolved, 'lite', 1))}::jsonb)`
     let registered = await call('/api/runner/register', REGISTRATION_TOKEN, { name: 'r', labels: [], version: '0.2.0' })
     let { runnerId, token } = await registered.json()
-    await database.sql`update runners set org_id = ${orgId}, trusted = true where id = ${runnerId}`
+    // A trusted runner of the service: only it gets the key of the service (REV-130).
+    await database.sql`update runners set trusted = true where id = ${runnerId}`
     let response = await call('/api/runner/jobs/claim', token, RUNNER)
     assert.equal(response.status, 200)
     let job = (await response.json()) as Job

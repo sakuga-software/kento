@@ -187,7 +187,8 @@ export interface RunnerStore {
    * and a runner revoked since the start of its request gets none. A job runs with the default
    * provider of its org, or with the OpenRouter key of the service when the org has none. A runner
    * gets it when it holds that kind itself, or when it is trusted at that moment and the service
-   * holds the key: otherwise it could only fail the job.
+   * holds the key: otherwise it could only fail the job. The key of the service goes only to a
+   * runner of the service (REV-130).
    */
   claimJob(runnerId: string, options?: ClaimOptions): Promise<ClaimedJob | null>
   /**
@@ -358,7 +359,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             -- goes only to a runner of its org or of the service (the line above).
             and case
               when prov.id is null then
-                ${ownProvider}::text = 'openrouter' or (me.trusted and ${serviceKey}::boolean)
+                ${ownProvider}::text = 'openrouter' or (me.trusted and me.org_id is null and ${serviceKey}::boolean)
               when not ${readsProviders}::boolean then false
               when prov.kind::text = ${ownProvider}::text then true
               when prov.runner_held then false

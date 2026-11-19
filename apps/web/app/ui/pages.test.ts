@@ -537,6 +537,12 @@ describe('localPath', () => {
       assert.equal(localPath(value), '/', String(value))
     }
   })
+
+  it('refuses a path that the parse turns into another origin (REV-130)', () => {
+    for (let value of ['/.//evil.example', '/a/..//evil.example', '/%2e//evil.example', '/.//evil.example/phish?x=1']) {
+      assert.equal(localPath(value), '/', value)
+    }
+  })
 })
 
 describe('readTheme', () => {

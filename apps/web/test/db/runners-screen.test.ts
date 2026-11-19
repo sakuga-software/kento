@@ -205,16 +205,24 @@ describe('the runners of the Runners screen', () => {
       assert.equal((await (await claim(gpu.token)).json()).id, job)
     })
 
-    it('sends the key of the service to a runner of key mode "app", and stops when an admin removes the trust', async () => {
+    it('never sends the key of the service to a runner of an org, even trusted (REV-130)', async () => {
       let runner = await registered({ trusted: true })
-      await queueJob()
-      let job = await (await claim(runner.token, false)).json()
-      assert.deepEqual(job.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
-
-      assert.equal(await admin.setTrusted(otherOrg, runner.runnerId, false), false, 'another org changes nothing')
-      assert.equal(await admin.setTrusted(org, runner.runnerId, false), true)
-      await queueJob()
+      let job = await queueJob()
       assert.equal((await claim(runner.token, false)).status, 204)
+
+      // The trust of a runner of the org changes from its own org only.
+      let trusted = async () => (await database.sql<{ trusted: boolean }[]>`select trusted from runners where id = ${runner.runnerId}`)[0]!.trusted
+      assert.equal(await admin.setTrusted(otherOrg, runner.runnerId, false), false, 'another org changes nothing')
+      assert.equal(await trusted(), true)
+      assert.equal(await admin.setTrusted(org, runner.runnerId, false), true)
+      assert.equal(await trusted(), false)
+
+      // The job waits for a trusted runner of the service, which gets the key.
+      let service = await (await register(SERVICE_TOKEN, { name: 'service-runner', labels: [], version: '0.1.0' })).json()
+      await database.sql`update runners set trusted = true where id = ${service.runnerId}`
+      let given = await (await claim(service.token, false)).json()
+      assert.equal(given.id, job)
+      assert.deepEqual(given.provider, { kind: 'openrouter', apiKey: 'sk-or-service-key' })
     })
 
     it('a runner of the service cannot be trusted or revoked from the screen', async () => {

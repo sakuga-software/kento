@@ -115,7 +115,7 @@ function screen(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
     runners: runnersOf(),
     stall: null,
     workflowRepos: ['sakuga-software/dojo'],
-    setup: { published: true, suspended: false, enabledRepos: 2, providers: 1, pendingRegistrations: 0 },
+    setup: { published: true, suspended: false, enabledRepos: 2, providers: 1, serviceRunners: 1, pendingRegistrations: 0 },
     ...overrides,
     runnerCounts: overrides.runnerCounts ?? countRunners(overrides.runners ?? runnersOf()),
   }
@@ -230,7 +230,7 @@ function fresh(overrides: Partial<DashboardScreen> = {}): DashboardScreen {
     workflowRepos: [],
     runners: [],
     queue: { running: [], queued: [], runningCount: 0, queuedCount: 0 },
-    setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 0 },
+    setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, serviceRunners: 1, pendingRegistrations: 0 },
     ...overrides,
   })
 }
@@ -243,13 +243,26 @@ describe('the list "Getting started" (REV-26)', () => {
     assert.deepEqual(states(fresh()), ['app:done', 'provider:todo', 'runner:todo', 'repo:todo', 'review:todo'])
   })
 
-  it('counts the key of the service as a provider', () => {
+  it('counts the key of the service as a provider while the service has a trusted runner', () => {
     assert.deepEqual(states(fresh(), { ...OPTIONS, serviceKey: true })?.[1], 'provider:done')
+    let step = setupSteps(fresh(), { ...OPTIONS, serviceKey: true })![1]!
+    assert.match(step.text, /The runners of the service review with the key of the service\. A runner of your organization needs its own OpenRouter key\./)
+  })
+
+  it('does not count the key of the service when the service has no trusted runner: a runner of the org never gets it (REV-130)', () => {
+    let view = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, serviceRunners: 0, pendingRegistrations: 0 } })
+    let step = setupSteps(view, { ...OPTIONS, serviceKey: true })![1]!
+    assert.equal(step.state, 'todo')
+    assert.equal(
+      step.text,
+      'No provider. The key of the service goes only to a runner of the service, and there is none. A runner of your organization needs its own OpenRouter key, or add a provider.',
+    )
+    assert.doesNotMatch(step.text, /A trusted runner gets the key of the service/)
   })
 
   it('marks each step from what the org has, and the first review as waiting while a job is in the queue', () => {
     let view = fresh({
-      setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, pendingRegistrations: 0 },
+      setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, serviceRunners: 1, pendingRegistrations: 0 },
       runners: [{ id: 'r', name: 'mac-mini', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
       queue: { running: [], queued: [], runningCount: 0, queuedCount: 1 },
     })
@@ -259,12 +272,12 @@ describe('the list "Getting started" (REV-26)', () => {
   it('says that a runner is on its way when it is registered but silent, or when a token waits for it', () => {
     let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0 }] })
     assert.equal(states(silent)?.[2], 'runner:wait')
-    let token = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, pendingRegistrations: 1 } })
+    let token = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, serviceRunners: 1, pendingRegistrations: 1 } })
     assert.equal(states(token)?.[2], 'runner:wait')
   })
 
   it('says that a suspended installation is to be done again', () => {
-    let view = fresh({ setup: { published: false, suspended: true, enabledRepos: 0, providers: 0, pendingRegistrations: 0 } })
+    let view = fresh({ setup: { published: false, suspended: true, enabledRepos: 0, providers: 0, serviceRunners: 1, pendingRegistrations: 0 } })
     assert.equal(states(view)?.[0], 'app:todo')
   })
 
@@ -478,7 +491,7 @@ describe('the dashboard', () => {
   it('says that jobs wait with no runner online, since when, and what to do (REV-52)', async () => {
     let since = new Date(NOW.getTime() - 14 * 60_000)
     let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)
-    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen } }))
+    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
     let { html } = await signIn(ALEX)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /2 jobs have waited in the queue for more than 10 min \(the oldest for 14 min\)/)
@@ -494,10 +507,33 @@ describe('the dashboard', () => {
     assert.match(html, /aria-labelledby="todo-failure-11111111-1111-4111-8111-111111111111"/)
     assert.match(html, /<h3 id="todo-failure-11111111-1111-4111-8111-111111111111" class="todo-title">/)
 
-    assert.deepEqual(stallText({ count: 1, since, lastRunnerSeenAt: null }, 0, NOW).cause, 'No runner ever called Kentō.')
-    let busy = stallText({ count: 1, since, lastRunnerSeenAt: NOW }, 2, NOW)
+    assert.deepEqual(stallText({ count: 1, since, lastRunnerSeenAt: null, serviceKeyJobs: 0, serviceRunnersOnline: 0 }, 0, NOW).cause, 'No runner ever called Kentō.')
+    let busy = stallText({ count: 1, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 0, serviceRunnersOnline: 0 }, 2, NOW)
     assert.match(busy.title, /^1 job has waited in the queue/)
     assert.match(busy.cause, /^2 runners are online, but none takes these jobs/)
+  })
+
+  it('says that jobs with no provider wait for a runner with an OpenRouter key (REV-130)', async () => {
+    let since = new Date(NOW.getTime() - 14 * 60_000)
+    let all = stallText({ count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 }, 1, NOW)
+    assert.equal(
+      all.cause,
+      'These jobs have no provider: they wait for a runner with an OpenRouter key. The key of the service goes only to a runner of the service, never to a runner of your organization.',
+    )
+    assert.equal(all.action, 'Give your runner its own OpenRouter key (PROVIDER_KIND=openrouter and PROVIDER_API_KEY), or add a provider in Settings.')
+    assert.match(stallText({ count: 3, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 1, serviceRunnersOnline: 0 }, 1, NOW).cause, /^1 of these jobs has no provider: it waits for a runner with an OpenRouter key\./)
+    // A trusted runner of the service is online: the jobs wait for it to be free, and no key is missing.
+    let busy = stallText({ count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 1 }, 2, NOW)
+    assert.match(busy.cause, /^2 runners are online, but none takes these jobs/)
+    assert.doesNotMatch(`${busy.cause} ${busy.action}`, /OpenRouter key/)
+    // With no runner online, the cause stays the missing runner.
+    assert.match(stallText({ count: 2, since, lastRunnerSeenAt: null, serviceKeyJobs: 2, serviceRunnersOnline: 0 }, 0, NOW).cause, /^No runner ever called Kentō/)
+
+    let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
+    let { html } = await signIn(ALEX)
+    let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
+    assert.match(section, /These jobs have no provider: they wait for a runner with an OpenRouter key\./)
+    assert.match(section, /Give your runner its own OpenRouter key \(PROVIDER_KIND=openrouter and PROVIDER_API_KEY\), or add a provider in Settings\./)
   })
 
   it('has no banner of the queue while no job waits for too long', async () => {

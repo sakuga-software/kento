@@ -33,8 +33,8 @@ export interface Config {
   /** The GitHub server that the runners clone from: `https://github.com`, or a GitHub Enterprise Server. */
   githubUrl: string
   /**
-   * The OpenRouter key of the service, sent only to a trusted runner without its own key, for the
-   * jobs of an org that has no provider (REV-11).
+   * The OpenRouter key of the service, sent only to a trusted runner of the service without its own
+   * key, for the jobs of an org that has no provider (REV-11). Never to a runner of an org (REV-130).
    */
   providerApiKey: string | null
   /**
