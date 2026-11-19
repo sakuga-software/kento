@@ -1,7 +1,8 @@
 # Results of 2026-10-02
 
-Seven cases, ten defects (see [`truth.md`](truth.md)). Each match below was read by hand: a finding
-counts when it names the defect, not a nearby one.
+Seven cases of private repositories, ten defects. The cases and their defects are in the internal
+bench, not in this repository (see [`README.md`](README.md)). Each match below was read by hand: a
+finding counts when it names the defect, not a nearby one.
 
 ## One call
 
@@ -38,21 +39,22 @@ agents read files without aiming better: fewer defects than one call.
 
 | Defect | Found by (one call) |
 | --- | --- |
-| plai565 G1: a `null` body answers 500 | every model of the top six, on most runs |
-| dbx539 G1: the French decimal comma | MiMo, GLM-5.3, Kimi K3 |
-| plai574 G2: an explicit `isActive` clears the pause of the site | MiMo, Sonnet 5.5 |
-| suri1035 G1: a line paid in part leaves the demand | GPT-5.6 Sol, Luna (once), MiMo and GLM-5.3 in part (the sale of several lines) |
-| plai549 G1, G2, G3; plai565a G1; plai574 G1; dbx539 G2 | nobody |
+| A `null` request body answers 500 instead of 400 | every model of the top six, on most runs |
+| A rate formatted with a fixed decimal separator | MiMo, GLM-5.3, Kimi K3 |
+| An explicit flag in the request clears a state that only the server sets | MiMo, Sonnet 5.5 |
+| A filter on the wrong key drops a record that is only partly settled | GPT-5.6 Sol, Luna (once), MiMo and GLM-5.3 in part (the case of several records) |
+| The six other defects | nobody |
 
-The six defects that nobody found need a reading of another service (the relay of plai549), of a
-library (drizzle wraps the error of plai565a), or of the input side of a schema.
+The six defects that nobody found need a reading of another service (a relay in front of an
+endpoint), of a library (the ORM wraps the error of the database driver), or of the input side of a
+schema.
 
 ## Frequent false positives
 
 - A file, an import or a function named "missing" because the diff does not show it. The prompt now
   forbids it.
-- On atlas#1035, the own lots read with their total quantity and not their remainder: the code
-  replays the whole history, so the total is right. Luna, GLM-5.3 and DeepSeek reported it.
+- On one case, a total read from the whole history and not from its remainder: the code replays the
+  whole history, so the total is right. Luna, GLM-5.3 and DeepSeek reported it.
 - A blocking finding on the clean PR, on a line that the PR did not change. The script now blocks
   only on a changed line.
 

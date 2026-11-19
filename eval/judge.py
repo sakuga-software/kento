@@ -3,6 +3,7 @@
     python3 judge.py <label> [<label> ...]        # table per model
     SHOW=1 python3 judge.py <label>               # also print each candidate match
 
+BENCH_CASES names the folder of the internal bench that holds truth.json (bench_cases.py).
 A hit is a finding whose path and text match the expected defect. The patterns
 only propose a match: read the SHOW output before you trust a number.
 """
@@ -15,26 +16,12 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-TRUTH = {
-    "plai574": {
-        "G1": (r"page\.tsx", r"null|nul\b|optional|schéma d'entrée|input"),
-        "G2": (r"route\.ts", r"isActive|pausedBySiteAt|pause"),
-    },
-    "plai565": {"G1": (r"route\.ts", r"null")},
-    "plai565a": {"G1": (r"organizations\.ts", r"23505|DrizzleQueryError|cause|unicit|unique")},
-    "plai549": {
-        "G1": (r"http\.ts|proxy|relay|channel-relay|server", r"pass-?through|relais|relay|SOURCE_TOKEN|re-?sign|signe|n'importe quel|any (authenticated )?listener|proxy"),
-        "G2": (r"stream-broadcaster", r"restaur|restore|revien|jamais.*(remis|rajout|recré)|never (come back|restor)|ne peut plus revenir|consumed|take"),
-        "G3": (r"channel-relay", r"catch|4\d\d|5\d\d|statut|status|ok\b"),
-    },
-    "dbx539": {
-        "G1": (r"tracking\.tsx", r"virgule|comma|décimal|decimal|locale|Intl|format"),
-        "G2": (r"admin\.json|locales", r"plur|_one|_other|count"),
-    },
-    "suri1035": {"G1": (r"container-lots", r"partiel|partially|in part|whole|entière|tout(e)? la (ligne|quantité)|line id|identifiant de ligne|exclue|leaves the demand")},
-    "plai529clean": {},
-}
-PRICE_SPLIT = re.compile(r"^(?P<label>[^-]+)-(?P<model>[a-z0-9.-]+_[^-]+(?:-[^-]+)*?)-(?P<case>plai574|plai565a|plai565|plai549|dbx539|suri1035|plai529clean)\.json$")
+sys.path.insert(0, HERE)
+from bench_cases import read_truth  # noqa: E402
+
+TRUTH = read_truth()
+CASE = "|".join(sorted(map(re.escape, TRUTH), key=len, reverse=True))
+PRICE_SPLIT = re.compile(rf"^(?P<label>[^-]+)-(?P<model>[a-z0-9.-]+_[^-]+(?:-[^-]+)*?)-(?P<case>{CASE})\.json$")
 
 
 def main():
@@ -57,7 +44,7 @@ def main():
             if not isinstance(a, dict) or "invalid" in a or "findings" not in a:
                 s["invalid"] += 1
                 continue
-            if case == "plai529clean":
+            if not TRUTH[case]:
                 s["clean_runs"] += 1
                 if a["verdict"] == "request_changes":
                     s["clean_block"] += 1

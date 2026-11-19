@@ -8,12 +8,23 @@ next. The full bench that this slice comes from is in [`../PLAN.md`](../PLAN.md)
 
 ## The subset
 
-[`subset-ts.json`](subset-ts.json) holds 20 pull requests, with 60 golden comments:
+[`subset-ts.json`](subset-ts.json) holds 13 pull requests of Martian whose repository is mostly
+TypeScript, with 50 golden comments: 10 of Cal.com, 2 of Grafana, and 1 of Sentry
+(`ai-code-review-evaluation/sentry-greptile` #5).
 
-- 13 pull requests of Martian whose repository is mostly TypeScript: 10 of Cal.com, 2 of Grafana,
-  and 1 of Sentry (`ai-code-review-evaluation/sentry-greptile` #5);
-- 7 internal cases of [`../cases.tsv`](../cases.tsv), with their defects from
-  [`../truth.md`](../truth.md). `plai529clean` has none, so each finding on it is a false positive.
+The results below count 20 pull requests and 60 golden comments: these 13, and the 7 internal
+cases of the first bench, with their 10 defects. One internal case has none, so each finding on it
+is a false positive. The internal cases are pull requests of private repositories: they are in the
+internal bench, apart from this repository ([`../README.md`](../README.md)), in
+`$INTERNAL_BENCH/martian/subset-ts.json`. Each subset of this folder has its internal part there,
+under the same name. `--subset` takes both, separated by a comma, and gives the 20 pull requests
+of before (REV-121):
+
+```bash
+--subset eval/martian/subset-ts.json,$INTERNAL_BENCH/martian/subset-ts.json
+```
+
+Martian publishes its bench under the MIT license: see [`NOTICE.md`](NOTICE.md).
 
 ## Run it
 
@@ -21,6 +32,8 @@ next. The full bench that this slice comes from is in [`../PLAN.md`](../PLAN.md)
 
 ```bash
 eval/martian/fetch.sh eval/martian/subset-ts.json ../repos   # blobless clones, about 3 GB
+# the internal part needs read access to the private repositories
+eval/martian/fetch.sh "$INTERNAL_BENCH/martian/subset-ts.json" ../repos
 OPENROUTER_API_KEY=... node eval/martian/run.ts --subset eval/martian/subset-ts.json \
   --repos ../repos --out ../results --label run1 --models z-ai/glm-5.3,openai/gpt-5.6-luna
 ```
@@ -68,16 +81,23 @@ the price table of the engine. With this provider, the run does not use the key 
 
 ## The bench v2: cases from the feedback of the org (REV-69)
 
-[`subset-ts-v2.json`](subset-ts-v2.json) holds 80 pull requests and 240 golden comments: the 20 of
-`subset-ts.json`, and 60 cases of [`../internal/subset-feedback.json`](../internal/subset-feedback.json)
-(`source: "feedback"`). These cases come from the review comments of 9 repositories of the org, and
-from the answers to them:
+The bench v2 holds 80 pull requests and 240 golden comments: the 20 of `subset-ts.json` with its
+internal part, and 60 cases from the review comments of 9 repositories of the org, and from the
+answers to them (`source: "feedback"`). In this repository, [`subset-ts-v2.json`](subset-ts-v2.json)
+holds its public part: the 13 pull requests of Martian, and the 25 cases of
+[`../internal/subset-feedback.json`](../internal/subset-feedback.json), from the 4 public
+repositories of the org. Its internal part, `$INTERNAL_BENCH/martian/subset-ts-v2.json`, holds the
+42 others: the 7 internal cases, and 35 cases from 5 private repositories. A test checks that
+`subset-ts-v2.json` is `subset-ts.json` then `subset-feedback.json`, and that no JSON file of
+`eval/` holds a pull request of a private repository ([`public.test.ts`](public.test.ts)).
+
+The cases come from these steps:
 
 1. [`collect.sh`](../internal/collect.sh) gets the review comments of each pull request.
 2. [`label.ts`](../internal/label.ts) (Haiku) reads each comment with its answer
    (`<!-- claude-reply -->`): `applied`, `partly`, `accepted`, `out_of_scope`, `wrong`, `duplicate`
    or `unclear`, with a Martian category, a severity and the defect in one sentence.
-3. client-a has few answers. [`infer.ts`](../internal/infer.ts) compares each comment with the
+3. For a repository with few answers, [`infer.ts`](../internal/infer.ts) compares each comment with the
    diff of its lines up to the last head of the pull request (Haiku). Sonnet then compares the
    comments of a pull request that are on the same file, at most 5 lines apart: `same`,
    `different` or `opposite`. If two comments are opposite, the comment that the last head does
@@ -126,8 +146,8 @@ Haiku:
 
 - 2 findings repeat a known false positive (of 15), both on fruitback.
 - Haiku gives 1.4 findings for each `feedback` case, but the past reviews give 2.75 golden
-  comments. pantry (2/43) and atlas (2/38) lose most: their large pull requests hold many
-  golden comments. client-a finds 8 of 50.
+  comments. The repositories with large pull requests lose most: these pull requests hold many
+  golden comments. The results by private repository are in the internal bench.
 - Cost: review $0.62, judge $1.47. 1 failure (network), 5 judge errors.
 
 ## Compare two variants: a progress or noise (REV-109)
@@ -139,12 +159,14 @@ when the interval is too wide to decide.
 
 ### The protocol
 
-1. **The hard subset.** [`subset-ts-hard.json`](subset-ts-hard.json) holds 57 pull requests of
-   v2: the 44 with 2 golden comments or more of the Core profile above `Low` (147 such comments:
-   martian 10, internal 3, feedback 31), and the 13 with no golden comment, for precision.
-   [`hard.ts`](hard.ts) builds it from the labels only, never from past scores, and a test
-   checks that the file follows the rule. These pull requests are the dense ones: recall moves
-   on them. Confirm a winner once on the 80 pull requests.
+1. **The hard subset.** The hard subset holds 57 pull requests of v2: the 44 with 2 golden
+   comments or more of the Core profile above `Low` (147 such comments: martian 10, internal 3,
+   feedback 31), and the 13 with no golden comment, for precision. Its public part,
+   [`subset-ts-hard.json`](subset-ts-hard.json), holds 23 of them (15 dense, 8 with no golden
+   comment); `$INTERNAL_BENCH/martian/subset-ts-hard.json` holds the 34 others.
+   [`hard.ts`](hard.ts) builds each part from the labels of its part of v2 only, never from past
+   scores, and a test checks that the public file follows the rule. These pull requests are the
+   dense ones: recall moves on them. Confirm a winner once on the 80 pull requests.
 2. **Each variant gets its own label**, the same model, level and subset, and `--repeats 3`
    (2 if the budget is short). Give a variant of the prompt with `--prompt <file>`: the engine
    reads that file in place of `prompts/review.md` (`prompts` of `ModelClient`), and nothing
@@ -156,9 +178,10 @@ when the interval is too wide to decide.
 4. **The comparison**: [`compare.ts`](compare.ts), with the files of each arm.
 
 ```bash
-ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset eval/martian/subset-ts-hard.json \
+HARD=eval/martian/subset-ts-hard.json,$INTERNAL_BENCH/martian/subset-ts-hard.json
+ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset "$HARD" \
   --repos ../repos --out ../results --label base --models claude-haiku-5-5 --repeats 3 --judge-batch --concurrency 3
-ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset eval/martian/subset-ts-hard.json \
+ANTHROPIC_API_KEY=... node eval/martian/run.ts --provider anthropic --subset "$HARD" \
   --repos ../repos --out ../results --label variant --prompt variant.md --models claude-haiku-5-5 --repeats 3 --judge-batch --concurrency 3
 node eval/martian/compare.ts --a ../results/base-r1-claude-haiku-5-5.json,../results/base-r2-claude-haiku-5-5.json,../results/base-r3-claude-haiku-5-5.json \
   --b ../results/variant-r1-claude-haiku-5-5.json,../results/variant-r2-claude-haiku-5-5.json,../results/variant-r3-claude-haiku-5-5.json
@@ -209,8 +232,8 @@ their cost. Use it before the judge, then run the same command without it.
   difference", or "a trade-off" when one metric moves and the other can fall by more than 0.05.
 - For a change of cost or speed, it says also when the interval of Δrecall is inside ±0.05.
 
-`--subset` limits the comparison to the pull requests of a subset: run it with
-`subset-ts-hard.json` on files of the 80 pull requests.
+`--subset` limits the comparison to the pull requests of a subset: run it with the hard subset
+(both parts, `"$HARD"`) on files of the 80 pull requests.
 
 ### The noise, measured on 2026-11-12
 
@@ -247,7 +270,7 @@ a golden comment on the function, and the judge accepts it. The loss is not the 
 result. Measure it on scored files with no API call:
 
 ```bash
-node eval/martian/prefilter.ts --subset eval/martian/subset-ts-v2.json ../results/*.json
+node eval/martian/prefilter.ts --subset eval/martian/subset-ts-v2.json,$INTERNAL_BENCH/martian/subset-ts-v2.json ../results/*.json
 ```
 
 ### First use, 2026-11-12: the prompt of 2026-11-03 against the prompt of `main`
@@ -319,7 +342,7 @@ out for the size). 3 are about localisation, and the prompt had no item on it. T
 
 - **The localisation item finds what it aims at.** The 3 golden comments that it aims at give
   6 chances a model (3 × 2 runs). Haiku finds 3 of them, Sonnet 3; before, no run of 8 found one. The
-  plural form of `en/admin.json` stays missed. F1 does not move more than the noise, and the
+  missing plural form of a translation key of an internal case stays missed. F1 does not move more than the noise, and the
   findings do not grow: 49 / 42 for Haiku, 53 / 60 for Sonnet.
 - **Two samples merged do not pay.** Recall goes from 31 to 35 % on average, but precision falls
   from 41 to 27 %: the second sample adds about 35 findings for 3 more golden comments found. The
@@ -386,7 +409,7 @@ one value a run.
 - **At low reasoning Haiku 5.5 finds less than GLM-5.3.** With more reasoning it finds as much or
   more. No review failed in 120 when the output cap left room for the answer.
 - **High reasoning finds the most internal defects**: 3 of 10 in both runs, with the unique
-  violation that drizzle wraps on pantry#565, which no cheap model found before. It costs 1.6 cents a
+  violation that the ORM wraps, on an internal case, which no cheap model found before. It costs 1.6 cents a
   review against 1.0 at medium.
 - **The reasoning counts in the output tokens.** At 16,000, high reasoning left no room for the
   answer in 7 to 8 reviews of 20: the content came back empty. The two failures of GLM-5.3 in its

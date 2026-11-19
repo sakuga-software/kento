@@ -1,6 +1,6 @@
 /**
  * The prefilter of the judge (REV-109). Most golden comments of `internal` and `feedback` start with
- * the file of the defect (`job.ts:215 …`, `exp31-variation-1.js line 301: …`). With `--prefilter`,
+ * the file of the defect (`job.ts:215 …`, `banner-variant.js line 301: …`). With `--prefilter`,
  * run.ts sends such a golden comment to the judge only with the findings on a file of that name, or
  * with the findings whose text names that file.
  *
@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
+import { readSubset } from './subset.ts';
 
 const NAMED_FILE = /^\s*`?([\w@.$\-[\]()+~]+(?:\/[\w@.$\-[\]()+~]+)*\.[A-Za-z0-9]{1,6})`?(?=[\s:,(]|$)/;
 
@@ -31,7 +32,7 @@ export function prefilterKeeps(golden: string, candidate: string): boolean {
 
 if (import.meta.main) {
   const { values, positionals } = parseArgs({ options: { subset: { type: 'string' } }, allowPositionals: true });
-  const prs: { url: string; golden: { comment: string }[] }[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
+  const prs = readSubset<{ url: string; golden: { comment: string }[] }>(values.subset!);
   const golden = new Map(prs.map((pr) => [pr.url, pr.golden.map((g) => g.comment)]));
   for (const file of positionals) {
     const result: { rows: { url: string; findings: string[]; matches?: number[][] }[] } = JSON.parse(readFileSync(file, 'utf8'));

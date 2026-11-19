@@ -18,6 +18,9 @@
  *
  * REV-117: `--rules <file>` gives the rules of a JSON file (an array of rules, as rules.ts reads
  * them) to every review: the pack then holds a Rules section, and the link call runs.
+ *
+ * REV-121: `--subset` takes several files separated by commas (subset.ts), for example the public
+ * subset and the same subset of the internal bench.
  */
 import { createHash } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -28,6 +31,7 @@ import type { Usage } from '../../packages/engine/src/findings.ts';
 import type { Rule } from '../../packages/engine/src/rules.ts';
 import { costFromTable } from '../../packages/engine/src/prices.ts';
 import { requestTokens } from '../../packages/engine/src/providers.ts';
+import { readSubset } from './subset.ts';
 import { failureCounts, failureKind } from './failures.ts';
 import { mergeSamples } from './merge.ts';
 import { prefilterKeeps } from './prefilter.ts';
@@ -552,7 +556,8 @@ async function main() {
   if (promptText) PROMPTS = { 'review.md': promptText };
   if (values.rules) RULES = readRules(values.rules);
   const promptId = sha256(promptText ?? readFileSync(join(import.meta.dirname, '..', '..', 'packages', 'engine', 'prompts', 'review.md'), 'utf8')).slice(0, 12);
-  const prs: Pr[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
+  if (!values.subset) throw new Error('--subset needs one subset file or more, separated by commas');
+  const prs = readSubset<Pr>(values.subset);
   const out = values.out!;
   mkdirSync(out, { recursive: true });
   loadJudgeCache(join(out, 'judge-cache.jsonl'));

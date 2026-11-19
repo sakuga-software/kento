@@ -2,7 +2,7 @@
 
     python3 oneshot.py <label> <model> [<model> ...]
 
-Reads eval/cases.tsv, builds the pack of each case with context-pack.sh, and
+Reads cases.tsv in BENCH_CASES (bench_cases.py), builds the pack of each case with context-pack.sh, and
 writes runs/<label>-<model>-<case>.json with the answer and the token usage.
 """
 import concurrent.futures
@@ -14,6 +14,10 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from bench_cases import cases_dir, read_cases  # noqa: E402
+
+cases_dir()  # Stop before the key and any call when BENCH_CASES is not set.
 URL = "https://openrouter.ai/api/v1/chat/completions"
 KEY = subprocess.check_output(
     ["security", "find-generic-password", "-s", "openrouter-pr-review", "-a", "api-key", "-w"], text=True
@@ -86,8 +90,7 @@ def main():
     os.makedirs(os.path.join(HERE, "runs"), exist_ok=True)
     label, models = sys.argv[1], sys.argv[2:]
     only = os.environ.get("CASES", "").split(",") if os.environ.get("CASES") else None
-    cases = [line.rstrip("\n").split("\t") for line in open(os.path.join(HERE, "cases.tsv"))]
-    cases = [c for c in cases if not only or c[0] in only]
+    cases = read_cases(only)
     jobs = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=int(os.environ.get("WORKERS", "8"))) as pool:
         for model in models:

@@ -18,6 +18,7 @@ import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 import { failureCounts, failureKind, type FailureRow } from './failures.ts';
 import { PROFILES } from './profiles.ts';
+import { readSubset } from './subset.ts';
 
 export type ResultRow = FailureRow & {
   url: string;
@@ -249,7 +250,7 @@ function main() {
   if (!values.a || !values.b) throw new Error('--a and --b each need one result file or more, separated by commas');
   const filesA = values.a.split(','), filesB = values.b.split(',');
   const armA = readArm(filesA), armB = readArm(filesB);
-  const urls = values.subset ? new Set((JSON.parse(readFileSync(values.subset, 'utf8')) as { url: string }[]).map((pr) => pr.url)) : undefined;
+  const urls = values.subset ? new Set(readSubset(values.subset).map((pr) => pr.url)) : undefined;
   const alignment = align(armA.rows, armB.rows, urls);
   const draws = Number(values.draws), seed = Number(values.seed);
   const inSubset = (rows: ResultRow[]) => rows.filter((row) => !urls || urls.has(row.url));

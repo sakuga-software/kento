@@ -15,6 +15,10 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from bench_cases import cases_dir, read_cases  # noqa: E402
+
+cases_dir()  # Stop before the key and any call when BENCH_CASES is not set.
 URL = "https://openrouter.ai/api/v1/chat/completions"
 KEY = subprocess.check_output(
     ["security", "find-generic-password", "-s", "openrouter-pr-review", "-a", "api-key", "-w"], text=True
@@ -22,7 +26,6 @@ KEY = subprocess.check_output(
 ROUNDS = int(os.environ.get("ROUNDS", "4"))
 MAX_TOOL_LINES = 300
 
-sys.path.insert(0, HERE)
 SCHEMA = json.loads(open(os.path.join(HERE, "schema.json")).read())
 
 TOOLS = [
@@ -169,8 +172,7 @@ def main():
     label, models = sys.argv[1], sys.argv[2:]
     prompt = open(os.path.join(HERE, os.environ.get("PROMPT", "review-prompt-agent.md"))).read()
     only = os.environ.get("CASES", "").split(",") if os.environ.get("CASES") else None
-    cases = [line.rstrip("\n").split("\t") for line in open(os.path.join(HERE, "cases.tsv"))]
-    cases = [c for c in cases if not only or c[0] in only]
+    cases = read_cases(only)
     packs = {}
     for name, _repo, base, _head in cases:
         wt = os.path.join(HERE, "..", os.environ.get("WORKTREES", "wt"), name)

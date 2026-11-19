@@ -29,7 +29,7 @@ Martian and on our own cases. Take this plan again when the budget allows it.
 ## 3. Regular runs
 
 Add a workflow to this repository. It must run the bench each month and on each pull request that
-changes `review/`, on `runners-host`, and post the table of scores. This workflow does not exist
+changes `review/`, on a self-hosted runner, and post the table of scores. This workflow does not exist
 yet.
 
 ## Budget

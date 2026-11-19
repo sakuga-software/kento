@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Clone each repository of a subset without blobs, and fetch the base and head commits of each pull
-# request by SHA. The internal repositories are private: git needs credentials for github.com.
+# request by SHA. The subset is one JSON file, or several separated by commas, as for run.ts. The
+# repositories of the internal bench are private: git needs credentials for github.com.
 #
 #     eval/martian/fetch.sh eval/martian/subset-ts.json <repos dir>
 set -euo pipefail
-subset=$1
+IFS=, read -ra subsets <<< "$1"
 repos=$2
 mkdir -p "$repos"
-jq -r '.[] | "\(.owner) \(.name) \(.base) \(.head)"' "$subset" | while read -r owner name base head; do
+jq -r '.[] | "\(.owner) \(.name) \(.base) \(.head)"' "${subsets[@]}" | while read -r owner name base head; do
   dir="$repos/${owner}__${name}"
   [ -d "$dir" ] || git clone -q --filter=blob:none --no-checkout "https://github.com/$owner/$name.git" "$dir"
   for sha in "$base" "$head"; do

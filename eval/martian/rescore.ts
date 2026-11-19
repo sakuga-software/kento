@@ -9,9 +9,10 @@ import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 import { PROFILES, profileMetrics, type Profile } from './profiles.ts';
+import { readSubset } from './subset.ts';
 
 const { values, positionals } = parseArgs({ options: { subset: { type: 'string' } }, allowPositionals: true });
-const prs: { url: string; golden: { category: string }[] }[] = JSON.parse(readFileSync(values.subset!, 'utf8'));
+const prs = readSubset<{ url: string; golden: { category: string }[] }>(values.subset!);
 const categories = new Map(prs.map((pr) => [pr.url, pr.golden.map((g) => g.category)]));
 for (const file of positionals) {
   const result = JSON.parse(readFileSync(file, 'utf8'));
