@@ -222,6 +222,40 @@ pnpm test
 more commands (tests against Postgres, the screens in a browser):
 [apps/web/README.md](apps/web/README.md#develop).
 
+## CI
+
+The workflows are in `.github/workflows`: Test (the packages), Web (`apps/web`), Runner (the image of
+`apps/runner`), Secrets (gitleaks) and CodeQL.
+
+- **Where a job runs.** Each `runs-on` reads `github.event.repository.private`. While the repository
+  is private, the jobs run on our self-hosted runners, which cost no minutes. Once it is public, they
+  run on the runners of GitHub (`ubuntu-latest`), which are free for a public repository: a pull
+  request from a fork must not run its code on our machines. A pull request can change the workflow
+  it runs, so this choice protects nothing by itself: the runner group of our runners must also
+  refuse public repositories.
+- **No dependency passes from a pull request to `main`.** On a self-hosted runner,
+  `.github/actions/setup-pnpm` removes all the files that an earlier job left, `node_modules` too.
+  pnpm itself, its npm cache and the pnpm store of a job are in the temporary directory of the job,
+  which the runner deletes after the job.
+  The packages come from the cache of `pnpm-lock.yaml`, and GitHub never restores the cache of a
+  pull request on `main`. The image builds keep their pnpm store in a BuildKit cache of the Docker
+  daemon: the pull requests use one apart (`PNPM_CACHE_ID=pnpm-store-pr`), and only the builds of
+  `main` use `pnpm-store`. A pull request can change these files, so this only prevents an accident: on a
+  self-hosted runner, the code of a pull request can still write where the runner user can write.
+  Only collaborators can open a pull request while the repository is private.
+- **Pinned versions.** Each action is pinned by the SHA of its commit, with its tag in a comment, and
+  each image of a job by its digest. Dependabot (`.github/dependabot.yml`) proposes the new versions
+  of the actions and of the npm packages. It does not update the images of the jobs, nor gitleaks
+  in `secrets.yml`: change those by hand.
+- **Least privilege.** The token of a workflow has no permission. Each job asks only for what it
+  needs (`contents: read`, and `security-events: write` for CodeQL), and no checkout keeps the
+  token in `.git/config`.
+- **Secrets.** gitleaks scans the history of each commit with its default rules. `.gitleaks.toml`
+  lists the fake values of the tests that it must not report.
+- **CodeQL.** Code scanning of a private repository needs paid GitHub Code Security, so the CodeQL
+  job runs only once the repository is public. `codeql.yml` is the advanced setup of code scanning:
+  keep the default setup off, or GitHub refuses its results.
+
 ## Contributing, security, conduct
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change.

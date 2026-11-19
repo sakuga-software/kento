@@ -1,0 +1,62 @@
+name: Setup Node.js and pnpm
+description: Node.js, pnpm, and the dependencies of the workspace (or of one package). Check out the code first.
+
+inputs:
+  filter:
+    description: The package to install, as `pnpm install --filter` takes it. Empty installs the whole workspace.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # A self-hosted runner keeps its work directory between jobs. Remove all that an earlier job left,
+    # node_modules too: a job of a pull request must not leave code that a later job runs.
+    - name: Clean the work directory
+      if: runner.environment == 'self-hosted'
+      shell: bash
+      run: git clean -ffdx
+
+    # The version of `engines.node` in package.json.
+    - name: Setup Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '26'
+
+    # pnpm, its npm cache and its store are in the temporary directory of the job, which the runner
+    # deletes after each job: a self-hosted runner shares none of them between jobs. npm installs
+    # the version of `packageManager` at once. pnpm/action-setup first installs another version and
+    # then switches, and that switch failed in the job containers (ERR_PNPM_BROKEN_PNPM_INSTALL).
+    # The values are paths of the runner and of package.json, not inputs.
+    - name: Setup pnpm
+      id: pnpm
+      shell: bash
+      run: | # zizmor: ignore[github-env]
+        manager=$(node -p "require('./package.json').packageManager ?? ''")
+        if [[ ! "$manager" =~ ^pnpm@([0-9]+\.[0-9]+\.[0-9]+)(\+.*)?$ ]]; then
+          echo "::error file=package.json::packageManager must be pnpm@<x.y.z>, not '$manager'."
+          exit 1
+        fi
+        version=${BASH_REMATCH[1]}
+        npm install --global --prefix "$RUNNER_TEMP/pnpm" --cache "$RUNNER_TEMP/npm-cache" --no-audit --no-fund "pnpm@$version"
+        echo "$RUNNER_TEMP/pnpm/bin" >> "$GITHUB_PATH"
+        echo "pnpm_config_store_dir=$RUNNER_TEMP/pnpm-store" >> "$GITHUB_ENV"
+        echo "store=$RUNNER_TEMP/pnpm-store" >> "$GITHUB_OUTPUT"
+
+    # The packages come from the cache of the lockfile. GitHub never restores the cache of a pull
+    # request on main.
+    - name: Cache the pnpm store
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.pnpm.outputs.store }}
+        key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ inputs.filter || 'all' }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ inputs.filter || 'all' }}-
+
+    - name: Install dependencies
+      shell: bash
+      env:
+        FILTER: ${{ inputs.filter }}
+      run: |
+        pnpm --version
+        pnpm install --frozen-lockfile ${FILTER:+--filter "$FILTER"}

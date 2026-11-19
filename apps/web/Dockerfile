@@ -11,6 +11,10 @@
 ARG NODE_IMAGE=node:26-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
+# The pnpm store is a BuildKit cache, which stays in the Docker daemon after the build.
+# PNPM_CACHE_ID names it: the CI gives the pull requests a cache apart, so the build of a pull
+# request does not write into the cache that a build of main reads.
+ARG PNPM_CACHE_ID=pnpm-store
 WORKDIR /repo
 # The Node 25 and later images have no corepack: npm installs it. corepack installs the pnpm
 # version of `packageManager` in the root package.json.
@@ -22,7 +26,7 @@ COPY packages/protocol/package.json packages/protocol/
 COPY packages/engine/package.json packages/engine/
 # The production dependencies of apps/web and of the workspace packages it uses (packages/protocol
 # and packages/engine, which have none). No dev dependency.
-RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @sakuga-review/web...
 
 FROM ${NODE_IMAGE}

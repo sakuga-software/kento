@@ -1,0 +1,20 @@
+# The configuration of the Secrets workflow (.github/workflows/secrets.yml): the default rules of
+# gitleaks, less the fake values below. Each one is a fixed string of a test or of a runbook, and no
+# key of any service. Add a value here only when it is fake, never to pass a real secret.
+title = "Kentō"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake keys and tokens of the tests and of the runbooks"
+regexes = [
+  # apps/web/app/publish/failure.test.ts: the masking of a GitHub token in an error.
+  '''^ghs_16C7e42F292c6912E7710c838347Ae178B4a$''',
+  # apps/runner/test/runner.test.ts: the installation token of the test.
+  '''^ghs_InstallationTokenOfTheTest0123456789$''',
+  # apps/runner/DEPLOY.md: a wrong runner token, to show the 401.
+  '''^kento_rt_wrong$''',
+  # packages/protocol/test/protocol.test.ts: the key of a finding, which is no secret.
+  '''^(abcdef012345|ABCDEF012345)$''',
+]

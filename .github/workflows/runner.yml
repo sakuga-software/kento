@@ -14,31 +14,44 @@ concurrency:
   group: runner-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   image:
     name: Runner image
-    runs-on: [self-hosted, sakuga-linux, docker]
+    # Our self-hosted runners while the repository is private, the runners of GitHub once it is
+    # public: a pull request from a fork must not run on our machines (README, "CI").
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-linux", "docker"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build the image
-        run: docker build -f apps/runner/Dockerfile --build-arg APP_COMMIT=${{ github.sha }} -t kento-runner:ci-${{ github.run_id }} .
+        env:
+          APP_COMMIT: ${{ github.sha }}
+          IMAGE: kento-runner:ci-${{ github.run_id }}
+          # The pull requests use a pnpm cache of the Docker daemon apart from the one of main
+          # (apps/*/Dockerfile). One cache for all of them: it does not grow with each pull request.
+          PNPM_CACHE_ID: ${{ github.event_name == 'pull_request' && 'pnpm-store-pr' || 'pnpm-store' }}
+        run: docker build -f apps/runner/Dockerfile --build-arg APP_COMMIT="$APP_COMMIT" --build-arg PNPM_CACHE_ID="$PNPM_CACHE_ID" -t "$IMAGE" .
       # Without KENTO_URL the runner must stop at once, with the name of the variable in its log:
       # this proves that Node runs the source, and that git is in the image.
       - name: Start the image
+        env:
+          IMAGE: kento-runner:ci-${{ github.run_id }}
         run: |
           set -o pipefail
-          docker run --rm kento-runner:ci-${{ github.run_id }} git --version
-          if docker run --rm kento-runner:ci-${{ github.run_id }} > out.log 2>&1; then
+          docker run --rm "$IMAGE" git --version
+          if docker run --rm "$IMAGE" > out.log 2>&1; then
             echo "::error::the runner started without KENTO_URL"; exit 1
           fi
           cat out.log
           grep -q '"event":"startup.config_invalid".*KENTO_URL' out.log
       - name: Remove the image
         if: always()
-        run: docker image rm kento-runner:ci-${{ github.run_id }} || true
+        env:
+          IMAGE: kento-runner:ci-${{ github.run_id }}
+        run: docker image rm "$IMAGE" || true
