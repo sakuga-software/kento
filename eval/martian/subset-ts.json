@@ -1,0 +1,408 @@
+[
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/8087",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 8087,
+    "golden": [
+      {
+        "comment": "Consider adding try-catch around the await to handle import failures gracefully",
+        "severity": "Low",
+        "category": "speculative"
+      },
+      {
+        "comment": "The code uses forEach with async callbacks, which causes asynchronous operations (e.g., calendar/video event deletions, payment refunds) to run concurrently without being awaited. This 'fire-and-forget' behavior leads to unhandled promise rejections, race conditions, and incomplete cleanup, as surrounding try-catch blocks cannot properly handle errors from these unawaited promises. Replace forEach with for...of loops or Promise.all() with map() to ensure proper sequential execution and error handling.",
+        "severity": "Critical",
+        "category": "concurrency"
+      }
+    ],
+    "base": "ba9688a04a8398c9a8332ee7061bfae2f2efd524",
+    "head": "820d7fa87e0c824c5dee8082a33efadb1a2566f7"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/10600",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 10600,
+    "golden": [
+      {
+        "comment": "The exported function TwoFactor handles backup codes and is in BackupCode.tsx. Inconsistent naming.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "Error message mentions 'backup code login' but this is a disable endpoint, not login",
+        "severity": "Low",
+        "category": "doc_defect"
+      },
+      {
+        "comment": "Backup code validation is case-sensitive due to the use of indexOf(). This causes validation to fail if a user enters uppercase hex characters, as backup codes should be case-insensitive for a better user experience.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Because backupCodes are decrypted and mutated in memory before being written back, two concurrent login requests using the same backupCode could both pass this check and update, so a single backup code may effectively be accepted more than once if used concurrently, weakening the intended one-time-use semantics.",
+        "severity": "High",
+        "category": "concurrency"
+      },
+      {
+        "comment": "Object URL for backup codes is not revoked on component unmount, leading to a potential memory leak. This can cause increased memory usage over time, especially if the component is mounted and unmounted frequently.",
+        "severity": "Low",
+        "category": "perf"
+      }
+    ],
+    "base": "efa6d464a38e60ceeeb88f40668c1c4ac4bfaf54",
+    "head": "54486a059cd2032042189bb565646ba4e0f6bd61"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/10967",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 10967,
+    "golden": [
+      {
+        "comment": "A null reference occurs in GoogleCalendarService.createEvent() and updateEvent() when mainHostDestinationCalendar is destructured from evt.destinationCalendar but evt.destinationCalendar is null or an empty array, causing mainHostDestinationCalendar to be undefined.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The optional chaining on mainHostDestinationCalendar?.integration is redundant since you already check mainHostDestinationCalendar in the ternary condition.",
+        "severity": "Low",
+        "category": "style"
+      },
+      {
+        "comment": "Logic error: when externalCalendarId is provided, you're searching for a calendar where externalId === externalCalendarId, but this will always fail since you're looking for a calendar that matches itself. Should likely find by credentialId or use different logic.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "Logic inversion in organization creation: The slug property is now conditionally set when IS_TEAM_BILLING_ENABLED is true, instead of when it's false as originally intended. This change, combined with requestedSlug still being set when IS_TEAM_BILLING_ENABLED is true, results in both properties being set when billing is enabled, and neither when disabled",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "The Calendar interface now requires createEvent(event, credentialId), but some implementations (e.g., Lark/Office365) still declare createEvent(event) only—this breaks the interface contract (also applies to other locations in the PR).",
+        "severity": "Low",
+        "category": "api"
+      },
+      {
+        "comment": "The `credential` may be undefined when passed to `updateEvent` if `reference.credentialId` is set but the credential is not found. This can lead to a runtime error when `updateEvent` is called with an undefined credential, which should be handled to prevent crashes.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "base": "a308075bc39b77ed7059b0cae9d443d669a7bf98",
+    "head": "de628295646d0848226618108a52f2f1e5d04ac0"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/22345",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 22345,
+    "golden": [
+      {
+        "comment": "In getBaseConditions(), the else if (filterConditions) and final else branches are unreachable. This is because getAuthorizationConditions() always returns a non-null Prisma.Sql object, making authConditions always truthy, which means only the first two if/else if conditions are ever evaluated.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "comment": "Fetching userIdsFromOrg only when teamsFromOrg.length > 0 can exclude org-level members for orgs without child teams; consider deriving from teamIds (which includes orgId) or removing the guard so org-only orgs still include member user bookings.",
+        "severity": "Medium",
+        "category": "speculative"
+      }
+    ],
+    "base": "c9a47dd0cebd121ff73f24e1f8c1829579daf8e3",
+    "head": "da09bc0808e7c6df1bc10e00d5acf764d94c7cc7"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/7232",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 7232,
+    "golden": [
+      {
+        "comment": "Asynchronous functions deleteScheduledEmailReminder and deleteScheduledSMSReminder are called without await inside forEach loops. This occurs during booking rescheduling/cancellation, and workflow/workflow step deletion/updates. Consequently, scheduled workflow reminders may not be reliably cancelled, potentially leaving them active.",
+        "severity": "Medium",
+        "category": "concurrency"
+      },
+      {
+        "comment": "When immediateDelete is true, the deleteScheduledEmailReminder function cancels the SendGrid email but fails to delete the corresponding WorkflowReminder record from the database. This creates orphaned database entries and is inconsistent with the immediateDelete: false path, which marks the record as cancelled. The SendGrid DELETE API call is also omitted in this path.",
+        "severity": "High",
+        "category": "data"
+      },
+      {
+        "comment": "The 'cancelled' field is nullable, which can lead to existing records having null values instead of a default of false. This can cause incorrect behavior in the application when checking the cancellation status of reminders.",
+        "severity": "Medium",
+        "category": "data"
+      }
+    ],
+    "base": "d1440bb5d2f2190ad7ae1d26c165f970055b5370",
+    "head": "6048e2a86b50e81e1e3b1b467dfea5a895add3dc"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/8330",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 8330,
+    "golden": [
+      {
+        "comment": "Incorrect end time calculation using slotStartTime instead of slotEndTime",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Using === for dayjs object comparison will always return false as it compares object references, not values. Use .isSame() method instead: dayjs(date.start).add(utcOffset, 'minutes').isSame(dayjs(date.end).add(utcOffset, minutes))",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "base": "93cb21f55a2a40d9116c014741f5679fbeff5fd9",
+    "head": "ee38fd295fd294b9fc787eba482bde24bbfea69b"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/11059",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 11059,
+    "golden": [
+      {
+        "comment": "The parseRefreshTokenResponse function incorrectly sets refresh_token to the hardcoded string 'refresh_token' when it's missing from the OAuth refresh token response. This invalidates the token, breaking subsequent token refreshes and causing authentication failures.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The Zod schema in parseRefreshTokenResponse uses computed property keys [z.string().toString()] and [z.string().optional().toString()] in minimumTokenResponseSchema, which is invalid Zod syntax and will throw a runtime error.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "parseRefreshTokenResponse returns a Zod safeParse result ({ success, data, error }), not the credential key object. Persisting that as key stores the wrapper instead of the token payload; we should store the parsed data or use schema parse.",
+        "severity": "High",
+        "category": "data"
+      },
+      {
+        "comment": "When APP_CREDENTIAL_SHARING_ENABLED and CALCOM_CREDENTIAL_SYNC_ENDPOINT are set, the refreshFunction helper returns the fetch Response, but several callers (for example GoogleCalendarService.refreshAccessToken expecting res.data, and HubspotCalendarService.refreshAccessToken expecting a HubspotToken) assume it returns the integration-specific token object. That mismatch will cause runtime errors in the sync-enabled path unless the return type or those call sites are adjusted.",
+        "severity": "High",
+        "category": "api"
+      },
+      {
+        "comment": "When the sync endpoint path is used, res is a fetch Response and has no .data; res?.data will be undefined and token.access_token will throw at runtime. This relies on a consistent return shape from refreshOAuthTokens, which isn’t guaranteed currently.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The `refreshOAuthTokens` function is passed `credentialId` instead of `userId`, which breaks the credential sync functionality by causing incorrect user lookups. This issue can lead to failures in syncing user credentials, impacting user experience.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The Salesforce integration checks `response.statusText` instead of `response.ok` when handling OAuth token refresh responses. This can lead to unreliable behavior, as a successful response may not be correctly identified, resulting in the use of stale credentials and potential authentication failures.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The `jsforce.Connection` is created using stale `credentialKey.access_token` and `credentialKey.instance_url` after a token refresh, which can lead to authentication failures and incorrect data access. Ensure that the connection is established using the refreshed token values instead.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "The `appCredentialWebhookRequestBodySchema.parse` function can throw on invalid payloads, resulting in 500 Internal Server Errors instead of the expected 400 Bad Request responses. This can lead to confusion for clients and hinder proper error handling.",
+        "severity": "Medium",
+        "category": "api"
+      }
+    ],
+    "base": "bc89fe00ea84d20bedcec782f0701b9711dc8201",
+    "head": "9fde0e906897cc0f4f71793f647dd629faba3317"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/14943",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 14943,
+    "golden": [
+      {
+        "comment": "Using retryCount: reminder.retryCount + 1 reads a possibly stale value and can lose increments under concurrency; consider an atomic increment via Prisma (increment: 1) to avoid race conditions (also applies to the similar update in the catch block).",
+        "severity": "High",
+        "category": "concurrency"
+      },
+      {
+        "comment": "The deletion logic in scheduleSMSReminders.ts incorrectly deletes non-SMS workflow reminders (e.g., Email, WhatsApp) that have retryCount > 1. This occurs because the retryCount condition within the OR clause for deletion lacks a method: WorkflowMethods.SMS filter, causing it to apply to all reminder types instead of only SMS reminders, which is the intended scope of this function.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "base": "917c7b0764f4c6bfdca95db2c5f73dbfdbe11757",
+    "head": "c790227e0cda780e6fea9bb03af27948d9e286b9"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/14740",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 14740,
+    "golden": [
+      {
+        "comment": "The addGuests.handler.ts blacklist check uses blacklistedGuestEmails.includes(guest) after lowercasing the blacklist but not the input guest emails, allowing attackers to bypass BLACKLISTED_GUEST_EMAILS restrictions by submitting emails with uppercase characters.",
+        "severity": "High",
+        "category": "security"
+      },
+      {
+        "comment": "The logic for checking team admin/owner permissions is incorrect. This condition uses AND (&&) which requires both isTeamAdmin AND isTeamOwner to be true, but it should use OR (||) since a user needs to be either an admin OR an owner to have permission.",
+        "severity": "Critical",
+        "category": "bug"
+      },
+      {
+        "comment": "The sendAddGuestsEmails function in email-manager.ts passes the full calendarEvent.attendees array when determining which attendees receive AttendeeScheduledEmail vs AttendeeAddGuestsEmail, but checks if newGuests.includes(attendee.email) where newGuests is the input guests array.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "uniqueGuests filters out existing attendees and blacklisted emails but does not deduplicate duplicates within the input; createMany can insert duplicate attendee rows if the client submits repeated emails.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Starting with an array containing an empty string may cause validation issues. Consider starting with an empty array [] and handling the empty state in the MultiEmail component instead.",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "comment": "The `sendAddGuestsEmails` function does not check the `disableStandardEmails` flags in the `EventType` metadata, which may result in sending emails to hosts/attendees even when standard emails are disabled for the event type.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "base": "b004587262e8221083bafbe9a0c515e7becaa7b3",
+    "head": "92f44dcea7ff19e9123a30c63c167a2938df5a55"
+  },
+  {
+    "source": "martian",
+    "repo": "cal_dot_com",
+    "url": "https://github.com/calcom/cal.com/pull/22532",
+    "owner": "calcom",
+    "name": "cal.com",
+    "number": 22532,
+    "golden": [
+      {
+        "comment": "The updateManyByCredentialId call uses an empty data object, which prevents Prisma's @updatedAt decorator from updating the updatedAt timestamp. This results in inaccurate cache status tracking, as the timestamp isn't updated when the cache is refreshed. To fix this, explicitly set the updatedAt field.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "logic: macOS-specific sed syntax with empty string after -i flag will fail on Linux systems",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "comment": "Throwing a generic Error for authentication failures results in a 500 response in tRPC. Instead, it should return a structured TRPCError with an appropriate code, such as FORBIDDEN, to accurately reflect the error type.",
+        "severity": "High",
+        "category": "api"
+      },
+      {
+        "comment": "Date is formatted with hardcoded 'en-US' locale instead of using the user's locale from useLocale, which can lead to incorrect date representation for users in different locales.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "base": "30a92a4d66b417f7c19dee2b343099adc6e88aa6",
+    "head": "5fd11f9faa79c4aefd39975d1b0e963e5034f793"
+  },
+  {
+    "source": "martian",
+    "repo": "grafana",
+    "url": "https://github.com/grafana/grafana/pull/107534",
+    "owner": "grafana",
+    "name": "grafana",
+    "number": 107534,
+    "golden": [
+      {
+        "comment": "The applyTemplateVariables method is called with request.filters as the third parameter, but this parameter is not used in the corresponding test setup.",
+        "severity": "Low",
+        "category": "test_gap"
+      }
+    ],
+    "base": "d9a8253640464014aa3662c91131278990cfb828",
+    "head": "1cab4143d443c33079566f6ca36931eb8468159f"
+  },
+  {
+    "source": "martian",
+    "repo": "grafana",
+    "url": "https://github.com/grafana/grafana/pull/106778",
+    "owner": "grafana",
+    "name": "grafana",
+    "number": 106778,
+    "golden": [
+      {
+        "comment": "The rendered GrafanaRuleListItem is missing the required key prop for React list items. This can cause rendering issues when the list order changes.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "RuleActionsButtons is invoked with only promRule, but SilenceGrafanaRuleDrawer inside RuleActionsButtons still depends on a Grafana Ruler rule being present, so for Grafana rules coming from list views the 'Silence notifications' menu entry (now driven by Grafana Prom abilities) will toggle showSilenceDrawer without ever rendering the drawer. This means clicking 'Silence notifications' for these rules has no visible effect, even when abilities indicate silencing is allowed.",
+        "severity": "High",
+        "category": "bug"
+      }
+    ],
+    "base": "47e5bd23163e6037fc0741068ac78930bba2769f",
+    "head": "8df850371034b73dc4dd9908cc30fa09f12a1f97"
+  },
+  {
+    "source": "martian",
+    "repo": "sentry",
+    "url": "https://github.com/ai-code-review-evaluation/sentry-greptile/pull/5",
+    "owner": "ai-code-review-evaluation",
+    "name": "sentry-greptile",
+    "number": 5,
+    "golden": [
+      {
+        "comment": "The BrowserReportingCollectorEndpoint returns HttpResponse objects but the endpoint inherits from Endpoint which expects rest_framework.response.Response objects.",
+        "severity": "Medium",
+        "category": "api"
+      },
+      {
+        "comment": "In BaseDetectorTypeValidator.update(), the validator incorrectly updates instance.type using validated_data.get('detector_type') instead of validated_data.get('type').",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Using zip(error_ids, events.values()) assumes the get_multi result preserves the input order; dict value order is not guaranteed to match error_ids, so event data can be paired with the wrong ID (missing nodes also shift alignment).",
+        "severity": "Low",
+        "category": "bug"
+      },
+      {
+        "comment": "Hardcoded empty data passed to TableWidgetVisualization causes it to always render an empty table instead of displaying actual results when the feature flag is enabled.",
+        "severity": "Medium",
+        "category": "bug"
+      },
+      {
+        "comment": "Validation logic incorrectly uses .get('timestamp'), which treats a timestamp of 0 as absent. It should directly check 'timestamp' in self.initial_data to ensure proper field presence detection, preventing both 'age=0' and 'timestamp' from passing mutual-exclusion validation.",
+        "severity": "High",
+        "category": "bug"
+      },
+      {
+        "comment": "Analytics events are recorded before the feature flag check, resulting in analytics being logged for all requests, including those that return 404 due to the feature being disabled. This can lead to misleading analytics data.",
+        "severity": "Medium",
+        "category": "bug"
+      }
+    ],
+    "base": "49a275847631e231672d01b5dcd66558c069d25b",
+    "head": "ea188e2d736fd6ed27c1dba8aae63b7268e2a7a9"
+  }
+]

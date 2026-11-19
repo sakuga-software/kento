@@ -1,0 +1,578 @@
+[
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#14@56aa52d",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "955d1b608e1902175d8f3871b338f1ca3b2f1409",
+    "head": "56aa52dd1a01a2fe12f15de3870710945a567ebb",
+    "golden": [
+      {
+        "comment": "theme.ts:94 an incomplete terminal background-color reply is pushed back into stdin as keystrokes when the 150 ms wait ends, so late bytes can trigger UI key actions.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "greptile-apps[bot]"
+        ]
+      },
+      {
+        "comment": "theme.ts:29 an incomplete OSC 11 reply without BEL or ST is classified as light, overriding the COLORFGBG fallback.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "theme.ts:43 COLORFGBG indices above 15 were classified as dark, so xterm 231 (white) gave a low-contrast ghost palette.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "theme.ts:47 the background-color reply to the terminal query can leak into keyboard input as stray keys, which the author fixed with a stateful reply filter.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "demo.tsx:148 forced background \"dark\" makes the live demo unreadable on light terminals; author now detects background and verified GIF still gets dark palette.",
+        "severity": "Low",
+        "category": "api",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#9@9b5ad91",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "bcab0a2c9797be94082d0939bf929fb3f2fa15ea",
+    "head": "9b5ad919c38f45538fe63505a4cef61262ee2684",
+    "golden": [
+      {
+        "comment": "app.tsx:453 the merge handler reports 'Merged' right after mergePullRequest returns, even when GitHub only queued the merge or enabled auto-merge and the pull request is still open.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "app.tsx:492 a delayed m keypress opens a merge prompt for whatever pull request is selected after 50 ms, so a selection change within that window merges the wrong pull request.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "github.ts:106 the merge command does not pin the confirmed head commit, so a commit pushed during confirmation can be merged unreviewed.",
+        "severity": "Medium",
+        "category": "data",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "mouse.ts:27 an incomplete mouse-report prefix never expires, so a later user key completes the old report and gets swallowed.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#88@aea426f",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "3c5ace569fa697a73f255aed7430b54549e78d66",
+    "head": "aea426f30f92b6a415cd88c8d0814c704c37403f",
+    "golden": [
+      {
+        "comment": "clone.ts:105 the catch retries all clone errors, including permanent auth and invalid-ref failures, delaying job failure by about 13 seconds.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      },
+      {
+        "comment": "clone.ts:109 the retry wait ignores the job's abort signal, so a cancelled job starts another clone attempt and holds the runner after cancellation.",
+        "severity": "Medium",
+        "category": "concurrency",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      },
+      {
+        "comment": "job.ts:215 retries of the clone start without the job's signal, so a canceled job can start another Git attempt and wait through the backoff.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#7@7b47d0c",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "add374c3dd1e1df1de545b35ad709d15580ae8d1",
+    "head": "7b47d0c73ddbbe18a27433457124fe9d4a1904bb",
+    "golden": [
+      {
+        "comment": "decide.ts:156 estimateQuota returns a free signal that predates a later exhaustion signal, so a review command can post while quota is exhausted.",
+        "severity": "High",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "app.tsx:168 orgBlockedUntil is a stale second quota clock that keeps recovered posts blocked after a newer shared free signal.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "decide.ts:139 the rate-limit summary date is taken from submitted_at or updated_at, so an edited summary can make a stale 'N remain' signal look recent.",
+        "severity": "Low",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#12@4c9f69c",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "8f8b0f49cb5965d7a17dc378b7f9e9cd3fed51c6",
+    "head": "4c9f69c47801fab4e4d641344b3a6b0fecb1561a",
+    "golden": [
+      {
+        "comment": "reviewers.ts:95 a thread reply with an empty body is taken as the end of a review in progress, so the reviewer shows as stale and the row stops refreshing.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "greptile-apps[bot]"
+        ]
+      },
+      {
+        "comment": "github.ts:257 allNodes pagination loop repeats the same cursor forever when hasNextPage stays true, never resolving the fetch.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#15@d1f64ec",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "8dab6704d873439ae266f7c8c64b0f2fb84739de",
+    "head": "d1f64ec8508702658b681e449b44d82f90bf24b4",
+    "golden": [
+      {
+        "comment": "settings.ts:46 toggleSetting starts overlapping writeFile calls to the same settings path, so the file can hold an older setting or invalid JSON and loadSettings then falls back to defaults.",
+        "severity": "Medium",
+        "category": "data",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      },
+      {
+        "comment": "actions.ts:18 the Copilot review request needs gh 2.88 or later, which was not documented in the README.",
+        "severity": "Low",
+        "category": "doc_defect",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#313@ddb2121",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "31215b55024eb504c78a9b0440d9f4d3ef19a88d",
+    "head": "ddb2121d0390d722f615e6f64aa1b75603da8ba1",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "notes.tsx:333 the range label after a reload on a later page could show a wrong interval before Previous returns to page one, which the author says cannot happen since from is stored in the address and Previous clears both.",
+        "reviewer": "kento-review[bot]"
+      },
+      {
+        "comment": "notes.tsx:187 Previous stays enabled on a shared deep link with empty before, leaving from out of sync; the author shows page('previous') deletes both cursor and from, so the defect does not exist.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#10@0a35e29",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "1d08575f3e916d3ec10fc6316614808a2525185c",
+    "head": "0a35e296adc9be36bd07f4434e3236d375d3dd63",
+    "golden": [
+      {
+        "comment": "sakuga-review.ts:147 the numstat parser splits on every tab, truncating paths that contain literal tabs and silently dropping those changed files from the review.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#12@d7c915b",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "b368d5227b5c22dc74b9aa162dc1b335512a8bc8",
+    "head": "d7c915b1f5d88072bced74c21e0fee7e525835c4",
+    "golden": [
+      {
+        "comment": "sakuga-review.ts:1120 when the first thread alone exceeds 150 KB, resolvePack keeps no thread and resolve wrongly reports that all open threads already got a reply.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#66@8acd4f3",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "eb2617ff0459cd8665c1e4ddbea4d1cad445e01c",
+    "head": "8acd4f36c884cd5e5b3fe08307a176f9241a3b14",
+    "golden": [
+      {
+        "comment": "model.test.ts:160 the test covers only an unprefixed Ollama model ID, not both ID forms for Ollama and OpenAI-compatible providers.",
+        "severity": "Low",
+        "category": "test_gap",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#67@e449734",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "fc1b05bf0f33d04181488fca3ccca367cabb8a2d",
+    "head": "e44973493081edce24e73f601a1216eb089d6fc4",
+    "golden": [
+      {
+        "comment": "comment-command.test.ts:8 the rename safety property, that @kento-ai no longer parses as a command, is untested, so a regression could restore the old mention unnoticed.",
+        "severity": "Low",
+        "category": "test_gap",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#111@5105911",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "9ae09309e4890d7c1b617c9b834f764bc43ca8ee",
+    "head": "51059116c46976bfa79e141b2497e428d632dcc6",
+    "golden": [
+      {
+        "comment": "runner.test.ts:289 the missing-blob check walks only --all refs, so blobs reachable only from the fetched head SHA are not verified.",
+        "severity": "Low",
+        "category": "test_gap",
+        "reviewers": [
+          "cubic-dev-ai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#2@df52294",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "bb85ad8d62a46d58556b2708859ce869273f1e2d",
+    "head": "df522944b51ef1b952f03917f19af62401544c39",
+    "golden": [
+      {
+        "comment": "app.tsx:180 the watch loop returns when no row needs polling, so new or newly ready pull requests are never discovered",
+        "severity": "High",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "boo",
+    "url": "feedback:boo#5@4d828de",
+    "owner": "sakuga-software",
+    "name": "boo",
+    "base": "e015661df087dbe7ac40dbd7b8b90a021741978c",
+    "head": "4d828de999a7786d70390d00a922210d6f655300",
+    "golden": [
+      {
+        "comment": "app.tsx:437 the delayed Escape fires with no confirmation check, so a late Escape cancels a prompt opened by a key pressed within 60 ms.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#71@e713eef",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "f3d307e747ff4106b3ad5e79149c6f50061afecb",
+    "head": "e713eefcc4328907d1ab43cb540bc99f85b3f75a",
+    "golden": [
+      {
+        "comment": "workflows.test.ts:128 the gh detection regex needs whitespace before gh, so commands after shell operators or in command substitution are missed and the repo check is skipped.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "coderabbitai[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "sakuga-review",
+    "url": "feedback:sakuga-review#74@88595d6",
+    "owner": "sakuga-software",
+    "name": "sakuga-review",
+    "base": "4552ab6540c416eff1b467e7e116a73243300340",
+    "head": "88595d60df9daf0dfeaf7452f7db99d2e8850b9e",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "org-settings.tsx:10 the type Level is used without an import in the file, so the typecheck would fail.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#230@3a0bc2a",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "791b902f0b433bb1ab0c69e24cb2219bb78f3298",
+    "head": "3a0bc2ac8d693f372f362a66d60e7e5e4e503699",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "ui.tsx:125 readOnly and onFocus are declared on the stopped tab's Field but never reach the input, so the field stays editable and the copy is not selected on focus",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#232@0867ff9",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "520ffad79df31df14abf336038d64c8280e3da9b",
+    "head": "0867ff9e5d9f89cc1688a5d5e4d8ef343d099698",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "sites.ts:56 readSite calls resolveSite without the proven previews, so a team wildcard is refused on the page bridge and the relay.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#311@9df3acf",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "63778428e07d9d0358f3e8930b01452d43e336a0",
+    "head": "9df3acff0056462b6bbf04b904c8e6c3eeaf8bec",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "main.ts:425 addAndTurnOn may leave the buttons disabled after a failed permission or render, but the author shows every path re-enables them through done() in the catch",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#315@78b5d09",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "db6e33c430029bf20e6ce6832e5708776298af2b",
+    "head": "78b5d095985174e05481a2ba8781d256c865e056",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "console-members.spec.ts:908 the test writes worker.refuses, a field missing from the Worker type, so the e2e typecheck fails and the refusal scenario is not wired.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "fruitback",
+    "url": "feedback:fruitback#387@a66b8f1",
+    "owner": "sakuga-software",
+    "name": "fruitback",
+    "base": "b0b6b76e05d1ac31f4857b850d24e3df07135e5e",
+    "head": "a66b8f153adfc612cac2cc53fe3cea4082864441",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "share-rules.ts:55 the section gets class 'share' but not id 'share', so e2e selector section#share finds nothing and the share test fails before its checks.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "git8n",
+    "url": "feedback:git8n#29@484699e",
+    "owner": "sakuga-software",
+    "name": "git8n",
+    "base": "302e2dc485d5677073dd86498118187f2b5d18f8",
+    "head": "484699ed901c3dec2339e285d03dcfe876107c21",
+    "golden": [],
+    "false_positives": [
+      {
+        "comment": "cache.ts:66 a read in flight that a write forgot can overwrite a newer value cached by a later read of the same key, because the reading identity check is considered fragile.",
+        "reviewer": "kento-review[bot]"
+      }
+    ]
+  },
+  {
+    "source": "feedback",
+    "repo": "git8n",
+    "url": "feedback:git8n#63@8b279b9",
+    "owner": "sakuga-software",
+    "name": "git8n",
+    "base": "9c927f113908dfeb9dbff3a2a2c877a876a26891",
+    "head": "8b279b9bf5179694e2c842013403b43c7c9bf8dd",
+    "golden": [
+      {
+        "comment": "check.ts:102 ICU_BRANCH has no word boundary, so a branch word like 'one' at the end of text, as in 'someone {owner}', drops the placeholder from the expected list.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "kento-review[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "git8n",
+    "url": "feedback:git8n#64@4ce4e57",
+    "owner": "sakuga-software",
+    "name": "git8n",
+    "base": "edc09d21cb1f3380ffbbb555822c1f3991bce145",
+    "head": "4ce4e578e933a63f052616d6d52884cfba6de2b2",
+    "golden": [
+      {
+        "comment": "app.ts:23 new URL(pathname, BETTER_AUTH_URL) lets a path starting with // redirect 301 to an arbitrary external host, an open redirect.",
+        "severity": "High",
+        "category": "security",
+        "reviewers": [
+          "kento-review[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  },
+  {
+    "source": "feedback",
+    "repo": "git8n",
+    "url": "feedback:git8n#74@d6c3f1a",
+    "owner": "sakuga-software",
+    "name": "git8n",
+    "base": "adf42b7f30013eb444da504bf583fe29030e838b",
+    "head": "d6c3f1a7372d92fa472fe45f9af82042bfb2f597",
+    "golden": [
+      {
+        "comment": "changeset.ts:31 git diff --name-only counts deleted changeset files, so a PR deleting an old changeset passes the changeset check without adding a changelog entry.",
+        "severity": "Medium",
+        "category": "bug",
+        "reviewers": [
+          "kento-review[bot]"
+        ]
+      }
+    ],
+    "false_positives": []
+  }
+]
