@@ -1,0 +1,41 @@
+name: Review quality
+description: A finding is wrong, or the review missed a defect.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Kentō finds part of the defects that a careful reviewer finds, so one miss is expected.
+        A small public diff that reproduces the problem helps most.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - A false positive (the finding is wrong)
+        - A missed defect
+        - A wrong priority or score
+        - A suggestion that does not apply or breaks the code
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: level
+    attributes:
+      label: Level and model
+      description: The footer of the review gives them.
+      placeholder: lite, anthropic/claude-haiku-5.5
+    validations:
+      required: true
+  - type: textarea
+    id: case
+    attributes:
+      label: The case
+      description: A link to a public pull request, or the diff and the code around it. No private code.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the review should say
+    validations:
+      required: true

@@ -6,8 +6,8 @@
  *     OPENROUTER_API_KEY=... node eval/rejected/run.ts --model z-ai/glm-5.3 --runs 3
  *
  * The pull request: `readConfig` parses its input with a zod schema that bounds the port, then returns
- * the port. A reviewer that does not read the schema reports « the port is not validated » (a false
- * P1). The person rejects it: « faux positif, la valeur est validée par le schéma ».
+ * the port. A reviewer that does not read the schema reports "the port is not validated" (a false
+ * P1). The person rejects it: "false positive, the schema validates the value".
  *
  * Without a model, the engine gets the answers that models gave to such a case: the same finding, the
  * finding in other words one line off, the same title elsewhere in the file, and a real defect far
@@ -39,7 +39,7 @@ const FILE = [
   '',
 ];
 const PORT_LINE = FILE.findIndex((l) => l.includes('config.port')) + 1;
-const CAUSE = 'faux positif, la valeur est validée par le schéma (int, min 1, max 65535)';
+const CAUSE = 'false positive, the schema validates the value (int, min 1, max 65535)';
 
 const repo = mkdtempSync(join(tmpdir(), 'bench-rejected-'));
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
@@ -64,16 +64,16 @@ const falseP1 = (over: Partial<Finding> = {}): Finding => ({
   severity: 'major',
   category: 'bug',
   confidence: 90,
-  title: 'Le port n’est pas validé',
-  scenario: 'Une config avec `port: 0` démarre le serveur sur un port aléatoire.',
-  fix: 'Valider le port avant de le rendre.',
+  title: 'The port is not validated',
+  scenario: 'A config with `port: 0` starts the server on a random port.',
+  fix: 'Validate the port before returning it.',
   suggestion: '',
   ...over,
 });
 const answer = (findings: Finding[], score = 4): Answer => ({
   confidence_score: score,
-  risk: 'Risque',
-  summary: 'Résumé',
+  risk: 'Risk',
+  summary: 'Summary',
   diagram: '',
   findings,
   not_reviewed: [],
@@ -91,10 +91,10 @@ const near = (f: Finding, r: RejectedFinding) => f.path === r.path && Math.abs(f
 const rows: string[] = [];
 try {
   if (!values.model) {
-    const realDefect = falseP1({ line: 3, start_line: 3, title: '`host` accepte une chaîne vide', severity: 'minor', confidence: 80 });
+    const realDefect = falseP1({ line: 3, start_line: 3, title: '`host` accepts an empty string', severity: 'minor', confidence: 80 });
     const cases: [string, Finding[]][] = [
       ['the same finding', [falseP1()]],
-      ['in other words, one line off', [falseP1({ title: 'Port accepté sans contrôle', line: PORT_LINE + 1, start_line: PORT_LINE + 1 })]],
+      ['in other words, one line off', [falseP1({ title: 'Port accepted without a check', line: PORT_LINE + 1, start_line: PORT_LINE + 1 })]],
       ['the same title, elsewhere in the file', [falseP1({ line: 1, start_line: 1 })]],
       ['a real defect far from it, with the false P1', [falseP1(), realDefect]],
     ];

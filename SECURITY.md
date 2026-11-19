@@ -1,90 +1,72 @@
-# Security of Kentō
+# Security policy
 
-## The keys of the model providers (REV-11)
+## Report a vulnerability
 
-An org of Kentō can add its own providers of models (Anthropic, OpenRouter, a server with the API of
-OpenAI, Ollama) on the screen "Settings · Providers and keys". This section is the threat model of
-their keys.
+Do not open a public issue, pull request or discussion for a vulnerability.
 
-### What is protected
+Report it privately on GitHub: in the **Security** tab of this repository, click **Report a
+vulnerability** ([private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)).
+Only the maintainers see the report.
 
-- **The key of a provider**: a paid credential of the org (Anthropic, OpenRouter, a private server).
-  A thief can spend on it, or read what the org sends through it.
-- **The master key** `KENTO_SECRETS_KEY`: 32 random bytes in the environment of the `web` service
-  (Dokploy). With it and a copy of the database, every key can be read.
-- **The OpenRouter key of the service** `KENTO_PROVIDER_API_KEY`: the key of Sakuga, for the orgs
-  that have no provider.
+Give, as far as you can:
 
-### Where a key goes
+- the affected part (`apps/web`, `apps/runner`, `packages/engine`, `packages/protocol`) and the
+  commit or release;
+- what an attacker can do, and what they need first (an account, an installation of the App, a
+  runner, a write access to a repository);
+- the steps to reproduce it, or a proof of concept;
+- your suggestion of a fix, if you have one.
 
-```mermaid
-flowchart LR
-  A["Admin's browser"] -- "HTTPS form, once" --> W["web: encrypt"]
-  W -- "AES-256-GCM ciphertext" --> DB[("Postgres: providers.key_ciphertext")]
-  DB --> C["web: claim of a job"]
-  C -- "decrypted, in the job, HTTPS" --> R["trusted runner of the org"]
-  R -- "x-api-key / Bearer" --> P["provider API"]
-  W -- "Test button: GET models, HTTPS, public host only" --> P
-```
+Do not send real secrets, private code or personal data in the report. Test only on an instance
+that you run yourself, never on an instance of someone else.
 
-1. The admin types the key once, in a `password` field, over HTTPS. The form is protected by the
-   session (signed `__Host-` cookie, SameSite=Lax), `cop()` and a CSRF token; only an admin of the
-   org (role read from GitHub) may post it.
-2. The service encrypts it at once with AES-256-GCM (`apps/web/app/providers/secrets.ts`): a fresh
-   96-bit IV per encryption, a 128-bit tag, and the additional data `kento:provider:<id>:<org id>`.
-   The row keeps `v1:<id of the master key>:<iv>:<ciphertext and tag>` and the last 4 characters.
-3. The key goes back out of the service only:
-   - in the job of a **claim**, to a runner that is **trusted** at the moment of the claim, of the
-     **org of the provider** or of the service, which does not hold that kind of key itself; for that
-     one job, over the existing HTTPS runner channel (`providers[].apiKey`);
-   - to the **provider itself**, when an admin presses "Test" (`GET /v1/models`, `/models`,
-     `/key`), over HTTPS, to a public address only, without following a redirect.
+What happens next:
 
-### Threats and what answers them
+1. A maintainer acknowledges the report. We aim to do it within 5 working days.
+2. We confirm or refute the issue, and tell you our assessment of its severity.
+3. We fix it in the temporary private fork of the advisory, then publish a release and the advisory
+   together. We credit you in the advisory, unless you ask us not to.
 
-| Threat | Answer | Where |
-| --- | --- | --- |
-| A copy of the database (backup, dump, SQL injection that reads) gives the keys | Only ciphertexts and the last 4 characters are stored; the master key is not in the database | `secrets.ts`, migration `0009_providers`, test "keeps no key in clear" |
-| A write to the database moves the ciphertext of org A to a provider of org B, so that B's runners receive A's key | The additional data binds a ciphertext to its row and its org: the copy does not decrypt, and the claim gives the job back with "cannot be decrypted" | `providerAad`, DB test "A ciphertext copied to a row of another org does not decrypt there" |
-| A runner of another org, or an untrusted one, gets the key | The claim (one SQL statement) gives a job of a provider only to a runner of the same org or of the service, and the key only when the runner is trusted at that moment; the controller checks the trust again before it decrypts | `runner/store.ts` `claimJob`, `runner/controller.ts`, DB tests of the claim |
-| The key reaches the browser | The screen reads `ProviderView`, which has no key; a form with an error is rendered again without the key; no notice takes text from the URL | `ui/settings.tsx`, `settings.test.ts` |
-| The key reaches the logs | No log line carries a key (the logs name the provider id and kind); the runner redacts every key of a job from its lines; a refusal message from a provider is cut and any token of 16 characters or more is replaced by `…` | `controller.ts`, `apps/runner/src/log.ts`, `refusalMessage` |
-| An admin makes the service call its own network with the key (SSRF: the metadata server, the database) through the URL of a provider | "Test" calls HTTPS only, refuses a host that resolves to a private, loopback, link-local, CGNAT or multicast address, and follows no redirect. A URL with credentials, a query or a fragment is refused by the form | `providers/probe.ts`, `providers/form.ts` |
-| The provider echoes the key in its error, which ends on the screen | The message is cut to 300 characters and long tokens are replaced by `…` | `refusalMessage`, unit test |
-| A stolen master key | Rotate it (below); every key encrypted under the old one is encrypted again, then the old one leaves the environment | `app/providers/rotate-keys.ts` |
-| A runner of the org, trusted, is compromised | It receives the key of its org: trust a runner only on a machine you control. The admin can untrust or revoke it on the Runners screen, then replace the key | Runners screen (REV-10) |
+Keep the issue private until the advisory is published. If we do not answer within 90 days, you may
+disclose it.
 
-### What is not covered
+## Supported versions
 
-- **DNS rebinding between the check and the call of "Test"**: the service resolves the host,
-  checks every address, then `fetch` resolves it again. A host whose answer changes in between could
-  still reach a private address once, with the key of its own org. The key belongs to the admin who
-  set the URL; the call reads the answer only to tell 200 from 401.
-- **The runners call the URL of a provider** (and an Ollama server on a private network) as the
-  admin wrote it: the runner is the org's own machine, or a runner of the service that only runs
-  public providers in practice. An operator who wants it closed can refuse private addresses on
-  the network of the service runners.
-- **Memory of the `web` process**: a key is decrypted in memory for the time of a claim or a test.
-  A dump of the process memory can show it.
-- **A key given with a job lives on the runner** for that job (environment of the process). A job
-  already running keeps the key it got after the admin replaces it.
+Only the latest release of the web service and of the runner gets security fixes. Kentō has no
+long-term support branch.
 
-### The master key
+## In scope
 
-- Generate: `openssl rand -base64 32` (44 characters). Store it in a password manager, and in Dokploy
-  → `web` → **Environment** as `KENTO_SECRETS_KEY`. It never goes in git, in a ticket or in a chat.
+- The webhook: the check of its signature, and what an event can make the service do.
+- The sign-in of the screens, the sessions, the roles, and the forms.
+- The runner API: registration, claims, leases, and the installation token given with a job.
+- The keys of the model providers: see [docs/threat-model.md](docs/threat-model.md).
+- What the model reads: a prompt injection in a pull request that makes Kentō approve, resolve a
+  thread of a person, or leak data from another repository.
+
+Out of scope: a finding that the model gets wrong (a false positive or a missed defect) is a bug,
+not a vulnerability. Report it in a public issue.
+
+## The master key
+
+The keys of the providers that the Settings screen stores are encrypted with `KENTO_SECRETS_KEY`.
+[docs/threat-model.md](docs/threat-model.md) explains what it protects.
+
+- Generate: `openssl rand -base64 32` (44 characters). Store it in a password manager, and in the
+  environment of the `web` service as `KENTO_SECRETS_KEY`. It never goes in git, in an issue or in a
+  chat.
 - Without it, the screen refuses to store a key (a provider whose key stays on the runner can still
   be added), and no job of a provider with a key runs.
 - The log `startup.secrets` gives the id of the master key (16 hex characters of a hash), never the key.
 
 **Rotation:**
 
-1. Generate a new key. In Dokploy, set `KENTO_SECRETS_PREVIOUS_KEYS` to the current key and
-   `KENTO_SECRETS_KEY` to the new one, then redeploy `web`. New keys use the new master key; old
-   ones still decrypt.
-2. In the container of `web` (Dokploy → `web` → **Terminal**, directory `/repo/apps/web`):
-   `node app/providers/rotate-keys.ts` (counts, writes nothing), then
-   `node app/providers/rotate-keys.ts --apply`. It prints `rotated N, failed 0`.
-3. Run the first command again: `0 to rotate`. Then remove `KENTO_SECRETS_PREVIOUS_KEYS` and redeploy.
+1. Generate a new key. Set `KENTO_SECRETS_PREVIOUS_KEYS` to the current key and `KENTO_SECRETS_KEY`
+   to the new one, then restart `web`. New keys use the new master key; old ones still decrypt.
+2. In the container of `web` (directory `/repo/apps/web`): `node app/providers/rotate-keys.ts`
+   (counts, writes nothing), then `node app/providers/rotate-keys.ts --apply`. It prints
+   `rotated N, failed 0`.
+3. Run the first command again: `0 to rotate`. Then remove `KENTO_SECRETS_PREVIOUS_KEYS` and restart
+   `web`.
 
 A lost master key cannot be recovered: every admin must type the keys of their providers again.

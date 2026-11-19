@@ -1,0 +1,58 @@
+name: Bug report
+description: The service, the runner or the review does not do what its documentation says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A vulnerability goes in a private report, never here: see SECURITY.md.
+        Remove every secret, token, private code and personal data from what you paste.
+  - type: dropdown
+    id: part
+    attributes:
+      label: Part
+      options:
+        - apps/web (the service, the screens, the webhook)
+        - apps/runner
+        - packages/engine (the review)
+        - compose.yaml or the deployment
+        - Documentation
+        - I do not know
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Release or commit
+      description: The version that `/healthz` gives, and the tag of the runner image.
+      placeholder: 0.1.0, abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The error, the screen, the reply of the bot.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The log lines of `web` and of the runner around the problem (JSON lines).
+      render: text
