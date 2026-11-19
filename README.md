@@ -203,7 +203,6 @@ can go a little over the limit.
 | [`packages/engine/`](packages/engine/) | The review: the pack of a pull request, the prompts (`packages/engine/prompts/`), the model call, the findings, the score, the verdict and the text of the review. It reads a clone with git and never calls GitHub. |
 | [`packages/protocol/`](packages/protocol/) | The messages between the runner and the service, and their checks. |
 | [`eval/`](eval/) | The bench that chose the models, and its results. |
-| [`design/`](design/README.md) | The design of the screens. |
 | [`docs/`](docs/threat-model.md) | The threat model of the provider keys. |
 
 ## Develop

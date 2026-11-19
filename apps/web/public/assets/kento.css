@@ -5,7 +5,7 @@
  * (Papier and Sumi), then the frame of the app (sidebar, page header, banner, footer, mobile tab
  * bar) and its few base controls. A screen writes a token name, never a colour value.
  *
- * The board design/socle/socle.html reads this file: change it here, and the board follows.
+ * The design boards (`design:board`, out of git) read this file: change it here, and the boards follow.
  */
 
 /* ---------------------------------------------------------------- Fonts (served by the app) */
