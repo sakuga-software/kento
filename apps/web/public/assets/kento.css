@@ -546,17 +546,17 @@ kbd,
   @view-transition {
     navigation: auto;
   }
-}
-::view-transition-group(root) {
-  animation-duration: 150ms;
-}
-::view-transition-group(bar),
-::view-transition-old(bar),
-::view-transition-new(bar) {
-  animation: none;
-}
-::view-transition-old(bar) {
-  display: none;
+  ::view-transition-group(root) {
+    animation-duration: 150ms;
+  }
+  ::view-transition-group(bar),
+  ::view-transition-old(bar),
+  ::view-transition-new(bar) {
+    animation: none;
+  }
+  ::view-transition-old(bar) {
+    display: none;
+  }
 }
 
 /* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */

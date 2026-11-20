@@ -15,10 +15,13 @@ describe('the stylesheet', () => {
   })
 
   it('runs view transitions between pages only without reduced motion, and keeps the bar still (KNT-145)', () => {
-    assert.match(CSS, /@media \(prefers-reduced-motion: no-preference\) \{\n {2}@view-transition \{\n {4}navigation: auto;\n {2}\}\n\}/)
-    assert.equal(CSS.match(/@view-transition\b/g)?.length, 1, 'no @view-transition outside of the media query')
+    let block = CSS.match(/^@media \(prefers-reduced-motion: no-preference\) \{\n([\s\S]*?)\n\}$/m)?.[1] ?? ''
+    assert.match(block, /^ {2}@view-transition \{\n {4}navigation: auto;\n {2}\}/)
+    assert.match(block, /\n {2}::view-transition-group\(root\) \{\n {4}animation-duration: 150ms;/)
+    assert.match(block, /\n {2}::view-transition-group\(bar\),\n {2}::view-transition-old\(bar\),\n {2}::view-transition-new\(bar\) \{\n {4}animation: none;/)
+    // Nothing of the transitions outside of that query.
+    let outside = CSS.replace(block, '')
+    assert.doesNotMatch(outside, /@view-transition|::view-transition/)
     assert.match(CSS, /^\.bar \{[^}]*\n {2}view-transition-name: bar;/m)
-    assert.match(CSS, /::view-transition-group\(bar\),\n::view-transition-old\(bar\),\n::view-transition-new\(bar\) \{\n {2}animation: none;/)
-    assert.match(CSS, /::view-transition-group\(root\) \{\n {2}animation-duration: 150ms;/)
   })
 })
