@@ -122,7 +122,8 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
             </div>
           </div>
         </popover.Context>
-        <input form={form ?? undefined} data-select="" mix={[select.hiddenInput(), ref((node) => (hidden = node))]} />
+        {/* Disabled with the select: the form does not post it, as a disabled native select (Kentō #117783). */}
+        <input form={form ?? undefined} disabled={disabled || undefined} data-select="" mix={[select.hiddenInput(), ref((node) => (hidden = node))]} />
       </select.Context>
     )
   }

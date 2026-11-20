@@ -135,12 +135,21 @@ test.describe('the Findings screen', () => {
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
       await signIn(page, 'octocat')
       await seed()
+      // No rule: "Source" is disabled (rules.spec.ts starts from no rule too).
+      let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
+      await sql`delete from rules`
+      await sql.end()
       await page.goto('/findings')
       await hydrated(page)
       // The native select is still in the page, hidden and disabled: the form posts the hidden input only.
       await expect(page.locator('select#findings-priority-native')).toBeHidden()
       await expect(page.locator('select#findings-priority-native')).toBeDisabled()
       await expect(selectValue(page, 'priority')).toHaveValue('')
+      // "Source" is disabled when the org has no rule: then its hidden input is disabled too, and the
+      // form does not post it, as a disabled native select (Kentō #117783).
+      let source = page.getByRole('button', { name: /^Source / })
+      await expect(source).toBeDisabled()
+      await expect(selectValue(page, 'rule')).toBeDisabled()
       let trigger = page.getByRole('button', { name: 'Priority All' })
       await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
       await expect(trigger).toHaveAttribute('aria-expanded', 'false')
