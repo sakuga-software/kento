@@ -1,5 +1,5 @@
 // REV-18. The Findings screen of an org with 300 repositories and 100 000 findings, against Postgres:
-// one page of 50 rows by keyset, the filters in SQL, the counts of the tabs in one more query.
+// one page of 25 rows (KNT-148), the filters in SQL, the counts of the tabs in one more query.
 // Another org holds as many findings: they must cost the screen nothing.
 import postgres from 'postgres'
 import * as assert from 'remix/assert'
@@ -22,8 +22,14 @@ const COOKIE = '__Host-kento_session'
  */
 const MAX_MS = 250
 const MAX_FULL_READS = 10
-/** The budget of the HTML of one page of 50 rows. */
-const MAX_BYTES = 110_000
+/** KNT-148. The budget of the list alone: 100 ms, or 4 full reads, whichever is more. */
+const MAX_LIST_MS = 100
+const MAX_LIST_FULL_READS = 4
+/**
+ * The budget of the HTML of one page of 25 rows (KNT-148): it weighs 72 to 74 KB, about 1.5 KB a
+ * row. 80 KB leaves room for a few hundred bytes more a row, not for a row twice as heavy.
+ */
+const MAX_BYTES = 80_000
 const FINDINGS = 100_000
 
 describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleString('en')} findings`, () => {
@@ -138,20 +144,21 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
   it(`answers /findings in under ${MAX_MS} ms (or ${MAX_FULL_READS} full reads) with under ${MAX_BYTES / 1000} KB of HTML, page after page and filter after filter`, async () => {
     let first = await load('/findings')
     assert.equal(first.status, 200)
-    assert.equal((first.html.match(/<tr id="finding-/g) ?? []).length, 50)
-    assert.match(first.html, /1 to 50 of 37,500 findings/)
-
-    let next = /href="\/findings\?after=([\w-]+)"/.exec(first.html)?.[1]
-    assert.ok(next, 'a link to the next page')
-    let deep = await load(`/findings?after=${next}`)
-    let previous = /href="\/findings\?before=([\w-]+)"/.exec(deep.html)?.[1]
-    assert.ok(previous, 'a link to the previous page')
+    assert.equal((first.html.match(/<tr id="finding-/g) ?? []).length, 25)
+    assert.match(first.html, /1 to 25 of 37,500 findings/)
+    assert.match(first.html, /href="\/findings\?page=2" rel="next"/)
+    // The last page: the deepest offset of the tab.
+    assert.match(first.html, /href="\/findings\?page=1500"/)
 
     let report: string[] = []
     for (let path of [
       '/findings',
-      `/findings?after=${next}`,
-      `/findings?before=${previous}`,
+      '/findings?page=2',
+      '/findings?page=750',
+      '/findings?page=1500',
+      // The deepest offsets: the last page of "all" (99,975 rows before it) and of "closed".
+      '/findings?status=all&page=4000',
+      '/findings?status=closed&page=2500',
       '/findings?status=closed',
       '/findings?status=dismissed&priority=critical',
       `/findings?repo=${repoId}`,
@@ -166,6 +173,23 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
       assert.equal(result.status, 200, path)
       assert.ok(best < limit.ms, line)
       assert.ok(result.bytes < MAX_BYTES, `${path}: ${result.bytes} bytes`)
+    }
+    if (process.env.KENTO_VOLUME_REPORT) console.log(report.join('\n'))
+  })
+
+  // The screen also reads the precision, which takes most of its time: the list alone gets its own
+  // budget, so that a slower list shows here.
+  it(`reads a page of the list alone, the deepest included, in under ${MAX_LIST_MS} ms (or ${MAX_LIST_FULL_READS} full reads)`, async () => {
+    let store = createFindingsScreenStore(sql)
+    let report: string[] = []
+    for (let query of [{}, { page: 1500 }, { view: 'all' as const, page: 4000 }, { view: 'closed' as const, page: 2500 }]) {
+      let limit = await budget()
+      let ms = Math.max(MAX_LIST_MS, MAX_LIST_FULL_READS * limit.fullRead)
+      let { best, result } = await timed(() => store.list(orgId, query), ms)
+      let line = `list ${JSON.stringify(query)}: ${best.toFixed(1)} ms for a budget of ${ms.toFixed(0)} ms, page ${result.page} of ${result.pages}`
+      report.push(line)
+      assert.equal(result.rows.length, result.page < result.pages ? 25 : result.matching - result.offset, line)
+      assert.ok(best < ms, line)
     }
     if (process.env.KENTO_VOLUME_REPORT) console.log(report.join('\n'))
   })

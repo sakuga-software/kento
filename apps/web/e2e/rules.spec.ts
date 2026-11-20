@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, goToSettingsLink, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The rules of a repository and of the org (REV-19) in a browser, with the test of the ticket: a
 // rule written in Config › Rules goes with the next job to a runner that reads the rules; disabled,
@@ -134,7 +134,7 @@ test.describe('the rules of a repository and of the org', () => {
     await reset(page)
 
     await page.goto('/settings')
-    await page.getByRole('navigation', { name: 'Sections of the settings' }).getByRole('link', { name: 'Org rules' }).click()
+    await goToSettingsLink(page, 'Org rules')
     let section = page.locator('#org-rules')
     await expect(section.getByRole('heading', { name: /Org rules/ })).toBeVisible()
 
