@@ -127,6 +127,8 @@
       if (!wasPhone) {
         mark(sections, null, 'location')
         for (const other of sections) mark(other.parts, null, 'true')
+        // The sidebar scrolls to its marked link again once the window widens.
+        shown = null
       }
       wasPhone = true
       return
