@@ -680,12 +680,15 @@ summary.button::-webkit-details-marker {
   display: none;
 }
 
-/* A field: its label, its control, then its hint or its error. */
+/*
+ * A field: its label, its control, then its hint or its error. The label keeps the line height of
+ * the old `.field-label`, so that a form keeps its vertical rhythm.
+ */
 .label {
   color: var(--ink);
   font-size: var(--text-sm);
   font-weight: 500;
-  line-height: var(--leading-sm);
+  line-height: var(--leading-xs);
 }
 .description {
   color: var(--ink-muted);
