@@ -126,6 +126,34 @@ test.describe('the Findings screen', () => {
     await expect(bar).toBeHidden()
   })
 
+  // KNT-143 follow-up: a radio button of a group where nothing is checked matches :indeterminate.
+  // The reasons of the dismiss dialog must still be drawn empty until one is chosen.
+  for (let theme of ['paper', 'sumi'] as const) {
+    test(`the reasons of "Mark dismissed…" are drawn empty until one is chosen (${theme})`, async ({ page, context, baseURL }) => {
+      await signIn(page, 'octocat')
+      await seed()
+      await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      await page.goto('/findings')
+      await page.getByRole('checkbox', { name: /Finding 01/ }).check()
+      await page.getByText('Mark dismissed…').click()
+      let drawing = (name: string) =>
+        page.getByRole('radio', { name }).evaluate((el) => {
+          let style = getComputedStyle(el)
+          let raised = document.createElement('span')
+          raised.style.backgroundColor = 'var(--paper-raised)'
+          document.body.append(raised)
+          let sheet = getComputedStyle(raised).backgroundColor
+          raised.remove()
+          return { empty: style.backgroundColor === sheet, dot: getComputedStyle(el, '::before').scale }
+        })
+      for (let name of ['False positive', 'Off topic', 'Other']) expect(await drawing(name), name).toEqual({ empty: true, dot: '0' })
+      await page.getByRole('radio', { name: 'Off topic' }).check()
+      expect(await drawing('Off topic')).toEqual({ empty: false, dot: '1' })
+      expect(await drawing('False positive')).toEqual({ empty: true, dot: '0' })
+    })
+  }
+
   // KNT-143: in forced colors (Windows High Contrast), the browser drops the drawn check mark, dot
   // and focus ring of kento.css. The native inputs come back, and the focus has an outline.
   test('in forced colors, the checkboxes and radio buttons are native, and the focus has an outline', async ({ page }) => {
@@ -149,6 +177,13 @@ test.describe('the Findings screen', () => {
       return { check: el.matches('input.check'), outline: getComputedStyle(el).outlineStyle }
     })
     expect(focused).toEqual({ check: true, outline: 'solid' })
+    // The chevron of a select stays drawn, in the colour of the text of the field (FieldText).
+    let chevron = await page.locator('.select--native').first().evaluate((el) => {
+      let after = getComputedStyle(el, '::after')
+      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('select')!).color }
+    })
+    expect(chevron.adjust).toBe('none')
+    expect(chevron.color).toBe(chevron.text)
   })
 
   test('an admin dismisses two findings "Off topic": both threads get the reply, and the reason counts two more', async ({ page }) => {
