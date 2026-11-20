@@ -1,5 +1,5 @@
-import { LEVELS as ENGINE_LEVELS } from '@sakuga-review/engine/levels'
-import { isLevel, isOneOf, LEVELS, type Level, type ProviderKind } from '@sakuga-review/protocol'
+import { LEVELS as ENGINE_LEVELS } from '@kento/engine/levels'
+import { isLevel, isOneOf, LEVELS, type Level, type ProviderKind } from '@kento/protocol'
 
 // The config of a repository (REV-12) and of its org: what each key means, how the screen and the
 // service read the JSON of the database, and how a repository inherits from its org. No database,
@@ -219,7 +219,7 @@ export function checkPattern(pattern: string): string | null {
 }
 
 // The patterns of the trigger and of the rules of REV-19 have one meaning: packages/engine/src/paths.ts.
-export { pathsMatch, patternToRegExp } from '@sakuga-review/engine/paths'
+export { pathsMatch, patternToRegExp } from '@kento/engine/paths'
 
 // --- The forms of the screen ------------------------------------------------------------------
 

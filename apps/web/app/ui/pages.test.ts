@@ -6,7 +6,7 @@ import { SESSION_TTL_MS } from '../auth/session-storage.ts'
 import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { ICON_FILES, ICON_VERSION } from '@sakuga-review/engine/render'
+import { ICON_FILES, ICON_VERSION } from '@kento/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 
@@ -517,13 +517,16 @@ describe('the frame of a screen', () => {
     }
   })
 
-  it('renders the theme of the cookie, and checks it in the switch', async () => {
+  it('keeps the theme of the cookie on every screen, with no theme form in the foot (KNT-142)', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(OCTOCAT)
-    let html = await (await request('/', { cookie: `${cookie}; kento_theme=sumi` })).text()
-
-    assert.match(html, /data-theme="sumi"/)
-    assert.match(html, /<input type="radio" name="theme" value="sumi" checked/)
+    for (let path of ['/', '/repos', '/findings', '/runners', '/settings']) {
+      let html = await (await request(path, { cookie: `${cookie}; kento_theme=sumi` })).text()
+      assert.match(html, /<html lang="en" data-theme="sumi">/, path)
+      let footer = html.slice(html.indexOf('<footer'))
+      assert.match(footer, /Sign out/, path)
+      assert.doesNotMatch(html, /data-theme-switch|name="theme"|\/preferences\/theme/, path)
+    }
   })
 })
 

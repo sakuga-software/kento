@@ -1,8 +1,8 @@
 import type { Handle } from 'remix/component'
 
-import { defaultModels } from '@sakuga-review/engine/levels'
-import { costKnown } from '@sakuga-review/engine/prices'
-import { LEVELS, type Level, type ProviderKind } from '@sakuga-review/protocol'
+import { defaultModels } from '@kento/engine/levels'
+import { costKnown } from '@kento/engine/prices'
+import { LEVELS, type Level, type ProviderKind } from '@kento/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
