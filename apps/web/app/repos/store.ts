@@ -139,7 +139,9 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
     async list(orgId, query = {}) {
       let filter = query.filter ?? 'all'
       let search = query.search?.trim().toLowerCase() ?? ''
-      let limit = query.limit ?? REPOS_PAGE_SIZE
+      // A limit of a caller outside the screen stays 1 row or more: the count of pages divides by it.
+      let wanted = Math.trunc(query.limit ?? REPOS_PAGE_SIZE)
+      let limit = Number.isFinite(wanted) ? Math.max(1, wanted) : REPOS_PAGE_SIZE
       let asked = query.page !== undefined && Number.isSafeInteger(query.page) && query.page > 1 ? query.page : 1
 
       let matches = sql`
