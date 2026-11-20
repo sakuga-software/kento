@@ -534,6 +534,29 @@ kbd,
 
 /* ---------------------------------------------------------------- Frame of the app */
 
+/* KNT-145. View transitions between the pages: each screen is a whole page from the server, so the
+   browser runs them across documents. The page fades in 150 ms. The bar at the top is its own part:
+   it does not move or fade, so the header never shifts. Nothing under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+  .bar {
+    view-transition-name: bar;
+  }
+  ::view-transition-group(root) {
+    animation-duration: 150ms;
+  }
+  ::view-transition-group(bar),
+  ::view-transition-old(bar),
+  ::view-transition-new(bar) {
+    animation: none;
+  }
+  ::view-transition-old(bar) {
+    display: none;
+  }
+}
+
 /* KNT-144. The bar at the top of the window while the next page loads (public/assets/progress.js), in
    the spirit of nprogress. The script adds it after 120 ms, so a fast page shows none. It grows fast,
    then slows down near 90 %: the next page replaces it. */
@@ -730,6 +753,12 @@ select.bar-org-box:hover {
   color: var(--ink-muted);
   font-size: var(--text-base);
   line-height: var(--leading-base);
+}
+/* KNT-141. A short line at the right of the title (the dashboard: "Updated 8 s ago · Refresh"). The
+   header then aligns its items on the baseline of the title; the line wraps under the title, at its
+   start, when the header is too narrow. */
+.page-header:has(> .page-meta) {
+  align-items: last baseline;
 }
 .page-actions {
   display: flex;
@@ -2998,10 +3027,17 @@ a.finding-title:hover {
 .dashboard > .banner {
   margin: 0;
 }
-/* "Updated at 10:12:04 · Refresh": the lead of the page, under its title. */
+/* KNT-141. "Updated 8 s ago · Refresh": at the right of the title, on its baseline (.page-meta). */
 .dash-updated {
-  margin-top: calc(-1 * var(--space-8) + var(--space-1));
   color: var(--ink-muted);
+}
+/* The text changes as the time passes ("Updated at 10:00:00", "Updated 9 s ago", "Updated 59 min
+   ago"). It keeps the width of the longest one, so the line never wraps or unwraps on its own and
+   the dashboard under it never moves. */
+.dash-updated [data-updated] {
+  display: inline-block;
+  min-width: 16ch;
+  text-align: end;
 }
 .dash-estimate {
   font-weight: 500;
@@ -3455,9 +3491,6 @@ a.finding-title:hover {
   .dashboard {
     gap: var(--space-6);
   }
-  .dash-updated {
-    margin-top: calc(-1 * var(--space-6) - var(--space-2));
-  }
   .todo {
     grid-template-columns: minmax(0, 1fr);
     padding: var(--space-4);
@@ -3555,17 +3588,26 @@ a.finding-title:hover {
   }
 }
 
-/* ---------------------------------------------------------------- Settings (REV-29, one column in REV-91) */
+/* ---------------------------------------------------------------- Settings (REV-29, sidebar in KNT-149) */
 
-/* One column of 760 px: the header, the banners, the tabs of the sections, then the cards. */
+/* The sidebar of the sections at the left, then a column of 760 px: the banners and the cards.
+   Without the sidebar (one section), one column of 760 px. */
 .content:has(> .settings-layout) > * {
   width: 100%;
   max-width: 760px;
   margin-inline: auto;
 }
+.content:has(> .settings-layout-nav) > * {
+  max-width: 1020px;
+}
 .settings-layout {
   display: grid;
   gap: var(--space-6);
+}
+.settings-layout-nav {
+  grid-template-columns: 220px minmax(0, 760px);
+  gap: var(--space-10);
+  align-items: start;
 }
 .settings-content {
   display: grid;
@@ -3578,40 +3620,69 @@ a.finding-title:hover {
 .settings-layout .org-settings {
   grid-template-columns: minmax(0, 1fr);
 }
-/* The sections as tabs under the title; settings.js marks the one on screen. */
+/* The sidebar stays in view; a long list of providers scrolls inside it. settings.js marks the
+   section and the part on screen. */
+.settings-nav {
+  position: sticky;
+  top: var(--space-6);
+  max-height: calc(100vh - 2 * var(--space-6));
+  overflow-y: auto;
+}
 .settings-nav ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-5);
   margin: 0;
   padding: 0;
-  border-bottom: 1px solid var(--line);
   list-style: none;
 }
-.settings-nav a {
-  position: relative;
-  display: inline-flex;
+.settings-nav-list {
+  display: grid;
+  gap: var(--space-1);
+}
+.settings-nav-link {
+  display: flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-3);
+  border-left: 2px solid transparent;
   color: var(--ink-muted);
+  font-size: var(--text-base);
+  line-height: var(--leading-sm);
   font-weight: 500;
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
-.settings-nav a:hover {
+.settings-nav-link:hover {
   color: var(--ink);
+  background: var(--paper-sunken);
 }
-.settings-nav a[aria-current] {
+.settings-nav-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.settings-nav-link[aria-current] {
+  border-left-color: var(--ink);
   color: var(--ink);
   font-weight: 600;
 }
-.settings-nav a[aria-current]::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: var(--ink);
+/* The parts of a section: smaller, indented, on a thin rail. */
+.settings-nav .settings-nav-sub {
+  margin: var(--space-1) 0 var(--space-2) var(--space-3);
+  border-left: 1px solid var(--line);
+}
+.settings-nav-sub .settings-nav-link {
+  min-height: 28px;
+  margin-left: -1px;
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.settings-nav-sub .settings-nav-link.mono {
+  font-family: var(--font-mono);
+}
+.settings-nav-sub .settings-nav-link[aria-current] {
+  font-weight: 500;
+}
+/* "Section …" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
+.settings-nav-toggle {
+  display: none;
 }
 .settings-content [id] {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
@@ -3657,12 +3728,107 @@ a.finding-title:hover {
   margin-top: var(--space-3);
 }
 
-@media (max-width: 760px) {
-  .settings-nav ul {
-    gap: 0 var(--space-4);
+/* Under 900 px the sidebar is a bar at the top of the page, "Section …", that stays in view and
+   opens the list over the page. settings.js sets .settings-nav-ready once it handles the bar: until
+   then, or without it, the list is part of the page. */
+@media (max-width: 900px) {
+  .settings-layout-nav {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
   }
-  .settings-nav a {
+  .settings-nav {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .settings-nav-ready {
+    position: sticky;
+    z-index: 15;
+    top: 0;
+    margin-block: calc(-1 * var(--space-2));
+    padding-block: var(--space-2);
+    background: var(--paper);
+  }
+  .settings-nav-ready .settings-nav-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
     min-height: var(--control-h-touch);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background: var(--paper-raised);
+    color: var(--ink);
+    font: 600 var(--text-base) var(--font-ui);
+    text-align: left;
+    cursor: pointer;
+  }
+  .settings-nav-ready .settings-nav-toggle:hover {
+    background: var(--paper);
+  }
+  .settings-nav-toggle:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+  .settings-nav-toggle-label {
+    color: var(--ink-muted);
+    font-weight: 500;
+  }
+  .settings-nav-toggle-current {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The chevron: down when folded, up when open. */
+  .settings-nav-toggle::after {
+    content: '';
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin: 0 var(--space-1) 3px;
+    border-right: 1.75px solid currentColor;
+    border-bottom: 1.75px solid currentColor;
+    transform: rotate(45deg);
+  }
+  .settings-nav-toggle[aria-expanded='true']::after {
+    margin-bottom: -3px;
+    transform: rotate(-135deg);
+  }
+  .settings-nav-list {
+    padding: var(--space-2) 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--paper-raised);
+  }
+  .settings-nav-ready .settings-nav-list {
+    position: absolute;
+    top: calc(100% - var(--space-1));
+    right: 0;
+    left: 0;
+    display: none;
+    max-height: calc(100vh - var(--control-h-touch) - 4 * var(--space-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: var(--shadow-2);
+  }
+  .settings-nav-ready.settings-nav-open .settings-nav-list {
+    display: grid;
+  }
+  /* Under the bar "Section …". */
+  .settings-layout:has(> .settings-nav-ready) .settings-content [id] {
+    scroll-margin-top: 72px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-nav-link {
+    min-height: var(--control-h-touch);
+  }
+  .settings-nav-sub .settings-nav-link {
+    min-height: 40px;
   }
   .settings-content [id] {
     /* Under the sticky top bar of a phone. */

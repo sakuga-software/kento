@@ -1,7 +1,7 @@
 // REV-17. "Run again at <level>" on the screen of a pull request: a new review job of its last head,
 // at the level that an admin chooses, with an estimate of its cost. A newer push cancels it, as it
 // cancels every job of an older head (app/db/webhook-store.ts, `cancelActive`).
-import type { Level } from '@kento/protocol'
+import type { Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { ESTIMATE_SAMPLE } from '../dashboard/store.ts'

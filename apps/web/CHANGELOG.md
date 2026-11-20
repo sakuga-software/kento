@@ -37,11 +37,17 @@ Each entry says, when it applies:
 
 ### Changed
 
-- The packages of the repository are `@kento/web`, `@kento/runner`, `@kento/engine` and
-  `@kento/protocol` (before `@sakuga-review/…`): use these names with `pnpm -F`. The images, the
-  markers in the texts on GitHub and the commands do not change.
+- The packages of the repository are `@kento-review/web`, `@kento-review/runner`,
+  `@kento-review/engine` and `@kento-review/protocol` (before `@sakuga-review/…`): use these names
+  with `pnpm -F`. The images, the markers in the texts on GitHub and the commands do not change.
 - Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
   the runner says so in `org.opencontainers.image.licenses`.
+- The Settings screen has a sidebar in place of the tabs under its title: the sections, and under
+  each one its parts (the levels, the parts of the GitHub App, each provider, "New rule", "Add a
+  provider"). It stays in view while the page scrolls and marks the section and the part on screen.
+  Under 900 px it is a bar, "Section", that stays at the top and opens the list. The addresses of
+  the sections do not change (`/settings#cap`, `#defaults`, `#bots`, `#app`, `#org-rules`,
+  `#providers`).
 
 ### Fixed
 

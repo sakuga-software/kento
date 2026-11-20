@@ -5,9 +5,9 @@
 // The runner gave the verdict of each thread and whether its file changed since the thread. The
 // service reads the threads again here: a thread resolved meanwhile gets no reply, and the opener of
 // each thread (a bot or a person) comes from GitHub, not from the runner.
-import { costLine, withIcon, type Icons } from '@kento/engine/render'
-import { markerResolve } from '@kento/engine/threads'
-import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS, type ResolvePayload } from '@kento/protocol'
+import { costLine, withIcon, type Icons } from '@kento-review/engine/render'
+import { markerResolve } from '@kento-review/engine/threads'
+import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS, type ResolvePayload } from '@kento-review/protocol'
 
 import { HINT_MARKER, namesReject, postRejectHint, type HintClaims } from '../commands/hint.ts'
 import { resolveReviewThread } from '../github/graphql.ts'

@@ -2,7 +2,7 @@
 // of the org only; cop() and csrf() of the session layer ran before.
 import { createAction } from 'remix/router'
 
-import { UUID } from '@kento/protocol'
+import { UUID } from '@kento-review/protocol'
 
 import { readAssignmentForm } from '../../assignment/model.ts'
 import { log } from '../../log.ts'

@@ -15,8 +15,8 @@
 // that failed the first time can still happen, and nothing is posted twice. GitHub never sends a
 // delivery again by itself, whatever its status: after a 😕, the person writes the same `reject`
 // again, or redelivers the webhook from the settings of the App.
-import { findingKey } from '@kento/engine/findings'
-import type { ReviewFinding } from '@kento/protocol'
+import { findingKey } from '@kento-review/engine/findings'
+import type { ReviewFinding } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { replyText } from '../findings/dismiss.ts'

@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX } from '@kento/protocol'
+import { RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX } from '@kento-review/protocol'
 
 import { FLOOR_LABELS, leftOutReason, RULE_FIELDS, type RuleField, type SeverityFloor } from '../rules/model.ts'
 import { MAX_RULES, type RuleView } from '../rules/store.ts'
@@ -301,6 +301,14 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
 }
 
 /**
+ * Whether the form "New rule" shows: an admin, under MAX_RULES rules (disabled ones included). KNT-149:
+ * the sidebar of the settings links to the form with the same rule.
+ */
+export function canAddRule(admin: boolean, count: number): boolean {
+  return admin && count < MAX_RULES
+}
+
+/**
  * REV-19. The rules of a repository (Config › Rules) or of the org (Settings › Org rules): a
  * list of folded rules, each one open to edit, disable or remove, and the form of a new rule. An
  * admin of the org writes; a member reads.
@@ -310,7 +318,6 @@ export function RulesList(handle: Handle<RulesListProps>) {
     let props = handle.props
     let { scope, repoId, rules, admin, csrf, form, notice } = props
     let newForm = form?.ruleId === null ? form : null
-    let full = rules.length >= MAX_RULES
     let tone = notice ? RULE_NOTICES[notice].tone : null
     return (
       <div class="rules">
@@ -335,7 +342,7 @@ export function RulesList(handle: Handle<RulesListProps>) {
             ))}
           </ul>
         )}
-        {admin && !full ? (
+        {canAddRule(admin, rules.length) ? (
           <details class="rule-new" id={`${scope}-rule-new`} open={newForm !== null || rules.length === 0}>
             <summary class="button">New rule</summary>
             <form method="post" action={routes.ruleAdd.href()} class="rule-form" noValidate>

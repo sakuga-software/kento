@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole } from './helpers.ts'
 
 // The settings of the org (REV-13) in a browser, against the server, Postgres and the fake GitHub,
 // with the tests of the ticket: a limit of 0,01 $ stops the next push, with its reason on the pull
@@ -174,29 +174,78 @@ test.describe('the settings of the org', () => {
     }
   })
 
-  // REV-29. Every section is one click from the top, has a URL, and the page stays under one
-  // primary button per section.
-  test('the table of contents leads to each section, and its anchor is the URL', async ({ page }) => {
+  // REV-29, KNT-149. Every section and every part of a section is one click away in the sidebar, has
+  // a URL, and the page stays under one primary button per section.
+  test('the sidebar leads to each section and to its parts, and marks the one on screen', async ({ page }, info) => {
+    let errors = watchConsole(page)
     await signIn(page, 'octocat')
     await page.goto('/settings')
     let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    let mobile = info.project.name === 'mobile'
+    // Under 900 px the list is folded under "Section …"; on a desktop it stays in view on the left.
+    await expect(nav.locator('[data-settings-nav-toggle]')).toBeVisible({ visible: mobile })
+    await expect(nav.getByRole('link', { name: 'Costs and cap' })).toBeVisible({ visible: !mobile })
     for (let [name, id] of [
       ['GitHub App', 'app'],
       ['Trusted bots', 'bots'],
       ['Levels and models', 'defaults'],
+      ['balanced', 'org-balanced'],
+      ['Webhook', 'app-webhook'],
       ['Providers and keys', 'providers'],
       ['Costs and cap', 'cap'],
     ] as const) {
-      await nav.getByRole('link', { name }).click()
+      await goToSettingsLink(page, name)
       await expect(page).toHaveURL(new RegExp(`/settings#${id}$`))
       await expect(page.locator(`#${id}`)).toBeInViewport()
+      if (!mobile) await expect(nav).toBeInViewport()
     }
-    // The table of contents marks the section on screen.
-    await expect(nav.getByRole('link', { name: 'Costs and cap' })).toHaveAttribute('aria-current', 'location')
+    if (!mobile) {
+      // The wheel over the sidebar scrolls the page: the sidebar does not hold it.
+      let box = (await nav.boundingBox())!
+      await page.mouse.move(box.x + 20, box.y + 20)
+      let before = await page.evaluate(() => window.scrollY)
+      await page.mouse.wheel(0, 600)
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
+      await page.evaluate(() => window.scrollTo(0, 0))
+    }
+    // The sidebar marks the section on screen, and the part on screen under it (folded on a phone).
+    await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.locator('[aria-current="location"]')).toHaveCount(1)
+    await goToSettingsLink(page, 'heavy')
+    await expect(nav.getByRole('link', { name: 'Levels and models', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.getByRole('link', { name: 'heavy', exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
+    await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).not.toHaveAttribute('aria-current', /.*/)
+    if (mobile) {
+      // The button names the section on screen, and the list is folded again after a link.
+      let toggle = nav.locator('[data-settings-nav-toggle]')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(nav.locator('[data-settings-nav-current]')).toHaveText('Levels and models')
+      // Tab past the last link: the list folds, and never covers the field that gets the focus.
+      await toggle.click()
+      await nav.locator('.settings-nav-list a').last().focus()
+      await page.keyboard.press('Tab')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(nav.locator('.settings-nav-list')).toBeHidden()
+    }
     for (let section of await page.locator('.settings-content section').all()) {
       expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
     }
+    let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
     await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
+  })
+
+  test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobile', 'the bar folds the list under 900 px only')
+    await page.route('**/assets/settings.js*', (route) => route.abort())
+    await signIn(page, 'octocat')
+    await page.goto('/settings')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.locator('[data-settings-nav-toggle]')).toBeHidden()
+    await expect(nav.getByRole('link', { name: 'Trusted bots' })).toBeVisible()
+    await nav.getByRole('link', { name: 'Trusted bots' }).click()
+    await expect(page.locator('#bots')).toBeInViewport()
   })
 
   test('an old anchor of the settings leads to its section under the new anchor', async ({ page }) => {

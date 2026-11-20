@@ -5,7 +5,7 @@
 // during a swap; no statement ever puts two rules on one place, even for one row.
 import type postgres from 'postgres'
 
-import { UUID as LOWER_UUID, type Level } from '@kento/protocol'
+import { UUID as LOWER_UUID, type Level } from '@kento-review/protocol'
 
 import { MAX_ASSIGNMENT_RULES, type AssignmentAction, type AssignmentRule, type AssignmentValues } from './model.ts'
 
