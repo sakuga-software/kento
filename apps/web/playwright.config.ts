@@ -7,7 +7,7 @@ import { E2E_WEBHOOK_SECRET } from './e2e/fake-github.ts'
 // The screens in Chromium, against the real server, a real Postgres and a fake GitHub
 // (e2e/fake-github.ts) for the sign-in.
 //
-//   E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @sakuga-review/web e2e
+//   E2E_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento/web e2e
 //
 // The server applies its migrations to that database at startup: give it a throwaway one.
 const port = Number(process.env.E2E_PORT ?? 3488)

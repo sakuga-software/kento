@@ -6,7 +6,7 @@ import { SESSION_TTL_MS } from '../auth/session-storage.ts'
 import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { ICON_FILES, ICON_VERSION } from '@sakuga-review/engine/render'
+import { ICON_FILES, ICON_VERSION } from '@kento/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 

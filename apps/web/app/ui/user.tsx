@@ -3,7 +3,7 @@
 // reviewed. Every member of the org reads it; only the user changes it.
 import type { Handle } from 'remix/component'
 
-import { LEVELS, type Level } from '@sakuga-review/protocol'
+import { LEVELS, type Level } from '@kento/protocol'
 
 import { mention } from '../instance.ts'
 import { userRoutes } from '../routes.ts'

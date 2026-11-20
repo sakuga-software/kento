@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX } from '@sakuga-review/protocol'
+import { RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX } from '@kento/protocol'
 
 import { FLOOR_LABELS, leftOutReason, RULE_FIELDS, type RuleField, type SeverityFloor } from '../rules/model.ts'
 import { MAX_RULES, type RuleView } from '../rules/store.ts'

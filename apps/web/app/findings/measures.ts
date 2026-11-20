@@ -11,7 +11,7 @@
 //
 // A finding counts in the week of the event that closed it, when its status is that of its last
 // event (the rule of precision.ts). The weeks start on Monday, in UTC.
-import { BLOCKING_CONFIDENCE } from '@sakuga-review/engine/findings'
+import { BLOCKING_CONFIDENCE } from '@kento/engine/findings'
 import type postgres from 'postgres'
 
 import { PRECISION_MIN } from './precision.ts'

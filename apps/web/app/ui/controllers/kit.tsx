@@ -6,7 +6,7 @@ import { getCsrfToken } from 'remix/middleware/csrf'
 import { createContextKey } from 'remix/router'
 import { Session } from 'remix/session'
 
-import { UUID } from '@sakuga-review/protocol'
+import { UUID } from '@kento/protocol'
 
 import type { MembershipRow, UserRow } from '../../auth/store.ts'
 import { log } from '../../log.ts'
