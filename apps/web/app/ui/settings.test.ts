@@ -8,9 +8,10 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
 import type { ProvidersStore, ProviderView } from '../providers/store.ts'
+import { MAX_RULES } from '../rules/store.ts'
 import { createAppRouter } from '../router.ts'
 import { hour } from './format.ts'
-import { providerState } from './settings.tsx'
+import { providerState, settingsSections } from './settings.tsx'
 
 const COOKIE = '__Host-kento_session'
 const ID = '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
@@ -284,8 +285,10 @@ describe('the section "Providers and keys"', () => {
     let page = await (await request('/settings', { cookie })).text()
     let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
-    // REV-91: no tab for the form; the button of the section opens it, and so does a link to #new-provider.
-    assert.doesNotMatch(page, /<a href="#new-provider">/)
+    // REV-91: the button of the section opens it, and so does a link to #new-provider. With the
+    // providers alone, the page has no sidebar (KNT-149: two sections at least).
+    assert.doesNotMatch(page, /href="#new-provider"/)
+    assert.doesNotMatch(page, /Sections of the settings/)
     assert.match(page, /src="\/assets\/settings\.js\?v=/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     let open = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
@@ -383,5 +386,49 @@ describe('the section "Providers and keys"', () => {
     // The URL is only in the escaped `returnTo` of the theme form; no banner says it.
     assert.doesNotMatch(html, /role="status"/)
     assert.doesNotMatch(html, /<script>/)
+  })
+})
+
+describe('the sidebar of the settings (KNT-149)', () => {
+  let app = { ok: true as const, status: {} as never }
+  let providers = [
+    { id: ID, label: 'Anthropic of Sakuga' },
+    { id: '8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', label: 'GPU' },
+  ]
+
+  it('lists the sections in the order of the page, each one with its parts', () => {
+    let sections = settingsSections({ org: { app }, rules: { count: 2 }, providers, admin: true })
+    assert.deepEqual(
+      sections.map((s) => [s.id, s.label, s.items.map((i) => i.id)]),
+      [
+        ['cap', 'Costs and cap', []],
+        ['defaults', 'Levels and models', ['org-level', 'org-lite', 'org-balanced', 'org-heavy']],
+        ['bots', 'Trusted bots', []],
+        ['app', 'GitHub App', ['app-installation', 'app-webhook', 'app-deliveries', 'app-permissions']],
+        ['org-rules', 'Org rules', ['org-rule-new']],
+        ['providers', 'Providers and keys', [`provider-${ID}`, 'provider-8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', 'new-provider']],
+      ],
+    )
+    assert.deepEqual(
+      sections.find((s) => s.id === 'providers')!.items.map((i) => i.label),
+      ['Anthropic of Sakuga', 'GPU', 'Add a provider'],
+    )
+  })
+
+  it('links only to the parts on the page: no form for a member, no permissions while GitHub does not answer', () => {
+    let member = settingsSections({ org: { app: null }, rules: { count: 0 }, providers, admin: false })
+    assert.deepEqual(member.find((s) => s.id === 'app')!.items.map((i) => i.id), ['app-installation', 'app-webhook', 'app-deliveries'])
+    assert.deepEqual(member.find((s) => s.id === 'org-rules')!.items, [])
+    assert.deepEqual(member.find((s) => s.id === 'providers')!.items.map((i) => i.id), [`provider-${ID}`, 'provider-8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'])
+    let failed = settingsSections({ org: { app: { ok: false, error: 'timeout' } }, rules: null, providers: null, admin: true })
+    assert.deepEqual(failed.map((s) => s.id), ['cap', 'defaults', 'bots', 'app'])
+    assert.ok(!failed.find((s) => s.id === 'app')!.items.some((i) => i.id === 'app-permissions'))
+  })
+
+  it('has no "New rule" once the org holds the most rules, as the section', () => {
+    let full = settingsSections({ org: null, rules: { count: MAX_RULES }, providers: [], admin: true })
+    assert.deepEqual(full.find((s) => s.id === 'org-rules')!.items, [])
+    let room = settingsSections({ org: null, rules: { count: MAX_RULES - 1 }, providers: [], admin: true })
+    assert.deepEqual(room.find((s) => s.id === 'org-rules')!.items.map((i) => i.id), ['org-rule-new'])
   })
 })

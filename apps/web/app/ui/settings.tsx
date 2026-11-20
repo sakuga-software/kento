@@ -12,7 +12,7 @@ import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
 import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
 import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
-import type { RuleView } from '../rules/store.ts'
+import { MAX_RULES, type RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openrouter', 'openai_compatible', 'ollama']
@@ -83,6 +83,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     // REV-27. Which levels of the org run on each provider: the same rule as Default values.
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
+    let sections = settingsSections({ org: org ?? null, rules: rules ? { count: rules.list.length } : null, providers, admin })
     return (
       <Shell
         frame={frame}
@@ -91,6 +92,9 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         // REV-91: the version of the settings goes under the title, after "For the whole organization".
         lead={org ? `For the whole organization · ${orgVersionLine(org.view)}` : 'What applies to the whole organization.'}
       >
+        <div class="settings-layout">
+          <SettingsNav sections={sections} />
+          <div class="settings-content">
         {refused.map((p) => {
           let levels = usage(p.id)
           let failing =
@@ -129,9 +133,6 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
           </div>
         ) : null}
 
-        <div class="settings-layout">
-          <SettingsNav org={!!org} rules={!!rules} providers={!!providers} />
-          <div class="settings-content">
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
         {rules ? (
@@ -209,33 +210,107 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
   }
 }
 
+/** One link of the sidebar of the settings, to an anchor of the page. */
+export interface SettingsNavLink {
+  id: string
+  label: string
+  /** A level name: written in mono, as in its card. */
+  mono?: boolean
+}
+/** A section of the sidebar, with the parts of the section under it. */
+export interface SettingsNavSection extends SettingsNavLink {
+  items: SettingsNavLink[]
+}
+
 /**
- * The table of contents of the settings (REV-29): one link per section, as tabs under the title
- * (REV-91). Each section keeps its anchor: #cap, #defaults, #bots, #app, #org-rules, #providers.
- * #new-provider still opens the form (settings.js); the button of the section does too.
+ * KNT-149. The sidebar of the settings: the sections in the order of the page (REV-29, REV-91
+ * labels), and under each section the parts that have their own anchor. The anchors of the sections
+ * stay the same: #cap, #defaults, #bots, #app, #org-rules, #providers.
  */
-function SettingsNav(handle: Handle<{ org: boolean; rules: boolean; providers: boolean }>) {
+export function settingsSections(input: {
+  org: Pick<OrgSectionProps, 'app'> | null
+  rules: { count: number } | null
+  providers: readonly Pick<ProviderView, 'id' | 'label'>[] | null
+  admin: boolean
+}): SettingsNavSection[] {
+  let { org, rules, providers, admin } = input
+  let sections: SettingsNavSection[] = []
+  if (org) {
+    sections.push(
+      { id: 'cap', label: 'Costs and cap', items: [] },
+      {
+        id: 'defaults',
+        label: 'Levels and models',
+        items: [{ id: 'org-level', label: 'Level of a push' }, ...LEVELS.map((level) => ({ id: `org-${level}`, label: level, mono: true }))],
+      },
+      { id: 'bots', label: 'Trusted bots', items: [] },
+      {
+        id: 'app',
+        label: 'GitHub App',
+        items: [
+          { id: 'app-installation', label: 'Installation' },
+          { id: 'app-webhook', label: 'Webhook' },
+          { id: 'app-deliveries', label: 'Deliveries' },
+          // The permissions and the events show only when GitHub answered.
+          ...(org.app?.ok ? [{ id: 'app-permissions', label: 'Permissions and events' }] : []),
+        ],
+      },
+    )
+  }
+  if (rules) {
+    // The same condition as the form "New rule" of the section.
+    let canAdd = admin && rules.count < MAX_RULES
+    sections.push({ id: 'org-rules', label: 'Org rules', items: canAdd ? [{ id: 'org-rule-new', label: 'New rule' }] : [] })
+  }
+  if (providers) {
+    sections.push({
+      id: 'providers',
+      label: 'Providers and keys',
+      items: [
+        ...providers.map((provider) => ({ id: `provider-${provider.id}`, label: provider.label })),
+        ...(admin ? [{ id: 'new-provider', label: 'Add a provider' }] : []),
+      ],
+    })
+  }
+  return sections
+}
+
+/**
+ * KNT-149. The sidebar of the settings, in place of the tabs of REV-91: one link per section, and
+ * the parts of each section under it. It stays in view while the page scrolls. Under 900 px it is
+ * a bar at the top, "Section …", that opens the list over the page (settings.js). Without
+ * JavaScript the list is part of the page. settings.js marks the section and the part on screen
+ * with aria-current.
+ */
+function SettingsNav(handle: Handle<{ sections: SettingsNavSection[] }>) {
   return () => {
-    let { org, rules, providers } = handle.props
-    let links: [string, string][] = [
-      ...(org
-        ? ([
-            ['#cap', 'Costs and cap'],
-            ['#defaults', 'Levels and models'],
-            ['#bots', 'Trusted bots'],
-            ['#app', 'GitHub App'],
-          ] as [string, string][])
-        : []),
-      ...(rules ? ([['#org-rules', 'Org rules']] as [string, string][]) : []),
-      ...(providers ? ([['#providers', 'Providers and keys']] as [string, string][]) : []),
-    ]
-    if (links.length < 2) return null
+    let { sections } = handle.props
+    if (sections.length < 2) return null
     return (
-      <nav class="settings-nav" aria-label="Sections of the settings">
-        <ul>
-          {links.map(([href, label]) => (
+      <nav class="settings-nav" aria-label="Sections of the settings" data-settings-nav="">
+        <button class="settings-nav-toggle" type="button" aria-expanded="false" aria-controls="settings-nav-list" data-settings-nav-toggle="">
+          <span class="settings-nav-toggle-label">Section</span>
+          <span class="settings-nav-toggle-current" data-settings-nav-current="">
+            {sections[0]!.label}
+          </span>
+        </button>
+        <ul class="settings-nav-list" id="settings-nav-list">
+          {sections.map((section) => (
             <li>
-              <a href={href}>{label}</a>
+              <a class="settings-nav-link" href={`#${section.id}`}>
+                {section.label}
+              </a>
+              {section.items.length > 0 ? (
+                <ul class="settings-nav-sub">
+                  {section.items.map((item) => (
+                    <li>
+                      <a class={item.mono ? 'settings-nav-link mono' : 'settings-nav-link'} href={`#${item.id}`}>
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>
