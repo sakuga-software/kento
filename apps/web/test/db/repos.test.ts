@@ -189,7 +189,7 @@ describe('the Repos screen against Postgres', () => {
     assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).lastReview?.prNumber], [20, null, 21])
   })
 
-  it('pages the list by 50, the enabled repositories first, and counts the whole org (REV-36)', async () => {
+  it('pages the list by 25 with ?page=n, the enabled repositories first, and counts the whole org (REV-36, KNT-146)', async () => {
     await sql`
       insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
       select ${orgId}, 6000 + g, 'sakuga-software/svc-' || lpad(g::text, 3, '0'), g % 4 = 0,
@@ -197,34 +197,46 @@ describe('the Repos screen against Postgres', () => {
       from generate_series(1, 119) g`
     // 120 repositories: orchard and 119 more, of which 29 enabled.
     let first = await store.list(orgId)
-    assert.equal(first.rows.length, 50)
+    assert.equal(first.rows.length, 25)
     assert.deepEqual(first.counts, { all: 120, enabled: 29, disabled: 91, switching: 23 })
     assert.equal(first.matching, 120)
     assert.equal(first.offset, 0)
-    assert.equal(first.previous, null)
+    assert.equal(first.page, 1)
+    assert.equal(first.pages, 5)
     assert.deepEqual(first.rows.slice(0, 3).map((r) => r.fullName), ['sakuga-software/svc-004', 'sakuga-software/svc-008', 'sakuga-software/svc-012'])
-    assert.ok(first.rows.slice(0, 29).every((r) => r.enabled), 'the enabled ones first')
-    assert.ok(first.rows.slice(29).every((r) => !r.enabled))
+    assert.ok(first.rows.every((r) => r.enabled), 'the enabled ones first')
 
     let seen = first.rows.map((r) => r.id)
-    let page = first
-    while (page.next) {
-      page = await store.list(orgId, { after: page.next })
+    for (let number = 2; number <= 5; number++) {
+      let page = await store.list(orgId, { page: number })
+      assert.equal(page.page, number)
       assert.equal(page.offset, seen.length)
       seen.push(...page.rows.map((r) => r.id))
     }
     assert.equal(seen.length, 120)
     assert.equal(new Set(seen).size, 120, 'no row twice, none left out')
-    assert.equal(page.rows.length, 20)
+    let pageTwo = await store.list(orgId, { page: 2 })
+    assert.deepEqual(pageTwo.rows.map((r) => r.id), seen.slice(25, 50))
+    assert.deepEqual(pageTwo.rows.slice(0, 4).map((r) => r.enabled), [true, true, true, true])
+    assert.deepEqual(pageTwo.rows.slice(4).map((r) => r.enabled), Array(21).fill(false))
 
-    // Back from the last page: the same rows as on the way forward.
-    let back = await store.list(orgId, { before: page.previous })
-    assert.deepEqual(back.rows.map((r) => r.id), seen.slice(50, 100))
-    assert.equal(back.offset, 50)
-    assert.equal(back.next, seen[99])
-    let start = await store.list(orgId, { before: back.previous })
-    assert.deepEqual(start.rows.map((r) => r.id), seen.slice(0, 50))
-    assert.equal(start.previous, null)
+    // A page after the last one gives the last one; a page under 1 gives the first one.
+    let past = await store.list(orgId, { page: 99 })
+    assert.equal(past.page, 5)
+    assert.equal(past.offset, 100)
+    assert.deepEqual(past.rows.map((r) => r.id), seen.slice(100))
+    assert.equal((await store.list(orgId, { page: 0 })).page, 1)
+    assert.equal((await store.list(orgId, { page: -2 })).page, 1)
+    assert.equal((await store.list(orgId, { page: 2.5 })).page, 1)
+
+    // The page counts the filter and the search, not the whole org.
+    let enabled = await store.list(orgId, { filter: 'enabled', page: 2 })
+    assert.equal(enabled.matching, 29)
+    assert.equal(enabled.pages, 2)
+    assert.equal(enabled.rows.length, 4)
+    assert.equal(enabled.offset, 25)
+    let none = await store.list(orgId, { search: 'nothing-here', page: 3 })
+    assert.deepEqual([none.page, none.pages, none.offset, none.rows.length], [1, 1, 0, 0])
   })
 
   it('filters by state and searches the name, any case, with % and _ as plain characters (REV-36)', async () => {
@@ -245,9 +257,6 @@ describe('the Repos screen against Postgres', () => {
     let page = await store.list(orgId, { search: 'boo', filter: 'disabled' })
     assert.equal(page.matching, 2)
     assert.deepEqual(page.counts, { all: 5, enabled: 1, disabled: 4, switching: 2 })
-    // A cursor of another org, or not an id, starts nowhere.
-    assert.deepEqual((await store.list(orgId, { after: '00000000-0000-4000-8000-000000000000' })).rows, [])
-    assert.equal((await store.list(orgId, { after: 'nope' })).rows.length, 5)
   })
 
   it('changes a repository of its own org only', async () => {

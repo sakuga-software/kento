@@ -317,7 +317,7 @@ test.describe('the Repos screen', () => {
     expect(edges.right).toBeLessThanOrEqual(edges.width)
   })
 
-  test('a long list: 50 rows a page, the enabled ones first, a search and the filters (REV-36)', async ({ page }) => {
+  test('a long list: 25 rows a page, numbered pages, the enabled ones first, a search and the filters (REV-36, KNT-146)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
@@ -330,19 +330,30 @@ test.describe('the Repos screen', () => {
 
       await page.goto('/repos')
       let rows = page.locator('tbody tr')
-      await expect(rows).toHaveCount(50)
+      await expect(rows).toHaveCount(25)
       await expect(rows.first().getByRole('rowheader')).toHaveText(/^orchard/)
       let total = Number(await page.getByRole('link', { name: /^All/ }).locator('.list-filter-count').textContent())
-      await expect(page.locator('.pager-range')).toHaveText(`1 to 50 of ${total}`)
-      await page.getByRole('link', { name: 'Next' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`51 to ${total} of ${total}`)
-      await page.getByRole('link', { name: 'Previous' }).click()
-      await expect(page.locator('.pager-range')).toHaveText(`1 to 50 of ${total}`)
+      let pager = page.getByRole('navigation', { name: 'Pages of the list' })
+      await expect(page.locator('.pager-range')).toHaveText(`1 to 25 of ${total}`)
+      await expect(pager.getByRole('link', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
+      await pager.getByRole('link', { name: 'Next' }).click()
+      await expect(page).toHaveURL(/[?&]page=2(&|$)/)
+      await expect(page.locator('.pager-range')).toHaveText(`26 to 50 of ${total}`)
+      await expect(pager.getByRole('link', { name: 'Page 2' })).toHaveAttribute('aria-current', 'page')
+      await pager.getByRole('link', { name: 'Page 3' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`51 to ${Math.min(75, total)} of ${total}`)
+      await pager.getByRole('link', { name: 'Previous' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`26 to 50 of ${total}`)
+      await pager.getByRole('link', { name: 'Previous' }).click()
+      await expect(page.locator('.pager-range')).toHaveText(`1 to 25 of ${total}`)
+      await expect(page).not.toHaveURL(/[?&]page=/)
 
-      // REV-91: Enter sends the search, with no visible button.
+      // REV-91: Enter sends the search, with no visible button. KNT-146: from page 2, it starts at page 1.
+      await page.goto('/repos?page=2')
       await page.getByRole('searchbox', { name: 'Search a repo by its name' }).fill('BULK-0')
       await page.getByRole('searchbox', { name: 'Search a repo by its name' }).press('Enter')
       await expect(rows).toHaveCount(9)
+      await expect(page).not.toHaveURL(/[?&]page=/)
       await expect(page.locator('.pager')).toHaveCount(0)
 
       await page.getByRole('link', { name: /^Enabled/ }).click()
@@ -354,7 +365,7 @@ test.describe('the Repos screen', () => {
 
       // Enabled from page 2 of a search in "Not enabled", a repository comes back to that page.
       await page.goto('/repos?filter=disabled&q=bulk')
-      await page.getByRole('link', { name: 'Next' }).click()
+      await page.getByRole('link', { name: 'Page 3' }).click()
       let url = page.url()
       await page.getByRole('row').filter({ hasText: 'bulk-60' }).getByRole('button', { name: 'Enable bulk-60' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'bulk-60 is enabled.' })).toBeVisible()
