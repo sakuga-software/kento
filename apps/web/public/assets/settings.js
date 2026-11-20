@@ -46,7 +46,7 @@
     sections.push({ link, target, parts })
   }
 
-  // Under 900 px, "Section …" opens the list over the page; a link folds it again.
+  // Under 900 px, "Section …" at the top of the page opens the list under it; a link folds it again.
   const setOpen = (open) => {
     if (!nav || !toggle) return
     nav.classList.toggle('settings-nav-open', open)
@@ -56,18 +56,13 @@
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
   })
-  // The list opens over the page: Escape, a click outside or the focus leaving it folds it, as the
-  // menu of the frame. The open list never hides the field that has the focus (WCAG 2.4.11).
+  // KNT-164. The open list is part of the page, as a disclosure: only a link or Escape folds it.
+  // Folding it when the focus leaves it, or on a tap outside, moved the field under it off the
+  // screen at the tap, and the tap missed the field.
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || toggle?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
     toggle.focus()
-  })
-  document.addEventListener('click', (event) => {
-    if (nav && !event.composedPath().includes(nav)) setOpen(false)
-  })
-  nav?.addEventListener('focusout', (event) => {
-    if (!(event.relatedTarget instanceof Node && nav.contains(event.relatedTarget))) setOpen(false)
   })
   // The bar folds the list only from here: if this script does not run, the list stays in the page.
   if (toggle) nav.classList.add('settings-nav-ready')

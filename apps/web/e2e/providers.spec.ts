@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
@@ -186,6 +186,8 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
   let label = `Anthropic form ${project}`
   let db = sql()
   try {
+    // KNT-164: with labels of 18 px, the field in error of a phone went under the sticky bar.
+    await withLabelLineHeight(page, '18px')
     await signIn(page, 'octocat')
     let [org] = await db<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
@@ -218,4 +220,36 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
   } finally {
     await db.end()
   }
+})
+
+// KNT-164. On a phone the bar "Section" is at the top of the page and does not follow the scroll: a
+// form sent back with its errors scrolls to its field, and no bar covers that field or the fields
+// around it. Also with labels of 18 px, which moved a field under the sticky bar of KNT-149.
+test('on a phone, a provider form sent back with its errors has no field under the bar "Section"', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'the bar exists under 900 px only')
+  await withLabelLineHeight(page, '18px')
+  await signIn(page, 'octocat')
+  await page.goto('/settings#new-provider')
+  let form = page.locator('#new-provider')
+  await form.getByLabel('Type').selectOption('anthropic')
+  await form.getByLabel('Name').fill('Phone form')
+  await form.getByLabel('Key', { exact: true }).fill('sk-ant-e2e-phone-0123456789-WXYZ')
+  await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')
+  await form.getByRole('button', { name: 'Add the provider' }).click()
+  // The first field in error is "heavy" of the models: the form focuses the first model field.
+  let lite = page.locator('#new-provider').getByLabel('lite')
+  await expect(lite).toBeFocused()
+  await expect(page.locator('.label').first()).toHaveCSS('line-height', '18px')
+  let bar = page.locator('[data-settings-nav]')
+  await expect(bar).toHaveCSS('position', 'static')
+  // The page scrolled down to the field, and the bar did not follow: it ends above the field,
+  // wherever the page stopped, so it covers none of it.
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+  let barBox = await bar.boundingBox()
+  let fieldBox = await lite.boundingBox()
+  expect(barBox, 'the bar has a box').not.toBeNull()
+  expect(fieldBox, 'the field has a box').not.toBeNull()
+  expect(fieldBox!.y).toBeGreaterThanOrEqual(barBox!.y + barBox!.height)
+  await expect(lite).toBeInViewport({ ratio: 1 })
+  await expectNoAxeViolations(page)
 })
