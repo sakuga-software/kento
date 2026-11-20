@@ -10,8 +10,8 @@ Martian and on our own cases. Take this plan again when the budget allows it.
   MIT): 50 pull requests of Sentry, Grafana, Cal.com, Discourse and Keycloak, 173 golden comments
   checked by hand, a published judge prompt, and the scores of 49 tools with the same judge. The
   pull requests date from 2023–2025, so a model can have seen them in training.
-- **Internal**: harvest the threads of our pull requests (Sakuga Review, Greptile, CodeRabbit,
-  Copilot, the old Claude reviewer) that a fix commit followed. This is the "online" method of
+- **Internal**: harvest the threads of our pull requests (Kentō and the other review bots) that a
+  fix commit followed. This is the "online" method of
   Martian, with no training leak. Add clean pull requests to measure the false positives.
 - **Three runs a configuration**, to measure the variance and not one sample.
 - One judge model for all runs: `anthropic/claude-sonnet-5.5` through OpenRouter.

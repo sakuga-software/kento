@@ -119,9 +119,8 @@ Each run gives more numbers:
   (`kento-review[bot]`, `sakuga-claude-review[bot]`);
 - the findings that repeat a known false positive.
 
-Most golden comments of `feedback` come from other review bots: CodeRabbit 60, Copilot 47,
-Kilo 30, cubic 20, Greptile 14, Kentō 11 (a comment can have more than one reviewer). A case
-holds the union of the comments of all these reviewers on one commit, so the recall of one
+Most golden comments of `feedback` come from other review bots, and 11 from Kentō (a comment can
+have more than one reviewer). A case holds the union of the comments of all these reviewers on one commit, so the recall of one
 review stays far below 100 %.
 
 ### Results, 2026-11-03: Haiku 5.5 at `lite` and Sonnet 5.5 at `balanced`, one run each
@@ -438,13 +437,12 @@ In the evening, MiMo hit timeouts (480 s) and `429 rate-limited upstream` at its
 20 reviews failed in its second run, and all 20 in its third.
 
 The commercial tools on the same 13 pull requests, from the published results of Martian (judge
-Claude Sonnet 4.5, so the comparison is approximate): Augment 0.58, Copilot v2 0.53, CodeRabbit
-0.47, Greptile v4.1 0.44, Claude Code 0.34.
+Claude Sonnet 4.5, so the comparison is approximate) have an F1 from 0.34 to 0.58.
 
 What it shows:
 
 - **GLM-5.3 stays in production**: it gives the best balance of F1, cost and speed. Its F1 is 0.36
-  to 0.43 (0.39 on average), near Greptile, at about 1 ¢ a review. MiMo has a higher F1, but not a
+  to 0.43 (0.39 on average), in the range of the commercial tools, at about 1 ¢ a review. MiMo has a higher F1, but not a
   reliable answer.
 - **MiMo finds the most when it answers** (F1 0.49 in its one full run, 4 of the 10 internal
   defects), but it takes 6 to 8 minutes, and its providers fail under load. It is not a reliable

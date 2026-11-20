@@ -192,7 +192,7 @@ test('the zone of a finding is its lines and 5 lines around; a file that the rev
   assert.equal(isSeen(finding(ENGINE, 156, 'x'), seen), true);
   assert.equal(isSeen(finding(ENGINE, 160, 'x', 'major', { start_line: 152 }), seen), false, 'a range that starts near the change');
   assert.equal(isSeen(finding('new.ts', 1, 'x'), seen), false);
-  // git quotes this path in the header of a patch: the change must still count (cubic on #167).
+  // git quotes this path in the header of a patch: the change must still count (a review of #167).
   assert.equal(isSeen(finding(ACCENT, 20, 'x'), seen), false);
   assert.equal(isSeen(finding(ACCENT, 35, 'x'), seen), true);
   assert.equal(isBlocking({ ...studioHost, seen: true }, () => 33), false);
