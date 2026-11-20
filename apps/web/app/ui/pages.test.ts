@@ -272,6 +272,19 @@ describe('the GitHub sign-in', () => {
     assert.ok(!authorize.href.includes(exchange!.codeVerifier!), 'the verifier never goes to the browser')
   })
 
+  it('KNT-150: a refused or failed sign-in from a signed-in session keeps that session', async () => {
+    let { request, signIn, auth } = setup()
+    let first = await signIn(OCTOCAT)
+    auth.as(STRANGER)
+    let start = await request('/login/github', { cookie: first.cookie })
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let refused = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: [first.cookie, cookiesOf(start)].join('; ') })
+    assert.equal(refused.headers.get('Location'), '/login?notice=not_member')
+    let failed = await request(`/auth/github/callback?code=bad&state=${state}`, { cookie: [first.cookie, cookiesOf(start)].join('; ') })
+    assert.match(failed.headers.get('Location') ?? '', /notice=failed/)
+    assert.equal((await request('/', { cookie: first.cookie })).status, 200, 'octocat is still signed in')
+  })
+
   it('gives a new session id at the sign-in', async () => {
     let { signIn } = setup()
     let { pending, cookie } = await signIn(OCTOCAT)

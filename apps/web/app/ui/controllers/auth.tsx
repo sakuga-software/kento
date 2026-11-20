@@ -310,15 +310,7 @@ export function createAuth(kit: UiKit) {
       // nothing is written for anyone else.
       async callback(context) {
         if (!auth) return redirect(authRoutes.signIn.href())
-        // A sign-in from a session that was already signed in (another account, or the same one)
-        // keeps nothing of it: its row goes before Better Auth writes the new one, so the delete can
-        // never touch the new row. A failure to delete it is logged, never a lost sign-in.
         let previous = context.get(CurrentSession) ?? null
-        if (previous) {
-          await auth.store.deleteSession(previous.sessionId).catch((error: unknown) => {
-            log('warn', 'auth.previous_session_not_deleted', { error: errorMessage(error) })
-          })
-        }
         let scope: SignInScope = { profile: null, decision: null }
         let target = new URL(`${AUTH_BASE_PATH}/callback/github${context.url.search}`, auth.publicUrl)
         let answer: Response
@@ -342,6 +334,15 @@ export function createAuth(kit: UiKit) {
           for (let cookie of answer.headers.getSetCookie()) response.headers.append('Set-Cookie', cookie)
           if (refused && refusedCookie && scope.profile) response.headers.append('Set-Cookie', await refusedCookie.serialize(scope.profile.login))
           return response
+        }
+        // A sign-in from a session that was already signed in (another account, or the same one)
+        // keeps nothing of it once it succeeds: the row of the old session goes. The new row has an id
+        // of its own (a random uuid), so this delete never touches it. A refused or failed sign-in
+        // keeps the old session as it was, and a failure of the delete is logged, never a lost sign-in.
+        if (previous) {
+          await auth.store.deleteSession(previous.sessionId).catch((error: unknown) => {
+            log('warn', 'auth.previous_session_not_deleted', { error: errorMessage(error) })
+          })
         }
         let done = withCookiesOf(answer.headers, localPath(`${location.pathname}${location.search}`))
         // The login of an earlier refusal has no use now.
