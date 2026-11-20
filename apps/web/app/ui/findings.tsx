@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { isOneOf, SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
+import { isOneOf, SEVERITIES, UUID, type Severity } from '@kento/protocol'
 
 import {
   DAYS_MAX,
@@ -21,7 +21,8 @@ import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { statusClass } from './pull.tsx'
-import { Pager, readPageNumber } from './pager.tsx'
+import { readPageNumber } from '../paging.ts'
+import { Pager } from './pager.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 

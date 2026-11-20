@@ -13,4 +13,9 @@ describe('the stylesheet', () => {
     assert.equal(CSS.match(/^\.list-filter-count \{/gm)?.length, 1)
     assert.match(CSS, /^\.list-filter-count \{\n {2}color: inherit;/m)
   })
+
+  it('has no rule left for the theme switch of the foot (KNT-142)', () => {
+    assert.doesNotMatch(CSS, /\.footer-settings\b/)
+    assert.match(CSS, /^\.js form\[data-theme-switch\] \.button \{\n {2}display: none;/m)
+  })
 })

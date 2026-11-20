@@ -1,4 +1,4 @@
-import { isOneOf } from '@sakuga-review/protocol'
+import { isOneOf } from '@kento/protocol'
 
 /** Paper (day), Sumi (night), or the theme of the device. */
 export type Theme = 'paper' | 'sumi' | 'system'

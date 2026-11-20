@@ -3,10 +3,11 @@
 // The order is the one of `listFindings` (store.ts): the newest first, by `created_at` then `id`.
 // The counts of the tabs come first, on the same filters: they give the number of pages. Then the
 // page is read with `limit` and `offset`, in the same snapshot.
-import { SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
+import { SEVERITIES, UUID, type Severity } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
+import { pageWindow } from '../paging.ts'
 import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
 import { FINDING_STATUSES, PAGE_MAX, type FindingStatus } from './store.ts'
 
@@ -165,7 +166,6 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
   let severity = query.severity && SEVERITIES.includes(query.severity) ? query.severity : null
   let author = query.author && LOGIN.test(query.author) ? query.author : null
   let days = query.days && Number.isInteger(query.days) && query.days >= 1 && query.days <= DAYS_MAX ? query.days : null
-  let asked = query.page !== undefined && Number.isSafeInteger(query.page) && query.page > 1 ? query.page : 1
 
   // Every filter but the tab: the counts of the tabs read them too.
   let filters = sql`
@@ -196,9 +196,7 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
       join repos on repos.id = findings.repo_id
       where ${filters}`
     let matching = Number(counts![view])
-    let pages = Math.max(1, Math.ceil(matching / limit))
-    let page = Math.min(asked, pages)
-    let offset = (page - 1) * limit
+    let { page, pages, offset } = pageWindow(query.page, matching, limit)
 
     // The ids of the page first: the skipped rows of a deep page cost an index read each, and the
     // columns and `considered` are read for the rows of the page only.

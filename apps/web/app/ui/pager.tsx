@@ -2,19 +2,6 @@ import type { Handle } from 'remix/component'
 
 import { ChevronLeftIcon, ChevronRightIcon } from './lucide.tsx'
 
-/** The highest `?page=` that a list reads: past it the number is noise, and the list shows its last page. */
-const PAGE_MAX = 100_000
-
-/**
- * The number of the page in the query of a list (KNT-146): `?page=n`, from 1. A missing, broken or
- * out of range value gives 1.
- */
-export function readPageNumber(query: URLSearchParams): number {
-  let value = query.get('page') ?? ''
-  if (!/^[1-9][0-9]{0,5}$/.test(value)) return 1
-  return Math.min(Number(value), PAGE_MAX)
-}
-
 /**
  * The numbers that the pager shows: the first and the last page, and the pages around the current
  * one. `null` is a gap. Seven places at most, so that the pager keeps its width from page to page.
@@ -61,16 +48,18 @@ export function Pager(handle: Handle<PagerProps>) {
           {format(offset + 1)} to {format(offset + shown)} of {format(matching)}
           {noun ? ` ${noun(matching)}` : ''}
         </p>
-        <span class="pager-links">
+        <div class="pager-links">
           {page > 1 ? (
             <a class="button button-small" href={href(page - 1)} rel="prev">
               <ChevronLeftIcon />
               <span class="pager-step">Previous</span>
             </a>
           ) : (
+            // Not a link and not focusable: its text says that there is no page before.
             <span class="button button-small" aria-disabled="true">
               <ChevronLeftIcon />
               <span class="pager-step">Previous</span>
+              <span class="visually-hidden"> (no previous page)</span>
             </span>
           )}
           <ul class="pager-pages">
@@ -101,10 +90,11 @@ export function Pager(handle: Handle<PagerProps>) {
           ) : (
             <span class="button button-small" aria-disabled="true">
               <span class="pager-step">Next</span>
+              <span class="visually-hidden"> (no next page)</span>
               <ChevronRightIcon />
             </span>
           )}
-        </span>
+        </div>
       </nav>
     )
   }

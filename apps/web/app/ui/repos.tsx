@@ -22,7 +22,8 @@ import {
   SearchIcon,
   SlidersIcon,
 } from './lucide.tsx'
-import { Pager, readPageNumber } from './pager.tsx'
+import { readPageNumber } from '../paging.ts'
+import { Pager } from './pager.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** What the screen says after a change, from the query of the redirect. */
@@ -430,7 +431,7 @@ function RepoRow(handle: Handle<RepoRowProps>) {
           ) : null}
           {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…". */}
           <details class="row-menu">
-            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 50 of them (budget of 110 KB). */}
+            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 25 of them (budget of 110 KB). */}
             <summary aria-label={`Actions of ${name}`}>…</summary>
             <div>
               <a href={routes.repoConfig.href({ id: repo.id })}>

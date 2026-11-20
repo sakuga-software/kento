@@ -353,6 +353,9 @@ describe('the Repos screen', () => {
     html = await (await request('/repos?filter=enabled&q=s&page=9', { cookie })).text()
     assert.match(html, /<span aria-disabled="true" class="button button-small">[^]*?<span class="pager-step">Next<\/span>/)
     assert.doesNotMatch(html, /rel="next"/)
+    // The dimmed Next says so to a screen reader; the steps and the numbers sit in a <div>, not a <span>.
+    assert.match(html, /<span class="pager-step">Next<\/span><span class="visually-hidden"> \(no next page\)<\/span>/)
+    assert.match(html, /<div class="pager-links">/)
   })
 
   it('"Read GitHub again" reads GitHub at once for an admin', async () => {

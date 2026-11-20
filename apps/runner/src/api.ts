@@ -13,7 +13,7 @@ import {
   type RegisterRequest,
   type RegisterResponse,
   type ResultRequest,
-} from '@sakuga-review/protocol';
+} from '@kento/protocol';
 
 /** The service refused the runner token (401): it is wrong or revoked. */
 export class UnauthorizedError extends Error {
