@@ -6,7 +6,7 @@ import { AlertIcon, ExternalIcon, GitHubIcon, Logo } from './icons.tsx'
 import type { Theme } from './theme.ts'
 
 /** Why the sign-in page is shown again. Each one has its sentence below. */
-export type SignInNotice = 'not_member' | 'failed' | 'signed_out' | 'expired' | 'disabled' | 'unavailable'
+export type SignInNotice = 'not_member' | 'failed' | 'signed_out' | 'expired' | 'disabled' | 'unavailable' | 'rate_limited'
 
 const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; text: string }> = {
   not_member: {
@@ -33,6 +33,11 @@ const NOTICES: Record<SignInNotice, { tone: 'alert' | 'info'; title: string; tex
     tone: 'alert',
     title: 'GitHub does not answer.',
     text: 'Kentō cannot confirm your role in the organization. Kentō keeps your session. Try again in a minute.',
+  },
+  rate_limited: {
+    tone: 'alert',
+    title: 'Too many sign-ins.',
+    text: 'Too many sign-in attempts came from your network in the last minute. Wait a minute, then sign in again.',
   },
   disabled: {
     tone: 'alert',

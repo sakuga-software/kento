@@ -2,6 +2,7 @@ import type { KeyObject } from 'node:crypto'
 
 import packageJson from '../package.json' with { type: 'json' }
 
+import { SIGN_IN_STARTS_PER_MINUTE } from './auth/rate-limit.ts'
 import { GITHUB_API_URL, readPrivateKey } from './github/installation-token.ts'
 import { CAP_CHECK_NAME, DEFAULT_INSTANCE, type Instance } from './instance.ts'
 import { MAX_TRUSTED_BOTS, parseBotLogins } from './org-settings/bot-logins.ts'
@@ -82,6 +83,13 @@ export interface SignInConfig {
   oauthUrl: string
   /** The GitHub API, the one of GITHUB_API_URL. */
   apiUrl: string
+  /**
+   * KNT-150. KENTO_TRUSTED_PROXY_HOPS: the proxies in front of the service, whose
+   * `X-Forwarded-For` gives the address of the client. 0: none, the socket is the client.
+   */
+  trustedProxyHops: number
+  /** KNT-150. KENTO_SIGN_IN_LIMIT: the starts of a sign-in per minute and per client; twice as many callbacks. */
+  signInLimit: number
 }
 
 /** The shortest session secret that `loadConfig` accepts. */
@@ -334,6 +342,8 @@ function readSignIn(
     sessionSecrets,
     oauthUrl,
     apiUrl: githubApp.apiUrl.replace(/\/+$/, ''),
+    trustedProxyHops: readInteger(env, 'KENTO_TRUSTED_PROXY_HOPS', 0, 0, 10, problems),
+    signInLimit: readInteger(env, 'KENTO_SIGN_IN_LIMIT', SIGN_IN_STARTS_PER_MINUTE, 1, 10_000, problems),
   }
 }
 

@@ -125,6 +125,17 @@ describe('loadConfig', () => {
       assert.equal(config.signIn?.apiUrl, 'https://api.github.com')
     })
 
+    it('KNT-150: reads the trusted proxies and the sign-in limit, with safe defaults', () => {
+      let plain = loadConfig({ ...app, ...signIn })
+      assert.equal(plain.signIn?.trustedProxyHops, 0)
+      assert.equal(plain.signIn?.signInLimit, 10)
+      let set = loadConfig({ ...app, ...signIn, KENTO_TRUSTED_PROXY_HOPS: '1', KENTO_SIGN_IN_LIMIT: '30' })
+      assert.equal(set.signIn?.trustedProxyHops, 1)
+      assert.equal(set.signIn?.signInLimit, 30)
+      assert.throws(() => loadConfig({ ...app, ...signIn, KENTO_TRUSTED_PROXY_HOPS: '-1' }), /KENTO_TRUSTED_PROXY_HOPS must be an integer from 0 to 10/)
+      assert.throws(() => loadConfig({ ...app, ...signIn, KENTO_SIGN_IN_LIMIT: '0' }), /KENTO_SIGN_IN_LIMIT must be an integer from 1 to 10000/)
+    })
+
     it('names the missing variables, and needs the App, never printing a value', () => {
       let { GITHUB_APP_CLIENT_SECRET: _secret, ...partial } = signIn
       let error = errorOf(() => loadConfig({ ...app, ...partial }))

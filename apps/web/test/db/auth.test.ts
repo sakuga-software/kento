@@ -7,6 +7,7 @@ import {
   postgresAuthDatabase,
   SESSION_TTL_MS,
   sessionTokenHash,
+  type AuthDatabase,
   type KentoAuth,
 } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
@@ -31,6 +32,7 @@ describe('the sign-in and the sessions in Postgres', () => {
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let router: ReturnType<typeof createAppRouter>
+  let makeRouter: (authDatabase: AuthDatabase) => { auth: KentoAuth; router: ReturnType<typeof createAppRouter> }
 
   before(async () => {
     test = await createTestDatabase()
@@ -53,14 +55,20 @@ describe('the sign-in and the sessions in Postgres', () => {
     }
     let lookupRole = async (installation: { login: string }, person: { login: string }) => roles.get(`${installation.login}/${person.login}`) ?? null
     let secret = 'a-session-secret-for-the-tests-0123456789'
-    auth = createKentoAuth({ database: postgresAuthDatabase(database.db), publicUrl: PUBLIC_URL, secret, github, store, lookupRole })
-    router = createAppRouter({
-      checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
-      version: '1.2.3',
-      commit: null,
-      webhook: disabledWebhook,
-      auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store, lookupRole },
-    })
+    makeRouter = (authDatabase) => {
+      let made = createKentoAuth({ database: authDatabase, publicUrl: PUBLIC_URL, secret, github, store, lookupRole })
+      return {
+        auth: made,
+        router: createAppRouter({
+          checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
+          version: '1.2.3',
+          commit: null,
+          webhook: disabledWebhook,
+          auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth: made, store, lookupRole },
+        }),
+      }
+    }
+    ;({ auth, router } = makeRouter(postgresAuthDatabase(database.db)))
   })
 
   after(async () => {
@@ -282,6 +290,52 @@ describe('the sign-in and the sessions in Postgres', () => {
     // The next GitHub check says member: role and source stay.
     await store.saveMembership(user!.id, acme, 'member', 'github')
     assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+  })
+
+  it('KNT-150: a session read other than by its token comes back without a token, never with its hash', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    await signIn()
+    let [row] = await database.sql<{ id: string; userId: string; tokenHash: string }[]>`
+      select id, user_id as "userId", token_hash as "tokenHash" from sessions`
+    let context = await auth.$context
+    let listed = await context.adapter.findMany<Record<string, unknown>>({ model: 'session', where: [{ field: 'userId', value: row!.userId }] })
+    assert.equal(listed.length, 1)
+    assert.equal('token' in listed[0]!, false)
+    assert.equal(JSON.stringify(listed).includes(row!.tokenHash), false)
+    let byId = await context.adapter.findOne<Record<string, unknown>>({ model: 'session', where: [{ field: 'id', value: row!.id }] })
+    assert.ok(byId)
+    assert.equal('token' in byId, false)
+    let updated = await context.adapter.update<Record<string, unknown>>({ model: 'session', where: [{ field: 'id', value: row!.id }], update: { userAgent: 'x' } })
+    assert.equal(JSON.stringify(updated).includes(row!.tokenHash), false)
+  })
+
+  it('KNT-150: the state of a sign-in is used once, even by callbacks at the same time', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    // A slow database: a delete of a state waits, so that the three callbacks read it before any
+    // delete. Only a read that deletes in the same statement lets one callback through.
+    let slow: AuthDatabase = (options) => {
+      let adapter = postgresAuthDatabase(database.db)(options)
+      let wait = () => new Promise((resolve) => setTimeout(resolve, 150))
+      return {
+        ...adapter,
+        delete: async (input) => (input.model === 'verification' ? (await wait(), adapter.delete(input)) : adapter.delete(input)),
+        deleteMany: async (input) => (input.model === 'verification' ? (await wait(), adapter.deleteMany(input)) : adapter.deleteMany(input)),
+      }
+    }
+    let racy = makeRouter(slow).router
+    let start = await racy.fetch(new Request('http://localhost/login/github'))
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let callbacks = await Promise.all(
+      [1, 2, 3].map(() =>
+        racy.fetch(new Request(`http://localhost/auth/github/callback?code=good&state=${state}`, { headers: { Cookie: cookiesOf(start) } })),
+      ),
+    )
+    let signedIn = callbacks.filter((c) => c.headers.getSetCookie().some((h) => h.startsWith(`${SESSION_COOKIE}=`) && !h.startsWith(`${SESSION_COOKIE}=;`)))
+    assert.equal(signedIn.length, 1)
+    assert.equal((await database.sql`select 1 from sessions`).length, 1)
+    assert.equal((await database.sql`select 1 from verifications`).length, 0)
   })
 
   it('the table refuses a token of GitHub in an account', async () => {

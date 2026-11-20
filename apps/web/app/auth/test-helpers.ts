@@ -22,7 +22,7 @@ export const CAMILLE: GitHubProfile = { id: 2, login: 'camille', name: null, ava
 export const STRANGER: GitHubProfile = { id: 3, login: 'stranger', name: null, avatarUrl: null }
 
 /** The name of the session cookie of Better Auth on the https service of the tests. */
-export const SESSION_COOKIE = '__Secure-kento_session'
+export const SESSION_COOKIE = '__Host-kento_session'
 
 /**
  * The sign-in with a fake GitHub, Better Auth on a store in memory, and a clock that the test moves.

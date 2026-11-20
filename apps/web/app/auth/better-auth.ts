@@ -23,8 +23,24 @@ import type { AuthStore } from './store.ts'
 
 /** A signed-in session lasts this long from the sign-in, whatever happens in between. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-/** A GitHub sign-in that started and did not come back is forgotten after this. */
+/**
+ * A GitHub sign-in that started and did not come back is forgotten after this: its row in
+ * `verifications` (Better Auth gives it 10 minutes) and the cookie of its state.
+ */
 export const PENDING_SIGN_IN_TTL_MS = 10 * 60 * 1000
+
+/**
+ * The session cookie. Over HTTPS, `__Host-`: the browser takes it only from this host, with
+ * `Secure`, `Path=/` and no `Domain`, so a sibling host of the same domain cannot set it.
+ */
+export function sessionCookieName(secure: boolean): string {
+  return secure ? '__Host-kento_session' : 'kento_session'
+}
+
+/** The cookie of the state of a sign-in in progress, with the same prefix as the session cookie. */
+export function stateCookieName(secure: boolean): string {
+  return secure ? '__Host-kento_state' : 'kento_state'
+}
 
 /** Where Better Auth thinks that its API is. Only the callback of GitHub is ever sent there. */
 export const AUTH_BASE_PATH = '/api/auth'
@@ -46,6 +62,8 @@ export function sessionTokenHash(token: string): string {
 export interface SignInScope {
   profile: GitHubProfile | null
   decision: SignInDecision | null
+  /** The address of the client, as Kentō resolves it (app/auth/rate-limit.ts): the one the session keeps. */
+  clientIp?: string | null
 }
 
 export const signInScope = new AsyncLocalStorage<SignInScope>()
@@ -92,12 +110,24 @@ export function createKentoAuth(options: KentoAuthOptions) {
       },
     },
     database: (adapterOptions: BetterAuthOptions) => hashSessionTokens(options.database(adapterOptions)),
+    // Its API is not mounted, and its limiter keys on a header that a client can write, or on one
+    // bucket for everyone. Kentō limits the start of a sign-in and the callback itself, by client.
+    rateLimit: { enabled: false },
     advanced: {
       database: { generateId: 'uuid' },
-      useSecureCookies: secure,
-      cookies: { session_token: { name: 'kento_session' } },
-      // The state of a sign-in lives in `verifications`, under a cookie of its own.
+      // `useSecureCookies` would give the `__Secure-` prefix. The names below carry `__Host-`, and
+      // every cookie is Secure over HTTPS.
+      useSecureCookies: false,
+      defaultCookieAttributes: { secure },
+      cookies: {
+        session_token: { name: sessionCookieName(secure) },
+        // The state of a sign-in lives in `verifications`, under a cookie of its own, for as long as its row.
+        state: { name: stateCookieName(secure), attributes: { maxAge: PENDING_SIGN_IN_TTL_MS / 1000 } },
+      },
       cookiePrefix: 'kento',
+      // Better Auth would read the address from a header that the client can write. The session
+      // keeps the address that Kentō resolved (`beforeSessionCreate`).
+      ipAddress: { disableIpTracking: true },
     },
     user: {
       modelName: 'users',
@@ -110,19 +140,7 @@ export function createKentoAuth(options: KentoAuthOptions) {
         githubId: { type: 'number', required: false, input: false },
         githubName: { type: 'string', required: false, input: false, fieldName: 'name' },
       },
-      // The gate of the sign-in: GitHub counts the person in an org of the App. Anyone else is
-      // refused before a row is written.
-      async validateUserInfo(data: { user: Record<string, unknown> }) {
-        let scope = signInScope.getStore()
-        let profile = scope?.profile
-        // The identity that Better Auth checks is the one that this sign-in read on GitHub.
-        if (!scope || !profile || data.user.email !== githubEmail(profile.id)) return { error: 'failed' }
-        let decision = await decideSignIn(store, lookupRole, profile)
-        scope.decision = decision
-        if (decision.kind === 'allowed') return
-        log('info', 'auth.sign_in_refused', { login: profile.login, reason: decision.kind })
-        return { error: decision.kind === 'refused' ? 'not_member' : 'failed' }
-      },
+      validateUserInfo: (data: { user: Record<string, unknown> }) => checkSignIn(store, lookupRole, signInScope.getStore(), data.user),
     },
     account: {
       modelName: 'accounts',
@@ -223,6 +241,26 @@ export function createKentoAuth(options: KentoAuthOptions) {
 export type KentoAuth = ReturnType<typeof createKentoAuth>
 
 /**
+ * The gate of the sign-in (`user.validateUserInfo` of Better Auth): GitHub counts the person in an
+ * org of the App. Anyone else is refused before a row is written. The identity that Better Auth
+ * checks must be the one that this sign-in read on GitHub, in its own scope.
+ */
+export async function checkSignIn(
+  store: AuthStore,
+  lookupRole: LookupRole,
+  scope: SignInScope | undefined,
+  user: Record<string, unknown>,
+): Promise<{ error: string } | undefined> {
+  let profile = scope?.profile
+  if (!scope || !profile || user.email !== githubEmail(profile.id)) return { error: 'failed' }
+  let decision = await decideSignIn(store, lookupRole, profile)
+  scope.decision = decision
+  if (decision.kind === 'allowed') return
+  log('info', 'auth.sign_in_refused', { login: profile.login, reason: decision.kind })
+  return { error: decision.kind === 'refused' ? 'not_member' : 'failed' }
+}
+
+/**
  * The hook of Better Auth before it writes a session. Better Auth writes no row when it answers
  * `false` (`if (result === false) return null` in better-auth/dist/db/with-hooks.mjs), and merges
  * `data` into the row otherwise.
@@ -230,7 +268,8 @@ export type KentoAuth = ReturnType<typeof createKentoAuth>
  * A session is written only for a sign-in that Kentō allowed, in its scope: anything else (no scope,
  * no decision, a user that is gone, no org to show) gets no session. The roles of the sign-in are
  * saved, the org on screen is the first one where the person is an admin, else the first one, and
- * the session ends 7 days after the sign-in on the clock of Kentō.
+ * the session ends 7 days after the sign-in on the clock of Kentō. It keeps the address of the
+ * client that Kentō resolved, never one read by Better Auth.
  */
 export async function beforeSessionCreate(
   store: AuthStore,
@@ -252,7 +291,9 @@ export async function beforeSessionCreate(
   if (!first) return false
   await store.touchSignIn(user.id)
   log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
-  return { data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS) } }
+  return {
+    data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS), ipAddress: scope?.clientIp ?? null },
+  }
 }
 
 /**
@@ -290,13 +331,19 @@ type Where = NonNullable<Parameters<Adapter['findMany']>[0]['where']>[number]
  * stores and looks up its SHA-256 instead, and gives the token back to Better Auth where it reads
  * a row it found by token, or wrote.
  *
- * A session listed by user carries the hash, which is not a token: Kentō never lists sessions or
- * revokes one by a listed token (`listSessions`, `revokeSession`, `revokeOtherSessions`; its HTTP
- * API is not mounted). Kentō ends a session by its id (`AuthStore.deleteSession`), and Better Auth
- * ends the sessions of a user by `userId`, which this adapter passes as it is.
+ * A session row that Better Auth reads in any other way (listed by user, found or changed by id)
+ * comes back with no `token` at all: the hash in the table is never handed out as a token, whatever
+ * API of Better Auth or of a plugin lists or revokes sessions. Kentō ends a session by its id
+ * (`AuthStore.deleteSession`), and Better Auth ends the sessions of a user by `userId`, which this
+ * adapter passes as it is.
+ *
+ * The state of a sign-in is single use: the read of its row by Better Auth deletes it in the same
+ * statement (`consumeOne`, a `DELETE … RETURNING`), so two callbacks with one state cannot both
+ * pass.
  */
 export function hashSessionTokens(adapter: Adapter): Adapter {
   let isSession = (model: string) => model === 'session' || model === 'sessions'
+  let isVerification = (model: string) => model === 'verification' || model === 'verifications'
   function hashWhere(model: string, where: Where[]): Where[]
   function hashWhere(model: string, where: Where[] | undefined): Where[] | undefined
   function hashWhere(model: string, where: Where[] | undefined) {
@@ -311,23 +358,41 @@ export function hashSessionTokens(adapter: Adapter): Adapter {
     let found = where?.find((w) => w.field === 'token' && (w.operator === undefined || w.operator === 'eq'))
     return typeof found?.value === 'string' ? found.value : null
   }
-  let restore = <T>(row: T, token: string | null): T =>
-    row && token !== null && typeof row === 'object' ? ({ ...row, token } as T) : row
+  /** The row of a session with the token that found it, or with no token: never the hash. */
+  let restore = <T>(row: T, token: string | null): T => {
+    if (!row || typeof row !== 'object') return row
+    if (token !== null) return { ...row, token } as T
+    let { token: _hash, ...rest } = row as Record<string, unknown>
+    return rest as T
+  }
   let hashData = (model: string, data: Record<string, unknown>) =>
     isSession(model) && typeof data.token === 'string' ? { ...data, token: sessionTokenHash(data.token) } : data
+  /** The read of the state of a sign-in by its identifier (`findVerificationValue` of Better Auth). */
+  let isStateRead = (input: Parameters<Adapter['findMany']>[0]) =>
+    isVerification(input.model) &&
+    input.where?.length === 1 &&
+    input.where[0]!.field === 'identifier' &&
+    (input.where[0]!.operator === undefined || input.where[0]!.operator === 'eq')
 
   let wrapped: Adapter = {
     ...adapter,
     async create<T extends Record<string, unknown>, R = T>(input: Parameters<Adapter['create']>[0]): Promise<R> {
       let data = input.data as Record<string, unknown>
       let row = await adapter.create<T, R>({ ...input, data: hashData(input.model, data) as Omit<T, 'id'> })
-      return isSession(input.model) && typeof data.token === 'string' ? restore(row, data.token) : row
+      return isSession(input.model) ? restore(row, typeof data.token === 'string' ? data.token : null) : row
     },
     async findOne<T>(input: Parameters<Adapter['findOne']>[0]): Promise<T | null> {
       let row = await adapter.findOne<T>({ ...input, where: hashWhere(input.model, input.where) })
       return isSession(input.model) ? restore(row, tokenOf(input.where)) : row
     },
-    findMany: (input) => adapter.findMany({ ...input, where: hashWhere(input.model, input.where) }),
+    async findMany<T>(input: Parameters<Adapter['findMany']>[0]): Promise<T[]> {
+      if (isStateRead(input)) {
+        let row = await adapter.consumeOne<T>({ model: input.model, where: input.where! })
+        return row ? [row] : []
+      }
+      let rows = await adapter.findMany<T>({ ...input, where: hashWhere(input.model, input.where) })
+      return isSession(input.model) ? rows.map((row) => restore(row, null)) : rows
+    },
     count: (input) => adapter.count({ ...input, where: hashWhere(input.model, input.where) }),
     async update<T>(input: Parameters<Adapter['update']>[0]): Promise<T | null> {
       let row = await adapter.update<T>({ ...input, where: hashWhere(input.model, input.where), update: hashData(input.model, input.update) })

@@ -45,3 +45,17 @@ describe('log', () => {
     assert.notEqual(line.time, 'yesterday')
   })
 })
+
+describe('errorMessage', () => {
+  it('KNT-150: stops before the parameters of a failed query, which can hold a secret', async () => {
+    let { errorMessage } = await import('./log.ts')
+    let failed = new Error('Failed query: select * from "verifications" where "identifier" = $1\nparams: oauth-state-secret,verifier-secret', {
+      cause: Object.assign(new Error('relation does not exist'), { code: '42P01' }),
+    })
+    let message = errorMessage(failed)
+    assert.equal(message, 'Failed query: select * from "verifications" where "identifier" = $1 (42P01)')
+    assert.doesNotMatch(message, /secret/)
+    assert.equal(errorMessage(new Error('GitHub answered 502')), 'GitHub answered 502')
+    assert.equal(errorMessage('plain'), 'plain')
+  })
+})
