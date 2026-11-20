@@ -65,12 +65,20 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
 
   async function check(org: CheckedOrg) {
     let total = { repos: 0, failed: 0 }
-    // One installation after the other: each one writes its repositories, even when a later one fails.
+    let firstError: unknown = null
+    // One installation after the other: each one writes its repositories, even when another one fails
+    // (an installation removed on GitHub whose event was lost). The check fails at the end if one did.
     for (let installation of org.installations) {
-      let result = await checkInstallation(org, installation)
-      total.repos += result.repos
-      total.failed += result.failed
+      try {
+        let result = await checkInstallation(org, installation)
+        total.repos += result.repos
+        total.failed += result.failed
+      } catch (error) {
+        log('warn', 'repos.check_installation_failed', { org: org.name, installation: installation.login, error: errorMessage(error) })
+        firstError ??= error
+      }
     }
+    if (firstError !== null) throw firstError
     return total
   }
 

@@ -25,7 +25,11 @@ Each entry says, when it applies:
   ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
   `name` and a unique `slug` (the login; an account that installed the App twice has a second org
   with the installation id as a suffix). The release before it does not run on the new schema:
-  stop it before the new one migrates, and roll back with a database backup taken before.
+  **follow [DEPLOY.md](DEPLOY.md#the-deployment-of-migration-0029)**: check that no slug
+  collides, take a backup (there is no down migration), stop the previous release before the new
+  one starts, and redeliver from the App page the webhooks that failed in between if they overlapped.
+  The live org of an account that installed the App twice gets the clean slug. An installation that
+  still has repositories cannot be deleted (their history stays).
 - **Webhook**: a new installation of an account that had one before joins the org of that earlier
   installation, with its settings, instead of a new org.
 - **Order**: the service, then the runners (the engine changes).

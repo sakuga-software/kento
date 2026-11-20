@@ -19,25 +19,27 @@ CREATE INDEX "installations_org_id_idx" ON "installations" USING btree ("org_id"
 INSERT INTO "installations" ("org_id", "github_installation_id", "github_account_id", "account_login", "suspended_at", "created_at")
 	SELECT "id", "github_installation_id", "github_account_id", "login", "suspended_at", "created_at" FROM "orgs";--> statement-breakpoint
 -- The name is the login. The slug is the login in lowercase; an account that installed the App
--- twice (uninstalled, then installed again) has two orgs, and the later ones take the id of their
--- installation as a suffix.
+-- twice (uninstalled, then installed again) has two orgs: the live one (not suspended, then the
+-- oldest) takes the clean slug, and the others take the id of their installation as a suffix.
 ALTER TABLE "orgs" ADD COLUMN "name" text;--> statement-breakpoint
 ALTER TABLE "orgs" ADD COLUMN "slug" text;--> statement-breakpoint
 UPDATE "orgs" SET "name" = "ranked"."login", "slug" = CASE WHEN "ranked"."rank" = 1 THEN lower("ranked"."login") ELSE lower("ranked"."login") || '-' || "ranked"."github_installation_id" END
 	FROM (
 		SELECT "id", "login", "github_installation_id",
-			row_number() OVER (PARTITION BY lower("login") ORDER BY "created_at", "github_installation_id") AS "rank"
+			row_number() OVER (PARTITION BY lower("login") ORDER BY "suspended_at" IS NOT NULL, "created_at", "github_installation_id") AS "rank"
 		FROM "orgs"
 	) AS "ranked"
 	WHERE "orgs"."id" = "ranked"."id";--> statement-breakpoint
 ALTER TABLE "orgs" ALTER COLUMN "name" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "orgs" ALTER COLUMN "slug" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "orgs" ADD CONSTRAINT "orgs_slug_unique" UNIQUE("slug");--> statement-breakpoint
--- Each repository takes the one installation of its org.
+-- Each repository takes the one installation of its org. Deleting an installation that still has
+-- repositories is refused: their reviews, findings and jobs are never deleted with it. An installation
+-- that moves to another org takes its repositories with it.
 ALTER TABLE "repos" ADD COLUMN "installation_id" uuid;--> statement-breakpoint
 UPDATE "repos" SET "installation_id" = "installations"."id" FROM "installations" WHERE "installations"."org_id" = "repos"."org_id";--> statement-breakpoint
 ALTER TABLE "repos" ALTER COLUMN "installation_id" SET NOT NULL;--> statement-breakpoint
-ALTER TABLE "repos" ADD CONSTRAINT "repos_installation_org_fk" FOREIGN KEY ("installation_id","org_id") REFERENCES "public"."installations"("id","org_id") ON DELETE cascade ON UPDATE cascade;--> statement-breakpoint
+ALTER TABLE "repos" ADD CONSTRAINT "repos_installation_org_fk" FOREIGN KEY ("installation_id","org_id") REFERENCES "public"."installations"("id","org_id") ON DELETE restrict ON UPDATE cascade;--> statement-breakpoint
 CREATE INDEX "repos_installation_id_idx" ON "repos" USING btree ("installation_id");--> statement-breakpoint
 ALTER TABLE "orgs" DROP CONSTRAINT "orgs_github_installation_id_unique";--> statement-breakpoint
 ALTER TABLE "orgs" DROP COLUMN "github_installation_id";--> statement-breakpoint
