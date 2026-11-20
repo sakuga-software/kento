@@ -46,7 +46,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let sessionRows = tables.sessions!
   Object.defineProperty(tables, 'sessions', {
     get() {
-      if (failing) throw new Error('connect ECONNREFUSED')
+      // As a failed query of Drizzle: its message ends with the parameters of the query.
+      if (failing) throw new Error('Failed query: select from "sessions"\nparams: the-token-hash-param,203.0.113.5')
       return sessionRows
     },
     set(rows: Record<string, unknown>[]) {

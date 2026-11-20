@@ -50,6 +50,7 @@ export function createAuth(kit: UiKit) {
   let limit = auth?.signInLimit ?? SIGN_IN_STARTS_PER_MINUTE
   let starts = createRateLimiter({ windowMs: 60_000, max: limit, now })
   let callbacks = createRateLimiter({ windowMs: 60_000, max: 2 * limit, now })
+  let socketWarned = false
 
   /**
    * The CSRF token of a session: an HMAC of its id. Nothing to store, and it changes with the
@@ -190,11 +191,16 @@ export function createAuth(kit: UiKit) {
 
   /**
    * KNT-150. A client over the limit of a step of the sign-in gets the sign-in page in a 429, and
-   * nothing is written. A request with no socket (a test of the routes) has no limit.
+   * nothing is written. A request whose socket nobody wrote (server.ts writes it for each request;
+   * only a test of the routes has none) shares one limit with the others like it: never no limit.
    */
   async function overLimit(limiter: ReturnType<typeof createRateLimiter>, context: { request: Request; headers: Headers }, step: 'start' | 'callback') {
     let address = clientOf(context.request)
-    if (address === null || limiter.hit(limitKey(address))) return null
+    if (address === null && !socketWarned) {
+      socketWarned = true
+      log('warn', 'auth.client_address_missing', { reason: 'no socket address for a request: one shared sign-in limit' })
+    }
+    if (limiter.hit(address === null ? 'no-socket' : limitKey(address))) return null
     log('warn', 'auth.sign_in_limited', { step })
     let html = await renderToString(signInPage(readTheme(context.headers.get('Cookie')), 'rate_limited', '/'))
     return new Response(`<!DOCTYPE html>${html}`, {

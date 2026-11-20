@@ -64,7 +64,8 @@ describe('the sign-in and the sessions in Postgres', () => {
           version: '1.2.3',
           commit: null,
           webhook: disabledWebhook,
-          auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth: made, store, lookupRole },
+          // Every request of these tests comes with no socket, so they share one limit: a high one.
+          auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth: made, store, lookupRole, signInLimit: 1000 },
         }),
       }
     }
@@ -265,6 +266,9 @@ describe('the sign-in and the sessions in Postgres', () => {
       }
     }
     let racy = makeRouter(slow).router
+    // The user exists already: the three callbacks would not trip on its unique row, only on the state.
+    await signIn()
+    await database.sql`delete from sessions`
     let start = await racy.fetch(new Request('http://localhost/login/github'))
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
     let callbacks = await Promise.all(
@@ -276,6 +280,36 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(signedIn.length, 1)
     assert.equal((await database.sql`select 1 from sessions`).length, 1)
     assert.equal((await database.sql`select 1 from verifications`).length, 0)
+  })
+
+  it('KNT-150: a failed write of the sign-in puts no parameter of its query on stdout or stderr', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let written: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    let stdout = process.stdout.write.bind(process.stdout)
+    let consoleError = console.error
+    process.stderr.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stderr.write
+    process.stdout.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stdout.write
+    console.error = (...args: unknown[]) => void written.push(args.map((a) => (a instanceof Error ? `${a.message} ${String(a.cause ?? '')}` : String(a))).join(' '))
+    let callback: Response
+    try {
+      await database.sql`alter table sessions rename to sessions_away`
+      callback = await request(`/auth/github/callback?code=good&state=${state}`, cookiesOf(start))
+    } finally {
+      await database.sql`alter table sessions_away rename to sessions`
+      process.stderr.write = stderr
+      process.stdout.write = stdout
+      console.error = consoleError
+    }
+    assert.equal(callback.headers.get('Location'), '/login?notice=failed')
+    let all = written.join('')
+    assert.match(all, /auth\.sign_in_failed/)
+    assert.doesNotMatch(all, /params:|SERVER_ERROR/, all)
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    assert.doesNotMatch(all, new RegExp(user!.id), 'not even the id of the user')
   })
 
   it('the table refuses a token of GitHub in an account', async () => {
