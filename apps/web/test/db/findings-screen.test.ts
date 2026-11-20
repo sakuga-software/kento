@@ -5,18 +5,12 @@ import { after, before, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
-import { findingFacets, listFindingScreen, type FindingRow } from '../../app/findings/screen.ts'
-import { encodeCursor } from '../../app/findings/store.ts'
+import { findingFacets, listFindingScreen } from '../../app/findings/screen.ts'
 import { createTestDatabase } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
 const NEXT = '2'.repeat(40)
 
-/** The cursor of a row, as the screen writes it: `created_at` to the microsecond, then the id. */
-function encodeCursorOf(row: FindingRow) {
-  return encodeCursor({ at: cursorAts.get(row.id)!, id: row.id })
-}
-const cursorAts = new Map<string, string>()
 
 describe('the Findings screen list', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
@@ -64,8 +58,6 @@ describe('the Findings screen list', () => {
         (${otherRepoId}, 5, 'b', 'b', 'lib/b.ts', 1, 'Orchard fixed', 'minor', 'data', 70, 'fixed', ${HEAD}, ${HEAD}),
         (${otherRepoId}, 5, 'c', 'c', 'lib/c.ts', 1, 'Orchard stale', 'minor', 'data', 70, 'stale', ${HEAD}, ${HEAD}),
         (${repos[2]!.id}, 5, 'd', 'd', 'x.ts', 1, 'Theirs', 'major', 'bug', 70, 'open', ${HEAD}, ${HEAD})`
-    for (let row of await sql<{ id: string; at: string }[]>`
-      select id, to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as at from findings`) cursorAts.set(row.id, row.at)
   })
 
   after(async () => {
@@ -81,8 +73,8 @@ describe('the Findings screen list', () => {
     assert.equal(page.rows[1]!.title, 'Finding 11')
     assert.ok(page.rows.every((row) => row.status === 'open' && row.repo.startsWith('sakuga-software/')))
     assert.equal(page.offset, 0)
-    assert.equal(page.next, null)
-    assert.equal(page.previous, null)
+    assert.equal(page.page, 1)
+    assert.equal(page.pages, 1)
   })
 
   it('filters by repository, priority, rule, search and tab, in SQL', async () => {
@@ -134,54 +126,28 @@ describe('the Findings screen list', () => {
     assert.equal((await listFindingScreen(database.sql, orgId, { search: 'file%1' })).rows.length, 0)
   })
 
-  it('pages forward and back by keyset, with the position of each page', async () => {
-    let seen: string[] = []
-    let page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5 })
-    let pages = [page]
-    seen.push(...page.rows.map((r) => r.id))
-    while (page.next) {
-      page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, after: page.next })
-      pages.push(page)
-      seen.push(...page.rows.map((r) => r.id))
-    }
-    assert.deepEqual(seen, [...ids].reverse())
-    assert.deepEqual(pages.map((p) => [p.offset, p.rows.length]), [[0, 5], [5, 5], [10, 2]])
-    assert.equal(pages[0]!.previous, null)
-
-    // "Previous" from the last page gives the middle page back, with its links both ways.
-    let back = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: pages[2]!.previous })
-    assert.deepEqual(back.rows.map((r) => r.id), pages[1]!.rows.map((r) => r.id))
-    assert.equal(back.offset, 5)
-    assert.ok(back.next && back.previous)
-    // Exactly a page before the cursor: the same first page as without a cursor, with the same "Next".
-    let first = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: back.previous })
-    assert.deepEqual(first.rows.map((r) => r.id), pages[0]!.rows.map((r) => r.id))
-    assert.equal(first.previous, null)
-    assert.equal(first.offset, 0)
-    assert.equal(first.next, pages[0]!.next)
-    let again = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, after: first.next })
+  it('pages by number, with the position and the count of pages (KNT-148)', async () => {
+    let pages = []
+    for (let number = 1; number <= 3; number++) pages.push(await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, page: number }))
+    assert.deepEqual(pages.flatMap((p) => p.rows.map((r) => r.id)), [...ids].reverse())
+    assert.deepEqual(pages.map((p) => [p.page, p.pages, p.offset, p.rows.length]), [[1, 3, 0, 5], [2, 3, 5, 5], [3, 3, 10, 2]])
+    // The same page twice: the same rows.
+    let again = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, page: 2 })
     assert.deepEqual(again.rows.map((r) => r.id), pages[1]!.rows.map((r) => r.id))
   })
 
-  it('gives the whole first page when fewer than a page are left before the cursor', async () => {
-    // A cursor on the 3rd newest finding: two rows before it, where "Previous" expects five.
-    let page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5 })
-    let short = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, before: encodeCursorOf(page.rows[2]!) })
-    assert.deepEqual(short.rows.map((r) => r.id), page.rows.map((r) => r.id))
-    assert.equal(short.offset, 0)
-    assert.equal(short.previous, null)
-    assert.equal(short.next, page.next)
-  })
-
-  it('gives the first page for "Next" past the last row, rather than an empty page', async () => {
-    let page = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5 })
-    let past = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, after: encodeCursorOf(page.rows.at(-1)!) })
-    assert.equal(past.rows.length, 5)
-    // The oldest finding of the repository as the cursor: no row after it.
-    let oldest = (await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 100 })).rows.at(-1)!
-    let end = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, after: encodeCursorOf(oldest) })
-    assert.deepEqual(end.rows.map((r) => r.id), page.rows.map((r) => r.id))
-    assert.equal(end.offset, 0)
+  it('gives the last page for a page past it, and the first page for a page that is not one', async () => {
+    let last = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, page: 3 })
+    let past = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, page: 99 })
+    assert.deepEqual([past.page, past.offset], [3, 10])
+    assert.deepEqual(past.rows.map((r) => r.id), last.rows.map((r) => r.id))
+    for (let page of [0, -1, 1.5, Number.NaN]) {
+      let first = await listFindingScreen(database.sql, orgId, { view: 'all', repoId, limit: 5, page })
+      assert.deepEqual([first.page, first.offset, first.rows.length], [1, 0, 5], String(page))
+    }
+    // An empty tab: one page, no row.
+    let none = await listFindingScreen(database.sql, orgId, { view: 'wontfix', page: 4 })
+    assert.deepEqual([none.page, none.pages, none.offset, none.rows.length], [1, 1, 0, 0])
   })
 
   it('keeps a limit of a caller between 1 and 100 rows', async () => {
@@ -189,12 +155,6 @@ describe('the Findings screen list', () => {
     assert.equal((await listFindingScreen(database.sql, orgId, { view: 'all', limit: -5 })).rows.length, 1)
     assert.equal((await listFindingScreen(database.sql, orgId, { view: 'all', limit: Number.NaN })).rows.length, 15)
     assert.equal((await listFindingScreen(database.sql, orgId, { view: 'all', limit: 10_000 })).rows.length, 15)
-  })
-
-  it('starts again at the first page on a cursor it cannot read', async () => {
-    let page = await listFindingScreen(database.sql, orgId, { after: 'not-a-cursor' })
-    assert.equal(page.offset, 0)
-    assert.equal(page.rows.length, 11)
   })
 
   it('never reads the findings of another org, nor its repository as a filter', async () => {

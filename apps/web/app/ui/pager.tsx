@@ -28,6 +28,10 @@ export interface PagerProps {
   href: (page: number) => string
   /** The name of the `<nav>` for a screen reader. */
   label: string
+  /** How a number of rows is written: `1,234` on a long list. As is by default. */
+  format?: (count: number) => string
+  /** The word after the total, for the count of the list: `finding` or `findings`. None by default. */
+  noun?: (count: number) => string
 }
 
 /**
@@ -36,12 +40,13 @@ export interface PagerProps {
  */
 export function Pager(handle: Handle<PagerProps>) {
   return () => {
-    let { page, pages, offset, shown, matching, href, label } = handle.props
+    let { page, pages, offset, shown, matching, href, label, format = String, noun } = handle.props
     if (pages <= 1 || shown === 0) return null
     return (
       <nav class="pager pager-numbered" aria-label={label}>
         <p class="pager-range">
-          {offset + 1} to {offset + shown} of {matching}
+          {format(offset + 1)} to {format(offset + shown)} of {format(matching)}
+          {noun ? ` ${noun(matching)}` : ''}
         </p>
         <div class="pager-links">
           {page > 1 ? (
