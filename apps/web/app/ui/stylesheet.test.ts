@@ -24,9 +24,9 @@ describe('the stylesheet', () => {
     assert.match(block, /^ {2}@view-transition \{\n {4}navigation: auto;\n {2}\}/)
     assert.match(block, /\n {2}::view-transition-group\(root\) \{\n {4}animation-duration: 150ms;/)
     assert.match(block, /\n {2}::view-transition-group\(bar\),\n {2}::view-transition-old\(bar\),\n {2}::view-transition-new\(bar\) \{\n {4}animation: none;/)
+    assert.match(block, /\n {2}\.bar \{\n {4}view-transition-name: bar;\n {2}\}/)
     // Nothing of the transitions outside of that query.
     let outside = CSS.replace(block, '')
-    assert.doesNotMatch(outside, /@view-transition|::view-transition/)
-    assert.match(CSS, /^\.bar \{[^}]*\n {2}view-transition-name: bar;/m)
+    assert.doesNotMatch(outside, /@view-transition|::view-transition|view-transition-name/)
   })
 })

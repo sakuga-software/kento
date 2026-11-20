@@ -541,6 +541,9 @@ kbd,
   @view-transition {
     navigation: auto;
   }
+  .bar {
+    view-transition-name: bar;
+  }
   ::view-transition-group(root) {
     animation-duration: 150ms;
   }
@@ -558,7 +561,6 @@ kbd,
 .bar {
   position: relative;
   z-index: 20;
-  view-transition-name: bar;
   background: var(--paper-raised);
   border-bottom: 1px solid var(--line);
 }
