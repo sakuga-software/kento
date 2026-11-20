@@ -198,12 +198,12 @@ function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> 
         },
         matching: REPOS.length,
         offset: 0,
-        next: null,
-        previous: null,
+        page: 1,
+        pages: 1,
         checkedAt: minutesAgo(4),
         unchecked: true,
       }}
-      list={{ filter: 'all', search: '', after: null, before: null }}
+      list={{ filter: 'all', search: '', page: 1 }}
       installations={[{ login: 'sakuga-software', url: 'https://github.com/organizations/sakuga-software/settings/installations/1' }]}
       githubUrl="https://github.com"
       checking={false}
