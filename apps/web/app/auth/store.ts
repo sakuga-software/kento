@@ -52,9 +52,9 @@ export interface AuthStore {
   /**
    * Writes the role of a user in an org, checked now. An invitation turns a membership from GitHub
    * into one from an invitation; a write from GitHub never changes the role nor the source of a
-   * membership from an invitation.
+   * membership from an invitation. Gives the role that the row holds after the write.
    */
-  saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<void>
+  saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<OrgRole>
   /**
    * KNT-150. The org has an active owner: one whose membership was checked, or who signed in, at
    * `since` or after.
@@ -115,14 +115,16 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
     },
 
     async saveMembership(userId, orgId, role, source = 'github') {
-      await sql`
+      let [row] = await sql<{ role: OrgRole }[]>`
         insert into memberships (user_id, org_id, role, source, checked_at)
         values (${userId}, ${orgId}, ${role}, ${source}, now())
         on conflict (user_id, org_id) do update set
           role = case when memberships.source = 'invitation' and excluded.source = 'github' then memberships.role else excluded.role end,
           source = case when excluded.source = 'invitation' then 'invitation' else memberships.source end,
           checked_at = now()
+        returning role
       `
+      return row!.role
     },
 
     async invitedOrgs(githubId) {

@@ -118,8 +118,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
           source: source === 'invitation' ? 'invitation' : m.source,
           checkedAt: new Date(clock.now),
         })
+        return m.role
       }
-      else rows().push({ id: `membership-${rows().length + 1}`, userId, orgId, role, source, checkedAt: new Date(clock.now), createdAt: new Date(clock.now) })
+      rows().push({ id: `membership-${rows().length + 1}`, userId, orgId, role, source, checkedAt: new Date(clock.now), createdAt: new Date(clock.now) })
+      return role
     },
     async invitedOrgs(githubId) {
       let user = tables.users!.find((u) => Number(u.githubId) === githubId)

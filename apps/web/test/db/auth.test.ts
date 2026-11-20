@@ -288,8 +288,11 @@ describe('the sign-in and the sessions in Postgres', () => {
     // An admin of Kentō invites octocat as an admin: the row becomes Kentō's.
     await store.saveMembership(user!.id, acme, 'admin', 'invitation')
     assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
-    // The next GitHub check says member: role and source stay.
-    await store.saveMembership(user!.id, acme, 'member', 'github')
+    // The next GitHub check says member: role and source stay, and the write says so.
+    assert.equal(await store.saveMembership(user!.id, acme, 'member', 'github'), 'admin')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+    // The check of a GitHub admin in between gives the role of the invitation, not its own.
+    assert.equal(await saveGitHubRole(store, user!.id, acme, 'member', 'admin', Date.now()), 'admin')
     assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
   })
 

@@ -103,14 +103,11 @@ export async function saveGitHubRole(
   now: number,
 ): Promise<OrgRole> {
   let role = roleFromGitHub(current, github)
-  if (github !== 'admin' || role === 'owner') {
-    await store.saveMembership(userId, orgId, role, 'github')
-    return role
-  }
+  // The role that the row holds after the write: an invitation made in between keeps its own.
+  if (github !== 'admin' || role === 'owner') return store.saveMembership(userId, orgId, role, 'github')
   return store.withOrgLock(orgId, async (locked) => {
     let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS))) ? 'admin' : 'owner'
-    await locked.saveMembership(userId, orgId, next, 'github')
-    return next
+    return locked.saveMembership(userId, orgId, next, 'github')
   })
 }
 
