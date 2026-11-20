@@ -9,7 +9,22 @@ import { Button, Input, buttonClass } from './controls.tsx'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue } from './precision.tsx'
 import { agoOrDate, plural } from './format.ts'
-import { AlertIcon, CheckIcon, ExternalIcon } from './icons.tsx'
+import { AlertIcon, CheckIcon, ExternalIcon, GitHubIcon, LockIcon } from './icons.tsx'
+import {
+  BookMarkedIcon,
+  CircleCheckIcon,
+  CircleDashedIcon,
+  CircleHelpIcon,
+  GlobeIcon,
+  ListChecksIcon,
+  PowerIcon,
+  PowerOffIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  SlidersIcon,
+} from './lucide.tsx'
+import { readPageNumber } from '../paging.ts'
+import { Pager } from './pager.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
 /** What the screen says after a change, from the query of the redirect. */
@@ -42,8 +57,8 @@ export interface ReposPageProps {
 export interface RepoList extends RepoListQuery {
   filter: RepoFilter
   search: string
-  after: string | null
-  before: string | null
+  /** KNT-146: `?page=n`, from 1. */
+  page: number
 }
 
 const SEARCH_MAX = 100
@@ -61,8 +76,7 @@ export function readRepoList(query: URLSearchParams): RepoList {
   return {
     filter: REPO_FILTERS.includes(filter as RepoFilter) ? (filter as RepoFilter) : 'all',
     search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
-    after: query.get('after') || null,
-    before: query.get('after') ? null : query.get('before') || null,
+    page: readPageNumber(query),
   }
 }
 
@@ -71,8 +85,7 @@ export function repoListQuery(list: Partial<RepoList>): URLSearchParams {
   let query = new URLSearchParams()
   if (list.filter && list.filter !== 'all') query.set('filter', list.filter)
   if (list.search) query.set('q', list.search)
-  if (list.after) query.set('after', list.after)
-  else if (list.before) query.set('before', list.before)
+  if (list.page && list.page > 1) query.set('page', String(list.page))
   return query
 }
 
@@ -139,6 +152,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         actions={
           <>
             <a class={buttonClass('ghost')} href={installationUrl} rel="noreferrer" target="_blank">
+              <GitHubIcon />
               Manage the installation on GitHub
               <ExternalIcon />
               <span class="visually-hidden">(new tab)</span>
@@ -146,6 +160,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
             <form method="post" action={routes.reposCheck.href()}>
               {csrf}
               <Button type="submit">
+                <RefreshCwIcon />
                 Read GitHub again
               </Button>
             </form>
@@ -229,16 +244,41 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                 </table>
               </div>
             )}
-            <Pager page={page} list={list} />
+            <Pager
+              page={page.page}
+              pages={page.pages}
+              offset={page.offset}
+              shown={repos.length}
+              matching={page.matching}
+              href={(number) => reposHref({ ...list, page: number })}
+              label="Pages of the list"
+            />
           </>
         )}
 
         {all > 0 ? (
           <p class="repos-legend">
-            Reviews by:<span class="tag tag-ok">Kentō</span> the App does the reviews
-            <span class="tag tag-warn">Kentō + review.yml</span> switch in progress, two reviews per push
-            <span class="tag">review.yml</span> the GitHub Action alone
-            <span class="tag">none</span> installed, with no review
+            Reviews by:
+            <span class="tag tag-ok">
+              <CircleCheckIcon />
+              Kentō
+            </span>{' '}
+            the App does the reviews
+            <span class="tag tag-warn">
+              <CircleCheckIcon />
+              Kentō + review.yml
+            </span>{' '}
+            switch in progress, two reviews per push
+            <span class="tag">
+              <CircleDashedIcon />
+              review.yml
+            </span>{' '}
+            the GitHub Action alone
+            <span class="tag">
+              <CircleDashedIcon />
+              none
+            </span>{' '}
+            installed, with no review
           </p>
         ) : null}
         {/* REV-91: the notes of the switch are asked for, not shown at all times. */}
@@ -342,9 +382,13 @@ function RepoRow(handle: Handle<RepoRowProps>) {
       <tr id={`repo-${repo.id}`}>
         <th scope="row">
           <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
-            {name}
+            <BookMarkedIcon />
+            <span>{name}</span>
           </a>
-          <span class="hint">{repo.private === null ? 'unknown visibility' : repo.private ? 'private' : 'public'}</span>
+          <span class="hint repo-visibility">
+            {repo.private === null ? <CircleHelpIcon /> : repo.private ? <LockIcon /> : <GlobeIcon />}
+            {repo.private === null ? 'unknown visibility' : repo.private ? 'private' : 'public'}
+          </span>
         </th>
         <td>
           <Mode repo={repo} />
@@ -382,23 +426,33 @@ function RepoRow(handle: Handle<RepoRowProps>) {
           {admin && !repo.enabled ? (
             // REV-36: a secondary button. The primary style stays for the main action of a screen.
             <Button size="sm" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
+              <PowerIcon />
               Enable<span class="visually-hidden"> {name}</span>
             </Button>
           ) : null}
           {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…". */}
           <details class="row-menu">
-            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 50 of them (budget of 110 KB). */}
+            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 25 of them (budget of 110 KB). */}
             <summary aria-label={`Actions of ${name}`}>…</summary>
             <div>
-              <a href={routes.repoConfig.href({ id: repo.id })}>Open the config</a>
-              <a href={findingsHref({ repoId: repo.id })}>See the findings</a>
+              <a href={routes.repoConfig.href({ id: repo.id })}>
+                <SlidersIcon />
+                Open the config
+              </a>
+              <a href={findingsHref({ repoId: repo.id })}>
+                <ListChecksIcon />
+                See the findings
+              </a>
               {admin && repo.enabled ? (
                 <Confirm
                   trigger={
-                    // One flex item: the gap of .button would split the visible "Disable…".
-                    <span>
-                      Disable<span class="visually-hidden"> {name}</span> Kentō…
-                    </span>
+                    // The icon, then one flex item: the gap of .button would split the visible "Disable…".
+                    <>
+                      <PowerOffIcon />
+                      <span>
+                        Disable<span class="visually-hidden"> {name}</span> Kentō…
+                      </span>
+                    </>
                   }
                   action={routes.repoDisable.href({ id: repo.id }) + suffix}
                   csrf={null}
@@ -426,6 +480,8 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           <label class="visually-hidden" for="repos-search">
             Search a repo by its name
           </label>
+          {/* KNT-146: the magnifier sits in the field, on its left; the field makes room for it. */}
+          <SearchIcon class="list-search-icon" />
           <Input
             id="repos-search"
             type="search"
@@ -451,37 +507,6 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           ))}
         </nav>
       </div>
-    )
-  }
-}
-
-/** "51 to 100 of 122", and the links to the pages around. Shown when the list has more than a page. */
-function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
-  return () => {
-    let { page, list } = handle.props
-    if (page.rows.length === 0 || (page.next === null && page.previous === null)) return null
-    let from = page.offset + 1
-    let to = page.offset + page.rows.length
-    return (
-      <nav class="pager" aria-label="Pages of the list">
-        {page.previous ? (
-          <a class={buttonClass('outline', 'sm')} href={reposHref({ filter: list.filter, search: list.search, before: page.previous })} rel="prev">
-            Previous
-          </a>
-        ) : (
-          <span aria-hidden="true"></span>
-        )}
-        <p class="pager-range">
-          {from} to {to} of {page.matching}
-        </p>
-        {page.next ? (
-          <a class={buttonClass('outline', 'sm')} href={reposHref({ filter: list.filter, search: list.search, after: page.next })} rel="next">
-            Next
-          </a>
-        ) : (
-          <span aria-hidden="true"></span>
-        )}
-      </nav>
     )
   }
 }
@@ -516,14 +541,20 @@ function Mode(handle: Handle<{ repo: RepoView }>) {
     if (repo.enabled) {
       return (
         <span class="stack">
-          <span class={`tag ${workflowLeft ? 'tag-warn' : 'tag-ok'}`}>{workflowLeft ? 'Kentō + review.yml' : 'Kentō'}</span>
+          <span class={`tag ${workflowLeft ? 'tag-warn' : 'tag-ok'}`}>
+            <CircleCheckIcon />
+            {workflowLeft ? 'Kentō + review.yml' : 'Kentō'}
+          </span>
           {workflowLeft ? detail : null}
         </span>
       )
     }
     return (
       <span class="stack">
-        <span class="tag">{workflowLeft ? 'review.yml' : 'none'}</span>
+        <span class="tag">
+          <CircleDashedIcon />
+          {workflowLeft ? 'review.yml' : 'none'}
+        </span>
         {detail}
       </span>
     )

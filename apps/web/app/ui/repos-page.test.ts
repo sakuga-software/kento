@@ -73,8 +73,8 @@ function setup(findings: FindingsScreenStore | null = null) {
         },
         matching: shown.length,
         offset: 0,
-        next: null,
-        previous: null,
+        page: 1,
+        pages: 1,
         checkedAt: all[0]?.workflowCheckedAt ?? null,
         unchecked: false,
         ...pages,
@@ -161,7 +161,8 @@ describe('the Repos screen', () => {
     assert.match(html, /review\.yml@stable/)
     // REV-91: "Reviews by" in the four words of the design, with the detail under it.
     assert.match(html, /Kentō \+ review\.yml/)
-    assert.match(html, /<span class="tag">review\.yml<\/span>/)
+    // KNT-146: the badge starts with its decorative icon.
+    assert.match(html, /<span class="tag"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg>review\.yml<\/span>/)
     assert.match(html, /3\/20/)
     assert.match(html, /set back to zero after a failure/)
     assert.match(html, /claude-haiku-5\.5/)
@@ -169,7 +170,9 @@ describe('the Repos screen', () => {
     assert.match(html, /#677 · 4\/5/)
     assert.match(html, /Precision 30 d/)
     // REV-25: the name can be cut short on screen; its title keeps it whole.
-    assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name">orchard<\/a>/)
+    assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg><span>orchard<\/span><\/a>/)
+    // KNT-146: the visibility with its icon.
+    assert.match(html, /<span class="hint repo-visibility"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg>private<\/span>/)
     assert.match(html, /Switch criterion/)
     assert.match(html, /Fallback during the switch/)
     assert.match(html, /<li>A <code>@sakuga-review<\/code> command then gets two answers\. <code>@kento-review<\/code> speaks to Kentō only\.<\/li>/)
@@ -210,7 +213,7 @@ describe('the Repos screen', () => {
     // REV-91: "Disable Kentō…" sits in the menu "…" of its row.
     assert.match(row, /<details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
     // Remix 3.2 renders a boolean data-* attribute as "true". confirm.js selects it by presence.
-    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button--danger-soft"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
+    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button--danger-soft"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
     assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button--danger">Disable fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
@@ -296,7 +299,7 @@ describe('the Repos screen', () => {
 
     lists.length = 0
     html = await (await request('/repos?filter=enabled&q=%20fruit%20', { cookie })).text()
-    assert.deepEqual(lists, [{ filter: 'enabled', search: 'fruit', after: null, before: null }])
+    assert.deepEqual(lists, [{ filter: 'enabled', search: 'fruit', page: 1 }])
     assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=fruit" aria-current="page">Enabled/)
     assert.match(html, /name="q" value="fruit"/)
     assert.match(html, /<input type="hidden" name="filter" value="enabled" \/>/)
@@ -304,7 +307,7 @@ describe('the Repos screen', () => {
 
     lists.length = 0
     html = await (await request('/repos?filter=nope&q=zzz', { cookie })).text()
-    assert.deepEqual(lists, [{ filter: 'all', search: 'zzz', after: null, before: null }])
+    assert.deepEqual(lists, [{ filter: 'all', search: 'zzz', page: 1 }])
     assert.match(html, /No repo matches/)
     assert.match(html, /No name contains (&quot;|")zzz(&quot;|")/)
   })
@@ -314,26 +317,45 @@ describe('the Repos screen', () => {
     let { cookie, csrf } = await signIn()
     let html = await (await request('/repos?filter=disabled&q=orch', { cookie })).text()
     let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=orch`
-    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button--outline button--sm">Enable`))
+    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button--outline button--sm"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!</svg>).)*</svg>Enable`))
     assert.doesNotMatch(html, /button--primary/)
-    let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=orch&after=x&evil=1`, { cookie, form: { _csrf: csrf } })
-    assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=orch&after=x&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
+    let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=orch&page=3&evil=1`, { cookie, form: { _csrf: csrf } })
+    assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=orch&page=3&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
     // The repository left the filter: the notice still names it.
     let after = await (await request(response.headers.get('Location')!, { cookie })).text()
     assert.match(after, /orchard is enabled\./)
   })
 
-  it('shows the range and the links to the pages around, with the filter and the search (REV-36)', async () => {
-    let { signIn, request, pages } = setup()
+  it('shows the range, Previous, the numbers of the pages and Next, with the filter and the search (KNT-146)', async () => {
+    let { signIn, request, pages, lists } = setup()
     let { cookie, html } = await signIn()
-    assert.doesNotMatch(html, /class="pager"/, 'one page: no pager')
+    assert.doesNotMatch(html, /class="pager/, 'one page: no pager')
 
-    Object.assign(pages, { offset: 50, matching: 120, previous: ORCHARD, next: FRUITBACK })
-    html = await (await request('/repos?filter=enabled&q=s', { cookie })).text()
-    assert.match(html, /<nav aria-label="Pages of the list" class="pager">/)
+    Object.assign(pages, { offset: 50, matching: 120, page: 3, pages: 5 })
+    lists.length = 0
+    html = await (await request('/repos?filter=enabled&q=s&page=3', { cookie })).text()
+    assert.deepEqual(lists, [{ filter: 'enabled', search: 's', page: 3 }])
+    assert.match(html, /<nav aria-label="Pages of the list" class="pager pager-numbered">/)
     assert.match(html, /51 to 51 of 120/)
-    assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;before=${ORCHARD}" rel="prev"`))
-    assert.match(html, new RegExp(`href="/repos\\?filter=enabled&amp;q=s&amp;after=${FRUITBACK}" rel="next"`))
+    assert.match(html, /href="\/repos\?filter=enabled&amp;q=s&amp;page=2" rel="prev"/)
+    assert.match(html, /href="\/repos\?filter=enabled&amp;q=s&amp;page=4" rel="next"/)
+    // Page 1 drops `page` from the link: the first page has one URL.
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s" class="button button--outline button--sm pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s&amp;page=3" aria-current="page" class="button button--outline button--sm pager-page">/)
+    assert.equal((html.match(/aria-current="page" class="button button--outline button--sm pager-page"/g) ?? []).length, 1)
+    // The search and the filters start again at page 1.
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s" aria-current="page">Enabled/)
+    assert.doesNotMatch(html, /name="page"/)
+    // The icons of the pager are decorative.
+    assert.match(html, /rel="next" class="button button--outline button--sm"><span class="pager-step">Next<\/span><svg viewBox="0 0 24 24"[^>]*aria-hidden="true"/)
+
+    Object.assign(pages, { offset: 100, page: 5, pages: 5 })
+    html = await (await request('/repos?filter=enabled&q=s&page=9', { cookie })).text()
+    assert.match(html, /<span aria-disabled="true" class="button button--outline button--sm">[^]*?<span class="pager-step">Next<\/span>/)
+    assert.doesNotMatch(html, /rel="next"/)
+    // The dimmed Next says so to a screen reader; the steps and the numbers sit in a <div>, not a <span>.
+    assert.match(html, /<span class="pager-step">Next<\/span><span class="visually-hidden"> \(no next page\)<\/span>/)
+    assert.match(html, /<div class="pager-links">/)
   })
 
   it('"Read GitHub again" reads GitHub at once for an admin', async () => {

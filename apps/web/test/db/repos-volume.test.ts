@@ -1,5 +1,5 @@
 // REV-36. The Repos screen of an org with 300 repositories and 50 000 jobs, against Postgres: one
-// page of 50 rows, read for its own rows only. Before, the screen read every repository and the
+// page of rows (25 since KNT-146), read for its own rows only. Before, the screen read every repository and the
 // reviews of the whole database: 499 KB of HTML and 490 to 1 350 ms on the same data.
 import postgres from 'postgres'
 import * as assert from 'remix/assert'
@@ -17,7 +17,8 @@ const COOKIE = '__Host-kento_session'
 /**
  * The budget of the server, and of the HTML of one page. 50 enabled rows with their actions weigh
  * about 1.75 KB each, and a row with no action 1 KB: 60 KB, the first aim of the ticket, would hold
- * some 25 rows. The page measured 102 KB (499 KB before REV-36).
+ * some 25 rows. The page measured 102 KB (499 KB before REV-36). KNT-146: 25 rows a page, each with
+ * its icons.
  */
 const MAX_MS = 150
 const MAX_BYTES = 110_000
@@ -97,14 +98,13 @@ describe('the Repos screen with 300 repositories and 50 000 jobs', () => {
     let first = await load('/repos')
     assert.equal(first.status, 200)
     assert.match(first.html, /300 repos in the installation · 120 enabled/)
-    assert.match(first.html, /1 to 50 of 300/)
-    assert.equal((first.html.match(/<tr id="repo-/g) ?? []).length, 50)
+    assert.match(first.html, /1 to 25 of 300/)
+    assert.equal((first.html.match(/<tr id="repo-/g) ?? []).length, 25)
     assert.ok(first.bytes < MAX_BYTES, `${first.bytes} bytes`)
 
     // The best of 5 loads: the budget is for the work of the screen, not for a busy machine.
-    let next = /href="\/repos\?after=([0-9a-f-]+)"/.exec(first.html)?.[1]
-    assert.ok(next, 'a link to the next page')
-    for (let path of ['/repos', `/repos?after=${next}`, '/repos?filter=switching', '/repos?q=service-2']) {
+    assert.match(first.html, /href="\/repos\?page=2" rel="next"/)
+    for (let path of ['/repos', '/repos?page=2', '/repos?page=12', '/repos?filter=switching', '/repos?q=service-2']) {
       let runs = []
       for (let n = 0; n < 5; n++) runs.push(await load(path))
       let best = Math.min(...runs.map((run) => run.ms))
