@@ -220,12 +220,13 @@ test.describe('the settings of the org', () => {
       let toggle = nav.locator('[data-settings-nav-toggle]')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(nav.locator('[data-settings-nav-current]')).toHaveText('Levels and models')
-      // Tab past the last link: the list folds, and never covers the field that gets the focus.
+      // KNT-164. Tab past the last link: the list stays open (a disclosure in the page), and the
+      // field that gets the focus is on screen.
       await toggle.click()
       await nav.locator('.settings-nav-list a').last().focus()
       await page.keyboard.press('Tab')
-      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      await expect(nav.locator('.settings-nav-list')).toBeHidden()
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+      await expect(page.locator(':focus')).toBeInViewport()
     }
     for (let section of await page.locator('.settings-content section').all()) {
       expect(await section.locator('.button--primary:visible').count()).toBeLessThanOrEqual(1)
@@ -234,6 +235,32 @@ test.describe('the settings of the org', () => {
     expect(overflow).toBeLessThanOrEqual(0)
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
+  })
+
+  // KNT-164. On a phone the open list is part of the page, as a disclosure: it folds only on a link
+  // or on Escape. If it folded when the focus left it, the field just under it would jump off the
+  // screen at the tap, and the tap would miss it.
+  test('on a phone, a tap on the field under the open list keeps the field on screen', async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobile', 'the list folds under 900 px only')
+    await signIn(page, 'octocat')
+    await page.goto('/settings')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    let toggle = nav.locator('[data-settings-nav-toggle]')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // The bottom of the list near the top of the screen, the first field of the cap under it.
+    let list = (await nav.locator('.settings-nav-list').boundingBox())!
+    await page.evaluate((y) => window.scrollBy(0, y), list.y + list.height - 150)
+    let field = page.locator('#cap-day')
+    await expect(field).toBeInViewport({ ratio: 1 })
+    await field.tap()
+    await expect(field).toBeFocused()
+    await expect(field).toBeInViewport({ ratio: 1 })
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // Escape folds it, and gives the focus back to the button.
+    await toggle.focus()
+    await page.keyboard.press('Escape')
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
   test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {
