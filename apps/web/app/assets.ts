@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { createAssetServer } from 'remix/assets'
 import type { Middleware } from 'remix/router'
 
+import { errorMessage, log } from './log.ts'
+
 const isDevelopment = process.env.NODE_ENV === 'development'
 const isProduction = process.env.NODE_ENV === 'production'
 
@@ -91,14 +93,28 @@ export interface BootScript {
 }
 
 /**
+ * The URLs of boot.ts and of the runtime. Null when the asset server cannot read them (a file
+ * missing from the image): the error is logged, and the pages go without their components, as
+ * without JavaScript; the service still starts (Kentō #5d5d55).
+ */
+export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>): Promise<BootScript | null> {
+  try {
+    return { href: await server.getHref(BOOT), runtime: await server.getHref(RUNTIME) }
+  } catch (error) {
+    log('error', 'startup.assets_unavailable', { error: errorMessage(error) })
+    return null
+  }
+}
+
+/**
  * Read once, when the module loads: without a hash (development, tests) the URL of a file never
  * changes, and with one (production) the files do not change while the process runs (`watch` is
  * off). Every page, a 404 included, gets the same value, with no request needed first.
  */
-const BOOT_SCRIPT: BootScript = { href: await assets.getHref(BOOT), runtime: await assets.getHref(RUNTIME) }
+const BOOT_SCRIPT = await resolveBootScript(assets)
 
-/** The URLs of boot.ts and of the runtime, for `<Document>`. */
-export function bootScript(): BootScript {
+/** The URLs of boot.ts and of the runtime, for `<Document>`. Null: no component hydrates. */
+export function bootScript(): BootScript | null {
   return BOOT_SCRIPT
 }
 

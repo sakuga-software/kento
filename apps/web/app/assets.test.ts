@@ -3,7 +3,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { assets, BOOT, RUNTIME } from './assets.ts'
+import { assets, BOOT, resolveBootScript, RUNTIME } from './assets.ts'
 import { fakeAuth } from './auth/test-helpers.ts'
 import { spyStore, webhookDeps } from './github/test-helpers.ts'
 import { createAppRouter } from './router.ts'
@@ -57,6 +57,30 @@ describe('the browser modules (KNT-163)', () => {
     let response = await fetch('/no-such-screen')
     assert.equal(response.status, 404)
     assert.match(await response.text(), /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
+  })
+})
+
+describe('the URLs of boot.ts (KNT-163)', () => {
+  it('are null, with an error in the log, when the asset server cannot read them: the service still starts (Kentō #5d5d55)', async () => {
+    let lines: string[] = []
+    let write = process.stderr.write.bind(process.stderr)
+    process.stderr.write = ((chunk: string) => (lines.push(String(chunk)), true)) as typeof process.stderr.write
+    try {
+      let boot = await resolveBootScript({
+        getHref: async () => {
+          throw new Error('File not found: app/ui/public/boot.ts')
+        },
+      })
+      assert.equal(boot, null)
+    } finally {
+      process.stderr.write = write
+    }
+    assert.equal(lines.length, 1)
+    let line = JSON.parse(lines[0]!) as { level: string; event: string; error: string }
+    assert.equal(line.level, 'error')
+    assert.equal(line.event, 'startup.assets_unavailable')
+    assert.match(line.error, /boot\.ts/)
+    assert.deepEqual(await resolveBootScript(assets), { href: '/assets/app/ui/public/boot.ts', runtime: '/assets/app/ui/public/runtime.ts' })
   })
 })
 
