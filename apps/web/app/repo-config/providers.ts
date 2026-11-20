@@ -1,4 +1,4 @@
-import type { Level, ProviderKind } from '@sakuga-review/protocol'
+import type { Level, ProviderKind } from '@kento/protocol'
 import { SERVICE_PROVIDER } from './model.ts'
 
 /** A provider that the Config screen offers for a level. */

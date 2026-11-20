@@ -17,19 +17,19 @@ importers:
 
   apps/runner:
     dependencies:
-      '@sakuga-review/engine':
+      '@kento/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@sakuga-review/protocol':
+      '@kento/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
 
   apps/web:
     dependencies:
-      '@sakuga-review/engine':
+      '@kento/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@sakuga-review/protocol':
+      '@kento/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       better-auth:

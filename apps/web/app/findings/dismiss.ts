@@ -2,7 +2,7 @@
 // screen (several at once) or from the screen of a pull request (REV-17, one at a time). Each change
 // is one event with the person's login (store.ts), then one reply in the thread of the finding on
 // GitHub, posted as the replies of a resolve job are (resolve/publish.ts).
-import { isOneOf, UUID } from '@sakuga-review/protocol'
+import { isOneOf, UUID } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import type { MintInstallationToken } from '../github/installation-token.ts'

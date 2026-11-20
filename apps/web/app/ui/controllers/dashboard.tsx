@@ -1,7 +1,7 @@
 // REV-14. The dashboard: a member reads it; an admin can also retry the last failure, or hide a failure (REV-59).
 import { createAction } from 'remix/router'
 
-import { UUID } from '@sakuga-review/protocol'
+import { UUID } from '@kento/protocol'
 
 import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { RetryOutcome } from '../../dashboard/store.ts'
@@ -23,6 +23,8 @@ export function dashboardActions(kit: UiKit) {
         deps.findings?.store.precision(signed.membership.org.id) ?? null,
       ])
       let notice = context.url.searchParams.get('notice')
+      // The steps of "Getting started" open the first installation of the org.
+      let firstInstallation = signed.membership.org.installations[0]
       return context.render(
         <DashboardPage
           frame={page}
@@ -30,7 +32,7 @@ export function dashboardActions(kit: UiKit) {
           githubUrl={dashboard.githubUrl}
           notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
           serviceKey={dashboard.serviceKey ?? false}
-          installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org.installations[0]!)}
+          installationUrl={firstInstallation ? installationUrl(dashboard.githubUrl, firstInstallation) : null}
           precision={precision}
         />,
       )

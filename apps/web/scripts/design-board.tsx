@@ -1,7 +1,7 @@
 // Writes the frames of the board design/socle/ from the real components of the app, so that the
 // board shows the markup and the stylesheet that the screens use.
 //
-//   pnpm -F @sakuga-review/web design:board
+//   pnpm -F @kento/web design:board
 //
 // Each frame is one HTML document; the board shows it in an <iframe> at its width, so that the
 // media queries of the stylesheet apply as on a screen of that width.
@@ -204,7 +204,7 @@ function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> 
         unchecked: true,
       }}
       list={{ filter: 'all', search: '', after: null, before: null }}
-      installationUrl="https://github.com/organizations/sakuga-software/settings/installations/1"
+      installations={[{ login: 'sakuga-software', url: 'https://github.com/organizations/sakuga-software/settings/installations/1' }]}
       githubUrl="https://github.com"
       checking={false}
       notice={null}

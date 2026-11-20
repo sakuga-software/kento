@@ -1,4 +1,4 @@
-import type { JobKind, Level } from '@sakuga-review/protocol'
+import type { JobKind, Level } from '@kento/protocol'
 import { sql as query } from 'drizzle-orm'
 
 import type { Database } from '../db/client.ts'

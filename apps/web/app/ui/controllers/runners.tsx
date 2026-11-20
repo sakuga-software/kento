@@ -1,7 +1,7 @@
 // REV-10. The Runners screen: a member reads it; an admin registers, trusts and revokes runners.
 import { createAction } from 'remix/router'
 
-import { UUID } from '@sakuga-review/protocol'
+import { UUID } from '@kento/protocol'
 
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'

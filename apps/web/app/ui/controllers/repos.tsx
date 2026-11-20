@@ -60,7 +60,7 @@ export function reposActions(kit: UiKit) {
           frame={page}
           page={result}
           list={list}
-          installationUrl={installationUrl(repos.githubUrl, org.installations[0]!)}
+          installations={org.installations.map((installation) => ({ login: installation.login, url: installationUrl(repos.githubUrl, installation) }))}
           githubUrl={repos.githubUrl}
           checking={checking}
           precisions={precisions}

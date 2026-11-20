@@ -1,8 +1,8 @@
 // REV-17. The detail of one finding: where it comes from (a pass of the model or a rule), the last
 // review that found it (its model, its scenario and its fix), the code around its line on GitHub, and
 // the history of its status. Every read takes the org of the session.
-import { findingKey, toConsider } from '@sakuga-review/engine/findings'
-import { UUID, type Level } from '@sakuga-review/protocol'
+import { findingKey, toConsider } from '@kento/engine/findings'
+import { UUID, type Level } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'

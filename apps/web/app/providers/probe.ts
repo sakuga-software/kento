@@ -1,8 +1,8 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
-import { defaultBaseUrl } from '@sakuga-review/engine/providers'
-import type { ProviderKind } from '@sakuga-review/protocol'
+import { defaultBaseUrl } from '@kento/engine/providers'
+import type { ProviderKind } from '@kento/protocol'
 
 /**
  * "Test" on the screen: one call that reads the list of models of the provider with its key. It

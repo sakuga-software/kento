@@ -1,7 +1,7 @@
 // REV-112. The cases of the bench from the statuses of the findings in the production database:
 // known false positives (dismissed with a reason) and non-regression cases (fixed, wontfix).
 //
-//   DATABASE_URL=... pnpm -F @sakuga-review/web bench:cases <out.json> [--weeks 12] [--max-per-repo 8]
+//   DATABASE_URL=... pnpm -F @kento/web bench:cases <out.json> [--weeks 12] [--max-per-repo 8]
 //
 // The connection is read-only. `gh` gives the base commit of each pull request. Run the cases with
 // `node eval/martian/run.ts --subset <out.json>`: their source is `kento`, apart from the recall.

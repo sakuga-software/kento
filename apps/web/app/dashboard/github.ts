@@ -1,4 +1,4 @@
-import { SHA } from '@sakuga-review/protocol'
+import { SHA } from '@kento/protocol'
 
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { createGitHub } from '../publish/github.ts'

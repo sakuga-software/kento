@@ -1,4 +1,4 @@
-import type { Job, ReviewPayload } from '@sakuga-review/protocol'
+import type { Job, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
