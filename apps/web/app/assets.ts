@@ -90,20 +90,22 @@ export interface BootScript {
   runtime: string
 }
 
-let boot: BootScript | null = null
+/**
+ * Read once, when the module loads: without a hash (development, tests) the URL of a file never
+ * changes, and with one (production) the files do not change while the process runs (`watch` is
+ * off). Every page, a 404 included, gets the same value, with no request needed first.
+ */
+const BOOT_SCRIPT: BootScript = { href: await assets.getHref(BOOT), runtime: await assets.getHref(RUNTIME) }
 
-/** The URLs of boot.ts and of the runtime, for `<Document>`. Null before the first request, and in a test of one component. */
-export function bootScript(): BootScript | null {
-  return boot
+/** The URLs of boot.ts and of the runtime, for `<Document>`. */
+export function bootScript(): BootScript {
+  return BOOT_SCRIPT
 }
 
-/** Serves the browser modules, and reads the URLs of boot.ts and of the runtime (they change with their content). */
+/** Serves the browser modules under `/assets/`; anything else goes on. */
 export function clientAssets(): Middleware {
   return async (context, next) => {
     if (context.url.pathname.startsWith('/assets/')) return (await assets.fetch(context.request)) ?? next()
-    if (context.request.method === 'GET' || context.request.method === 'HEAD') {
-      boot = { href: await assets.getHref(BOOT), runtime: await assets.getHref(RUNTIME) }
-    }
     return next()
   }
 }

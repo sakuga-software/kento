@@ -48,7 +48,7 @@ export function Document(handle: Handle<DocumentProps>) {
            * runs after the parse, like a deferred script. render() writes the import map of those
            * components, the one inline script, with the nonce of the request.
            */}
-          {boot ? <script type="module" src={boot.href} data-runtime={boot.runtime}></script> : null}
+          <script type="module" src={boot.href} data-runtime={boot.runtime}></script>
         </head>
         <body>{children}</body>
       </html>

@@ -52,6 +52,12 @@ describe('the browser modules (KNT-163)', () => {
     // The sign-in page hydrates nothing: no import map, no data, no runtime.
     assert.doesNotMatch(login, /importmap|rmx-data|rmx:h/)
   })
+
+  it('loads boot.ts on the 404 page too, even as the first request of a new server (Kentō #6783ea)', async () => {
+    let response = await fetch('/no-such-screen')
+    assert.equal(response.status, 404)
+    assert.match(await response.text(), /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
+  })
 })
 
 describe('the content security policy of the screens (KNT-163)', () => {
