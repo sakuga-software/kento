@@ -460,10 +460,6 @@ kbd,
     background-color 100ms var(--ease),
     box-shadow 100ms var(--ease);
 }
-/* A link that looks like a button: the colour of its variant, not the ink of `a`. */
-a.button {
-  color: var(--button-fg);
-}
 summary.button {
   list-style: none;
 }
@@ -652,19 +648,23 @@ summary.button::-webkit-details-marker {
   height: 6px;
   clip-path: circle(50%);
 }
+/*
+ * Indeterminate is a state of a checkbox only: a radio button of a group where nothing is checked
+ * also matches :indeterminate, and must stay empty.
+ */
 .check:checked,
-.check:indeterminate {
+.check[type='checkbox']:indeterminate {
   border-color: transparent;
   background-color: var(--action);
 }
 .check:checked::before {
   scale: 1;
 }
-.check:indeterminate::before {
+.check[type='checkbox']:indeterminate::before {
   clip-path: inset(40% 0 40% 0 round 1px);
   scale: 1;
 }
-.check:hover:not(:checked, :indeterminate) {
+.check:hover:not(:checked, [type='checkbox']:indeterminate) {
   border-color: var(--ink-muted);
 }
 .check:focus-visible {
@@ -721,6 +721,11 @@ summary.button::-webkit-details-marker {
   }
   .check::before {
     display: none;
+  }
+  /* The chevron of a select is a background: keep it, in the colour of the text of a field. */
+  .select--native::after {
+    forced-color-adjust: none;
+    background-color: FieldText;
   }
   .button:focus-visible,
   .input:focus,
