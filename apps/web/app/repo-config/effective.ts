@@ -1,5 +1,5 @@
-import { defaultModels } from '@kento/engine/levels'
-import { UUID, type Level } from '@kento/protocol'
+import { defaultModels } from '@kento-review/engine/levels'
+import { UUID, type Level } from '@kento-review/protocol'
 
 import { idFormHelp, SERVICE_PROVIDER, type LevelModels, type Resolved } from './model.ts'
 import type { ProviderOption } from './providers.ts'

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, expectReadableButtons, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-8: an admin, a member, a person outside of the org, and the way out.
 
@@ -74,3 +74,22 @@ test('the sign-in page passes axe in Sumi', async ({ page, context, baseURL }) =
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
   await expectNoAxeViolations(page)
 })
+
+// KNT-143: a link that looks like a primary button keeps the colour of its text, in both themes.
+for (let theme of ['paper', 'sumi'] as const) {
+  test(`the buttons that are links are readable on the sign-in page, the dashboard and a missing page (${theme})`, async ({ page, context, baseURL }) => {
+    await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
+    await page.goto('/login')
+    let start = page.getByRole('link', { name: 'Continue with GitHub' })
+    await expect(start).toBeVisible()
+    await expect(start).toHaveClass(/button--primary/)
+    await expectReadableButtons(page)
+    await signIn(page, 'octocat')
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
+    await expectReadableButtons(page)
+    await page.goto('/no-such-page')
+    await expect(page.getByRole('link', { name: 'Back to the dashboard' })).toHaveClass(/button--primary/)
+    await expectReadableButtons(page)
+  })
+}
+

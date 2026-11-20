@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 
-import { defaultModels } from '@kento/engine/levels'
-import type { Job } from '@kento/protocol'
+import { defaultModels } from '@kento-review/engine/levels'
+import type { Job } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 

@@ -21,6 +21,9 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
 - `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
   the frame. A screen writes a token name, never a colour value.
+- `app/ui/controls.tsx` (KNT-143): the form controls, native elements (`Button`, `buttonClass`,
+  `Input`, `Textarea`, `Select`, `Choice`, `Check`, `Field`) drawn by `kento.css`. The rules for the
+  controls of every screen are in [CLAUDE.md](CLAUDE.md#ui-components).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
@@ -221,32 +224,32 @@ From the root of the repository:
 ```sh
 pnpm install
 docker run -d --name kento-pg --rm -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55432:5432 postgres:18.3
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento/web dev
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento-review/web dev
 ```
 
 | Command                                    | Does                                                         |
 | ------------------------------------------ | ------------------------------------------------------------ |
-| `pnpm -F @kento/web lint`          | oxlint                                                       |
-| `pnpm -F @kento/web typecheck`     | `tsc --noEmit`                                               |
-| `pnpm -F @kento/web test`          | Unit tests, no database.                                     |
-| `pnpm -F @kento/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
-| `pnpm -F @kento/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
-| `pnpm -F @kento/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @kento/web exec playwright install chromium` once. |
-| `pnpm -F @kento/web design:board`  | Writes the frames of the design boards from the components, into `design/` at the root. That folder stays out of git. |
-| `pnpm -F @kento/web measures`      | REV-112. The weekly measures of the findings of every org (handled rate, reject rate, calibration, findings for each pull request), from `DATABASE_URL`, read-only. `--weeks 12`, `--json`. |
-| `pnpm -F @kento/web bench:cases <out.json>` | REV-112. The cases of the bench from the findings, from `DATABASE_URL`, read-only. See [eval/README.md](../../eval/README.md). |
+| `pnpm -F @kento-review/web lint`          | oxlint                                                       |
+| `pnpm -F @kento-review/web typecheck`     | `tsc --noEmit`                                               |
+| `pnpm -F @kento-review/web test`          | Unit tests, no database.                                     |
+| `pnpm -F @kento-review/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
+| `pnpm -F @kento-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
+| `pnpm -F @kento-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @kento-review/web exec playwright install chromium` once. |
+| `pnpm -F @kento-review/web design:board`  | Writes the frames of the design boards from the components, into `design/` at the root. That folder stays out of git. |
+| `pnpm -F @kento-review/web measures`      | REV-112. The weekly measures of the findings of every org (handled rate, reject rate, calibration, findings for each pull request), from `DATABASE_URL`, read-only. `--weeks 12`, `--json`. |
+| `pnpm -F @kento-review/web bench:cases <out.json>` | REV-112. The cases of the bench from the findings, from `DATABASE_URL`, read-only. See [eval/README.md](../../eval/README.md). |
 
 `test:db` creates one throwaway database per test file on the server of `TEST_DATABASE_URL`, and
 drops it at the end:
 
 ```sh
-TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento/web test:db
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento-review/web test:db
 ```
 
 ## Migrations
 
 1. Change `app/db/schema.ts`.
-2. `pnpm -F @kento/web db:generate --name <what>`: writes `drizzle/NNNN_<what>.sql` and its
+2. `pnpm -F @kento-review/web db:generate --name <what>`: writes `drizzle/NNNN_<what>.sql` and its
    snapshot. Read the SQL, and commit it with the schema.
 3. The next start applies it, in one transaction, under an advisory lock (two instances that start
    together migrate one after the other). A migration already applied is skipped.

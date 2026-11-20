@@ -1,5 +1,5 @@
 {
-  "name": "@kento/web",
+  "name": "@kento-review/web",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -22,8 +22,8 @@
     "node": ">=26"
   },
   "dependencies": {
-    "@kento/engine": "workspace:*",
-    "@kento/protocol": "workspace:*",
+    "@kento-review/engine": "workspace:*",
+    "@kento-review/protocol": "workspace:*",
     "better-auth": "1.7.26",
     "drizzle-orm": "0.45.4",
     "postgres": "4.1.1",

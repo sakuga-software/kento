@@ -1,6 +1,6 @@
 // REV-112. The weekly measures of the reviews, from the production database, in Markdown or JSON.
 //
-//   DATABASE_URL=... pnpm -F @kento/web measures [--weeks 12] [--json]
+//   DATABASE_URL=... pnpm -F @kento-review/web measures [--weeks 12] [--json]
 //
 // The connection is read-only. app/findings/measures.ts gives the formulas.
 import { parseArgs } from 'node:util'

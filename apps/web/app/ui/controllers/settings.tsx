@@ -4,7 +4,7 @@ import { createAction } from 'remix/router'
 
 import { canEdit } from '../../auth/access.ts'
 
-import { UUID, type Level } from '@kento/protocol'
+import { UUID, type Level } from '@kento-review/protocol'
 
 import { log } from '../../log.ts'
 import { readCapsForm, readTrustedBotsForm } from '../../org-settings/model.ts'

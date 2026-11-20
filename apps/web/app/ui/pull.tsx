@@ -1,4 +1,4 @@
-import { isOneOf, LEVELS, type Level } from '@kento/protocol'
+import { isOneOf, LEVELS, type Level } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
 import { assignmentLine } from '../assignment/model.ts'
@@ -7,6 +7,7 @@ import type { PullHeader } from '../pulls/github.ts'
 import { CELL_LABELS, STATUS_LABELS, type Cell } from '../pulls/sheet.ts'
 import type { PullActiveJob, PullFinding, PullReview, PullSheet, PullSummary } from '../pulls/store.ts'
 import { pageRoutes, pullRoutes } from '../routes.ts'
+import { Button, buttonClass } from './controls.tsx'
 import { agoOrDate, clock, duration, plural, usdPrecise } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -301,7 +302,7 @@ function RerunMenu(handle: Handle<{ summary: PullSummary; estimates: Record<Leve
     let { repoId, prNumber } = summary.target
     return (
       <details class="confirm pull-rerun" data-confirm>
-        <summary class="button">Run R{summary.reviews + 1}…</summary>
+        <summary class={buttonClass()}>Run R{summary.reviews + 1}…</summary>
         <div class="confirm-body" role="group" aria-labelledby="rerun-title">
           <p id="rerun-title" class="pull-rerun-title">
             Run R{summary.reviews + 1}
@@ -316,16 +317,16 @@ function RerunMenu(handle: Handle<{ summary: PullSummary; estimates: Record<Leve
                 <form method="post" action={pullRoutes.pullRerun.href({ id: repoId, number: String(prNumber) })}>
                   <input type="hidden" name="_csrf" value={csrf} />
                   <input type="hidden" name="level" value={level} />
-                  <button class="button" type="submit">
+                  <Button type="submit">
                     Run at {level}
                     <span class="dash-estimate">{estimate === null ? ' · unknown cost' : ` · ≈ ${usdPrecise(estimate)}`}</span>
-                  </button>
+                  </Button>
                 </form>
               )
             })}
-            <button class="button button-ghost" type="button" data-confirm-cancel hidden>
+            <Button variant="ghost" type="button" data-confirm-cancel hidden>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       </details>

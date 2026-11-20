@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
-import { levelCost } from '@kento/engine/levels'
-import { LEVELS, type Level } from '@kento/protocol'
+import { levelCost } from '@kento-review/engine/levels'
+import { LEVELS, type Level } from '@kento-review/protocol'
 
 import { mention } from '../instance.ts'
 import type { AppStatus } from '../org-settings/app-status.ts'
@@ -12,6 +12,7 @@ import { kentoDefaults, SERVICE_PROVIDER, type ConfigField, type LevelModels } f
 import { effectiveLevel, type EffectiveLevel } from '../repo-config/effective.ts'
 import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { Button, Choice, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine } from './form-fields.tsx'
@@ -225,11 +226,11 @@ function CapSection(handle: Handle<SectionProps>) {
             {/* REV-91: the three limits on one line, each with a short hint. */}
             <div class="cap-fields">
               <div class="field">
-                <label class="field-label" for="cap-day">
+                <label class="label" for="cap-day">
                   Daily cap ($)
                 </label>
-                <input
-                  class="input config-cap"
+                <Input
+                  class="config-cap"
                   id="cap-day"
                   name="dailyCapUsd"
                   value={values.dailyCapUsd ?? ''}
@@ -242,11 +243,11 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Set back to zero at midnight UTC." />
               </div>
               <div class="field">
-                <label class="field-label" for="cap-month">
+                <label class="label" for="cap-month">
                   Monthly cap ($)
                 </label>
-                <input
-                  class="input config-cap"
+                <Input
+                  class="config-cap"
                   id="cap-month"
                   name="monthlyCapUsd"
                   value={values.monthlyCapUsd ?? ''}
@@ -259,11 +260,11 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Calendar month, in UTC." />
               </div>
               <div class="field">
-                <label class="field-label" for="cap-alert">
+                <label class="label" for="cap-alert">
                   Alert threshold (%)
                 </label>
-                <input
-                  class="input config-cap"
+                <Input
+                  class="config-cap"
                   id="cap-alert"
                   name="alertPct"
                   value={values.alertPct ?? ''}
@@ -276,9 +277,9 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-alert" error={errors.alertPct} hint="Warns before the cap." />
               </div>
             </div>
-            <button class="button button-primary" type="submit">
+            <Button variant="primary" type="submit">
               Save the cap
-            </button>
+            </Button>
           </form>
         ) : (
           <p>
@@ -322,18 +323,18 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                 <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'org-level-error' : undefined}>
                   <legend class="visually-hidden">Level of a push</legend>
                   {LEVELS.map((key) => (
-                    <label class="choice">
-                      <input
-                        type="radio"
-                        name="defaultLevel"
-                        value={key}
-                        checked={key === selected}
-                        autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
-                      />
-                      <span>
-                        <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
-                      </span>
-                    </label>
+                    <Choice
+                      type="radio"
+                      name="defaultLevel"
+                      value={key}
+                      checked={key === selected}
+                      autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
+                      label={
+                        <>
+                          <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
+                        </>
+                      }
+                    />
                   ))}
                   {mine?.errors.defaultLevel ? (
                     <p class="field-error" id="org-level-error">
@@ -342,9 +343,9 @@ function DefaultsSection(handle: Handle<SectionProps>) {
                   ) : null}
                 </fieldset>
                 {/* A row of the section: a secondary button (REV-29, one primary action per section at most). */}
-                <button class="button" type="submit">
+                <Button type="submit">
                   Save the level
-                </button>
+                </Button>
               </form>
               {view.config.level !== undefined ? <OrgReset csrf={csrf} version={view.version} field="level" label="the level" /> : null}
             </>
@@ -417,11 +418,10 @@ function LevelDefault(
               <FormErrors errors={errors} />
               <div class="org-default-fields">
                 <div class="field">
-                  <label class="field-label" for={`${id}-provider`}>
+                  <label class="label" for={`${id}-provider`}>
                     Provider
                   </label>
-                  <select
-                    class="input"
+                  <Select
                     id={`${id}-provider`}
                     name="provider"
                     {...focusIf(first, 'provider')}
@@ -438,15 +438,15 @@ function LevelDefault(
                         {selected} (not available)
                       </option>
                     ) : null}
-                  </select>
+                  </Select>
                   <FieldMessage id={`${id}-provider`} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint} />
                 </div>
                 <div class="field">
-                  <label class="field-label" for={`${id}-model`}>
+                  <label class="label" for={`${id}-model`}>
                     Model
                   </label>
-                  <input
-                    class="input mono"
+                  <Input
+                    class="mono"
                     id={`${id}-model`}
                     name="model"
                     value={values.model ?? ''}
@@ -460,11 +460,11 @@ function LevelDefault(
                   <FieldMessage id={`${id}-model`} error={errors.model} />
                 </div>
                 <div class="field">
-                  <label class="field-label" for={`${id}-fallback`}>
+                  <label class="label" for={`${id}-fallback`}>
                     Fallback
                   </label>
-                  <input
-                    class="input mono"
+                  <Input
+                    class="mono"
                     id={`${id}-fallback`}
                     name="fallback"
                     value={values.fallback ?? ''}
@@ -483,9 +483,9 @@ function LevelDefault(
                   "Save" fixes this choice for the organization, and the level no longer follows the "Default" provider.
                 </p>
               )}
-              <button class="button" type="submit">
+              <Button type="submit">
                 Save<span class="visually-hidden"> the model {level}</span>
-              </button>
+              </Button>
             </form>
             {set ? <OrgReset csrf={csrf} version={version} field={`models.${level}`} label={level} /> : null}
           </>
@@ -525,11 +525,11 @@ function BotsSection(handle: Handle<SectionProps>) {
             <VersionFields csrf={csrf} version={view.version} field="trustedBots" />
             <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
-              <label class="field-label" for="trusted-bots">
+              <label class="label" for="trusted-bots">
                 One login per line
               </label>
-              <textarea
-                class="input mono config-paths"
+              <Textarea
+                class="mono config-paths"
                 id="trusted-bots"
                 name="trustedBots"
                 rows={4}
@@ -538,12 +538,12 @@ function BotsSection(handle: Handle<SectionProps>) {
                 aria-invalid={mine?.errors.trustedBots ? 'true' : undefined}
                 aria-describedby={describedBy('trusted-bots', mine?.errors.trustedBots, true)}
                 value={value}
-              ></textarea>
+              ></Textarea>
               <FieldMessage id="trusted-bots" error={mine?.errors.trustedBots} hint={'For example renovate[bot]. Kentō adds "[bot]" if it is missing.'} />
             </div>
-            <button class="button button-primary" type="submit">
+            <Button variant="primary" type="submit">
               Save the bots
-            </button>
+            </Button>
           </form>
         ) : null}
       </section>
@@ -720,7 +720,7 @@ function AppSection(handle: Handle<SectionProps>) {
         </dl>
         {status ? (
           <p>
-            <a class="button" href={status.deliveriesUrl}>
+            <a class={buttonClass()} href={status.deliveriesUrl}>
               Redeliver from the page of the App
             </a>{' '}
             <span class="hint">Open "Recent Deliveries", choose a delivery, then "Redeliver".</span>

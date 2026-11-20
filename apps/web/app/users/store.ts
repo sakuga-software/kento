@@ -1,7 +1,7 @@
 // REV-22. The screen of a user: their preferences for the reviews of their own pull requests, the
 // findings that those pull requests received, and the pull requests that Kentō reviewed. Every read
 // is for one org; the author of a pull request comes from `pull_authors`.
-import { isLevel, type Level } from '@kento/protocol'
+import { isLevel, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'

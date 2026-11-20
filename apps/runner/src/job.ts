@@ -14,7 +14,7 @@ import {
   type OpenThread,
   type ReviewResult,
   type ThreadVerdict,
-} from '@kento/engine';
+} from '@kento-review/engine';
 import {
   HEARTBEAT_SECONDS,
   MAX_RESOLVE_THREADS,
@@ -26,7 +26,7 @@ import {
   type ResultRequest,
   type ReviewPayload,
   type UnchangedPayload,
-} from '@kento/protocol';
+} from '@kento-review/protocol';
 import { ApiError, isJobLost, type KentoApi } from './api.ts';
 import { clonePullRequest, gitEnvironment, withEnvironment } from './clone.ts';
 import type { Config } from './config.ts';

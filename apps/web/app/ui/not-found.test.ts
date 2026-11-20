@@ -91,7 +91,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     let html = await response.text()
     assert.match(html, /<html lang="en"/)
     assert.match(html, /<h1 class="page-title">This page does not exist<\/h1>/)
-    assert.match(html, /<a href="\/" class="button button-primary">Back to the dashboard<\/a>/)
+    assert.match(html, /<a href="\/" class="button button--primary">Back to the dashboard<\/a>/)
     assert.match(html, /aria-label="Main navigation"/)
     assert.doesNotMatch(html, /aria-current="page"/)
   })
@@ -150,7 +150,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
       assert.equal(response.status, 404, path)
       let html = await response.text()
       assert.match(html, /This repo is no longer in the installation/, path)
-      assert.match(html, /<a href="\/repos" class="button button-primary">See the repos<\/a>/, path)
+      assert.match(html, /<a href="\/repos" class="button button--primary">See the repos<\/a>/, path)
       assert.match(html, /<a href="\/repos" aria-current="page" class="bar-link">/, path)
     }
   })
@@ -162,7 +162,7 @@ describe('REV-40: a 404 or a 400 of a screen', () => {
     assert.equal(response.status, 400)
     let html = await response.text()
     assert.match(html, /Kentō could not read this form/)
-    assert.match(html, new RegExp(`href="/repos/${UNKNOWN}/config" class="button button-primary">Back to the config of the repo</a>`))
+    assert.match(html, new RegExp(`href="/repos/${UNKNOWN}/config" class="button button--primary">Back to the config of the repo</a>`))
   })
 })
 

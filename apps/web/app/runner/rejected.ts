@@ -1,5 +1,5 @@
 // REV-95. The rejected findings of a review job, as the protocol accepts them. Pure: no database.
-import { CATEGORIES, isOneOf, SEVERITIES, SHA, type RejectedFinding } from '@kento/protocol'
+import { CATEGORIES, isOneOf, SEVERITIES, SHA, type RejectedFinding } from '@kento-review/protocol'
 
 /** A row of the database: the columns are NOT NULL in the schema, but a row is checked as it comes. */
 export type RejectedRow = { [K in keyof RejectedFinding]: RejectedFinding[K] | null }

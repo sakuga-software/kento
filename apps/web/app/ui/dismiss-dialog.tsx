@@ -3,6 +3,8 @@ import type { Handle, RemixNode } from 'remix/component'
 import { DISMISS_REASONS, OTHER_REASON } from '../findings/dismiss.ts'
 import { REASON_MAX } from '../findings/store.ts'
 
+import { Button, Choice, Input, buttonClass } from './controls.tsx'
+
 export interface DismissDialogProps {
   /** The text of the button that opens the dialog: "Mark dismissed…". */
   trigger: RemixNode
@@ -29,25 +31,18 @@ export function DismissDialog(handle: Handle<DismissDialogProps>) {
     let { trigger, submit, form, action, id } = handle.props
     return (
       <details class="confirm dismiss-dialog" data-confirm>
-        <summary class="button">{trigger}</summary>
+        <summary class={buttonClass()}>{trigger}</summary>
         <div class="confirm-body">
           <fieldset class="field dismiss-reasons">
-            <legend class="field-label">Reason</legend>
+            <legend class="label">Reason</legend>
             {DISMISS_REASONS.map((reason, n) => (
-              <label class="choice" for={`${id}-reason-${n}`}>
-                <input type="radio" id={`${id}-reason-${n}`} name="reason" value={reason} form={form} />
-                <span>{reason}</span>
-              </label>
+              <Choice type="radio" id={`${id}-reason-${n}`} name="reason" value={reason} form={form} label={reason} />
             ))}
-            <label class="choice" for={`${id}-reason-other`}>
-              <input type="radio" id={`${id}-reason-other`} name="reason" value={OTHER_REASON} form={form} />
-              <span>Other</span>
-            </label>
+            <Choice type="radio" id={`${id}-reason-other`} name="reason" value={OTHER_REASON} form={form} label="Other" />
             <label class="visually-hidden" for={`${id}-other`}>
               Other reason
             </label>
-            <input
-              class="input"
+            <Input
               id={`${id}-other`}
               name="other"
               form={form}
@@ -55,15 +50,15 @@ export function DismissDialog(handle: Handle<DismissDialogProps>) {
               placeholder="Other reason"
               autocomplete="off"
             />
-            <p class="field-hint">Kentō gives the reason in the GitHub thread of each finding, and counts it in "Dismissal reasons".</p>
+            <p class="description">Kentō gives the reason in the GitHub thread of each finding, and counts it in "Dismissal reasons".</p>
           </fieldset>
           <div class="confirm-actions">
-            <button class="button button-primary" type="submit" form={form} name="status" value="dismissed" formaction={action}>
+            <Button variant="primary" type="submit" form={form} name="status" value="dismissed" formaction={action}>
               {submit}
-            </button>
-            <button class="button" type="button" data-confirm-cancel hidden>
+            </Button>
+            <Button type="button" data-confirm-cancel hidden>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       </details>

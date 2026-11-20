@@ -1,12 +1,13 @@
 import type { Handle } from 'remix/component'
 
-import { CLAIM_WAIT_SECONDS, HEARTBEAT_SECONDS, LEASE_SECONDS, MAX_ATTEMPTS, MAX_BODY_BYTES, RUNNER_TOKEN_PREFIX } from '@kento/protocol'
+import { CLAIM_WAIT_SECONDS, HEARTBEAT_SECONDS, LEASE_SECONDS, MAX_ATTEMPTS, MAX_BODY_BYTES, RUNNER_TOKEN_PREFIX } from '@kento-review/protocol'
 
 import { instance } from '../instance.ts'
 import { OFFLINE_SECONDS, ONLINE_SECONDS, REGISTRATION_TTL_MINUTES, SILENT_HOURS, type RegistrationView, type RunnersScreen, type RunnerView } from '../runner/admin.ts'
 import { RETRY_BACKOFF_SECONDS } from '../runner/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { Button, Choice, Input, buttonClass } from './controls.tsx'
 import { agoShort, clock, elapsed, hour } from './format.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -202,7 +203,7 @@ export function RunnersPage(handle: Handle<RunnersPageProps>) {
         title="Runners"
         lead="The machines that do the reviews."
         actions={
-          <a class="button button-primary" href="#new-runner">
+          <a class={buttonClass('primary')} href="#new-runner">
             New runner
           </a>
         }
@@ -325,13 +326,13 @@ function CreatedToken(handle: Handle<{ created: CreatedRegistration; kentoUrl: s
           {created.trusted ? null : ' Put your OpenRouter key in place of <your OpenRouter key>.'}
         </p>
         <div class="copy-block">
-          <label class="field-label" for="docker-command">
+          <label class="label" for="docker-command">
             docker run command
           </label>
           <textarea id="docker-command" class="mono command" readOnly rows={command.split('\n').length} spellCheck={false} value={command}></textarea>
-          <button class="button" type="button" data-copy="docker-command" hidden>
+          <Button type="button" data-copy="docker-command" hidden>
             Copy the command
-          </button>
+          </Button>
           <span class="copy-status" role="status" aria-live="polite"></span>
         </div>
       </section>
@@ -368,9 +369,9 @@ function PendingRegistration(handle: Handle<{ registration: RegistrationView; no
           <div class="runner-actions">
             <form method="post" action={routes.runnerRenew.href({ id: registration.id })}>
               <input type="hidden" name="_csrf" value={csrf} />
-              <button class={`button ${expired ? 'button-primary' : ''}`} type="submit">
+              <Button variant={expired ? 'primary' : 'outline'} type="submit">
                 New token
-              </button>
+              </Button>
             </form>
             <Confirm
               trigger="Cancel the token…"
@@ -505,10 +506,10 @@ function RunnerRow(
                 <form method="post" action={routes.runnerTrust.href({ id: runner.id })}>
                   <input type="hidden" name="_csrf" value={csrf} />
                   <input type="hidden" name="trusted" value={runner.trusted ? 'false' : 'true'} />
-                  <button class="button button-small" type="submit">
+                  <Button size="sm" type="submit">
                     {runner.trusted ? 'Remove the trust' : 'Mark as trusted'}
                     <span class="visually-hidden"> for {runner.name}</span>
-                  </button>
+                  </Button>
                 </form>
                 <Confirm trigger="Revoke…" action={routes.runnerRevoke.href({ id: runner.id })} csrf={csrf} submit={`Revoke ${runner.name}`}>
                   <p>
@@ -628,11 +629,11 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
         <form method="post" action={routes.runnerNew.href()} noValidate>
           <input type="hidden" name="_csrf" value={csrf} />
           <div class="field">
-            <label class="field-label" for="runner-name">
+            <label class="label" for="runner-name">
               Name
             </label>
-            <input
-              class="input mono"
+            <Input
+              class="mono"
               id="runner-name"
               name="name"
               value={values.name}
@@ -648,17 +649,17 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
                 {errors.name}
               </p>
             ) : (
-              <p class="field-hint" id="runner-name-hint">
+              <p class="description" id="runner-name-hint">
                 For example runner-1.
               </p>
             )}
           </div>
           <div class="field">
-            <label class="field-label" for="runner-labels">
+            <label class="label" for="runner-labels">
               Labels
             </label>
-            <input
-              class="input mono"
+            <Input
+              class="mono"
               id="runner-labels"
               name="labels"
               value={values.labels}
@@ -672,36 +673,46 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
                 {errors.labels}
               </p>
             ) : (
-              <p class="field-hint" id="runner-labels-hint">
+              <p class="description" id="runner-labels-hint">
                 Separated by commas. They show on the card of the runner.
               </p>
             )}
           </div>
           <fieldset class="field" aria-describedby={errors.keyMode ? 'runner-key-error' : undefined}>
-            <legend class="field-label">Model key</legend>
-            <label class="choice">
-              <input type="radio" name="keyMode" value="runner" checked={values.keyMode === 'runner'} />
-              <span>
-                <strong>Key on the runner.</strong> The machine has its own key (PROVIDER_API_KEY), and the service never
-                sends its key.
-              </span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="keyMode" value="app" checked={values.keyMode === 'app'} />
-              <span>
-                <strong>Keys stored in Kentō.</strong> The runner is trusted and gets, with each job, the key of the provider
-                that the org added in Settings. The OpenRouter key of the service stays on the runners of the service.
-              </span>
-            </label>
+            <legend class="label">Model key</legend>
+            <Choice
+              type="radio"
+              name="keyMode"
+              value="runner"
+              checked={values.keyMode === 'runner'}
+              label={
+                <>
+                  <strong>Key on the runner.</strong> The machine has its own key (PROVIDER_API_KEY), and the service never
+                  sends its key.
+                </>
+              }
+            />
+            <Choice
+              type="radio"
+              name="keyMode"
+              value="app"
+              checked={values.keyMode === 'app'}
+              label={
+                <>
+                  <strong>Keys stored in Kentō.</strong> The runner is trusted and gets, with each job, the key of the provider
+                  that the org added in Settings. The OpenRouter key of the service stays on the runners of the service.
+                </>
+              }
+            />
             {errors.keyMode ? (
               <p class="field-error" id="runner-key-error">
                 {errors.keyMode}
               </p>
             ) : null}
           </fieldset>
-          <button class="button button-primary" type="submit">
+          <Button variant="primary" type="submit">
             Create the token
-          </button>
+          </Button>
         </form>
       </section>
     )

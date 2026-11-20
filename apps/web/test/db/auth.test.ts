@@ -139,6 +139,19 @@ describe('the sign-in and the sessions in Postgres', () => {
     }
   })
 
+  it('ends the sessions of a user by user id through Better Auth, and never hands out a hash as a token', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let first = await signIn()
+    let second = await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    assert.equal((await database.sql`select 1 from sessions`).length, 2, 'two browsers, two sessions')
+    let context = await auth.$context
+    await context.internalAdapter.deleteUserSessions(user!.id)
+    assert.equal((await database.sql`select 1 from sessions`).length, 0)
+    for (let cookie of [first.cookie, second.cookie]) assert.equal((await request('/', cookie!)).status, 303)
+  })
+
   it('refuses a person outside of every org: no user, no account, no session', async () => {
     await insertOrgRow(database.sql, 'acme', 11)
     let { callback, cookie } = await signIn()
@@ -254,6 +267,21 @@ describe('the sign-in and the sessions in Postgres', () => {
     // Kentō itself still changes it.
     await store.saveMembership(user!.id, acme, 'member', 'invitation')
     assert.equal((await database.sql`select role from memberships`)[0]!.role, 'member')
+  })
+
+  it('KNT-150: an invitation turns a membership from GitHub into one from an invitation, which GitHub then keeps', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'member')
+    await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    let row = async () => ({ ...(await database.sql`select role, source from memberships`)[0] })
+    assert.deepEqual(await row(), { role: 'member', source: 'github' })
+    // An admin of Kentō invites octocat as an admin: the row becomes Kentō's.
+    await store.saveMembership(user!.id, acme, 'admin', 'invitation')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+    // The next GitHub check says member: role and source stay.
+    await store.saveMembership(user!.id, acme, 'member', 'github')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
   })
 
   it('the table refuses a token of GitHub in an account', async () => {

@@ -50,8 +50,9 @@ export interface AuthStore {
   /** The memberships of a user, in the orgs that are still active, by org name. */
   memberships(userId: string): Promise<MembershipRow[]>
   /**
-   * Writes the role of a user in an org, checked now. A membership that exists keeps its source, and
-   * a write from GitHub never changes the role of a membership from an invitation.
+   * Writes the role of a user in an org, checked now. An invitation turns a membership from GitHub
+   * into one from an invitation; a write from GitHub never changes the role nor the source of a
+   * membership from an invitation.
    */
   saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<void>
   /** KNT-150. The org has at least one owner. */
@@ -113,6 +114,7 @@ export function createAuthStore(sql: postgres.Sql): AuthStore {
         values (${userId}, ${orgId}, ${role}, ${source}, now())
         on conflict (user_id, org_id) do update set
           role = case when memberships.source = 'invitation' and excluded.source = 'github' then memberships.role else excluded.role end,
+          source = case when excluded.source = 'invitation' then 'invitation' else memberships.source end,
           checked_at = now()
       `
     },

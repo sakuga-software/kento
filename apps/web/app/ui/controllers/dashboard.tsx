@@ -3,7 +3,7 @@ import { createAction } from 'remix/router'
 
 import { canEdit } from '../../auth/access.ts'
 
-import { UUID } from '@kento/protocol'
+import { UUID } from '@kento-review/protocol'
 
 import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { RetryOutcome } from '../../dashboard/store.ts'

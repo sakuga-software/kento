@@ -1,6 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
+import { Button } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
 import type { Theme } from './theme.ts'
@@ -253,10 +254,10 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
         <span class="who-role">{ROLE_LABELS[viewer.role]}</span>
         <form method="post" action={routes.signOut.href()}>
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
-          <button class="button button-ghost" type="submit">
+          <Button variant="ghost" type="submit">
             <SignOutIcon />
             Sign out
-          </button>
+          </Button>
         </form>
       </div>
     )

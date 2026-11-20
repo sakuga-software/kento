@@ -27,7 +27,7 @@ COPY packages/engine/package.json packages/engine/
 # The production dependencies of apps/web and of the workspace packages it uses (packages/protocol
 # and packages/engine, which have none). No dev dependency.
 RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --prod --filter @kento/web...
+    pnpm install --frozen-lockfile --prod --filter @kento-review/web...
 
 FROM ${NODE_IMAGE}
 # The service runs with node alone. The npm of the base image only adds the vulnerabilities of its

@@ -285,7 +285,12 @@ type Where = NonNullable<Parameters<Adapter['findMany']>[0]['where']>[number]
 /**
  * Better Auth writes the token of a session as it is, and finds a session by it. This adapter
  * stores and looks up its SHA-256 instead, and gives the token back to Better Auth where it reads
- * a row it found by token, or wrote. A session listed by user carries the hash.
+ * a row it found by token, or wrote.
+ *
+ * A session listed by user carries the hash, which is not a token: Kentō never lists sessions or
+ * revokes one by a listed token (`listSessions`, `revokeSession`, `revokeOtherSessions`; its HTTP
+ * API is not mounted). Kentō ends a session by its id (`AuthStore.deleteSession`), and Better Auth
+ * ends the sessions of a user by `userId`, which this adapter passes as it is.
  */
 export function hashSessionTokens(adapter: Adapter): Adapter {
   let isSession = (model: string) => model === 'session' || model === 'sessions'
