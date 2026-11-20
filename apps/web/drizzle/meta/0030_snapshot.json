@@ -2402,7 +2402,7 @@
             "id",
             "org_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "cascade"
         }
       },
