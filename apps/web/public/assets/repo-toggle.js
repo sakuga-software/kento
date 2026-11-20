@@ -83,32 +83,42 @@
       button.setAttribute('aria-disabled', 'true')
       row.querySelector('.row-error')?.remove()
       try {
-        const response = await fetch(button.formAction, {
-          method: 'POST',
-          body: new URLSearchParams(new FormData(form)),
-          credentials: 'same-origin',
-          headers: { Accept: 'text/html' },
-        })
+        let response
+        try {
+          response = await fetch(button.formAction, {
+            method: 'POST',
+            body: new URLSearchParams(new FormData(form)),
+            credentials: 'same-origin',
+            headers: { Accept: 'text/html' },
+          })
+        } catch {
+          return showError(row, 'network')
+        }
         // The server answers a change with a redirect to the screen; a sign-in page means the
-        // session is over. After a redirect the change is saved, even when the screen it leads to
-        // does not come: the browser goes there, as without JavaScript (Kentō #2e027b).
+        // session is over.
+        // fetch drops the `#repo-<id>` of the redirect: it comes back here, for a fallback below.
         const landed = new URL(response.url, location.href)
+        landed.hash = row.id
         if (response.ok && landed.pathname !== location.pathname) return showError(row, 'session')
-        if (!response.ok) return response.redirected ? location.assign(landed.href) : showError(row, 'refused')
-        const next = (await parse(response)).getElementById('content')
-        if (!next) return location.assign(landed.href)
-        const nextRow = next.querySelector(`#${CSS.escape(row.id)}`) ?? (await rowByName(row))
-        // The change is saved, but its row cannot be read: the page that the redirect gives.
-        if (!nextRow) return location.assign(landed.href)
-        // The notice above the list can grow or shrink the page: the row stays where it is on the
-        // screen (the browser does it by itself, except at the top of the page).
-        const top = row.getBoundingClientRect().top
-        updateFrame(next)
-        replaceRow(row, nextRow)
-        const moved = document.getElementById(row.id).getBoundingClientRect().top - top
-        if (Math.abs(moved) >= 1) window.scrollBy(0, moved)
-      } catch {
-        showError(row, 'network')
+        if (!response.redirected) return showError(row, 'refused')
+        // From here the change is saved. When its screen does not come, or its row cannot be read
+        // or shown, the browser goes to the screen of the redirect, as without JavaScript: never a
+        // message that says the change failed (Kentō #2e027b, #e074d4).
+        try {
+          if (!response.ok) throw new Error(`screen ${response.status}`)
+          const next = (await parse(response)).getElementById('content')
+          const nextRow = next?.querySelector(`#${CSS.escape(row.id)}`) ?? (await rowByName(row))
+          if (!next || !nextRow) throw new Error('no row')
+          // The notice above the list can grow or shrink the page: the row stays where it is on the
+          // screen (the browser does it by itself, except at the top of the page).
+          const top = row.getBoundingClientRect().top
+          updateFrame(next)
+          replaceRow(row, nextRow)
+          const moved = document.getElementById(row.id).getBoundingClientRect().top - top
+          if (Math.abs(moved) >= 1) window.scrollBy(0, moved)
+        } catch {
+          location.assign(landed.href)
+        }
       } finally {
         // The old row, when it is still on screen (an error): it can be tried again.
         row.removeAttribute('aria-busy')

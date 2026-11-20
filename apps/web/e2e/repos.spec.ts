@@ -421,6 +421,15 @@ test.describe('the Repos screen', () => {
       await expect(rowOf(page, 'zz-05').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
       await expect(rowOf(page, 'zz-05').locator('.row-menu > summary')).toBeFocused()
 
+      // Saved, but its row cannot be read (the network goes after the change): no message of a
+      // failure; the browser goes to the screen of the redirect (Kentō #e074d4).
+      await page.route(/\/repos\?q=/, (route) => route.abort())
+      await rowOf(page, 'zz-07').getByRole('button', { name: 'Enable zz-07' }).click()
+      await page.waitForURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-/)
+      await page.unroute(/\/repos\?q=/)
+      await expect(page.getByRole('status').filter({ hasText: 'zz-07 is enabled.' })).toBeVisible()
+      await expect(page.locator('.row-error')).toHaveCount(0)
+
       // A row at the top of the screen: the page does not move either.
       await page.goto('/repos?q=zz-')
       await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
@@ -467,7 +476,7 @@ test.describe('the Repos screen', () => {
         route.fulfill({ status: 303, headers: { Location: '/no-such-screen?done=disabled' } }),
       )
       await row.getByRole('button', { name: 'Disable zz-18' }).click()
-      await page.waitForURL(/\/no-such-screen\?done=disabled$/)
+      await page.waitForURL(/\/no-such-screen\?done=disabled#repo-[0-9a-f-]+$/)
       await page.unroute('**/repos/*/disable*')
       // The route answered in place of the server: zz-18 is still enabled.
       await page.goto('/repos?q=zz-')
