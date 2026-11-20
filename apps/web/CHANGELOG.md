@@ -19,12 +19,6 @@ Each entry says, when it applies:
 
 ## Unreleased
 
-### Fixed
-
-- `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
-  HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
-  your reverse proxy runs on another machine, publish the port on a private address.
-
 - **Migrations**: none (still 29).
 - **Order**: the service, then the runners (the engine changes).
 - **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
@@ -40,6 +34,12 @@ Each entry says, when it applies:
     `PGSSLNEGOTIATION`, new options of version 4.
 
   Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
+
+### Fixed
+
+- `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
+  HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
+  your reverse proxy runs on another machine, publish the port on a private address.
 
 ### Security
 
