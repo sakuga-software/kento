@@ -3,8 +3,9 @@
 #   cp .env.example .env    # then fill it in: see apps/web/DEPLOY.md, section 4
 #   docker compose up -d --build
 #
-# GitHub must reach the webhook over HTTPS. Put a TLS reverse proxy in front of port 3000 and set
-# KENTO_PUBLIC_URL to its origin. The runner shares the network of `web` and calls it on
+# GitHub must reach the webhook over HTTPS. Put a TLS reverse proxy on this machine in front of
+# 127.0.0.1:3000 and set KENTO_PUBLIC_URL to its origin. Port 3000 listens on 127.0.0.1 only:
+# Docker opens a published port in the firewall itself, so ufw does not close 3000:3000. The runner shares the network of `web` and calls it on
 # http://localhost:3000: the runner accepts plain HTTP only on localhost.
 
 services:
@@ -32,7 +33,7 @@ services:
     environment:
       DATABASE_URL: postgresql://kento:${POSTGRES_PASSWORD}@postgres:5432/kento
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
