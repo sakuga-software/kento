@@ -682,7 +682,7 @@ summary.button::-webkit-details-marker {
 
 /*
  * A field: its label, its control, then its hint or its error. The label keeps the line height of
- * the old `.field-label`, so that a form keeps its vertical rhythm.
+ * 16 px that labels had before KNT-143, so that a form keeps its vertical rhythm.
  */
 .field-label {
   color: var(--ink);
