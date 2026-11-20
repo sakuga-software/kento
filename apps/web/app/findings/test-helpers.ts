@@ -7,8 +7,8 @@ export const EMPTY_PAGE: FindingScreenPage = {
   counts: { open: 0, fixed: 0, dismissed: 0, wontfix: 0, stale: 0, closed: 0, all: 0 },
   matching: 0,
   offset: 0,
-  next: null,
-  previous: null,
+  page: 1,
+  pages: 1,
 }
 
 export const EMPTY_REPORT: PrecisionReport = {

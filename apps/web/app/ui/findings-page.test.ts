@@ -7,7 +7,7 @@ import { describe, it } from 'remix/test'
 
 import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
 import type { BulkStatus, StatusOutcome } from '../findings/dismiss.ts'
-import type { FindingRow } from '../findings/screen.ts'
+import type { FindingRow, FindingScreenPage } from '../findings/screen.ts'
 import { EMPTY_PAGE, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
@@ -25,12 +25,16 @@ function finding(id: string, title: string): FindingRow {
   }
 }
 
-function setup(outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, missing: 0, failed: 0, replied: 2, unreplied: 0 }, empty = false) {
+function setup(
+  outcome: StatusOutcome = { changed: 2, unchanged: 0, fixed: 0, missing: 0, failed: 0, replied: 2, unreplied: 0 },
+  empty = false,
+  paging: Partial<FindingScreenPage> = {},
+) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let rows = [finding(A, 'Key read with no expiry'), { ...finding(B, 'Error swallowed'), considered: true }, { ...finding(C, 'Already fixed'), status: 'fixed' as const }]
-  let { store, lists } = fakeFindingsScreenStore({ page: empty ? EMPTY_PAGE : { ...EMPTY_PAGE, rows, counts: { ...EMPTY_PAGE.counts, open: 2, all: 2 }, matching: 2 } })
+  let { store, lists } = fakeFindingsScreenStore({ page: empty ? EMPTY_PAGE : { ...EMPTY_PAGE, rows, counts: { ...EMPTY_PAGE.counts, open: 2, all: 2 }, matching: 2, ...paging } })
   let calls: { orgId: string; ids: string[]; status: BulkStatus; reason: string | null; actor: string }[] = []
   let router = createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
@@ -148,18 +152,33 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.equal(lists.length, before)
   })
 
-  it('drops a cursor that does not decode, from the query and from the links (REV-91)', async () => {
+  it('shows the numbered pager with the filters and the search, 1,234 written with its comma (KNT-148)', async () => {
+    let { request, signIn } = setup(undefined, false, { offset: 1225, matching: 1234, page: 50, pages: 50 })
+    let { cookie, html } = await signIn()
+    assert.match(html, /<nav aria-label="Pages of the list" class="pager pager-numbered">/)
+    assert.match(html, /1,226 to 1,228 of 1,234 findings/)
+    assert.match(html, /href="\/findings\?status=all&amp;priority=major&amp;page=49" rel="prev"/)
+    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major&amp;page=50" aria-current="page" class="button button-small pager-page">/)
+    // Page 1 drops `page` from the link; the last page has no "Next".
+    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major" class="button button-small pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
+    assert.doesNotMatch(html, /rel="next"/)
+    // A tab or a filter starts again at page 1.
+    assert.doesNotMatch(html, /href="\/findings\?status=open[^"]*page=/)
+    html = await (await request('/findings?status=all&priority=major&page=50', { cookie })).text()
+    assert.match(html, /<input type="hidden" name="back" value="status=all&amp;priority=major&amp;page=50" \/>/)
+  })
+
+  it('reads ?page=n, drops a page that is not one and the old cursors, and keeps the page in `back` (KNT-148)', async () => {
     let { request, signIn, lists } = setup()
     let { cookie } = await signIn()
-    let html = await (await request('/findings?status=all&after=not-a-cursor&before=%E2%9C%97', { cookie })).text()
-    assert.equal(lists.at(-1)!.after, null)
-    assert.equal(lists.at(-1)!.before, null)
+    let html = await (await request('/findings?status=all&page=abc&after=x&before=y', { cookie })).text()
+    assert.equal(lists.at(-1)!.page, 1)
     // The tabs, the statuses and the `back` of the actions are built from the list: no cursor in them.
-    assert.doesNotMatch(html, /href="[^"]*(?:after|before)=/)
+    assert.doesNotMatch(html, /href="[^"]*(?:after|before|page)=/)
     assert.match(html, /<input type="hidden" name="back" value="status=all" \/>/)
-    let good = Buffer.from(`2026-11-01T10:00:00.000000Z|${A}`).toString('base64url')
-    await request(`/findings?after=${good}`, { cookie })
-    assert.equal(lists.at(-1)!.after, good)
+    html = await (await request('/findings?status=all&page=3', { cookie })).text()
+    assert.equal(lists.at(-1)!.page, 3)
+    assert.match(html, /<input type="hidden" name="back" value="status=all&amp;page=3" \/>/)
   })
 
   it('loads findings.js once on the list, for an admin and a member, and not on "Precision" (REV-91)', async () => {
