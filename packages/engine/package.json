@@ -2,6 +2,7 @@
   "name": "@sakuga-review/engine",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "The engine of Sakuga Review: pack, model call, findings and rendering of a review. No GitHub API.",
   "type": "module",
   "exports": {

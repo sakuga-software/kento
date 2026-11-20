@@ -35,6 +35,11 @@ Each entry says, when it applies:
 
   Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
 
+### Changed
+
+- Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
+  the runner says so in `org.opencontainers.image.licenses`.
+
 ### Fixed
 
 - `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain

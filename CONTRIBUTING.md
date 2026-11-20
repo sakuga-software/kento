@@ -2,7 +2,8 @@
 
 Thank you for your interest. This page says how to report a problem and how to propose a change.
 
-License: to be decided.
+Kentō is under the [GNU Affero General Public License v3.0 only](LICENSE). Each contribution comes
+under the same license, with a sign-off (see [Sign your commits](#sign-your-commits)).
 
 By taking part, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -41,7 +42,8 @@ the tests against Postgres, the tests of the screens in a browser, and the migra
    [apps/web/DEPLOY.md](apps/web/DEPLOY.md) for a new variable or permission, and the
    `Unreleased` section of [apps/web/CHANGELOG.md](apps/web/CHANGELOG.md) for a change that an
    operator sees.
-6. Open the pull request and fill in its template.
+6. Sign off each commit (below).
+7. Open the pull request and fill in its template.
 
 The title of a pull request becomes the message of the squashed commit. It follows
 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), in English:
@@ -54,6 +56,19 @@ type(scope): imperative lowercase summary
 - `scope`: the area that the change touches, short (`engine`, `web`, `runner`, `publish`,
   `deploy`). No scope for `ci`.
 - For example: `fix(publish): keep the block of the description when the body changed`.
+
+## Sign your commits
+
+Each commit carries a `Signed-off-by` line with your name and email. With it, you certify the
+[Developer Certificate of Origin 1.1](https://developercertificate.org/): you wrote the change, or
+you have the right to submit it under the license of the project.
+
+```
+git commit -s
+```
+
+Add `-s` to each commit. To sign the commits of a branch that you already wrote, run
+`git rebase --signoff main`, then push again.
 
 ## Conventions
 

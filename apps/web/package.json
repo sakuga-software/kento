@@ -2,6 +2,7 @@
   "name": "@sakuga-review/web",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Kentō web service: GitHub webhooks, runner API and settings, on review.sakuga.dev.",
   "scripts": {
