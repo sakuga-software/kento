@@ -453,6 +453,17 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /No closed finding over 30 days/)
   })
 
+  it('puts "Updated at · Refresh" in the page header at the right of the title, out of the part that the refresh replaces (KNT-141)', async () => {
+    for (let user of [OCTOCAT, CAMILLE]) {
+      let { signIn } = setup()
+      let { html } = await signIn(user)
+      let header = html.slice(html.indexOf('<div class="page-header">'), html.indexOf('id="dashboard-live"'))
+      assert.match(header, /<h1 class="page-title">Dashboard<\/h1><\/div><div class="page-meta"><p class="dash-updated"><span data-updated="[^"]+">Updated at /)
+      assert.match(header, /<a href="\/">Refresh<\/a><\/p><\/div>/)
+      assert.equal(html.match(/data-updated=/g)?.length, 1, 'one stamp on the page')
+    }
+  })
+
   it('shows the same dashboard to a member, without the retry buttons', async () => {
     let { signIn } = setup()
     let { html } = await signIn(CAMILLE)
