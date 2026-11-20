@@ -194,7 +194,9 @@ describe('the Repos screen', () => {
 
     let member = (await signIn(CAMILLE)).html
     assert.match(member, /Read only<\/strong>/)
-    assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation|repo-toggle\.js/)
+    assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation|repo-toggle\.js|notice-slot/)
+    // KNT-147: an admin gets the live region of the notices on every load, empty with no notice.
+    assert.match(admin, /<div role="status" class="notice-slot"><\/div>/)
   })
 
   it('enables a repository for an admin, with CSRF, and says what the next push does', async () => {

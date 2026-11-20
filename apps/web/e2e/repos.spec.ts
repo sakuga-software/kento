@@ -545,6 +545,29 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('a row that leaves the last page of a list: the pager of an earlier page is not copied (Kentō #fcb2e3)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 893000 + g, 'sakuga-software/pc-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 51) g where full_name = 'sakuga-software/orchard'`
+      await page.goto('/repos?filter=disabled&q=pc-&page=3')
+      await expect(page.locator('.pager-range')).toHaveText('51 to 51 of 51')
+      // 50 left: the server shows page 2 of 2, not the page 3 on screen.
+      await rowOf(page, 'pc-51').getByRole('button', { name: 'Enable pc-51' }).click()
+      await expect(page.locator('.notice-slot')).toContainText('pc-51 is enabled.')
+      await expect(page.locator('.pager')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toBeVisible()
+      await expect(rowOf(page, 'pc-51').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+    } finally {
+      await sql`delete from repos where github_repo_id between 893001 and 893051`
+      await sql.end()
+    }
+  })
+
   test('a server that does not answer: the row says so after the timeout (KNT-147)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)

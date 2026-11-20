@@ -62,11 +62,16 @@
   // The row left the list on screen (another filter, another page): the list of the server is not
   // the one on screen any more. The pager and its range come from the server, and a line says so,
   // with a link that reads the page again. Without it, "Next" would skip the rows that moved up.
+  // The pager of the server is copied only when it is on the page on screen: a list that got shorter
+  // can send the server to an earlier page, and its range and current page would then not match the
+  // table. Then the pager goes, and the line offers the reload (Kentō #fcb2e3).
+  const currentPage = (root) => root.querySelector('.pager [aria-current="page"]')?.textContent.replace(/\D/g, '') ?? '1'
   const listChanged = (next) => {
     const wrap = content.querySelector('.table-wrap')
     if (!wrap) return
     const pager = content.querySelector('.pager')
-    const nextPager = next.querySelector('.pager')
+    let nextPager = next.querySelector('.pager')
+    if (nextPager && currentPage(next) !== currentPage(content)) nextPager = null
     if (pager && nextPager) pager.replaceWith(document.importNode(nextPager, true))
     else if (pager) pager.remove()
     else if (nextPager) wrap.after(document.importNode(nextPager, true))

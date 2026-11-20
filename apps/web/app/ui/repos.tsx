@@ -170,9 +170,12 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         {/* KNT-147: a live region on every load, empty when there is no notice. repo-toggle.js fills
             it after a change in place: a screen reader reads a change of its content, not a region
             that comes in already filled. */}
-        <div class="notice-slot" role="status">
-          {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} /> : null}
-        </div>
+        {admin || (notice && notice.kind !== 'check_failed') ? (
+          // Only for an admin when empty: a member has the "Read only" status, and changes nothing.
+          <div class="notice-slot" role="status">
+            {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+          </div>
+        ) : null}
 
 
         <p class="repos-summary" aria-live="polite">
