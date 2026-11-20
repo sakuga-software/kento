@@ -337,7 +337,12 @@ export function createAuth(kit: UiKit) {
         }
         // A sign-in from a session that was already signed in (another account, or the same one)
         // keeps nothing of it: its row goes.
-        if (previous) await auth.store.deleteSession(previous.sessionId)
+        // The new session is written: a failure to delete the old row is logged, never a lost sign-in.
+        if (previous) {
+          await auth.store.deleteSession(previous.sessionId).catch((error: unknown) => {
+            log('warn', 'auth.previous_session_not_deleted', { error: errorMessage(error) })
+          })
+        }
         let done = withCookiesOf(answer.headers, localPath(`${location.pathname}${location.search}`))
         // The login of an earlier refusal has no use now.
         if (refusedCookie) done.headers.append('Set-Cookie', await clearRefused())
