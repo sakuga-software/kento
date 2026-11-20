@@ -396,6 +396,20 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(count!.n, 1)
   })
 
+  it('KNT-150: two checks of the same GitHub admin at the same time keep the org with an owner', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let admin = await insertUser(211, 'twice')
+    await store.saveMembership(admin, acme, 'admin', 'github')
+    let now = Date.now()
+    // Both requests read `admin` before the lock; each one takes the lock in turn.
+    let roles_ = await Promise.all([saveGitHubRole(store, admin, acme, 'admin', 'admin', now), saveGitHubRole(store, admin, acme, 'admin', 'admin', now)])
+    assert.deepEqual(roles_, ['owner', 'owner'])
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
+    // Three at the same time: still the owner.
+    await Promise.all([1, 2, 3].map(() => saveGitHubRole(store, admin, acme, 'admin', 'admin', now)))
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
+  })
+
   it('KNT-150: lists only the orgs of a membership from an invitation as invited', async () => {
     let acme = await insertOrgRow(database.sql, 'acme', 11)
     let globex = await insertOrgRow(database.sql, 'globex', 12)

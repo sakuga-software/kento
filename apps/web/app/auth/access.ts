@@ -106,7 +106,9 @@ export async function saveGitHubRole(
   // The role that the row holds after the write: an invitation made in between keeps its own.
   if (github !== 'admin' || role === 'owner') return store.saveMembership(userId, orgId, role, 'github')
   return store.withOrgLock(orgId, async (locked) => {
-    let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS))) ? 'admin' : 'owner'
+    // Another active owner, not this person: a second request of the same admin at the same time
+    // finds its own row as owner, and keeps it.
+    let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS), userId)) ? 'admin' : 'owner'
     return locked.saveMembership(userId, orgId, next, 'github')
   })
 }

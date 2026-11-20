@@ -127,8 +127,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       let user = tables.users!.find((u) => Number(u.githubId) === githubId)
       return user ? orgs.filter((org) => rows().some((m) => m.userId === user.id && m.orgId === org.id && m.source === 'invitation')) : []
     },
-    async hasOwner(orgId, since) {
-      return rows().some((m) => m.orgId === orgId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime())
+    async hasOwner(orgId, since, exceptUserId) {
+      return rows().some(
+        (m) => m.orgId === orgId && m.userId !== exceptUserId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime(),
+      )
     },
     async withOrgLock(_orgId, work) {
       return work(store)
