@@ -88,7 +88,22 @@ const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'Daily', month: 'Monthly' 
  * the repositories inherit, the trusted bots, and the state of the GitHub App. An admin edits; a
  * member reads everything.
  */
-export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: boolean; csrf: string }>) {
+/**
+ * KNT-168. At the end of a section on a phone: back to the bar "Sections" at the top of the page,
+ * which opens the list (settings.js). Hidden where the sidebar stays in view. Without JavaScript the
+ * link leads to the list, which is part of the page.
+ */
+export function SectionsLink(handle: Handle<{ section: string }>) {
+  return () => (
+    <p class="settings-back">
+      <a href="#settings-nav" data-settings-back={handle.props.section}>
+        Sections
+      </a>
+    </p>
+  )
+}
+
+export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: boolean; csrf: string; back: boolean }>) {
   return () => {
     let props = handle.props
     let { view, now, notice, admin } = props
@@ -121,9 +136,13 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
         {notice ? <Notice notice={notice} /> : null}
         <div class="org-settings">
           <CapSection {...props} />
+          {props.back ? <SectionsLink section="cap" /> : null}
           <DefaultsSection {...props} />
+          {props.back ? <SectionsLink section="defaults" /> : null}
           <BotsSection {...props} />
+          {props.back ? <SectionsLink section="bots" /> : null}
           <AppSection {...props} />
+          {props.back ? <SectionsLink section="app" /> : null}
         </div>
       </>
     )

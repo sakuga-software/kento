@@ -182,7 +182,7 @@ test.describe('the settings of the org', () => {
     await page.goto('/settings')
     let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
     let mobile = info.project.name === 'mobile'
-    // Under 900 px the list is folded under "Section …"; on a desktop it stays in view on the left.
+    // Under 900 px the list is folded under "Sections"; on a desktop it stays in view on the left.
     await expect(nav.locator('[data-settings-nav-toggle]')).toBeVisible({ visible: mobile })
     await expect(nav.getByRole('link', { name: 'Costs and cap' })).toBeVisible({ visible: !mobile })
     for (let [name, id] of [
@@ -208,7 +208,8 @@ test.describe('the settings of the org', () => {
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
       await page.evaluate(() => window.scrollTo(0, 0))
     }
-    // The sidebar marks the section on screen, and the part on screen under it (folded on a phone).
+    // The sidebar marks the section on screen, and the part on screen under it. On a phone, the list
+    // marks the section and the part chosen in it (KNT-168).
     await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).toHaveAttribute('aria-current', 'location')
     await expect(nav.locator('[aria-current="location"]')).toHaveCount(1)
     await goToSettingsLink(page, 'heavy')
@@ -216,10 +217,10 @@ test.describe('the settings of the org', () => {
     await expect(nav.getByRole('link', { name: 'heavy', exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
     await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).not.toHaveAttribute('aria-current', /.*/)
     if (mobile) {
-      // The button names the section on screen, and the list is folded again after a link.
+      // The list is folded again after a link. KNT-168: the button names no section.
       let toggle = nav.locator('[data-settings-nav-toggle]')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      await expect(nav.locator('[data-settings-nav-current]')).toHaveText('Levels and models')
+      await expect(toggle).toHaveText('Sections')
       // KNT-164. Tab past the last link: the list stays open (a disclosure in the page), and the
       // field that gets the focus is on screen.
       await toggle.click()
@@ -261,6 +262,47 @@ test.describe('the settings of the org', () => {
     await toggle.focus()
     await page.keyboard.press('Escape')
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // KNT-168. On a phone the bar is at the top of the page. Each section ends with "Sections": the
+  // link leads back to the bar, opens the list on that section, and gives the focus to the button.
+  test('on a phone, "Sections" at the end of a section opens the list on that section', async ({ page }, info) => {
+    let errors = watchConsole(page)
+    let mobile = info.project.name === 'mobile'
+    await signIn(page, 'octocat')
+    await page.goto('/settings#app')
+    let back = page.locator('a[data-settings-back="app"]')
+    // A desktop has its sidebar in view: no link back.
+    await expect(back).toBeVisible({ visible: mobile })
+    test.skip(!mobile, 'the links back exist under 900 px only')
+    await back.scrollIntoViewIfNeeded()
+    await back.click()
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    let toggle = nav.locator('[data-settings-nav-toggle]')
+    await expect(page).toHaveURL(/\/settings#settings-nav$/)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(toggle).toBeFocused()
+    await expect(toggle).toBeInViewport()
+    await expect(nav.getByRole('link', { name: 'GitHub App' })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.locator('[aria-current]')).toHaveCount(1)
+    // Tab goes on into the list; a choice leads to the section, and the list marks it.
+    await page.keyboard.press('Tab')
+    await expect(nav.getByRole('link', { name: 'Costs and cap' })).toBeFocused()
+    await nav.getByRole('link', { name: 'Trusted bots' }).click()
+    await expect(page).toHaveURL(/\/settings#bots$/)
+    await expect(page.locator('#bots')).toBeInViewport()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav.getByRole('link', { name: 'Trusted bots', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    // The scroll does not move the mark of a phone: the list is never next to the section.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await page.waitForTimeout(200)
+    await expect(nav.getByRole('link', { name: 'Trusted bots', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    // The last section, at the bottom of a long page, leads back too.
+    await page.locator('a[data-settings-back="providers"]').click()
+    await expect(toggle).toBeInViewport()
+    await expect(nav.getByRole('link', { name: 'Providers and keys' })).toHaveAttribute('aria-current', 'location')
+    await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
   })
 
   test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {

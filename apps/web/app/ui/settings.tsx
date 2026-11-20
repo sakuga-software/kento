@@ -11,7 +11,7 @@ import { Confirm } from './confirm.tsx'
 import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
-import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
+import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, SectionsLink, type OrgSectionProps } from './org-settings.tsx'
 import { canAddRule, RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -85,6 +85,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     let sections = settingsSections({ org: org ?? null, rules: rules ? { count: rules.list.length } : null, providers, admin })
+    // KNT-168. With a sidebar, each section ends with a link back to the bar "Sections" of a phone.
+    let back = sections.length >= 2
     return (
       <Shell
         frame={frame}
@@ -133,10 +135,10 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
 
         {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px.
             The alerts of a refused key stay above it, in reach of the keyboard. */}
-        <div class={sections.length >= 2 ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
+        <div class={back ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
           <SettingsNav sections={sections} />
           <div class="settings-content">
-        {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
+        {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} back={back} /> : null}
 
         {rules ? (
           <section class="card config-card" id="org-rules" aria-labelledby="org-rules-title" tabIndex={-1}>
@@ -159,6 +161,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
             />
           </section>
         ) : null}
+        {rules && back ? <SectionsLink section="org-rules" /> : null}
 
         {providers ? (
           <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
@@ -205,6 +208,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
+        {providers && back ? <SectionsLink section="providers" /> : null}
           </div>
         </div>
         <script src={`/assets/settings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -279,22 +283,20 @@ export function settingsSections(input: {
 
 /**
  * KNT-149. The sidebar of the settings, in place of the tabs of REV-91: one link per section, and
- * the parts of each section under it. It stays in view while the page scrolls. Under 900 px it is
- * a bar at the top of the page, "Section …", that opens the list under it (settings.js). Without
- * JavaScript the list is part of the page. settings.js marks the section and the part on screen
- * with aria-current.
+ * the parts of each section under it. It stays in view while the page scrolls, and settings.js
+ * marks the section and the part on screen with aria-current. Under 900 px it is a bar at the top of
+ * the page, "Sections", that opens the list under it (settings.js). There, the marks show the section
+ * that the person chose or came back from (KNT-168). Without JavaScript the list is part of the page.
  */
 function SettingsNav(handle: Handle<{ sections: SettingsNavSection[] }>) {
   return () => {
     let { sections } = handle.props
     if (sections.length < 2) return null
     return (
-      <nav class="settings-nav" aria-label="Sections of the settings" data-settings-nav="">
+      <nav class="settings-nav" id="settings-nav" aria-label="Sections of the settings" data-settings-nav="" tabIndex={-1}>
+        {/* KNT-168: the bar names no section. At the top of the page, it would only ever name the first one. */}
         <button class="settings-nav-toggle" type="button" aria-expanded="false" aria-controls="settings-nav-list" data-settings-nav-toggle="">
-          <span class="settings-nav-toggle-label">Section</span>
-          <span class="settings-nav-toggle-current" data-settings-nav-current="">
-            {sections[0]!.label}
-          </span>
+          <span class="settings-nav-toggle-label">Sections</span>
         </button>
         <ul class="settings-nav-list" id="settings-nav-list">
           {sections.map((section) => (

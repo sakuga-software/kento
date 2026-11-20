@@ -31,7 +31,6 @@
   // section on screen gets aria-current="location", the link of its part on screen aria-current="true".
   const nav = document.querySelector('[data-settings-nav]')
   const toggle = nav?.querySelector('[data-settings-nav-toggle]')
-  const currentLabel = nav?.querySelector('[data-settings-nav-current]')
   const targetOf = (link) => document.getElementById(link.getAttribute('href').slice(1))
   const sections = []
   for (const item of nav?.querySelectorAll('.settings-nav-list > li') ?? []) {
@@ -46,7 +45,7 @@
     sections.push({ link, target, parts })
   }
 
-  // Under 900 px, "Section …" at the top of the page opens the list under it; a link folds it again.
+  // Under 900 px, "Sections" at the top of the page opens the list under it; a link folds it again.
   const setOpen = (open) => {
     if (!nav || !toggle) return
     nav.classList.toggle('settings-nav-open', open)
@@ -98,11 +97,33 @@
     if (row.top < box.top) nav.scrollTop -= box.top - row.top + 8
     else if (row.bottom > box.bottom) nav.scrollTop += row.bottom - box.bottom + 8
   }
+  // KNT-168. Under 900 px the list is at the top of the page: the section on screen is never the
+  // one under the list. There, the marks show the section that the person chose in the list, or
+  // came back from with its link "Sections", and the scroll does not move them.
+  const phone = () => !!toggle && getComputedStyle(toggle).display !== 'none'
+  const markChoice = (link) => {
+    const section = sections.find((entry) => entry.link === link || entry.parts.some((part) => part.link === link) || entry.target.id === link?.dataset?.settingsBack)
+    mark(sections, section ?? null, 'location')
+    for (const other of sections) mark(other.parts, other === section ? other.parts.find((part) => part.link === link) ?? null : null, 'true')
+  }
+  nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
+    const link = event.target instanceof Element ? event.target.closest('a') : null
+    if (link && phone()) markChoice(link)
+  })
+  // "Sections" at the end of a section: the link leads to the bar; the list opens on that section,
+  // and the focus goes to the button, so that Tab goes on into the list.
+  document.addEventListener('click', (event) => {
+    const back = event.target instanceof Element ? event.target.closest('[data-settings-back]') : null
+    if (!back || !phone()) return
+    setOpen(true)
+    markChoice(back)
+    requestAnimationFrame(() => toggle.focus({ preventScroll: true }))
+  })
   const update = () => {
+    if (phone()) return
     const section = pick(sections) ?? sections[0]
     mark(sections, section, 'location')
     for (const other of sections) mark(other.parts, other === section ? pick(other.parts) : null, 'true')
-    if (currentLabel && section) currentLabel.textContent = section.link.textContent
     const deepest = nav?.querySelector('a[aria-current="true"]') ?? section?.link
     if (deepest && deepest !== shown) keepInView(deepest)
     shown = deepest

@@ -292,6 +292,8 @@ describe('the section "Providers and keys"', () => {
     assert.doesNotMatch(page, /Sections of the settings/)
     // Without the sidebar, the page keeps its column of 760 px (kento.css: only .settings-layout-nav widens it).
     assert.match(page, /<div class="settings-layout">/)
+    // KNT-168: no link back to a bar that is not there.
+    assert.doesNotMatch(page, /data-settings-back/)
     assert.match(page, /src="\/assets\/settings\.js\?v=/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     let open = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
@@ -442,6 +444,8 @@ describe('the sidebar of the settings (KNT-149)', () => {
       let ids = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!)
       assert.deepEqual(ids, [...expected], profile.login)
       assert.match(html, /<div class="settings-layout settings-layout-nav">/)
+      // KNT-168: the rules and the providers end with a link back to the bar of a phone.
+      assert.deepEqual([...html.matchAll(/data-settings-back="([^"]+)"/g)].map((m) => m[1]), ['org-rules', 'providers'], profile.login)
       for (let id of ids) assert.match(html, new RegExp(`<[a-z]+ [^>]*\\bid="${id}"`), `#${id} is on the page for ${profile.login}`)
     }
   })
