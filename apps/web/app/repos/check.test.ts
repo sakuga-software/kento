@@ -62,7 +62,7 @@ function fakeGitHub(now?: () => number) {
       return { token: 'ghs_check', expiresAt: '2027-01-01T00:00:00Z' }
     },
   })
-  return { check, calls, mints, saved, targets }
+  return { check, calls, mints, saved, targets, fetch }
 }
 
 /** What the Repos screen knows of the checks of its org: one repository. */
@@ -100,6 +100,32 @@ describe('the check of the repositories on GitHub', () => {
       { orgId: 'org-1', installationId: 'installation-1' },
       { orgId: 'org-1', installationId: 'installation-2' },
     ])
+  })
+
+  it('KNT-150: checks the other installations of the org when one of them fails, then fails', async () => {
+    let { fetch, targets } = fakeGitHub()
+    let gone = { id: 'installation-0', githubInstallationId: 10, login: 'gone' }
+    let check = createRepoCheck({
+      store: {
+        list: async () => {
+          throw new Error('the check does not list')
+        },
+        fullName: async () => null,
+        setEnabled: async () => null,
+        async saveCheck(target) {
+          targets.push(target)
+        },
+      },
+      apiUrl: 'https://api.github.test',
+      fetch,
+      async mintInstallationToken(target) {
+        // An installation removed on GitHub, whose event was lost.
+        if (target.installationId === 10) throw new Error('GitHub answered 404 for an installation token')
+        return { token: 'ghs_check', expiresAt: '2027-01-01T00:00:00Z' }
+      },
+    })
+    await assert.rejects(check.run({ ...ORG, installations: [gone, ...ORG.installations] }), /404/)
+    assert.deepEqual(targets, [{ orgId: 'org-1', installationId: 'installation-1' }], 'the live installation is still read')
   })
 
   it('starts in the background only when the rows are old or never checked, once at a time', async () => {
