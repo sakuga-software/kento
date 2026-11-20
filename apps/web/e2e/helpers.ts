@@ -11,6 +11,36 @@ export async function expectNoAxeViolations(page: Page) {
   expect(summary, 'axe violations').toEqual([])
 }
 
+/**
+ * KNT-143. The text of every visible button-like link or summary contrasts with its own background
+ * (4.5:1 at least). axe reports a link with `background-color` on itself as "incomplete", not as a
+ * violation: an ink-on-ink primary link passed it.
+ */
+export async function expectReadableButtons(page: Page) {
+  let bad = await page.evaluate(() => {
+    let rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number)
+    let luminance = ([r, g, b]: number[]) => {
+      let [R, G, B] = [r!, g!, b!].map((c) => {
+        let s = c / 255
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!
+    }
+    let out: string[] = []
+    for (let el of document.querySelectorAll<HTMLElement>('a.button, summary.button')) {
+      if (el.offsetParent === null) continue
+      let style = getComputedStyle(el)
+      let bg = rgb(style.backgroundColor)
+      if (bg.length === 4 && bg[3] === 0) continue
+      let [a, b] = [luminance(rgb(style.color)), luminance(bg)].sort((x, y) => y - x)
+      let ratio = (a! + 0.05) / (b! + 0.05)
+      if (ratio < 4.5) out.push(`${el.textContent?.trim()}: ${style.color} on ${style.backgroundColor} (${ratio.toFixed(2)}:1)`)
+    }
+    return out
+  })
+  expect(bad, 'button-like links with unreadable text').toEqual([])
+}
+
 /** Collects the errors of the console (a CSP violation is one), for a check at the end of a test. */
 export function watchConsole(page: Page): string[] {
   let errors: string[] = []

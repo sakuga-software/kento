@@ -108,6 +108,11 @@
 
 /* The native elements that HeroUI draws with other markup in React. */
 @layer components {
+  /* `hidden` until a script shows it: the `display` of `.button` would beat the one of the browser. */
+  .button[hidden] {
+    display: none;
+  }
+
   /* A link or the <summary> of a <details> that looks like a button. */
   a.button {
     text-decoration: none;
@@ -236,5 +241,36 @@
   .checkbox:has(input:disabled),
   .radio:has(input:disabled) {
     @apply status-disabled;
+  }
+}
+
+/*
+ * Forced colors (Windows High Contrast). The browser drops the box-shadow of the focus ring and the
+ * backgrounds that draw a check mark or a dot. The native checkbox and radio button come back, and a
+ * focused control gets an outline in the colour of the system.
+ */
+@media (forced-colors: active) {
+  @layer components {
+    .check {
+      appearance: auto;
+    }
+    .check::before {
+      display: none;
+    }
+    .checkbox__control > input,
+    .radio__control > input {
+      opacity: 1;
+    }
+    /* The selectors of the focus state of HeroUI, so that this outline wins over its `outline: none`. */
+    .button:focus-visible:not([data-focused]),
+    .input:focus,
+    .textarea:focus,
+    .select__trigger:focus-visible:not([data-focused]),
+    .check:focus-visible,
+    .checkbox__control > input:focus-visible,
+    .radio__control > input:focus-visible {
+      outline: 2px solid Highlight;
+      outline-offset: 2px;
+    }
   }
 }

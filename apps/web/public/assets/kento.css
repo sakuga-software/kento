@@ -425,6 +425,13 @@ kbd,
 .button {
   text-decoration: none;
 }
+/*
+ * A link that looks like a button takes the colour of its variant. Without this, `a { color }` above
+ * (unlayered) beats the layered `.button` of HeroUI: ink on the ink of a primary button.
+ */
+a.button {
+  color: revert-layer;
+}
 /* Fields: the full width of their column, up to a readable line. */
 .input,
 .textarea,

@@ -24,7 +24,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 - `public/assets/heroui.css` (KNT-143): the form controls of [HeroUI](https://heroui.com) v3 without
   React, built from `styles/heroui.css` by `css:build` and committed (the service has no build step).
   `app/ui/controls.tsx` writes them (`Button`, `buttonClass`, `Input`, `Textarea`, `Select`,
-  `Choice`, `Field`); their colours are the tokens of `kento.css`.
+  `Choice`, `Check`, `Field`); their colours are the tokens of `kento.css`. Licences:
+  `public/assets/LICENSE-HeroUI.txt` (Apache-2.0) and `public/assets/LICENSE-TailwindCSS.txt` (MIT).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.

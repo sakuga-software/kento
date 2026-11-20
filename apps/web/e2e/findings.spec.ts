@@ -119,6 +119,31 @@ test.describe('the Findings screen', () => {
     await expect(bar).toBeHidden()
   })
 
+  // KNT-143: in forced colors (Windows High Contrast), the browser drops the drawn check mark, dot
+  // and focus ring of HeroUI. The native inputs come back, and the focus has an outline.
+  test('in forced colors, the checkboxes and radio buttons are native, and the focus has an outline', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    await page.emulateMedia({ forcedColors: 'active' })
+    await page.goto('/findings')
+    let row = page.getByRole('checkbox', { name: /Finding 01/ })
+    await row.check()
+    expect(await row.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
+    let radio = page.locator('input[type=radio][name=reason]').first()
+    expect(await radio.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+    // Keyboard focus, from the search field to the first box of a row.
+    await page.locator('#findings-q').focus()
+    expect(await page.locator('#findings-q').evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    for (let i = 0; i < 30 && !(await page.evaluate(() => document.activeElement?.matches('input.check') ?? false)); i++) {
+      await page.keyboard.press('Tab')
+    }
+    let focused = await page.evaluate(() => {
+      let el = document.activeElement as HTMLElement
+      return { check: el.matches('input.check'), outline: getComputedStyle(el).outlineStyle }
+    })
+    expect(focused).toEqual({ check: true, outline: 'solid' })
+  })
+
   test('an admin dismisses two findings "Off topic": both threads get the reply, and the reason counts two more', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'octocat')
