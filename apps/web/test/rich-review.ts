@@ -1,5 +1,5 @@
 // A review with every kind of text that the bot posts, published on the fake GitHub.
-import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 
 import { createGitHub } from '../app/publish/github.ts'

@@ -2,7 +2,7 @@
 import { hostname } from 'node:os';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isProviderKind, PROVIDER_KINDS, type ProviderKind } from '@sakuga-review/protocol';
+import { isProviderKind, PROVIDER_KINDS, type ProviderKind } from '@kento/protocol';
 
 export type Config = {
   /** The web service, for example https://review.sakuga.dev. */

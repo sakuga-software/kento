@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 
-import { MAX_JOB_RULES, UUID as LOWER_UUID } from '@sakuga-review/protocol'
+import { MAX_JOB_RULES, UUID as LOWER_UUID } from '@kento/protocol'
 
 import { toDate } from '../db/rows.ts'
 import type { RuleValues, SeverityFloor } from './model.ts'

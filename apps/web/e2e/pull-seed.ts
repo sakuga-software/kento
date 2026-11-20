@@ -8,7 +8,7 @@
 //   before R3. R3 and R4 leave it out.
 // - D "SQL query built by concatenation": posted by R2, absent from R3 (its file did not
 //   change), kept by octocat (wontfix) before R4.
-import { findingKey } from '@sakuga-review/engine/findings'
+import { findingKey } from '@kento/engine/findings'
 import type postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
