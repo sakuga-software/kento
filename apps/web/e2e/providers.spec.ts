@@ -38,7 +38,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
   let db = sql()
   try {
     await signIn(page, 'octocat')
-    let [org] = await db<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+    let [org] = await db<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
     await db`delete from providers where org_id = ${org!.id}`
 
@@ -71,8 +71,8 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     // 3. A trusted runner of the org claims a job, and gets the key with it.
     let runnerToken = await trustedRunner(page, request, `providers-runner-${project}`)
     let [repo] = await db<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${org!.id}, ${project === 'desktop' ? 71001 : 71002}, ${`sakuga-software/providers-${project}`}, true)
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), ${project === 'desktop' ? 71001 : 71002}, ${`sakuga-software/providers-${project}`}, true)
       on conflict (github_repo_id) do update set enabled = true returning id`
     let [job] = await db<{ id: string }[]>`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repo!.id}, 'lite', 7, ${'c'.repeat(40)}, 'main') returning id`
@@ -189,7 +189,7 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
     // KNT-164: with labels of 18 px, the field in error of a phone went under the sticky bar.
     await withLabelLineHeight(page, '18px')
     await signIn(page, 'octocat')
-    let [org] = await db<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+    let [org] = await db<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
     await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
     await db`delete from providers where org_id = ${org!.id}`
 
