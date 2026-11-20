@@ -168,7 +168,7 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
     return (
       <form class="feedback-filters" method="get" action={feedbackRoutes.feedback.href()} role="search" aria-label="Filter the feedback">
         <div class="findings-filter">
-          <label class="label" for="feedback-repo">
+          <label class="field-label" for="feedback-repo">
             Repo
           </label>
           <Select id="feedback-repo" name="repo">
@@ -183,7 +183,7 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
           </Select>
         </div>
         <div class="findings-filter">
-          <label class="label" for="feedback-source">
+          <label class="field-label" for="feedback-source">
             Source
           </label>
           <Select id="feedback-source" name="source">
@@ -198,7 +198,7 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
           </Select>
         </div>
         <div class="findings-filter">
-          <label class="label" for="feedback-kind">
+          <label class="field-label" for="feedback-kind">
             Author
           </label>
           <Select id="feedback-kind" name="author">

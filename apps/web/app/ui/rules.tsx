@@ -90,7 +90,7 @@ function Message(handle: Handle<{ id: string; error?: string; hint?: string }>) 
       )
     }
     return hint ? (
-      <p class="description" id={`${id}-hint`}>
+      <p class="field-hint" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null
@@ -107,7 +107,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
       <>
         <FormErrors errors={errors} />
         <div class="field">
-          <label class="label" for={id('title')}>
+          <label class="field-label" for={id('title')}>
             Title
           </label>
           <Input
@@ -123,7 +123,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           <Message id={id('title')} error={errors.title} />
         </div>
         <div class="field">
-          <label class="label" for={id('body')}>
+          <label class="field-label" for={id('body')}>
             What the rule asks for
           </label>
           <Textarea
@@ -144,7 +144,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           />
         </div>
         <div class="field">
-          <label class="label" for={id('paths')}>
+          <label class="field-label" for={id('paths')}>
             Paths
           </label>
           <Textarea
@@ -165,7 +165,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           />
         </div>
         <div class="field">
-          <label class="label" for={id('severityFloor')}>
+          <label class="field-label" for={id('severityFloor')}>
             Lowest priority of a finding of this rule
           </label>
           <Select
