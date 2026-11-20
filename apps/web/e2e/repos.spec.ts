@@ -391,10 +391,12 @@ test.describe('the Repos screen', () => {
       await page.goto('/repos?q=zz-')
       // A row far down the page: the case of the ticket.
       let row = rowOf(page, 'zz-18')
-      await row.scrollIntoViewIfNeeded()
-      await page.evaluate(() => window.scrollBy(0, -120))
-      let y = await page.evaluate(() => window.scrollY)
-      expect(y).toBeGreaterThan(200)
+      await row.getByRole('button', { name: 'Enable zz-18' }).scrollIntoViewIfNeeded()
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+      // Where the row is on the screen: the notice above it can grow the page, and the browser then
+      // scrolls by as much (scroll anchoring), so the row does not move on screen.
+      let top = async () => Math.round((await rowOf(page, 'zz-18').boundingBox())!.y)
+      let before = await top()
       // A mark on the window: a reload would lose it.
       await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
 
@@ -404,22 +406,31 @@ test.describe('the Repos screen', () => {
       await expect(row.locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
       await expect(row.getByRole('button', { name: 'Enable zz-18' })).toHaveCount(0)
       expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
-      // The enabled rows come first: the row moved up, out of the screen. It comes back into view,
-      // marked, with the focus on its menu; the top of the page (y = 0) is not where it goes.
+      // The row keeps its place until the next load, marked; the page does not scroll.
       await expect(row).toBeInViewport()
       await expect(row).toHaveClass(/\brow-changed\b/)
       await expect(row.locator('.row-menu > summary')).toBeFocused()
+      expect(Math.abs((await top()) - before)).toBeLessThan(4)
+      // The counts of the screen follow.
+      await expect(page.getByRole('link', { name: /^Enabled/ }).locator('.list-filter-count')).toHaveText('1')
 
-      // A row that stays on screen: the page does not move at all.
+      // In "Not enabled", the row leaves the filter: it stays on screen until the next load.
+      await page.goto('/repos?filter=disabled&q=zz-')
+      await rowOf(page, 'zz-05').getByRole('button', { name: 'Enable zz-05' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-05 is enabled.' })).toBeAttached()
+      await expect(rowOf(page, 'zz-05').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(rowOf(page, 'zz-05').locator('.row-menu > summary')).toBeFocused()
+
+      // A row at the top of the screen: the page does not move either.
       await page.goto('/repos?q=zz-')
       await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
-      let first = rowOf(page, 'zz-01')
-      await first.getByRole('button', { name: 'Enable zz-01' }).scrollIntoViewIfNeeded()
-      let still = await page.evaluate(() => window.scrollY)
-      await first.getByRole('button', { name: 'Enable zz-01' }).click()
-      await expect(page.getByRole('status').filter({ hasText: 'zz-01 is enabled.' })).toBeAttached()
-      await expect(rowOf(page, 'zz-01').locator('.row-menu > summary')).toBeFocused()
-      expect(Math.abs((await page.evaluate(() => window.scrollY)) - still)).toBeLessThan(4)
+      let first = rowOf(page, 'zz-02')
+      await first.getByRole('button', { name: 'Enable zz-02' }).scrollIntoViewIfNeeded()
+      let still = Math.round((await first.boundingBox())!.y)
+      await first.getByRole('button', { name: 'Enable zz-02' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-02 is enabled.' })).toBeAttached()
+      await expect(rowOf(page, 'zz-02').locator('.row-menu > summary')).toBeFocused()
+      expect(Math.abs(Math.round((await rowOf(page, 'zz-02').boundingBox())!.y) - still)).toBeLessThan(4)
       row = rowOf(page, 'zz-18')
 
       // Disable, in place too: the row goes back to "none", with its "Enable" focused.
