@@ -97,7 +97,7 @@ Their source is `kento` and their reviewer is `kento-review[bot]`: they count in
 profile of the results, never in the independent recall. Keep them in their own file:
 
 ```bash
-DATABASE_URL=... pnpm -F @sakuga-review/web bench:cases "$INTERNAL_BENCH/internal/subset-kento.json" --weeks 12
+DATABASE_URL=... pnpm -F @kento/web bench:cases "$INTERNAL_BENCH/internal/subset-kento.json" --weeks 12
 node eval/martian/run.ts --subset "$INTERNAL_BENCH/internal/subset-kento.json" ...
 ```
 

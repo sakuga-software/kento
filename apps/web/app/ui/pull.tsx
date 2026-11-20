@@ -1,4 +1,4 @@
-import { isOneOf, LEVELS, type Level } from '@sakuga-review/protocol'
+import { isOneOf, LEVELS, type Level } from '@kento/protocol'
 import type { Handle } from 'remix/component'
 
 import { assignmentLine } from '../assignment/model.ts'

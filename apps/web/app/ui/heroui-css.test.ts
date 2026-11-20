@@ -20,12 +20,12 @@ function cli(): string {
 }
 
 describe('public/assets/heroui.css', () => {
-  it('is the build of styles/heroui.css (run `pnpm -F @sakuga-review/web css:build`)', () => {
+  it('is the build of styles/heroui.css (run `pnpm -F @kento/web css:build`)', () => {
     let dir = mkdtempSync(join(tmpdir(), 'kento-heroui-'))
     try {
       let out = join(dir, 'heroui.css')
       execFileSync(process.execPath, [cli(), '--input', 'styles/heroui.css', '--output', out, '--minify'], { cwd: WEB, stdio: 'pipe' })
-      assert.ok(readFileSync(out, 'utf8') === COMMITTED, 'public/assets/heroui.css is stale: run pnpm -F @sakuga-review/web css:build')
+      assert.ok(readFileSync(out, 'utf8') === COMMITTED, 'public/assets/heroui.css is stale: run pnpm -F @kento/web css:build')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

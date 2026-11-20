@@ -3,7 +3,7 @@
 // paged: at most PAGE_MAX rows, and a cursor for the next page.
 //
 // Each read takes the org of the session: a finding of another org is never found.
-import { UUID } from '@sakuga-review/protocol'
+import { UUID } from '@kento/protocol'
 import type postgres from 'postgres'
 
 export const FINDING_STATUSES = ['open', 'fixed', 'stale', 'dismissed', 'wontfix'] as const

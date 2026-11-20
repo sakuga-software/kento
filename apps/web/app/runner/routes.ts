@@ -1,4 +1,4 @@
-import { PATHS } from '@sakuga-review/protocol'
+import { PATHS } from '@kento/protocol'
 import { post, route } from 'remix/routes'
 
 /** The runner API. packages/protocol describes each message. */

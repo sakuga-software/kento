@@ -3,7 +3,7 @@
 /*
  * KNT-143. The form controls of every screen take the look of HeroUI v3, without React: the
  * framework-agnostic CSS of @heroui/styles on native elements (`button`, `input`, `select`,
- * `textarea`). `pnpm -F @sakuga-review/web css:build` writes public/assets/heroui.css from this
+ * `textarea`). `pnpm -F @kento/web css:build` writes public/assets/heroui.css from this
  * file; app/ui/heroui-css.test.ts fails when the committed file is not up to date.
  *
  * Scope:
