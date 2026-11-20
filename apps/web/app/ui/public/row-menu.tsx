@@ -62,18 +62,35 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
    */
   let afterClose: (() => void) | null = null
   let details: HTMLDetailsElement | null = null
+  let box: HTMLElement | null = null
+  /**
+   * A click outside closes the menu, and the menu then gives the focus back to "…", a frame or two
+   * later: it would take it from the field, or the other menu, that the person just clicked (Kentō
+   * CI, repos.spec "Search shows at the keyboard"). That one call to `focus()` of "…" is dropped:
+   * the focus stays where the click put it.
+   */
+  let dropFocus = false
+  let focusTrigger = () => trigger && HTMLElement.prototype.focus.call(trigger, { preventScroll: true })
   handle.queueTask(async () => {
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        let inside = event.target instanceof Node && !!box?.contains(event.target)
+        dropFocus = !inside && trigger?.getAttribute('aria-expanded') === 'true'
+      },
+      { capture: true, signal: handle.signal },
+    )
     enhanced = true
     // The focus was in the `<details>` (a row that repo-toggle.js swapped focuses its "…"): it goes to the new button.
     let focused = details?.contains(document.activeElement) ?? false
     await handle.update()
-    if (focused) trigger?.focus({ preventScroll: true })
+    if (focused) focusTrigger()
   })
 
   let closeConfirm = async (focus: boolean) => {
     confirming = false
     await handle.update()
-    if (focus) trigger?.focus()
+    if (focus) focusTrigger()
   }
 
   // A link of the menu: a plain click goes through the menu (it closes, then the page changes); a
@@ -112,7 +129,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
     let id = `${handle.id}-trigger`
     return (
       <popover.Context>
-        <span class="row-menu-box" mix={popover.anchor({ placement: 'bottom-end', offset: 4 })}>
+        <span class="row-menu-box" mix={[ref((node) => (box = node)), popover.anchor({ placement: 'bottom-end', offset: 4 })]}>
           <menu.Context label={`Actions of ${name}`}>
             <button
               type="button"
@@ -120,7 +137,14 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
               class="row-menu-trigger"
               aria-label={`Actions of ${name}`}
               mix={[
-                ref((node) => (trigger = node)),
+                ref((node) => {
+                  trigger = node
+                  let focus = node.focus.bind(node)
+                  node.focus = (options?: FocusOptions) => {
+                    if (dropFocus) dropFocus = false
+                    else focus(options)
+                  }
+                }),
                 menu.trigger({ placement: 'bottom-end', offset: 4 }),
                 on('focus', () => {
                   let next = afterClose
