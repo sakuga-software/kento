@@ -557,6 +557,41 @@ kbd,
   }
 }
 
+/* KNT-144. The bar at the top of the window while the next page loads (public/assets/progress.js), in
+   the spirit of nprogress. The script adds it after 120 ms, so a fast page shows none. It grows fast,
+   then slows down near 90 %: the next page replaces it. */
+.nav-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 100;
+  height: 3px;
+  background: var(--shu);
+  box-shadow: 0 0 6px var(--shu);
+  transform-origin: left center;
+  pointer-events: none;
+  animation: nav-progress 12s cubic-bezier(0.1, 0.6, 0.2, 1) forwards;
+}
+@keyframes nav-progress {
+  0% {
+    transform: scaleX(0);
+  }
+  4% {
+    transform: scaleX(0.3);
+  }
+  25% {
+    transform: scaleX(0.65);
+  }
+  100% {
+    transform: scaleX(0.9);
+  }
+}
+/* No motion: the whole bar at once, still. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress {
+    animation: none;
+  }
+}
+
 /* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */
 .bar {
   position: relative;
