@@ -143,7 +143,8 @@
   .radio__control > input {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    /* Over the indicator of HeroUI (z-index 10): the pointer reaches the input. */
+    z-index: 20;
     width: 100%;
     height: 100%;
     margin: 0;
