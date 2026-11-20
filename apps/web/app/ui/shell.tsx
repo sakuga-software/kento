@@ -4,7 +4,7 @@ import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Button, Select } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
-import { THEME_LABELS, THEMES, type Theme } from './theme.ts'
+import type { Theme } from './theme.ts'
 
 /** The screens of the navigation, in its order. */
 export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
@@ -44,7 +44,7 @@ export interface PageFrame {
   viewer: Viewer | null
   /** The CSRF token of the session, for the forms of the frame. Null without a session. */
   csrfToken: string | null
-  /** The path of the page, where the theme form comes back to without JavaScript. */
+  /** The path of the page, where the forms of the frame come back to without JavaScript. */
   path: string
 }
 
@@ -68,7 +68,8 @@ export interface ShellProps {
 /**
  * The frame of every screen (REV-91): the bar with the mark, the screens, the org and the avatar;
  * under 760 px, "Menu" opens the list (public/assets/frame.js). Then the page header, the "Read
- * only" notice for a member, and the foot: "Kentō x.y.z · by Sakuga", the theme and the sign-out.
+ * only" notice for a member, and the foot: "Kentō x.y.z · by Sakuga" and the sign-out. The theme is
+ * on the screen of the user (KNT-142).
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
@@ -141,10 +142,7 @@ export function Shell(handle: Handle<ShellProps>) {
 
         <footer class="footer">
           <p>Kentō {frame.version} · by Sakuga</p>
-          <div class="footer-settings">
-            <ThemeSwitch frame={frame} />
-            {viewer ? <Who frame={frame} viewer={viewer} /> : null}
-          </div>
+          {viewer ? <Who frame={frame} viewer={viewer} /> : null}
         </footer>
       </Document>
     )
@@ -157,33 +155,6 @@ function Mark(_handle: Handle<{}>) {
       <Logo />
     </a>
   )
-}
-
-/** Paper / Sumi / Device. public/assets/theme.js applies a choice at once; without it, "Apply". */
-export function ThemeSwitch(handle: Handle<{ frame: PageFrame }>) {
-  return () => {
-    let { frame } = handle.props
-    return (
-      <form method="post" action={routes.theme.href()} data-theme-switch="">
-        {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
-        <input type="hidden" name="returnTo" value={frame.path} />
-        <fieldset class="theme-switch">
-          <legend>Theme</legend>
-          <div class="segmented">
-            {THEMES.map((theme) => (
-              <label>
-                <input type="radio" name="theme" value={theme} checked={theme === frame.theme} />
-                {THEME_LABELS[theme]}
-              </label>
-            ))}
-          </div>
-          <Button type="submit">
-            Apply
-          </Button>
-        </fieldset>
-      </form>
-    )
-  }
 }
 
 /** The org on screen; a select when the person is a member of several. frame.js sends a choice at once. */

@@ -380,7 +380,7 @@ describe('the section "Providers and keys"', () => {
     let { request, signIn } = setup([provider()])
     let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings?notice=<script>&detail=Pirate', { cookie })).text()
-    // The URL is only in the escaped `returnTo` of the theme form; no banner says it.
+    // No banner says what the URL writes.
     assert.doesNotMatch(html, /role="status"/)
     assert.doesNotMatch(html, /<script>/)
   })
