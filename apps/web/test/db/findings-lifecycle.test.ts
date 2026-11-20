@@ -371,6 +371,33 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'fixed', 'reopened'])
   })
 
+  it('resolves the thread of a fixed finding with a token that can write the contents', async () => {
+    fake.state.canResolve = true
+    fake.state.resolveNeedsWrite = true
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    await push(HEADS[1]!, [], ['src/sum.ts'])
+
+    let [thread] = fake.botThreads()
+    assert.equal((await findingRows())[0]!.status, 'fixed')
+    assert.ok(fake.state.resolved.has(thread!.id), 'the thread of the fixed finding is resolved')
+    assert.doesNotMatch(fake.state.sent.join('\n'), /The thread can be resolved/)
+    let writers = fake.state.tokens.filter((t) => t.permissions.contents === 'write')
+    assert.equal(writers.length, 1, 'one token with contents: write, for the thread only')
+  })
+
+  it('leaves the thread of a fixed finding open, with a reply, when the App cannot write the contents', async () => {
+    fake.state.canResolve = true
+    fake.state.resolveNeedsWrite = true
+    fake.state.readOnly.add('contents')
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    await push(HEADS[1]!, [], ['src/sum.ts'])
+
+    let [thread] = fake.botThreads()
+    assert.equal((await findingRows())[0]!.status, 'fixed')
+    assert.ok(!fake.state.resolved.has(thread!.id))
+    assert.match(fake.state.sent.join('\n'), /The thread can be resolved/)
+  })
+
   it('keeps open a finding not found again on a file that did not change', async () => {
     await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES], ['src/sum.ts', 'src/div.ts'])
     await push(HEADS[1]!, [DIVIDES], ['src/div.ts'])

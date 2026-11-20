@@ -501,7 +501,7 @@ describe('commands in the comments of a pull request', () => {
         // The runner clones with `contents: read`; the service read the threads with its own token.
         let perms = fake.state.tokens.map((t) => JSON.stringify(t.permissions))
         assert.ok(perms.includes(JSON.stringify({ contents: 'read' })))
-        assert.ok(perms.includes(JSON.stringify({ pull_requests: 'read' })))
+        assert.ok(perms.includes(JSON.stringify({ contents: 'read', pull_requests: 'read' })))
         assert.equal(job.installationToken.token.includes('pull_requests'), false)
 
         let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: resolved() })
@@ -607,8 +607,8 @@ describe('commands in the comments of a pull request', () => {
           job.threads?.map((t) => [t.id, t.comments.map((c) => [c.author, c.isBot, c.body])]),
           [[`PRRT_${refuted}`, [['kento-review', true, '**`sum` not imported**'], ['octocat', false, 'False positive: line 1 imports `sum`.']]]],
         )
-        // The service read the threads with a token that reads the pull requests only.
-        assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'read' })))
+        // The service read the threads with a token that reads the contents and the pull requests only.
+        assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ contents: 'read', pull_requests: 'read' })))
       })
 
       it('18r1. REV-95: a review job carries the findings of the pull request that a person set aside, for a runner that reads them', async () => {
@@ -695,7 +695,7 @@ describe('commands in the comments of a pull request', () => {
       })
 
       describe('REV-92: the token that reads the threads', () => {
-        const READS_THREADS = JSON.stringify({ pull_requests: 'read' })
+        const READS_THREADS = JSON.stringify({ contents: 'read', pull_requests: 'read' })
         const threadTokens = () => fake.state.tokens.filter((t) => JSON.stringify(t.permissions) === READS_THREADS)
         const cloneTokens = () => fake.state.tokens.filter((t) => JSON.stringify(t.permissions) === JSON.stringify({ contents: 'read' }))
 
@@ -714,7 +714,7 @@ describe('commands in the comments of a pull request', () => {
           app = router()
         })
 
-        it('18e. two review claims on the same repository mint one `pull_requests: read` token', async () => {
+        it('18e. two review claims on the same repository mint one token that reads the threads', async () => {
           let first = await reviewClaim()
           let second = await reviewClaim()
           assert.equal(threadTokens().length, 1)

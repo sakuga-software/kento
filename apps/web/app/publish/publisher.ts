@@ -149,8 +149,11 @@ type QueueNotice = {
 /** The reaction to the comment of a command. On a pull request, GitHub needs `pull_requests: write`. */
 const REACTION_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
 
-/** Read the threads, reply in them, post the summary and react: no `contents`. */
-export const RESOLVE_PERMISSIONS: TokenPermissions = { pull_requests: 'write', issues: 'write' }
+/**
+ * Read the threads, reply in them, post the summary and react. `contents: read` because GitHub gives
+ * the `originalCommit` of a comment only to a token that can read the contents.
+ */
+export const RESOLVE_PERMISSIONS: TokenPermissions = { contents: 'read', pull_requests: 'write', issues: 'write' }
 /**
  * GitHub resolves a review thread only for a token that can write the contents. The service asks for
  * it only here, for this repository, at the moment it resolves; never for a runner.
@@ -301,6 +304,16 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       review,
       {
         checks,
+        async threadWriter() {
+          try {
+            let writeToken = await deps.mintInstallationToken({ ...target, permissions: RESOLVE_THREAD_PERMISSIONS })
+            return createGitHub({ apiUrl: deps.apiUrl, token: writeToken.token, fetch: deps.fetch })
+          } catch (error) {
+            // The App does not have `contents: write`: the reply in the thread says that a person can resolve it.
+            log('warn', 'review.write_token_refused', { reviewId: row.id, error: errorMessage(error) })
+            return null
+          }
+        },
         marker: row.id,
         assignment: readJobAssignment(row.jobConfig),
         assignmentUnread: readUnreadPathRules(row.jobConfig),

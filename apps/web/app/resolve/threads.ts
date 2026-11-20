@@ -9,8 +9,11 @@ import { reviewThreadPages } from '../github/graphql.ts'
 import type { TokenPermissions } from '../github/installation-token.ts'
 import type { GitHub } from '../publish/github.ts'
 
-/** Read the review threads. Nothing else. */
-export const THREADS_PERMISSIONS: TokenPermissions = { pull_requests: 'read' }
+/**
+ * Read the review threads. Nothing else. GitHub gives the `originalCommit` of a comment only to a
+ * token that can read the contents.
+ */
+export const THREADS_PERMISSIONS: TokenPermissions = { contents: 'read', pull_requests: 'read' }
 
 // A long thread keeps its first comment and its newest ones: the reply of a resolve, with its marker,
 // is among the newest.
