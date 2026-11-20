@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
-import { RUNNER_TOKEN_PREFIX } from '@sakuga-review/protocol'
+import { RUNNER_TOKEN_PREFIX } from '@kento/protocol'
 
 /**
  * A registration token of the Runners screen starts with this prefix: the service tells it from the

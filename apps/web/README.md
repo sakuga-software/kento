@@ -198,32 +198,32 @@ From the root of the repository:
 ```sh
 pnpm install
 docker run -d --name kento-pg --rm -e POSTGRES_PASSWORD=postgres -p 127.0.0.1:55432:5432 postgres:18.3
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @sakuga-review/web dev
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento/web dev
 ```
 
 | Command                                    | Does                                                         |
 | ------------------------------------------ | ------------------------------------------------------------ |
-| `pnpm -F @sakuga-review/web lint`          | oxlint                                                       |
-| `pnpm -F @sakuga-review/web typecheck`     | `tsc --noEmit`                                               |
-| `pnpm -F @sakuga-review/web test`          | Unit tests, no database.                                     |
-| `pnpm -F @sakuga-review/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
-| `pnpm -F @sakuga-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
-| `pnpm -F @sakuga-review/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @sakuga-review/web exec playwright install chromium` once. |
-| `pnpm -F @sakuga-review/web design:board`  | Writes the frames of the design boards from the components, into `design/` at the root. That folder stays out of git. |
-| `pnpm -F @sakuga-review/web measures`      | REV-112. The weekly measures of the findings of every org (handled rate, reject rate, calibration, findings for each pull request), from `DATABASE_URL`, read-only. `--weeks 12`, `--json`. |
-| `pnpm -F @sakuga-review/web bench:cases <out.json>` | REV-112. The cases of the bench from the findings, from `DATABASE_URL`, read-only. See [eval/README.md](../../eval/README.md). |
+| `pnpm -F @kento/web lint`          | oxlint                                                       |
+| `pnpm -F @kento/web typecheck`     | `tsc --noEmit`                                               |
+| `pnpm -F @kento/web test`          | Unit tests, no database.                                     |
+| `pnpm -F @kento/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
+| `pnpm -F @kento/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |
+| `pnpm -F @kento/web e2e`           | The screens in Chromium, with axe, at 1440 and 390 px, signed in through a fake GitHub (`e2e/fake-github.ts`, port 3499). Needs `E2E_DATABASE_URL` (a throwaway database: the server migrates it) and `pnpm -F @kento/web exec playwright install chromium` once. |
+| `pnpm -F @kento/web design:board`  | Writes the frames of the design boards from the components, into `design/` at the root. That folder stays out of git. |
+| `pnpm -F @kento/web measures`      | REV-112. The weekly measures of the findings of every org (handled rate, reject rate, calibration, findings for each pull request), from `DATABASE_URL`, read-only. `--weeks 12`, `--json`. |
+| `pnpm -F @kento/web bench:cases <out.json>` | REV-112. The cases of the bench from the findings, from `DATABASE_URL`, read-only. See [eval/README.md](../../eval/README.md). |
 
 `test:db` creates one throwaway database per test file on the server of `TEST_DATABASE_URL`, and
 drops it at the end:
 
 ```sh
-TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @sakuga-review/web test:db
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kento/web test:db
 ```
 
 ## Migrations
 
 1. Change `app/db/schema.ts`.
-2. `pnpm -F @sakuga-review/web db:generate --name <what>`: writes `drizzle/NNNN_<what>.sql` and its
+2. `pnpm -F @kento/web db:generate --name <what>`: writes `drizzle/NNNN_<what>.sql` and its
    snapshot. Read the SQL, and commit it with the schema.
 3. The next start applies it, in one transaction, under an advisory lock (two instances that start
    together migrate one after the other). A migration already applied is skipped.

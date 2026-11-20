@@ -1,5 +1,5 @@
-import { defaultModels } from '@sakuga-review/engine/levels'
-import { isProviderKind, LEVELS, MODEL_ID, type Level, type ProviderKind } from '@sakuga-review/protocol'
+import { defaultModels } from '@kento/engine/levels'
+import { isProviderKind, LEVELS, MODEL_ID, type Level, type ProviderKind } from '@kento/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
 import { idFormHelp } from '../repo-config/model.ts'

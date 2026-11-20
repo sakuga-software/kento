@@ -1,6 +1,6 @@
-import { descriptionBlock, reviewBody } from '@sakuga-review/engine/render'
-import { verdict, type ChangedLines } from '@sakuga-review/engine/findings'
-import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import { descriptionBlock, reviewBody } from '@kento/engine/render'
+import { verdict, type ChangedLines } from '@kento/engine/findings'
+import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

@@ -2,7 +2,7 @@
 // jobs one at a time until it stops.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { FEATURES, type JobKind } from '@sakuga-review/protocol';
+import { FEATURES, type JobKind } from '@kento/protocol';
 import { createApi, register, UnauthorizedError, type KentoApi } from './api.ts';
 import type { Config } from './config.ts';
 import { runJob, type JobDependencies } from './job.ts';

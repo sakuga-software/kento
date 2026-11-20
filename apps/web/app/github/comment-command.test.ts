@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { parseCommentCommand, rejectProblem, usage, usageText } from './comment-command.ts'
 import { REASON_MAX } from '../findings/store.ts'
-import { inlineBody, shortId } from '@sakuga-review/engine/render'
+import { inlineBody, shortId } from '@kento/engine/render'
 
 describe('parseCommentCommand', () => {
   it('reads the verb and the level, under both names and in any case', () => {

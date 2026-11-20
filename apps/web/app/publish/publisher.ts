@@ -8,8 +8,8 @@
 //
 // A job that failed for good gets one comment on its pull request: `jobs.failure_noticed_at`.
 // A pull request whose job waits in the queue for too long gets one comment too (REV-52, queued.ts).
-import type { Icons } from '@sakuga-review/engine/render'
-import type { ResolvePayload, ReviewPayload } from '@sakuga-review/protocol'
+import type { Icons } from '@kento/engine/render'
+import type { ResolvePayload, ReviewPayload } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { DOCS_PATH } from '../commands/hint.ts'
