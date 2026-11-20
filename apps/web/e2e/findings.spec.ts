@@ -59,16 +59,23 @@ test.describe('the Findings screen', () => {
       let tabs = page.getByRole('navigation', { name: 'Status of the findings' })
       await expect(tabs.getByRole('link', { name: /open\s*60/ })).toHaveAttribute('aria-current', 'page')
       await expect(tabs.getByRole('link', { name: /closed\s*3/ })).toBeVisible()
-      await expect(page.getByRole('rowheader')).toHaveCount(50)
-      await expect(page.getByText('1 to 50 of 60 findings')).toBeVisible()
+      await expect(page.getByRole('rowheader')).toHaveCount(25)
+      await expect(page.getByText('1 to 25 of 60 findings')).toBeVisible()
       await expect(page.getByRole('rowheader').first()).toContainText('Finding 01')
       await expectNoAxeViolations(page)
 
-      await page.getByRole('link', { name: 'Next' }).click()
+      // KNT-148: numbered pages, `?page=n`.
+      let pager = page.getByRole('navigation', { name: 'Pages of the list' })
+      await expect(pager.getByRole('link', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
+      await pager.getByRole('link', { name: 'Next' }).click()
+      await expect(page.getByText('26 to 50 of 60 findings')).toBeVisible()
+      await expect(page).toHaveURL(/[?&]page=2(&|$)/)
+      await pager.getByRole('link', { name: 'Page 3' }).click()
       await expect(page.getByText('51 to 60 of 60 findings')).toBeVisible()
       await expect(page.getByRole('rowheader')).toHaveCount(10)
-      await page.getByRole('link', { name: 'Previous' }).click()
-      await expect(page.getByText('1 to 50 of 60 findings')).toBeVisible()
+      await expect(pager.getByRole('link', { name: 'Page 3' })).toHaveAttribute('aria-current', 'page')
+      await pager.getByRole('link', { name: 'Page 1' }).click()
+      await expect(page.getByText('1 to 25 of 60 findings')).toBeVisible()
 
       // P0 only: one in three.
       // REV-91: a filter applies on change, with no "Filter" button.

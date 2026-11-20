@@ -2,17 +2,17 @@
 // count of rows allows. The screens (Repos, Findings) and their stores share these rules.
 
 /** The highest `?page=` that a list reads: past it the number is noise, and the list shows its last page. */
-export const PAGE_MAX = 100_000
+export const PAGE_NUMBER_MAX = 100_000
 
 /**
  * The number of the page in the query of a list: `?page=n`, from 1. A whole number in decimal
- * digits, with no sign and no leading zero, is a page: over `PAGE_MAX` it reads as `PAGE_MAX`, and
+ * digits, with no sign and no leading zero, is a page: over `PAGE_NUMBER_MAX` it reads as `PAGE_NUMBER_MAX`, and
  * the store shows the last page. Anything else (missing, `0`, `-1`, `2.5`, `1e3`, `abc`) gives 1.
  */
 export function readPageNumber(query: URLSearchParams): number {
   let value = query.get('page') ?? ''
   if (!/^[1-9][0-9]*$/.test(value)) return 1
-  return Math.min(Number(value), PAGE_MAX)
+  return Math.min(Number(value), PAGE_NUMBER_MAX)
 }
 
 /** The page that a list shows, from the page asked for and the rows that match. */

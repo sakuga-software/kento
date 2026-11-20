@@ -1598,14 +1598,6 @@ a.finding-title:hover {
 .status-mono {
   font-family: var(--font-mono);
 }
-.findings-pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
 
 /* REV-18. The actions on the findings checked: a bar of ink that floats at the foot of the screen. */
 .findings-bulk {
