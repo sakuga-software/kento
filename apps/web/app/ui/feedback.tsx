@@ -14,6 +14,7 @@ import {
 } from '../feedback/store.ts'
 import { mention } from '../instance.ts'
 import { feedbackRoutes } from '../routes.ts'
+import { Button, Select, buttonClass } from './controls.tsx'
 import { agoOrDate, count, plural } from './format.ts'
 import { shortName } from './precision.tsx'
 import { pullHref } from './pull.tsx'
@@ -167,10 +168,10 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
     return (
       <form class="feedback-filters" method="get" action={feedbackRoutes.feedback.href()} role="search" aria-label="Filter the feedback">
         <div class="findings-filter">
-          <label class="field-label" for="feedback-repo">
+          <label class="label" for="feedback-repo">
             Repo
           </label>
-          <select class="input" id="feedback-repo" name="repo">
+          <Select id="feedback-repo" name="repo">
             <option value="" selected={!query.repoId}>
               All repos
             </option>
@@ -179,13 +180,13 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
                 {shortName(repo.fullName, org)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="feedback-source">
+          <label class="label" for="feedback-source">
             Source
           </label>
-          <select class="input" id="feedback-source" name="source">
+          <Select id="feedback-source" name="source">
             <option value="" selected={!query.source}>
               All
             </option>
@@ -194,13 +195,13 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
                 {SOURCE_LABELS[source]}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="feedback-kind">
+          <label class="label" for="feedback-kind">
             Author
           </label>
-          <select class="input" id="feedback-kind" name="author">
+          <Select id="feedback-kind" name="author">
             <option value="" selected={!query.kind}>
               People and agents
             </option>
@@ -209,14 +210,14 @@ function FilterForm(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuer
                 {KIND_LABELS[kind]}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter-actions">
-          <button class="button" type="submit">
+          <Button type="submit">
             Filter
-          </button>
+          </Button>
           {query.repoId || query.source || query.kind ? (
-            <a class="button button-ghost" href={feedbackHref()}>
+            <a class={buttonClass('ghost')} href={feedbackHref()}>
               Clear the filters
             </a>
           ) : null}

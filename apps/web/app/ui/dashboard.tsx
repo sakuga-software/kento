@@ -3,6 +3,7 @@ import type { Handle } from 'remix/component'
 
 import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
 import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
+import { Button, buttonClass } from './controls.tsx'
 import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../db/costs.ts'
@@ -340,7 +341,7 @@ function SetupSection(handle: Handle<{ steps: SetupStep[]; admin: boolean }>) {
               </div>
               {step.action && (admin || step.state === 'done') ? (
                 <a
-                  class={`button button-small ${step.state === 'todo' && admin ? 'button-primary' : ''}`}
+                  class={buttonClass(step.state === 'todo' && admin ? 'primary' : 'outline', 'sm')}
                   href={step.action.href}
                   {...(step.action.external ? { rel: 'noreferrer', target: '_blank' } : {})}
                 >
@@ -448,7 +449,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                   </p>
                 </div>
                 <div class="todo-actions">
-                  <a class="button" href={`${routes.settings.href()}#cap`}>
+                  <a class={buttonClass()} href={`${routes.settings.href()}#cap`}>
                     {admin ? 'Change the cap' : 'See the cap'}
                   </a>
                 </div>
@@ -493,7 +494,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                   )}
                 </div>
                 <div class="todo-actions">
-                  <a class="button" href={routes.runners.href()}>
+                  <a class={buttonClass()} href={routes.runners.href()}>
                     See the runners
                   </a>
                 </div>
@@ -514,7 +515,7 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                   <p class="hint">{screen.workflowRepos.join(', ')}. Kentō does not track their findings here.</p>
                 </div>
                 <div class="todo-actions">
-                  <a class="button" href={routes.repos.href()}>
+                  <a class={buttonClass()} href={routes.repos.href()}>
                     See the repos
                   </a>
                 </div>
@@ -549,7 +550,7 @@ function StallItem(handle: Handle<{ stall: QueueStall; online: number; now: Date
           </p>
         </div>
         <div class="todo-actions">
-          <a class="button" href={routes.runners.href()}>
+          <a class={buttonClass()} href={routes.runners.href()}>
             See the runners
           </a>
         </div>
@@ -605,15 +606,15 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
                   <form class="todo-retry" method="post" action={routes.jobRetry.href({ id: banner.id })}>
                     <input type="hidden" name="_csrf" value={csrf} />
                     <input type="hidden" name="level" value={level} />
-                    <button class={`button ${level === banner.level ? 'button-primary' : ''}`} type="submit">
+                    <Button variant={level === banner.level ? 'primary' : 'outline'} type="submit">
                       Run again at {LEVEL_LABEL[level]}
                       <span class="dash-estimate">{estimate === null ? ' · unknown cost' : ` · ≈ ${usdPrecise(estimate)}`}</span>
-                    </button>
+                    </Button>
                   </form>
                 )
               })
             : null}
-          <a class="button button-ghost" href={prUrl(githubUrl, banner.repo, banner.prNumber)}>
+          <a class={buttonClass('ghost')} href={prUrl(githubUrl, banner.repo, banner.prNumber)}>
             Open the PR
           </a>
           {admin ? <DismissForm id={banner.id} csrf={csrf} label={`Hide the failure of ${banner.repo}#${banner.prNumber}`} ghost /> : null}
@@ -1103,9 +1104,9 @@ function DismissForm(handle: Handle<{ id: string; csrf: string; label: string; s
     return (
       <form method="post" action={routes.jobDismiss.href({ id })}>
         <input type="hidden" name="_csrf" value={csrf} />
-        <button class={`button ${small ? 'button-small' : ''} ${ghost ? 'button-ghost' : ''}`} type="submit" aria-label={label}>
+        <Button variant={ghost ? 'ghost' : 'outline'} size={small ? 'sm' : 'md'} type="submit" aria-label={label}>
           Hide
-        </button>
+        </Button>
       </form>
     )
   }

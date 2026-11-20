@@ -3,6 +3,7 @@
 // value, and the line of the version.
 import type { Handle, RemixNode } from 'remix/component'
 
+import { Button } from './controls.tsx'
 import { when } from './format.ts'
 
 /** The hidden fields of a versioned form: the CSRF token, the version that the page showed, the field. */
@@ -31,7 +32,7 @@ export function FieldMessage(handle: Handle<{ id: string; error?: string; hint?:
       )
     }
     return hint ? (
-      <p class="field-hint" id={`${id}-hint`}>
+      <p class="description" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null
@@ -53,9 +54,9 @@ export function ResetForm(handle: Handle<{ action: string; csrf: string | null; 
     return (
       <form method="post" action={action}>
         <VersionFields csrf={csrf} version={version} field={field} />
-        <button class="button" type="submit">
+        <Button type="submit">
           Back to the {to} value<span class="visually-hidden"> for {label}</span>
-        </button>
+        </Button>
       </form>
     )
   }

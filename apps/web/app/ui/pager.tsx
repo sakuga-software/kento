@@ -1,5 +1,6 @@
 import type { Handle } from 'remix/component'
 
+import { buttonClass } from './controls.tsx'
 import { ChevronLeftIcon, ChevronRightIcon } from './lucide.tsx'
 
 /**
@@ -50,13 +51,13 @@ export function Pager(handle: Handle<PagerProps>) {
         </p>
         <div class="pager-links">
           {page > 1 ? (
-            <a class="button button-small" href={href(page - 1)} rel="prev">
+            <a class={buttonClass('outline', 'sm')} href={href(page - 1)} rel="prev">
               <ChevronLeftIcon />
               <span class="pager-step">Previous</span>
             </a>
           ) : (
             // Not a link and not focusable: its text says that there is no page before.
-            <span class="button button-small" aria-disabled="true">
+            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
               <ChevronLeftIcon />
               <span class="pager-step">Previous</span>
               <span class="visually-hidden"> (no previous page)</span>
@@ -71,7 +72,7 @@ export function Pager(handle: Handle<PagerProps>) {
               ) : (
                 <li>
                   <a
-                    class="button button-small pager-page"
+                    class={buttonClass('outline', 'sm', 'pager-page')}
                     href={href(number)}
                     aria-current={number === page ? 'page' : undefined}
                   >
@@ -83,12 +84,12 @@ export function Pager(handle: Handle<PagerProps>) {
             )}
           </ul>
           {page < pages ? (
-            <a class="button button-small" href={href(page + 1)} rel="next">
+            <a class={buttonClass('outline', 'sm')} href={href(page + 1)} rel="next">
               <span class="pager-step">Next</span>
               <ChevronRightIcon />
             </a>
           ) : (
-            <span class="button button-small" aria-disabled="true">
+            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
               <span class="pager-step">Next</span>
               <span class="visually-hidden"> (no next page)</span>
               <ChevronRightIcon />

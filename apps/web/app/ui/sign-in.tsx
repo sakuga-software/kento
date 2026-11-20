@@ -1,5 +1,6 @@
 import type { Handle } from 'remix/component'
 
+import { buttonClass } from './controls.tsx'
 import { Document } from './document.tsx'
 import { AlertIcon, ExternalIcon, GitHubIcon, Logo } from './icons.tsx'
 import type { Theme } from './theme.ts'
@@ -94,12 +95,12 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                 ) : null}
                 {refused ? (
                   <div class="signin-actions">
-                    <a class="button button-primary button-large" href={switchHref ?? signInHref!}>
+                    <a class={buttonClass('primary', 'lg')} href={switchHref ?? signInHref!}>
                       <GitHubIcon />
                       Switch GitHub account
                     </a>
                     {installHref ? (
-                      <a class="button button-large" href={installHref} rel="noreferrer" target="_blank">
+                      <a class={buttonClass('outline', 'lg')} href={installHref} rel="noreferrer" target="_blank">
                         Install Kentō on an organization
                         <ExternalIcon />
                         <span class="visually-hidden">(GitHub, new tab)</span>
@@ -110,7 +111,7 @@ export function SignInPage(handle: Handle<SignInPageProps>) {
                     </p>
                   </div>
                 ) : signInHref ? (
-                  <a class="button button-primary button-large" href={signInHref}>
+                  <a class={buttonClass('primary', 'lg')} href={signInHref}>
                     <GitHubIcon />
                     Continue with GitHub
                   </a>

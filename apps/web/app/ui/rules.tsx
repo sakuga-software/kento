@@ -6,6 +6,7 @@ import { FLOOR_LABELS, leftOutReason, RULE_FIELDS, type RuleField, type Severity
 import { MAX_RULES, type RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { Button, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { count, when } from './format.ts'
 import { AlertIcon, CheckIcon } from './icons.tsx'
@@ -89,7 +90,7 @@ function Message(handle: Handle<{ id: string; error?: string; hint?: string }>) 
       )
     }
     return hint ? (
-      <p class="field-hint" id={`${id}-hint`}>
+      <p class="description" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null
@@ -106,11 +107,10 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
       <>
         <FormErrors errors={errors} />
         <div class="field">
-          <label class="field-label" for={id('title')}>
+          <label class="label" for={id('title')}>
             Title
           </label>
-          <input
-            class="input"
+          <Input
             id={id('title')}
             name="title"
             value={values.title ?? ''}
@@ -123,11 +123,11 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           <Message id={id('title')} error={errors.title} />
         </div>
         <div class="field">
-          <label class="field-label" for={id('body')}>
+          <label class="label" for={id('body')}>
             What the rule asks for
           </label>
-          <textarea
-            class="input rule-body-input"
+          <Textarea
+            class="rule-body-input"
             id={id('body')}
             name="body"
             rows={4}
@@ -136,7 +136,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
             aria-invalid={errors.body ? 'true' : undefined}
             aria-describedby={describedBy(id('body'), errors.body, true)}
             value={values.body ?? ''}
-          ></textarea>
+          ></Textarea>
           <Message
             id={id('body')}
             error={errors.body}
@@ -144,11 +144,11 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           />
         </div>
         <div class="field">
-          <label class="field-label" for={id('paths')}>
+          <label class="label" for={id('paths')}>
             Paths
           </label>
-          <textarea
-            class="input mono config-paths rule-paths-input"
+          <Textarea
+            class="mono config-paths rule-paths-input"
             id={id('paths')}
             name="paths"
             rows={3}
@@ -157,7 +157,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
             aria-invalid={errors.paths ? 'true' : undefined}
             aria-describedby={describedBy(id('paths'), errors.paths, true)}
             value={values.paths ?? ''}
-          ></textarea>
+          ></Textarea>
           <Message
             id={id('paths')}
             error={errors.paths}
@@ -165,11 +165,11 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
           />
         </div>
         <div class="field">
-          <label class="field-label" for={id('severityFloor')}>
+          <label class="label" for={id('severityFloor')}>
             Lowest priority of a finding of this rule
           </label>
-          <select
-            class="input rule-floor-input"
+          <Select
+            wrapperClass="rule-floor-input"
             id={id('severityFloor')}
             name="severityFloor"
             {...focusIf(first, 'severityFloor')}
@@ -184,7 +184,7 @@ function RuleFields(handle: Handle<{ prefix: string; values: Record<string, stri
                 {FLOOR_LABELS[floor]}
               </option>
             ))}
-          </select>
+          </Select>
           <Message
             id={id('severityFloor')}
             error={errors.severityFloor}
@@ -232,9 +232,9 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
               <form method="post" action={routes.ruleSave.href({ id: rule.id })} class="rule-form" noValidate>
                 <Hidden csrf={csrf} repoId={repoId} version={rule.version} />
                 <RuleFields prefix={prefix} values={mine?.values ?? valuesOf(rule)} errors={mine?.errors ?? {}} />
-                <button class="button button-primary" type="submit">
+                <Button variant="primary" type="submit">
                   Save<span class="visually-hidden"> the rule {rule.title}</span>
-                </button>
+                </Button>
               </form>
             ) : (
               <dl class="config-facts">
@@ -271,10 +271,10 @@ function RuleItem(handle: Handle<{ rule: RuleView; props: RulesListProps }>) {
                 <form method="post" action={routes.ruleActive.href({ id: rule.id })}>
                   <Hidden csrf={csrf} repoId={repoId} version={rule.version} />
                   <input type="hidden" name="active" value={rule.active ? 'false' : 'true'} />
-                  <button class="button" type="submit">
+                  <Button type="submit">
                     {rule.active ? 'Disable' : 'Enable again'}
                     <span class="visually-hidden"> the rule {rule.title}</span>
-                  </button>
+                  </Button>
                 </form>
                 <Confirm
                   trigger={
@@ -344,13 +344,13 @@ export function RulesList(handle: Handle<RulesListProps>) {
         )}
         {canAddRule(admin, rules.length) ? (
           <details class="rule-new" id={`${scope}-rule-new`} open={newForm !== null || rules.length === 0}>
-            <summary class="button">New rule</summary>
+            <summary class={buttonClass()}>New rule</summary>
             <form method="post" action={routes.ruleAdd.href()} class="rule-form" noValidate>
               <Hidden csrf={csrf} repoId={repoId} />
               <RuleFields prefix={`${scope}-rule-new`} values={newForm?.values ?? {}} errors={newForm?.errors ?? {}} />
-              <button class="button button-primary" type="submit">
+              <Button variant="primary" type="submit">
                 Add the rule
-              </button>
+              </Button>
             </form>
           </details>
         ) : admin ? (

@@ -3,6 +3,7 @@ import type { Handle } from 'remix/component'
 import type { FindingDetail } from '../pulls/finding.ts'
 import { pullRoutes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { Button } from './controls.tsx'
 import { DismissDialog } from './dismiss-dialog.tsx'
 
 /** What the detail of a finding says after a decision, from `?done=` and `?github=`. */
@@ -59,9 +60,9 @@ export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: st
         {decided ? (
           <form method="post" action={pullRoutes.findingReopen.href({ id: finding.id })}>
             <input type="hidden" name="_csrf" value={csrf} />
-            <button class="button" type="submit">
+            <Button type="submit">
               Reopen
-            </button>
+            </Button>
           </form>
         ) : (
           <>

@@ -21,6 +21,9 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
 - `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
   the frame. A screen writes a token name, never a colour value.
+- `app/ui/controls.tsx` (KNT-143): the form controls, native elements (`Button`, `buttonClass`,
+  `Input`, `Textarea`, `Select`, `Choice`, `Check`, `Field`) drawn by `kento.css`. The rules for the
+  controls of every screen are in [CLAUDE.md](CLAUDE.md#ui-components).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.

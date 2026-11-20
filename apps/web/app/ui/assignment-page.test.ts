@@ -149,8 +149,8 @@ describe('the tab Assignment of the Config screen (REV-21)', () => {
     assert.match(html, /If the author is sakuga-agent\[bot\]<\/p><p class="assignment-then">then <strong class="mono">balanced<\/strong>\.<\/p>/)
     assert.match(html, /If the PR changes \*\*\/migrations\/\*\*<\/p><p class="assignment-then">then <strong class="mono">heavy<\/strong>, and the review mentions <span class="mono">@octocat<\/span>\./)
     // The first rule cannot go up, the last one cannot go down.
-    assert.match(html, /<button type="submit" disabled class="button">Move up<span class="visually-hidden"> rule 1<\/span>/)
-    assert.match(html, /<button type="submit" disabled class="button">Move down<span class="visually-hidden"> rule 2<\/span>/)
+    assert.match(html, /<button type="submit" disabled class="button button--outline">Move up<span class="visually-hidden"> rule 1<\/span>/)
+    assert.match(html, /<button type="submit" disabled class="button button--outline">Move down<span class="visually-hidden"> rule 2<\/span>/)
 
     let moved = await request(`/repos/${ORCHARD}/assignment/${second.id}/move`, { cookie, form: { _csrf: csrf, direction: 'up' } })
     assert.equal(moved.status, 303)
