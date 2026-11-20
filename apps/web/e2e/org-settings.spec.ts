@@ -328,6 +328,21 @@ test.describe('the settings of the org', () => {
     // No axe here: Chromium emulates the media query only, and does not force the colours.
   })
 
+  // KNT-168. The marks of the scroll belong to the sidebar of a wide screen: a window that narrows to
+  // a phone drops them, and the list starts with no mark until a choice.
+  test('a window that narrows to a phone drops the marks of the scroll', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'starts with the sidebar of a wide screen')
+    await signIn(page, 'octocat')
+    await page.goto('/settings#bots')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'Trusted bots' })).toHaveAttribute('aria-current', 'location')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(nav.locator('[aria-current]')).toHaveCount(0)
+    // A choice in the list marks it again.
+    await goToSettingsLink(page, 'GitHub App')
+    await expect(nav.getByRole('link', { name: 'GitHub App', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+  })
+
   test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {
     test.skip(info.project.name !== 'mobile', 'the bar folds the list under 900 px only')
     await page.route('**/assets/settings.js*', (route) => route.abort())

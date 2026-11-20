@@ -119,8 +119,19 @@
     markChoice(back)
     requestAnimationFrame(() => toggle.focus({ preventScroll: true }))
   })
+  // A window that narrows to a phone drops the marks of the scroll: they named a section that the
+  // person did not choose.
+  let wasPhone = false
   const update = () => {
-    if (phone()) return
+    if (phone()) {
+      if (!wasPhone) {
+        mark(sections, null, 'location')
+        for (const other of sections) mark(other.parts, null, 'true')
+      }
+      wasPhone = true
+      return
+    }
+    wasPhone = false
     const section = pick(sections) ?? sections[0]
     mark(sections, section, 'location')
     for (const other of sections) mark(other.parts, other === section ? pick(other.parts) : null, 'true')
