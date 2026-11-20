@@ -6,7 +6,7 @@ import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const appDir = fileURLToPath(new URL('../../', import.meta.url))
 
@@ -80,20 +80,20 @@ describe('server', () => {
       assert.equal(response.status, 200, first.output())
       assert.equal(body.status, 'ok')
       assert.equal(body.commit, 'abc1234')
-      assert.equal(body.database.migrations, 29)
+      assert.equal(body.database.migrations, 30)
       assert.match(first.output(), /"event":"startup.migrations_applied"/)
     } finally {
       assert.equal(await stop(first), 0, first.output())
     }
 
     let sql = postgres(test.url, { max: 1 })
-    await sql`insert into orgs (github_installation_id, github_account_id, login) values (1, 2, 'kept')`
+    await insertOrg(sql, 'kept', 1, 2)
 
     let second = start(env)
     try {
       let response = await waitForHealthz(port, second)
       assert.equal(response.status, 200, second.output())
-      let [row] = await sql<{ logins: string[] }[]>`select array_agg(login) as logins from orgs`
+      let [row] = await sql<{ logins: string[] }[]>`select array_agg(name) as logins from orgs`
       assert.deepEqual(row!.logins, ['kept'])
     } finally {
       await sql.end()

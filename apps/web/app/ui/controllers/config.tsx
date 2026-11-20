@@ -142,7 +142,7 @@ export function configActions(kit: UiKit) {
     }
     log('info', reset ? 'repo_config.reset' : 'repo_config.saved', {
       login: signed.user.login,
-      org: signed.membership.org.login,
+      org: signed.membership.org.name,
       repo: outcome.fullName,
       field: key,
       version: outcome.version,

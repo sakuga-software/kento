@@ -243,7 +243,7 @@ describe('comment of a pull request whose job waits in the queue', () => {
     await queuedJob()
     await publisher().publishPending()
     await expectState(1, 'waits')
-    await database.sql`update orgs set suspended_at = now() where id = ${orgId}`
+    await database.sql`update installations set suspended_at = now() where org_id = ${orgId}`
     let calls = fake.state.calls.length
     await publisher().publishPending()
     assert.equal((await notices()).length, 0)

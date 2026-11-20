@@ -53,7 +53,7 @@ describe('the preferences of a user and their screen', () => {
     await sql`truncate orgs, repos, jobs, reviews, users cascade`
     ;({ orgId, repoId: reviewId } = await seedEnabledRepo(sql))
     let [orchard] = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, ${ORCHARD.id}, ${ORCHARD.full_name}, true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${ORCHARD.id}, ${ORCHARD.full_name}, true) returning id`
     orchardId = orchard!.id
     let [user] = await sql<{ id: string }[]>`
       insert into users (github_id, login, name) values (101, 'octocat', 'Alex Martin') returning id`
@@ -136,9 +136,9 @@ describe('the preferences of a user and their screen', () => {
 
   it('4. a repository of another org, or a disabled one, is no choice', async () => {
     let [other] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (2002, 3003, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 2002, 3003, 'orchard' from org returning org_id as id`
     let [foreign] = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${other!.id}, 4004, 'orchard/app', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${other!.id}, (select id from installations where org_id = ${other!.id} order by created_at limit 1), 4004, 'orchard/app', true) returning id`
     assert.deepEqual(await users.savePref(orgId, octocat, foreign!.id, { autoReview: false, level: null }), { outcome: 'not_found' })
     await sql`update repos set enabled = false where id = ${orchardId}`
     assert.deepEqual(await users.savePref(orgId, octocat, orchardId, { autoReview: false, level: null }), { outcome: 'not_found' })

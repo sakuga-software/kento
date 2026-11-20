@@ -323,8 +323,8 @@ test.describe('the Repos screen', () => {
     let sql = database()
     try {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-        select org_id, 880000 + g, 'sakuga-software/bulk-' || lpad(g::text, 2, '0'), false, 'none'
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, installation_id, 880000 + g, 'sakuga-software/bulk-' || lpad(g::text, 2, '0'), false, 'none'
         from repos, generate_series(1, 60) g where full_name = 'sakuga-software/orchard'`
       await sql`update repos set enabled = true where full_name = 'sakuga-software/orchard'`
 
@@ -384,8 +384,8 @@ test.describe('the Repos screen', () => {
     let sql = database()
     try {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-        select org_id, 890000 + g, 'sakuga-software/zz-' || lpad(g::text, 2, '0'), false, 'none'
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, installation_id, 890000 + g, 'sakuga-software/zz-' || lpad(g::text, 2, '0'), false, 'none'
         from repos, generate_series(1, 20) g where full_name = 'sakuga-software/orchard'`
       // One page of 20 rows, whatever the other tests added to the org.
       await page.goto('/repos?q=zz-')
@@ -513,8 +513,8 @@ test.describe('the Repos screen', () => {
     let sql = database()
     try {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-        select org_id, 891000 + g, 'sakuga-software/pg-' || lpad(g::text, 2, '0'), false, 'none'
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, installation_id, 891000 + g, 'sakuga-software/pg-' || lpad(g::text, 2, '0'), false, 'none'
         from repos, generate_series(1, 30) g where full_name = 'sakuga-software/orchard'`
       await page.goto('/repos?filter=disabled&q=pg-')
       await expect(page.locator('.pager-range')).toHaveText('1 to 25 of 30')
@@ -551,8 +551,8 @@ test.describe('the Repos screen', () => {
     let sql = database()
     try {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-        select org_id, 893000 + g, 'sakuga-software/pc-' || lpad(g::text, 2, '0'), false, 'none'
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, installation_id, 893000 + g, 'sakuga-software/pc-' || lpad(g::text, 2, '0'), false, 'none'
         from repos, generate_series(1, 51) g where full_name = 'sakuga-software/orchard'`
       await page.goto('/repos?filter=disabled&q=pc-&page=3')
       await expect(page.locator('.pager-range')).toHaveText('51 to 51 of 51')

@@ -21,7 +21,7 @@ import { issueCommentPayload, pullRequestPayload, signedRequest, TEST_SECRET } f
 import { createPublisher } from '../../app/publish/publisher.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { BOT, createFakeGitHub, type FakeGitHub } from '../fake-github.ts'
-import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
+import { createTestDatabase, seedEnabledRepo, seedEnabledRepoBefore0029 } from './helpers.ts'
 
 const PR = 28
 const BASE = 'a'.repeat(40)
@@ -295,7 +295,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.deepEqual((await listFeedback(database.sql, orgId, { kind: 'person' })).rows.map((r) => r.authorLogin), ['camille'])
     assert.deepEqual((await listFeedback(database.sql, orgId, { source: 'quote' })).rows.map((r) => r.authorLogin), ['sakuga-agent[bot]'])
     let [other] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (9999, 9998, 'other') returning id`
+      with org as (insert into orgs (name, slug) values ('other', lower('other')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 9999, 9998, 'other' from org returning org_id as id`
     assert.equal((await listFeedback(database.sql, other!.id)).total, 0, 'another org sees nothing')
   })
 })
@@ -313,7 +313,7 @@ describe('feedback on a pull request reviewed before the deploy (REV-107)', () =
       journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0026')
       await writeFile(journalPath, JSON.stringify(journal))
       await runMigrations(test.url, earlier)
-      let { repoId } = await seedEnabledRepo(database.sql)
+      let { repoId } = await seedEnabledRepoBefore0029(database.sql)
 
       let n = 0
       async function storeReview(pr: number, published: boolean) {

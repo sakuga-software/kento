@@ -11,16 +11,16 @@ import { after, before, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { migrationsFolder, runMigrations } from '../../app/db/migrate.ts'
 import { createFindingsLedger, type LedgerEntry } from '../../app/findings/ledger.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, seedEnabledRepoBefore0029 } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
 
 async function seedRepo(sql: Database['sql']) {
   let [org] = await sql<{ id: string }[]>`
-    insert into orgs (github_installation_id, github_account_id, login) values (1, 11, 'sakuga-software') returning id`
+    with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1, 11, 'sakuga-software' from org returning org_id as id`
   let [repo] = await sql<{ id: string }[]>`
-    insert into repos (org_id, github_repo_id, full_name, enabled)
-    values (${org!.id}, 3001, 'sakuga-software/sakuga-review', true) returning id`
+    insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+    values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true) returning id`
   return { orgId: org!.id, repoId: repo!.id }
 }
 
@@ -142,7 +142,7 @@ describe('the rule of a finding (REV-55)', () => {
       journal.entries = journal.entries.filter((e: { tag: string }) => e.tag < '0015')
       await writeFile(journalPath, JSON.stringify(journal))
       await runMigrations(other.url, earlier)
-      let seeded = await seedRepo(check.sql)
+      let seeded = await seedEnabledRepoBefore0029(check.sql)
       let rule = await insertRule(check.sql, seeded.orgId, 'Still there')
       let orphan = await insertFinding(check.sql, seeded.repoId, 'orphan', '00000000-0000-0000-0000-000000000000')
       let cited = await insertFinding(check.sql, seeded.repoId, 'cited', rule)
