@@ -3883,6 +3883,18 @@ a.finding-title:hover {
 .settings-nav-sub .settings-nav-link[aria-current] {
   font-weight: 500;
 }
+/* KNT-169. Forced colors draw the transparent border of every link in the colour of the text: only
+   the current link keeps a border, in Highlight. The others keep its width as padding. */
+@media (forced-colors: active) {
+  .settings-nav-link {
+    border-left-style: none;
+    padding-left: calc(var(--space-3) + 2px);
+  }
+  .settings-nav-link[aria-current] {
+    border-left: 2px solid Highlight;
+    padding-left: var(--space-3);
+  }
+}
 /* "Section …" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
 .settings-nav-toggle {
   display: none;

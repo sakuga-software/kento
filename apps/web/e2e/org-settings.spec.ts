@@ -263,6 +263,26 @@ test.describe('the settings of the org', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
+  // KNT-169. Forced colors (Windows High Contrast) draw a transparent border in the colour of the
+  // text: only the current link of the sidebar may have a border, or every link looks current.
+  test('in forced colors, only the current link of the sidebar has a border', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await page.emulateMedia({ forcedColors: 'active' })
+    await page.goto('/settings')
+    await goToSettingsLink(page, 'heavy')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'heavy', exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
+    let borders = await nav.locator('.settings-nav-link').evaluateAll((links) =>
+      links.map((link) => ({ current: link.hasAttribute('aria-current'), style: getComputedStyle(link).borderLeftStyle })),
+    )
+    let current = borders.filter((b) => b.current)
+    let others = borders.filter((b) => !b.current)
+    // The section and its part: two current links, each with a border; no other link has one.
+    expect(current.map((b) => b.style)).toEqual(['solid', 'solid'])
+    expect(new Set(others.map((b) => b.style))).toEqual(new Set(['none']))
+    // No axe here: Chromium emulates the media query only, and does not force the colours.
+  })
+
   test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {
     test.skip(info.project.name !== 'mobile', 'the bar folds the list under 900 px only')
     await page.route('**/assets/settings.js*', (route) => route.abort())
