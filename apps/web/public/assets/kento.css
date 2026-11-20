@@ -478,8 +478,12 @@ kbd,
   margin-bottom: 6px;
   padding: 0;
 }
-.theme-switch .segmented {
-  align-self: flex-start;
+/* "Apply" (no JavaScript) stands next to the choices, above the hint. */
+.theme-switch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
 }
 /* The segmented control of the design: one outlined box, the choice in ink. */
 .segmented {

@@ -226,21 +226,25 @@ function ThemeSection(handle: Handle<{ frame: PageFrame }>) {
         <form class="user-pref-form" method="post" action={pageRoutes.theme.href()} data-theme-switch="">
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
           <input type="hidden" name="returnTo" value={frame.path} />
-          <fieldset class="field theme-switch">
+          <fieldset class="field theme-switch" aria-describedby="theme-hint">
             <legend class="field-label">Theme of this browser</legend>
-            <div class="segmented">
-              {THEMES.map((theme) => (
-                <label>
-                  <input type="radio" name="theme" value={theme} checked={theme === frame.theme} />
-                  {THEME_LABELS[theme]}
-                </label>
-              ))}
+            <div class="theme-switch-row">
+              <div class="segmented">
+                {THEMES.map((theme) => (
+                  <label>
+                    <input type="radio" name="theme" value={theme} checked={theme === frame.theme} />
+                    {THEME_LABELS[theme]}
+                  </label>
+                ))}
+              </div>
+              <button class="button" type="submit">
+                Apply
+              </button>
             </div>
-            <p class="field-hint">Applies at once, on every screen of Kentō in this browser. Device follows the light or dark mode of the device.</p>
+            <p class="field-hint" id="theme-hint">
+              For every screen of Kentō in this browser. Device follows the light or dark mode of the device.
+            </p>
           </fieldset>
-          <button class="button" type="submit">
-            Apply
-          </button>
         </form>
       </section>
     )

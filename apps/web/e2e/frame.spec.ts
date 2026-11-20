@@ -161,6 +161,10 @@ test.describe('without JavaScript', () => {
     await signIn(page, 'octocat')
     await page.goto('/users/octocat')
     let section = page.getByRole('region', { name: 'Theme' })
+    // "Apply" stands next to the choices, not under them by the hint.
+    let apply = (await section.getByRole('button', { name: 'Apply' }).boundingBox())!
+    let choices = (await section.locator('.segmented').boundingBox())!
+    expect(Math.abs(apply.y + apply.height / 2 - (choices.y + choices.height / 2))).toBeLessThan(2)
     await section.getByText('Sumi', { exact: true }).click()
     await section.getByRole('button', { name: 'Apply' }).click()
     await expect(page).toHaveURL(/\/users\/octocat$/)
