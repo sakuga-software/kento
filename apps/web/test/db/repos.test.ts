@@ -237,6 +237,13 @@ describe('the Repos screen against Postgres', () => {
     assert.equal(enabled.offset, 25)
     let none = await store.list(orgId, { search: 'nothing-here', page: 3 })
     assert.deepEqual([none.page, none.pages, none.offset, none.rows.length], [1, 1, 0, 0])
+
+    // A limit of a caller under 1 row is 1 row: the count of pages stays finite (Kentō #7ad4c1).
+    for (let limit of [0, -5, 0.5]) {
+      let one = await store.list(orgId, { limit, page: 3 })
+      assert.deepEqual([one.rows.length, one.pages, one.page, one.offset], [1, 120, 3, 2], String(limit))
+    }
+    assert.equal((await store.list(orgId, { limit: Number.NaN })).rows.length, 25)
   })
 
   it('filters by state and searches the name, any case, with % and _ as plain characters (REV-36)', async () => {
