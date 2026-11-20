@@ -13,7 +13,7 @@ export type SignInDecision =
    * `unconfirmed`: the orgs where GitHub failed. Their memberships stay as they were, with their old
    * `checked_at`, so the first request asks GitHub again.
    */
-  | { kind: 'allowed'; roles: { org: OrgRow; role: GitHubRole }[]; unconfirmed: OrgRow[] }
+  | { kind: 'allowed'; roles: { org: OrgRow; role: GitHubRole }[]; unconfirmed: OrgRow[]; invited: OrgRow[] }
   /** GitHub counts the person in none of the orgs of the App. */
   | { kind: 'refused' }
   /** GitHub failed for every org where the answer could have let the person in. */
@@ -65,8 +65,10 @@ export async function decideSignIn(
     }),
   )
   let roles = results.flatMap(({ org, role }) => (role ? [{ org, role }] : []))
-  if (roles.length > 0) {
-    return { kind: 'allowed', roles, unconfirmed: results.flatMap(({ org, failed }) => (failed ? [org] : [])) }
+  // KNT-150. A person invited in Kentō signs in to the orgs of their invitations, whatever GitHub says.
+  let invited = await store.invitedOrgs(profile.id)
+  if (roles.length > 0 || invited.length > 0) {
+    return { kind: 'allowed', roles, unconfirmed: results.flatMap(({ org, failed }) => (failed ? [org] : [])), invited }
   }
   return results.some((result) => result.failed) ? { kind: 'unknown' } : { kind: 'refused' }
 }

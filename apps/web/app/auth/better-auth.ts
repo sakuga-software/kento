@@ -159,9 +159,9 @@ export function createKentoAuth(options: KentoAuthOptions) {
             if (!user) return false
             await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
             await store.touchSignIn(user.id)
-            let first = decision.roles.find((r) => r.role === 'admin') ?? decision.roles[0]!
+            let first = decision.roles.find((r) => r.role === 'admin')?.org ?? decision.roles[0]?.org ?? decision.invited[0]!
             log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
-            return { data: { ...session, activeOrganizationId: first.org.id, expiresAt: new Date(now() + SESSION_TTL_MS) } }
+            return { data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now() + SESSION_TTL_MS) } }
           },
         },
       },

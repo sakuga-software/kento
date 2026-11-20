@@ -115,6 +115,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       if (m) Object.assign(m, { role, checkedAt: new Date(clock.now) })
       else rows().push({ id: `membership-${rows().length + 1}`, userId, orgId, role, source, checkedAt: new Date(clock.now), createdAt: new Date(clock.now) })
     },
+    async invitedOrgs(githubId) {
+      let user = tables.users!.find((u) => Number(u.githubId) === githubId)
+      return user ? orgs.filter((org) => rows().some((m) => m.userId === user.id && m.orgId === org.id && m.source === 'invitation')) : []
+    },
     async hasOwner(orgId) {
       return rows().some((m) => m.orgId === orgId && m.role === 'owner')
     },

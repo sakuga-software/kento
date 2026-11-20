@@ -53,6 +53,8 @@ export interface AuthStore {
   saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<void>
   /** KNT-150. The org has at least one owner. */
   hasOwner(orgId: string): Promise<boolean>
+  /** KNT-150. The active orgs where the user of a GitHub account is a member from an invitation. */
+  invitedOrgs(githubId: number): Promise<OrgRow[]>
   deleteMembership(userId: string, orgId: string): Promise<void>
 }
 
@@ -108,6 +110,14 @@ export function createAuthStore(sql: postgres.Sql): AuthStore {
         values (${userId}, ${orgId}, ${role}, ${source}, now())
         on conflict (user_id, org_id) do update set role = excluded.role, checked_at = now()
       `
+    },
+
+    async invitedOrgs(githubId) {
+      let rows = await sql<{ orgId: string }[]>`
+        select m.org_id as "orgId" from memberships m join users u on u.id = m.user_id
+        where u.github_id = ${githubId} and m.source = 'invitation'
+      `
+      return readOrgs(sql, rows.map((r) => r.orgId))
     },
 
     async hasOwner(orgId) {

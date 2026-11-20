@@ -115,8 +115,8 @@ describe('the sign-in and the sessions in Postgres', () => {
     let ttl = new Date(session!.expiresAt).getTime() - Date.now()
     assert.ok(ttl > SESSION_TTL_MS - 60_000 && ttl <= SESSION_TTL_MS, 'seven days from the sign-in')
 
-    let [membership] = await database.sql`select role from memberships`
-    assert.equal(membership!.role, 'admin')
+    let [membership] = await database.sql`select role, source from memberships`
+    assert.deepEqual({ ...membership }, { role: 'owner', source: 'github' }, 'the first admin of an org with no owner')
     // The verification of the sign-in (its state) is gone once used.
     assert.equal((await database.sql`select 1 from verifications`).length, 0)
 
@@ -209,6 +209,37 @@ describe('the sign-in and the sessions in Postgres', () => {
       select (select count(*)::int from sessions) as sessions, (select count(*)::int from memberships) as memberships,
         (select count(*)::int from accounts) as accounts`
     assert.deepEqual({ ...counts }, { sessions: 0, memberships: 0, accounts: 0 })
+  })
+
+  it('KNT-150: switches the org on screen through Better Auth, only to an org of the person', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    let initech = await insertOrgRow(database.sql, 'initech', 13)
+    roles.set('acme/octocat', 'admin')
+    roles.set('globex/octocat', 'member')
+    let { cookie } = await signIn()
+    let active = async () => (await database.sql`select active_organization_id as id from sessions`)[0]!.id
+    assert.equal(await active(), acme)
+    let page = await (await request('/', cookie!)).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(page)![1]!
+    let post = (orgId: string) =>
+      router.fetch(
+        new Request('http://localhost/preferences/org', {
+          method: 'POST',
+          headers: { Cookie: cookie!, Origin: PUBLIC_URL.origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ _csrf: csrf, orgId, returnTo: '/' }),
+        }),
+      )
+    assert.equal((await post(globex)).status, 303)
+    assert.equal(await active(), globex)
+    let html = await (await request('/', cookie!)).text()
+    assert.match(html, /<span class="org-menu-name">globex<\/span>/)
+    assert.match(html, /Read only/)
+    // An org where the person is not a member: nothing moves.
+    assert.equal((await post(initech)).status, 303)
+    assert.equal(await active(), globex)
+    let [roles_] = await database.sql`select array_agg(role order by role) as roles from memberships`
+    assert.deepEqual(roles_!.roles, ['member', 'owner'])
   })
 
   it('the table refuses a token of GitHub in an account', async () => {

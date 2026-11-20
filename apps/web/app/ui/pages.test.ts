@@ -690,3 +690,21 @@ describe('KNT-150: the roles owner, admin and member, and the menu of the orgs',
     assert.doesNotMatch(html, /orchard/)
   })
 })
+
+describe('KNT-150: a member from an invitation', () => {
+  it('signs in to the org of the invitation when GitHub counts them nowhere, and reads it', async () => {
+    let { request, signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
+    // Refused before: GitHub counts the stranger in no org.
+    assert.equal((await signIn(STRANGER)).callback.headers.get('Location'), '/login?notice=not_member')
+    // An admin of orchard invited them (the invitation flow comes later): a user and a membership.
+    auth.tables.users!.push({ id: 'user-stranger', githubId: STRANGER.id, login: STRANGER.login, email: `${STRANGER.id}@users.github.invalid`, emailVerified: false, createdAt: new Date(), updatedAt: new Date() })
+    auth.tables.accounts!.push({ id: 'account-stranger', userId: 'user-stranger', providerId: 'github', accountId: String(STRANGER.id), createdAt: new Date(), updatedAt: new Date() })
+    await auth.deps.store.saveMembership('user-stranger', 'org-2', 'member', 'invitation')
+    let { callback, cookie } = await signIn(STRANGER)
+    assert.equal(callback.headers.get('Location'), '/')
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<span class="org-menu-name">orchard<\/span>/)
+    assert.match(html, /Read only/)
+    assert.equal(auth.memberships.get('user-stranger/org-2')?.source, 'invitation')
+  })
+})

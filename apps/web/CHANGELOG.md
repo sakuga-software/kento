@@ -19,7 +19,13 @@ Each entry says, when it applies:
 
 ## Unreleased
 
-- **Migrations**: 31. `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
+- **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
+  and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
+  of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those;
+  the owner role is given in Kentō.
+- **Screens**: the box of the org in the header is a menu of every org of the person, with their
+  role in each.
+- **Migrations** (before it): `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
   `users` gets the e-mail that Better Auth needs (`<github id>@users.github.invalid`, never mailed),
   `accounts` the GitHub account of each user (no token, ever), `verifications` the state of a
   sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and
