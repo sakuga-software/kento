@@ -14,6 +14,9 @@
     network: 'Kentō could not be reached. Check the connection, then try again.',
   }
 
+  // A server that does not answer: the row gets its message, and can be tried again.
+  const TIMEOUT_MS = 15_000
+
   // The message of a row: one at a time, in its action cell, read at once by a screen reader.
   const showError = (row, kind) => {
     const cell = row.querySelector('.row-action') ?? row
@@ -25,38 +28,63 @@
     cell.append(message)
   }
 
+  const read = (url) => fetch(url, { credentials: 'same-origin', headers: { Accept: 'text/html' }, signal: AbortSignal.timeout(TIMEOUT_MS) })
   const parse = async (response) => new DOMParser().parseFromString(await response.text(), 'text/html')
+  const copy = (node) => [...node.childNodes].map((child) => document.importNode(child, true))
 
   // The screen of the name of a repository: its row, when the change took it out of the list on
   // screen (the filter "Not enabled", or another page).
   const rowByName = async (row) => {
     const name = row.querySelector('.repo-name')?.getAttribute('title')
     if (!name) return null
-    const response = await fetch(`${location.pathname}?${new URLSearchParams({ q: name })}`, {
-      credentials: 'same-origin',
-      headers: { Accept: 'text/html' },
-    })
+    const response = await read(`${location.pathname}?${new URLSearchParams({ q: name })}`)
     return response.ok ? (await parse(response)).getElementById(row.id) : null
   }
 
-  // The notice, the line of the counts and the counts of the filters of the new screen, in place of
-  // the old ones. The role of the notice (status or alert) has a screen reader read it.
-  const updateFrame = (next) => {
+  // The line of the counts and the counts of the filters of the new screen, in place of the old ones.
+  // The nodes stay: only their content changes, so `aria-live` on the line keeps working. With
+  // `notice`, the notice too, in the slot `role="status"` that the server always renders: a screen
+  // reader reads the change of its content.
+  const updateFrame = (next, { notice }) => {
     const summary = content.querySelector('.repos-summary')
     const nextSummary = next.querySelector('.repos-summary')
-    if (!summary || !nextSummary) return
-    for (const banner of content.querySelectorAll(':scope > .banner')) banner.remove()
-    for (const banner of next.querySelectorAll(':scope > .banner')) summary.before(document.importNode(banner, true))
-    summary.replaceWith(document.importNode(nextSummary, true))
+    if (summary && nextSummary) summary.replaceChildren(...copy(nextSummary))
     const filters = content.querySelector('.list-controls .segmented-links')
     const nextFilters = next.querySelector('.list-controls .segmented-links')
-    if (filters && nextFilters) filters.replaceWith(document.importNode(nextFilters, true))
+    if (filters && nextFilters) filters.replaceChildren(...copy(nextFilters))
+    if (!notice) return
+    for (const banner of content.querySelectorAll(':scope > .banner-alert')) banner.remove()
+    const slot = content.querySelector('.notice-slot')
+    const nextSlot = next.querySelector('.notice-slot')
+    if (slot && nextSlot) slot.replaceChildren(...copy(nextSlot))
   }
 
-  // The new row in place of the old one, marked as `:target` marks it after a redirect. The focus
-  // goes to its next action: "…" after "Enable", "Enable" after "Disable".
+  // The row left the list on screen (another filter, another page): the list of the server is not
+  // the one on screen any more. The pager and its range come from the server, and a line says so,
+  // with a link that reads the page again. Without it, "Next" would skip the rows that moved up.
+  const listChanged = (next) => {
+    const wrap = content.querySelector('.table-wrap')
+    if (!wrap) return
+    const pager = content.querySelector('.pager')
+    const nextPager = next.querySelector('.pager')
+    if (pager && nextPager) pager.replaceWith(document.importNode(nextPager, true))
+    else if (pager) pager.remove()
+    else if (nextPager) wrap.after(document.importNode(nextPager, true))
+    if (content.querySelector('.list-changed')) return
+    const line = document.createElement('p')
+    line.className = 'list-changed hint'
+    const reload = document.createElement('a')
+    reload.href = location.href.split('#')[0]
+    reload.textContent = 'Reload'
+    line.append('The list changed. ', reload)
+    wrap.after(line)
+  }
+
+  // The new row in place of the old one, marked as `:target` marks it after a redirect: the last
+  // changed row only. The focus goes to its next action: "…" after "Enable", "Enable" after "Disable".
   const replaceRow = (row, nextRow) => {
     const fresh = document.importNode(nextRow, true)
+    for (const marked of content.querySelectorAll('tr.row-changed')) marked.classList.remove('row-changed')
     fresh.classList.add('row-changed')
     // confirm.js shows "Cancel" once, at load: the new confirmation needs it too.
     for (const button of fresh.querySelectorAll('[data-confirm-cancel]')) button.hidden = false
@@ -66,6 +94,24 @@
     if (wrap) wrap.style.paddingBottom = ''
     const target = fresh.querySelector('.row-action > button') ?? fresh.querySelector('.row-menu > summary')
     target?.focus({ preventScroll: true })
+  }
+
+  // Two rows changed at the same time: their answers can come back in any order, and the counts of
+  // the first one to come back can be the older ones. When the last one is done, the counts are read
+  // again from the screen as it is now.
+  let pending = 0
+  let overlapped = false
+  const settle = async () => {
+    pending -= 1
+    if (pending > 0 || !overlapped) return
+    overlapped = false
+    try {
+      const response = await read(location.href.split('#')[0])
+      const next = response.ok ? (await parse(response)).getElementById('content') : null
+      if (next && pending === 0) updateFrame(next, { notice: false })
+    } catch {
+      // The counts stay as they are; the next load reads them again.
+    }
   }
 
   // On the document: the buttons of the rows submit the form "repo-actions" from anywhere in the page.
@@ -82,6 +128,8 @@
       row.setAttribute('aria-busy', 'true')
       button.setAttribute('aria-disabled', 'true')
       row.querySelector('.row-error')?.remove()
+      pending += 1
+      if (pending > 1) overlapped = true
       try {
         let response
         try {
@@ -90,12 +138,11 @@
             body: new URLSearchParams(new FormData(form)),
             credentials: 'same-origin',
             headers: { Accept: 'text/html' },
+            signal: AbortSignal.timeout(TIMEOUT_MS),
           })
         } catch {
           return showError(row, 'network')
         }
-        // The server answers a change with a redirect to the screen; a sign-in page means the
-        // session is over.
         // fetch drops the `#repo-<id>` of the redirect: it comes back here, for a fallback below.
         const landed = new URL(response.url, location.href)
         landed.hash = row.id
@@ -115,12 +162,16 @@
         try {
           if (!response.ok) throw new Error(`screen ${response.status}`)
           const next = (await parse(response)).getElementById('content')
-          const nextRow = next?.querySelector(`#${CSS.escape(row.id)}`) ?? (await rowByName(row))
-          if (!next || !nextRow) throw new Error('no row')
+          if (!next) throw new Error('no screen')
+          let nextRow = next.querySelector(`#${CSS.escape(row.id)}`)
+          const left = !nextRow
+          if (left) nextRow = await rowByName(row)
+          if (!nextRow) throw new Error('no row')
           // The notice above the list can grow or shrink the page: the row stays where it is on the
           // screen (the browser does it by itself, except at the top of the page).
           const top = row.getBoundingClientRect().top
-          updateFrame(next)
+          updateFrame(next, { notice: true })
+          if (left) listChanged(next)
           replaceRow(row, nextRow)
           const moved = document.getElementById(row.id).getBoundingClientRect().top - top
           if (Math.abs(moved) >= 1) window.scrollBy(0, moved)
@@ -131,6 +182,7 @@
         // The old row, when it is still on screen (an error): it can be tried again.
         row.removeAttribute('aria-busy')
         button.removeAttribute('aria-disabled')
+        settle()
       }
     })
   }

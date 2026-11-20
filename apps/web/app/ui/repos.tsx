@@ -166,7 +166,13 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </>
         }
       >
-        {notice ? <Notice notice={notice} org={org} /> : null}
+        {notice?.kind === 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+        {/* KNT-147: a live region on every load, empty when there is no notice. repo-toggle.js fills
+            it after a change in place: a screen reader reads a change of its content, not a region
+            that comes in already filled. */}
+        <div class="notice-slot" role="status">
+          {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+        </div>
 
 
         <p class="repos-summary" aria-live="polite">
@@ -352,8 +358,9 @@ function Notice(handle: Handle<{ notice: ReposNotice; org: string }>) {
           . The published reviews stay.
         </p>
       )
+    // In the slot `role="status"` of the screen: no role of its own.
     return (
-      <div class="banner banner-ok" role="status">
+      <div class="banner banner-ok">
         <CheckIcon />
         {text}
       </div>

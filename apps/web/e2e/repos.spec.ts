@@ -507,6 +507,57 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('after rows leave the list in place, the pager follows the server and a line offers to reload; the notice is read in the same live region (KNT-147)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 891000 + g, 'sakuga-software/pg-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 30) g where full_name = 'sakuga-software/orchard'`
+      await page.goto('/repos?filter=disabled&q=pg-')
+      await expect(page.locator('.pager-range')).toHaveText('1 to 25 of 30')
+      // The live region is on the page before any change, empty; the same node gets the notices.
+      let slot = page.locator('.notice-slot[role="status"]')
+      await expect(slot).toBeEmpty()
+      await slot.evaluate((node) => ((window as unknown as { slot: Element }).slot = node))
+
+      for (let n of ['01', '02', '03', '04', '05']) {
+        await rowOf(page, `pg-${n}`).getByRole('button', { name: `Enable pg-${n}` }).click()
+        await expect(slot).toContainText(`pg-${n} is enabled.`)
+      }
+      expect(await slot.evaluate((node) => node === (window as unknown as { slot: Element }).slot)).toBe(true)
+      // Only the last changed row is marked.
+      await expect(page.locator('tr.row-changed')).toHaveCount(1)
+      // 25 left in "Not enabled": one page. The pager of the screen said 2; it follows the server now.
+      await expect(page.locator('.pager')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toBeVisible()
+      await expect(page.getByRole('link', { name: /^Not enabled/ }).locator('.list-filter-count')).toHaveText(/\d+/)
+      await page.getByRole('link', { name: 'Reload' }).click()
+      await expect(page.locator('tbody tr')).toHaveCount(25)
+      await expect(rowOf(page, 'pg-30')).toBeVisible()
+      await expect(rowOf(page, 'pg-01')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toHaveCount(0)
+    } finally {
+      await sql`delete from repos where github_repo_id between 891001 and 891030`
+      await sql.end()
+    }
+  })
+
+  test('a server that does not answer: the row says so after the timeout (KNT-147)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    // 15 s of the script, made short: the clock of the page runs fast.
+    await page.clock.install()
+    await page.goto('/repos')
+    await page.route('**/repos/*/enable*', () => {})
+    await rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' }).click()
+    await page.clock.runFor(16_000)
+    await expect(rowOf(page, 'garden').getByRole('alert')).toHaveText('Kentō could not be reached. Check the connection, then try again.')
+    await expect(rowOf(page, 'garden')).not.toHaveAttribute('aria-busy', 'true')
+  })
+
   test('a member reads the list under "Read only", with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')

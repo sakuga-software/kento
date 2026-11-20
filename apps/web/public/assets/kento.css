@@ -1001,6 +1001,10 @@ select.bar-org-box:hover {
   opacity: 0.6;
   cursor: progress;
 }
+/* "The list changed. Reload": after a row left the list on screen, under the table. */
+.list-changed {
+  margin: var(--space-3) 0 0;
+}
 .row-error {
   margin: var(--space-1) 0 0;
   color: var(--shu);
