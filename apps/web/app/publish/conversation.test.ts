@@ -2,7 +2,7 @@
 // has the mark "to check" and does not block. Outside the diff, it gets a comment on its file,
 // with a link to its line. A P1 to consider (REV-100) gets a thread with the mark "to consider"
 // only when the published score is below 4 and no other new P0 or P1 is in the review.
-import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
+import type { ReviewFinding, ReviewPayload } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

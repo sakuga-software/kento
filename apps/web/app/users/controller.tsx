@@ -1,6 +1,6 @@
 // REV-22. The controller of the screen of a user, on the frame of the screens (`ScreenKit` of
 // app/ui/pages.tsx): the session, the signed-in person, the 404 page.
-import { isLevel, UUID } from '@kento/protocol'
+import { isLevel, UUID } from '@kento-review/protocol'
 import { createController } from 'remix/router'
 
 import { log } from '../log.ts'

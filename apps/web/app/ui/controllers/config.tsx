@@ -1,7 +1,7 @@
 // REV-12. The Config screen of a repository: a member reads it, an admin changes it, one key at a time.
 import { createAction } from 'remix/router'
 
-import { UUID, type Level } from '@kento/protocol'
+import { UUID, type Level } from '@kento-review/protocol'
 
 import { log } from '../../log.ts'
 import {

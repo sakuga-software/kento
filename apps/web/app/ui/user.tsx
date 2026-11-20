@@ -3,7 +3,7 @@
 // requests that Kentō reviewed. Every member of the org reads it; only the user changes it.
 import type { Handle } from 'remix/component'
 
-import { LEVELS, type Level } from '@kento/protocol'
+import { LEVELS, type Level } from '@kento-review/protocol'
 
 import { mention } from '../instance.ts'
 import { pageRoutes, userRoutes } from '../routes.ts'

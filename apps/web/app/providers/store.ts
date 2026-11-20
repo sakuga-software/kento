@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type postgres from 'postgres'
 
-import { UUID, type ProviderKind } from '@kento/protocol'
+import { UUID, type ProviderKind } from '@kento-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
 import { last4, providerAad, SecretsError, type SecretBox } from './secrets.ts'

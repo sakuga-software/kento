@@ -1,9 +1,9 @@
 // The open review threads of a pull request, read by the service when a runner claims a resolve job
 // (REV-7). The query is the one of `resolve` in review/sakuga-review.ts. The runner gets the threads
 // in the job, already cleaned: it never reads GitHub with a token that can see the pull request.
-import { FINDING_KEY } from '@kento/engine/render'
-import { cleanBody, markerResolve } from '@kento/engine/threads'
-import { MAX_RESOLVE_THREADS, SHA, type ResolveInput, type ResolveThread } from '@kento/protocol'
+import { FINDING_KEY } from '@kento-review/engine/render'
+import { cleanBody, markerResolve } from '@kento-review/engine/threads'
+import { MAX_RESOLVE_THREADS, SHA, type ResolveInput, type ResolveThread } from '@kento-review/protocol'
 
 import { reviewThreadPages } from '../github/graphql.ts'
 import type { TokenPermissions } from '../github/installation-token.ts'

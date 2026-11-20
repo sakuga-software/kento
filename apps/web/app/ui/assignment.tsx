@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import type { Level } from '@kento/protocol'
+import type { Level } from '@kento-review/protocol'
 
 import { mention } from '../instance.ts'
 import { ASSIGNMENT_FIELDS, MAX_ASSIGNMENT_RULES, MAX_CONDITION_VALUES, OUTCOMES, type AssignmentField, type Outcome } from '../assignment/model.ts'

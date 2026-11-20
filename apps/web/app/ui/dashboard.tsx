@@ -1,4 +1,4 @@
-import { LEVELS, type Level } from '@kento/protocol'
+import { LEVELS, type Level } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
 import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'

@@ -1,4 +1,4 @@
-import { RUNNER_TOKEN_PREFIX } from '@kento/protocol'
+import { RUNNER_TOKEN_PREFIX } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 

@@ -3,9 +3,9 @@
 // `@kento-review feedback <text>` (REV-107).
 // The names come from the instance (KENTO_COMMAND_NAMES): by default `kento-review`, and
 // `sakuga-review`, the old name of the bot, as an alias. Pure functions: no database, no network.
-import { levelCost } from '@kento/engine/levels'
-import { SHORT_ID_LENGTH } from '@kento/engine/render'
-import { isLevel, type Level } from '@kento/protocol'
+import { levelCost } from '@kento-review/engine/levels'
+import { SHORT_ID_LENGTH } from '@kento-review/engine/render'
+import { isLevel, type Level } from '@kento-review/protocol'
 
 import { FEEDBACK_TEXT_MAX } from '../feedback/request.ts'
 import { REASON_MAX } from '../findings/store.ts'

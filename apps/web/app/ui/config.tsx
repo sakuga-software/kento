@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
-import { levelCost } from '@kento/engine/levels'
-import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@kento/protocol'
+import { levelCost } from '@kento-review/engine/levels'
+import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@kento-review/protocol'
 
 import {
   MAX_PATHS,

@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { isOneOf, SEVERITIES, UUID, type Severity } from '@kento/protocol'
+import { isOneOf, SEVERITIES, UUID, type Severity } from '@kento-review/protocol'
 
 import {
   DAYS_MAX,

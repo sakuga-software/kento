@@ -17,19 +17,19 @@ importers:
 
   apps/runner:
     dependencies:
-      '@kento/engine':
+      '@kento-review/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@kento/protocol':
+      '@kento-review/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
 
   apps/web:
     dependencies:
-      '@kento/engine':
+      '@kento-review/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@kento/protocol':
+      '@kento-review/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       drizzle-orm:
