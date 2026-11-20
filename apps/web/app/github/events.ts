@@ -1,4 +1,4 @@
-import { SHA } from '@kento/protocol'
+import { SHA } from '@kento-review/protocol'
 
 import { quotesRequest, replyText } from '../feedback/request.ts'
 import { parseCommentCommand, type CommentCommand } from './comment-command.ts'

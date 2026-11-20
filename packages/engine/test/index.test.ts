@@ -13,7 +13,7 @@ const ROOT = join(import.meta.dirname, '..', '..', '..');
 function importedValues(file: string): string[] {
   const source = readFileSync(join(ROOT, file), 'utf8');
   const names: string[] = [];
-  for (const match of source.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+'(@kento\/engine|[./]*packages\/engine\/src\/index\.ts)'/g)) {
+  for (const match of source.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+'(@kento-review\/engine|[./]*packages\/engine\/src\/index\.ts)'/g)) {
     if (match[1]) continue;
     for (const part of match[2]!.split(',')) {
       const name = part.trim();

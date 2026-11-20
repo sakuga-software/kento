@@ -1,4 +1,4 @@
-import { UUID as LOWER_UUID, type Level } from '@kento/protocol'
+import { UUID as LOWER_UUID, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'

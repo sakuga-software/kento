@@ -1,4 +1,4 @@
-import type { Level } from '@kento/protocol'
+import type { Level } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

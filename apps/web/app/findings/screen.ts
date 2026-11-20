@@ -3,7 +3,7 @@
 // The order is the one of `listFindings` (store.ts): the newest first, by `created_at` then `id`.
 // The counts of the tabs come first, on the same filters: they give the number of pages. Then the
 // page is read with `limit` and `offset`, in the same snapshot.
-import { SEVERITIES, UUID, type Severity } from '@kento/protocol'
+import { SEVERITIES, UUID, type Severity } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'

@@ -1,8 +1,8 @@
 import type { Handle } from 'remix/component'
 
-import { defaultModels } from '@kento/engine/levels'
-import { costKnown } from '@kento/engine/prices'
-import { LEVELS, type Level, type ProviderKind } from '@kento/protocol'
+import { defaultModels } from '@kento-review/engine/levels'
+import { costKnown } from '@kento-review/engine/prices'
+import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
