@@ -88,15 +88,6 @@
       else entry.link.removeAttribute('aria-current')
     }
   }
-  const update = () => {
-    const section = pick(sections) ?? sections[0]
-    mark(sections, section, 'location')
-    for (const other of sections) mark(other.parts, other === section ? pick(other.parts) : null, 'true')
-    if (currentLabel && section) currentLabel.textContent = section.link.textContent
-    const deepest = nav?.querySelector('a[aria-current="true"]') ?? section?.link
-    if (deepest && deepest !== shown) keepInView(deepest)
-    shown = deepest
-  }
   // A long sidebar scrolls on its own: the marked link stays in it.
   let shown = null
   const keepInView = (link) => {
@@ -105,6 +96,15 @@
     const row = link.getBoundingClientRect()
     if (row.top < box.top) nav.scrollTop -= box.top - row.top + 8
     else if (row.bottom > box.bottom) nav.scrollTop += row.bottom - box.bottom + 8
+  }
+  const update = () => {
+    const section = pick(sections) ?? sections[0]
+    mark(sections, section, 'location')
+    for (const other of sections) mark(other.parts, other === section ? pick(other.parts) : null, 'true')
+    if (currentLabel && section) currentLabel.textContent = section.link.textContent
+    const deepest = nav?.querySelector('a[aria-current="true"]') ?? section?.link
+    if (deepest && deepest !== shown) keepInView(deepest)
+    shown = deepest
   }
   if (sections.length > 0) {
     let queued = false
