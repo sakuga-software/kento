@@ -14,7 +14,7 @@ import {
   type FindingView,
 } from '../findings/screen.ts'
 import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
-import { decodeCursor, REASON_MAX } from '../findings/store.ts'
+import { REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { PRECISION_DAYS, PRECISION_MIN, reasonText, type PrecisionReport } from '../findings/precision.ts'
 import { Button, Check, Input, Select, buttonClass } from './controls.tsx'
@@ -22,6 +22,8 @@ import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { statusClass } from './pull.tsx'
+import { readPageNumber } from '../paging.ts'
+import { Pager } from './pager.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 
@@ -45,8 +47,8 @@ export interface FindingList extends FindingQuery {
   days: number | null
   /** REV-102. The findings to consider only (`?type=to-consider`). */
   considered: boolean
-  after: string | null
-  before: string | null
+  /** KNT-148: `?page=n`, from 1. */
+  page: number
   /** REV-91. The tab of the screen: the list, or the precision (`?view=precision`). */
   tab: 'list' | 'precision'
 }
@@ -129,19 +131,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   test: 'Test',
 }
 
-/** A cursor that does not decode is dropped at once: it leaves the URL of the list and of its links. */
-function cursorOf(value: string | null): string | null {
-  try {
-    return decodeCursor(value) ? value : null
-  } catch {
-    return null
-  }
-}
-
 /** The list that a query of the screen asks for. A value that the screen does not know is ignored. */
 export function readFindingList(query: URLSearchParams): FindingList {
   let view = query.get('status')
-  let after = cursorOf(query.get('after'))
   let severity = query.get('priority')
   let repo = query.get('repo')
   let rule = query.get('rule')
@@ -157,8 +149,7 @@ export function readFindingList(query: URLSearchParams): FindingList {
     author: author && LOGIN.test(author) ? author : null,
     days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
     considered: query.get('type') === CONSIDERED,
-    after,
-    before: after ? null : cursorOf(query.get('before')),
+    page: readPageNumber(query),
     tab: query.get('view') === 'precision' ? 'precision' : 'list',
   }
 }
@@ -175,8 +166,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.author) query.set('author', list.author)
   if (list.days) query.set('days', String(list.days))
   if (list.considered) query.set('type', CONSIDERED)
-  if (list.after) query.set('after', list.after)
-  else if (list.before) query.set('before', list.before)
+  if (list.page && list.page > 1) query.set('page', String(list.page))
   if (list.tab === 'precision') query.set('view', 'precision')
   return query
 }
@@ -208,7 +198,7 @@ function hasFilters(list: FindingList): boolean {
 
 /**
  * The Findings screen (REV-18): every finding of the org, filtered by repository, status, priority,
- * rule and a search, a page of 50 at a time.
+ * rule and a search, a page of 25 at a time (KNT-148).
  */
 /** "Precision over 30 d: 78% (n = 40)", or "n = 5 of 10" under the minimum, for the lead of the screen. */
 export function precisionLead(report: PrecisionReport): string {
@@ -307,7 +297,17 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                 </table>
               </div>
             )}
-            <Pager page={page} list={list} />
+            <Pager
+              page={page.page}
+              pages={page.pages}
+              offset={page.offset}
+              shown={page.rows.length}
+              matching={page.matching}
+              href={(number) => findingsHref({ ...filtersOf(list), page: number })}
+              label="Pages of the list"
+              format={count}
+              noun={(total) => plural(total, 'finding')}
+            />
             {admin && page.rows.length > 0 ? <BulkBar csrf={frame.csrfToken} back={findingListQuery(list).toString()} /> : null}
             {/* One load for every person: the filters apply on change; the selection, when the bar is there. */}
             <script src={`/assets/findings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -554,44 +554,6 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
           <time datetime={row.createdAt.toISOString()}>{agoOrDate(row.createdAt, now)}</time>
         </td>
       </tr>
-    )
-  }
-}
-
-/** "1 to 50 of 1,234 findings", and the links to the pages around. Shown when the tab has more than a page. */
-function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
-  return () => {
-    let { page, list } = handle.props
-    if (page.rows.length === 0 || (page.next === null && page.previous === null)) return null
-    let from = page.offset + 1
-    let to = page.offset + page.rows.length
-    let filters = filtersOf(list)
-    return (
-      <nav class="pager findings-pager" aria-label="Pages of the list">
-        <p class="pager-range">
-          {count(from)} to {count(to)} of {count(page.matching)} {plural(page.matching, 'finding')}
-        </p>
-        <span class="pager-links">
-          {page.previous ? (
-            <a class={buttonClass('outline', 'sm')} href={findingsHref({ ...filters, before: page.previous })} rel="prev">
-              Previous
-            </a>
-          ) : (
-            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
-              Previous
-            </span>
-          )}
-          {page.next ? (
-            <a class={buttonClass('outline', 'sm')} href={findingsHref({ ...filters, after: page.next })} rel="next">
-              Next
-            </a>
-          ) : (
-            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
-              Next
-            </span>
-          )}
-        </span>
-      </nav>
     )
   }
 }

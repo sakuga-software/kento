@@ -1,22 +1,22 @@
-// REV-18. The Findings screen: the findings of an org, filtered in SQL and paged by keyset.
+// REV-18. The Findings screen: the findings of an org, filtered in SQL, in numbered pages (KNT-148).
 //
-// The order is the one of `listFindings` (store.ts): the newest first, by `created_at` then `id`. A
-// page starts after the last row of the page before (or ends before the first row of the page
-// after): its cost does not grow with the page number. The counts of the tabs and the position of
-// the page come from one more query on the same filters.
+// The order is the one of `listFindings` (store.ts): the newest first, by `created_at` then `id`.
+// The counts of the tabs come first, on the same filters: they give the number of pages. Then the
+// page is read with `limit` and `offset`, in the same snapshot.
 import { SEVERITIES, UUID, type Severity } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
+import { pageWindow } from '../paging.ts'
 import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
-import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, PAGE_MAX, type FindingStatus } from './store.ts'
+import { FINDING_STATUSES, PAGE_MAX, type FindingStatus } from './store.ts'
 
 /** The tabs of the screen: one status, the closed ones (every status but `open`), or all. */
 export const FINDING_VIEWS = ['open', 'fixed', 'dismissed', 'wontfix', 'stale', 'closed', 'all'] as const
 export type FindingView = (typeof FINDING_VIEWS)[number]
 
-/** The rows of one page of the screen. */
-export const FINDINGS_PAGE_SIZE = 50
+/** The rows of one page of the screen (KNT-148: 25, was 50). */
+export const FINDINGS_PAGE_SIZE = 25
 
 /** The longest search. */
 export const SEARCH_MAX = 100
@@ -41,10 +41,11 @@ export interface FindingQuery {
   days?: number | null
   /** REV-102. The findings to consider only: new on code already read, not blocking (REV-100). */
   considered?: boolean
-  /** The rows after this cursor, in the order of the screen (the next page). */
-  after?: string | null
-  /** The rows before this cursor (the previous page). Ignored with `after`. */
-  before?: string | null
+  /**
+   * The number of the page, from 1 (KNT-148). A page after the last one gives the last one, so a
+   * tab that got shorter (findings marked dismissed) still shows rows.
+   */
+  page?: number
   limit?: number
 }
 
@@ -85,10 +86,10 @@ export interface FindingScreenPage {
   matching: number
   /** The rows of the tab before this page: the first row is number `offset + 1`. */
   offset: number
-  /** `after` of the next page, or null on the last one. */
-  next: string | null
-  /** `before` of the previous page, or null on the first one. */
-  previous: string | null
+  /** The number of the page on screen, from 1: the one asked for, or the last one. */
+  page: number
+  /** The pages of the tab: 1 when it is empty. */
+  pages: number
 }
 
 /** The choices of the filters: the repositories that have findings, and the rules of the org. */
@@ -140,21 +141,18 @@ type Row = Omit<FindingRow, 'githubCommentId' | 'createdAt' | 'updatedAt'> & {
   githubCommentId: number | string | null
   createdAt: Date | string
   updatedAt: Date | string
-  cursorAt: string
 }
 
 function toRow(row: Row): FindingRow {
-  let out: Partial<Row> = { ...row }
-  delete out.cursorAt
   return {
-    ...(out as Omit<Row, 'cursorAt'>),
+    ...row,
     githubCommentId: row.githubCommentId === null ? null : Number(row.githubCommentId),
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),
   }
 }
 
-type CountRow = Record<FindingView, string | number> & { offset: string | number }
+type CountRow = Record<FindingView, string | number>
 
 export async function listFindingScreen(sql: postgres.Sql, orgId: string, query: FindingQuery = {}): Promise<FindingScreenPage> {
   let view = query.view ?? 'open'
@@ -168,16 +166,6 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
   let severity = query.severity && SEVERITIES.includes(query.severity) ? query.severity : null
   let author = query.author && LOGIN.test(query.author) ? query.author : null
   let days = query.days && Number.isInteger(query.days) && query.days >= 1 && query.days <= DAYS_MAX ? query.days : null
-  // A cursor that does not decode starts the list again at its first page.
-  let cursorOf = (value: string | null | undefined) => {
-    try {
-      return decodeCursor(value)
-    } catch {
-      return null
-    }
-  }
-  let after = cursorOf(query.after)
-  let before = after ? null : cursorOf(query.before)
 
   // Every filter but the tab: the counts of the tabs read them too.
   let filters = sql`
@@ -191,64 +179,56 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}
     ${query.considered ? sql`and ${consideredSql(sql)}` : sql``}`
   let inView = sql`findings.status = any(${[...statusesOf(view)]}::finding_status[])`
-  let key = sql`(findings.created_at, findings.id)`
 
-  let fetched = await sql<Row[]>`
-    select findings.id, findings.repo_id as "repoId", repos.full_name as repo, findings.pr_number as "prNumber",
-      findings.path, findings.line, findings.title, findings.severity, findings.category, findings.confidence,
-      findings.status, findings.status_reason as "statusReason", findings.rule_id as "ruleId", rules.title as "ruleTitle",
-      findings.first_seen_sha as "firstSeenSha", findings.last_seen_sha as "lastSeenSha",
-      findings.github_comment_id::float8 as "githubCommentId", ${consideredSql(sql)} as considered,
-      findings.created_at as "createdAt", findings.updated_at as "updatedAt",
-      ${sql.unsafe(cursorAt('findings.created_at'))} as "cursorAt"
-    from findings
-    join repos on repos.id = findings.repo_id
-    left join rules on rules.id = findings.rule_id
-    where ${filters} and ${inView}
-      ${after ? sql`and ${key} < (${after.at}::timestamptz, ${after.id}::uuid)` : sql``}
-      ${before ? sql`and ${key} > (${before.at}::timestamptz, ${before.id}::uuid)` : sql``}
-    order by ${before ? sql`findings.created_at, findings.id` : sql`findings.created_at desc, findings.id desc`}
-    limit ${limit + 1}`
-  // Fewer than a page before the cursor (findings came or went since the link was made): the
-  // previous page is the first one, whole, and not a short page.
-  // In the same way, "Next" past the last row (its findings left the tab since) gives the first page.
-  if ((before && fetched.length < limit) || (after && fetched.length === 0)) {
-    return listFindingScreen(sql, orgId, { ...query, after: null, before: null })
-  }
-  let more = fetched.length > limit
-  let kept = fetched.slice(0, limit)
-  if (before) kept.reverse()
+  // One snapshot (repeatable read) for the counts and the page: the range "26 to 50 of 50" matches
+  // the rows, even while a review writes findings.
+  return sql.begin('isolation level repeatable read read only', async (tx) => {
+    let [counts] = await tx<CountRow[]>`
+      select
+        count(*) filter (where findings.status = 'open') as "open",
+        count(*) filter (where findings.status = 'fixed') as "fixed",
+        count(*) filter (where findings.status = 'dismissed') as "dismissed",
+        count(*) filter (where findings.status = 'wontfix') as "wontfix",
+        count(*) filter (where findings.status = 'stale') as "stale",
+        count(*) filter (where findings.status <> 'open') as "closed",
+        count(*) as "all"
+      from findings
+      join repos on repos.id = findings.repo_id
+      where ${filters}`
+    let matching = Number(counts![view])
+    let { page, pages, offset } = pageWindow(query.page, matching, limit)
 
-  // The position of the page: the rows of the tab that are newer than its first row.
-  let first = kept[0]
-  let [counts] = await sql<CountRow[]>`
-    select
-      count(*) filter (where findings.status = 'open') as "open",
-      count(*) filter (where findings.status = 'fixed') as "fixed",
-      count(*) filter (where findings.status = 'dismissed') as "dismissed",
-      count(*) filter (where findings.status = 'wontfix') as "wontfix",
-      count(*) filter (where findings.status = 'stale') as "stale",
-      count(*) filter (where findings.status <> 'open') as "closed",
-      count(*) as "all",
-      ${
-        first
-          ? sql`count(*) filter (where ${inView} and ${key} > (${first.cursorAt}::timestamptz, ${first.id}::uuid))`
-          : sql`0`
-      } as "offset"
-    from findings
-    join repos on repos.id = findings.repo_id
-    where ${filters}`
+    // The ids of the page first: the skipped rows of a deep page cost an index read each, and the
+    // columns and `considered` are read for the rows of the page only.
+    let rows = await tx<Row[]>`
+      with page as (
+        select findings.id from findings
+        join repos on repos.id = findings.repo_id
+        where ${filters} and ${inView}
+        order by findings.created_at desc, findings.id desc
+        limit ${limit} offset ${offset}
+      )
+      select findings.id, findings.repo_id as "repoId", repos.full_name as repo, findings.pr_number as "prNumber",
+        findings.path, findings.line, findings.title, findings.severity, findings.category, findings.confidence,
+        findings.status, findings.status_reason as "statusReason", findings.rule_id as "ruleId", rules.title as "ruleTitle",
+        findings.first_seen_sha as "firstSeenSha", findings.last_seen_sha as "lastSeenSha",
+        findings.github_comment_id::float8 as "githubCommentId", ${consideredSql(sql)} as considered,
+        findings.created_at as "createdAt", findings.updated_at as "updatedAt"
+      from page
+      join findings on findings.id = page.id
+      join repos on repos.id = findings.repo_id
+      left join rules on rules.id = findings.rule_id
+      order by findings.created_at desc, findings.id desc`
 
-  let last = kept.at(-1)
-  let offset = Number(counts!.offset)
-  return {
-    rows: kept.map(toRow),
-    counts: Object.fromEntries(FINDING_VIEWS.map((v) => [v, Number(counts![v])])) as Record<FindingView, number>,
-    matching: Number(counts![view]),
-    offset,
-    next: last && (before || more) ? encodeCursor({ at: last.cursorAt, id: last.id }) : null,
-    previous: first && offset > 0 ? encodeCursor({ at: first.cursorAt, id: first.id }) : null,
-  }
+    return {
+      rows: rows.map(toRow),
+      counts: Object.fromEntries(FINDING_VIEWS.map((v) => [v, Number(counts![v])])) as Record<FindingView, number>,
+      matching,
+      offset,
+      page,
+      pages,
+    }
+  })
 }
 
 /** The choices of the filters of an org. A repository without a finding is no choice. */
