@@ -25,10 +25,20 @@ Each entry says, when it applies:
   sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and
   keeps their rights (`memberships` stay). The GitHub App needs no change: the callback URL is the
   same.
-- **Session cookie**: `__Secure-kento_session` (was `__Host-kento_session`), still HttpOnly,
-  SameSite=Lax, no Domain, 7 days.
+- **Session cookie**: still `__Host-kento_session` over HTTPS (HttpOnly, Secure, SameSite=Lax,
+  Path=/, no Domain, 7 days), now written by Better Auth. The cookie of the release before opens no
+  session: its holder sees "Session ended." once, the cookie is cleared, and they sign in again. The
+  state of a sign-in in progress has its own cookie, `__Host-kento_state` (10 minutes).
+- **Sign-in limits**: Kentō limits the starts of a sign-in (10 a minute) and the callbacks of GitHub
+  (20 a minute) by client; over it, the sign-in page answers 429 (`auth.sign_in_limited`). The
+  limiter of Better Auth is off. **Behind a proxy, set `KENTO_TRUSTED_PROXY_HOPS`** (1 behind
+  Traefik alone) before the deploy: with the default 0, every client has the address of the proxy
+  and shares one limit.
+- **Sessions keep** the address of the client (as resolved above) and its user agent, for an
+  admin who reads the table; nothing shows them.
 - **Variables**: `KENTO_SESSION_SECRET` signs with its first secret only; a new first secret signs
   everybody out (DEPLOY.md, section 9).
+- **Variables**: new `KENTO_TRUSTED_PROXY_HOPS` (default 0) and `KENTO_SIGN_IN_LIMIT` (default 10).
 - **Migrations** (before it): `0029_installations` (KNT-150) moves the GitHub App installation out of
   `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
   org keeps its id, its settings and its members, and gets one installation with the same GitHub

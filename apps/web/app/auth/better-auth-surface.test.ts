@@ -1,8 +1,9 @@
 // KNT-150. The table keeps only the hash of a session token (app/auth/better-auth.ts,
-// `hashSessionTokens`): a session listed by user carries the hash, not a token. That is safe while
-// Kentō never lists sessions nor revokes one by a listed token, and while the HTTP API of Better
-// Auth, which offers those calls, is not mounted. This scan fails as soon as one of them appears in
-// the code of the service.
+// `hashSessionTokens`), and a session row read other than by its token comes back with no token:
+// that is enforced by the adapter (test/db/auth.test.ts) and by the router, which serves no path of
+// the API of Better Auth (app/ui/pages.test.ts). This scan is a second line: it fails as soon as the
+// code of the service calls an API that lists or revokes sessions, or reaches the handler of Better
+// Auth in another way than the one callback.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,7 +24,12 @@ function sources(): { path: string; code: string }[] {
     }
   }
   walk(join(ROOT, 'app'))
-  return files.map((path) => ({ path: path.slice(ROOT.length), code: readFileSync(path, 'utf8') }))
+  return files.map((path) => ({ path: path.slice(ROOT.length), code: withoutComments(readFileSync(path, 'utf8')) }))
+}
+
+/** The code without its comments: a comment may name an API that the code never calls. */
+function withoutComments(code: string): string {
+  return code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/.*$/gm, '$1')
 }
 
 describe('the surface of Better Auth in the service', () => {
@@ -35,14 +41,22 @@ describe('the surface of Better Auth in the service', () => {
   })
 
   it('never lists the sessions of a user, nor revokes a session by a token it listed', () => {
-    let calls = /\b(listSessions|revokeSession|revokeSessions|revokeOtherSessions|deleteSessions)\s*\(/
-    let found = files.filter((f) => calls.test(f.code)).map((f) => f.path)
+    // Every name, called or not: an alias or a call by a string key still names it. The calls of
+    // Better Auth and of its plugins (admin, multi-session) that list or revoke sessions.
+    let names =
+      /\b(listSessions|listUserSessions|listDeviceSessions|revokeSession|revokeSessions|revokeOtherSessions|revokeUserSession|revokeUserSessions|revokeDeviceSession|setActiveSession|deleteSessions)\b/
+    let found = files.filter((f) => names.test(f.code)).map((f) => f.path)
     assert.deepEqual(found, [])
+    // No call of the API by a computed name: `auth.api[name](…)`.
+    assert.deepEqual(files.filter((f) => /\.api\s*\[/.test(f.code)).map((f) => f.path), [])
   })
 
   it('hands one request only to the handler of Better Auth: the callback of GitHub', () => {
-    let handlers = files.flatMap((f) => [...f.code.matchAll(/\.handler\(/g)].map(() => f.path))
+    // `.handler` named once, called or not (an alias counts), and no adapter that mounts the API.
+    let handlers = files.flatMap((f) => [...f.code.matchAll(/\.handler\b|\[\s*['"`]handler['"`]\s*\]/g)].map(() => f.path))
     assert.deepEqual(handlers, ['app/ui/controllers/auth.tsx'])
+    let mounts = files.filter((f) => /\btoNodeHandler\b|better-auth\/(node|integrations)|\bfromNodeHeaders\b/.test(f.code)).map((f) => f.path)
+    assert.deepEqual(mounts, [])
     let auth = files.find((f) => f.path === 'app/ui/controllers/auth.tsx')!.code
     assert.match(auth, /new URL\(`\$\{AUTH_BASE_PATH\}\/callback\/github\$\{context\.url\.search\}`, auth\.publicUrl\)/)
     // No route of the service points at the base path of Better Auth.

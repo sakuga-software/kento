@@ -11,7 +11,8 @@ import { createAction, createContextKey, createController, type Middleware } fro
 import { createSession, Session } from 'remix/session'
 
 import { currentMemberships } from '../../auth/access.ts'
-import { AUTH_BASE_PATH, signInScope, type SignInScope } from '../../auth/better-auth.ts'
+import { AUTH_BASE_PATH, sessionCookieName, signInScope, type SignInScope } from '../../auth/better-auth.ts'
+import { clientAddress, createRateLimiter, limitKey, SIGN_IN_STARTS_PER_MINUTE, socketAddressOf } from '../../auth/rate-limit.ts'
 import { errorMessage, log } from '../../log.ts'
 import { authRoutes, pageRoutes } from '../../routes.ts'
 import { securityHeaders } from '../security-headers.ts'
@@ -23,9 +24,6 @@ const NOTICES: readonly SignInNotice[] = ['not_member', 'failed', 'signed_out', 
 
 /** A login of GitHub: what the page "Access refused" accepts to show from its cookie. */
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
-
-/** The name of the session cookie of Better Auth, without the `__Secure-` of HTTPS. */
-const SESSION_COOKIE = 'kento_session'
 
 /** The session of Better Auth of a request, read once by the session layer. Null: no valid session. */
 interface AuthSession {
@@ -47,6 +45,11 @@ function activeOrgOf(session: object): string | null {
 export function createAuth(kit: UiKit) {
   let { deps, assetVersion, now, secure } = kit
   let auth = deps.auth
+  let sessionCookie = sessionCookieName(secure)
+  // KNT-150. The starts of a sign-in and the callbacks, by client (app/auth/rate-limit.ts).
+  let limit = auth?.signInLimit ?? SIGN_IN_STARTS_PER_MINUTE
+  let starts = createRateLimiter({ windowMs: 60_000, max: limit, now })
+  let callbacks = createRateLimiter({ windowMs: 60_000, max: 2 * limit, now })
 
   /**
    * The CSRF token of a session: an HMAC of its id. Nothing to store, and it changes with the
@@ -59,7 +62,7 @@ export function createAuth(kit: UiKit) {
 
   /** The request carries a session cookie, valid or not. */
   function hasSessionCookie(cookies: string | null): boolean {
-    return (cookies ?? '').split(/;\s*/).some((pair) => pair.startsWith(`${SESSION_COOKIE}=`) || pair.startsWith(`__Secure-${SESSION_COOKIE}=`))
+    return (cookies ?? '').split(/;\s*/).some((pair) => pair.startsWith(`${sessionCookie}=`))
   }
 
   // Reads the session of Better Auth once, then gives remix/middleware/csrf the token of that
@@ -136,8 +139,7 @@ export function createAuth(kit: UiKit) {
 
   /** Clears the session cookie on a response, whatever the state of the session. */
   function clearSessionCookie(response: Response): Response {
-    let name = secure ? `__Secure-${SESSION_COOKIE}` : SESSION_COOKIE
-    response.headers.append('Set-Cookie', `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`)
+    response.headers.append('Set-Cookie', `${sessionCookie}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`)
     return response
   }
 
@@ -179,6 +181,26 @@ export function createAuth(kit: UiKit) {
   async function roleUnconfirmed(context: { headers: Headers }, login: string, orgs: number) {
     log('warn', 'auth.role_unconfirmed', { login, orgs })
     return unavailable(context)
+  }
+
+  /** The address of the client of a request, as the limits and the session see it. */
+  function clientOf(request: Request): string | null {
+    return clientAddress(request, socketAddressOf(request), auth?.trustedProxyHops ?? 0)
+  }
+
+  /**
+   * KNT-150. A client over the limit of a step of the sign-in gets the sign-in page in a 429, and
+   * nothing is written. A request with no socket (a test of the routes) has no limit.
+   */
+  async function overLimit(limiter: ReturnType<typeof createRateLimiter>, context: { request: Request; headers: Headers }, step: 'start' | 'callback') {
+    let address = clientOf(context.request)
+    if (address === null || limiter.hit(limitKey(address))) return null
+    log('warn', 'auth.sign_in_limited', { step })
+    let html = await renderToString(signInPage(readTheme(context.headers.get('Cookie')), 'rate_limited', '/'))
+    return new Response(`<!DOCTYPE html>${html}`, {
+      status: 429,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '60' },
+    })
   }
 
   /** The 503 of the screens: the sign-in cannot be checked now. Nothing changes in the session. */
@@ -277,6 +299,9 @@ export function createAuth(kit: UiKit) {
 
       async signInGitHub(context) {
         if (!auth) return redirect(authRoutes.signIn.href())
+        // Each start writes a row of `verifications`: one client writes a bounded number of them.
+        let limited = await overLimit(starts, context, 'start')
+        if (limited) return limited
         let started: { headers: Headers; response: { url?: string } }
         try {
           started = (await auth.auth.api.signInSocial({
@@ -310,8 +335,10 @@ export function createAuth(kit: UiKit) {
       // nothing is written for anyone else.
       async callback(context) {
         if (!auth) return redirect(authRoutes.signIn.href())
+        let limited = await overLimit(callbacks, context, 'callback')
+        if (limited) return limited
         let previous = context.get(CurrentSession) ?? null
-        let scope: SignInScope = { profile: null, decision: null }
+        let scope: SignInScope = { profile: null, decision: null, clientIp: clientOf(context.request) }
         let target = new URL(`${AUTH_BASE_PATH}/callback/github${context.url.search}`, auth.publicUrl)
         let answer: Response
         try {
@@ -323,15 +350,23 @@ export function createAuth(kit: UiKit) {
           return redirect(`${authRoutes.signIn.href()}?notice=failed`)
         }
         let location = new URL(answer.headers.get('Location') ?? authRoutes.signIn.href(), auth.publicUrl)
-        let error = answer.status >= 300 && answer.status < 400 ? location.searchParams.get('error') : 'no_redirect'
-        if (error !== null || scope.decision?.kind !== 'allowed') {
+        // A success is a sign-in that Kentō allowed and that got a session cookie. The address that
+        // Better Auth redirects to is the `returnTo` of the person then, which may hold anything.
+        let cookies = answer.headers.getSetCookie()
+        let signedIn =
+          scope.decision?.kind === 'allowed' &&
+          answer.status >= 300 &&
+          answer.status < 400 &&
+          cookies.some((cookie) => cookie.startsWith(`${sessionCookie}=`) && !cookie.startsWith(`${sessionCookie}=;`))
+        if (!signedIn) {
           if (scope.decision?.kind !== 'refused' && scope.decision?.kind !== 'unknown') {
+            let error = answer.status >= 300 && answer.status < 400 ? location.searchParams.get('error') : 'no_redirect'
             log('warn', 'auth.sign_in_failed', { error: error ?? 'no decision' })
           }
           let refused = scope.decision?.kind === 'refused'
           let response = redirect(`${authRoutes.signIn.href()}?notice=${refused ? 'not_member' : 'failed'}`)
-          // The cookies of Better Auth: the state of the sign-in, cleared.
-          for (let cookie of answer.headers.getSetCookie()) response.headers.append('Set-Cookie', cookie)
+          // The cookies of Better Auth, but never a session cookie: the state of the sign-in, cleared.
+          for (let cookie of cookies) if (!cookie.startsWith(`${sessionCookie}=`)) response.headers.append('Set-Cookie', cookie)
           if (refused && refusedCookie && scope.profile) response.headers.append('Set-Cookie', await refusedCookie.serialize(scope.profile.login))
           return response
         }

@@ -1,6 +1,6 @@
 import * as http from 'node:http'
 
-import { createRequestListener } from 'remix/node-fetch-server'
+import { createRequestListener, type ClientAddress } from 'remix/node-fetch-server'
 
 import { createCommandHandler } from './app/commands/handler.ts'
 import { createFeedbackHandler } from './app/feedback/handler.ts'
@@ -18,6 +18,7 @@ import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
 import { createKentoAuth, postgresAuthDatabase } from './app/auth/better-auth.ts'
 import { createGitHubOAuth, createRoleLookup } from './app/auth/github.ts'
+import { rememberClientAddress } from './app/auth/rate-limit.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
 import { createConfigProviders } from './app/providers/catalog.ts'
@@ -125,6 +126,9 @@ let auth =
         lookupRole,
         // REV-32: "Install Kentō on an organization" on the page "Access refused".
         installUrl: appInstallUrl(config.githubUrl, config.appSlug),
+        // KNT-150. The limits of the sign-in, by client.
+        trustedProxyHops: config.signIn.trustedProxyHops,
+        signInLimit: config.signIn.signInLimit,
       }
     : null
 
@@ -317,7 +321,11 @@ let stopLeaseSweeper = startLeaseSweeper(runnerStore)
 let stopJobsPurge = startJobsPurge(database.sql)
 
 let server = http.createServer(
-  createRequestListener(router.fetch, {
+  // KNT-150. The router reads the address of the socket of each request (app/auth/rate-limit.ts).
+  createRequestListener((request: Request, client: ClientAddress) => {
+    rememberClientAddress(request, client.address)
+    return router.fetch(request)
+  }, {
     onError(error) {
       log('error', 'http.unhandled_error', { error: errorMessage(error) })
       return new Response('Internal Server Error', { status: 500 })

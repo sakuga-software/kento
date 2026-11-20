@@ -31,6 +31,10 @@ export interface AuthDependencies {
   now?: () => number
   /** REV-32. The page of GitHub that installs the App on an org, for "Access refused". */
   installUrl?: string | null
+  /** KNT-150. The proxies in front of the service whose `X-Forwarded-For` names the client (KENTO_TRUSTED_PROXY_HOPS). Default 0. */
+  trustedProxyHops?: number
+  /** KNT-150. The starts of a sign-in per minute and per client; twice as many callbacks (KENTO_SIGN_IN_LIMIT). Default 10. */
+  signInLimit?: number
 }
 
 /** The Repos screen (REV-9). Null: the screen shows its empty frame. */
