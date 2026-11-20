@@ -147,7 +147,7 @@ describe('the sign-in and the sessions in Postgres', () => {
     let [user] = await database.sql<{ id: string }[]>`select id from users`
     assert.equal((await database.sql`select 1 from sessions`).length, 2, 'two browsers, two sessions')
     let context = await auth.$context
-    await context.internalAdapter.deleteSessions(user!.id)
+    await context.internalAdapter.deleteUserSessions(user!.id)
     assert.equal((await database.sql`select 1 from sessions`).length, 0)
     for (let cookie of [first.cookie, second.cookie]) assert.equal((await request('/', cookie!)).status, 303)
   })
