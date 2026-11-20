@@ -2,6 +2,7 @@ import { UUID as LOWER_UUID, type Level } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
+import { pageWindow } from '../paging.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import type { DetectedWorkflow, WorkflowMode } from './workflow.ts'
 
@@ -142,7 +143,6 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       // A limit of a caller outside the screen stays 1 row or more: the count of pages divides by it.
       let wanted = Math.trunc(query.limit ?? REPOS_PAGE_SIZE)
       let limit = Number.isFinite(wanted) ? Math.max(1, wanted) : REPOS_PAGE_SIZE
-      let asked = query.page !== undefined && Number.isSafeInteger(query.page) && query.page > 1 ? query.page : 1
 
       let matches = sql`
         ${filter === 'enabled' ? sql`and repos.enabled` : filter === 'disabled' ? sql`and not repos.enabled` : sql``}
@@ -162,7 +162,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       //
       // KNT-146. The counts come first: they give the last page, and a page after it shows the last
       // one. One snapshot (repeatable read) for both: the range "26 to 50 of 50" matches the rows.
-      let { rows, counts, page, pages } = await sql.begin('isolation level repeatable read read only', async (tx) => {
+      let { rows, counts, page, pages, offset } = await sql.begin('isolation level repeatable read read only', async (tx) => {
         await tx`set local jit = off`
         let [counts] = await tx<CountRow[]>`
           select
@@ -175,8 +175,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             coalesce(bool_or(repos.workflow_checked_at is null), false) as unchecked
           from repos where repos.org_id = ${orgId}
         `
-        let pages = Math.max(1, Math.ceil(Number(counts!.matching) / limit))
-        let page = Math.min(asked, pages)
+        let { page, pages, offset } = pageWindow(query.page, Number(counts!.matching), limit)
         // The order of the screen: the enabled repositories first, then by name. The id breaks a
         // tie, so that a row is on one page only.
         let rows = await tx<Row[]>`
@@ -184,7 +183,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             select * from repos
             where repos.org_id = ${orgId} ${matches}
             order by not repos.enabled, lower(repos.full_name), repos.id
-            limit ${limit} offset ${(page - 1) * limit}
+            limit ${limit} offset ${offset}
           )
           select
             page.id, page.github_repo_id as "githubRepoId", page.full_name as "fullName", page.enabled,
@@ -257,7 +256,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             left join last on true
           ) recent on true
         `
-        return { rows, counts: counts!, page, pages }
+        return { rows, counts: counts!, page, pages, offset }
       })
       return {
         rows: rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, ...row }) => ({
@@ -277,7 +276,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
           switching: Number(counts.switching),
         },
         matching: Number(counts.matching),
-        offset: (page - 1) * limit,
+        offset,
         page,
         pages,
         checkedAt: counts.checkedAt === null ? null : toDate(counts.checkedAt),
