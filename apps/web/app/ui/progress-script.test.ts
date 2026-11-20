@@ -135,11 +135,14 @@ describe('the bar of a navigation (KNT-144)', () => {
     assert.equal(fast.bars(), 0)
   })
 
-  it('takes the bar away on Escape, which stops the loading of the page', () => {
+  it('takes the bar away on Escape, which stops the loading of the page, unless another script used that Escape', () => {
     let page = load()
     page.click({ href: '/findings' })
     assert.equal(page.bars(), 1)
     page.fire('keydown', { target: null, defaultPrevented: false, key: 'Enter' } as FakeEvent)
+    assert.equal(page.bars(), 1)
+    // confirm.js or row-menu.js used this Escape to close something of their own.
+    page.fire('keydown', { target: null, defaultPrevented: true, key: 'Escape' } as FakeEvent)
     assert.equal(page.bars(), 1)
     page.fire('keydown', { target: null, defaultPrevented: false, key: 'Escape' } as FakeEvent)
     assert.equal(page.bars(), 0)

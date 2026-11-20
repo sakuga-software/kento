@@ -63,9 +63,10 @@
     })
   })
 
-  // Escape stops the loading of the page in the browsers: the bar goes too.
+  // Escape stops the loading of the page in the browsers: the bar goes too. An Escape that another
+  // script used for itself (confirm.js closes a confirmation, row-menu.js a menu) leaves it.
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') stop()
+    if (event.key === 'Escape' && !event.defaultPrevented && (bar || pending)) stop()
   })
 
   // Back to this page from the cache of the browser: the bar of the click that left it goes away.
