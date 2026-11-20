@@ -297,7 +297,8 @@ describe('the Repos screen', () => {
     let page = await response.text()
     let inline = [...page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)].map((match) => match[1]!)
     assert.deepEqual(inline.map((attrs) => attrs.match(/type="([^"]+)"/)?.[1]).sort(), ['application/json', 'importmap'])
-    assert.match(inline.find((attrs) => attrs.includes('importmap'))!, new RegExp(`nonce="${nonce!.replace(/[+/]/g, '\\$&')}"`))
+    assert.ok(nonce)
+    assert.ok(inline.find((attrs) => attrs.includes('importmap'))!.includes(`nonce="${nonce}"`))
     assert.match(html, /<button type="submit" class="button button--outline list-search-submit">Search<\/button>/)
     checking.now = true
     html = await (await request('/repos', { cookie })).text()
