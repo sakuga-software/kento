@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-pnpm
         with:
-          filter: '@kento/web'
+          filter: '@kento-review/web'
       - name: Lint
         run: pnpm lint
       - name: Type check
@@ -54,7 +54,7 @@ jobs:
           pnpm db:generate --name ci_check
           if [ -n "$(git status --porcelain -- drizzle)" ]; then
             git status --porcelain -- drizzle
-            echo "::error::app/db/schema.ts changed without its migration. Run pnpm -F @kento/web db:generate and commit drizzle/."
+            echo "::error::app/db/schema.ts changed without its migration. Run pnpm -F @kento-review/web db:generate and commit drizzle/."
             exit 1
           fi
 
@@ -90,7 +90,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-pnpm
         with:
-          filter: '@kento/web'
+          filter: '@kento-review/web'
       - name: Tests against Postgres
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
@@ -127,7 +127,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-pnpm
         with:
-          filter: '@kento/web'
+          filter: '@kento-review/web'
       # Chromium of the Playwright version in package.json, and the system libraries it needs.
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium

@@ -1,13 +1,14 @@
 import type { Handle } from 'remix/component'
 
-import { defaultModels } from '@kento/engine/levels'
-import { costKnown } from '@kento/engine/prices'
-import { LEVELS, type Level, type ProviderKind } from '@kento/protocol'
+import { defaultModels } from '@kento-review/engine/levels'
+import { costKnown } from '@kento-review/engine/prices'
+import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
 import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
@@ -470,31 +471,31 @@ function ProviderItem(
             {provider.runnerHeld ? null : (
               <form method="post" action={routes.providerTest.href({ id })}>
                 <input type="hidden" name="_csrf" value={csrf} />
-                <button class="button" type="submit">
+                <Button type="submit">
                   Test
-                </button>
+                </Button>
               </form>
             )}
             {provider.isDefault ? null : (
               <form method="post" action={routes.providerDefault.href({ id })}>
                 <input type="hidden" name="_csrf" value={csrf} />
-                <button class="button" type="submit">
+                <Button type="submit">
                   Make default
-                </button>
+                </Button>
               </form>
             )}
             {provider.runnerHeld ? null : (
               <details class="confirm replace-key" open={keyError !== null || state === 'refused' ? true : undefined}>
-                <summary class={`button ${state === 'refused' ? 'button-primary' : ''}`}>Replace the key</summary>
+                <summary class={buttonClass(state === 'refused' ? 'primary' : 'outline')}>Replace the key</summary>
                 <form class="confirm-body replace-body" method="post" action={routes.providerKey.href({ id })} noValidate>
                   <input type="hidden" name="_csrf" value={csrf} />
                   {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
-                    <label class="field-label" for={`key-${id}`}>
+                    <label class="label" for={`key-${id}`}>
                       New {KIND_LABELS[provider.kind]} key
                     </label>
-                    <input
-                      class="input mono"
+                    <Input
+                      class="mono"
                       id={`key-${id}`}
                       name="apiKey"
                       type="password"
@@ -510,14 +511,14 @@ function ProviderItem(
                         {keyError}
                       </p>
                     ) : (
-                      <p class="field-hint" id={`key-${id}-hint`}>
+                      <p class="description" id={`key-${id}-hint`}>
                         Kentō deletes the old key. The jobs already in progress keep the key that they got.
                       </p>
                     )}
                   </div>
-                  <button class="button button-primary" type="submit">
+                  <Button variant="primary" type="submit">
                     Replace
-                  </button>
+                  </Button>
                 </form>
               </details>
             )}
@@ -563,7 +564,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           {errors[name]}
         </p>
       ) : (
-        <p class="field-hint" id={`provider-${name}-hint`}>
+        <p class="description" id={`provider-${name}-hint`}>
           {hint}
         </p>
       )
@@ -572,7 +573,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
       // #new-provider (public/assets/settings.js).
       <section class="new-provider" id="new-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
         <details class="new-provider-toggle" open={form && Object.keys(form.errors).length > 0 ? true : undefined}>
-          <summary class="button">
+          <summary class={buttonClass()}>
             <span id="new-provider-title">Add a provider</span>
           </summary>
           <div class="card new-provider-card">
@@ -580,11 +581,10 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           <input type="hidden" name="_csrf" value={csrf} />
           <FormErrors errors={errors} />
           <div class="field">
-            <label class="field-label" for="provider-kind">
+            <label class="label" for="provider-kind">
               Type
             </label>
-            <select
-              class="input"
+            <Select
               id="provider-kind"
               name="kind"
               {...field('kind')}
@@ -595,13 +595,13 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                   {KIND_LABELS[kind]}
                 </option>
               ))}
-            </select>
+            </Select>
             {errors.kind ? (
               <p class="field-error" id="provider-kind-error">
                 {errors.kind}
               </p>
             ) : null}
-            <ul class="field-hint kind-hints" id="provider-kind-hint">
+            <ul class="description kind-hints" id="provider-kind-hint">
               {KINDS.map((kind) => (
                 <li>
                   <strong>{KIND_LABELS[kind]}</strong>: {KIND_HINTS[kind]}
@@ -610,25 +610,25 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             </ul>
           </div>
           <div class="field">
-            <label class="field-label" for="provider-label">
+            <label class="label" for="provider-label">
               Name
             </label>
-            <input class="input" id="provider-label" name="label" value={values.label} maxLength={60} required {...field('label')} />
+            <Input id="provider-label" name="label" value={values.label} maxLength={60} required {...field('label')} />
             {message('label', 'What the screen shows, for example "Anthropic of Sakuga".')}
           </div>
           <div class="field">
-            <label class="field-label" for="provider-baseUrl">
+            <label class="label" for="provider-baseUrl">
               Server URL
             </label>
-            <input class="input mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
+            <Input class="mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
             {message('baseUrl', 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
           </div>
           <div class="field">
-            <label class="field-label" for="provider-apiKey">
+            <label class="label" for="provider-apiKey">
               Key
             </label>
-            <input
-              class="input mono"
+            <Input
+              class="mono"
               id="provider-apiKey"
               name="apiKey"
               type="password"
@@ -639,22 +639,27 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             />
             {message('apiKey', 'Encrypted when it arrives. It never comes back to the browser.')}
           </div>
-          <label class="choice">
-            <input type="checkbox" name="runnerHeld" checked={values.runnerHeld ? true : undefined} autoFocus={focusRunnerHeld ? true : undefined} />
-            <span>
-              <strong>The key stays on the runner.</strong> A runner of the organization has it in <span class="mono">PROVIDER_API_KEY</span>. The
-              service never has it.
-            </span>
-          </label>
+          <Choice
+            type="checkbox"
+            name="runnerHeld"
+            checked={values.runnerHeld ? true : undefined}
+            autoFocus={focusRunnerHeld ? true : undefined}
+            label={
+              <>
+                <strong>The key stays on the runner.</strong> A runner of the organization has it in <span class="mono">PROVIDER_API_KEY</span>. The
+                service never has it.
+              </>
+            }
+          />
           <fieldset class="field" aria-describedby={errors.models ? 'provider-models-error' : 'provider-models-hint'}>
-            <legend class="field-label">Models per level</legend>
+            <legend class="label">Models per level</legend>
             {LEVELS.map((level) => (
               <div class="model-field">
-                <label class="field-hint" for={`provider-models-${level}`}>
+                <label class="description" for={`provider-models-${level}`}>
                   {level}
                 </label>
-                <input
-                  class="input mono"
+                <Input
+                  class="mono"
                   id={`provider-models-${level}`}
                   name={`models_${level}`}
                   value={values.models[level]}
@@ -667,9 +672,9 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             ))}
             {message('models', 'Separated by commas, the first one first. Leave it empty for the default models of the type (Anthropic, OpenRouter).')}
           </fieldset>
-          <button class="button button-primary" type="submit">
+          <Button variant="primary" type="submit">
             Add the provider
-          </button>
+          </Button>
         </form>
           </div>
         </details>

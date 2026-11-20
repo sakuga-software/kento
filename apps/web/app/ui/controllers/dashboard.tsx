@@ -1,7 +1,7 @@
 // REV-14. The dashboard: a member reads it; an admin can also retry the last failure, or hide a failure (REV-59).
 import { createAction } from 'remix/router'
 
-import { UUID } from '@kento/protocol'
+import { UUID } from '@kento-review/protocol'
 
 import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { RetryOutcome } from '../../dashboard/store.ts'

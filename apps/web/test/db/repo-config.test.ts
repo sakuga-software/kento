@@ -1,4 +1,4 @@
-import type { Job } from '@kento/protocol'
+import type { Job } from '@kento-review/protocol'
 import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'

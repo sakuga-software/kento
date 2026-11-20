@@ -1,4 +1,4 @@
-import type { Level } from '@kento/protocol'
+import type { Level } from '@kento-review/protocol'
 import { sql } from 'drizzle-orm'
 import {
   bigint,
@@ -22,7 +22,7 @@ import {
 } from 'drizzle-orm/pg-core'
 
 // The tables of milestone M2 only: orgs, repos, runners, jobs, reviews. Later tickets add their own tables
-// and columns with new migrations (`pnpm -F @kento/web db:generate`).
+// and columns with new migrations (`pnpm -F @kento-review/web db:generate`).
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 const updatedAt = () =>

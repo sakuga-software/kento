@@ -1,6 +1,6 @@
-import { descriptionBlock, reviewBody } from '@kento/engine/render'
-import { verdict, type ChangedLines } from '@kento/engine/findings'
-import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
+import { descriptionBlock, reviewBody } from '@kento-review/engine/render'
+import { verdict, type ChangedLines } from '@kento-review/engine/findings'
+import type { ReviewFinding, ReviewPayload } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
