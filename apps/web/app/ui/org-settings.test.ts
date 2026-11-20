@@ -150,10 +150,18 @@ describe('the settings of the org (REV-13)', () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(OCTOCAT)
     let html = await (await request('/settings', { cookie })).text()
-    let nav = /<nav aria-label="Sections of the settings" class="settings-nav">(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
-    let anchors = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
+    let nav = /<nav [^>]*aria-label="Sections of the settings"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
+    // KNT-149: a sidebar. The sections first, each one with the parts that have an anchor under it.
+    let sectionsOnly = nav.replace(/<ul class="settings-nav-sub">.*?<\/ul>/gs, '')
+    let anchors = [...sectionsOnly.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!)
     assert.deepEqual(anchors, ['cap', 'defaults', 'bots', 'app'])
     for (let id of anchors) assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `the section #${id} is on the page`)
+    let parts = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!).filter((id) => !anchors.includes(id))
+    assert.deepEqual(parts, ['org-level', 'org-lite', 'org-balanced', 'org-heavy', 'app-installation', 'app-webhook', 'app-deliveries', 'app-permissions'])
+    for (let id of parts) assert.match(html, new RegExp(`<(div|li|section|details) [^>]*id="${id}"`), `the part #${id} is on the page`)
+    // The button that folds the list under 900 px controls the list, folded until settings.js opens it.
+    assert.match(nav, /<button [^>]*aria-expanded="false"[^>]*aria-controls="settings-nav-list"/)
+    assert.match(nav, /<ul [^>]*id="settings-nav-list"/)
     // Each section of the org: at most one primary button (the defaults have none, their rows are secondary).
     let sections = html.split('<section ').slice(1)
     assert.ok(sections.length >= 4)
@@ -170,6 +178,10 @@ describe('the settings of the org (REV-13)', () => {
         assert.match(html, new RegExp(`href="#${id}"`))
         assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `#${id} for ${profile.login}, App ${app === null ? 'unknown' : 'known'}`)
       }
+      // KNT-149: "Permissions and events" only when GitHub answered, as the part of the page.
+      let known = app !== null
+      assert.equal(/href="#app-permissions"/.test(html), known, `${profile.login}, App ${known ? 'known' : 'unknown'}`)
+      assert.equal(/id="app-permissions"/.test(html), known)
     }
   })
 

@@ -259,14 +259,20 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
     let org = frame.viewer?.org.login ?? ''
     let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })
     return (
-      <Shell frame={frame} section="dashboard" title="Dashboard">
-        <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
+      <Shell
+        frame={frame}
+        section="dashboard"
+        title="Dashboard"
+        meta={
+          // KNT-141: at the right of the title. Out of #dashboard-live, so a read every 10 s keeps it.
           <p class="dash-updated">
             <span data-updated={screen.now.toISOString()}>Updated at {hourSeconds(screen.now)}</span>
             {' · '}
             <a href={routes.home.href()}>Refresh</a>
           </p>
-
+        }
+      >
+        <div class="dashboard" id="dashboard-live" data-refresh={String(REFRESH_SECONDS)}>
           {notice ? (
             <div class={`banner ${notice === 'retried' ? 'banner-ok' : 'banner-info'}`} role="status">
               <p>{DASHBOARD_NOTICES[notice]}</p>

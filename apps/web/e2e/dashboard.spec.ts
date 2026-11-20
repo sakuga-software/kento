@@ -243,6 +243,26 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
+  test('the "Updated" line keeps its place beside the title while its text changes (KNT-141)', async ({ page }) => {
+    // 332–356 px is where the line used to wrap and unwrap as its text grew and shrank.
+    for (let width of [336, 350, 390, 1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      await expect(page.getByText(/Updated \d+ s ago/)).toBeVisible()
+      let tops = await page.evaluate(() => {
+        let stamp = document.querySelector<HTMLElement>('[data-updated]')!
+        let live = document.getElementById('dashboard-live')!
+        let texts = ['Updated at 23:59:59', 'Updated 0 s ago', 'Updated 10 s ago', 'Updated 59 s ago', 'Updated 1 min ago', 'Updated 59 min ago', 'Updated 23 h ago']
+        // In one task: dashboard.js cannot write its own text between two measures.
+        return texts.map((text) => {
+          stamp.textContent = text
+          return Math.round(live.getBoundingClientRect().top)
+        })
+      })
+      expect(new Set(tops).size, `${width} px: ${tops.join(', ')}`).toBe(1)
+    }
+  })
+
   test('a member reads the dashboard and cannot retry or hide a failure', async ({ page, context }) => {
     await seed()
     await context.clearCookies()

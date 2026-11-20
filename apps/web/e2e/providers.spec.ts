@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
@@ -111,6 +111,20 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expect(page.getByText('Key replaced.')).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(card.getByText('••••WXYZ')).toBeVisible()
+
+    // KNT-149. The sidebar lists the provider under "Providers and keys": its link leads to the card,
+    // and leaves "Replace the key" folded. "Add a provider" opens the form.
+    await goToSettingsLink(page, 'Costs and cap')
+    await goToSettingsLink(page, label)
+    await expect(page).toHaveURL(/\/settings\?notice=replaced#provider-[0-9a-f-]+$/)
+    await expect(card).toBeInViewport()
+    await expect(card.getByLabel('New Anthropic key')).toBeHidden()
+    // The card is at the bottom of the page: the sidebar marks it and its section all the same.
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'Providers and keys', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.getByRole('link', { name: label, exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
+    await goToSettingsLink(page, 'Add a provider')
+    await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
 
     // 6. A member reads the section and has no form.
     await page.context().clearCookies()

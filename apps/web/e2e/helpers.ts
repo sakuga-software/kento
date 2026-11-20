@@ -68,6 +68,20 @@ export async function openRepoConfig(page: Page, repo: string) {
 }
 
 /**
+ * KNT-149: follows a link of the sidebar of the settings. Under 900 px the list is folded under
+ * "Section …": the helper opens it first, and the link folds it again.
+ */
+export async function goToSettingsLink(page: Page, name: string) {
+  let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+  let toggle = nav.locator('[data-settings-nav-toggle]')
+  if (await toggle.isVisible()) {
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  }
+  await nav.getByRole('link', { name, exact: true }).click()
+}
+
+/**
  * Signs in through the sign-in page and the fake GitHub, as one of its accounts
  * (e2e/fake-github.ts), and puts the org of the fake in the database first.
  */
