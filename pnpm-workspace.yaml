@@ -4,6 +4,8 @@ packages:
 
 # pnpm 11 refuses to install while a dependency has a build script that this list does not decide.
 # esbuild (from drizzle-kit and the Remix test runner) ships its binary as an optional dependency:
-# its postinstall script only checks it, so it does not run.
+# its postinstall script only checks it, so it does not run. @parcel/watcher (from the Tailwind CLI
+# of apps/web, for --watch only) also ships prebuilt binaries: its script only builds a missing one.
 allowBuilds:
+  '@parcel/watcher': false
   esbuild: false

@@ -497,7 +497,7 @@ describe('the dashboard', () => {
     assert.match(section, /2 jobs have waited in the queue for more than 10 min \(the oldest for 14 min\)/)
     assert.match(section, /No runner online for 2 h/)
     assert.match(section, /Start a runner, see the Runners screen/)
-    assert.match(section, /<a href="\/runners" class="button">See the runners<\/a>/)
+    assert.match(section, /<a href="\/runners" class="button button--outline">See the runners<\/a>/)
     assert.ok(html.indexOf('id="todo-stall"') < html.indexOf('id="todo-failure-'), 'the queue comes before the failure')
     assert.ok(html.indexOf('id="todo-stall"') < html.indexOf('id="dash-runners-title"'))
     // REV-91: each row of "To do" has its own id, once on the page, and names its region with it.

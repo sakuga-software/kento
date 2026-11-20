@@ -157,8 +157,8 @@ describe('the settings of the org (REV-13)', () => {
     // Each section of the org: at most one primary button (the defaults have none, their rows are secondary).
     let sections = html.split('<section ').slice(1)
     assert.ok(sections.length >= 4)
-    for (let section of sections) assert.ok((section.match(/button-primary/g) ?? []).length <= 1, section.slice(0, 120))
-    assert.doesNotMatch(sections.find((s) => s.includes('id="defaults"'))!, /button-primary/)
+    for (let section of sections) assert.ok((section.match(/button--primary/g) ?? []).length <= 1, section.slice(0, 120))
+    assert.doesNotMatch(sections.find((s) => s.includes('id="defaults"'))!, /button--primary/)
   })
 
   it('has the four sections of its table of contents for a member, and without the state of the App (REV-29)', async () => {

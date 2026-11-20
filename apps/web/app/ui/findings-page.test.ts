@@ -82,7 +82,7 @@ describe('the findings to consider (REV-102)', () => {
     assert.equal(lists.at(-1)!.considered, true)
     assert.match(html, /<option value="to-consider" selected>\s*To consider \(code already reviewed\)\s*<\/option>/)
     assert.match(html, /href="\/findings\?status=all&amp;type=to-consider"/)
-    assert.match(html, /<a href="\/findings" class="button button-ghost">Clear the filters/)
+    assert.match(html, /<a href="\/findings" class="button button--ghost">Clear the filters/)
     await request('/findings?type=autre', { cookie })
     assert.equal(lists.at(-1)!.considered, false, 'a value that the screen does not know is ignored')
   })
@@ -96,7 +96,7 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(admin.html, /aria-label="Select &quot;Key read with no expiry&quot;"/)
     // A finding fixed by a push has no checkbox: a person does not set it aside.
     assert.doesNotMatch(admin.html, new RegExp(`value="${C}"`))
-    assert.match(admin.html, /<summary class="button">Mark dismissed…<\/summary>/)
+    assert.match(admin.html, /<summary class="button button--outline">Mark dismissed…<\/summary>/)
     assert.match(admin.html, /value="Off topic" form="findings-bulk"/)
     assert.match(admin.html, /name="status" value="wontfix"[^>]*>\s*Mark wontfix/)
     // The form comes back to the list on screen.
@@ -116,7 +116,7 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /<option value=""[^>]*>\s*Review and rules\s*<\/option>/)
     // The org of the test has no rule: the list "Source" is disabled, as before REV-91.
     assert.match(html, /<select[^>]*id="findings-rule"[^>]*disabled|<select[^>]*disabled[^>]*id="findings-rule"/)
-    assert.match(html, /class="button findings-submit" type="submit"|type="submit" class="button findings-submit"/)
+    assert.match(html, /class="button button--outline findings-submit" type="submit"|type="submit" class="button button--outline findings-submit"/)
     assert.doesNotMatch(html, /Precision · last 30 days/)
     let precision = await (await request('/findings?view=precision', { cookie })).text()
     assert.match(precision, /<a href="\/findings\?view=precision" aria-current="page">Precision<\/a>/)

@@ -5,6 +5,7 @@ import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type 
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
 import { Confirm } from './confirm.tsx'
+import { Button, Input, buttonClass } from './controls.tsx'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue } from './precision.tsx'
 import { agoOrDate, plural } from './format.ts'
@@ -137,16 +138,16 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         title="Repos"
         actions={
           <>
-            <a class="button button-ghost" href={installationUrl} rel="noreferrer" target="_blank">
+            <a class={buttonClass('ghost')} href={installationUrl} rel="noreferrer" target="_blank">
               Manage the installation on GitHub
               <ExternalIcon />
               <span class="visually-hidden">(new tab)</span>
             </a>
             <form method="post" action={routes.reposCheck.href()}>
               {csrf}
-              <button class="button" type="submit">
+              <Button type="submit">
                 Read GitHub again
-              </button>
+              </Button>
             </form>
           </>
         }
@@ -380,9 +381,9 @@ function RepoRow(handle: Handle<RepoRowProps>) {
         <td class="row-action">
           {admin && !repo.enabled ? (
             // REV-36: a secondary button. The primary style stays for the main action of a screen.
-            <button class="button button-small" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
+            <Button size="sm" type="submit" form="repo-actions" formaction={routes.repoEnable.href({ id: repo.id }) + suffix}>
               Enable<span class="visually-hidden"> {name}</span>
-            </button>
+            </Button>
           ) : null}
           {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…". */}
           <details class="row-menu">
@@ -425,8 +426,7 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           <label class="visually-hidden" for="repos-search">
             Search a repo by its name
           </label>
-          <input
-            class="input"
+          <Input
             id="repos-search"
             type="search"
             name="q"
@@ -438,9 +438,9 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           {list.filter !== 'all' ? <input type="hidden" name="filter" value={list.filter} /> : null}
           {/* Enter sends the search; the button serves a screen reader and a browser without it. */}
           {/* Out of sight until the keyboard reaches it: then it shows, with its focus ring. */}
-          <button class="button list-search-submit" type="submit">
+          <Button class="list-search-submit" type="submit">
             Search
-          </button>
+          </Button>
         </form>
         <nav class="segmented-links" aria-label="Filter the repos">
           {REPO_FILTERS.map((filter) => (
@@ -465,7 +465,7 @@ function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
     return (
       <nav class="pager" aria-label="Pages of the list">
         {page.previous ? (
-          <a class="button button-small" href={reposHref({ filter: list.filter, search: list.search, before: page.previous })} rel="prev">
+          <a class={buttonClass('outline', 'sm')} href={reposHref({ filter: list.filter, search: list.search, before: page.previous })} rel="prev">
             Previous
           </a>
         ) : (
@@ -475,7 +475,7 @@ function Pager(handle: Handle<{ page: RepoPage; list: RepoList }>) {
           {from} to {to} of {page.matching}
         </p>
         {page.next ? (
-          <a class="button button-small" href={reposHref({ filter: list.filter, search: list.search, after: page.next })} rel="next">
+          <a class={buttonClass('outline', 'sm')} href={reposHref({ filter: list.filter, search: list.search, after: page.next })} rel="next">
             Next
           </a>
         ) : (
@@ -569,7 +569,7 @@ function Switch(handle: Handle<{ repo: RepoView; admin: boolean; githubUrl: stri
         ) : null}
         {done && workflowLeft && admin && repo.defaultBranch ? (
           <a
-            class="button button-small"
+            class={buttonClass('outline', 'sm')}
             href={`${githubUrl}/${repo.fullName}/delete/${encodeURIComponent(repo.defaultBranch)}/${repo.workflowPath!.split('/').map(encodeURIComponent).join('/')}`}
             rel="noreferrer"
             target="_blank"

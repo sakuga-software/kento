@@ -17,6 +17,7 @@ import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
 import { decodeCursor, REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { PRECISION_DAYS, PRECISION_MIN, reasonText, type PrecisionReport } from '../findings/precision.ts'
+import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
@@ -282,7 +283,7 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                       {admin ? (
                         <th scope="col" class="finding-check">
                           {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
-                          <input type="checkbox" id="findings-all" data-select-all hidden aria-label="Select all the findings of the page" />
+                          <Choice type="checkbox" id="findings-all" data-select-all hidden aria-label="Select all the findings of the page" />
                         </th>
                       ) : null}
                       <th scope="col">Finding</th>
@@ -328,11 +329,10 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
         {list.author ? <input type="hidden" name="author" value={list.author} /> : null}
         {list.days ? <input type="hidden" name="days" value={String(list.days)} /> : null}
         <div class="findings-filter findings-filter-search">
-          <label class="field-label" for="findings-q">
+          <label class="label" for="findings-q">
             Search
           </label>
-          <input
-            class="input"
+          <Input
             id="findings-q"
             type="search"
             name="q"
@@ -343,10 +343,10 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           />
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="findings-repo">
+          <label class="label" for="findings-repo">
             Repo
           </label>
-          <select class="input" id="findings-repo" name="repo">
+          <Select id="findings-repo" name="repo">
             <option value="" selected={!list.repoId}>
               All repos
             </option>
@@ -355,13 +355,13 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
                 {shortName(repo.fullName, org)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="findings-priority">
+          <label class="label" for="findings-priority">
             Priority
           </label>
-          <select class="input" id="findings-priority" name="priority">
+          <Select id="findings-priority" name="priority">
             <option value="" selected={!list.severity}>
               All
             </option>
@@ -370,16 +370,16 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
                 {PRIORITY[severity].label} · {PRIORITY[severity].name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="findings-rule">
+          <label class="label" for="findings-rule">
             Source
           </label>
           {/* With no rule, "Review and rules" is the only choice: the list says so and stays still. */}
           {/* A disabled select is not sent: a rule of the URL that the org no longer has stays in the list. */}
           {facets.rules.length === 0 && list.ruleId ? <input type="hidden" name="rule" value={list.ruleId} /> : null}
-          <select class="input" id="findings-rule" name="rule" disabled={facets.rules.length === 0}>
+          <Select id="findings-rule" name="rule" disabled={facets.rules.length === 0}>
             <option value="" selected={!list.ruleId}>
               Review and rules
             </option>
@@ -388,29 +388,29 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
                 {rule.repo ? `${shortName(rule.repo, org)} · ${rule.title}` : `Org · ${rule.title}`}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div class="findings-filter">
-          <label class="field-label" for="findings-type">
+          <label class="label" for="findings-type">
             Type
           </label>
           {/* REV-102: the findings that the last review lists under "To consider (code already reviewed)". */}
-          <select class="input" id="findings-type" name="type">
+          <Select id="findings-type" name="type">
             <option value="" selected={!list.considered}>
               All findings
             </option>
             <option value={CONSIDERED} selected={list.considered}>
               To consider (code already reviewed)
             </option>
-          </select>
+          </Select>
         </div>
         <div class="findings-filter-actions">
           {/* REV-91: with JavaScript a filter applies on change (findings.js); "Filter" serves a browser without it. */}
-          <button class="button findings-submit" type="submit">
+          <Button class="findings-submit" type="submit">
             Filter
-          </button>
+          </Button>
           {hasFilters(list) ? (
-            <a class="button button-ghost" href={findingsHref({ view: list.view })}>
+            <a class={buttonClass('ghost')} href={findingsHref({ view: list.view })}>
               Clear the filters
             </a>
           ) : null}
@@ -470,7 +470,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
         {select ? (
           <td class="finding-check">
             {row.status !== 'fixed' ? (
-              <input
+              <Choice
                 type="checkbox"
                 name="ids"
                 value={row.id}
@@ -574,20 +574,20 @@ function Pager(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
         </p>
         <span class="pager-links">
           {page.previous ? (
-            <a class="button button-small" href={findingsHref({ ...filters, before: page.previous })} rel="prev">
+            <a class={buttonClass('outline', 'sm')} href={findingsHref({ ...filters, before: page.previous })} rel="prev">
               Previous
             </a>
           ) : (
-            <span class="button button-small" aria-disabled="true">
+            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
               Previous
             </span>
           )}
           {page.next ? (
-            <a class="button button-small" href={findingsHref({ ...filters, after: page.next })} rel="next">
+            <a class={buttonClass('outline', 'sm')} href={findingsHref({ ...filters, after: page.next })} rel="next">
               Next
             </a>
           ) : (
-            <span class="button button-small" aria-disabled="true">
+            <span class={buttonClass('outline', 'sm')} aria-disabled="true">
               Next
             </span>
           )}
@@ -617,12 +617,12 @@ function BulkBar(handle: Handle<{ csrf: string | null; back: string }>) {
             Check findings to mark them.
           </p>
           <DismissDialog id="bulk" form={BULK_FORM} trigger="Mark dismissed…" submit="Mark dismissed" />
-          <button class="button" type="submit" form={BULK_FORM} name="status" value="wontfix">
+          <Button type="submit" form={BULK_FORM} name="status" value="wontfix">
             Mark wontfix
-          </button>
-          <button class="button button-ghost findings-clear" type="button" data-select-none hidden>
+          </Button>
+          <Button variant="ghost" class="findings-clear" type="button" data-select-none hidden>
             Deselect
-          </button>
+          </Button>
         </div>
       </>
     )

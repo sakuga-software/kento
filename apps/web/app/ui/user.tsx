@@ -8,6 +8,7 @@ import { LEVELS, type Level } from '@sakuga-review/protocol'
 import { mention } from '../instance.ts'
 import { userRoutes } from '../routes.ts'
 import { PULLS_STEP, RECEIVED_DAYS, type ReviewedPull, type UserPref, type UserScreen } from '../users/store.ts'
+import { Button, Field, Select } from './controls.tsx'
 import { VERDICT_LABEL } from './dashboard.tsx'
 import { findingsHref } from './findings.tsx'
 import { agoOrDate, plural } from './format.ts'
@@ -84,24 +85,18 @@ function PrefFields(handle: Handle<{ id: string; pref: UserPref | null }>) {
     let level = pref?.level ?? null
     return (
       <>
-        <div class="field">
-          <label class="field-label" for={`${id}-auto`}>
-            Automatic review
-          </label>
-          <select class="input" id={`${id}-auto`} name="auto">
+        <Field id={`${id}-auto`} label="Automatic review">
+          <Select id={`${id}-auto`} name="auto">
             <option value="on" selected={auto}>
               On: each push of my PRs
             </option>
             <option value="off" selected={!auto}>
               Off: only on a command
             </option>
-          </select>
-        </div>
-        <div class="field">
-          <label class="field-label" for={`${id}-level`}>
-            Default level
-          </label>
-          <select class="input" id={`${id}-level`} name="level">
+          </Select>
+        </Field>
+        <Field id={`${id}-level`} label="Default level">
+          <Select id={`${id}-level`} name="level">
             <option value="" selected={level === null}>
               From the repo
             </option>
@@ -110,8 +105,8 @@ function PrefFields(handle: Handle<{ id: string; pref: UserPref | null }>) {
                 {l}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </Field>
       </>
     )
   }
@@ -138,9 +133,9 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
             <input type="hidden" name="_csrf" value={csrf} />
             <input type="hidden" name="repo" value="" />
             <PrefFields id="pref-all" pref={global} />
-            <button class="button button-primary" type="submit">
+            <Button variant="primary" type="submit">
               Save
-            </button>
+            </Button>
           </form>
         ) : (
           <p>
@@ -180,9 +175,9 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
                       <td>
                         <form method="post" action={userRoutes.userPrefRemove.href({ login: user.login, repoId: pref.repoId })}>
                           <input type="hidden" name="_csrf" value={csrf} />
-                          <button class="button button-small" type="submit">
+                          <Button size="sm" type="submit">
                             Remove<span class="visually-hidden"> {pref.fullName}</span>
-                          </button>
+                          </Button>
                         </form>
                       </td>
                     ) : null}
@@ -195,20 +190,17 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
         {self && screen.addable.length > 0 ? (
           <form class="user-pref-form" method="post" action={action}>
             <input type="hidden" name="_csrf" value={csrf} />
-            <div class="field">
-              <label class="field-label" for="pref-repo">
-                Repo
-              </label>
-              <select class="input" id="pref-repo" name="repo">
+            <Field id="pref-repo" label="Repo">
+              <Select id="pref-repo" name="repo">
                 {screen.addable.map((repo) => (
                   <option value={repo.id}>{repo.fullName}</option>
                 ))}
-              </select>
-            </div>
+              </Select>
+            </Field>
             <PrefFields id="pref-new" pref={null} />
-            <button class="button" type="submit">
+            <Button type="submit">
               Add a repo
-            </button>
+            </Button>
           </form>
         ) : null}
       </section>

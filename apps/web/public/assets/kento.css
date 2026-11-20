@@ -414,60 +414,22 @@ kbd,
 
 /* ---------------------------------------------------------------- Controls */
 
-/* Three levels: the main button in ink (one per screen), the secondary outlined, the ghost text only. */
+/*
+ * KNT-143. The buttons, fields, selects, checkboxes and radio buttons are the controls of HeroUI
+ * (heroui.css, built from styles/heroui.css; markup in app/ui/controls.tsx). Three levels of button:
+ * `button--primary` in ink (one per screen), `button--outline`, `button--ghost`; a destructive action
+ * is `button--danger-soft` to open its confirmation, `button--danger` to act. The rules here only
+ * place a control in a screen.
+ */
 .button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: var(--control-h);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--paper-raised);
-  color: var(--ink);
-  font: 600 var(--text-base) / 1 var(--font-ui);
   text-decoration: none;
-  cursor: pointer;
-  transition: background-color var(--duration) var(--ease), opacity var(--duration) var(--ease);
 }
-.button:hover {
-  background: var(--paper);
-}
-.button:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-.button:disabled,
-.button[aria-disabled='true'] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.button-primary {
-  background: var(--action);
-  border-color: var(--action);
-  color: var(--on-action);
-}
-.button-primary:hover {
-  background: var(--action);
-  opacity: 0.86;
-}
-.button-ghost {
-  border-color: transparent;
-  background: transparent;
-}
-.button-ghost:hover {
-  background: var(--paper-sunken);
-}
-.button-large {
-  min-height: var(--control-h-touch);
-  padding: 0 var(--space-5);
-  font-size: 15px;
-}
-.button svg {
-  width: 18px;
-  height: 18px;
-  flex: none;
+/* Fields: the full width of their column, up to a readable line. */
+.input,
+.textarea,
+.select--native {
+  width: 100%;
+  max-width: 420px;
 }
 
 /* Papier / Sumi / Appareil: three radios that look like one segmented control. */
@@ -616,6 +578,9 @@ kbd,
   align-items: center;
   gap: var(--space-2);
 }
+.bar-org-select {
+  max-width: 220px;
+}
 .bar-org-box {
   display: inline-flex;
   align-items: center;
@@ -630,19 +595,6 @@ kbd,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-select.bar-org-box {
-  appearance: none;
-  padding-right: 32px;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
-  background-size: 5px 5px;
-  background-repeat: no-repeat;
-  cursor: pointer;
-}
-select.bar-org-box:hover {
-  background-color: var(--paper);
 }
 /* With JavaScript, a choice applies at once (frame.js): no "Switch" button. */
 .js .bar-org .button {
@@ -809,7 +761,7 @@ select.bar-org-box:hover {
 .who-role {
   color: var(--ink-muted);
 }
-.who .button-ghost {
+.who .button--ghost {
   min-height: 36px;
   padding: 0 var(--space-2);
   color: var(--ink-muted);
@@ -843,13 +795,6 @@ select.bar-org-box:hover {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-1);
-}
-
-.button-small {
-  min-height: 28px;
-  padding: 0 var(--space-3);
-  font-size: var(--text-sm);
-  white-space: nowrap;
 }
 
 .tag.tag-ok {
@@ -1382,7 +1327,7 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
   gap: 6px;
   min-width: 0;
 }
-.findings-filter .input {
+.findings-filter :is(.input, .select--native) {
   max-width: none;
 }
 .findings-filter-actions {
@@ -1454,11 +1399,8 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 .finding-check {
   width: 18px;
 }
-.finding-check input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--action);
+.finding-check .choice {
+  padding: 0;
 }
 /* A checked row: a wash of indigo. */
 .findings-table tbody tr:has(input[name='ids']:checked) > * {
@@ -1566,7 +1508,7 @@ a.finding-title:hover {
 }
 
 @media (max-width: 760px) {
-  .findings-filter .input,
+  .findings-filter :is(.input, .select__trigger),
   .findings-filter-actions .button {
     min-height: var(--control-h-touch);
   }
@@ -2091,25 +2033,6 @@ a.finding-title:hover {
   background: var(--shu);
 }
 
-/* A destructive action: vermilion, outlined to open its confirmation, solid to act (app/ui/confirm.tsx). */
-.button-danger {
-  background: transparent;
-  border-color: var(--shu);
-  color: var(--shu);
-}
-.button-danger:hover {
-  background: var(--shu-wash);
-}
-.button-danger-solid {
-  background: var(--shu);
-  border-color: var(--shu);
-  color: var(--on-shu);
-}
-.button-danger-solid:hover {
-  background: var(--shu);
-  opacity: 0.86;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -2118,63 +2041,28 @@ a.finding-title:hover {
   padding: 0;
   border: 0;
 }
-.field-label {
-  color: var(--ink-muted);
-  font-weight: 500;
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-  letter-spacing: 0.01em;
-}
-.field-hint {
-  color: var(--ink-muted);
-  font-size: var(--text-xs);
-  line-height: var(--leading-xs);
-}
 .field-error {
   color: var(--shu);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
 }
-.input {
-  width: 100%;
-  max-width: 420px;
-  min-height: var(--control-h);
-  padding: 0 var(--space-3);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  background: var(--paper-raised);
-  color: var(--ink);
-  font: 400 var(--text-base) / 20px var(--font-ui);
-  caret-color: var(--ai);
-}
-.input::placeholder {
-  color: var(--ink-faint);
-}
-.input:hover {
-  border-color: var(--ink-muted);
-}
-.input:focus {
-  outline: none;
-  border-color: var(--ai);
-  box-shadow: var(--focus-ring);
-}
-.input[aria-invalid='true'] {
-  border-color: var(--shu);
-}
 .choice {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
   max-width: 640px;
   padding: var(--space-2) 0;
-  line-height: var(--leading-base);
 }
-.choice input {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  accent-color: var(--action);
+/* A choice of several lines: the box on the first line, the text at its usual weight. */
+.choice > :is(.checkbox__content, .radio__content) {
+  align-items: flex-start;
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  font-weight: 400;
+}
+.choice :is(.checkbox__control, .radio__control) {
+  margin-top: 2px;
+}
+/* An input that a script shows (`hidden` until then) hides its box too. */
+.choice:has(input[hidden]) {
+  display: none;
 }
 
 /* ---------------------------------------------------------------- Runners (REV-10) */
@@ -2494,7 +2382,7 @@ a.finding-title:hover {
 .config-card .field {
   width: 100%;
 }
-.config-card .input {
+.config-card :is(.input, .textarea, .select--native) {
   max-width: none;
 }
 .config-paths {
@@ -2614,7 +2502,7 @@ a.finding-title:hover {
   gap: var(--space-2);
 }
 .replace-key[open] summary,
-.replace-key[open] summary.button-primary {
+.replace-key[open] summary.button--primary {
   background: var(--paper-sunken);
   border-color: var(--line-strong);
   color: var(--ink);
@@ -2840,7 +2728,7 @@ a.finding-title:hover {
 .org-default .field {
   margin-bottom: 0;
 }
-.org-default .input {
+.org-default :is(.input, .select--native) {
   max-width: none;
 }
 .app-status .config-facts dd {
@@ -3710,7 +3598,7 @@ a.finding-title:hover {
 .rule-form .field {
   width: 100%;
 }
-.rule-form .input {
+.rule-form :is(.input, .textarea, .select--native) {
   max-width: none;
 }
 .rule-body-input {
@@ -3721,7 +3609,7 @@ a.finding-title:hover {
 .rule-paths-input {
   min-height: 72px;
 }
-.rule-form .input.rule-floor-input {
+.rule-form .select--native.rule-floor-input {
   max-width: 240px;
 }
 .rule-body {
@@ -3828,7 +3716,7 @@ a.finding-title:hover {
     min-height: var(--control-h-touch);
     justify-content: center;
   }
-  .rule-form .input.rule-floor-input {
+  .rule-form .select--native.rule-floor-input {
     max-width: none;
   }
 }

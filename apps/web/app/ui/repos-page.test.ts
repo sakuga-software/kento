@@ -210,14 +210,14 @@ describe('the Repos screen', () => {
     // REV-91: "Disable Kentō…" sits in the menu "…" of its row.
     assert.match(row, /<details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
     // Remix 3.2 renders a boolean data-* attribute as "true". confirm.js selects it by presence.
-    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
+    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button--danger-soft"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
-    assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Disable fruitback</button>`))
+    assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button--danger">Disable fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
-    assert.match(row, /<button type="button" data-confirm-cancel="true" hidden class="button">Cancel<\/button>/)
+    assert.match(row, /<button type="button" data-confirm-cancel="true" hidden class="button button--outline">Cancel<\/button>/)
     assert.match(row, /The published reviews and the counter stay/)
     // No destructive button has the style of the main action.
-    assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
+    assert.doesNotMatch(page, /button--primary[^>]*>\s*Disable/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
 
     let response = await request(`/repos/${FRUITBACK}/disable`, { cookie, form: { _csrf: csrf } })
@@ -270,7 +270,7 @@ describe('the Repos screen', () => {
     assert.equal(html.match(/src="\/assets\/row-menu\.js\?v=1\.2\.3"/g)?.length, 1)
     // Both deferred: confirm.js, in the head, registers its listeners first.
     assert.ok(html.indexOf('/assets/confirm.js') < html.indexOf('/assets/row-menu.js'))
-    assert.match(html, /<button type="submit" class="button list-search-submit">Search<\/button>/)
+    assert.match(html, /<button type="submit" class="button button--outline list-search-submit">Search<\/button>/)
     checking.now = true
     html = await (await request('/repos', { cookie })).text()
     assert.match(html, /<span data-recheck="">check in progress on GitHub · <a href="\/repos">Reload<\/a><\/span>/)
@@ -314,8 +314,8 @@ describe('the Repos screen', () => {
     let { cookie, csrf } = await signIn()
     let html = await (await request('/repos?filter=disabled&q=orch', { cookie })).text()
     let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=orch`
-    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button-small">Enable`))
-    assert.doesNotMatch(html, /button-primary/)
+    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button--outline button--sm">Enable`))
+    assert.doesNotMatch(html, /button--primary/)
     let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=orch&after=x&evil=1`, { cookie, form: { _csrf: csrf } })
     assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=orch&after=x&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
     // The repository left the filter: the notice still names it.

@@ -9,6 +9,7 @@
     "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
     "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
     "db:generate": "drizzle-kit generate",
+    "css:build": "tailwindcss --input styles/heroui.css --output public/assets/heroui.css --minify",
     "lint": "oxlint --deny-warnings app test e2e scripts server.ts drizzle.config.ts playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "NODE_ENV=test remix test 'app/**/*.test.ts'",
@@ -30,10 +31,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@heroui/styles": "3.2.7",
     "@playwright/test": "1.65.0",
+    "@tailwindcss/cli": "4.3.5",
     "@types/node": "26.6.6",
     "drizzle-kit": "0.31.11",
     "oxlint": "1.93.0",
+    "tailwindcss": "4.3.5",
     "typescript": "7.0.2"
   }
 }

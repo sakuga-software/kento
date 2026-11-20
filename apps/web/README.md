@@ -21,6 +21,10 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
 - `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
   the frame. A screen writes a token name, never a colour value.
+- `public/assets/heroui.css` (KNT-143): the form controls of [HeroUI](https://heroui.com) v3 without
+  React, built from `styles/heroui.css` by `css:build` and committed (the service has no build step).
+  `app/ui/controls.tsx` writes them (`Button`, `buttonClass`, `Input`, `Textarea`, `Select`,
+  `Choice`, `Field`); their colours are the tokens of `kento.css`.
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
@@ -204,6 +208,7 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @saku
 | ------------------------------------------ | ------------------------------------------------------------ |
 | `pnpm -F @sakuga-review/web lint`          | oxlint                                                       |
 | `pnpm -F @sakuga-review/web typecheck`     | `tsc --noEmit`                                               |
+| `pnpm -F @sakuga-review/web css:build`     | Writes `public/assets/heroui.css` from `styles/heroui.css` (Tailwind CSS 4, minified). A unit test fails while the committed file is stale. |
 | `pnpm -F @sakuga-review/web test`          | Unit tests, no database.                                     |
 | `pnpm -F @sakuga-review/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
 | `pnpm -F @sakuga-review/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |

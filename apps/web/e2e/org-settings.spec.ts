@@ -194,7 +194,7 @@ test.describe('the settings of the org', () => {
     // The table of contents marks the section on screen.
     await expect(nav.getByRole('link', { name: 'Costs and cap' })).toHaveAttribute('aria-current', 'location')
     for (let section of await page.locator('.settings-content section').all()) {
-      expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
+      expect(await section.locator('.button--primary:visible').count()).toBeLessThanOrEqual(1)
     }
     await expectNoAxeViolations(page)
   })

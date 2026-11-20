@@ -7,6 +7,7 @@ import { ASSIGNMENT_FIELDS, MAX_ASSIGNMENT_RULES, MAX_CONDITION_VALUES, OUTCOMES
 import type { AssignmentView } from '../assignment/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
+import { Button, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 
@@ -84,7 +85,7 @@ function Message(handle: Handle<{ id: string; error?: string; hint?: string }>) 
       )
     }
     return hint ? (
-      <p class="field-hint" id={`${id}-hint`}>
+      <p class="description" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null
@@ -128,16 +129,16 @@ function RuleRow(handle: Handle<{ rule: AssignmentView; last: boolean; props: As
             <form method="post" action={routes.assignmentMove.href({ id: repoId, rule: rule.id })}>
               <Hidden csrf={csrf} />
               <input type="hidden" name="direction" value="up" />
-              <button class="button" type="submit" disabled={rule.position === 1 ? true : undefined}>
+              <Button type="submit" disabled={rule.position === 1 ? true : undefined}>
                 Move up<span class="visually-hidden"> {label}</span>
-              </button>
+              </Button>
             </form>
             <form method="post" action={routes.assignmentMove.href({ id: repoId, rule: rule.id })}>
               <Hidden csrf={csrf} />
               <input type="hidden" name="direction" value="down" />
-              <button class="button" type="submit" disabled={last ? true : undefined}>
+              <Button type="submit" disabled={last ? true : undefined}>
                 Move down<span class="visually-hidden"> {label}</span>
-              </button>
+              </Button>
             </form>
             <Confirm
               trigger={
@@ -169,19 +170,19 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
     let outcome = values.outcome ?? 'balanced'
     return (
       <details class="rule-new" id="assignment-new" open={form !== null || rules.length === 0}>
-        <summary class="button">New rule</summary>
+        <summary class={buttonClass()}>New rule</summary>
         <form method="post" action={routes.assignmentAdd.href({ id: repoId })} class="rule-form" noValidate>
           <Hidden csrf={csrf} />
           <FormErrors errors={errors} />
           <fieldset class="assignment-condition">
-            <legend class="field-label">If</legend>
-            <p class="field-hint">Fill in at least one line. Each filled line must match. In one line, one value is enough.</p>
+            <legend class="label">If</legend>
+            <p class="description">Fill in at least one line. Each filled line must match. In one line, one value is enough.</p>
             <div class="field">
-              <label class="field-label" for={id('authors')}>
+              <label class="label" for={id('authors')}>
                 The author of the PR is
               </label>
-              <input
-                class="input mono"
+              <Input
+                class="mono"
                 id={id('authors')}
                 name="authors"
                 value={values.authors ?? ''}
@@ -194,11 +195,11 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               <Message id={id('authors')} error={errors.authors} hint={`GitHub logins separated by commas, ${MAX_CONDITION_VALUES} at most: sakuga-agent[bot], camille.`} />
             </div>
             <div class="field">
-              <label class="field-label" for={id('paths')}>
+              <label class="label" for={id('paths')}>
                 The PR changes one of these paths
               </label>
-              <textarea
-                class="input mono config-paths rule-paths-input"
+              <Textarea
+                class="mono config-paths rule-paths-input"
                 id={id('paths')}
                 name="paths"
                 rows={3}
@@ -207,7 +208,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
                 aria-invalid={errors.paths ? 'true' : undefined}
                 aria-describedby={describedBy(id('paths'), errors.paths, true)}
                 value={values.paths ?? ''}
-              ></textarea>
+              ></Textarea>
               <Message
                 id={id('paths')}
                 error={errors.paths}
@@ -215,11 +216,10 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               />
             </div>
             <div class="field">
-              <label class="field-label" for={id('labels')}>
+              <label class="label" for={id('labels')}>
                 The PR has one of these labels
               </label>
-              <input
-                class="input"
+              <Input
                 id={id('labels')}
                 name="labels"
                 value={values.labels ?? ''}
@@ -232,11 +232,10 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             </div>
           </fieldset>
           <div class="field">
-            <label class="field-label" for={id('outcome')}>
+            <label class="label" for={id('outcome')}>
               Then
             </label>
-            <select
-              class="input"
+            <Select
               id={id('outcome')}
               name="outcome"
               {...focusIf(first, 'outcome')}
@@ -248,7 +247,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
                   {OUTCOME_LABELS[o]}
                 </option>
               ))}
-            </select>
+            </Select>
             <Message
               id={id('outcome')}
               error={errors.outcome}
@@ -256,11 +255,11 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             />
           </div>
           <div class="field">
-            <label class="field-label" for={id('mention')}>
+            <label class="label" for={id('mention')}>
               Mention in the review (optional)
             </label>
-            <input
-              class="input mono"
+            <Input
+              class="mono"
               id={id('mention')}
               name="mention"
               value={values.mention ?? ''}
@@ -272,9 +271,9 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             />
             <Message id={id('mention')} error={errors.mention} hint="The GitHub login of a person. The published review asks them to review the PR, and GitHub notifies them." />
           </div>
-          <button class="button button-primary" type="submit">
+          <Button variant="primary" type="submit">
             Add the rule
-          </button>
+          </Button>
         </form>
       </details>
     )

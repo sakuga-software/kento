@@ -282,7 +282,7 @@ describe('the section "Providers and keys"', () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(OCTOCAT)
     let page = await (await request('/settings', { cookie })).text()
-    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
+    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button button--outline">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
     // REV-91: no tab for the form; the button of the section opens it, and so does a link to #new-provider.
     assert.doesNotMatch(page, /<a href="#new-provider">/)
