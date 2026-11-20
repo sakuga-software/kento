@@ -7,6 +7,11 @@ import { describe, it } from 'remix/test'
 const CSS = readFileSync(new URL('../../public/assets/kento.css', import.meta.url), 'utf8')
 
 describe('the stylesheet', () => {
+  it('widens the settings for the sidebar only, and keeps 760 px without it (KNT-149)', () => {
+    assert.match(CSS, /^\.content:has\(> \.settings-layout\) > \* \{\n {2}width: 100%;\n {2}max-width: 760px;/m)
+    assert.match(CSS, /^\.content:has\(> \.settings-layout-nav\) > \* \{\n {2}max-width: 1020px;/m)
+  })
+
   it('has no rule of .list-filters, and one rule for the count of a filter (REV-91)', () => {
     // The filters of Repos and Findings are .segmented-links now.
     assert.doesNotMatch(CSS, /\.list-filters\b/)
