@@ -92,7 +92,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         // REV-91: the version of the settings goes under the title, after "For the whole organization".
         lead={org ? `For the whole organization · ${orgVersionLine(org.view)}` : 'What applies to the whole organization.'}
       >
-        <div class="settings-layout">
+        {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px. */}
+        <div class={sections.length >= 2 ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
           <SettingsNav sections={sections} />
           <div class="settings-content">
         {refused.map((p) => {

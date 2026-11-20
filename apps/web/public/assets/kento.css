@@ -3530,17 +3530,21 @@ a.finding-title:hover {
 
 /* ---------------------------------------------------------------- Settings (REV-29, sidebar in KNT-149) */
 
-/* The sidebar of the sections at the left, then a column of 760 px: the banners and the cards. */
+/* The sidebar of the sections at the left, then a column of 760 px: the banners and the cards.
+   Without the sidebar (one section), one column of 760 px. */
 .content:has(> .settings-layout) > * {
   width: 100%;
-  max-width: 1020px;
+  max-width: 760px;
   margin-inline: auto;
+}
+.content:has(> .settings-layout-nav) > * {
+  max-width: 1020px;
 }
 .settings-layout {
   display: grid;
   gap: var(--space-6);
 }
-.settings-layout:has(> .settings-nav) {
+.settings-layout-nav {
   grid-template-columns: 220px minmax(0, 760px);
   gap: var(--space-10);
   align-items: start;
@@ -3667,7 +3671,7 @@ a.finding-title:hover {
 /* Under 900 px the sidebar is a bar at the top of the page, "Section …", that stays in view and
    opens the list over the page. Without JavaScript the list is part of the page. */
 @media (max-width: 900px) {
-  .settings-layout:has(> .settings-nav) {
+  .settings-layout-nav {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);
   }
