@@ -49,5 +49,7 @@ describe('public/assets/heroui.css', () => {
     assert.match(COMMITTED, /--danger:var\(--shu\)/)
     assert.match(COMMITTED, /--field-background:var\(--paper-raised\)/)
     assert.doesNotMatch(COMMITTED, /oklch\(/)
+    // The chevron of a select takes the colour of the text of the field, in each theme.
+    assert.match(COMMITTED, /\.select--native:after\{[^}]*background-color:var\(--field-foreground,var\(--foreground\)\)/)
   })
 })
