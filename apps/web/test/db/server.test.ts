@@ -6,7 +6,7 @@ import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const appDir = fileURLToPath(new URL('../../', import.meta.url))
 
@@ -87,7 +87,7 @@ describe('server', () => {
     }
 
     let sql = postgres(test.url, { max: 1 })
-    await sql`insert into orgs (github_installation_id, github_account_id, login) values (1, 2, 'kept')`
+    await insertOrg(sql, 'kept', 1, 2)
 
     let second = start(env)
     try {

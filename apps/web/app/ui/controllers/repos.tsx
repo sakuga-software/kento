@@ -18,7 +18,7 @@ export function reposActions(kit: UiKit) {
     if (!result) return kit.errorPage(context, 404, 'repo', 'repos')
     log('info', enabled ? 'repos.enabled' : 'repos.disabled', {
       login: signed.user.login,
-      org: signed.membership.org.login,
+      org: signed.membership.org.name,
       repo: result.fullName,
       cancelled: result.cancelled,
     })
@@ -60,7 +60,7 @@ export function reposActions(kit: UiKit) {
           frame={page}
           page={result}
           list={list}
-          installationUrl={installationUrl(repos.githubUrl, org)}
+          installationUrl={installationUrl(repos.githubUrl, org.installations[0]!)}
           githubUrl={repos.githubUrl}
           checking={checking}
           precisions={precisions}

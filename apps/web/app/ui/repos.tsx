@@ -125,7 +125,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
     let repos = page.rows
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
-    let org = viewer.org.login
+    let org = viewer.org.name
     let { all, enabled } = page.counts
     let checkedAt = page.checkedAt
     let csrf = frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null

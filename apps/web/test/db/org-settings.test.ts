@@ -19,7 +19,7 @@ import { createOrgSettingsStore } from '../../app/org-settings/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createFakeGitHub, type FakeGitHub } from '../fake-github.ts'
 import { withInstance } from '../instance.ts'
-import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
+import { createTestDatabase, insertOrg, seedEnabledRepo } from './helpers.ts'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 const HEAD = headSha(0xabc)
@@ -227,7 +227,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
 
     it('an org has its own limit: the limit of another org never stops it', async () => {
       await spend(3)
-      await sql`insert into orgs (github_installation_id, github_account_id, login, daily_cap_usd) values (1002, 2002, 'orchard', 0)`
+      await sql`update orgs set daily_cap_usd = 0 where id = ${await insertOrg(sql, 'orchard', 1002, 2002)}`
       assert.equal((await push()).body.outcome, 'queued')
     })
 
@@ -269,7 +269,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       let store = createOrgSettingsStore(database)
       assert.deepEqual([...(await store.trustedBotsFor(1001))], ['sakuga-agent[bot]'])
       assert.deepEqual([...(await store.trustedBotsFor(424242))], ['sakuga-agent[bot]'], 'an installation that Kentō does not know yet')
-      await sql`insert into orgs (github_installation_id, github_account_id, login, trusted_bots) values (1002, 2002, 'orchard', '{renovate[bot]}')`
+      await sql`update orgs set trusted_bots = '{renovate[bot]}' where id = ${await insertOrg(sql, 'orchard', 1002, 2002)}`
       let renovate = { login: 'renovate[bot]', type: 'Bot' }
       assert.equal((await push({ sender: renovate, author: renovate })).body.outcome, 'ignored')
     })

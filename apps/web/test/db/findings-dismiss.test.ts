@@ -10,7 +10,7 @@ import { createDatabase, type Database } from '../../app/db/client.ts'
 import { migrationsFolder, runMigrations } from '../../app/db/migrate.ts'
 import { applyStatus, type ThreadTarget } from '../../app/findings/dismiss.ts'
 import { precisionReport } from '../../app/findings/precision.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
 
@@ -27,13 +27,11 @@ describe('a change of status of several findings', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url)
     let sql = database.sql
-    let orgs = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (4242, 11, 'sakuga-software'), (5252, 22, 'other') returning id`
-    orgId = orgs[0]!.id
-    otherOrgId = orgs[1]!.id
+    orgId = await insertOrg(sql, 'sakuga-software', 4242, 11)
+    otherOrgId = await insertOrg(sql, 'other', 5252, 22)
     let repos = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${orgId}, 7001, 'sakuga-software/orchard', true), (${otherOrgId}, 7009, 'other/app', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 7001, 'sakuga-software/orchard', true), (${otherOrgId}, (select id from installations where org_id = ${otherOrgId} order by created_at limit 1), 7009, 'other/app', true) returning id`
     // Three open findings of orchard#12: two with a thread on GitHub, one without (its comment failed).
     for (let n = 0; n < 3; n++) {
       let [row] = await sql<{ id: string }[]>`

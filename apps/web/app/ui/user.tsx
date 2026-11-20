@@ -47,7 +47,7 @@ export function UserPage(handle: Handle<UserPageProps>) {
   return () => {
     let { frame, screen, self, pulls, notice, now } = handle.props
     let { user } = screen
-    let org = frame.viewer!.org.login
+    let org = frame.viewer!.org.name
     let role = screen.role === 'admin' ? 'Admin' : 'Member'
     return (
       <Shell

@@ -103,10 +103,10 @@ describe('"Next job" is the provider and the model of the claim (REV-27)', () =>
     box = createSecretBox(randomBytes(32))
     store = createProvidersStore(database.sql, box)
     let [org] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (77, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 77, 2001, 'sakuga-software' from org returning org_id as id`
     orgId = org!.id
     let [repo] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, 3001, 'sakuga-software/sakuga-review', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true) returning id`
     repoId = repo!.id
   })
 

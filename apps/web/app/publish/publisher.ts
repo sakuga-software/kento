@@ -394,12 +394,12 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       )
       select taken.id, taken.job_id as "jobId", taken.pr_number as "prNumber", taken.head_sha as "headSha",
         taken.result, repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
-        orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+        installations.github_installation_id as "installationId", installations.suspended_at is not null as suspended,
         jobs.github_comment_id as "commentId"
       from taken
       join jobs on jobs.id = taken.job_id
       join repos on repos.id = jobs.repo_id
-      join orgs on orgs.id = repos.org_id`
+      join installations on installations.id = repos.installation_id`
     for (let row of rows) {
       let fields = { resolutionId: row.id, jobId: row.jobId, repo: row.fullName, pr: row.prNumber, head: row.headSha }
       let payload = jsonOf<ResolvePayload>(row.result)
@@ -464,13 +464,13 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   async function answerEndedCommands(connection: postgres.ReservedSql) {
     let rows = await connection<EndedCommand[]>`
       select jobs.id, jobs.state, jobs.github_comment_id as "commentId", repos.full_name as "fullName",
-        repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
+        repos.github_repo_id as "githubRepoId", installations.github_installation_id as "installationId"
       from jobs
       join repos on repos.id = jobs.repo_id
-      join orgs on orgs.id = repos.org_id
+      join installations on installations.id = repos.installation_id
       where jobs.github_comment_id is not null and jobs.command_answered_at is null
         and jobs.state in ('failed', 'cancelled') and jobs.finished_at > now() - ${MAX_AGE}::interval
-        and orgs.suspended_at is null
+        and installations.suspended_at is null
       order by jobs.finished_at
       limit 20`
     for (let row of rows) {
@@ -503,9 +503,9 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         where id in (
           select jobs.id from jobs
           join repos on repos.id = jobs.repo_id
-          join orgs on orgs.id = repos.org_id
+          join installations on installations.id = repos.installation_id
           where jobs.state = 'failed' and jobs.failure_noticed_at is null
-            and jobs.finished_at > now() - ${MAX_AGE}::interval and orgs.suspended_at is null
+            and jobs.finished_at > now() - ${MAX_AGE}::interval and installations.suspended_at is null
           order by jobs.finished_at
           limit 20
         )
@@ -513,10 +513,10 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       )
       select taken.id, taken.kind, taken.level, taken.pr_number as "prNumber", taken.head_sha as "headSha",
         taken.failure_reason as "failureReason", taken.github_comment_id as "commentId", taken.repo_id as "repoId",
-        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
+        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", installations.github_installation_id as "installationId"
       from taken
       join repos on repos.id = taken.repo_id
-      join orgs on orgs.id = repos.org_id`
+      join installations on installations.id = repos.installation_id`
     for (let row of rows) {
       let fields = { jobId: row.id, kind: row.kind, repo: row.fullName, pr: row.prNumber, head: row.headSha }
       try {
@@ -588,17 +588,17 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
     let ended = await connection<QueueNotice[]>`
       select qn.repo_id as "repoId", qn.pr_number as "prNumber", qn.github_comment_id as "commentId", qn.body,
         qn.gone_at is not null as gone, repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
-        orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+        installations.github_installation_id as "installationId", installations.suspended_at is not null as suspended,
         qn.updated_at < now() - interval '1 day' as stale
       from queue_notices qn
       join repos on repos.id = qn.repo_id
-      join orgs on orgs.id = repos.org_id
+      join installations on installations.id = repos.installation_id
       where not exists (
         select 1 from jobs
         where jobs.repo_id = qn.repo_id and jobs.pr_number = qn.pr_number and jobs.state = 'queued' and jobs.base_ref is not null
           and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval
           and coalesce(jobs.not_before, jobs.created_at) > now() - ${QUEUE_NOTICE_MAX_AGE}::interval
-      ) or orgs.suspended_at is not null
+      ) or installations.suspended_at is not null
       order by qn.updated_at
       limit 20`
     for (let row of ended) {
@@ -635,19 +635,19 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           count(*) over (partition by jobs.repo_id, jobs.pr_number) as count
         from jobs
         join repos on repos.id = jobs.repo_id
-        join orgs on orgs.id = repos.org_id
+        join installations on installations.id = repos.installation_id
         where jobs.state = 'queued' and jobs.base_ref is not null
           and coalesce(jobs.not_before, jobs.created_at) < now() - ${`${QUEUE_STALL_MINUTES} minutes`}::interval
           and coalesce(jobs.not_before, jobs.created_at) > now() - ${QUEUE_NOTICE_MAX_AGE}::interval
-          and orgs.suspended_at is null
+          and installations.suspended_at is null
       )
       select w.repo_id as "repoId", w.pr_number as "prNumber", w.kind, w.level, w.head_sha as "headSha",
         w.since as "waitingSince", w.count,
-        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId",
+        repos.full_name as "fullName", repos.github_repo_id as "githubRepoId", installations.github_installation_id as "installationId",
         runner_state.online, runner_state.last_seen as "lastSeenAt"
       from waiting w
       join repos on repos.id = w.repo_id
-      join orgs on orgs.id = repos.org_id
+      join installations on installations.id = repos.installation_id
       -- The runners that could take the job: of its org or of the service, in the pool of the repository.
       cross join lateral (
         select count(*) filter (where runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval) as online,
@@ -718,12 +718,12 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         let rows = await connection<Pending[]>`
           select reviews.id, reviews.repo_id as "repoId", reviews.pr_number as "prNumber", reviews.head_sha as "headSha", reviews.result,
             repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
-            orgs.github_installation_id as "installationId", orgs.suspended_at is not null as suspended,
+            installations.github_installation_id as "installationId", installations.suspended_at is not null as suspended,
             jobs.github_comment_id as "commentId", jobs.config as "jobConfig"
           from reviews
           join jobs on jobs.id = reviews.job_id
           join repos on repos.id = reviews.repo_id
-          join orgs on orgs.id = repos.org_id
+          join installations on installations.id = repos.installation_id
           where reviews.published_at is null and reviews.created_at > now() - ${MAX_AGE}::interval
             -- The rows that this process gave up on do not hold the limit.
             and not (reviews.id = any(${exhausted()}::uuid[]))

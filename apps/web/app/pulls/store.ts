@@ -165,7 +165,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
           resolutionsCost: string | null
         }[]
       >`
-        select repos.full_name as "fullName", orgs.github_installation_id::text as "installationId",
+        select repos.full_name as "fullName", installations.github_installation_id::text as "installationId",
           repos.github_repo_id::text as "githubRepoId", last_job.head_sha as "headSha", last_job.base_ref as "baseRef",
           (select count(*)::int from reviews where repo_id = repos.id and pr_number = ${prNumber}) as reviews,
           (select array_agg(score) from (
@@ -174,7 +174,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
           (select sum(cost_usd)::text from reviews where repo_id = repos.id and pr_number = ${prNumber}) as "reviewsCost",
           (select sum(cost_usd)::text from resolutions where repo_id = repos.id and pr_number = ${prNumber}) as "resolutionsCost"
         from repos
-        join orgs on orgs.id = repos.org_id
+        join installations on installations.id = repos.installation_id
         left join lateral (
           select head_sha, base_ref from jobs
           where jobs.repo_id = repos.id and jobs.pr_number = ${prNumber}

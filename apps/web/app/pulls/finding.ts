@@ -110,14 +110,14 @@ export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: st
     }[]
   >`
     select f.id, f.repo_id as "repoId", repos.full_name as "fullName", f.pr_number as "prNumber",
-      orgs.github_installation_id::text as "installationId", repos.github_repo_id::text as "githubRepoId",
+      installations.github_installation_id::text as "installationId", repos.github_repo_id::text as "githubRepoId",
       f.title, f.path, f.line, f.severity, f.category, f.confidence, f.status, f.status_reason as "statusReason",
       f.rule_id as "ruleId", rules.title as "ruleTitle", f.fingerprint, f.key,
       f.first_seen_sha as "firstSeenSha", f.last_seen_sha as "lastSeenSha",
       f.github_comment_id::float8 as "githubCommentId", f.last_review_id as "lastReviewId"
     from findings f
     join repos on repos.id = f.repo_id
-    join orgs on orgs.id = repos.org_id
+    join installations on installations.id = repos.installation_id
     left join rules on rules.id = f.rule_id and rules.org_id = repos.org_id
     where f.id = ${id} and repos.org_id = ${orgId}`
   if (!row) return null

@@ -10,7 +10,7 @@ import { createWebhookStore } from '../../app/db/webhook-store.ts'
 import { headSha, pullRequestPayload, signedRequest, TEST_SECRET } from '../../app/github/test-helpers.ts'
 import { createReposStore, type ReposStore } from '../../app/repos/store.ts'
 import { createAppRouter } from '../../app/router.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, installationOf } from './helpers.ts'
 
 const ORCHARD = { id: 5001, name: 'orchard', full_name: 'sakuga-software/orchard', owner: { id: 2001, login: 'sakuga-software' } }
 
@@ -45,10 +45,10 @@ describe('the Repos screen against Postgres', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews cascade`
     let [org] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (1001, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1001, 2001, 'sakuga-software' from org returning org_id as id`
     orgId = org!.id
     // orchard as an installation event leaves it: known, and disabled.
-    await sql`insert into repos (org_id, github_repo_id, full_name) values (${orgId}, ${ORCHARD.id}, ${ORCHARD.full_name})`
+    await sql`insert into repos (org_id, installation_id, github_repo_id, full_name) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${ORCHARD.id}, ${ORCHARD.full_name})`
   })
 
   async function push(n: number, number = 7) {
@@ -191,8 +191,8 @@ describe('the Repos screen against Postgres', () => {
 
   it('pages the list by 50, the enabled repositories first, and counts the whole org (REV-36)', async () => {
     await sql`
-      insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-      select ${orgId}, 6000 + g, 'sakuga-software/svc-' || lpad(g::text, 3, '0'), g % 4 = 0,
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+      select ${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 6000 + g, 'sakuga-software/svc-' || lpad(g::text, 3, '0'), g % 4 = 0,
         (case when g % 5 = 0 then 'copy' else 'none' end)::workflow_mode
       from generate_series(1, 119) g`
     // 120 repositories: orchard and 119 more, of which 29 enabled.
@@ -229,11 +229,11 @@ describe('the Repos screen against Postgres', () => {
 
   it('filters by state and searches the name, any case, with % and _ as plain characters (REV-36)', async () => {
     await sql`
-      insert into repos (org_id, github_repo_id, full_name, enabled, workflow) values
-        (${orgId}, 7001, 'sakuga-software/Boo', true, 'reusable'),
-        (${orgId}, 7002, 'sakuga-software/boo_cli', false, 'copy'),
-        (${orgId}, 7003, 'sakuga-software/boox', false, 'none'),
-        (${orgId}, 7004, 'sakuga-software/100%-done', false, 'none')`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow) values
+        (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 7001, 'sakuga-software/Boo', true, 'reusable'),
+        (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 7002, 'sakuga-software/boo_cli', false, 'copy'),
+        (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 7003, 'sakuga-software/boox', false, 'none'),
+        (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 7004, 'sakuga-software/100%-done', false, 'none')`
     let names = async (query: Parameters<ReposStore['list']>[1]) => (await store.list(orgId, query)).rows.map((r) => r.fullName)
     assert.deepEqual(await names({ filter: 'enabled' }), ['sakuga-software/Boo'])
     assert.deepEqual(await names({ filter: 'disabled' }), ['sakuga-software/100%-done', 'sakuga-software/boo_cli', 'sakuga-software/boox', 'sakuga-software/orchard'])
@@ -252,7 +252,7 @@ describe('the Repos screen against Postgres', () => {
 
   it('changes a repository of its own org only', async () => {
     let [other] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (1002, 2002, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1002, 2002, 'orchard' from org returning org_id as id`
     let repo = await orchard()
     assert.equal(await store.setEnabled(other!.id, repo.id, true), null)
     assert.equal(await store.setEnabled(orgId, 'not-a-uuid', true), null)
@@ -264,7 +264,7 @@ describe('the Repos screen against Postgres', () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     await sql`update repos set default_level = 'balanced' where id = ${repo.id}`
-    await store.saveCheck(orgId, [
+    await store.saveCheck({ orgId, installationId: await installationOf(sql, orgId) }, [
       {
         githubRepoId: ORCHARD.id, fullName: ORCHARD.full_name, private: true, defaultBranch: 'main',
         workflow: { mode: 'reusable', path: '.github/workflows/sakuga-review.yml', ref: 'stable' },

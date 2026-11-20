@@ -69,7 +69,7 @@ export function createUserControllers(kit: ScreenKit, deps: UsersDependencies | 
         let change = await deps.store.savePref(signed.orgId, user.id, read.repoId, read.pref)
         log('info', 'user.prefs_saved', {
           login: signed.login,
-          org: signed.orgLogin,
+          org: signed.orgName,
           repoId: read.repoId,
           autoReview: read.pref.autoReview,
           level: read.pref.level,
@@ -85,7 +85,7 @@ export function createUserControllers(kit: ScreenKit, deps: UsersDependencies | 
         let user = deps ? await deps.store.member(signed.orgId, signed.login) : null
         if (!deps || !user || !UUID.test(context.params.repoId)) return kit.errorPage(context, 404, 'page', undefined, EXIT)
         await deps.store.removePref(user.id, context.params.repoId)
-        log('info', 'user.prefs_removed', { login: signed.login, org: signed.orgLogin, repoId: context.params.repoId })
+        log('info', 'user.prefs_removed', { login: signed.login, org: signed.orgName, repoId: context.params.repoId })
         return kit.redirect(`${userHref(user.login)}?done=removed`)
       },
     },

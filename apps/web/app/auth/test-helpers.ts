@@ -3,12 +3,20 @@ import type { SessionStorage } from 'remix/session'
 import { createMemorySessionStorage } from 'remix/session-storage/memory'
 
 import type { AuthDependencies } from '../ui/pages.tsx'
-import type { GitHubProfile, LookupRole, OrgRole } from './github.ts'
+import type { GitHubProfile, InstallationAccount, LookupRole, OrgRole } from './github.ts'
 import { readSessionAuth } from './session-storage.ts'
 import type { AuthStore, MembershipRow, OrgRow, UserRow } from './store.ts'
 
-export const ORG: OrgRow = { id: 'org-1', githubInstallationId: 11, githubAccountId: 900, login: 'sakuga-software' }
-export const OTHER_ORG: OrgRow = { id: 'org-2', githubInstallationId: 12, githubAccountId: 901, login: 'orchard' }
+export const ORG: OrgRow = {
+  id: 'org-1',
+  name: 'sakuga-software',
+  installations: [{ id: 'installation-1', githubInstallationId: 11, githubAccountId: 900, login: 'sakuga-software' }],
+}
+export const OTHER_ORG: OrgRow = {
+  id: 'org-2',
+  name: 'orchard',
+  installations: [{ id: 'installation-2', githubInstallationId: 12, githubAccountId: 901, login: 'orchard' }],
+}
 
 export const OCTOCAT: GitHubProfile = { id: 1, login: 'octocat', name: 'Octocat', avatarUrl: null }
 export const CAMILLE: GitHubProfile = { id: 2, login: 'camille', name: null, avatarUrl: null }
@@ -16,7 +24,8 @@ export const STRANGER: GitHubProfile = { id: 3, login: 'stranger', name: null, a
 
 /**
  * The sign-in with a fake GitHub, a store in memory and a clock that the test moves. `roles` is
- * what GitHub answers, by org login then person login: a role, null (not a member), or 'error'.
+ * what GitHub answers, by the login of the account of an installation then person login: a role, null
+ * (not a member), or 'error'.
  */
 export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) {
   let orgs = options.orgs ?? [ORG]
@@ -56,9 +65,9 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     },
   }
 
-  let lookupRole: LookupRole = async (org, person) => {
-    lookups.push(`${org.login}/${person.login}`)
-    let role = roles.get(`${org.login}/${person.login}`) ?? null
+  let lookupRole: LookupRole = async (installation, person) => {
+    lookups.push(`${installation.login}/${person.login}`)
+    let role = roles.get(`${installation.login}/${person.login}`) ?? null
     if (role === 'error') throw new Error('GitHub answered 502')
     return role
   }
@@ -94,9 +103,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     users,
     memberships,
     lookups,
-    /** What GitHub answers for the role of `person` in `org`. */
-    setRole(org: OrgRow, person: GitHubProfile, role: OrgRole | null | 'error') {
-      roles.set(`${org.login}/${person.login}`, role)
+    /** What GitHub answers for the role of `person` in the account of an installation (the first of `org`). */
+    setRole(org: OrgRow | InstallationAccount, person: GitHubProfile, role: OrgRole | null | 'error') {
+      let login = 'installations' in org ? org.installations[0]!.login : org.login
+      roles.set(`${login}/${person.login}`, role)
     },
     /** The account that the next sign-in comes back with. */
     as(next: GitHubProfile) {

@@ -124,7 +124,7 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
     let soon = (key: ConfigTab) => (key === 'rules' && !rules) || (key === 'assignment' && !assignment)
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
-    let name = shortName(view.fullName, viewer.org.login)
+    let name = shortName(view.fullName, viewer.org.name)
     let resolved = resolveConfig(view.orgConfig, view.config, view.defaultLevel)
     let ctx: FormContext = { csrf: frame.csrfToken, repoId: view.id, version: view.version, admin, form }
 

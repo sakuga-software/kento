@@ -90,7 +90,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
         }
       }
     }
-    log('info', 'finding.status', { login: signed.login, org: signed.orgLogin, finding: id, status, outcome: change.outcome, github })
+    log('info', 'finding.status', { login: signed.login, org: signed.orgName, finding: id, status, outcome: change.outcome, github })
     let notice: FindingNotice = change.outcome === 'changed' ? status : 'unchanged'
     return kit.redirect(`${findingHref(id)}?done=${notice}${github ? `&github=${github}` : ''}`)
   }
@@ -184,7 +184,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
       async pullRerun(context) {
         let signed = kit.signed(context)
         if (signed.role !== 'admin') {
-          log('warn', 'pull.rerun_refused', { login: signed.login, org: signed.orgLogin, reason: 'not an admin' })
+          log('warn', 'pull.rerun_refused', { login: signed.login, org: signed.orgName, reason: 'not an admin' })
           return kit.forbidden()
         }
         let prNumber = Number(context.params.number)
@@ -211,7 +211,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
           if ('jobId' in outcome) jobId = outcome.jobId
           notice = outcome.kind === 'not_found' ? 'missing' : outcome.kind
         }
-        log('info', 'pull.rerun', { login: signed.login, org: signed.orgLogin, repo: summary.target.fullName, pr: prNumber, reviewLevel: level, outcome: notice, jobId })
+        log('info', 'pull.rerun', { login: signed.login, org: signed.orgName, repo: summary.target.fullName, pr: prNumber, reviewLevel: level, outcome: notice, jobId })
         return kit.redirect(`${pullHref(summary.target.repoId, prNumber)}?rerun=${notice}`)
       },
 

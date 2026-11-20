@@ -74,7 +74,7 @@ describe('rerun of a pull request', () => {
     await push(headSha(1))
     assert.equal((await rerunReview(sql, { orgId, repoId, prNumber: 24, level: 'lite', githubHead: headSha(9) })).kind, 'stale')
     assert.equal((await rerunReview(sql, { orgId, repoId, prNumber: 99, level: 'lite', githubHead: null })).kind, 'not_found')
-    let [other] = await sql<{ id: string }[]>`insert into orgs (github_installation_id, github_account_id, login) values (7, 7, 'x') returning id`
+    let [other] = await sql<{ id: string }[]>`with org as (insert into orgs (name, slug) values ('x', lower('x')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 7, 7, 'x' from org returning org_id as id`
     assert.equal((await rerunReview(sql, { orgId: other!.id, repoId, prNumber: 24, level: 'lite', githubHead: null })).kind, 'not_found')
     await sql`update repos set enabled = false where id = ${repoId}`
     assert.equal((await rerunReview(sql, { orgId, repoId, prNumber: 24, level: 'lite', githubHead: null })).kind, 'not_found')

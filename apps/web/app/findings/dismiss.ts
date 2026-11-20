@@ -111,11 +111,11 @@ export async function applyStatus(
     (
       await sql<Thread[]>`
         select findings.id, findings.status, findings.pr_number as "prNumber", findings.github_comment_id::float8 as "commentId",
-          repos.full_name as "fullName", repos.github_repo_id::text as "githubRepoId", orgs.github_installation_id::text as "installationId"
+          repos.full_name as "fullName", repos.github_repo_id::text as "githubRepoId", installations.github_installation_id::text as "installationId"
         from findings
         join repos on repos.id = findings.repo_id
-        join orgs on orgs.id = repos.org_id
-        where findings.id = any(${input.ids}::uuid[]) and orgs.id = ${input.orgId}`
+        join installations on installations.id = repos.installation_id
+        where findings.id = any(${input.ids}::uuid[]) and repos.org_id = ${input.orgId}`
     ).map((t) => [t.id, t]),
   )
   let body = replyText(input.status, input.reason, input.actor)

@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
-import { FAKE_ORG } from './fake-github.ts'
+import { seedFakeOrg } from './pull-seed.ts'
 
 /** Fails on any WCAG 2.2 A or AA violation that axe finds on the page. */
 export async function expectNoAxeViolations(page: Page) {
@@ -44,11 +44,7 @@ async function seedOrg() {
   if (seeded) return
   let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
   try {
-    await sql`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (${FAKE_ORG.installationId}, ${FAKE_ORG.accountId}, ${FAKE_ORG.login})
-      on conflict (github_installation_id) do nothing
-    `
+    await seedFakeOrg(sql)
     seeded = true
   } finally {
     await sql.end()

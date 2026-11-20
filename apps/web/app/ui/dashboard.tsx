@@ -255,7 +255,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
     let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
     let admin = frame.viewer?.role === 'admin'
     let csrf = frame.csrfToken ?? ''
-    let org = frame.viewer?.org.login ?? ''
+    let org = frame.viewer?.org.name ?? ''
     let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })
     return (
       <Shell frame={frame} section="dashboard" title="Dashboard">

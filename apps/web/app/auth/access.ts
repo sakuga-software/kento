@@ -18,6 +18,31 @@ export type SignInDecision =
   /** GitHub failed for every org where the answer could have let the person in. */
   | { kind: 'unknown' }
 
+/**
+ * KNT-150. The role of a person in an org, from GitHub: the highest role that the accounts of its
+ * installations give (`admin` over `member`). Null when every installation answers "not a member".
+ * Throws when none gives a role and GitHub failed for at least one: the answer is unknown.
+ */
+export async function orgRole(
+  lookupRole: LookupRole,
+  org: OrgRow,
+  person: { githubId: number; login: string },
+): Promise<OrgRole | null> {
+  let role: OrgRole | null = null
+  let failure: unknown = null
+  for (let installation of org.installations) {
+    try {
+      let found = await lookupRole(installation, person)
+      if (found === 'admin') return 'admin'
+      role = found ?? role
+    } catch (error) {
+      failure ??= error
+    }
+  }
+  if (role === null && failure !== null) throw failure
+  return role
+}
+
 /** Asks GitHub for the role of a GitHub account in every org of the App, before anything is written. */
 export async function decideSignIn(
   store: AuthStore,
@@ -28,9 +53,9 @@ export async function decideSignIn(
   let results = await Promise.all(
     orgs.map(async (org) => {
       try {
-        return { org, role: await lookupRole(org, { githubId: profile.id, login: profile.login }), failed: false }
+        return { org, role: await orgRole(lookupRole, org, { githubId: profile.id, login: profile.login }), failed: false }
       } catch (error) {
-        log('warn', 'auth.role_check_failed', { org: org.login, login: profile.login, error: errorMessage(error) })
+        log('warn', 'auth.role_check_failed', { org: org.name, login: profile.login, error: errorMessage(error) })
         return { org, role: null, failed: true }
       }
     }),
@@ -82,16 +107,16 @@ export async function currentMemberships(
       continue
     }
     try {
-      let role = await lookupRole(membership.org, { githubId: user.githubId, login: user.login })
+      let role = await orgRole(lookupRole, membership.org, { githubId: user.githubId, login: user.login })
       if (role === null) {
         await store.deleteMembership(user.id, membership.org.id)
-        log('info', 'auth.access_lost', { login: user.login, org: membership.org.login })
+        log('info', 'auth.access_lost', { login: user.login, org: membership.org.name })
         continue
       }
       await store.saveMembership(user.id, membership.org.id, role)
       current.push({ ...membership, role, checkedAt: new Date(now) })
     } catch (error) {
-      log('warn', 'auth.role_check_failed', { org: membership.org.login, login: user.login, error: errorMessage(error) })
+      log('warn', 'auth.role_check_failed', { org: membership.org.name, login: user.login, error: errorMessage(error) })
       if (age < ROLE_GRACE_MS) current.push(membership)
       else unconfirmed++
     }

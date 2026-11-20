@@ -19,7 +19,15 @@ Each entry says, when it applies:
 
 ## Unreleased
 
-- **Migrations**: none (still 29).
+- **Migrations**: 30. `0029_installations` (KNT-150) moves the GitHub App installation out of
+  `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
+  org keeps its id, its settings and its members, and gets one installation with the same GitHub
+  ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
+  `name` and a unique `slug` (the login; an account that installed the App twice has a second org
+  with the installation id as a suffix). The release before it does not run on the new schema:
+  stop it before the new one migrates, and roll back with a database backup taken before.
+- **Webhook**: a new installation of an account that had one before joins the org of that earlier
+  installation, with its settings, instead of a new org.
 - **Order**: the service, then the runners (the engine changes).
 - **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
   `DATABASE_URL`, the service connects as before. Version 4 reads more of the environment:

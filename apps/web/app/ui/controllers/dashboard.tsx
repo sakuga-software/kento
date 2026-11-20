@@ -30,7 +30,7 @@ export function dashboardActions(kit: UiKit) {
           githubUrl={dashboard.githubUrl}
           notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
           serviceKey={dashboard.serviceKey ?? false}
-          installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org)}
+          installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org.installations[0]!)}
           precision={precision}
         />,
       )
@@ -41,7 +41,7 @@ export function dashboardActions(kit: UiKit) {
       let signed = signedOf(context)
       let dashboard = deps.dashboard
       if (!dashboard || signed.membership.role !== 'admin') {
-        log('warn', 'dashboard.retry_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+        log('warn', 'dashboard.retry_refused', { login: signed.user.login, org: signed.membership.org.name, reason: 'not an admin' })
         return forbidden()
       }
       let level = context.get(FormData)?.get('level')
@@ -68,7 +68,7 @@ export function dashboardActions(kit: UiKit) {
       }
       log('info', 'dashboard.retry', {
         login: signed.user.login,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         failedJobId: id,
         reviewLevel: level,
         outcome: outcome.kind,
@@ -83,12 +83,12 @@ export function dashboardActions(kit: UiKit) {
       let signed = signedOf(context)
       let dashboard = deps.dashboard
       if (!dashboard || signed.membership.role !== 'admin') {
-        log('warn', 'dashboard.dismiss_refused', { login: signed.user.login, org: signed.membership.org.login, reason: 'not an admin' })
+        log('warn', 'dashboard.dismiss_refused', { login: signed.user.login, org: signed.membership.org.name, reason: 'not an admin' })
         return forbidden()
       }
       let id = context.params.id
       let dismissed = UUID.test(id) ? await dashboard.store.dismissFailure(signed.membership.org.id, id, signed.user.login) : false
-      log('info', 'dashboard.dismiss', { login: signed.user.login, org: signed.membership.org.login, failedJobId: id, dismissed })
+      log('info', 'dashboard.dismiss', { login: signed.user.login, org: signed.membership.org.name, failedJobId: id, dismissed })
       let notice: DashboardNotice = dismissed ? 'dismissed' : 'dismiss_missing'
       return redirect(`${pageRoutes.home.href()}?notice=${notice}`)
     }),

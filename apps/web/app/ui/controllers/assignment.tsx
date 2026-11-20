@@ -52,7 +52,7 @@ export function assignmentActions(kit: UiKit) {
       }
       let outcome = await store.create(org.id, repoId, signed.user.id, parsed.value)
       if (outcome.kind === 'saved') {
-        log('info', 'assignment.added', { login, org: org.login, repoId, ruleId: outcome.id, position: outcome.position, action: parsed.value.action, level: parsed.value.level })
+        log('info', 'assignment.added', { login, org: org.name, repoId, ruleId: outcome.id, position: outcome.position, action: parsed.value.action, level: parsed.value.level })
         return assignmentBack(repoId, 'added', outcome.id)
       }
       if (outcome.kind === 'full') return assignmentBack(repoId, 'full', null)
@@ -63,14 +63,14 @@ export function assignmentActions(kit: UiKit) {
       if (direction !== 'up' && direction !== 'down') return new Response('Bad Request', { status: 400 })
       let outcome = await store.move(org.id, repoId, ruleId!, direction)
       if (outcome.kind === 'saved') {
-        log('info', 'assignment.moved', { login, org: org.login, repoId, ruleId, position: outcome.position })
+        log('info', 'assignment.moved', { login, org: org.name, repoId, ruleId, position: outcome.position })
         return assignmentBack(repoId, 'moved', ruleId)
       }
       return assignmentBack(repoId, 'missing', null)
     }
     let outcome = await store.remove(org.id, repoId, ruleId!)
     if (outcome.kind === 'removed') {
-      log('info', 'assignment.removed', { login, org: org.login, repoId, ruleId, position: outcome.position })
+      log('info', 'assignment.removed', { login, org: org.name, repoId, ruleId, position: outcome.position })
       return assignmentBack(repoId, 'removed', null)
     }
     return assignmentBack(repoId, 'missing', null)

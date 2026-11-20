@@ -31,7 +31,7 @@ const OUT = new URL('../../../design/socle/frames/', import.meta.url)
 // From design/socle/frames/ to the assets of the app.
 const ASSETS = '../../../apps/web/public/assets/'
 
-const admin: Viewer = { login: 'octocat', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', login: 'sakuga-software' }, orgs: [{ id: 'org-1', login: 'sakuga-software' }] }
+const admin: Viewer = { login: 'octocat', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', name: 'sakuga-software' }, orgs: [{ id: 'org-1', name: 'sakuga-software' }] }
 const member: Viewer = { ...admin, login: 'camille', name: 'Camille', role: 'member' }
 
 function frame(theme: Theme, viewer: Viewer | null, path: string): PageFrame {

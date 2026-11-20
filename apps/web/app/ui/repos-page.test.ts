@@ -96,7 +96,7 @@ function setup(findings: FindingsScreenStore | null = null) {
   let checking = { now: false }
   let check: RepoCheck = {
     async run(org) {
-      checks.push(org.login)
+      checks.push(org.name)
       return { repos: 2, failed: 0 }
     },
     refreshIfStale: () => checking.now,

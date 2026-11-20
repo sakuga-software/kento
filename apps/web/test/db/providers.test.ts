@@ -12,7 +12,7 @@ import { createProvidersStore, type ProvidersStore } from '../../app/providers/s
 import { createAppRouter } from '../../app/router.ts'
 import type { RunnerApiDependencies } from '../../app/runner/controller.ts'
 import { createRunnerStore } from '../../app/runner/store.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = 'b'.repeat(40)
@@ -94,14 +94,11 @@ describe('providers and their encrypted keys', () => {
     database = createDatabase(test.url, { max: 12 })
     box = createSecretBox(randomBytes(32))
     store = createProvidersStore(database.sql, box)
-    let orgs = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (77, 2001, 'sakuga-software'), (78, 2002, 'orchard') returning id`
-    orgId = orgs[0]!.id
-    otherOrgId = orgs[1]!.id
+    orgId = await insertOrg(database.sql, 'sakuga-software', 77, 2001)
+    otherOrgId = await insertOrg(database.sql, 'orchard', 78, 2002)
     let repos = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${orgId}, 3001, 'sakuga-software/sakuga-review', true), (${otherOrgId}, 3002, 'orchard/app', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true), (${otherOrgId}, (select id from installations where org_id = ${otherOrgId} order by created_at limit 1), 3002, 'orchard/app', true) returning id`
     repoId = repos[0]!.id
     otherRepoId = repos[1]!.id
   })

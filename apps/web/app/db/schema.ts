@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -14,6 +15,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   type AnyPgColumn,
@@ -38,14 +40,16 @@ export const jobKind = pgEnum('job_kind', ['review', 'resolve'])
 /** The life of a job: queued → running → done | failed, or cancelled by a newer push. */
 export const jobState = pgEnum('job_state', ['queued', 'running', 'done', 'failed', 'cancelled'])
 
-/** One installation of the GitHub App, on an organization or a user account. */
+/**
+ * KNT-150. An organization of Kentō: its members, its settings, and the GitHub App installations that
+ * bring its repositories. The webhook creates one for each new installation.
+ */
 export const orgs = pgTable('orgs', {
   id: uuid('id').primaryKey().defaultRandom(),
-  githubInstallationId: bigint('github_installation_id', { mode: 'number' }).notNull().unique(),
-  githubAccountId: bigint('github_account_id', { mode: 'number' }).notNull(),
-  login: text('login').notNull(),
-  /** Set when GitHub reports the installation as suspended or deleted. */
-  suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+  /** What the screens show. At its creation by the webhook: the login of the account of the installation. */
+  name: text('name').notNull(),
+  /** Unique, lowercase. At its creation by the webhook: the login, then `-<installation id>` if it is taken. */
+  slug: text('slug').notNull().unique(),
   /**
    * The config of the org: what its repositories inherit (`ConfigOverrides` of app/repo-config). A
    * key that it does not hold takes the value of Kentō. The settings of the org (REV-13) write it.
@@ -78,12 +82,36 @@ export const orgs = pgTable('orgs', {
 ])
 
 /**
+ * KNT-150. One installation of the GitHub App, on an organization or a user account of GitHub. It
+ * belongs to one org of Kentō; the webhook finds the org of an event through it, never through a
+ * session.
+ */
+export const installations = pgTable(
+  'installations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'restrict' }),
+    githubInstallationId: bigint('github_installation_id', { mode: 'number' }).notNull().unique(),
+    githubAccountId: bigint('github_account_id', { mode: 'number' }).notNull(),
+    /** The login of the GitHub account. It changes when the account is renamed. */
+    accountLogin: text('account_login').notNull(),
+    /** Set when GitHub reports the installation as suspended or deleted. */
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index('installations_org_id_idx').on(table.orgId), unique('installations_id_org_id_unique').on(table.id, table.orgId)],
+)
+
+/**
  * The review workflow that a repository still runs, as the Repos screen reads it on GitHub: none, a
  * workflow that calls `review.yml` of sakuga-review (`reusable`), or a copy of its job (`copy`).
  */
 export const workflowMode = pgEnum('workflow_mode', ['none', 'reusable', 'copy'])
 
-/** A repository that the installation of an org can see. */
+/** A repository that an installation of an org can see. */
 export const repos = pgTable(
   'repos',
   {
@@ -91,6 +119,12 @@ export const repos = pgTable(
     orgId: uuid('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
+    /**
+     * KNT-150. The installation that sees the repository: its token reads and writes on GitHub. It
+     * belongs to the org of the repository (a foreign key on both columns), and an installation
+     * that moves to another org takes its repositories with it.
+     */
+    installationId: uuid('installation_id').notNull(),
     githubRepoId: bigint('github_repo_id', { mode: 'number' }).notNull().unique(),
     /** `owner/name`. It changes when the repository is renamed or moved. */
     fullName: text('full_name').notNull(),
@@ -127,7 +161,17 @@ export const repos = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [index('repos_org_id_idx').on(table.orgId)],
+  (table) => [
+    index('repos_org_id_idx').on(table.orgId),
+    index('repos_installation_id_idx').on(table.installationId),
+    foreignKey({
+      name: 'repos_installation_org_fk',
+      columns: [table.installationId, table.orgId],
+      foreignColumns: [installations.id, installations.orgId],
+    })
+      .onDelete('cascade')
+      .onUpdate('cascade'),
+  ],
 )
 
 /**

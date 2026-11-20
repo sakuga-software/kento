@@ -24,15 +24,15 @@ describe('the store of the rules (REV-19)', () => {
     database = createDatabase(test.url, { max: 4 })
     store = createRulesStore(database.sql)
     let [org] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (77, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 77, 2001, 'sakuga-software' from org returning org_id as id`
     let [other] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (78, 2002, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 78, 2002, 'orchard' from org returning org_id as id`
     orgId = org!.id
     otherOrgId = other!.id
     let [repo] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name) values (${orgId}, 3001, 'sakuga-software/orchard') returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/orchard') returning id`
     let [otherRepo] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name) values (${otherOrgId}, 3002, 'orchard/app') returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name) values (${otherOrgId}, (select id from installations where org_id = ${otherOrgId} order by created_at limit 1), 3002, 'orchard/app') returning id`
     repoId = repo!.id
     otherRepoId = otherRepo!.id
     let [user] = await database.sql<{ id: string }[]>`

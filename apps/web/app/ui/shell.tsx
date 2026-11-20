@@ -29,9 +29,9 @@ export interface Viewer {
   /** An admin of the org edits; a member reads. */
   role: 'admin' | 'member'
   /** The org on screen. */
-  org: { id: string; login: string }
+  org: { id: string; name: string }
   /** Every org where the person is a member; more than one shows a switch. */
-  orgs: { id: string; login: string }[]
+  orgs: { id: string; name: string }[]
 }
 
 /** What every screen gives to the frame. */
@@ -129,7 +129,7 @@ export function Shell(handle: Handle<ShellProps>) {
             <div class="banner banner-info" role="status">
               <LockIcon />
               <p>
-                <strong class="banner-title">Read only</strong> You are a member of {viewer.org.login}. You can see everything
+                <strong class="banner-title">Read only</strong> You are a member of {viewer.org.name}. You can see everything
                 {memberCan ? `, ${memberCan}` : ''}, and only the admins of the organization can change
                 {memberCan ? ' the rest' : ' it'}.
               </p>
@@ -193,7 +193,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
       return (
         <span class="bar-org">
           <span class="visually-hidden">Organization: </span>
-          <span class="bar-org-box">{viewer.org.login}</span>
+          <span class="bar-org-box">{viewer.org.name}</span>
         </span>
       )
     }
@@ -207,7 +207,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
         <select class="bar-org-box" id="org-switch" name="orgId">
           {viewer.orgs.map((org) => (
             <option value={org.id} selected={org.id === viewer.org.id}>
-              {org.login}
+              {org.name}
             </option>
           ))}
         </select>

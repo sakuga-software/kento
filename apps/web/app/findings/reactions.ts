@@ -94,11 +94,11 @@ export async function sweepReactions(
 ): Promise<{ checked: number; dismissed: number }> {
   let due = await sql<Due[]>`
     select findings.id, findings.github_comment_id::float8 as "commentId", repos.full_name as "fullName",
-      repos.github_repo_id as "githubRepoId", orgs.github_installation_id as "installationId"
+      repos.github_repo_id as "githubRepoId", installations.github_installation_id as "installationId"
     from findings
     join repos on repos.id = findings.repo_id
-    join orgs on orgs.id = repos.org_id
-    where findings.status = 'open' and findings.github_comment_id is not null and orgs.suspended_at is null
+    join installations on installations.id = repos.installation_id
+    where findings.status = 'open' and findings.github_comment_id is not null and installations.suspended_at is null
     order by findings.reactions_checked_at nulls first, findings.created_at
     limit ${limit}`
   let byRepo = Map.groupBy(due, (d) => `${d.installationId}/${d.githubRepoId}`)

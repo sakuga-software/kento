@@ -110,11 +110,11 @@ describe('runner API', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 12 })
     let [org] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (77, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id)
+      insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 77, 2001, 'sakuga-software' from org returning org_id as id`
     let [repo] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${org!.id}, 3001, 'sakuga-software/sakuga-review', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true) returning id`
     repoId = repo!.id
   })
 

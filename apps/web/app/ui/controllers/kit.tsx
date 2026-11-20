@@ -72,7 +72,7 @@ export function redirect(location: string) {
  */
 export function isAdmin(signed: SignedIn, event?: string, fields: Record<string, unknown> = {}): boolean {
   if (signed.membership.role === 'admin') return true
-  if (event) log('warn', event, { login: signed.user.login, org: signed.membership.org.login, ...fields, reason: 'not an admin' })
+  if (event) log('warn', event, { login: signed.user.login, org: signed.membership.org.name, ...fields, reason: 'not an admin' })
   return false
 }
 
@@ -99,9 +99,9 @@ export function rulesNotice(query: URLSearchParams): RulesExtra {
   return { form: null, notice: isRuleNotice(notice) ? notice : null, noticeRule: rule && UUID.test(rule) ? rule : null }
 }
 
-/** The page of the installation of the App on GitHub, where an owner picks the repositories it sees. */
-export function installationUrl(githubUrl: string, org: { login: string; githubInstallationId: number }): string {
-  return `${githubUrl}/organizations/${encodeURIComponent(org.login)}/settings/installations/${org.githubInstallationId}`
+/** The page of an installation of the App on GitHub, where an owner picks the repositories it sees. */
+export function installationUrl(githubUrl: string, installation: { login: string; githubInstallationId: number }): string {
+  return `${githubUrl}/organizations/${encodeURIComponent(installation.login)}/settings/installations/${installation.githubInstallationId}`
 }
 
 /** A path of this site, or `/`: never another origin (`//host`, `/\host`, a scheme). */
@@ -146,8 +146,8 @@ export function createKit(deps: UiDependencies): UiKit {
         name: signed.user.name,
         avatarUrl: signed.user.avatarUrl,
         role: signed.membership.role,
-        org: { id: signed.membership.org.id, login: signed.membership.org.login },
-        orgs: signed.memberships.map((m) => ({ id: m.org.id, login: m.org.login })),
+        org: { id: signed.membership.org.id, name: signed.membership.org.name },
+        orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name })),
       }
       return {
         theme: readTheme(context.headers.get('Cookie')),

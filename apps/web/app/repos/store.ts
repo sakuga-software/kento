@@ -99,10 +99,10 @@ export interface ReposStore {
    */
   setEnabled(orgId: string, repoId: string, enabled: boolean): Promise<{ fullName: string; cancelled: number } | null>
   /**
-   * Writes what GitHub said about the repositories of an org. A new repository comes in disabled; an
-   * existing one keeps `enabled` and its level.
+   * Writes what GitHub said about the repositories of an installation of an org. A new repository
+   * comes in disabled; an existing one keeps `enabled` and its level.
    */
-  saveCheck(orgId: string, repos: CheckedRepo[]): Promise<void>
+  saveCheck(installation: { orgId: string; installationId: string }, repos: CheckedRepo[]): Promise<void>
 }
 
 // Postgres reads a uuid in any case: an id in upper case finds the row too.
@@ -320,12 +320,13 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       })
     },
 
-    async saveCheck(orgId, checked) {
+    async saveCheck({ orgId, installationId }, checked) {
       if (checked.length === 0) return
       let unique = [...new Map(checked.map((repo) => [repo.githubRepoId, repo])).values()]
       let now = new Date().toISOString()
       let rows = unique.map((repo) => ({
         org_id: orgId,
+        installation_id: installationId,
         github_repo_id: repo.githubRepoId,
         full_name: repo.fullName,
         private: repo.private,
@@ -336,9 +337,9 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
         workflow_checked_at: now,
       }))
       await sql`
-        insert into repos ${sql(rows, 'org_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
+        insert into repos ${sql(rows, 'org_id', 'installation_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
         on conflict (github_repo_id) do update set
-          org_id = excluded.org_id, full_name = excluded.full_name, private = excluded.private,
+          org_id = excluded.org_id, installation_id = excluded.installation_id, full_name = excluded.full_name, private = excluded.private,
           default_branch = excluded.default_branch, workflow = excluded.workflow,
           workflow_path = excluded.workflow_path, workflow_ref = excluded.workflow_ref,
           workflow_checked_at = excluded.workflow_checked_at, updated_at = now()

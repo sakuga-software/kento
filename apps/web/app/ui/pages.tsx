@@ -107,7 +107,7 @@ export function createUiControllers(deps: UiDependencies) {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
     signed: (context) => {
       let signed = signedOf(context)
-      return { login: signed.user.login, orgId: signed.membership.org.id, orgLogin: signed.membership.org.login, role: signed.membership.role }
+      return { login: signed.user.login, orgId: signed.membership.org.id, orgName: signed.membership.org.name, role: signed.membership.role }
     },
     frame: (context) => kit.page(context),
     errorPage: kit.errorPage,
@@ -122,7 +122,7 @@ export function createUiControllers(deps: UiDependencies) {
 export interface ScreenViewer {
   login: string
   orgId: string
-  orgLogin: string
+  orgName: string
   role: 'admin' | 'member'
 }
 
