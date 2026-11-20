@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
-import { SESSION_TTL_MS } from '../auth/session-storage.ts'
+import { SESSION_TTL_MS } from '../auth/better-auth.ts'
 import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'

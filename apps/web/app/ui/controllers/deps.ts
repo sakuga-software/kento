@@ -1,8 +1,6 @@
 // REV-48. What the controllers of the screens need from the server: one interface per screen.
-import type { OAuthProvider } from 'remix/auth'
-import type { SessionStorage } from 'remix/session'
-
-import type { GitHubProfile, LookupRole } from '../../auth/github.ts'
+import type { KentoAuth } from '../../auth/better-auth.ts'
+import type { LookupRole } from '../../auth/github.ts'
 import type { AuthStore } from '../../auth/store.ts'
 import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { DashboardStore } from '../../dashboard/store.ts'
@@ -24,9 +22,10 @@ import type { RunnersAdminStore } from '../../runner/admin.ts'
 export interface AuthDependencies {
   /** The origin of the service as the browser sees it. Traefik ends TLS, so the request URL is http. */
   publicUrl: URL
+  /** KENTO_SESSION_SECRET: the first one signs the cookies of Better Auth and the CSRF tokens; every one verifies the refusal cookie. */
   sessionSecrets: string[]
-  sessionStorage: SessionStorage
-  provider: OAuthProvider<GitHubProfile, 'github'>
+  /** KNT-150. The sign-in and the sessions. */
+  auth: KentoAuth
   store: AuthStore
   lookupRole: LookupRole
   now?: () => number

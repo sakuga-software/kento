@@ -4,7 +4,6 @@ import type { Handle } from 'remix/component'
 import type { renderToString } from 'remix/component/server'
 import { getCsrfToken } from 'remix/middleware/csrf'
 import { createContextKey } from 'remix/router'
-import { Session } from 'remix/session'
 
 import { UUID } from '@sakuga-review/protocol'
 
@@ -18,6 +17,8 @@ import { readTheme } from '../theme.ts'
 import type { UiDependencies } from './deps.ts'
 
 export interface SignedIn {
+  /** The session of Better Auth of the request. */
+  sessionId: string
   user: UserRow
   membership: MembershipRow
   memberships: MembershipRow[]
@@ -39,13 +40,6 @@ export type ScreenContext = Parameters<typeof getCsrfToken>[0] & {
 
 /** The context of a form of a screen. */
 export type FormContext = ScreenContext & { get(key: typeof FormData): FormData | undefined }
-
-/** The session of a request; the session middleware runs before every action that calls it. */
-export function sessionOf(context: { get(key: typeof Session): Session | undefined }): Session {
-  let session = context.get(Session)
-  if (!session) throw new Error('the session middleware did not run')
-  return session
-}
 
 /** The signed-in person of a request; `requireViewer` runs before every action that calls it. */
 export function signedOf(context: { get(key: typeof Signed): SignedIn | undefined }): SignedIn {

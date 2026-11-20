@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 
-import type { GitHubProfile, InstallationAccount, OrgRole } from './github.ts'
+import type { InstallationAccount, OrgRole } from './github.ts'
 
 export interface UserRow {
   id: string
@@ -33,9 +33,15 @@ export interface MembershipRow {
 
 /** What the sign-in and the screens read and write about people. Tests of the routes can pass a fake. */
 export interface AuthStore {
-  /** Creates the user of a GitHub account, or updates its login, name and avatar. */
-  upsertUser(profile: GitHubProfile): Promise<UserRow>
   findUser(userId: string): Promise<UserRow | null>
+  /** KNT-150. Better Auth writes the user; this keeps the time of the sign-in. */
+  touchSignIn(userId: string): Promise<void>
+  /** KNT-150. The org on screen of a session. */
+  setActiveOrg(sessionId: string, orgId: string): Promise<void>
+  /** KNT-150. Ends a session: a person with no org left, or a session that a new sign-in replaced. */
+  deleteSession(sessionId: string): Promise<void>
+  /** Deletes the expired sessions and sign-ins. The server calls it every hour. */
+  sweep(): Promise<number>
   /** The orgs that have an installation of the App that is not suspended. */
   activeOrgs(): Promise<OrgRow[]>
   /** The memberships of a user, in the orgs that are still active, by org name. */
@@ -47,24 +53,30 @@ export interface AuthStore {
 
 export function createAuthStore(sql: postgres.Sql): AuthStore {
   return {
-    async upsertUser(profile) {
-      let [row] = await sql<UserRow[]>`
-        insert into users (github_id, login, name, avatar_url, last_sign_in_at)
-        values (${profile.id}, ${profile.login}, ${profile.name}, ${profile.avatarUrl}, now())
-        on conflict (github_id) do update
-          set login = excluded.login, name = excluded.name, avatar_url = excluded.avatar_url,
-              last_sign_in_at = now(), updated_at = now()
-        returning id, github_id::float8 as "githubId", login, name, avatar_url as "avatarUrl"
-      `
-      return row!
-    },
-
     async findUser(userId) {
       let [row] = await sql<UserRow[]>`
         select id, github_id::float8 as "githubId", login, name, avatar_url as "avatarUrl"
         from users where id = ${userId}
       `
       return row ?? null
+    },
+
+    async touchSignIn(userId) {
+      await sql`update users set last_sign_in_at = now() where id = ${userId}`
+    },
+
+    async setActiveOrg(sessionId, orgId) {
+      await sql`update sessions set active_organization_id = ${orgId}, updated_at = now() where id = ${sessionId}`
+    },
+
+    async deleteSession(sessionId) {
+      await sql`delete from sessions where id = ${sessionId}`
+    },
+
+    async sweep() {
+      let sessions = await sql`delete from sessions where expires_at <= now() returning 1`
+      let pending = await sql`delete from verifications where expires_at <= now() returning 1`
+      return sessions.length + pending.length
     },
 
     async activeOrgs() {
