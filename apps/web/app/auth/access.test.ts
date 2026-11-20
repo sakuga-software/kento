@@ -49,6 +49,10 @@ describe('the role of a person in an org of several installations', () => {
     assert.equal(await orgRole(lookup({ acme: 'error', 'acme-labs': 'member' }).lookupRole, ORG, PERSON), 'member')
   })
 
+  it('throws for an org with no installation: nobody to ask, so the answer is unknown', async () => {
+    await assert.rejects(orgRole(lookup({}).lookupRole, { ...ORG, installations: [] }, PERSON), /no installation/)
+  })
+
   it('throws when GitHub fails and no account gives a role: the answer is unknown, not "no access"', async () => {
     await assert.rejects(orgRole(lookup({ acme: 'error', 'acme-labs': null }).lookupRole, ORG, PERSON), /502/)
   })

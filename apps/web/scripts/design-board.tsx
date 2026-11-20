@@ -204,7 +204,7 @@ function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> 
         unchecked: true,
       }}
       list={{ filter: 'all', search: '', after: null, before: null }}
-      installationUrl="https://github.com/organizations/sakuga-software/settings/installations/1"
+      installations={[{ login: 'sakuga-software', url: 'https://github.com/organizations/sakuga-software/settings/installations/1' }]}
       githubUrl="https://github.com"
       checking={false}
       notice={null}

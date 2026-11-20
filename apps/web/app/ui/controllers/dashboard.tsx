@@ -23,6 +23,8 @@ export function dashboardActions(kit: UiKit) {
         deps.findings?.store.precision(signed.membership.org.id) ?? null,
       ])
       let notice = context.url.searchParams.get('notice')
+      // The steps of "Getting started" open the first installation of the org.
+      let firstInstallation = signed.membership.org.installations[0]
       return context.render(
         <DashboardPage
           frame={page}
@@ -30,7 +32,7 @@ export function dashboardActions(kit: UiKit) {
           githubUrl={dashboard.githubUrl}
           notice={notice !== null && notice in DASHBOARD_NOTICES ? (notice as DashboardNotice) : null}
           serviceKey={dashboard.serviceKey ?? false}
-          installationUrl={installationUrl(dashboard.githubUrl, signed.membership.org.installations[0]!)}
+          installationUrl={firstInstallation ? installationUrl(dashboard.githubUrl, firstInstallation) : null}
           precision={precision}
         />,
       )

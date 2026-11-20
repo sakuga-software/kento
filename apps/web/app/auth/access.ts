@@ -28,6 +28,9 @@ export async function orgRole(
   org: OrgRow,
   person: { githubId: number; login: string },
 ): Promise<OrgRole | null> {
+  // The store gives only orgs with an installation that is not suspended. An org without one has no
+  // account to ask: the answer is unknown, never "not a member".
+  if (org.installations.length === 0) throw new Error(`the org ${org.name} has no installation to ask GitHub`)
   let role: OrgRole | null = null
   let failure: unknown = null
   for (let installation of org.installations) {
