@@ -9,7 +9,8 @@ a comment.
 You run Kentō yourself: a web service, its Postgres database, and one or more runners that call the
 model provider of your choice (OpenRouter, Anthropic, a server with the OpenAI API, or Ollama).
 
-License: to be decided.
+License: [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). If you
+run a changed version of Kentō as a service, give its users the source of your version.
 
 ## How it works
 

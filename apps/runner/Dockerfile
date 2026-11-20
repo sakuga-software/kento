@@ -58,8 +58,9 @@ VOLUME /var/lib/kento-runner
 
 ARG APP_COMMIT=""
 ENV APP_COMMIT=${APP_COMMIT}
-LABEL org.opencontainers.image.source="https://github.com/sakuga-software/sakuga-review" \
-      org.opencontainers.image.description="Kentō runner: claims review jobs from review.sakuga.dev"
+LABEL org.opencontainers.image.source="https://github.com/sakuga-software/kento" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Kentō runner: claims review jobs from a Kentō service"
 
 USER node
 WORKDIR /repo/apps/runner
