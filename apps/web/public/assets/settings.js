@@ -56,7 +56,8 @@
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
   })
-  // The list opens over the page: Escape or a click outside folds it, as the menu of the frame.
+  // The list opens over the page: Escape, a click outside or the focus leaving it folds it, as the
+  // menu of the frame. The open list never hides the field that has the focus (WCAG 2.4.11).
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || toggle?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
@@ -65,6 +66,11 @@
   document.addEventListener('click', (event) => {
     if (nav && !event.composedPath().includes(nav)) setOpen(false)
   })
+  nav?.addEventListener('focusout', (event) => {
+    if (!(event.relatedTarget instanceof Node && nav.contains(event.relatedTarget))) setOpen(false)
+  })
+  // The bar folds the list only from here: if this script does not run, the list stays in the page.
+  if (toggle) nav.classList.add('settings-nav-ready')
 
   // The entry on screen: the last one whose top went above the line, at a quarter of the window.
   // At the bottom of the page, the entry that the URL names, or whose part it names, wins: a short

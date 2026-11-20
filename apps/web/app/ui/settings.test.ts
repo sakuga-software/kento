@@ -8,7 +8,7 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
 import type { ProvidersStore, ProviderView } from '../providers/store.ts'
-import { MAX_RULES, type RulesStore } from '../rules/store.ts'
+import { MAX_RULES, type RulesStore, type RuleView } from '../rules/store.ts'
 import { createAppRouter } from '../router.ts'
 import { hour } from './format.ts'
 import { providerState, settingsSections } from './settings.tsx'
@@ -444,6 +444,46 @@ describe('the sidebar of the settings (KNT-149)', () => {
       assert.match(html, /<div class="settings-layout settings-layout-nav">/)
       for (let id of ids) assert.match(html, new RegExp(`<[a-z]+ [^>]*\\bid="${id}"`), `#${id} is on the page for ${profile.login}`)
     }
+  })
+
+  it('has no link to "New rule" once the org holds the most rules, as the section has no form', async () => {
+    let rule = (n: number): RuleView => ({
+      id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+      repoId: null,
+      title: `Rule ${n}`,
+      body: 'A rule.',
+      paths: [],
+      severityFloor: null,
+      active: true,
+      disabledBy: null,
+      disabledAt: null,
+      version: 1,
+      updatedBy: 'octocat',
+      updatedAt: NOW,
+    })
+    for (let count of [MAX_RULES - 1, MAX_RULES]) {
+      let list = Array.from({ length: count }, (_, n) => rule(n))
+      let none = () => Promise.reject(new Error('not in this test'))
+      let rules: RulesStore = { list: async () => list, activeOrgRules: async () => count, create: none, update: none, setActive: none, remove: none }
+      let { request, signIn } = setup([provider()], { rules })
+      let { cookie } = await signIn(OCTOCAT)
+      let html = await (await request('/settings', { cookie })).text()
+      let room = count < MAX_RULES
+      assert.equal(/href="#org-rule-new"/.test(html), room, `${count} rules`)
+      assert.equal(/id="org-rule-new"/.test(html), room, `${count} rules`)
+    }
+  })
+
+  it('puts the alert of a refused key before the sidebar, in reach of the keyboard', async () => {
+    let none = () => Promise.reject(new Error('not in this test'))
+    let rules: RulesStore = { list: async () => [], activeOrgRules: async () => 0, create: none, update: none, setActive: none, remove: none }
+    let { request, signIn } = setup([provider({ refusedAt: NOW, refusedStatus: 401, refusedMessage: 'invalid x-api-key' })], { rules })
+    let { cookie } = await signIn(OCTOCAT)
+    let html = await (await request('/settings', { cookie })).text()
+    let alert = html.indexOf('role="alert"')
+    let nav = html.indexOf('aria-label="Sections of the settings"')
+    assert.ok(alert > 0 && nav > 0 && alert < nav, `alert at ${alert}, sidebar at ${nav}`)
+    assert.ok(html.indexOf('>Replace the key</a>') < nav)
   })
 
   it('has no "New rule" once the org holds the most rules, as the section', () => {

@@ -3620,7 +3620,7 @@ a.finding-title:hover {
 .settings-nav-sub .settings-nav-link[aria-current] {
   font-weight: 500;
 }
-/* "Section …" folds the list under 900 px, with JavaScript only (settings.js). */
+/* "Section …" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
 .settings-nav-toggle {
   display: none;
 }
@@ -3669,7 +3669,8 @@ a.finding-title:hover {
 }
 
 /* Under 900 px the sidebar is a bar at the top of the page, "Section …", that stays in view and
-   opens the list over the page. Without JavaScript the list is part of the page. */
+   opens the list over the page. settings.js sets .settings-nav-ready once it handles the bar: until
+   then, or without it, the list is part of the page. */
 @media (max-width: 900px) {
   .settings-layout-nav {
     grid-template-columns: minmax(0, 1fr);
@@ -3680,7 +3681,7 @@ a.finding-title:hover {
     max-height: none;
     overflow: visible;
   }
-  .js .settings-nav {
+  .settings-nav-ready {
     position: sticky;
     z-index: 15;
     top: 0;
@@ -3688,7 +3689,7 @@ a.finding-title:hover {
     padding-block: var(--space-2);
     background: var(--paper);
   }
-  .js .settings-nav-toggle {
+  .settings-nav-ready .settings-nav-toggle {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -3703,7 +3704,7 @@ a.finding-title:hover {
     text-align: left;
     cursor: pointer;
   }
-  .js .settings-nav-toggle:hover {
+  .settings-nav-ready .settings-nav-toggle:hover {
     background: var(--paper);
   }
   .settings-nav-toggle:focus-visible {
@@ -3742,7 +3743,7 @@ a.finding-title:hover {
     border-radius: var(--radius-sm);
     background: var(--paper-raised);
   }
-  .js .settings-nav-list {
+  .settings-nav-ready .settings-nav-list {
     position: absolute;
     top: calc(100% - var(--space-1));
     right: 0;
@@ -3753,11 +3754,11 @@ a.finding-title:hover {
     overscroll-behavior: contain;
     box-shadow: var(--shadow-2);
   }
-  .js .settings-nav-open .settings-nav-list {
+  .settings-nav-ready.settings-nav-open .settings-nav-list {
     display: grid;
   }
   /* Under the bar "Section …". */
-  .js .settings-content [id] {
+  .settings-layout:has(> .settings-nav-ready) .settings-content [id] {
     scroll-margin-top: 72px;
   }
 }

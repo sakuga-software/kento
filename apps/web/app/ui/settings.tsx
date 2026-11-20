@@ -11,8 +11,8 @@ import { Confirm } from './confirm.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
 import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
-import { RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
-import { MAX_RULES, type RuleView } from '../rules/store.ts'
+import { canAddRule, RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
+import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const KINDS: readonly ProviderKind[] = ['anthropic', 'openrouter', 'openai_compatible', 'ollama']
@@ -92,10 +92,6 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         // REV-91: the version of the settings goes under the title, after "For the whole organization".
         lead={org ? `For the whole organization · ${orgVersionLine(org.view)}` : 'What applies to the whole organization.'}
       >
-        {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px. */}
-        <div class={sections.length >= 2 ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
-          <SettingsNav sections={sections} />
-          <div class="settings-content">
         {refused.map((p) => {
           let levels = usage(p.id)
           let failing =
@@ -134,6 +130,11 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
           </div>
         ) : null}
 
+        {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px.
+            The alerts of a refused key stay above it, in reach of the keyboard. */}
+        <div class={sections.length >= 2 ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
+          <SettingsNav sections={sections} />
+          <div class="settings-content">
         {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
 
         {rules ? (
@@ -259,9 +260,8 @@ export function settingsSections(input: {
     )
   }
   if (rules) {
-    // The same condition as the form "New rule" of the section.
-    let canAdd = admin && rules.count < MAX_RULES
-    sections.push({ id: 'org-rules', label: 'Org rules', items: canAdd ? [{ id: 'org-rule-new', label: 'New rule' }] : [] })
+    // The condition of the form "New rule" itself (rules.tsx).
+    sections.push({ id: 'org-rules', label: 'Org rules', items: canAddRule(admin, rules.count) ? [{ id: 'org-rule-new', label: 'New rule' }] : [] })
   }
   if (providers) {
     sections.push({

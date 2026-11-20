@@ -217,8 +217,15 @@ test.describe('the settings of the org', () => {
     await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).not.toHaveAttribute('aria-current', /.*/)
     if (mobile) {
       // The button names the section on screen, and the list is folded again after a link.
-      await expect(nav.locator('[data-settings-nav-toggle]')).toHaveAttribute('aria-expanded', 'false')
+      let toggle = nav.locator('[data-settings-nav-toggle]')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
       await expect(nav.locator('[data-settings-nav-current]')).toHaveText('Levels and models')
+      // Tab past the last link: the list folds, and never covers the field that gets the focus.
+      await toggle.click()
+      await nav.locator('.settings-nav-list a').last().focus()
+      await page.keyboard.press('Tab')
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await expect(nav.locator('.settings-nav-list')).toBeHidden()
     }
     for (let section of await page.locator('.settings-content section').all()) {
       expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
@@ -227,6 +234,18 @@ test.describe('the settings of the org', () => {
     expect(overflow).toBeLessThanOrEqual(0)
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
+  })
+
+  test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {
+    test.skip(info.project.name !== 'mobile', 'the bar folds the list under 900 px only')
+    await page.route('**/assets/settings.js*', (route) => route.abort())
+    await signIn(page, 'octocat')
+    await page.goto('/settings')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.locator('[data-settings-nav-toggle]')).toBeHidden()
+    await expect(nav.getByRole('link', { name: 'Trusted bots' })).toBeVisible()
+    await nav.getByRole('link', { name: 'Trusted bots' }).click()
+    await expect(page.locator('#bots')).toBeInViewport()
   })
 
   test('an old anchor of the settings leads to its section under the new anchor', async ({ page }) => {
