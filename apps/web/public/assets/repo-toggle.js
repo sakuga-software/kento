@@ -99,11 +99,16 @@
         // fetch drops the `#repo-<id>` of the redirect: it comes back here, for a fallback below.
         const landed = new URL(response.url, location.href)
         landed.hash = row.id
-        // Only a redirect back to this screen says that the change is saved: an answer with no
-        // redirect, or a redirect elsewhere that fails, is a refusal (Kentō #7cf7a5).
-        const back = response.redirected && landed.pathname === location.pathname
-        if (response.ok && !back) return showError(row, response.redirected ? 'session' : 'refused')
-        if (!back) return showError(row, 'refused')
+        // Only the redirect of a saved change says that it is saved: back to this screen, with
+        // `done=enabled|disabled` and the id of this repo. Anything else is a refusal (Kentō
+        // #7cf7a5, #807f15), or the end of the session when it lands on another page.
+        const saved =
+          response.redirected &&
+          landed.pathname === location.pathname &&
+          /^(enabled|disabled)$/.test(landed.searchParams.get('done') ?? '') &&
+          landed.searchParams.get('repo') === row.id.replace(/^repo-/, '')
+        const elsewhere = response.ok && response.redirected && landed.pathname !== location.pathname
+        if (!saved) return showError(row, elsewhere ? 'session' : 'refused')
         // From here the change is saved. When its screen does not come, or its row cannot be read
         // or shown, the browser goes to the screen of the redirect, as without JavaScript: never a
         // message that says the change failed (Kentō #2e027b, #e074d4).

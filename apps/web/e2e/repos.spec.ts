@@ -480,6 +480,17 @@ test.describe('the Repos screen', () => {
       await page.unroute('**/repos/*/disable*')
       await page.goto('/repos?q=zz-')
 
+      // A redirect back to this screen, but not the one of a saved change (no `done=`): a refusal
+      // too (Kentō #807f15).
+      row = rowOf(page, 'zz-18')
+      await row.locator('.row-menu > summary').click()
+      await row.locator('summary', { hasText: 'Disable' }).click()
+      await page.route('**/repos/*/disable*', (route) => route.fulfill({ status: 303, headers: { Location: '/repos?q=zz-' } }))
+      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
+      await page.unroute('**/repos/*/disable*')
+      await page.goto('/repos?q=zz-')
+
       // The network is gone: the row says so.
       row = rowOf(page, 'zz-18')
       await row.locator('.row-menu > summary').click()
