@@ -271,7 +271,10 @@ test.describe('the settings of the org', () => {
     await page.goto('/settings')
     await goToSettingsLink(page, 'heavy')
     let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    // Both marks are set (the section and its part) before the styles are read.
+    await expect(nav.getByRole('link', { name: 'Levels and models', includeHidden: true })).toHaveAttribute('aria-current', 'location')
     await expect(nav.getByRole('link', { name: 'heavy', exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
+    await expect(nav.locator('.settings-nav-link[aria-current]')).toHaveCount(2)
     let borders = await nav.locator('.settings-nav-link').evaluateAll((links) =>
       links.map((link) => ({ current: link.hasAttribute('aria-current'), style: getComputedStyle(link).borderLeftStyle })),
     )
