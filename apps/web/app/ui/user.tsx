@@ -223,7 +223,6 @@ function ThemeSection(handle: Handle<{ frame: PageFrame }>) {
         <h2 id="user-theme-title" class="section-title">
           Theme
         </h2>
-        <p class="hint">The choice applies at once, on every screen of Kentō in this browser. Device follows the light or dark mode of the device.</p>
         <form class="user-pref-form" method="post" action={pageRoutes.theme.href()} data-theme-switch="">
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
           <input type="hidden" name="returnTo" value={frame.path} />
@@ -237,6 +236,7 @@ function ThemeSection(handle: Handle<{ frame: PageFrame }>) {
                 </label>
               ))}
             </div>
+            <p class="field-hint">Applies at once, on every screen of Kentō in this browser. Device follows the light or dark mode of the device.</p>
           </fieldset>
           <button class="button" type="submit">
             Apply

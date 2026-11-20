@@ -478,6 +478,9 @@ kbd,
   margin-bottom: 6px;
   padding: 0;
 }
+.theme-switch .segmented {
+  align-self: flex-start;
+}
 /* The segmented control of the design: one outlined box, the choice in ink. */
 .segmented {
   display: inline-flex;
