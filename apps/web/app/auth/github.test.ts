@@ -5,7 +5,7 @@ import { finishExternalAuth, startExternalAuth } from 'remix/auth'
 import { createSession, Session } from 'remix/session'
 import { describe, it } from 'remix/test'
 
-import { createGitHubSignIn, createRoleLookup, type OrgAccount } from './github.ts'
+import { createGitHubSignIn, createRoleLookup, type InstallationAccount } from './github.ts'
 
 let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 
@@ -95,7 +95,7 @@ describe('createGitHubSignIn', () => {
 })
 
 describe('createRoleLookup', () => {
-  let org: OrgAccount = { githubInstallationId: 77, githubAccountId: 900, login: 'sakuga-software' }
+  let org: InstallationAccount = { githubInstallationId: 77, githubAccountId: 900, login: 'sakuga-software' }
   let now = Date.parse('2026-10-28T12:00:00Z')
 
   function lookup(membership: (login: string) => Response, tokenStatus = 201) {

@@ -210,7 +210,7 @@ export function precisionLead(report: PrecisionReport): string {
 export function FindingsPage(handle: Handle<FindingsPageProps>) {
   return () => {
     let { frame, page, facets, list, precision, githubUrl, now, notice } = handle.props
-    let org = frame.viewer!.org.login
+    let org = frame.viewer!.org.name
     // REV-18: an admin sets findings aside; a member reads.
     let admin = frame.viewer!.role === 'admin'
     let none = page.counts.all === 0 && !hasFilters(list)

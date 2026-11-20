@@ -47,13 +47,13 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     database = createDatabase(test.url, { max: 4 })
     sql = database.sql
     let [org] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (11, 900, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 11, 900, 'sakuga-software' from org returning org_id as id`
     let [other] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (12, 901, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 12, 901, 'orchard' from org returning org_id as id`
     for (let [orgId, offset, owner] of [[org!.id, 0, 'sakuga-software'], [other!.id, 1000, 'orchard']] as const) {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled)
-        select ${orgId}, ${offset} + g, ${owner} || '/service-' || lpad(g::text, 3, '0'), true
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+        select ${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${offset} + g, ${owner} || '/service-' || lpad(g::text, 3, '0'), true
         from generate_series(1, 300) g`
       await sql`
         insert into rules (org_id, title, body) select ${orgId}, 'Rule ' || g, 'Text.' from generate_series(1, 20) g`

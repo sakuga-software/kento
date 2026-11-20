@@ -2,7 +2,7 @@
 // review workflow, and writes them in `repos`. It never enables a repository.
 //
 // A screen starts it in the background when the last check is older than CHECK_MAX_AGE_MS; an admin
-// can run it at once ("Reload"). One check per org at a time.
+// can run it at once ("Reload"). One check per org at a time; it reads each installation of the org.
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { createGitHub, GitHubError, type GitHub } from '../publish/github.ts'
@@ -24,8 +24,8 @@ const WORKFLOWS_DIR = '.github/workflows'
 
 export interface CheckedOrg {
   id: string
-  githubInstallationId: number
-  login: string
+  name: string
+  installations: { id: string; githubInstallationId: number; login: string }[]
 }
 
 export interface RepoCheckDependencies {
@@ -37,7 +37,7 @@ export interface RepoCheckDependencies {
 }
 
 export interface RepoCheck {
-  /** Reads GitHub and writes the result. Throws when GitHub fails for the whole installation. */
+  /** Reads GitHub and writes the result. Throws when GitHub fails for a whole installation. */
   run(org: CheckedOrg): Promise<{ repos: number; failed: number }>
   /**
    * Starts a check in the background when the rows are older than `CHECK_MAX_AGE_MS`, or never
@@ -64,10 +64,29 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
   let checkedAt = new Map<string, number>()
 
   async function check(org: CheckedOrg) {
+    let total = { repos: 0, failed: 0 }
+    let firstError: unknown = null
+    // One installation after the other: each one writes its repositories, even when another one fails
+    // (an installation removed on GitHub whose event was lost). The check fails at the end if one did.
+    for (let installation of org.installations) {
+      try {
+        let result = await checkInstallation(org, installation)
+        total.repos += result.repos
+        total.failed += result.failed
+      } catch (error) {
+        log('warn', 'repos.check_installation_failed', { org: org.name, installation: installation.login, error: errorMessage(error) })
+        firstError ??= error
+      }
+    }
+    if (firstError !== null) throw firstError
+    return total
+  }
+
+  async function checkInstallation(org: CheckedOrg, installation: CheckedOrg['installations'][number]) {
     let start = now()
     // `contents: read` on every repository of the installation, for the list and the workflow files.
     let token = await deps.mintInstallationToken({
-      installationId: org.githubInstallationId,
+      installationId: installation.githubInstallationId,
       githubRepoId: null,
       permissions: { contents: 'read' },
     })
@@ -98,13 +117,13 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
         } catch (error) {
           // The row keeps what the last check found.
           failed++
-          log('warn', 'repos.check_repo_failed', { org: org.login, repo: repo.full_name, error: errorMessage(error) })
+          log('warn', 'repos.check_repo_failed', { org: org.name, installation: installation.login, repo: repo.full_name, error: errorMessage(error) })
         }
       }
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker))
-    await deps.store.saveCheck(org.id, checked)
-    log('info', 'repos.checked', { org: org.login, repos: checked.length, failed, durationMs: now() - start })
+    await deps.store.saveCheck({ orgId: org.id, installationId: installation.id }, checked)
+    log('info', 'repos.checked', { org: org.name, installation: installation.login, repos: checked.length, failed, durationMs: now() - start })
     return { repos: checked.length, failed }
   }
 
@@ -119,7 +138,7 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
       })
       .catch((error: unknown) => {
         failedAt.set(org.id, now())
-        log('warn', 'repos.check_failed', { org: org.login, error: errorMessage(error) })
+        log('warn', 'repos.check_failed', { org: org.name, error: errorMessage(error) })
         throw error
       })
       .finally(() => running.delete(org.id))

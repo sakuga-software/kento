@@ -157,7 +157,7 @@ describe('comment of a failed job', () => {
     await publisher().publishPending()
     assert.equal(await noticedAt(old), null)
 
-    await database.sql`update orgs set suspended_at = now() where id = ${orgId}`
+    await database.sql`update installations set suspended_at = now() where org_id = ${orgId}`
     let suspended = await failedJob()
     await publisher().publishPending()
     assert.equal(fake.state.issueComments.length, 0)

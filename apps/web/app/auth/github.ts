@@ -107,14 +107,15 @@ export function createGitHubSignIn(options: {
 /** The role of a person in an org, or null when GitHub does not count them as an active member. */
 export type OrgRole = 'admin' | 'member'
 
-export interface OrgAccount {
+/** KNT-150. An installation of the App, and the GitHub account (organization or user) that holds it. */
+export interface InstallationAccount {
   githubInstallationId: number
   githubAccountId: number
   login: string
 }
 
 /** Asks GitHub for the role of a person in the account of an installation. Throws when GitHub fails. */
-export type LookupRole = (org: OrgAccount, person: { githubId: number; login: string }) => Promise<OrgRole | null>
+export type LookupRole = (installation: InstallationAccount, person: { githubId: number; login: string }) => Promise<OrgRole | null>
 
 /**
  * Reads the role with an installation token of the App that has only `members: read`:
@@ -160,16 +161,16 @@ export function createRoleLookup(options: {
     return body.token
   }
 
-  return async (org, person) => {
-    if (org.githubAccountId === person.githubId) return 'admin'
-    let token = await installationToken(org.githubInstallationId)
+  return async (installation, person) => {
+    if (installation.githubAccountId === person.githubId) return 'admin'
+    let token = await installationToken(installation.githubInstallationId)
     if (token === null) return null
     let response = await doFetch(
-      `${apiUrl}/orgs/${encodeURIComponent(org.login)}/memberships/${encodeURIComponent(person.login)}`,
+      `${apiUrl}/orgs/${encodeURIComponent(installation.login)}/memberships/${encodeURIComponent(person.login)}`,
       { headers: { ...HEADERS, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
     )
     if (response.status === 404) return null
-    if (!response.ok) throw new GitHubError(`GitHub answered ${response.status} for the membership in ${org.login}`)
+    if (!response.ok) throw new GitHubError(`GitHub answered ${response.status} for the membership in ${installation.login}`)
     let body = (await response.json()) as { state?: unknown; role?: unknown }
     if (body.state !== 'active') return null
     return body.role === 'admin' ? 'admin' : body.role === 'member' ? 'member' : null

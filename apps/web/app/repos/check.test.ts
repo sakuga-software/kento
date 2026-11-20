@@ -4,13 +4,13 @@ import { describe, it } from 'remix/test'
 import { createRepoCheck } from './check.ts'
 import type { CheckedRepo, RepoPage, ReposStore } from './store.ts'
 
-const ORG = { id: 'org-1', githubInstallationId: 11, login: 'sakuga-software' }
+const ORG = { id: 'org-1', name: 'sakuga-software', installations: [{ id: 'installation-1', githubInstallationId: 11, login: 'sakuga-software' }] }
 const CALLER = 'jobs:\n  review:\n    uses: sakuga-software/sakuga-review/.github/workflows/review.yml@stable\n'
 
 /** A GitHub of three repositories: a caller of review.yml, one with no workflow directory, one that fails. */
 function fakeGitHub(now?: () => number) {
   let calls: string[] = []
-  let mints: { githubRepoId: number | null; permissions?: Record<string, string> }[] = []
+  let mints: { installationId: number; githubRepoId: number | null; permissions?: Record<string, string> }[] = []
   let fetch = (async (input: string | URL | Request) => {
     let url = new URL(String(input))
     calls.push(url.pathname)
@@ -40,13 +40,15 @@ function fakeGitHub(now?: () => number) {
   }) as typeof globalThis.fetch
 
   let saved: CheckedRepo[][] = []
+  let targets: { orgId: string; installationId: string }[] = []
   let store: ReposStore = {
     list: async () => {
       throw new Error('the check does not list')
     },
     fullName: async () => null,
     setEnabled: async () => null,
-    async saveCheck(_orgId, repos) {
+    async saveCheck(target, repos) {
+      targets.push(target)
       saved.push(repos)
     },
   }
@@ -60,7 +62,7 @@ function fakeGitHub(now?: () => number) {
       return { token: 'ghs_check', expiresAt: '2027-01-01T00:00:00Z' }
     },
   })
-  return { check, calls, mints, saved }
+  return { check, calls, mints, saved, targets, fetch }
 }
 
 /** What the Repos screen knows of the checks of its org: one repository. */
@@ -81,6 +83,49 @@ describe('the check of the repositories on GitHub', () => {
     assert.deepEqual(byName['sakuga-software/fruitback']!.workflow, { mode: 'none', path: null, ref: null })
     assert.equal(calls.includes('/repos/sakuga-software/orchard/contents/.github/workflows/README.md'), false)
     assert.equal(calls.some((path) => path.includes('/old/')), false)
+  })
+
+  it('KNT-150: reads each installation of the org with its own token, and writes its repositories to it', async () => {
+    let { check, mints, targets } = fakeGitHub()
+    let org = {
+      ...ORG,
+      installations: [...ORG.installations, { id: 'installation-2', githubInstallationId: 12, login: 'acme' }],
+    }
+    assert.deepEqual(await check.run(org), { repos: 4, failed: 2 })
+    assert.deepEqual(
+      mints.map((mint) => mint.installationId),
+      [11, 12],
+    )
+    assert.deepEqual(targets, [
+      { orgId: 'org-1', installationId: 'installation-1' },
+      { orgId: 'org-1', installationId: 'installation-2' },
+    ])
+  })
+
+  it('KNT-150: checks the other installations of the org when one of them fails, then fails', async () => {
+    let { fetch, targets } = fakeGitHub()
+    let gone = { id: 'installation-0', githubInstallationId: 10, login: 'gone' }
+    let check = createRepoCheck({
+      store: {
+        list: async () => {
+          throw new Error('the check does not list')
+        },
+        fullName: async () => null,
+        setEnabled: async () => null,
+        async saveCheck(target) {
+          targets.push(target)
+        },
+      },
+      apiUrl: 'https://api.github.test',
+      fetch,
+      async mintInstallationToken(target) {
+        // An installation removed on GitHub, whose event was lost.
+        if (target.installationId === 10) throw new Error('GitHub answered 404 for an installation token')
+        return { token: 'ghs_check', expiresAt: '2027-01-01T00:00:00Z' }
+      },
+    })
+    await assert.rejects(check.run({ ...ORG, installations: [gone, ...ORG.installations] }), /404/)
+    assert.deepEqual(targets, [{ orgId: 'org-1', installationId: 'installation-1' }], 'the live installation is still read')
   })
 
   it('starts in the background only when the rows are old or never checked, once at a time', async () => {

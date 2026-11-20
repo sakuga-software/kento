@@ -59,11 +59,11 @@ describe('purge of the old jobs (REV-38)', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url)
     let [org] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (1, 11, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1, 11, 'sakuga-software' from org returning org_id as id`
     orgId = org!.id
     let repos = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${orgId}, 1, 'sakuga-software/busy', true), (${orgId}, 2, 'sakuga-software/idle', true)
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 1, 'sakuga-software/busy', true), (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 2, 'sakuga-software/idle', true)
       returning id`
     busy = repos[0]!.id
     idle = repos[1]!.id

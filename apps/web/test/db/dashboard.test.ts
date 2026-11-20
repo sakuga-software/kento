@@ -72,15 +72,15 @@ describe('the dashboard of an org', () => {
     database = createDatabase(test.url, { max: 4 })
     store = createDashboardStore(database)
     let [a] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (91, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 91, 2001, 'sakuga-software' from org returning org_id as id`
     let [b] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (92, 2002, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 92, 2002, 'orchard' from org returning org_id as id`
     org = a!.id
     otherOrg = b!.id
     let [r1] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled, workflow) values (${org}, 4001, 'sakuga-software/app', true, 'reusable') returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow) values (${org}, (select id from installations where org_id = ${org} order by created_at limit 1), 4001, 'sakuga-software/app', true, 'reusable') returning id`
     let [r2] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${otherOrg}, 4002, 'orchard/app', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${otherOrg}, (select id from installations where org_id = ${otherOrg} order by created_at limit 1), 4002, 'orchard/app', true) returning id`
     repo = r1!.id
     otherRepo = r2!.id
     let [r] = await database.sql<{ id: string }[]>`
@@ -114,15 +114,15 @@ describe('the dashboard of an org', () => {
     // A review published in another org, and a review of the org that is not published yet.
     await review(await job({ repoId: otherRepo }))
     await review(await job({}), { publishedAgo: null })
-    await database.sql`update orgs set suspended_at = now() where id = ${otherOrg}`
+    await database.sql`update installations set suspended_at = now() where org_id = ${otherOrg}`
     assert.deepEqual(await setup(), { published: false, suspended: false, enabledRepos: 1, providers: 1, serviceRunners: 0, pendingRegistrations: 1 })
 
     await review(await job({ pr: 13 }))
-    await database.sql`update orgs set suspended_at = now() where id = ${org}`
+    await database.sql`update installations set suspended_at = now() where org_id = ${org}`
     let after = await setup()
     assert.equal(after.published, true)
     assert.equal(after.suspended, true)
-    await database.sql`update orgs set suspended_at = null`
+    await database.sql`update installations set suspended_at = null`
     await database.sql`delete from runner_registrations`
   })
 

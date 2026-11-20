@@ -31,9 +31,9 @@ describe('migration 0028', () => {
   it('puts the label of the provider in straight quotes, twice with no change, and keeps the other reasons', async () => {
     let sql = database.sql
     let [org] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (4242, 11, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 4242, 11, 'sakuga-software' from org returning org_id as id`
     let [repo] = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${org!.id}, 7001, 'sakuga-software/orchard', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 7001, 'sakuga-software/orchard', true) returning id`
     let stored = [
       'the provider « Anthropic of Sakuga » refused its key (401): unauthorized',
       'the provider « vLLM » needs a trusted runner',

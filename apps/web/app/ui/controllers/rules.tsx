@@ -52,7 +52,7 @@ export function rulesActions(kit: UiKit) {
 
     if (action === 'remove') {
       let removed = await store.remove(org.id, ruleId!)
-      if (removed) log('info', 'rules.removed', { login, org: org.login, ruleId, repoId: removed.repoId, title: removed.title })
+      if (removed) log('info', 'rules.removed', { login, org: org.name, ruleId, repoId: removed.repoId, title: removed.title })
       return rulesBack(removed ? removed.repoId : repoId, removed ? 'removed' : 'missing', null)
     }
 
@@ -62,7 +62,7 @@ export function rulesActions(kit: UiKit) {
       if (active !== 'true' && active !== 'false') return new Response('Bad Request', { status: 400 })
       outcome = await store.setActive(org.id, ruleId!, signed.user.id, version!, active === 'true')
       if (outcome.kind === 'saved') {
-        log('info', active === 'true' ? 'rules.enabled' : 'rules.disabled', { login, org: org.login, ruleId, repoId: outcome.repoId, version: outcome.version })
+        log('info', active === 'true' ? 'rules.enabled' : 'rules.disabled', { login, org: org.name, ruleId, repoId: outcome.repoId, version: outcome.version })
         return rulesBack(outcome.repoId, active === 'true' ? 'enabled' : 'disabled', ruleId)
       }
     } else {
@@ -75,12 +75,12 @@ export function rulesActions(kit: UiKit) {
       }
       outcome = action === 'add' ? await store.create(org.id, repoId, signed.user.id, parsed.value) : await store.update(org.id, ruleId!, signed.user.id, version!, parsed.value)
       if (outcome.kind === 'saved') {
-        log('info', action === 'add' ? 'rules.added' : 'rules.saved', { login, org: org.login, ruleId: outcome.id, repoId: outcome.repoId, version: outcome.version })
+        log('info', action === 'add' ? 'rules.added' : 'rules.saved', { login, org: org.name, ruleId: outcome.id, repoId: outcome.repoId, version: outcome.version })
         return rulesBack(outcome.repoId, action === 'add' ? 'added' : 'saved', outcome.id)
       }
     }
     if (outcome.kind === 'conflict') {
-      log('info', 'rules.conflict', { login, org: org.login, ruleId, sent: version, current: outcome.version })
+      log('info', 'rules.conflict', { login, org: org.name, ruleId, sent: version, current: outcome.version })
       return rulesBack(repoId, 'conflict', ruleId)
     }
     if (outcome.kind === 'full') return rulesBack(repoId, 'full', null)
