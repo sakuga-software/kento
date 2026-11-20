@@ -17,7 +17,8 @@ const COOKIE = '__Host-kento_session'
 /**
  * The budget of the server, and of the HTML of one page. 50 enabled rows with their actions weigh
  * about 1.75 KB each, and a row with no action 1 KB: 60 KB, the first aim of the ticket, would hold
- * some 25 rows. The page measured 102 KB (499 KB before REV-36).
+ * some 25 rows. The page measured 102 KB (499 KB before REV-36). KNT-146: 25 rows a page, each with
+ * its icons.
  */
 const MAX_MS = 150
 const MAX_BYTES = 110_000
