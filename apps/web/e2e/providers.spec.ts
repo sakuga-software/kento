@@ -242,10 +242,14 @@ test('on a phone, a provider form sent back with its errors has no field under t
   await expect(page.locator('.label').first()).toHaveCSS('line-height', '18px')
   let bar = page.locator('[data-settings-nav]')
   await expect(bar).toHaveCSS('position', 'static')
-  // The page scrolled to the field: the bar stayed at the top, out of view.
-  let box = await bar.boundingBox()
-  expect(box, 'the bar has a box').not.toBeNull()
-  expect(box!.y + box!.height).toBeLessThanOrEqual(0)
+  // The page scrolled down to the field, and the bar did not follow: it ends above the field,
+  // wherever the page stopped, so it covers none of it.
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+  let barBox = await bar.boundingBox()
+  let fieldBox = await lite.boundingBox()
+  expect(barBox, 'the bar has a box').not.toBeNull()
+  expect(fieldBox, 'the field has a box').not.toBeNull()
+  expect(fieldBox!.y).toBeGreaterThanOrEqual(barBox!.y + barBox!.height)
   await expect(lite).toBeInViewport({ ratio: 1 })
   await expectNoAxeViolations(page)
 })
