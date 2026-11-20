@@ -36,9 +36,21 @@
     for (const button of content.querySelectorAll('[data-confirm-cancel]')) button.hidden = false
     window.scrollTo(x, y)
 
+    // The enabled repos come first: a row can move. One that left the screen is brought back into
+    // view, marked, as the redirect without JavaScript does with `#repo-<id>`. One still on screen
+    // does not move the page.
+    const row = document.getElementById(rowId)
+    if (row) {
+      row.classList.add('row-changed')
+      const box = row.getBoundingClientRect()
+      if (box.top < 0 || box.bottom > window.innerHeight) {
+        const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        row.scrollIntoView({ block: 'center', behavior: still ? 'auto' : 'smooth' })
+      }
+    }
+
     // The focus goes to the next action of the row: "…" after "Enable", "Enable" after "Disable".
     // A row that left the list (the filter "Not enabled" after "Enable") gives it to the notice.
-    const row = document.getElementById(rowId)
     const target =
       row?.querySelector('.row-action > button') ?? row?.querySelector('.row-menu > summary') ?? content.querySelector('.banner')
     if (!target) return
