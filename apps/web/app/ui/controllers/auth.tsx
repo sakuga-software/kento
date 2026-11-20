@@ -64,8 +64,19 @@ export function createAuth(kit: UiKit) {
 
   // Reads the session of Better Auth once, then gives remix/middleware/csrf the token of that
   // session in a `Session` of the request only: it is never stored.
+  //
+  // When the session cannot be read (the database does not answer), the screens answer 503 and keep
+  // the cookie: the session works again as soon as the database answers.
   let readSession: Middleware = async (context, next) => {
-    let found = auth ? await auth.auth.api.getSession({ headers: context.headers, query: { disableCookieCache: true } }).catch(() => null) : null
+    let found: Awaited<ReturnType<NonNullable<typeof auth>['auth']['api']['getSession']>> = null
+    if (auth) {
+      try {
+        found = await auth.auth.api.getSession({ headers: context.headers, query: { disableCookieCache: true } })
+      } catch (error) {
+        log('warn', 'auth.session_read_failed', { error: errorMessage(error) })
+        return unavailable(context)
+      }
+    }
     let session: AuthSession | null = found
       ? {
           sessionId: found.session.id,
@@ -167,6 +178,11 @@ export function createAuth(kit: UiKit) {
   /** The 503 of the screens while GitHub does not confirm the role. */
   async function roleUnconfirmed(context: { headers: Headers }, login: string, orgs: number) {
     log('warn', 'auth.role_unconfirmed', { login, orgs })
+    return unavailable(context)
+  }
+
+  /** The 503 of the screens: the sign-in cannot be checked now. Nothing changes in the session. */
+  async function unavailable(context: { headers: Headers }) {
     let html = await renderToString(
       <SignInPage
         theme={readTheme(context.headers.get('Cookie'))}

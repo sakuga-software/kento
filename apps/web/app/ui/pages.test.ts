@@ -388,6 +388,18 @@ describe('the role, from GitHub', () => {
     assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">sakuga-software<\/span>/)
   })
 
+  it('answers 503 and keeps the cookie while the sessions cannot be read, then works again', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    auth.failSessions(true)
+    let down = await request('/repos', { cookie })
+    assert.equal(down.status, 503)
+    assert.equal(down.headers.get('Retry-After'), '60')
+    assert.equal(down.headers.getSetCookie().some((c) => c.startsWith(`${COOKIE}=`)), false, 'the cookie stays')
+    auth.failSessions(false)
+    assert.equal((await request('/repos', { cookie })).status, 200)
+  })
+
   it('ends the session seven days after the sign-in', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn(OCTOCAT)
