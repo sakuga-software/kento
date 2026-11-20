@@ -64,7 +64,14 @@ export interface AuthStore {
   withOrgLock<T>(orgId: string, work: (store: AuthStore) => Promise<T>): Promise<T>
   /** KNT-150. The active orgs where the user of a GitHub account is a member from an invitation. */
   invitedOrgs(githubId: number): Promise<OrgRow[]>
+  /** KNT-150. The pending invitations of a GitHub account, not expired, in the active orgs. */
+  pendingInvitations(githubId: number): Promise<number>
   deleteMembership(userId: string, orgId: string): Promise<void>
+}
+
+/** KNT-150. The key of the advisory lock of the owners of an org: every change of a role takes it. */
+export function orgLockKey(orgId: string): string {
+  return `kento.org_owners:${orgId}`
 }
 
 /** `locked`: a store of `withOrgLock`, inside its transaction. */
@@ -135,6 +142,15 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
       return readOrgs(sql, rows.map((r) => r.orgId))
     },
 
+    async pendingInvitations(githubId) {
+      let [row] = await sql<{ n: number }[]>`
+        select count(*)::int as n from invitations i
+        where i.github_id = ${githubId} and i.status = 'pending' and i.expires_at > now()
+          and exists (select 1 from installations s where s.org_id = i.org_id and s.suspended_at is null)
+      `
+      return row!.n
+    },
+
     async hasOwner(orgId, since) {
       // drizzle shares this client and turns off its date conversion: the time goes as text.
       let [row] = await sql`
@@ -150,7 +166,7 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
       // The store of a `withOrgLock` already holds a lock, in its transaction: one org at a time.
       if (locked) return work(store)
       return (await sql.begin(async (tx) => {
-        await tx`select pg_advisory_xact_lock(hashtextextended(${`kento.org_owners:${orgId}`}, 0))`
+        await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(orgId)}, 0))`
         return work(createAuthStore(tx as unknown as postgres.Sql, true))
       })) as Awaited<ReturnType<typeof work>>
     },

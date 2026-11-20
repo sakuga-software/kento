@@ -586,6 +586,45 @@ export const memberships = pgTable(
   ],
 )
 
+/** KNT-150. What becomes of an invitation. Only a `pending` one can be accepted, declined or canceled. */
+export const INVITATION_STATUSES = ['pending', 'accepted', 'declined', 'canceled'] as const
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+
+/** KNT-150. The roles that an invitation gives: an owner gives `owner` to a member afterwards. */
+export const INVITATION_ROLES = ['admin', 'member'] as const
+export type InvitationRole = (typeof INVITATION_ROLES)[number]
+
+/**
+ * KNT-150. An invitation of a GitHub account to an org of Kentō, by an owner or an admin. Kentō
+ * sends no mail: the person sees it after a sign-in with that GitHub account (by its id, not its
+ * login, which can change), and accepts or declines it. It ends at `expires_at` (7 days). One
+ * pending invitation at most per account and org.
+ */
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    githubId: bigint('github_id', { mode: 'number' }).notNull(),
+    /** The login at the time of the invitation, for the screens. */
+    githubLogin: text('github_login').notNull(),
+    role: text('role').$type<InvitationRole>().notNull(),
+    status: text('status').$type<InvitationStatus>().notNull().default('pending'),
+    inviterId: uuid('inviter_id').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('invitations_pending_idx').on(table.orgId, table.githubId).where(sql`${table.status} = 'pending'`),
+    index('invitations_github_id_idx').on(table.githubId),
+    check('invitations_role', sql`${table.role} in ('admin', 'member')`),
+    check('invitations_status', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled')`),
+  ],
+)
+
 /**
  * A browser session (KNT-150: the `session` of Better Auth). The cookie holds a random token, signed;
  * the table keeps only its SHA-256 (`token_hash`), so a copy of the table opens no session. A row

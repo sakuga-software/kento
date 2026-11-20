@@ -36,6 +36,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let clock = { now: Date.now() }
   let roles = new Map<string, GitHubRole | null | 'error'>()
   let lookups: string[] = []
+  /** The pending invitations of each GitHub account, by its id. */
+  let pending = new Map<number, number>()
   /** The code exchanges that the fake GitHub received, as GitHub checks them. */
   let exchanges: { code: string; codeVerifier: string | null; redirectUri: string }[] = []
   let profile: GitHubProfile = OCTOCAT
@@ -130,6 +132,9 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     async hasOwner(orgId, since) {
       return rows().some((m) => m.orgId === orgId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime())
     },
+    async pendingInvitations(githubId) {
+      return pending.get(githubId) ?? 0
+    },
     async withOrgLock(_orgId, work) {
       return work(store)
     },
@@ -199,6 +204,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       roles.set(`${login}/${person.login}`, role)
     },
     /** The account that the next sign-in comes back with. */
+    /** The number of pending invitations of a GitHub account. */
+    invite(person: GitHubProfile, count = 1) {
+      pending.set(person.id, count)
+    },
     as(next: GitHubProfile) {
       profile = next
     },
