@@ -153,10 +153,10 @@ describe('the settings of the org (REV-13)', () => {
     let nav = /<nav [^>]*aria-label="Sections of the settings"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
     // KNT-149: a sidebar. The sections first, each one with the parts that have an anchor under it.
     let sectionsOnly = nav.replace(/<ul class="settings-nav-sub">.*?<\/ul>/gs, '')
-    let anchors = [...sectionsOnly.matchAll(/href="#([^"]+)"/g)].map((m) => m[1])
+    let anchors = [...sectionsOnly.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!)
     assert.deepEqual(anchors, ['cap', 'defaults', 'bots', 'app'])
     for (let id of anchors) assert.match(html, new RegExp(`<section [^>]*id="${id}"`), `the section #${id} is on the page`)
-    let parts = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]).filter((id) => !anchors.includes(id))
+    let parts = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!).filter((id) => !anchors.includes(id))
     assert.deepEqual(parts, ['org-level', 'org-lite', 'org-balanced', 'org-heavy', 'app-installation', 'app-webhook', 'app-deliveries', 'app-permissions'])
     for (let id of parts) assert.match(html, new RegExp(`<(div|li|section|details) [^>]*id="${id}"`), `the part #${id} is on the page`)
     // The button that folds the list under 900 px controls the list, folded until settings.js opens it.

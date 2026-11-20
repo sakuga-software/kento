@@ -8,7 +8,7 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
 import type { ProvidersStore, ProviderView } from '../providers/store.ts'
-import { MAX_RULES } from '../rules/store.ts'
+import { MAX_RULES, type RulesStore } from '../rules/store.ts'
 import { createAppRouter } from '../router.ts'
 import { hour } from './format.ts'
 import { providerState, settingsSections } from './settings.tsx'
@@ -94,7 +94,7 @@ function fakeStore(initial: ProviderView[] = []) {
   return { store, writes, rows }
 }
 
-function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; secretsConfigured?: boolean; serviceKey?: boolean } = {}) {
+function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; secretsConfigured?: boolean; serviceKey?: boolean; rules?: RulesStore } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -111,6 +111,7 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
     webhook: disabledWebhook,
     auth: { ...auth.deps, now: () => NOW.getTime() },
     providers: { store: fake.store, probe, secretsConfigured: options.secretsConfigured ?? true, serviceKey: options.serviceKey ?? true },
+    rules: options.rules ?? null,
   })
 
   function request(path: string, init: { cookie?: string | null; form?: Record<string, string> } = {}) {
@@ -423,6 +424,23 @@ describe('the sidebar of the settings (KNT-149)', () => {
     let failed = settingsSections({ org: { app: { ok: false, error: 'timeout' } }, rules: null, providers: null, admin: true })
     assert.deepEqual(failed.map((s) => s.id), ['cap', 'defaults', 'bots', 'app'])
     assert.ok(!failed.find((s) => s.id === 'app')!.items.some((i) => i.id === 'app-permissions'))
+  })
+
+  it('links only to ids that the page renders: "New rule", each provider, "Add a provider"', async () => {
+    let none = () => Promise.reject(new Error('not in this test'))
+    let rules: RulesStore = { list: async () => [], activeOrgRules: async () => 0, create: none, update: none, setActive: none, remove: none }
+    let { request, signIn } = setup([provider(), provider({ id: '8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', label: 'GPU', isDefault: false })], { rules })
+    for (let [profile, expected] of [
+      [OCTOCAT, ['org-rules', 'org-rule-new', 'providers', `provider-${ID}`, 'provider-8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', 'new-provider']],
+      [CAMILLE, ['org-rules', 'providers', `provider-${ID}`, 'provider-8f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f']],
+    ] as const) {
+      let { cookie } = await signIn(profile)
+      let html = await (await request('/settings', { cookie })).text()
+      let nav = /<nav [^>]*aria-label="Sections of the settings"[^>]*>(.*?)<\/nav>/s.exec(html)?.[1] ?? ''
+      let ids = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!)
+      assert.deepEqual(ids, [...expected], profile.login)
+      for (let id of ids) assert.match(html, new RegExp(`<[a-z]+ [^>]*\\bid="${id}"`), `#${id} is on the page for ${profile.login}`)
+    }
   })
 
   it('has no "New rule" once the org holds the most rules, as the section', () => {
