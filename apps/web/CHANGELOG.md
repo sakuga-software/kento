@@ -35,6 +35,12 @@ Each entry says, when it applies:
 
   Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
 
+### Fixed
+
+- `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
+  HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
+  your reverse proxy runs on another machine, publish the port on a private address.
+
 ### Security
 
 - The OpenRouter key of the service (`KENTO_PROVIDER_API_KEY`) goes only to a trusted runner of the
