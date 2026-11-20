@@ -1,18 +1,19 @@
 // REV-22. The screen of a user ("octocat · Kentō"): the preferences of the reviews of their own pull
-// requests, the findings that those pull requests received, and the pull requests that Kentō
-// reviewed. Every member of the org reads it; only the user changes it.
+// requests, the theme (KNT-142), the findings that those pull requests received, and the pull
+// requests that Kentō reviewed. Every member of the org reads it; only the user changes it.
 import type { Handle } from 'remix/component'
 
 import { LEVELS, type Level } from '@sakuga-review/protocol'
 
 import { mention } from '../instance.ts'
-import { userRoutes } from '../routes.ts'
+import { pageRoutes, userRoutes } from '../routes.ts'
 import { PULLS_STEP, RECEIVED_DAYS, type ReviewedPull, type UserPref, type UserScreen } from '../users/store.ts'
 import { VERDICT_LABEL } from './dashboard.tsx'
 import { findingsHref } from './findings.tsx'
 import { agoOrDate, plural } from './format.ts'
 import { pullHref } from './pull.tsx'
-import { Shell, ThemeSwitch, type PageFrame } from './shell.tsx'
+import { Shell, type PageFrame } from './shell.tsx'
+import { THEME_LABELS, THEMES } from './theme.ts'
 
 /** What the screen says after a form, from `?done=`. */
 export const USER_NOTICES = {
@@ -62,14 +63,7 @@ export function UserPage(handle: Handle<UserPageProps>) {
           </div>
         ) : null}
         <PrefsSection screen={screen} self={self} csrf={frame.csrfToken ?? ''} />
-        {self ? (
-          <section class="card user-section" aria-labelledby="user-theme-title">
-            <h2 id="user-theme-title" class="section-title">
-              Display
-            </h2>
-            <ThemeSwitch frame={frame} />
-          </section>
-        ) : null}
+        {self ? <ThemeSection frame={frame} /> : null}
         <ReceivedSection screen={screen} self={self} />
         <PullsSection screen={screen} self={self} pulls={pulls} now={now} />
       </Shell>
@@ -211,6 +205,43 @@ function PrefsSection(handle: Handle<{ screen: UserScreen; self: boolean; csrf: 
             </button>
           </form>
         ) : null}
+      </section>
+    )
+  }
+}
+
+/**
+ * KNT-142. Paper / Sumi / Device, for the user alone. The choice stays in the cookie of the browser
+ * (`kento_theme`), so it also applies on the sign-in page. public/assets/theme.js applies a choice
+ * at once; without JavaScript, "Apply" posts it.
+ */
+function ThemeSection(handle: Handle<{ frame: PageFrame }>) {
+  return () => {
+    let { frame } = handle.props
+    return (
+      <section class="card user-section" aria-labelledby="user-theme-title">
+        <h2 id="user-theme-title" class="section-title">
+          Theme
+        </h2>
+        <p class="hint">The choice applies at once, on every screen of Kentō in this browser. Device follows the light or dark mode of the device.</p>
+        <form class="user-pref-form" method="post" action={pageRoutes.theme.href()} data-theme-switch="">
+          {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
+          <input type="hidden" name="returnTo" value={frame.path} />
+          <fieldset class="field theme-switch">
+            <legend class="field-label">Theme of this browser</legend>
+            <div class="segmented">
+              {THEMES.map((theme) => (
+                <label>
+                  <input type="radio" name="theme" value={theme} checked={theme === frame.theme} />
+                  {THEME_LABELS[theme]}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <button class="button" type="submit">
+            Apply
+          </button>
+        </form>
       </section>
     )
   }
