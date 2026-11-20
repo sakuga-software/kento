@@ -191,6 +191,9 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
 - **Exception, migration 0029 (KNT-150).** It moves the GitHub App installation out of `orgs` and
   drops the old columns, so the previous release does not run on the new schema. Follow the steps
   of [the deployment of 0029](#the-deployment-of-migration-0029) instead of a rolling deploy.
+- **Exception, migration 0030 (KNT-150).** It drops the table of the sessions and makes the one of
+  Better Auth: the previous release cannot read a session any more, and every person signs in
+  again once. Follow [the deployment of 0030](#the-deployment-of-migration-0030).
 - `startup.migrations_failed` gives the error of the database. The process stops before it listens,
   and the previous container keeps serving.
 - How to write one: [README.md](README.md#migrations).
@@ -284,6 +287,23 @@ only way back.
 5. If the old container served after the migration committed (a rolling deploy), open **Advanced**
    in the settings of the GitHub App and **Redeliver** the deliveries of that window that failed.
 6. To roll back: stop the new release, restore the backup, start the previous release.
+
+### The deployment of migration 0030
+
+Migration 0030 (KNT-150) needs 0029 before it, and nothing else of the state that 0029 left: it
+changes only `users`, `accounts`, `sessions` and `verifications`. Both can run in the same deploy (the service applies every
+pending migration in one start), or 0030 in a later one.
+
+1. Behind a proxy, set `KENTO_TRUSTED_PROXY_HOPS` first (`1` behind Traefik alone): the limits of
+   the sign-in are by client, and with the default 0 every client has the address of the proxy.
+2. Take a backup of the database (`pg_dump`). There is no down migration.
+3. Stop the container of the previous release: it reads the old table of the sessions, and fails
+   on every screen once 0030 commits. The webhook and the runners do not read sessions.
+4. Start the new release. Each person signs in again once, with one click on GitHub, and keeps
+   their rights (`memberships` do not change). The cookie of the previous release gives "Session
+   ended." once, and is cleared.
+5. To roll back: stop the new release, restore the backup, start the previous release. Everyone
+   signs in again once more.
 
 **Roll back**: run the image of the previous release again. It does not undo a migration, and the
 previous release runs on the newer schema. Read the entry of the release in
