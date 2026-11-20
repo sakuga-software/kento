@@ -6,7 +6,7 @@ import { after, before, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { getFinding, InvalidCursorError, listFindingEvents, listFindings, PAGE_MAX, setFindingStatus } from '../../app/findings/store.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
 
@@ -32,14 +32,11 @@ describe('findings store', () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url)
-    let orgs = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (1, 11, 'sakuga-software'), (2, 22, 'someone-else') returning id`
-    orgId = orgs[0]!.id
-    otherOrgId = orgs[1]!.id
+    orgId = await insertOrg(database.sql, 'sakuga-software', 1, 11)
+    otherOrgId = await insertOrg(database.sql, 'someone-else', 2, 22)
     let repos = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${orgId}, 3001, 'sakuga-software/sakuga-review', true), (${otherOrgId}, 3002, 'someone-else/app', true)
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true), (${otherOrgId}, (select id from installations where org_id = ${otherOrgId} order by created_at limit 1), 3002, 'someone-else/app', true)
       returning id`
     repoId = repos[0]!.id
     otherRepoId = repos[1]!.id

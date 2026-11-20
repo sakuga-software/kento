@@ -61,7 +61,7 @@ export interface FeedbackPageProps {
 export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
   return () => {
     let { frame, screen, query, now } = handle.props
-    let org = frame.viewer!.org.login
+    let org = frame.viewer!.org.name
     let filtered = Boolean(query.repoId || query.source || query.kind)
     let none = screen.total === 0 && !filtered
     return (

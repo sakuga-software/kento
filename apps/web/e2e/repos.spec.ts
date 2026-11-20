@@ -366,8 +366,8 @@ test.describe('the Repos screen', () => {
     let sql = database()
     try {
       await sql`
-        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
-        select org_id, 880000 + g, 'sakuga-software/bulk-' || lpad(g::text, 2, '0'), false, 'none'
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, installation_id, 880000 + g, 'sakuga-software/bulk-' || lpad(g::text, 2, '0'), false, 'none'
         from repos, generate_series(1, 60) g where full_name = 'sakuga-software/orchard'`
       await sql`update repos set enabled = true where full_name = 'sakuga-software/orchard'`
 

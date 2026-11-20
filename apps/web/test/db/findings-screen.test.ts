@@ -6,7 +6,7 @@ import { after, before, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { findingFacets, listFindingScreen } from '../../app/findings/screen.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg } from './helpers.ts'
 
 const HEAD = '1'.repeat(40)
 const NEXT = '2'.repeat(40)
@@ -26,14 +26,12 @@ describe('the Findings screen list', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url)
     let sql = database.sql
-    let orgs = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (1, 11, 'sakuga-software'), (2, 22, 'someone-else') returning id`
+    let orgs = [{ id: await insertOrg(sql, 'sakuga-software', 1, 11) }, { id: await insertOrg(sql, 'someone-else', 2, 22) }]
     orgId = orgs[0]!.id
     let repos = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${orgId}, 3001, 'sakuga-software/sakuga-review', true), (${orgId}, 3002, 'sakuga-software/orchard', true),
-        (${orgs[1]!.id}, 3003, 'someone-else/app', true), (${orgId}, 3004, 'sakuga-software/quiet', true)
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true), (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3002, 'sakuga-software/orchard', true),
+        (${orgs[1]!.id}, (select id from installations where org_id = ${orgs[1]!.id} order by created_at limit 1), 3003, 'someone-else/app', true), (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3004, 'sakuga-software/quiet', true)
       returning id`
     repoId = repos[0]!.id
     otherRepoId = repos[1]!.id

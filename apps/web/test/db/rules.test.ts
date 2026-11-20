@@ -126,16 +126,16 @@ describe('rules of a repository and of its org (REV-19)', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 4 })
     let [org] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (77, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 77, 2001, 'sakuga-software' from org returning org_id as id`
     orgId = org!.id
     let [repo] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, 3001, 'sakuga-software/orchard', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/orchard', true) returning id`
     repoId = repo!.id
     let [other] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, 3002, 'sakuga-software/other', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3002, 'sakuga-software/other', true) returning id`
     otherRepoId = other!.id
     let [otherOrg] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (78, 2002, 'someone-else') returning id`
+      with org as (insert into orgs (name, slug) values ('someone-else', lower('someone-else')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 78, 2002, 'someone-else' from org returning org_id as id`
     otherOrgRuleId = await addRule({ orgId: otherOrg!.id, repoId: null, title: 'Rule of another org' })
   })
 

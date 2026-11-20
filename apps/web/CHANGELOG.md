@@ -25,7 +25,19 @@ Each entry says, when it applies:
   header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
   `/assets/ui/`, `/assets/rp/`, `/assets/fr/` and `/assets/npm/`: the proxy routes all of `/assets/`
   to it, as before.
-- **Migrations**: none (still 29).
+- **Migrations**: 30. `0029_installations` (KNT-150) moves the GitHub App installation out of
+  `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
+  org keeps its id, its settings and its members, and gets one installation with the same GitHub
+  ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
+  `name` and a unique `slug` (the login; an account that installed the App twice has a second org
+  with the installation id as a suffix). The release before it does not run on the new schema:
+  **follow [DEPLOY.md](DEPLOY.md#the-deployment-of-migration-0029)**: check that no slug
+  collides, take a backup (there is no down migration), stop the previous release before the new
+  one starts, and redeliver from the App page the webhooks that failed in between if they overlapped.
+  The live org of an account that installed the App twice gets the clean slug. An installation that
+  still has repositories cannot be deleted (their history stays).
+- **Webhook**: a new installation of an account that had one before joins the org of that earlier
+  installation, with its settings, instead of a new org.
 - **Order**: the service, then the runners (the engine changes).
 - **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
   `DATABASE_URL`, the service connects as before. Version 4 reads more of the environment:
@@ -51,9 +63,10 @@ Each entry says, when it applies:
 - The Settings screen has a sidebar in place of the tabs under its title: the sections, and under
   each one its parts (the levels, the parts of the GitHub App, each provider, "New rule", "Add a
   provider"). It stays in view while the page scrolls and marks the section and the part on screen.
-  Under 900 px it is a bar, "Section", that stays at the top and opens the list. The addresses of
-  the sections do not change (`/settings#cap`, `#defaults`, `#bots`, `#app`, `#org-rules`,
-  `#providers`).
+  Under 900 px it is a bar, "Section", at the top of the page, that opens the list under it. It does
+  not follow the scroll: a sticky bar covered part of a field after a form came back with its
+  errors. The addresses of the sections do not change (`/settings#cap`, `#defaults`, `#bots`,
+  `#app`, `#org-rules`, `#providers`).
 
 ### Fixed
 

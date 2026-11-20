@@ -460,10 +460,6 @@ kbd,
     background-color 100ms var(--ease),
     box-shadow 100ms var(--ease);
 }
-/* A link that looks like a button: the colour of its variant, not the ink of `a`. */
-a.button {
-  color: var(--button-fg);
-}
 summary.button {
   list-style: none;
 }
@@ -652,19 +648,23 @@ summary.button::-webkit-details-marker {
   height: 6px;
   clip-path: circle(50%);
 }
+/*
+ * Indeterminate is a state of a checkbox only: a radio button of a group where nothing is checked
+ * also matches :indeterminate, and must stay empty.
+ */
 .check:checked,
-.check:indeterminate {
+.check[type='checkbox']:indeterminate {
   border-color: transparent;
   background-color: var(--action);
 }
 .check:checked::before {
   scale: 1;
 }
-.check:indeterminate::before {
+.check[type='checkbox']:indeterminate::before {
   clip-path: inset(40% 0 40% 0 round 1px);
   scale: 1;
 }
-.check:hover:not(:checked, :indeterminate) {
+.check:hover:not(:checked, [type='checkbox']:indeterminate) {
   border-color: var(--ink-muted);
 }
 .check:focus-visible {
@@ -721,6 +721,11 @@ summary.button::-webkit-details-marker {
   }
   .check::before {
     display: none;
+  }
+  /* The chevron of a select is a background: keep it, in the colour of the text of a field. */
+  .select--native::after {
+    forced-color-adjust: none;
+    background-color: FieldText;
   }
   .button:focus-visible,
   .input:focus,
@@ -4013,9 +4018,11 @@ a.finding-title:hover {
   margin-top: var(--space-3);
 }
 
-/* Under 900 px the sidebar is a bar at the top of the page, "Section …", that stays in view and
-   opens the list over the page. settings.js sets .settings-nav-ready once it handles the bar: until
-   then, or without it, the list is part of the page. */
+/* Under 900 px the sidebar is a bar at the top of the page, "Section …", that opens the list under
+   it. KNT-164: the bar does not stay in view. A sticky bar that holds a button always covers part of
+   some field at some scroll position (a form sent back with its errors scrolls to its field).
+   settings.js sets .settings-nav-ready once it handles the bar: until then, or without it, the list
+   is part of the page. */
 @media (max-width: 900px) {
   .settings-layout-nav {
     grid-template-columns: minmax(0, 1fr);
@@ -4025,14 +4032,6 @@ a.finding-title:hover {
     position: static;
     max-height: none;
     overflow: visible;
-  }
-  .settings-nav-ready {
-    position: sticky;
-    z-index: 15;
-    top: 0;
-    margin-block: calc(-1 * var(--space-2));
-    padding-block: var(--space-2);
-    background: var(--paper);
   }
   .settings-nav-ready .settings-nav-toggle {
     display: flex;
@@ -4089,22 +4088,11 @@ a.finding-title:hover {
     background: var(--paper-raised);
   }
   .settings-nav-ready .settings-nav-list {
-    position: absolute;
-    top: calc(100% - var(--space-1));
-    right: 0;
-    left: 0;
     display: none;
-    max-height: calc(100vh - var(--control-h-touch) - 4 * var(--space-4));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    box-shadow: var(--shadow-2);
+    margin-top: var(--space-2);
   }
   .settings-nav-ready.settings-nav-open .settings-nav-list {
     display: grid;
-  }
-  /* Under the bar "Section …". */
-  .settings-layout:has(> .settings-nav-ready) .settings-content [id] {
-    scroll-margin-top: 72px;
   }
 }
 
@@ -4114,10 +4102,6 @@ a.finding-title:hover {
   }
   .settings-nav-sub .settings-nav-link {
     min-height: 40px;
-  }
-  .settings-content [id] {
-    /* Under the sticky top bar of a phone. */
-    scroll-margin-top: 72px;
   }
   .cap-facts,
   .cap-fields {

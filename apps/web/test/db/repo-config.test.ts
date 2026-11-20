@@ -121,7 +121,7 @@ describe('the config of a repository against Postgres', () => {
     it('never reads nor writes the repository of another org', async () => {
       let store = createRepoConfigStore(database)
       let [other] = await sql<{ id: string }[]>`
-        insert into orgs (github_installation_id, github_account_id, login) values (1002, 2002, 'orchard') returning id`
+        with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1002, 2002, 'orchard' from org returning org_id as id`
       assert.equal(await store.read(other!.id, repoId), null)
       assert.deepEqual(await store.save(other!.id, repoId, userId, 0, (c) => c), { kind: 'not_found' })
       assert.equal(await store.read(orgId, 'not-a-uuid'), null)

@@ -20,10 +20,10 @@ function database() {
 async function seed(): Promise<{ failedJobId: string }> {
   let sql = database()
   try {
-    let [org] = await sql<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+    let [org] = await sql<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
     await sql`delete from repos where github_repo_id = ${REPO.id}`
     let [repo] = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${org!.id}, ${REPO.id}, ${REPO.full_name}, true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), ${REPO.id}, ${REPO.full_name}, true) returning id`
     let [runner] = await sql<{ id: string }[]>`
       insert into runners (name, token_hash, last_seen_at) values ('shared-01', ${`e2e-dash-${Date.now()}`}, now()) returning id`
     // An earlier review of the pull request, published, at a known cost.
@@ -114,11 +114,11 @@ test.describe('the dashboard', () => {
     let total: string
     try {
       let [row] = await sql<{ total: string }[]>`
-        select (select coalesce(sum(r.cost_usd), 0) from reviews r join repos on repos.id = r.repo_id join orgs on orgs.id = repos.org_id
-            where orgs.github_installation_id = ${FAKE_ORG.installationId}
+        select (select coalesce(sum(r.cost_usd), 0) from reviews r join repos on repos.id = r.repo_id join installations on installations.id = repos.installation_id
+            where installations.github_installation_id = ${FAKE_ORG.installationId}
               and r.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc')
-          + (select coalesce(sum(s.cost_usd), 0) from resolutions s join repos on repos.id = s.repo_id join orgs on orgs.id = repos.org_id
-            where orgs.github_installation_id = ${FAKE_ORG.installationId}
+          + (select coalesce(sum(s.cost_usd), 0) from resolutions s join repos on repos.id = s.repo_id join installations on installations.id = repos.installation_id
+            where installations.github_installation_id = ${FAKE_ORG.installationId}
               and s.created_at >= date_trunc('day', now() at time zone 'utc') at time zone 'utc') as total`
       total = row!.total
     } finally {
@@ -209,10 +209,10 @@ test.describe('the dashboard', () => {
     let name = `sakuga-software/${'very-long-repository-name-'.repeat(3)}xx`.slice(0, 96)
     let sql = database()
     try {
-      let [org] = await sql<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+      let [org] = await sql<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
       await sql`delete from repos where github_repo_id = 7199`
       let [repo] = await sql<{ id: string }[]>`
-        insert into repos (org_id, github_repo_id, full_name, enabled) values (${org!.id}, 7199, ${name}, true) returning id`
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 7199, ${name}, true) returning id`
       await sql`insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref) values (${repo!.id}, 'lite', 'queued', 12, ${'e'.repeat(40)}, 'main')`
       await page.goto('/')
       let queue = page.locator('.dash-queue')

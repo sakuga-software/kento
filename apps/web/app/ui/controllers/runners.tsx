@@ -65,7 +65,7 @@ export function runnersActions(kit: UiKit) {
       })
       log('info', 'runner.registration_created', {
         registrationId: created.id,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         by: signed.user.login,
         name: input.name,
         labels: input.labels,
@@ -91,7 +91,7 @@ export function runnersActions(kit: UiKit) {
       log('info', 'runner.registration_created', {
         registrationId: renewed.id,
         replaces: id,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         by: signed.user.login,
         name: renewed.name,
         labels: renewed.labels,
