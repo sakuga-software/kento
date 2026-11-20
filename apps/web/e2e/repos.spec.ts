@@ -440,6 +440,8 @@ test.describe('the Repos screen', () => {
       await expect(page.getByRole('status').filter({ hasText: 'zz-18 is disabled.' })).toBeAttached()
       row = rowOf(page, 'zz-18')
       await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeFocused()
+      // The room that the open menu took under the table is given back.
+      expect(await page.locator('.table-wrap').evaluate((wrap) => (wrap as HTMLElement).style.paddingBottom)).toBe('')
       expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
 
       // The server refuses: the row says so, and stays as it was; a second try works.

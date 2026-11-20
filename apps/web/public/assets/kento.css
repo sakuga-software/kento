@@ -975,7 +975,8 @@ select.bar-org-box:hover {
 }
 /* KNT-147. A row on its way to the server, and the error of its change, in its action cell. The row
    that changed is marked as `:target` marks it after the redirect without JavaScript. */
-.table tbody tr.row-changed {
+.table tbody tr.row-changed,
+.table tbody tr.row-changed .row-action {
   background: var(--ai-wash);
 }
 .repos-table tr[aria-busy='true'] .row-action {

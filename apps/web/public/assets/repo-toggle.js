@@ -61,6 +61,9 @@
     // confirm.js shows "Cancel" once, at load: the new confirmation needs it too.
     for (const button of fresh.querySelectorAll('[data-confirm-cancel]')) button.hidden = false
     row.replaceWith(fresh)
+    // row-menu.js gave the table the room of the open menu of the old row: it is gone now.
+    const wrap = fresh.closest('.table-wrap')
+    if (wrap) wrap.style.paddingBottom = ''
     const target = fresh.querySelector('.row-action > button') ?? fresh.querySelector('.row-menu > summary')
     target?.focus({ preventScroll: true })
   }
