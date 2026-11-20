@@ -19,11 +19,6 @@ Each entry says, when it applies:
 
 ## Unreleased
 
-### Changed
-
-- Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
-  the runner says so in `org.opencontainers.image.licenses`.
-
 - **Migrations**: none (still 29).
 - **Order**: the service, then the runners (the engine changes).
 - **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
@@ -39,6 +34,11 @@ Each entry says, when it applies:
     `PGSSLNEGOTIATION`, new options of version 4.
 
   Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
+
+### Changed
+
+- Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
+  the runner says so in `org.opencontainers.image.licenses`.
 
 ### Security
 
