@@ -4016,10 +4016,6 @@ a.finding-title:hover {
   .settings-nav-sub .settings-nav-link {
     min-height: 40px;
   }
-  .settings-content [id] {
-    /* Under the sticky top bar of a phone. */
-    scroll-margin-top: 72px;
-  }
   .cap-facts,
   .cap-fields {
     grid-template-columns: minmax(0, 1fr);

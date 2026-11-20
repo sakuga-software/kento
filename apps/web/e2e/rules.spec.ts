@@ -130,7 +130,7 @@ test.describe('the rules of a repository and of the org', () => {
 
   test('a rule of the org, written in the settings, goes with the jobs of orchard; a wrong form keeps its values', async ({ page }) => {
     let errors = watchConsole(page)
-    // KNT-164: with labels of 18 px, the title of the form went under the sticky bar of a phone.
+    // KNT-164: the form also runs with labels of 18 px, and axe passes at 1440 and 390 px.
     await withLabelLineHeight(page, '18px')
     await signIn(page, 'octocat')
     await reset(page)

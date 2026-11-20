@@ -56,17 +56,13 @@
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
   })
-  // Escape, a click outside or the focus leaving the list folds it, as the menu of the frame.
+  // KNT-164. The open list is part of the page, as a disclosure: only a link or Escape folds it.
+  // Folding it when the focus leaves it, or on a tap outside, moved the field under it off the
+  // screen at the tap, and the tap missed the field.
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || toggle?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
     toggle.focus()
-  })
-  document.addEventListener('click', (event) => {
-    if (nav && !event.composedPath().includes(nav)) setOpen(false)
-  })
-  nav?.addEventListener('focusout', (event) => {
-    if (!(event.relatedTarget instanceof Node && nav.contains(event.relatedTarget))) setOpen(false)
   })
   // The bar folds the list only from here: if this script does not run, the list stays in the page.
   if (toggle) nav.classList.add('settings-nav-ready')
