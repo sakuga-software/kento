@@ -65,6 +65,8 @@ export interface ShellProps {
   actions?: RemixNode
   /** REV-91. The tabs of a screen at the right of its title, for every person ("List", "Precision"). */
   tabs?: RemixNode
+  /** KNT-141. A short line at the right of the title, on its baseline, for every person ("Updated 8 s ago · Refresh"). */
+  meta?: RemixNode
   /** REV-17. What a member can do on this screen, in place of "only the admins … can change". */
   memberCan?: string
   children?: RemixNode
@@ -78,7 +80,7 @@ export interface ShellProps {
  */
 export function Shell(handle: Handle<ShellProps>) {
   return () => {
-    let { frame, section, title, before, lead, actions, tabs, children, memberCan } = handle.props
+    let { frame, section, title, before, lead, actions, tabs, meta, children, memberCan } = handle.props
     let { viewer } = frame
     let readOnly = viewer?.role === 'member'
     return (
@@ -129,6 +131,7 @@ export function Shell(handle: Handle<ShellProps>) {
               <h1 class="page-title">{title}</h1>
               {lead ? <p class="page-lead">{lead}</p> : null}
             </div>
+            {meta ? <div class="page-meta">{meta}</div> : null}
             {tabs ? <div class="page-tabs">{tabs}</div> : null}
             {actions && !readOnly ? <div class="page-actions">{actions}</div> : null}
           </div>

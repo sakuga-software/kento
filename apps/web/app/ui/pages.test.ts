@@ -708,3 +708,23 @@ describe('KNT-150: a member from an invitation', () => {
     assert.equal(auth.memberships.get('user-stranger/org-2')?.source, 'invitation')
   })
 })
+
+describe('KNT-150: an invitation and GitHub on the same org', () => {
+  it('the invitation wins: GitHub neither changes the role nor ends the membership', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(CAMILLE)
+    // An admin of Kentō made camille an admin by invitation; GitHub counts her as a member.
+    await auth.deps.store.deleteMembership(auth.userIdOf(CAMILLE), 'org-1')
+    await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-1', 'admin', 'invitation')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.doesNotMatch(await (await request('/', { cookie })).text(), /Read only/)
+    // A new sign-in where GitHub counts her as a member keeps the invitation and its role.
+    await signIn(CAMILLE)
+    assert.deepEqual({ ...auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-1`) }.role, 'admin')
+    // GitHub says she left: the membership from the invitation stays.
+    auth.setRole(ORG, CAMILLE, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', { cookie })).status, 200)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-1`)?.source, 'invitation')
+  })
+})

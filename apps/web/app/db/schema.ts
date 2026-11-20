@@ -124,8 +124,9 @@ export const repos = pgTable(
       .references(() => orgs.id, { onDelete: 'cascade' }),
     /**
      * KNT-150. The installation that sees the repository: its token reads and writes on GitHub. It
-     * belongs to the org of the repository (a foreign key on both columns), and an installation
-     * that moves to another org takes its repositories with it.
+     * belongs to the org of the repository (a foreign key on both columns). An installation that
+     * moves to another org takes its repositories with it; one that still has repositories cannot be
+     * deleted, so their history is never deleted with it.
      */
     installationId: uuid('installation_id').notNull(),
     githubRepoId: bigint('github_repo_id', { mode: 'number' }).notNull().unique(),
@@ -172,7 +173,7 @@ export const repos = pgTable(
       columns: [table.installationId, table.orgId],
       foreignColumns: [installations.id, installations.orgId],
     })
-      .onDelete('cascade')
+      .onDelete('restrict')
       .onUpdate('cascade'),
   ],
 )

@@ -57,7 +57,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
     the person left, the membership goes. `owner` is given in Kentō and stays while GitHub counts the
     person. The first admin on GitHub of an org that has no owner becomes its owner. In an org of
     several installations, the role is the highest that their accounts give.
-  - `invitation`: an admin of Kentō invited the person. GitHub is never asked about it.
+  - `invitation`: an admin of Kentō invited the person. GitHub is never asked about it, even when
+    GitHub also counts the person in the account: the invitation wins, and only Kentō changes or ends it.
 - At the sign-in, someone whom GitHub counts in none of the orgs of the App, and who has no
   membership from an invitation, is refused, and nothing is written.
 - The header shows the org on screen; its menu lists every org of the person with their role, and

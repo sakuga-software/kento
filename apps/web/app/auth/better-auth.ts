@@ -148,22 +148,7 @@ export function createKentoAuth(options: KentoAuthOptions) {
         update: { before: async (account: Record<string, unknown>) => ({ data: withoutTokens(account) }) },
       },
       session: {
-        create: {
-          // The roles of the sign-in, and the org on screen: the first org where the person is an
-          // admin, else the first one.
-          before: async (session: Record<string, unknown>) => {
-            let scope = signInScope.getStore()
-            let decision = scope?.decision
-            if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
-            let user = await store.findUser(session.userId)
-            if (!user) return false
-            await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
-            await store.touchSignIn(user.id)
-            let first = decision.roles.find((r) => r.role === 'admin')?.org ?? decision.roles[0]?.org ?? decision.invited[0]!
-            log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
-            return { data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now() + SESSION_TTL_MS) } }
-          },
-        },
+        create: { before: (session: Record<string, unknown>) => beforeSessionCreate(store, session, signInScope.getStore(), now()) },
       },
     },
     plugins: [
@@ -236,6 +221,36 @@ export function createKentoAuth(options: KentoAuthOptions) {
 }
 
 export type KentoAuth = ReturnType<typeof createKentoAuth>
+
+/**
+ * The hook of Better Auth before it writes a session. Better Auth writes no row when it answers
+ * `false` (`if (result === false) return null` in better-auth/dist/db/with-hooks.mjs), and merges
+ * `data` into the row otherwise.
+ *
+ * A session is written only for a sign-in that Kentō allowed, in its scope: anything else (no scope,
+ * no decision, a user that is gone, no org to show) gets no session. The roles of the sign-in are
+ * saved, the org on screen is the first one where the person is an admin, else the first one, and
+ * the session ends 7 days after the sign-in on the clock of Kentō.
+ */
+export async function beforeSessionCreate(
+  store: AuthStore,
+  session: Record<string, unknown>,
+  scope: SignInScope | undefined,
+  now: number,
+): Promise<false | { data: Record<string, unknown> }> {
+  let decision = scope?.decision
+  if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
+  // The org on screen: the first org where GitHub counts the person as an admin, else the first one
+  // from GitHub, else the first one of an invitation. None: no session.
+  let first = decision.roles.find((r) => r.role === 'admin')?.org ?? decision.roles[0]?.org ?? decision.invited[0]
+  if (!first) return false
+  let user = await store.findUser(session.userId)
+  if (!user) return false
+  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
+  await store.touchSignIn(user.id)
+  log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
+  return { data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS) } }
+}
 
 /**
  * The GitHub fields of a user that Better Auth writes, from the profile of the sign-in in progress.

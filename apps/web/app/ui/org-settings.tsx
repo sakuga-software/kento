@@ -309,7 +309,7 @@ function DefaultsSection(handle: Handle<SectionProps>) {
         <p class="hint">
           Each repo takes them in its Config, and can replace them. A repo that replaced a value keeps its own value.
         </p>
-        <div class="org-default">
+        <div class="org-default" id="org-level" tabIndex={-1}>
           <div class="config-card-head">
             <h3 class="org-default-title">Level of a push</h3>
             <OrgSource set={view.config.level !== undefined} />
@@ -404,7 +404,7 @@ function LevelDefault(
     let id = `org-${level}`
     let selected = values.provider ?? ''
     return (
-      <div class="org-default" id={id}>
+      <div class="org-default" id={id} tabIndex={-1}>
         <div class="config-card-head">
           <h3 class="org-default-title mono">{level}</h3>
           <OrgSource set={set} />
@@ -616,7 +616,8 @@ function AppSection(handle: Handle<SectionProps>) {
           </p>
         ) : null}
         <dl class="config-facts">
-          <div>
+          {/* KNT-149: the ids of the parts are the links under "GitHub App" in the sidebar. */}
+          <div id="app-installation" tabIndex={-1}>
             <dt>Installation</dt>
             <dd>
               {status ? (
@@ -632,7 +633,7 @@ function AppSection(handle: Handle<SectionProps>) {
               {status ? (status.installation.repositorySelection === 'all' ? ' (all)' : ' (chosen)') : ''}, {view.repos.enabled} enabled
             </dd>
           </div>
-          <div>
+          <div id="app-webhook" tabIndex={-1}>
             <dt>Webhook URL</dt>
             <dd>
               <span class="mono">{status?.webhook?.url ?? webhookUrl ?? 'unknown'}</span>
@@ -652,7 +653,7 @@ function AppSection(handle: Handle<SectionProps>) {
                 : 'Not configured (GITHUB_WEBHOOK_SECRET), and the webhook answers 503.'}
             </dd>
           </div>
-          <div>
+          <div id="app-deliveries" tabIndex={-1}>
             <dt>Last event</dt>
             <dd>
               <DeliveryLine delivery={view.deliveries.last} now={now} />
@@ -677,7 +678,7 @@ function AppSection(handle: Handle<SectionProps>) {
             </dd>
           </div>
           {status ? (
-            <div>
+            <div id="app-permissions" tabIndex={-1}>
               <dt>Permissions</dt>
               <dd>
                 <ul class="permission-list">

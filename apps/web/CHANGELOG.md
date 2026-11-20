@@ -41,7 +41,11 @@ Each entry says, when it applies:
   ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
   `name` and a unique `slug` (the login; an account that installed the App twice has a second org
   with the installation id as a suffix). The release before it does not run on the new schema:
-  stop it before the new one migrates, and roll back with a database backup taken before.
+  **follow [DEPLOY.md](DEPLOY.md#the-deployment-of-migration-0029)**: check that no slug
+  collides, take a backup (there is no down migration), stop the previous release before the new
+  one starts, and redeliver from the App page the webhooks that failed in between if they overlapped.
+  The live org of an account that installed the App twice gets the clean slug. An installation that
+  still has repositories cannot be deleted (their history stays).
 - **Webhook**: a new installation of an account that had one before joins the org of that earlier
   installation, with its settings, instead of a new org.
 - **Order**: the service, then the runners (the engine changes).
@@ -66,6 +70,12 @@ Each entry says, when it applies:
   markers in the texts on GitHub and the commands do not change.
 - Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
   the runner says so in `org.opencontainers.image.licenses`.
+- The Settings screen has a sidebar in place of the tabs under its title: the sections, and under
+  each one its parts (the levels, the parts of the GitHub App, each provider, "New rule", "Add a
+  provider"). It stays in view while the page scrolls and marks the section and the part on screen.
+  Under 900 px it is a bar, "Section", that stays at the top and opens the list. The addresses of
+  the sections do not change (`/settings#cap`, `#defaults`, `#bots`, `#app`, `#org-rules`,
+  `#providers`).
 
 ### Fixed
 

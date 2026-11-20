@@ -225,14 +225,15 @@ describe('migrations', () => {
           { orgId: initech!, githubInstallationId: '104', githubAccountId: '204', accountLogin: 'Initech', suspended: false },
         ],
       )
-      // Every org keeps its id and its settings; the later Acme takes its installation id as a suffix.
+      // Every org keeps its id and its settings. Of the two Acme, the live one takes the clean slug and
+      // the suspended one its installation id as a suffix.
       let after = await sql<{ id: string; name: string; slug: string; dailyCapUsd: string | null; trustedBots: string[] }[]>`
         select id, name, slug, daily_cap_usd as "dailyCapUsd", trusted_bots as "trustedBots" from orgs order by created_at`
       assert.deepEqual(
         after.map((o) => ({ ...o })),
         [
-          { id: first!, name: 'Acme', slug: 'acme', dailyCapUsd: '5.00', trustedBots: ['renovate[bot]'] },
-          { id: second!, name: 'acme', slug: 'acme-102', dailyCapUsd: null, trustedBots: ['sakuga-agent[bot]'] },
+          { id: first!, name: 'Acme', slug: 'acme-101', dailyCapUsd: '5.00', trustedBots: ['renovate[bot]'] },
+          { id: second!, name: 'acme', slug: 'acme', dailyCapUsd: null, trustedBots: ['sakuga-agent[bot]'] },
           { id: globex!, name: 'globex', slug: 'globex', dailyCapUsd: null, trustedBots: [] },
           { id: initech!, name: 'Initech', slug: 'initech', dailyCapUsd: null, trustedBots: [] },
         ],
@@ -258,6 +259,8 @@ describe('migrations', () => {
         select column_name from information_schema.columns where table_schema = 'public' and table_name = 'orgs'
           and column_name in ('github_installation_id', 'github_account_id', 'login', 'suspended_at')`
       assert.deepEqual([...columns], [], 'the installation columns left orgs')
+      // An installation that still has repositories cannot be deleted: their history stays.
+      await assert.rejects(sql`delete from installations where github_installation_id = 102`, /repos_installation_org_fk/)
       // A repository cannot take the installation of another org.
       let [globexInstallation] = await sql<{ id: string }[]>`select id from installations where org_id = ${globex!}`
       await assert.rejects(
