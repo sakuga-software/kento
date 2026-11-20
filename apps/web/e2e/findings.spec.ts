@@ -178,7 +178,7 @@ test.describe('the Findings screen', () => {
     })
     expect(focused).toEqual({ check: true, outline: 'solid' })
     // The chevron of a select stays drawn, in the colour of the text of the field (FieldText).
-    let chevron = await page.locator('.select--native').first().evaluate((el) => {
+    let chevron = await page.locator('.select-box').first().evaluate((el) => {
       let after = getComputedStyle(el, '::after')
       return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('select')!).color }
     })

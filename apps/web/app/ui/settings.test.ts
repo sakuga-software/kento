@@ -284,7 +284,7 @@ describe('the section "Providers and keys"', () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(OCTOCAT)
     let page = await (await request('/settings', { cookie })).text()
-    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button button--outline">/.exec(page)?.[1]
+    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
     // REV-91: the button of the section opens it, and so does a link to #new-provider. With the
     // providers alone, the page has no sidebar (KNT-149: two sections at least).

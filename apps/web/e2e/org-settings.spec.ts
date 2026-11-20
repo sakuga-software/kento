@@ -229,7 +229,7 @@ test.describe('the settings of the org', () => {
       await expect(page.locator(':focus')).toBeInViewport()
     }
     for (let section of await page.locator('.settings-content section').all()) {
-      expect(await section.locator('.button--primary:visible').count()).toBeLessThanOrEqual(1)
+      expect(await section.locator('.button-primary:visible').count()).toBeLessThanOrEqual(1)
     }
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)

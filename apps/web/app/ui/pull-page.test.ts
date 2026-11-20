@@ -296,7 +296,7 @@ describe('the screen of a pull request', () => {
     assert.match(html, /Exposure sheet/)
     // REV-91: with no title from GitHub, the title is "orchard #142", and an admin keeps "Run R5…".
     assert.match(html, /<h1 class="page-title">orchard #142<\/h1>/)
-    assert.match(html, /<summary class="button button--outline">Run R\d+…<\/summary>/)
+    assert.match(html, /<summary class="button">Run R\d+…<\/summary>/)
   })
 
   it('drops the cursor of the findings from the links of the status filter', async () => {
