@@ -114,6 +114,8 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     readOnly: new Set<string>(),
     /** `resolveReviewThread` asks for a token minted with `contents: write`, as GitHub does. */
     resolveNeedsWrite: false,
+    /** GitHub gives the `originalCommit` of a review comment only to a token that can read the contents. */
+    commitNeedsContents: true,
     calls: [] as { method: string; path: string; token: string }[],
     /** The body of each request that writes, as JSON: what the bot posts on GitHub. */
     sent: [] as string[],
@@ -186,6 +188,10 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
         return json(200, { data: { resolveReviewThread: { thread: { id: body.variables.id } } } })
       }
       if (body.query.includes('opener:')) {
+        let minted = state.tokens.find((t) => t.token === token)
+        if (state.commitNeedsContents && minted && !minted.permissions.contents) {
+          return json(200, { errors: [{ type: 'FORBIDDEN', path: ['repository', 'pullRequest', 'reviewThreads', 'nodes', 0, 'opener', 'nodes', 0, 'originalCommit'], message: 'Resource not accessible by integration' }] })
+        }
         // The query of a resolve: the first comment and the newest ones, with the type of the author.
         let nodes = threadsOf().map((t) => {
           let comments = t.comments.nodes.map((c) => {

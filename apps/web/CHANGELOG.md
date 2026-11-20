@@ -42,6 +42,11 @@ Each entry says, when it applies:
 
 ### Fixed
 
+- The thread of a finding that a push fixed is resolved again. The review asked GitHub with a token
+  that cannot write the contents, and GitHub refused: Kentō answered "The thread can be resolved."
+  and left it open. The publisher now asks a token with `contents: write` for the thread only.
+- `@kento-review resolve` works again. The service read the threads with a token that cannot read
+  the contents, and GitHub refused the commit of each comment (`FORBIDDEN` on `originalCommit`).
 - `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
   HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
   your reverse proxy runs on another machine, publish the port on a private address.

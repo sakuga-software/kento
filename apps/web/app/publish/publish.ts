@@ -170,6 +170,12 @@ export async function publishReview(
     /** A client whose token can write the checks, or null when the App cannot. */
     checks?: GitHub | null
     /**
+     * Gives a client whose token can resolve and reopen a review thread (`contents: write`), or null
+     * when the App cannot. Called only when a thread changes. Without it, the client of the review
+     * tries, and GitHub refuses it to a token without `contents: write`.
+     */
+    threadWriter?: () => Promise<GitHub | null>
+    /**
      * A unique id of the stored review, written in a hidden comment of the review body. A review of
      * the bot that already carries it is not posted again.
      */
@@ -198,6 +204,9 @@ export async function publishReview(
   let level = review.level
   let head = review.head
   let threads = await botThreads(github, target)
+  let writer: Promise<GitHub> | null = null
+  let threadClient = (): Promise<GitHub> =>
+    (writer ??= (options.threadWriter ? options.threadWriter() : Promise.resolve(null)).then((client) => client ?? github))
   let threadUrl = (commentId: number) => `${target.webUrl}/${owner}/${name}/pull/${pr}#discussion_r${commentId}`
 
   // REV-16. The findings of the pull request: those of the database, and the open threads of an
@@ -403,7 +412,7 @@ export async function publishReview(
   for (let t of toClose) {
     await step('thread', async () => {
       try {
-        await resolveReviewThread(github, t.id)
+        await resolveReviewThread(await threadClient(), t.id)
       } catch (error) {
         // GitHub refuses this mutation to an App that cannot write the contents. The reply tells the
         // person who resolves the thread why it can go.
@@ -429,7 +438,7 @@ export async function publishReview(
     await step('follow', async () => {
       if (thread.resolved) {
         try {
-          await unresolveReviewThread(github, thread.id)
+          await unresolveReviewThread(await threadClient(), thread.id)
         } catch (error) {
           // The reply still says that the defect is back: a person can open the thread.
           warn('publish.thread_not_unresolved', { thread: thread.id, error: String(error) })
