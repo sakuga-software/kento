@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
+import { CAMILLE, STRANGER, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { AppStatus, ReadAppStatus } from '../org-settings/app-status.ts'
 import type { OrgSettingsStore, OrgSettingsValues, OrgSettingsView } from '../org-settings/store.ts'
@@ -114,7 +114,7 @@ function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, stat
     return { cookie, csrf }
   }
 
-  return { ...fake, request, signIn }
+  return { ...fake, auth, request, signIn }
 }
 
 
@@ -209,6 +209,28 @@ describe('the settings of the org (REV-13)', () => {
       assert.equal(response.status, 403, `${path} ${field}`)
     }
     assert.deepEqual(saves, [])
+  })
+
+  it('KNT-150: an admin who is not the owner saves a form; an owner whom GitHub demotes to member reads only', async () => {
+    let { request, signIn, auth, rows } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    let owner = await signIn(OCTOCAT)
+    let admin = await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/${ORG.id}`)?.role, 'owner')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/${ORG.id}`)?.role, 'admin')
+    let form = { version: '0', field: 'caps', dailyCapUsd: '2', monthlyCapUsd: '', alertPct: '80' }
+    let saved = await request('/settings/org', { cookie: admin.cookie, form: { _csrf: admin.csrf, ...form } })
+    assert.equal(saved.status, 303)
+    assert.equal(rows[ORG.id]!.caps.dailyCapUsd, 2)
+
+    // GitHub demotes the owner to member: at the next check, the owner is a member, and reads only.
+    auth.setRole(ORG, OCTOCAT, 'member')
+    let again = await signIn(OCTOCAT)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/${ORG.id}`)?.role, 'member')
+    let refused = await request('/settings/org', { cookie: again.cookie, form: { _csrf: again.csrf, ...form, version: '1', dailyCapUsd: '9' } })
+    assert.equal(refused.status, 403)
+    assert.equal(rows[ORG.id]!.caps.dailyCapUsd, 2)
+    assert.ok(owner.cookie)
   })
 
   it('refuses a form without the CSRF token, or from another site', async () => {

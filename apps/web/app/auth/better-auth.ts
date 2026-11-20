@@ -281,7 +281,7 @@ export async function beforeSessionCreate(
   if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
   let user = await store.findUser(session.userId)
   if (!user) return false
-  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
+  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed, now)
   // The org on screen: the first org where GitHub counts the person as an admin, else the first one
   // from GitHub, else the first one of an invitation; always one where the person is a member once
   // the roles are saved (an org can go in between), else their first membership. None: no session.

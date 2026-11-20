@@ -11,6 +11,7 @@ import {
   type KentoAuth,
 } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
+import { OWNER_ACTIVE_MS, saveGitHubRole } from '../../app/auth/access.ts'
 import { createAuthStore, type AuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -336,6 +337,70 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(signedIn.length, 1)
     assert.equal((await database.sql`select 1 from sessions`).length, 1)
     assert.equal((await database.sql`select 1 from verifications`).length, 0)
+  })
+
+  async function insertUser(githubId: number, login: string, lastSignInAt: Date | null = null): Promise<string> {
+    let [row] = await database.sql<{ id: string }[]>`
+      insert into users (github_id, login, email, last_sign_in_at) values (${githubId}, ${login}, ${githubEmail(githubId)}, ${lastSignInAt?.toISOString() ?? null}::timestamptz)
+      returning id`
+    return row!.id
+  }
+
+  it('KNT-150: counts an owner seen within 30 days, and not an older one', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let owner = await insertUser(101, 'founder')
+    let admin = await insertUser(102, 'second')
+    let now = Date.now()
+    await store.saveMembership(owner, acme, 'owner', 'github')
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
+    // A second GitHub admin is an admin while the owner is active.
+    assert.equal(await saveGitHubRole(store, admin, acme, null, 'admin', now), 'admin')
+    // The owner was last checked 31 days ago and never signed in since: a ghost.
+    await database.sql`update memberships set checked_at = now() - interval '31 days' where user_id = ${owner}`
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), false)
+    // A sign-in within the window counts too.
+    await database.sql`update users set last_sign_in_at = now() - interval '1 day' where id = ${owner}`
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
+    await database.sql`update users set last_sign_in_at = now() - interval '40 days' where id = ${owner}`
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', now), 'owner')
+    let rows = await database.sql`select role from memberships order by role`
+    assert.deepEqual(rows.map((r) => r.role), ['owner', 'owner'])
+  })
+
+  it('KNT-150: two GitHub admins of an org with no owner at the same time make one owner', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let first = await insertUser(201, 'first')
+    let second = await insertUser(202, 'second')
+    // A slow check: without the lock of the org, both admins would read "no owner" before either writes.
+    let slow: AuthStore = {
+      ...store,
+      withOrgLock: (orgId, work) =>
+        store.withOrgLock(orgId, (locked) =>
+          work({
+            ...locked,
+            hasOwner: async (id, since) => {
+              let found = await locked.hasOwner(id, since)
+              await new Promise((resolve) => setTimeout(resolve, 150))
+              return found
+            },
+          }),
+        ),
+    }
+    let now = Date.now()
+    let roles_ = await Promise.all([saveGitHubRole(slow, first, acme, null, 'admin', now), saveGitHubRole(slow, second, acme, null, 'admin', now)])
+    assert.deepEqual(roles_.sort(), ['admin', 'owner'])
+    let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from memberships where role = 'owner'`
+    assert.equal(count!.n, 1)
+  })
+
+  it('KNT-150: lists only the orgs of a membership from an invitation as invited', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    let user = await insertUser(301, 'guest')
+    await store.saveMembership(user, acme, 'member', 'github')
+    await store.saveMembership(user, globex, 'member', 'invitation')
+    assert.deepEqual((await store.invitedOrgs(301)).map((o) => o.name), ['globex'])
+    assert.deepEqual(await store.invitedOrgs(999), [])
   })
 
   it('the table refuses a token of GitHub in an account', async () => {

@@ -7,6 +7,12 @@ import type { AuthStore, MembershipRow, OrgRow, UserRow } from './store.ts'
 export const ROLE_TTL_MS = 10 * 60 * 1000
 /** While GitHub does not answer, a role read before stays valid this long, then the access ends. */
 export const ROLE_GRACE_MS = 60 * 60 * 1000
+/**
+ * KNT-150. An owner counts as the owner of an org while their membership was checked, or they
+ * signed in, within this window. Past it, an owner who left and never came back no longer stops
+ * the next GitHub admin from becoming the owner.
+ */
+export const OWNER_ACTIVE_MS = 30 * 24 * 60 * 60 * 1000
 
 export type SignInDecision =
   /**
@@ -74,11 +80,38 @@ export async function decideSignIn(
 }
 
 /**
- * KNT-150. The role in Kentō of a membership that GitHub confirms with `github`: GitHub decides
- * between `admin` and `member`; an owner, given in Kentō, stays an owner.
+ * KNT-150. The role in Kentō of a membership from GitHub, once GitHub answered `github`: GitHub
+ * decides between `admin` and `member`. `owner` holds only while GitHub says `admin`: an owner whom
+ * GitHub demotes to `member` becomes a member, as an admin would.
  */
 export function roleFromGitHub(current: OrgRole | null, github: GitHubRole): OrgRole {
-  return current === 'owner' ? 'owner' : github
+  return current === 'owner' && github === 'admin' ? 'owner' : github
+}
+
+/**
+ * KNT-150. Writes the role that GitHub gives to a membership from GitHub. A GitHub admin of an org
+ * that has no active owner (`OWNER_ACTIVE_MS`) becomes its owner: a new installation gets one, and
+ * so does an org whose owner left. The check and the write run under one lock of the org, so two
+ * admins at the same time make one owner.
+ */
+export async function saveGitHubRole(
+  store: AuthStore,
+  userId: string,
+  orgId: string,
+  current: OrgRole | null,
+  github: GitHubRole,
+  now: number,
+): Promise<OrgRole> {
+  let role = roleFromGitHub(current, github)
+  if (github !== 'admin' || role === 'owner') {
+    await store.saveMembership(userId, orgId, role, 'github')
+    return role
+  }
+  return store.withOrgLock(orgId, async (locked) => {
+    let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS))) ? 'admin' : 'owner'
+    await locked.saveMembership(userId, orgId, next, 'github')
+    return next
+  })
 }
 
 /**
@@ -86,14 +119,15 @@ export function roleFromGitHub(current: OrgRole | null, github: GitHubRole): Org
  * a member. An org where GitHub failed (`unconfirmed`) keeps its membership as it was. A membership
  * from an invitation is Kentō's: GitHub neither changes nor removes it.
  *
- * A person that GitHub counts in an org where they are not a member yet joins it. The first admin
- * on GitHub of an org that has no owner becomes its owner: a new installation gets one.
+ * A person that GitHub counts in an org where they are not a member yet joins it. A GitHub admin of
+ * an org that has no active owner becomes its owner (`saveGitHubRole`).
  */
 export async function saveSignInRoles(
   store: AuthStore,
   user: UserRow,
   roles: { org: OrgRow; role: GitHubRole }[],
   unconfirmed: OrgRow[] = [],
+  now: number = Date.now(),
 ) {
   let kept = new Set([...roles, ...unconfirmed.map((org) => ({ org }))].map(({ org }) => org.id))
   let existing = new Map((await store.memberships(user.id)).map((m) => [m.org.id, m]))
@@ -103,12 +137,7 @@ export async function saveSignInRoles(
   for (let { org, role } of roles) {
     let membership = existing.get(org.id)
     if (membership?.source === 'invitation') continue
-    let next = membership
-      ? roleFromGitHub(membership.role, role)
-      : role === 'admin' && !(await store.hasOwner(org.id))
-        ? 'owner'
-        : role
-    await store.saveMembership(user.id, org.id, next, 'github')
+    await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, role, now)
   }
 }
 
@@ -141,8 +170,7 @@ export async function currentMemberships(
         log('info', 'auth.access_lost', { login: user.login, org: membership.org.name })
         continue
       }
-      let role = roleFromGitHub(membership.role, github)
-      await store.saveMembership(user.id, membership.org.id, role, 'github')
+      let role = await saveGitHubRole(store, user.id, membership.org.id, membership.role, github, now)
       current.push({ ...membership, role, checkedAt: new Date(now) })
     } catch (error) {
       log('warn', 'auth.role_check_failed', { org: membership.org.name, login: user.login, error: errorMessage(error) })

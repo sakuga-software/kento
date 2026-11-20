@@ -83,7 +83,7 @@ export function Shell(handle: Handle<ShellProps>) {
   return () => {
     let { frame, section, title, before, lead, actions, tabs, meta, children, memberCan } = handle.props
     let { viewer } = frame
-    let readOnly = viewer?.role === 'member'
+    let readOnly = viewer !== null && !viewer.canEdit
     return (
       <Document title={title} theme={frame.theme} assetVersion={frame.assetVersion}>
         <a class="skip-link" href="#content">

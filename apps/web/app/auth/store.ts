@@ -55,15 +55,21 @@ export interface AuthStore {
    * membership from an invitation.
    */
   saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<void>
-  /** KNT-150. The org has at least one owner. */
-  hasOwner(orgId: string): Promise<boolean>
+  /**
+   * KNT-150. The org has an active owner: one whose membership was checked, or who signed in, at
+   * `since` or after.
+   */
+  hasOwner(orgId: string, since: Date): Promise<boolean>
+  /** KNT-150. Runs `work` in one transaction that holds the lock of the owners of the org. */
+  withOrgLock<T>(orgId: string, work: (store: AuthStore) => Promise<T>): Promise<T>
   /** KNT-150. The active orgs where the user of a GitHub account is a member from an invitation. */
   invitedOrgs(githubId: number): Promise<OrgRow[]>
   deleteMembership(userId: string, orgId: string): Promise<void>
 }
 
-export function createAuthStore(sql: postgres.Sql): AuthStore {
-  return {
+/** `locked`: a store of `withOrgLock`, inside its transaction. */
+export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
+  let store: AuthStore = {
     async findUser(userId) {
       let [row] = await sql<UserRow[]>`
         select id, github_id::float8 as "githubId", login, name, avatar_url as "avatarUrl"
@@ -127,15 +133,31 @@ export function createAuthStore(sql: postgres.Sql): AuthStore {
       return readOrgs(sql, rows.map((r) => r.orgId))
     },
 
-    async hasOwner(orgId) {
-      let [row] = await sql`select 1 from memberships where org_id = ${orgId} and role = 'owner' limit 1`
+    async hasOwner(orgId, since) {
+      // drizzle shares this client and turns off its date conversion: the time goes as text.
+      let [row] = await sql`
+        select 1 from memberships m join users u on u.id = m.user_id
+        where m.org_id = ${orgId} and m.role = 'owner'
+          and (m.checked_at >= ${since.toISOString()}::timestamptz or u.last_sign_in_at >= ${since.toISOString()}::timestamptz)
+        limit 1
+      `
       return row !== undefined
+    },
+
+    async withOrgLock(orgId, work) {
+      // The store of a `withOrgLock` already holds a lock, in its transaction: one org at a time.
+      if (locked) return work(store)
+      return (await sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${`kento.org_owners:${orgId}`}, 0))`
+        return work(createAuthStore(tx as unknown as postgres.Sql, true))
+      })) as Awaited<ReturnType<typeof work>>
     },
 
     async deleteMembership(userId, orgId) {
       await sql`delete from memberships where user_id = ${userId} and org_id = ${orgId}`
     },
   }
+  return store
 }
 
 /**

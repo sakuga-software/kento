@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
+import { OWNER_ACTIVE_MS, ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { githubEmail, SESSION_TTL_MS } from '../auth/better-auth.ts'
 import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
@@ -494,6 +494,8 @@ describe('the role, from GitHub', () => {
 
   it('follows a change of role on GitHub', async () => {
     let { request, signIn, auth } = setup()
+    // octocat, the first admin, is the owner: camille becomes an admin, not the owner.
+    await signIn(OCTOCAT)
     let { cookie } = await signIn(CAMILLE)
     auth.setRole(ORG, CAMILLE, 'admin')
     auth.clock.now += ROLE_TTL_MS + 1000
@@ -625,6 +627,26 @@ describe('the role, from GitHub', () => {
 
     await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-9' } })
     assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">sakuga-software<\/span>/)
+  })
+
+  it('KNT-150: a switch that Better Auth refuses (the membership went in between) goes back to the page, not to a 500', async () => {
+    let { request, signIn, auth, csrfOf } = setup({ orgs: [ORG, OTHER_ORG] })
+    auth.setRole(OTHER_ORG, CAMILLE, 'admin')
+    let { cookie } = await signIn(CAMILLE)
+    let token = await csrfOf(cookie!)
+    let api = auth.deps.auth.api as { setActiveOrganization: (...args: unknown[]) => Promise<unknown> }
+    let original = api.setActiveOrganization
+    api.setActiveOrganization = async () => {
+      throw new Error('You are not a member of this organization')
+    }
+    try {
+      let switched = await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-1', returnTo: '/repos' } })
+      assert.equal(switched.status, 303)
+      assert.equal(switched.headers.get('Location'), '/repos')
+    } finally {
+      api.setActiveOrganization = original
+    }
+    assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">orchard<\/span>/)
   })
 })
 
@@ -811,17 +833,62 @@ describe('KNT-150: the roles owner, admin and member, and the menu of the orgs',
     assert.doesNotMatch(await (await request('/settings', { cookie: owner.cookie })).text(), /Read only/)
   })
 
-  it('keeps an owner an owner while GitHub counts them, and removes them when GitHub says they left', async () => {
+  it('keeps an owner an owner while GitHub says admin, makes them a member when GitHub demotes them, and removes them when they left', async () => {
     let { request, signIn, auth } = setup()
     let { cookie } = await signIn(OCTOCAT)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.match(await (await request('/', { cookie })).text(), /<span class="who-role">Owner<\/span>/)
+    // GitHub demotes octocat to member: owner holds only while GitHub says admin.
     auth.setRole(ORG, OCTOCAT, 'member')
     auth.clock.now += ROLE_TTL_MS + 1000
     let html = await (await request('/', { cookie })).text()
-    assert.match(html, /<span class="who-role">Owner<\/span>/)
+    assert.match(html, /<span class="who-role">Member<\/span>/)
+    assert.match(html, /Read only/)
+    // A new sign-in changes nothing.
+    let again = await signIn(OCTOCAT)
+    assert.match(await (await request('/', { cookie: again.cookie })).text(), /<span class="who-role">Member<\/span>/)
     auth.setRole(ORG, OCTOCAT, null)
     auth.clock.now += ROLE_TTL_MS + 1000
-    assert.equal((await request('/', { cookie })).status, 303)
+    assert.equal((await request('/', { cookie: again.cookie })).status, 303)
     assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`), undefined)
+  })
+
+  it('makes an admin the owner at its next check when the org has no owner any more', async () => {
+    let { request, signIn, auth } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    let owner = await signIn(OCTOCAT)
+    let admin = await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'admin')
+    // The owner leaves the org on GitHub; their next request ends the membership.
+    auth.setRole(ORG, OCTOCAT, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', { cookie: owner.cookie })).status, 303)
+    // The admin, at its next check, becomes the owner, without a new sign-in.
+    assert.match(await (await request('/', { cookie: admin.cookie })).text(), /<span class="who-role">Owner<\/span>/)
+  })
+
+  it('gives the org back an owner after a release that wrote admin over owner', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    // The release before, during the deploy, read GitHub again and wrote `admin`.
+    await auth.deps.store.saveMembership(auth.userIdOf(OCTOCAT), ORG.id, 'admin', 'github')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.match(await (await request('/', { cookie })).text(), /<span class="who-role">Owner<\/span>/)
+  })
+
+  it('an owner who has not been seen for 30 days does not stop the next GitHub admin from becoming the owner', async () => {
+    let { signIn, auth } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    await signIn(OCTOCAT)
+    auth.clock.now += OWNER_ACTIVE_MS - 60_000
+    await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'admin', 'the owner was seen within 30 days')
+    auth.clock.now += 2 * 60_000
+    auth.clock.now += ROLE_TTL_MS
+    await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'owner')
+    // The old owner keeps their row; when they come back as an admin of GitHub, they stay an owner.
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'owner')
   })
 
   it('follows GitHub between admin and member for a membership from GitHub', async () => {

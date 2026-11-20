@@ -57,8 +57,12 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
     /orgs/{org}/memberships/{login}` with an installation token limited to `members: read`; the owner
     of a personal account is its admin). GitHub decides between `admin` and `member`, read again after
     10 minutes; while GitHub fails, the last one holds 1 hour, then the access ends. When GitHub says
-    the person left, the membership goes. `owner` is given in Kentō and stays while GitHub counts the
-    person. The first admin on GitHub of an org that has no owner becomes its owner. In an org of
+    the person left, the membership goes. `owner` holds only while GitHub says `admin`: an
+    owner whom GitHub demotes to `member` becomes a member at the next check. A GitHub admin of an
+    org that has no active owner becomes its owner at each check, under a lock of the org, so two
+    admins at the same time make one owner. An owner is active while their membership was checked,
+    or they signed in, within 30 days (`OWNER_ACTIVE_MS`): an owner who left and never came back
+    does not stop the next admin. In an org of
     several installations, the role is the highest that their accounts give.
   - `invitation`: an admin of Kentō invited the person. GitHub is never asked about it, even when
     GitHub also counts the person in the account: the invitation wins, and only Kentō changes or ends it.
