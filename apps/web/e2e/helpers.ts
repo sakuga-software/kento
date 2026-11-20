@@ -12,8 +12,8 @@ export async function expectNoAxeViolations(page: Page) {
 }
 
 /**
- * KNT-143. The text of every visible button-like link or summary contrasts with its own background
- * (4.5:1 at least). axe reports a link with `background-color` on itself as "incomplete", not as a
+ * KNT-143. The text of every visible button-like link or summary contrasts with its background, or
+ * with the first opaque background behind a transparent one (4.5:1 at least). axe reports a link with `background-color` on itself as "incomplete", not as a
  * violation: an ink-on-ink primary link passed it.
  */
 export async function expectReadableButtons(page: Page) {
@@ -30,11 +30,21 @@ export async function expectReadableButtons(page: Page) {
     for (let el of document.querySelectorAll<HTMLElement>('a.button, summary.button')) {
       if (el.offsetParent === null) continue
       let style = getComputedStyle(el)
-      let bg = rgb(style.backgroundColor)
-      if (bg.length === 4 && bg[3] === 0) continue
-      let [a, b] = [luminance(rgb(style.color)), luminance(bg)].sort((x, y) => y - x)
+      // A ghost or outline link is transparent: its text sits on the first opaque background behind it.
+      let behind: Element | null = el
+      let background = 'rgb(255, 255, 255)'
+      while (behind) {
+        let value = getComputedStyle(behind).backgroundColor
+        let parts = rgb(value)
+        if (parts.length === 3 || (parts.length === 4 && parts[3]! > 0)) {
+          background = value
+          break
+        }
+        behind = behind.parentElement
+      }
+      let [a, b] = [luminance(rgb(style.color)), luminance(rgb(background))].sort((x, y) => y - x)
       let ratio = (a! + 0.05) / (b! + 0.05)
-      if (ratio < 4.5) out.push(`${el.textContent?.trim()}: ${style.color} on ${style.backgroundColor} (${ratio.toFixed(2)}:1)`)
+      if (ratio < 4.5) out.push(`${el.textContent?.trim()}: ${style.color} on ${background} (${ratio.toFixed(2)}:1)`)
     }
     return out
   })
