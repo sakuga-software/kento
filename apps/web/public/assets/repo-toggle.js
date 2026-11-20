@@ -4,7 +4,6 @@
 // JavaScript, the form posts as before, and the redirect goes to the row (`#repo-<id>`).
 // Its names stay in a block: the scripts of a page share one global scope.
 {
-  const form = document.getElementById('repo-actions')
   const content = document.getElementById('content')
 
   const MESSAGES = {
@@ -47,8 +46,11 @@
     target.focus({ preventScroll: true })
   }
 
-  if (form && content && window.fetch && window.DOMParser) {
-    form.addEventListener('submit', async (event) => {
+  // On the document: a change puts a new form "repo-actions" in place of the old one.
+  if (content && window.fetch && window.DOMParser) {
+    document.addEventListener('submit', async (event) => {
+      const form = event.target
+      if (!(form instanceof HTMLFormElement) || form.id !== 'repo-actions') return
       const button = event.submitter
       const row = button?.closest('tr[id^="repo-"]')
       if (!row || !button.formAction) return
