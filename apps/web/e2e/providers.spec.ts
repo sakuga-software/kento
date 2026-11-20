@@ -48,7 +48,8 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expectNoAxeViolations(page)
     // REV-29: the form is folded; the table of contents opens it.
     let form = page.locator('#new-provider')
-    await expect(form.getByLabel('Type')).toBeHidden()
+    // KNT-165: the field "Type" is a custom select: its button (the list is labelled "Type" too).
+    await expect(form.getByRole('button', { name: /^Type / })).toBeHidden()
     // REV-91: the button of the section opens it.
     await form.getByText('Add a provider', { exact: true }).click()
     await chooseOption(form, 'Type', 'anthropic')
@@ -124,7 +125,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expect(nav.getByRole('link', { name: 'Providers and keys', includeHidden: true })).toHaveAttribute('aria-current', 'location')
     await expect(nav.getByRole('link', { name: label, exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
     await goToSettingsLink(page, 'Add a provider')
-    await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
+    await expect(page.locator('#new-provider').getByRole('button', { name: /^Type / })).toBeVisible()
 
     // 6. A member reads the section and has no form.
     await page.context().clearCookies()
@@ -152,7 +153,7 @@ test('a provider form with an error opens on its first field in error, in view a
   await page.evaluate(() => {
     location.hash = 'new-provider'
   })
-  await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
+  await expect(page.locator('#new-provider').getByRole('button', { name: /^Type / })).toBeVisible()
   expect(errors.filter((e) => /URI/i.test(e))).toEqual([])
 
   // A link to the anchor opens the folded form (the home screen has one).
