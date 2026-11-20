@@ -1,7 +1,7 @@
 // REV-21. The assignment rules of a repository: who and what sets the level of the review of a push,
 // as a CODEOWNERS file sets the reviewers. The rules are read in their order, and the first one that
 // matches wins; with none, the level of the config applies. No database, no network.
-import { isLevel, isOneOf, LEVELS, type Level } from '@sakuga-review/protocol'
+import { isLevel, isOneOf, LEVELS, type Level } from '@kento/protocol'
 
 import { checkPattern, patternToRegExp, type FormResult, type Trigger } from '../repo-config/model.ts'
 

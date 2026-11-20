@@ -53,27 +53,33 @@ test.describe('the frame of the screens', () => {
     expect(await page.locator('.dash-tile').first().evaluate((el) => getComputedStyle(el).borderTopStyle)).toBe('solid')
   })
 
-  test('the theme applies at once, with no save, and stays on the next page', async ({ page }) => {
+  // KNT-142: the theme is on the screen of the user, reached from the avatar of the bar, and no longer in the foot.
+  test('the theme applies at once from the screen of the user, with no save, and stays on the next page', async ({ page }) => {
     await page.goto('/repos')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'system')
+    await expect(page.locator('footer').getByRole('group', { name: 'Theme' })).toHaveCount(0)
     let paper = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 
-    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
+    await page.getByRole('link', { name: 'octocat, your preferences' }).click()
+    await expect(page).toHaveURL(/\/users\/octocat$/)
+    let section = page.getByRole('region', { name: 'Theme' })
+    let theme = section.getByRole('group', { name: 'Theme of this browser' })
     await theme.getByText('Sumi', { exact: true }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe(paper)
     // No "Apply" button with JavaScript: the click was enough.
-    await expect(theme.getByRole('button', { name: 'Apply' })).toBeHidden()
+    await expect(section.getByRole('button', { name: 'Apply' })).toBeHidden()
 
     await page.goto('/findings')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
-    await expect(page.getByRole('group', { name: 'Theme' }).locator('visible=true').getByRole('radio', { name: 'Sumi' })).toBeChecked()
+    await page.goto('/users/octocat')
+    await expect(page.getByRole('group', { name: 'Theme of this browser' }).getByRole('radio', { name: 'Sumi' })).toBeChecked()
   })
 
   test('"Device" follows the theme of the device', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'dark' })
-    await page.goto('/')
-    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
+    await page.goto('/users/octocat')
+    let theme = page.getByRole('group', { name: 'Theme of this browser' })
     await theme.getByText('Paper', { exact: true }).click()
     let light = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
     await theme.getByText('Device', { exact: true }).click()
@@ -151,13 +157,19 @@ test.describe('a page that does not exist', () => {
 test.describe('without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
-  test('the theme form applies the choice with "Apply"', async ({ page }) => {
+  test('the theme form of the screen of the user applies the choice with "Apply" (KNT-142)', async ({ page }) => {
     await signIn(page, 'octocat')
+    await page.goto('/users/octocat')
+    let section = page.getByRole('region', { name: 'Theme' })
+    // "Apply" stands next to the choices, not under them by the hint.
+    let apply = (await section.getByRole('button', { name: 'Apply' }).boundingBox())!
+    let choices = (await section.locator('.segmented').boundingBox())!
+    expect(Math.abs(apply.y + apply.height / 2 - (choices.y + choices.height / 2))).toBeLessThan(2)
+    await section.getByText('Sumi', { exact: true }).click()
+    await section.getByRole('button', { name: 'Apply' }).click()
+    await expect(page).toHaveURL(/\/users\/octocat$/)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
     await page.goto('/runners')
-    let theme = page.getByRole('group', { name: 'Theme' }).locator('visible=true')
-    await theme.getByText('Sumi', { exact: true }).click()
-    await theme.getByRole('button', { name: 'Apply' }).click()
-    await expect(page).toHaveURL(/\/runners$/)
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
   })
 })

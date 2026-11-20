@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { LEVELS, PROVIDER_KINDS } from '@sakuga-review/protocol'
+import { LEVELS, PROVIDER_KINDS } from '@kento/protocol'
 
 import { providerKind, reviewLevel } from './schema.ts'
 

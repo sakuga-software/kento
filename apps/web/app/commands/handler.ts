@@ -17,7 +17,7 @@
 // (reject.ts): 👀 on receipt, 🚀 after the effect, 😕 when a step on GitHub failed. A command in a review thread
 // (`pull_request_review_comment`) gets its reactions and its reply on the routes of the review
 // comments. In a thread, only `reject` is read: the other commands go in the conversation.
-import { SHA } from '@sakuga-review/protocol'
+import { SHA } from '@kento/protocol'
 import { and, eq, sql } from 'drizzle-orm'
 
 import type postgres from 'postgres'

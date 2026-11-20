@@ -14,6 +14,11 @@ describe('the stylesheet', () => {
     assert.match(CSS, /^\.list-filter-count \{\n {2}color: inherit;/m)
   })
 
+  it('has no rule left for the theme switch of the foot (KNT-142)', () => {
+    assert.doesNotMatch(CSS, /\.footer-settings\b/)
+    assert.match(CSS, /^\.js form\[data-theme-switch\] \.button \{\n {2}display: none;/m)
+  })
+
   it('runs view transitions between pages only without reduced motion, and keeps the bar still (KNT-145)', () => {
     let block = CSS.match(/^@media \(prefers-reduced-motion: no-preference\) \{\n([\s\S]*?)\n\}$/m)?.[1] ?? ''
     assert.match(block, /^ {2}@view-transition \{\n {4}navigation: auto;\n {2}\}/)

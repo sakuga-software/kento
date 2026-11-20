@@ -1,5 +1,5 @@
-import { defaultModels } from '@sakuga-review/engine/levels'
-import { UUID, type Level } from '@sakuga-review/protocol'
+import { defaultModels } from '@kento/engine/levels'
+import { UUID, type Level } from '@kento/protocol'
 
 import { idFormHelp, SERVICE_PROVIDER, type LevelModels, type Resolved } from './model.ts'
 import type { ProviderOption } from './providers.ts'
