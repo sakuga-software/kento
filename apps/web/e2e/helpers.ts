@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, type Locator, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
-import { FAKE_ORG } from './fake-github.ts'
+import { seedFakeOrg } from './pull-seed.ts'
 
 /** Fails on any WCAG 2.2 A or AA violation that axe finds on the page. */
 export async function expectNoAxeViolations(page: Page) {
@@ -97,6 +97,18 @@ export async function openRepoConfig(page: Page, repo: string) {
 }
 
 /**
+ * KNT-164: serves kento.css with another line height for the labels of the fields (18 px for
+ * example), from the first page. The content security policy refuses an inline style, and a style
+ * added after the load comes too late for the scroll to a field in error.
+ */
+export async function withLabelLineHeight(page: Page, lineHeight: string) {
+  await page.route('**/assets/kento.css*', async (route) => {
+    let response = await route.fetch()
+    await route.fulfill({ response, body: `${await response.text()}\n.label { line-height: ${lineHeight}; }\n` })
+  })
+}
+
+/**
  * KNT-149: follows a link of the sidebar of the settings. Under 900 px the list is folded under
  * "Section …": the helper opens it first, and the link folds it again.
  */
@@ -127,11 +139,7 @@ async function seedOrg() {
   if (seeded) return
   let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
   try {
-    await sql`
-      insert into orgs (github_installation_id, github_account_id, login)
-      values (${FAKE_ORG.installationId}, ${FAKE_ORG.accountId}, ${FAKE_ORG.login})
-      on conflict (github_installation_id) do nothing
-    `
+    await seedFakeOrg(sql)
     seeded = true
   } finally {
     await sql.end()

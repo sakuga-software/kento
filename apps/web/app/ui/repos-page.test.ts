@@ -37,8 +37,8 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
 }
 
 /** The screens with the fake sign-in, and a store of repositories in memory, per org. */
-function setup(findings: FindingsScreenStore | null = null) {
-  let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
+function setup(findings: FindingsScreenStore | null = null, orgs = [ORG, OTHER_ORG]) {
+  let auth = fakeAuth({ orgs })
   auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
   let rows: Record<string, RepoView[]> = {
@@ -98,7 +98,7 @@ function setup(findings: FindingsScreenStore | null = null) {
   let checking = { now: false }
   let check: RepoCheck = {
     async run(org) {
-      checks.push(org.login)
+      checks.push(org.name)
       return { repos: 2, failed: 0 }
     },
     refreshIfStale: () => checking.now,
@@ -182,6 +182,14 @@ describe('the Repos screen', () => {
     assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"/)
     // The repositories of another org of the person are not on screen.
     assert.doesNotMatch(html, /orchard\/app/)
+  })
+
+  it('KNT-150: an org of two installations links the page of each one on GitHub', async () => {
+    let labs = { id: 'installation-3', githubInstallationId: 13, githubAccountId: 902, login: 'acme-labs' }
+    let { signIn } = setup(null, [{ ...ORG, installations: [...ORG.installations, labs] }, OTHER_ORG])
+    let html = (await signIn(OCTOCAT)).html
+    assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"[^>]*>(?:<svg.*?<\/svg>)?Manage sakuga-software on GitHub/)
+    assert.match(html, /href="https:\/\/github\.com\/organizations\/acme-labs\/settings\/installations\/13"[^>]*>(?:<svg.*?<\/svg>)?Manage acme-labs on GitHub/)
   })
 
   it('gives an admin "Enable", "Disable" and "Read GitHub again", and a member none of them', async () => {

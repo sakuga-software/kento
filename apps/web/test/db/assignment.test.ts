@@ -148,7 +148,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
     it('finds nothing in the repository of another org, and refuses a rule over the limit', async () => {
       let store = createAssignmentStore(sql)
       let [other] = await sql<{ id: string }[]>`
-        insert into orgs (github_installation_id, github_account_id, login) values (9, 9, 'other') returning id`
+        with org as (insert into orgs (name, slug) values ('other', lower('other')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 9, 9, 'other' from org returning org_id as id`
       assert.equal((await store.create(other!.id, repoId, userId, AGENT)).kind, 'not_found')
       assert.deepEqual(await store.list(other!.id, repoId), [])
       for (let i = 0; i < 20; i++) await store.create(orgId, repoId, userId, AGENT)

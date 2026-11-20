@@ -17,10 +17,10 @@ const TITLE_BLOCKING = 'The session token never expires'
 async function seed(): Promise<Record<string, string>> {
   let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
   try {
-    let [org] = await sql<{ id: string }[]>`select id from orgs where github_installation_id = ${FAKE_ORG.installationId}`
+    let [org] = await sql<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
     await sql`
-      insert into repos (org_id, github_repo_id, full_name)
-      values (${org!.id}, 7003, 'sakuga-software/dojo')
+      insert into repos (org_id, installation_id, github_repo_id, full_name)
+      values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 7003, 'sakuga-software/dojo')
       on conflict (github_repo_id) do nothing`
     let [repo] = await sql<{ id: string }[]>`select id from repos where github_repo_id = 7003`
     await sql`delete from findings`

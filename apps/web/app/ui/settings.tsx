@@ -280,7 +280,7 @@ export function settingsSections(input: {
 /**
  * KNT-149. The sidebar of the settings, in place of the tabs of REV-91: one link per section, and
  * the parts of each section under it. It stays in view while the page scrolls. Under 900 px it is
- * a bar at the top, "Section …", that opens the list over the page (settings.js). Without
+ * a bar at the top of the page, "Section …", that opens the list under it (settings.js). Without
  * JavaScript the list is part of the page. settings.js marks the section and the part on screen
  * with aria-current.
  */

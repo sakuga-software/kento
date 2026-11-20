@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { chooseOption, expectNoAxeViolations, goToSettingsLink, openRepoConfig, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, goToSettingsLink, openRepoConfig, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
 
 // The rules of a repository and of the org (REV-19) in a browser, with the test of the ticket: a
 // rule written in Config › Rules goes with the next job to a runner that reads the rules; disabled,
@@ -130,6 +130,8 @@ test.describe('the rules of a repository and of the org', () => {
 
   test('a rule of the org, written in the settings, goes with the jobs of orchard; a wrong form keeps its values', async ({ page }) => {
     let errors = watchConsole(page)
+    // KNT-164: the form also runs with labels of 18 px, and axe passes at 1440 and 390 px.
+    await withLabelLineHeight(page, '18px')
     await signIn(page, 'octocat')
     await reset(page)
 

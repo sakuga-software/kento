@@ -186,6 +186,9 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
 - The one removal allowed is an index that another index covers: no query reads an index by its
   name, so the previous release gets the same rows. `DROP INDEX` waits for each transaction that
   uses the table, and each query on the table waits behind it: deploy when no long query runs.
+- **Exception, migration 0029 (KNT-150).** It moves the GitHub App installation out of `orgs` and
+  drops the old columns, so the previous release does not run on the new schema. Follow the steps
+  of [the deployment of 0029](#the-deployment-of-migration-0029) instead of a rolling deploy.
 - `startup.migrations_failed` gives the error of the database. The process stops before it listens,
   and the previous container keeps serving.
 - How to write one: [README.md](README.md#migrations).
@@ -257,6 +260,28 @@ select pr_number, left(head_sha, 8), score, published_at, github_review_id from 
    service refuses (400). A runner of the previous release keeps working with the new service. Then
    publish the runner image of the same commit and update the runners
    ([apps/runner/DEPLOY.md](../runner/DEPLOY.md#1-publish-the-image)).
+
+### The deployment of migration 0029
+
+Migration 0029 (KNT-150) cannot run while the previous release serves: once it commits, every
+webhook and every claim of a runner that reaches the old container fails with a 500, and GitHub
+does not deliver a failed webhook again by itself. There is no down migration: the backup is the
+only way back.
+
+1. Before the deploy, check on the database that no org will collide on its new slug. Each line of
+   these two queries is a collision to settle first (rename the account, or delete the dead org):
+
+   ```sql
+   select lower(login), count(*) from orgs group by 1 having count(*) > 1;
+   select o.login from orgs o join orgs d on lower(o.login) = lower(d.login) || '-' || d.github_installation_id;
+   ```
+
+2. Take a backup of the database (`pg_dump`).
+3. Stop the container of the previous release.
+4. Start the new release: it migrates at startup (`/healthz` gives the new number of migrations).
+5. If the old container served after the migration committed (a rolling deploy), open **Advanced**
+   in the settings of the GitHub App and **Redeliver** the deliveries of that window that failed.
+6. To roll back: stop the new release, restore the backup, start the previous release.
 
 **Roll back**: run the image of the previous release again. It does not undo a migration, and the
 previous release runs on the newer schema. Read the entry of the release in

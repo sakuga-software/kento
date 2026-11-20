@@ -37,8 +37,11 @@ export interface ReposPageProps {
   page: RepoPage
   /** The filter, the search and the page on screen. */
   list: RepoList
-  /** The page of the installation of the App on GitHub. */
-  installationUrl: string
+  /**
+   * The page of each installation of the App in the org, on GitHub (KNT-150: an org can hold
+   * several). `login`: the GitHub account of the installation.
+   */
+  installations: { login: string; url: string }[]
   /** `https://github.com`, or the GitHub Enterprise Server. */
   githubUrl: string
   /** A check of GitHub runs in the background: the rows can change at the next load. */
@@ -132,11 +135,11 @@ function SwitchCommands() {
 
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
-    let { frame, page, list, installationUrl, githubUrl, checking, precisions, notice, now } = handle.props
+    let { frame, page, list, installations, githubUrl, checking, precisions, notice, now } = handle.props
     let repos = page.rows
     let viewer = frame.viewer!
     let admin = viewer.role === 'admin'
-    let org = viewer.org.login
+    let org = viewer.org.name
     let { all, enabled } = page.counts
     let checkedAt = page.checkedAt
     let csrf = frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null
@@ -148,12 +151,14 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         title="Repos"
         actions={
           <>
-            <a class={buttonClass('ghost')} href={installationUrl} rel="noreferrer" target="_blank">
-              <GitHubIcon />
-              Manage the installation on GitHub
-              <ExternalIcon />
-              <span class="visually-hidden">(new tab)</span>
-            </a>
+            {installations.map((installation) => (
+              <a class={buttonClass('ghost')} href={installation.url} rel="noreferrer" target="_blank">
+                <GitHubIcon />
+                {installations.length > 1 ? `Manage ${installation.login} on GitHub` : 'Manage the installation on GitHub'}
+                <ExternalIcon />
+                <span class="visually-hidden">(new tab)</span>
+              </a>
+            ))}
             <form method="post" action={routes.reposCheck.href()}>
               {csrf}
               <Button type="submit">

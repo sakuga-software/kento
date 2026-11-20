@@ -77,6 +77,9 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
       (event) => {
         let inside = event.target instanceof Node && !!box?.contains(event.target)
         dropFocus = !inside && trigger?.getAttribute('aria-expanded') === 'true'
+        // For this close only: the menu gives the focus back within a few frames, or not at all
+        // (a click that leaves the page). A later focus, an Escape for one, goes through (Kentō #0066dd).
+        if (dropFocus) setTimeout(() => (dropFocus = false), 500)
       },
       { capture: true, signal: handle.signal },
     )

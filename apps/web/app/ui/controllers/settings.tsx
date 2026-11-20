@@ -142,13 +142,13 @@ export function settingsActions(kit: UiKit) {
     })
     if (outcome.kind === 'not_found') return kit.errorPage(context, 404, 'page', 'settings', SETTINGS_EXIT)
     if (outcome.kind === 'conflict') {
-      log('info', 'org_settings.conflict', { login: signed.user.login, org: signed.membership.org.login, field: key, sent: version, current: outcome.version })
+      log('info', 'org_settings.conflict', { login: signed.user.login, org: signed.membership.org.name, field: key, sent: version, current: outcome.version })
       return renderSettings(kit, context, signed, page, { orgNotice: conflictNotice(outcome) }, 409)
     }
     // The log keeps what changed for the cost and the rights: the limits and the bots, before and after.
     log('info', reset ? 'org_settings.reset' : 'org_settings.saved', {
       login: signed.user.login,
-      org: signed.membership.org.login,
+      org: signed.membership.org.name,
       field: key,
       version: outcome.version,
       ...(key === 'caps' && changed ? { before: changed.before.caps, after: changed.after.caps } : {}),
@@ -162,7 +162,7 @@ export function settingsActions(kit: UiKit) {
   function providerAdmin(context: ScreenContext, action: string): { signed: SignedIn; providers: ProvidersDependencies } | Response {
     let signed = signedOf(context)
     if (!deps.providers || signed.membership.role !== 'admin') {
-      log('warn', 'providers.change_refused', { login: signed.user.login, org: signed.membership.org.login, action, reason: 'not an admin' })
+      log('warn', 'providers.change_refused', { login: signed.user.login, org: signed.membership.org.name, action, reason: 'not an admin' })
       return forbidden()
     }
     return { signed, providers: deps.providers }
@@ -209,7 +209,7 @@ export function settingsActions(kit: UiKit) {
       }
       log('info', 'providers.added', {
         providerId: added.id,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         by: signed.user.login,
         kind: added.kind,
         runnerHeld: added.runnerHeld,
@@ -240,7 +240,7 @@ export function settingsActions(kit: UiKit) {
       let result = await providers.probe({ kind: found.provider.kind, baseUrl: found.provider.baseUrl, apiKey: found.apiKey })
       log(result.outcome === 'ok' ? 'info' : 'warn', 'providers.tested', {
         providerId: id,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         by: signed.user.login,
         outcome: result.outcome,
         ...(result.outcome === 'refused' ? { status: result.status } : {}),
@@ -273,7 +273,7 @@ export function settingsActions(kit: UiKit) {
         return renderSettings(kit, context, signed, page, { keyError: { id, message: cause.message } }, 422)
       }
       if (!replaced) return toSettings('missing')
-      log('info', 'providers.key_replaced', { providerId: id, org: signed.membership.org.login, by: signed.user.login })
+      log('info', 'providers.key_replaced', { providerId: id, org: signed.membership.org.name, by: signed.user.login })
       return toSettings('replaced', id)
     }),
 
@@ -284,7 +284,7 @@ export function settingsActions(kit: UiKit) {
       let id = context.params.id
       let done = UUID.test(id) ? await providers.store.setDefault(signed.membership.org.id, id) : null
       if (!done) return toSettings('missing')
-      log('info', 'providers.default_changed', { providerId: id, org: signed.membership.org.login, by: signed.user.login })
+      log('info', 'providers.default_changed', { providerId: id, org: signed.membership.org.name, by: signed.user.login })
       return toSettings('default', id)
     }),
 
@@ -295,7 +295,7 @@ export function settingsActions(kit: UiKit) {
       let id = context.params.id
       let removed = UUID.test(id) ? await providers.store.remove(signed.membership.org.id, id) : null
       if (!removed) return toSettings('missing')
-      log('info', 'providers.removed', { providerId: id, org: signed.membership.org.login, by: signed.user.login, kind: removed.kind })
+      log('info', 'providers.removed', { providerId: id, org: signed.membership.org.name, by: signed.user.login, kind: removed.kind })
       return toSettings('removed')
     }),
   }

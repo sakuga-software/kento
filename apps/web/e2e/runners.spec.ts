@@ -200,7 +200,7 @@ test('a runner offline for 2 h is "Offline", in red, at the top; a new token kee
     await db`
       insert into runners (org_id, name, labels, version, token_hash, trusted, last_seen_at, created_at)
       select id, ${name}, '{linux}', '0.3.9', ${`e2e-${name}`}, false, now() - interval '2 hours', now() - interval '30 days'
-      from orgs where login = 'sakuga-software'`
+      from orgs where slug = 'sakuga-software'`
   } finally {
     await db.end()
   }
@@ -242,7 +242,7 @@ test('the runners silent for a day are folded away, and revoked together after a
     await db`
       insert into runners (org_id, name, labels, version, token_hash, last_seen_at, created_at)
       select orgs.id, ${prefix} || g, '{linux}', '0.3.9', ${`e2e-${prefix}`} || g, now() - (g || ' days')::interval, now() - interval '30 days'
-      from orgs, generate_series(1, 3) g where login = 'sakuga-software'`
+      from orgs, generate_series(1, 3) g where slug = 'sakuga-software'`
   } finally {
     await db.end()
   }

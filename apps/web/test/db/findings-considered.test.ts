@@ -24,10 +24,10 @@ describe('the findings to consider (REV-102)', () => {
     await runMigrations(test.url)
     database = createDatabase(test.url)
     let sql = database.sql
-    let [org] = await sql<{ id: string }[]>`insert into orgs (github_installation_id, github_account_id, login) values (1, 11, 'sakuga-software') returning id`
+    let [org] = await sql<{ id: string }[]>`with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1, 11, 'sakuga-software' from org returning org_id as id`
     orgId = org!.id
     let [repo] = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${orgId}, 3001, 'sakuga-software/dojo', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/dojo', true) returning id`
     let [job] = await sql<{ id: string }[]>`
       insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id) values (${repo!.id}, 'lite', 91, ${HEAD}, 'delivery-1') returning id`
     // The second review of dojo#91 (REV-100): a new P1 on the settings page that did not change.

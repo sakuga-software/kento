@@ -10,6 +10,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { renderToString } from 'remix/component/server'
 
 import type { RepoView } from '../app/repos/store.ts'
+import { buttonClass } from '../app/ui/controls.tsx'
 import { ReposPage, type ReposPageProps } from '../app/ui/repos.tsx'
 import { Shell, type PageFrame, type Viewer } from '../app/ui/shell.tsx'
 import { SignInPage } from '../app/ui/sign-in.tsx'
@@ -31,7 +32,7 @@ const OUT = new URL('../../../design/socle/frames/', import.meta.url)
 // From design/socle/frames/ to the assets of the app.
 const ASSETS = '../../../apps/web/public/assets/'
 
-const admin: Viewer = { login: 'octocat', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', login: 'sakuga-software' }, orgs: [{ id: 'org-1', login: 'sakuga-software' }] }
+const admin: Viewer = { login: 'octocat', name: 'Alex Martin', avatarUrl: null, role: 'admin', org: { id: 'org-1', name: 'sakuga-software' }, orgs: [{ id: 'org-1', name: 'sakuga-software' }] }
 const member: Viewer = { ...admin, login: 'camille', name: 'Camille', role: 'member' }
 
 function frame(theme: Theme, viewer: Viewer | null, path: string): PageFrame {
@@ -55,7 +56,7 @@ const frames: { file: string; node: unknown }[] = [
         section="dashboard"
         title="Dashboard"
         lead="What runs, what failed, and what it costs."
-        actions={<a class="button button-primary" href="#">Run again at balanced</a>}
+        actions={<a class={buttonClass('primary')} href="#">Run again at balanced</a>}
       >
         <section class="empty"><h2>Soon here</h2><p>The last reviews, the job queue, the cost of the day and the runners will show here.</p></section>
       </Shell>
@@ -69,7 +70,7 @@ const frames: { file: string; node: unknown }[] = [
         section="repos"
         title="Repos"
         lead="The repos of the installation, and where each one is in its switch."
-        actions={<a class="button button-primary" href="#">Enable a repo</a>}
+        actions={<a class={buttonClass('primary')} href="#">Enable a repo</a>}
       >
         <section class="empty"><h2>Soon here</h2><p>The list of the repos, their mode and their switch counter will show here.</p></section>
       </Shell>
@@ -86,7 +87,7 @@ const frames: { file: string; node: unknown }[] = [
   {
     file: 'runners-admin-sumi-390.html',
     node: (
-      <Shell frame={frame('sumi', admin, '/runners')} section="runners" title="Runners" lead="The machines that do the reviews." actions={<a class="button button-primary" href="#">New runner</a>}>
+      <Shell frame={frame('sumi', admin, '/runners')} section="runners" title="Runners" lead="The machines that do the reviews." actions={<a class={buttonClass('primary')} href="#">New runner</a>}>
         <section class="empty"><h2>Soon here</h2><p>The runners, their last signal and their jobs will show here.</p></section>
       </Shell>
     ),
@@ -204,7 +205,7 @@ function reposPage(theme: Theme, viewer: Viewer, extra: Partial<ReposPageProps> 
         unchecked: true,
       }}
       list={{ filter: 'all', search: '', page: 1 }}
-      installationUrl="https://github.com/organizations/sakuga-software/settings/installations/1"
+      installations={[{ login: 'sakuga-software', url: 'https://github.com/organizations/sakuga-software/settings/installations/1' }]}
       githubUrl="https://github.com"
       checking={false}
       notice={null}

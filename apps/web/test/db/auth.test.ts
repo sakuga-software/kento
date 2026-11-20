@@ -11,7 +11,7 @@ import {
 import { createAuthStore } from '../../app/auth/store.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
-import { createTestDatabase } from './helpers.ts'
+import { createTestDatabase, insertOrg as insertOrgRow } from './helpers.ts'
 
 describe('sessions and people in Postgres', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
@@ -35,12 +35,7 @@ describe('sessions and people in Postgres', () => {
   })
 
   async function insertOrg(login: string, installationId: number, suspended = false) {
-    let [row] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login, suspended_at)
-      values (${installationId}, ${installationId + 1000}, ${login}, ${suspended ? new Date().toISOString() : null})
-      returning id
-    `
-    return row!.id
+    return insertOrgRow(database.sql, login, installationId, installationId + 1000, { suspended })
   }
 
   async function rows() {
@@ -169,10 +164,10 @@ describe('sessions and people in Postgres', () => {
 
       let memberships = await store.memberships(user.id)
       assert.deepEqual(
-        memberships.map((m) => [m.org.login, m.role, m.org.githubInstallationId]),
-        [['sakuga-software', 'member', 11]],
+        memberships.map((m) => [m.org.name, m.role, m.org.installations.map((i) => i.githubInstallationId)]),
+        [['sakuga-software', 'member', [11]]],
       )
-      assert.deepEqual((await store.activeOrgs()).map((o) => o.login), ['sakuga-software'])
+      assert.deepEqual((await store.activeOrgs()).map((o) => o.name), ['sakuga-software'])
 
       let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
       let session = createSession()

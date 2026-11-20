@@ -389,7 +389,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           claimed.id, claimed.attempts as "attempt", claimed.kind, claimed.level, claimed.pr_number as "prNumber", claimed.head_sha as "headSha",
           claimed.base_ref as "baseRef", claimed.lease_expires_at as "leaseExpiresAt",
           repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
-          orgs.github_installation_id as "githubInstallationId",
+          installations.github_installation_id as "githubInstallationId",
           me.trusted as "runnerTrusted", me.org_id as "runnerOrgId", claimed.config,
           case when p.id is null then null else json_build_object(
             'id', p.id, 'orgId', p.org_id, 'kind', p.kind, 'label', p.label, 'baseUrl', p.base_url,
@@ -397,7 +397,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         from claimed
         cross join me
         join repos on repos.id = claimed.repo_id
-        join orgs on orgs.id = repos.org_id
+        join installations on installations.id = repos.installation_id
         left join providers p on p.id = claimed.provider_id`
       if (!row) return null
       return {
