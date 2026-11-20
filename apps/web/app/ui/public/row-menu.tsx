@@ -61,9 +61,13 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
    * focus after the menu took it back.
    */
   let afterClose: (() => void) | null = null
-  handle.queueTask(() => {
+  let details: HTMLDetailsElement | null = null
+  handle.queueTask(async () => {
     enhanced = true
-    void handle.update()
+    // The focus was in the `<details>` (a row that repo-toggle.js swapped focuses its "…"): it goes to the new button.
+    let focused = details?.contains(document.activeElement) ?? false
+    await handle.update()
+    if (focused) trigger?.focus({ preventScroll: true })
   })
 
   let closeConfirm = async (focus: boolean) => {
@@ -86,7 +90,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
     let disable = handle.props.disable ? pageRoutes.repoDisable.href({ id: repoId }) + (back ?? '') : null
     if (!enhanced) {
       return (
-        <details class="row-menu">
+        <details class="row-menu" mix={ref((node) => (details = node))}>
           {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 25 of them (budget of 110 KB). */}
           <summary aria-label={`Actions of ${name}`}>…</summary>
           {/*

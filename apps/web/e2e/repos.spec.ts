@@ -34,6 +34,16 @@ function rowOf(page: Page, name: string) {
   return page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(`^${name}`) }) })
 }
 
+/**
+ * KNT-163: "…", then "Disable <name> Kentō…": the confirmation opens. Returns its button that acts.
+ */
+async function chooseDisable(page: Page, name: string) {
+  let { trigger, menu } = menuOf(page, name)
+  await trigger.click()
+  await menu.getByRole('menuitem', { name: `Disable ${name} Kentō…` }).click()
+  return page.getByRole('dialog', { name: `Disable ${name} Kentō…` }).getByRole('button', { name: `Disable ${name}` })
+}
+
 /** KNT-163: the button "…" of a row, once its menu hydrated, and the menu it opens. */
 function menuOf(page: Page, name: string) {
   return {
@@ -392,6 +402,207 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('"Enable" and "Disable" change the row in place: no reload, no jump, the focus stays in the row, an error in the row (KNT-147)', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 890000 + g, 'sakuga-software/zz-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 20) g where full_name = 'sakuga-software/orchard'`
+      // One page of 20 rows, whatever the other tests added to the org.
+      await page.goto('/repos?q=zz-')
+      // A row far down the page: the case of the ticket.
+      let row = rowOf(page, 'zz-18')
+      await row.getByRole('button', { name: 'Enable zz-18' }).scrollIntoViewIfNeeded()
+      expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+      // Where the row is on the screen: the notice above it can grow the page, and the browser then
+      // scrolls by as much (scroll anchoring), so the row does not move on screen.
+      let top = async () => Math.round((await rowOf(page, 'zz-18').boundingBox())!.y)
+      let before = await top()
+      // A mark on the window: a reload would lose it.
+      await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
+
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
+      row = rowOf(page, 'zz-18')
+      await expect(row.locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toHaveCount(0)
+      expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+      // The row keeps its place until the next load, marked; the page does not scroll.
+      await expect(row).toBeInViewport()
+      await expect(row).toHaveClass(/\brow-changed\b/)
+      // KNT-163: the menu "…" of the new row hydrates, and keeps the focus.
+      await expect(menuOf(page, 'zz-18').trigger).toBeFocused()
+      expect(Math.abs((await top()) - before)).toBeLessThan(4)
+      // The counts of the screen follow.
+      await expect(page.getByRole('link', { name: /^Enabled/ }).locator('.list-filter-count')).toHaveText('1')
+
+      // In "Not enabled", the row leaves the filter: it stays on screen until the next load.
+      await page.goto('/repos?filter=disabled&q=zz-')
+      await rowOf(page, 'zz-05').getByRole('button', { name: 'Enable zz-05' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-05 is enabled.' })).toBeAttached()
+      await expect(rowOf(page, 'zz-05').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(menuOf(page, 'zz-05').trigger).toBeFocused()
+
+      // Saved, but its row cannot be read (the network goes after the change): no message of a
+      // failure; the browser goes to the screen of the redirect (Kentō #e074d4).
+      await page.route(/\/repos\?q=/, (route) => route.abort())
+      await rowOf(page, 'zz-07').getByRole('button', { name: 'Enable zz-07' }).click()
+      await page.waitForURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-/)
+      await page.unroute(/\/repos\?q=/)
+      await expect(page.getByRole('status').filter({ hasText: 'zz-07 is enabled.' })).toBeVisible()
+      await expect(page.locator('.row-error')).toHaveCount(0)
+
+      // A row at the top of the screen: the page does not move either.
+      await page.goto('/repos?q=zz-')
+      await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
+      let first = rowOf(page, 'zz-02')
+      await first.getByRole('button', { name: 'Enable zz-02' }).scrollIntoViewIfNeeded()
+      let still = Math.round((await first.boundingBox())!.y)
+      await first.getByRole('button', { name: 'Enable zz-02' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-02 is enabled.' })).toBeAttached()
+      await expect(menuOf(page, 'zz-02').trigger).toBeFocused()
+      expect(Math.abs(Math.round((await rowOf(page, 'zz-02').boundingBox())!.y) - still)).toBeLessThan(4)
+      row = rowOf(page, 'zz-18')
+
+      // Disable, in place too, from the menu of the row that was swapped: the row goes back to
+      // "none", with its "Enable" focused. The popover closed before the row went: the page scrolls.
+      await (await chooseDisable(page, 'zz-18')).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is disabled.' })).toBeAttached()
+      row = rowOf(page, 'zz-18')
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeFocused()
+      await expect(page.locator(':popover-open')).toHaveCount(0)
+      expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).not.toBe('hidden')
+      expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+
+      // The server refuses: the row says so, and stays as it was; a second try works.
+      let refuse = true
+      await page.route('**/repos/*/enable*', (route) => (refuse ? route.fulfill({ status: 500, body: 'no' }) : route.continue()))
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeVisible()
+      refuse = false
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
+      await expect(rowOf(page, 'zz-18').getByRole('alert')).toHaveCount(0)
+      await page.unroute('**/repos/*/enable*')
+
+      // A redirect to another screen that fails is a refusal, not a saved change (Kentō #7cf7a5):
+      // the row says so, and the page stays.
+      row = rowOf(page, 'zz-18')
+      let act = await chooseDisable(page, 'zz-18')
+      await page.route('**/repos/*/disable*', (route) =>
+        route.fulfill({ status: 303, headers: { Location: '/no-such-screen?done=disabled' } }),
+      )
+      let here = page.url()
+      await act.click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
+      expect(page.url()).toBe(here)
+      await page.unroute('**/repos/*/disable*')
+      await page.goto('/repos?q=zz-')
+
+      // A redirect back to this screen, but not the one of a saved change (no `done=`): a refusal
+      // too (Kentō #807f15).
+      row = rowOf(page, 'zz-18')
+      act = await chooseDisable(page, 'zz-18')
+      await page.route('**/repos/*/disable*', (route) => route.fulfill({ status: 303, headers: { Location: '/repos?q=zz-' } }))
+      await act.click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
+      await page.unroute('**/repos/*/disable*')
+      await page.goto('/repos?q=zz-')
+
+      // The network is gone: the row says so.
+      row = rowOf(page, 'zz-18')
+      act = await chooseDisable(page, 'zz-18')
+      await page.route('**/repos/*/disable*', (route) => route.abort())
+      await act.click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō could not be reached. Check the connection, then try again.')
+      await page.unroute('**/repos/*/disable*')
+      await expectNoAxeViolations(page)
+      expect(errors.filter((error) => !/Failed to load resource|net::ERR_FAILED/.test(error))).toEqual([])
+    } finally {
+      await sql`delete from repos where github_repo_id between 890001 and 890020`
+      await sql.end()
+    }
+  })
+
+  test('after rows leave the list in place, the pager follows the server and a line offers to reload; the notice is read in the same live region (KNT-147)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 891000 + g, 'sakuga-software/pg-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 30) g where full_name = 'sakuga-software/orchard'`
+      await page.goto('/repos?filter=disabled&q=pg-')
+      await expect(page.locator('.pager-range')).toHaveText('1 to 25 of 30')
+      // The live region is on the page before any change, empty; the same node gets the notices.
+      let slot = page.locator('.notice-slot[role="status"]')
+      await expect(slot).toBeEmpty()
+      await slot.evaluate((node) => ((window as unknown as { slot: Element }).slot = node))
+
+      for (let n of ['01', '02', '03', '04', '05']) {
+        await rowOf(page, `pg-${n}`).getByRole('button', { name: `Enable pg-${n}` }).click()
+        await expect(slot).toContainText(`pg-${n} is enabled.`)
+      }
+      expect(await slot.evaluate((node) => node === (window as unknown as { slot: Element }).slot)).toBe(true)
+      // Only the last changed row is marked.
+      await expect(page.locator('tr.row-changed')).toHaveCount(1)
+      // 25 left in "Not enabled": one page. The pager of the screen said 2; it follows the server now.
+      await expect(page.locator('.pager')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toBeVisible()
+      await expect(page.getByRole('link', { name: /^Not enabled/ }).locator('.list-filter-count')).toHaveText(/\d+/)
+      await page.getByRole('link', { name: 'Reload' }).click()
+      await expect(page.locator('tbody tr')).toHaveCount(25)
+      await expect(rowOf(page, 'pg-30')).toBeVisible()
+      await expect(rowOf(page, 'pg-01')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toHaveCount(0)
+    } finally {
+      await sql`delete from repos where github_repo_id between 891001 and 891030`
+      await sql.end()
+    }
+  })
+
+  test('a row that leaves the last page of a list: the pager of an earlier page is not copied (Kentō #fcb2e3)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 893000 + g, 'sakuga-software/pc-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 51) g where full_name = 'sakuga-software/orchard'`
+      await page.goto('/repos?filter=disabled&q=pc-&page=3')
+      await expect(page.locator('.pager-range')).toHaveText('51 to 51 of 51')
+      // 50 left: the server shows page 2 of 2, not the page 3 on screen.
+      await rowOf(page, 'pc-51').getByRole('button', { name: 'Enable pc-51' }).click()
+      await expect(page.locator('.notice-slot')).toContainText('pc-51 is enabled.')
+      await expect(page.locator('.pager')).toHaveCount(0)
+      await expect(page.getByText('The list changed.')).toBeVisible()
+      await expect(rowOf(page, 'pc-51').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+    } finally {
+      await sql`delete from repos where github_repo_id between 893001 and 893051`
+      await sql.end()
+    }
+  })
+
+  test('a server that does not answer: the row says so after the timeout (KNT-147)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    // 15 s of the script, made short: the clock of the page runs fast.
+    await page.clock.install()
+    await page.goto('/repos')
+    await page.route('**/repos/*/enable*', () => {})
+    await rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' }).click()
+    await page.clock.runFor(16_000)
+    await expect(rowOf(page, 'garden').getByRole('alert')).toHaveText('Kentō could not be reached. Check the connection, then try again.')
+    await expect(rowOf(page, 'garden')).not.toHaveAttribute('aria-busy', 'true')
+  })
+
   test('a member reads the list under "Read only", with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')
@@ -422,6 +633,22 @@ test.describe('the Repos screen', () => {
 
 test.describe('the Repos screen without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
+
+  test('"Enable" posts the form and comes back to the row, with no script (KNT-147)', async ({ page, browser, baseURL }) => {
+    await reset()
+    let reader = await browser.newContext({ baseURL, javaScriptEnabled: true })
+    let readerPage = await reader.newPage()
+    await signIn(readerPage, 'octocat')
+    await checkNow(readerPage)
+    await reader.close()
+
+    await signIn(page, 'octocat')
+    await page.goto('/repos')
+    await rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' }).click()
+    await expect(page).toHaveURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-[0-9a-f-]+$/)
+    await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
+    await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
+  })
 
   test('the menu "…" of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
     // The list comes from GitHub: read once in a browser with JavaScript, which waits for it.

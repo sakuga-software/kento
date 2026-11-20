@@ -93,7 +93,15 @@ export function ConfirmDialog(handle: Handle<ConfirmDialogProps>) {
         })}
       >
         {children}
-        <div class="confirm-actions">
+        <div
+          class="confirm-actions"
+          // The button that acts closes the popover before its form goes: a script that swaps the
+          // HTML around it (repo-toggle.js) would leave a popover open out of the page, and the page
+          // locked from scrolling.
+          mix={on('click', (event) => {
+            if (event.target instanceof Element && event.target.closest('button[type="submit"]')) onClose(false)
+          })}
+        >
           <ConfirmSubmit action={action} csrf={csrf} form={form}>
             {submit}
           </ConfirmSubmit>
@@ -118,11 +126,13 @@ export const Confirm = clientEntry(import.meta.url, function Confirm(handle: Han
   let open = false
   let trigger: HTMLButtonElement | null = null
   let details: HTMLDetailsElement | null = null
-  handle.queueTask(() => {
+  handle.queueTask(async () => {
     enhanced = true
-    // Opened before the component hydrated: it stays open, as a popover.
+    // Opened before the component hydrated: it stays open, as a popover. Its focus goes to the new trigger.
     open = details?.open ?? false
-    void handle.update()
+    let focused = details?.contains(document.activeElement) ?? false
+    await handle.update()
+    if (focused && !open) trigger?.focus({ preventScroll: true })
   })
 
   let close = async (focus: boolean) => {
