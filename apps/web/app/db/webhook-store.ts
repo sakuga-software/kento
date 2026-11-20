@@ -1,4 +1,4 @@
-import type { JobKind, Level } from '@kento/protocol'
+import type { JobKind, Level } from '@kento-review/protocol'
 import { and, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
 
 import { matchAssignment, needsFiles, unreadPathRules, type AssignmentRule, type JobAssignment } from '../assignment/model.ts'

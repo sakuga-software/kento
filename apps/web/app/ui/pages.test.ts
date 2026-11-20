@@ -8,7 +8,7 @@ import { SESSION_TTL_MS } from '../auth/better-auth.ts'
 import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { ICON_FILES, ICON_VERSION } from '@kento/engine/render'
+import { ICON_FILES, ICON_VERSION } from '@kento-review/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 

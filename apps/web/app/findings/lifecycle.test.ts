@@ -2,9 +2,9 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { findingKey } from '@kento/engine/findings'
-import { inlineBody } from '@kento/engine/render'
-import type { ReviewFinding } from '@kento/protocol'
+import { findingKey } from '@kento-review/engine/findings'
+import { inlineBody } from '@kento-review/engine/render'
+import type { ReviewFinding } from '@kento-review/protocol'
 
 import { adoptThreads, matchFindings, type BotThread } from './lifecycle.ts'
 

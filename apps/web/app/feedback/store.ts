@@ -1,5 +1,5 @@
 // REV-107. The requests for feedback and the answers, in Postgres.
-import { UUID } from '@kento/protocol'
+import { UUID } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'

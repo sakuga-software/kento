@@ -39,6 +39,8 @@ export function Document(handle: Handle<DocumentProps>) {
           <script src={`/assets/confirm.js?v=${v}`} defer></script>
           {/* REV-91: "Menu" under 760 px, and the org switch. */}
           <script src={`/assets/frame.js?v=${v}`} defer></script>
+          {/* KNT-144: the bar at the top of the window while the next page loads. */}
+          <script src={`/assets/progress.js?v=${v}`} defer></script>
         </head>
         <body>{children}</body>
       </html>

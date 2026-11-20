@@ -11,6 +11,46 @@ export async function expectNoAxeViolations(page: Page) {
   expect(summary, 'axe violations').toEqual([])
 }
 
+/**
+ * KNT-143. The text of every visible button-like link or summary contrasts with its background, or
+ * with the first opaque background behind a transparent one (4.5:1 at least). axe reports a link with `background-color` on itself as "incomplete", not as a
+ * violation: an ink-on-ink primary link passed it.
+ */
+export async function expectReadableButtons(page: Page) {
+  let bad = await page.evaluate(() => {
+    let rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).map(Number)
+    let luminance = ([r, g, b]: number[]) => {
+      let [R, G, B] = [r!, g!, b!].map((c) => {
+        let s = c / 255
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * R! + 0.7152 * G! + 0.0722 * B!
+    }
+    let out: string[] = []
+    for (let el of document.querySelectorAll<HTMLElement>('a.button, summary.button')) {
+      if (el.offsetParent === null) continue
+      let style = getComputedStyle(el)
+      // A ghost or outline link is transparent: its text sits on the first opaque background behind it.
+      let behind: Element | null = el
+      let background = 'rgb(255, 255, 255)'
+      while (behind) {
+        let value = getComputedStyle(behind).backgroundColor
+        let parts = rgb(value)
+        if (parts.length === 3 || (parts.length === 4 && parts[3]! > 0)) {
+          background = value
+          break
+        }
+        behind = behind.parentElement
+      }
+      let [a, b] = [luminance(rgb(style.color)), luminance(rgb(background))].sort((x, y) => y - x)
+      let ratio = (a! + 0.05) / (b! + 0.05)
+      if (ratio < 4.5) out.push(`${el.textContent?.trim()}: ${style.color} on ${background} (${ratio.toFixed(2)}:1)`)
+    }
+    return out
+  })
+  expect(bad, 'button-like links with unreadable text').toEqual([])
+}
+
 /** Collects the errors of the console (a CSP violation is one), for a check at the end of a test. */
 export function watchConsole(page: Page): string[] {
   let errors: string[] = []

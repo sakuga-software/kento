@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
-import { levelCost } from '@kento/engine/levels'
-import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@kento/protocol'
+import { levelCost } from '@kento-review/engine/levels'
+import { isOneOf, LEVELS, MAX_JOB_RULES, type Level } from '@kento-review/protocol'
 
 import {
   MAX_PATHS,
@@ -18,6 +18,7 @@ import type { ProviderOption } from '../repo-config/providers.ts'
 import type { RepoConfigView } from '../repo-config/store.ts'
 import type { RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
+import { Button, Choice, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { EffectiveLine } from './effective.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine as sharedVersionLine } from './form-fields.tsx'
@@ -135,7 +136,7 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
         title={`Config of ${name}`}
         lead={versionLine(view)}
         actions={
-          <a class="button" href={`${routes.repos.href()}#repo-${view.id}`}>
+          <a class={buttonClass()} href={`${routes.repos.href()}#repo-${view.id}`}>
             Back to the repos
           </a>
         }
@@ -284,11 +285,10 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
               <Hidden ctx={ctx} field={field} />
               <FormErrors errors={errors} />
               <div class="field">
-                <label class="field-label" for={providerId}>
+                <label class="label" for={providerId}>
                   Provider
                 </label>
-                <select
-                  class="input"
+                <Select
                   id={providerId}
                   name="provider"
                   {...focusIf(first, 'provider')}
@@ -305,15 +305,15 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                       {selected} (not available)
                     </option>
                   ) : null}
-                </select>
+                </Select>
                 <FieldMessage id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'This provider is no longer in the organization.'} />
               </div>
               <div class="field">
-                <label class="field-label" for={modelId}>
+                <label class="label" for={modelId}>
                   Model
                 </label>
-                <input
-                  class="input mono"
+                <Input
+                  class="mono"
                   id={modelId}
                   name="model"
                   value={values.model ?? ''}
@@ -328,11 +328,11 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 <FieldMessage id={modelId} error={errors.model} />
               </div>
               <div class="field">
-                <label class="field-label" for={fallbackId}>
+                <label class="label" for={fallbackId}>
                   Fallback if the call fails
                 </label>
-                <input
-                  class="input mono"
+                <Input
+                  class="mono"
                   id={fallbackId}
                   name="fallback"
                   value={values.fallback ?? ''}
@@ -348,10 +348,10 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
               {value.source === 'kento' && effective.origin === 'default' ? (
                 <p class="hint">"Set here" fixes this choice for the repo, and the level no longer follows the "Default" provider.</p>
               ) : null}
-              <button class="button" type="submit">
+              <Button type="submit">
                 {value.source === 'repo' ? 'Save' : 'Set here'}
                 <span class="visually-hidden"> for {level}</span>
-              </button>
+              </Button>
             </form>
             {value.source === 'repo' ? <RepoReset ctx={ctx} field={field} label={level} /> : null}
           </>
@@ -384,18 +384,18 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
               <fieldset class="field" aria-describedby={mine?.errors.defaultLevel ? 'default-level-error' : undefined}>
                 <legend class="visually-hidden">Default level</legend>
                 {LEVELS.map((key) => (
-                  <label class="choice">
-                    <input
-                      type="radio"
-                      name="defaultLevel"
-                      value={key}
-                      checked={key === selected}
-                      autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
-                    />
-                    <span>
-                      <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
-                    </span>
-                  </label>
+                  <Choice
+                    type="radio"
+                    name="defaultLevel"
+                    value={key}
+                    checked={key === selected}
+                    autoFocus={mine?.errors.defaultLevel && key === radioFocus(selected, LEVELS) ? true : undefined}
+                    label={
+                      <>
+                        <strong class="mono">{key}</strong>. {LEVEL_HINTS[key]}
+                      </>
+                    }
+                  />
                 ))}
                 {mine?.errors.defaultLevel ? (
                   <p class="field-error" id="default-level-error">
@@ -403,10 +403,10 @@ function LevelsTab(handle: Handle<{ level: Resolved<Level>; ctx: FormContext }>)
                   </p>
                 ) : null}
               </fieldset>
-              <button class="button button-primary" type="submit">
+              <Button variant="primary" type="submit">
                 {resolvedLevel.source === 'repo' ? 'Save the level' : 'Set here'}
                 {resolvedLevel.source === 'repo' ? null : <span class="visually-hidden"> the level</span>}
-              </button>
+              </Button>
             </form>
           ) : null}
           {ctx.admin && resolvedLevel.source === 'repo' ? <RepoReset ctx={ctx} field="level" label="the level" /> : null}
@@ -477,27 +477,27 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <fieldset class="field" aria-describedby={triggerForm?.errors.trigger ? 'trigger-error' : undefined}>
                   <legend class="visually-hidden">What creates a review</legend>
                   {TRIGGER_CHOICES.map((choice) => (
-                    <label class="choice">
-                      <input
-                        type="radio"
-                        name="trigger"
-                        value={choice.value}
-                        checked={choice.value === selectedTrigger}
-                        autoFocus={
-                          triggerForm?.errors.trigger &&
-                          choice.value ===
-                            radioFocus(
-                              selectedTrigger,
-                              TRIGGER_CHOICES.map((c) => c.value),
-                            )
-                            ? true
-                            : undefined
-                        }
-                      />
-                      <span>
-                        <strong>{choice.title}</strong>. {choice.text}
-                      </span>
-                    </label>
+                    <Choice
+                      type="radio"
+                      name="trigger"
+                      value={choice.value}
+                      checked={choice.value === selectedTrigger}
+                      autoFocus={
+                        triggerForm?.errors.trigger &&
+                        choice.value ===
+                          radioFocus(
+                            selectedTrigger,
+                            TRIGGER_CHOICES.map((c) => c.value),
+                          )
+                          ? true
+                          : undefined
+                      }
+                      label={
+                        <>
+                          <strong>{choice.title}</strong>. {choice.text}
+                        </>
+                      }
+                    />
                   ))}
                   {triggerForm?.errors.trigger ? (
                     <p class="field-error" id="trigger-error">
@@ -505,10 +505,10 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     </p>
                   ) : null}
                 </fieldset>
-                <button class="button button-primary" type="submit">
+                <Button variant="primary" type="submit">
                   {trigger.source === 'repo' ? 'Save' : 'Set here'}
                   <span class="visually-hidden"> the trigger</span>
-                </button>
+                </Button>
               </form>
               {trigger.source === 'repo' ? <RepoReset ctx={ctx} field="trigger" label="the trigger" /> : null}
             </>
@@ -534,11 +534,11 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <Hidden ctx={ctx} field="paths" />
                 <FormErrors errors={pathsForm?.errors ?? {}} />
                 <div class="field">
-                  <label class="field-label" for="config-paths">
+                  <label class="label" for="config-paths">
                     An automatic review only if the PR changes one of these paths
                   </label>
-                  <textarea
-                    class="input mono config-paths"
+                  <Textarea
+                    class="mono config-paths"
                     id="config-paths"
                     name="paths"
                     rows={5}
@@ -547,7 +547,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     aria-invalid={pathsForm?.errors.paths ? 'true' : undefined}
                     aria-describedby={describedBy('config-paths', pathsForm?.errors.paths, true)}
                     value={pathsValue}
-                  ></textarea>
+                  ></Textarea>
                   <FieldMessage
                     id="config-paths"
                     error={pathsForm?.errors.paths}
@@ -559,10 +559,10 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     }
                   />
                 </div>
-                <button class="button button-primary" type="submit">
+                <Button variant="primary" type="submit">
                   {paths.source === 'repo' ? 'Save' : 'Set here'}
                   <span class="visually-hidden"> the paths</span>
-                </button>
+                </Button>
               </form>
               {paths.source === 'repo' ? <RepoReset ctx={ctx} field="paths" label="the paths" /> : null}
             </>
@@ -595,11 +595,11 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <Hidden ctx={ctx} field="monthlyCapUsd" />
                 <FormErrors errors={capForm?.errors ?? {}} />
                 <div class="field">
-                  <label class="field-label" for="config-cap">
+                  <label class="label" for="config-cap">
                     Cap of the automatic reviews, in dollars per month
                   </label>
-                  <input
-                    class="input mono config-cap"
+                  <Input
+                    class="mono config-cap"
                     id="config-cap"
                     name="monthlyCapUsd"
                     value={capValue}
@@ -615,10 +615,10 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                     hint={`Leave it empty for no cap. A ${mention()} command always runs, because a person asked for it.`}
                   />
                 </div>
-                <button class="button button-primary" type="submit">
+                <Button variant="primary" type="submit">
                   {cap.source === 'repo' ? 'Save' : 'Set here'}
                   <span class="visually-hidden"> the cap</span>
-                </button>
+                </Button>
               </form>
               {cap.source === 'repo' ? <RepoReset ctx={ctx} field="monthlyCapUsd" label="the cap" /> : null}
             </>

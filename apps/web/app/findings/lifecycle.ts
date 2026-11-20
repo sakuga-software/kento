@@ -21,9 +21,9 @@
 //   found it (publish.ts asks GitHub).
 //
 // This module is pure: publish.ts reads GitHub and ledger.ts the database.
-import { findingKey } from '@kento/engine/findings'
-import { fingerprint } from '@kento/engine/fingerprint'
-import type { ReviewFinding } from '@kento/protocol'
+import { findingKey } from '@kento-review/engine/findings'
+import { fingerprint } from '@kento-review/engine/fingerprint'
+import type { ReviewFinding } from '@kento-review/protocol'
 
 import type { FindingEventType, FindingStatus } from './store.ts'
 

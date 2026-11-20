@@ -1,6 +1,7 @@
 import type { Handle } from 'remix/component'
 
 import { authRoutes, pageRoutes } from '../routes.ts'
+import { buttonClass } from './controls.tsx'
 import { Document } from './document.tsx'
 import { Logo } from './icons.tsx'
 import { Shell, type PageFrame, type Section } from './shell.tsx'
@@ -66,7 +67,7 @@ export function ErrorPage(handle: Handle<ErrorPageProps>) {
                     <h1>{error.title}</h1>
                     <p class="signin-lead">{error.text}</p>
                   </div>
-                  <a class="button button-primary button-large" href={authRoutes.signIn.href()}>
+                  <a class={buttonClass('primary', 'lg')} href={authRoutes.signIn.href()}>
                     Sign in to Kentō
                   </a>
                 </div>
@@ -81,7 +82,7 @@ export function ErrorPage(handle: Handle<ErrorPageProps>) {
     return (
       <Shell frame={frame} section={section} title={error.title} lead={error.text}>
         <p>
-          <a class="button button-primary" href={link.href}>
+          <a class={buttonClass('primary')} href={link.href}>
             {link.label}
           </a>
         </p>

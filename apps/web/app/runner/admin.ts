@@ -1,6 +1,6 @@
 import type postgres from 'postgres'
 
-import { CLAIM_WAIT_SECONDS, type JobKind } from '@kento/protocol'
+import { CLAIM_WAIT_SECONDS, type JobKind } from '@kento-review/protocol'
 
 import { toDate } from '../db/rows.ts'
 
