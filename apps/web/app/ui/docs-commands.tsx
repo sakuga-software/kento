@@ -2,8 +2,8 @@
 // comment of Kentō on GitHub works for every reader of the pull request. It describes `review`,
 // `force`, `resolve`, `reject` and `feedback` (REV-107): where to write them, who can run them, what they cost, what they do
 // at once and what the next review does with them.
-import { levelCost } from '@sakuga-review/engine/levels'
-import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS } from '@sakuga-review/protocol'
+import { levelCost } from '@kento/engine/levels'
+import { MAX_RESOLVE_PACK_BYTES, MAX_RESOLVE_THREADS } from '@kento/protocol'
 import type { Handle, RemixNode } from 'remix/component'
 
 import { REASON_MAX } from '../findings/store.ts'

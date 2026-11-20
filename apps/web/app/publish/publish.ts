@@ -18,7 +18,7 @@ import {
   type Answer,
   type Finding,
   type Usage,
-} from '@sakuga-review/engine/findings'
+} from '@kento/engine/findings'
 import {
   descriptionBlock,
   fileCommentBody,
@@ -34,8 +34,8 @@ import {
   type Icons,
   type Link,
   type Poster,
-} from '@sakuga-review/engine/render'
-import { SEVERITIES, type ReviewFinding, type ReviewPayload } from '@sakuga-review/protocol'
+} from '@kento/engine/render'
+import { SEVERITIES, type ReviewFinding, type ReviewPayload } from '@kento/protocol'
 
 import type { FindingsLedger, LedgerEntry } from '../findings/ledger.ts'
 import {

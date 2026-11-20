@@ -1,7 +1,7 @@
 // REV-96, REV-116. The hint of `reject`: the model calls a thread refuted, at the next review (REV-71)
 // or at a `resolve` command, and Kentō answers that thread once with the command and the page of the
 // commands. The hint changes no status, and it keeps the thread live for the next review.
-import type { ResolvePayload, ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import type { ResolvePayload, ReviewFinding, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

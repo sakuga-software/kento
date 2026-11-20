@@ -2,7 +2,7 @@
 // disable or enable, remove. An admin of the org only.
 import { createAction } from 'remix/router'
 
-import { UUID } from '@sakuga-review/protocol'
+import { UUID } from '@kento/protocol'
 
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'

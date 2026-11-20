@@ -9,8 +9,8 @@
 // 5. The pull request closes → the open findings left become `stale`.
 import { generateKeyPairSync } from 'node:crypto'
 
-import { fingerprint } from '@sakuga-review/engine/fingerprint'
-import type { Job, ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import { fingerprint } from '@kento/engine/fingerprint'
+import type { Job, ReviewFinding, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 

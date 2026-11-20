@@ -1,4 +1,4 @@
-import { isOneOf, RULE_PATH_MAX, RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX, SEVERITIES } from '@sakuga-review/protocol'
+import { isOneOf, RULE_PATH_MAX, RULE_PATHS_MAX, RULE_TEXT_MAX, RULE_TITLE_MAX, SEVERITIES } from '@kento/protocol'
 
 import { checkPattern, MAX_PATH_LENGTH, type FormResult } from '../repo-config/model.ts'
 

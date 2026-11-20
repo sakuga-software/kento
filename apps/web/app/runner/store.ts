@@ -25,9 +25,9 @@ import {
   type ResolvePayload,
   type ReviewPayload,
   type UnchangedPayload,
-} from '@sakuga-review/protocol'
+} from '@kento/protocol'
 
-import { withoutSettled } from '@sakuga-review/engine/findings'
+import { withoutSettled } from '@kento/engine/findings'
 
 import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'

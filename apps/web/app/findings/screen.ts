@@ -4,7 +4,7 @@
 // page starts after the last row of the page before (or ends before the first row of the page
 // after): its cost does not grow with the page number. The counts of the tabs and the position of
 // the page come from one more query on the same filters.
-import { SEVERITIES, UUID, type Severity } from '@sakuga-review/protocol'
+import { SEVERITIES, UUID, type Severity } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
