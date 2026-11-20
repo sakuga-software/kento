@@ -308,8 +308,26 @@ test.describe('the Repos screen', () => {
     await fruitback.trigger.click()
     await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
     await expect(fruitback.menu).toBeHidden()
-
+    // A click outside gives the focus to what it clicked, not back to "…": a field keeps it.
     let search = page.getByRole('searchbox', { name: 'Search a repo by its name' })
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    await search.click()
+    await expect(fruitback.menu).toBeHidden()
+    // The menu would give the focus back to "…" a frame or two later: it does not.
+    await page.waitForTimeout(300)
+    await expect(search).toBeFocused()
+    // A click on the "…" of another row: the focus goes to its open menu.
+    await orchard.trigger.click()
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    await page.waitForTimeout(300)
+    await expect(fruitback.menu).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(fruitback.menu).toBeHidden()
+    // Escape gives the focus back to "…", once the menu has closed.
+    await expect(fruitback.trigger).toBeFocused()
+
     let submit = page.getByRole('button', { name: 'Search', exact: true })
     expect((await submit.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1)
     await search.focus()
