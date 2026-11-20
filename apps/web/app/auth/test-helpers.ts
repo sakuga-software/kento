@@ -41,6 +41,18 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let profile: GitHubProfile = OCTOCAT
   // The tables of Better Auth, in memory, under the model names of Kentō.
   let tables: Record<string, Record<string, unknown>[]> = { users: [], accounts: [], sessions: [], verifications: [] }
+  // `failing`: the table of the sessions throws, as a database that does not answer.
+  let failing = false
+  let sessionRows = tables.sessions!
+  Object.defineProperty(tables, 'sessions', {
+    get() {
+      if (failing) throw new Error('connect ECONNREFUSED')
+      return sessionRows
+    },
+    set(rows: Record<string, unknown>[]) {
+      sessionRows = rows
+    },
+  })
   let database: AuthDatabase = memoryAdapter(tables) as unknown as AuthDatabase
 
   function userRow(row: Record<string, unknown>): UserRow {
@@ -132,6 +144,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     /** The users that Better Auth wrote. */
     get users() {
       return tables.users!
+    },
+    /** The sessions cannot be read or written from now on, until `failSessions(false)`. */
+    failSessions(on: boolean) {
+      failing = on
     },
     /** The id of the user of a GitHub account, once it signed in. */
     userIdOf(person: GitHubProfile): string {

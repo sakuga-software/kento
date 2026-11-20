@@ -124,6 +124,21 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(screen.status, 200)
   })
 
+  it('reads the session back with the token of the cookie, never its hash, and never signs a new cookie', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let { cookie } = await signIn()
+    let token = decodeURIComponent(cookie!.split('=')[1]!).split('.')[0]!
+    for (let n = 0; n < 2; n++) {
+      let found = await auth.api.getSession({ headers: new Headers({ Cookie: cookie! }), query: { disableCookieCache: true } })
+      assert.equal(found?.session.token, token)
+      let screen = await request('/', cookie!)
+      assert.equal(screen.status, 200)
+      // No refresh and no cookie cache: the cookie of the sign-in is the only one.
+      assert.equal(screen.headers.getSetCookie().some((c) => c.startsWith(`${SESSION_COOKIE}=`)), false)
+    }
+  })
+
   it('refuses a person outside of every org: no user, no account, no session', async () => {
     await insertOrgRow(database.sql, 'acme', 11)
     let { callback, cookie } = await signIn()
