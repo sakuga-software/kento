@@ -458,7 +458,7 @@ describe('POST /webhooks/github against Postgres', () => {
       await post({ action: 'created', installation, repositories: [review] }, { event: 'installation' })
       await post({ action: 'created', installation: { id: 1002, account: globex }, repositories: [{ id: 4001, name: 'app', full_name: 'Globex/app' }] }, { event: 'installation' })
       let rows = await orgsOfInstallations()
-      assert.deepEqual(rows.map(({ orgId: _, ...r }) => r), [
+      assert.deepEqual(rows.map((r) => ({ githubInstallationId: r.githubInstallationId, name: r.name, slug: r.slug })), [
         { githubInstallationId: '1001', name: 'sakuga-software', slug: 'sakuga-software' },
         { githubInstallationId: '1002', name: 'Globex', slug: 'globex' },
       ])
