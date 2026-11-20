@@ -40,6 +40,12 @@ Each entry says, when it applies:
 - Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
   the runner says so in `org.opencontainers.image.licenses`.
 
+### Fixed
+
+- `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
+  HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
+  your reverse proxy runs on another machine, publish the port on a private address.
+
 ### Security
 
 - The OpenRouter key of the service (`KENTO_PROVIDER_API_KEY`) goes only to a trusted runner of the

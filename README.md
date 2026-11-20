@@ -126,8 +126,10 @@ curl -s localhost:3000/healthz
    App, `<slug of your App>[bot]`: Kentō finds its own reviews, threads and check by this login. With
    the wrong login, each push posts a new review and a new check, and the `REQUEST_CHANGES` of an
    earlier head is never dismissed.
-2. GitHub sends the webhook over HTTPS only. Put a TLS reverse proxy in front of port 3000, and set
-   `KENTO_PUBLIC_URL` to its origin.
+2. GitHub sends the webhook over HTTPS only. Put a TLS reverse proxy on the same machine in front of
+   `127.0.0.1:3000`, and set `KENTO_PUBLIC_URL` to its origin. `compose.yaml` publishes port 3000 on
+   `127.0.0.1` only, so the service never answers in plain HTTP from outside. For a proxy on another
+   machine, publish the port on a private address, never on `0.0.0.0`.
 3. Set `KENTO_ALLOWED_ORGS` to the accounts that you serve. Empty, any account that installs your
    App gets reviews on your runner.
 4. The runner of `compose.yaml` registers itself with `KENTO_RUNNER_REGISTRATION_TOKEN`. It calls
