@@ -2,6 +2,7 @@ import { UUID as LOWER_UUID, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
+import { pageWindow } from '../paging.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import type { DetectedWorkflow, WorkflowMode } from './workflow.ts'
 
@@ -49,18 +50,19 @@ export type RepoFilter = 'all' | 'enabled' | 'disabled' | 'switching'
 
 export const REPO_FILTERS: readonly RepoFilter[] = ['all', 'enabled', 'disabled', 'switching']
 
-/** The rows of one page of the Repos screen. */
-export const REPOS_PAGE_SIZE = 50
+/** The rows of one page of the Repos screen (KNT-146: 25, was 50). */
+export const REPOS_PAGE_SIZE = 25
 
 /** What the Repos screen asks for: a filter, a part of the name, and a page. */
 export interface RepoListQuery {
   filter?: RepoFilter
   /** A part of `owner/name`, any case. */
   search?: string
-  /** The rows after this repository, in the order of the screen (the next page). */
-  after?: string | null
-  /** The rows before this repository (the previous page). Ignored with `after`. */
-  before?: string | null
+  /**
+   * The number of the page, from 1 (KNT-146). A page after the last one gives the last one, so a
+   * list that got shorter (a repository disabled in "Enabled") still shows rows.
+   */
+  page?: number
   /** `REPOS_PAGE_SIZE` by default. */
   limit?: number
 }
@@ -74,10 +76,10 @@ export interface RepoPage {
   matching: number
   /** The rows of the filter and the search before this page: the first row is number `offset + 1`. */
   offset: number
-  /** `after` of the next page, or null on the last one. */
-  next: string | null
-  /** `before` of the previous page, or null on the first one. */
-  previous: string | null
+  /** The number of the page on screen, from 1: the one asked for, or the last one. */
+  page: number
+  /** The pages of the filter and the search: 1 when nothing matches. */
+  pages: number
   /** The oldest check of a repository of the org on GitHub; null before the first one. */
   checkedAt: Date | null
   /** A repository of the org was never checked. */
@@ -129,7 +131,6 @@ interface CountRow {
   disabled: string | number
   switching: string | number
   matching: string | number
-  offset: string | number
   checkedAt: Date | string | null
   unchecked: boolean
 }
@@ -139,24 +140,16 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
     async list(orgId, query = {}) {
       let filter = query.filter ?? 'all'
       let search = query.search?.trim().toLowerCase() ?? ''
-      let limit = query.limit ?? REPOS_PAGE_SIZE
-      let after = query.after && UUID.test(query.after) ? query.after : null
-      let before = !after && query.before && UUID.test(query.before) ? query.before : null
-      let cursor = after ?? before
+      // A limit of a caller outside the screen stays 1 row or more: the count of pages divides by it.
+      let wanted = Math.trunc(query.limit ?? REPOS_PAGE_SIZE)
+      let limit = Number.isFinite(wanted) ? Math.max(1, wanted) : REPOS_PAGE_SIZE
 
-      // The order of the screen: the enabled repositories first, then by name. The id breaks a tie,
-      // so that the key of a row is unique and a page starts where the last one ended (keyset).
-      let key = sql`(not repos.enabled, lower(repos.full_name), repos.id)`
       let matches = sql`
         ${filter === 'enabled' ? sql`and repos.enabled` : filter === 'disabled' ? sql`and not repos.enabled` : sql``}
         ${filter === 'switching' ? sql`and repos.workflow in ('reusable', 'copy')` : sql``}
         ${search ? sql`and lower(repos.full_name) like ${likePattern(search)}` : sql``}`
-      let from = cursor
-        ? sql`and ${key} ${after ? sql`>` : sql`<`} (
-            select not enabled, lower(full_name), id from repos where id = ${cursor} and org_id = ${orgId})`
-        : sql``
 
-      // The page comes first: the streak, the reset and the last review are read for its rows only.
+      // The page is cut first: the streak, the reset and the last review are read for its rows only.
       // Each lateral reads the reviews and jobs of one repository, by its indexes: the time of the
       // screen does not grow with the history of the other repositories, nor of the other orgs.
       //
@@ -166,14 +159,31 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       //
       // The laterals make the estimated cost of the plan high (one per row), and Postgres would spend
       // more time on its JIT than on the query.
-      let { rows, more, counts } = await sql.begin(async (tx) => {
+      //
+      // KNT-146. The counts come first: they give the last page, and a page after it shows the last
+      // one. One snapshot (repeatable read) for both: the range "26 to 50 of 50" matches the rows.
+      let { rows, counts, page, pages, offset } = await sql.begin('isolation level repeatable read read only', async (tx) => {
         await tx`set local jit = off`
-        let fetched = await tx<Row[]>`
+        let [counts] = await tx<CountRow[]>`
+          select
+            count(*) as "all",
+            count(*) filter (where repos.enabled) as enabled,
+            count(*) filter (where not repos.enabled) as disabled,
+            count(*) filter (where repos.workflow in ('reusable', 'copy')) as switching,
+            count(*) filter (where true ${matches}) as matching,
+            min(repos.workflow_checked_at) as "checkedAt",
+            coalesce(bool_or(repos.workflow_checked_at is null), false) as unchecked
+          from repos where repos.org_id = ${orgId}
+        `
+        let { page, pages, offset } = pageWindow(query.page, Number(counts!.matching), limit)
+        // The order of the screen: the enabled repositories first, then by name. The id breaks a
+        // tie, so that a row is on one page only.
+        let rows = await tx<Row[]>`
           with page as (
             select * from repos
-            where repos.org_id = ${orgId} ${matches} ${from}
-            order by ${before ? sql`not repos.enabled desc, lower(repos.full_name) desc, repos.id desc` : sql`not repos.enabled, lower(repos.full_name), repos.id`}
-            limit ${limit + 1}
+            where repos.org_id = ${orgId} ${matches}
+            order by not repos.enabled, lower(repos.full_name), repos.id
+            limit ${limit} offset ${offset}
           )
           select
             page.id, page.github_repo_id as "githubRepoId", page.full_name as "fullName", page.enabled,
@@ -246,28 +256,8 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             left join last on true
           ) recent on true
         `
-        let more = fetched.length > limit
-        let rows = fetched.slice(0, limit)
-        if (before) rows.reverse()
-
-        let first = rows[0]?.id ?? null
-        let [counts] = await tx<CountRow[]>`
-          select
-            count(*) as "all",
-            count(*) filter (where repos.enabled) as enabled,
-            count(*) filter (where not repos.enabled) as disabled,
-            count(*) filter (where repos.workflow in ('reusable', 'copy')) as switching,
-            count(*) filter (where true ${matches}) as matching,
-            count(*) filter (where true ${matches} and ${key} < (
-              select not enabled, lower(full_name), id from repos where id = ${first} and org_id = ${orgId})) as "offset",
-            min(repos.workflow_checked_at) as "checkedAt",
-            coalesce(bool_or(repos.workflow_checked_at is null), false) as unchecked
-          from repos where repos.org_id = ${orgId}
-        `
-        return { rows, more, counts: counts! }
+        return { rows, counts: counts!, page, pages, offset }
       })
-      let first = rows[0]?.id ?? null
-      let last = rows.at(-1)?.id ?? null
       return {
         rows: rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, ...row }) => ({
           ...row,
@@ -286,10 +276,9 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
           switching: Number(counts.switching),
         },
         matching: Number(counts.matching),
-        offset: Number(counts.offset),
-        // Going back, the extra row says that there is a page before; going forward, one after.
-        next: (before ? cursor !== null : more) ? last : null,
-        previous: (before ? more : after !== null) && first !== null ? first : null,
+        offset,
+        page,
+        pages,
         checkedAt: counts.checkedAt === null ? null : toDate(counts.checkedAt),
         unchecked: counts.unchecked,
       }
