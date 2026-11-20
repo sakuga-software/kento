@@ -5,8 +5,8 @@
 // The pages go by keyset on (created_at, id). The columns page from the newest review back; the rows
 // page from the first finding on. The result of a review is read for the columns of the page only,
 // and only the few fields of its findings that the sheet compares.
-import { findingKey } from '@sakuga-review/engine/findings'
-import { isOneOf, UUID, type Level } from '@sakuga-review/protocol'
+import { findingKey } from '@kento/engine/findings'
+import { isOneOf, UUID, type Level } from '@kento/protocol'
 import type postgres from 'postgres'
 
 import { readJobAssignment, type JobAssignment } from '../assignment/model.ts'

@@ -4,8 +4,8 @@
 // of the commenter, and keeps the reactions and the comments of the bot.
 import { generateKeyPairSync } from 'node:crypto'
 
-import { findingKey } from '@sakuga-review/engine/findings'
-import type { Job, ReviewPayload } from '@sakuga-review/protocol'
+import { findingKey } from '@kento/engine/findings'
+import type { Job, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
