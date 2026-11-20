@@ -936,6 +936,107 @@ select.bar-org-box:hover {
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+/* KNT-146. The numbered pager: the range on the left; Previous, the numbers and Next on the right. */
+.pager-numbered {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.pager-numbered .pager-links {
+  align-items: center;
+  gap: var(--space-2);
+}
+.pager-pages {
+  display: flex;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pager-page {
+  min-width: 32px;
+  padding: 0 var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.pager-page[aria-current='page'] {
+  border-color: var(--action);
+  background: var(--action);
+  color: var(--on-action);
+}
+.pager-gap {
+  align-self: center;
+  color: var(--ink-muted);
+}
+.button-small svg {
+  width: 16px;
+  height: 16px;
+}
+/* KNT-146. The icons of the Repos screen: the magnifier in the search, the icons of a row. */
+.list-search {
+  position: relative;
+}
+.list-search-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-3);
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.list-search .input {
+  padding-left: calc(var(--space-3) + 16px + var(--space-2));
+}
+/* After `.repo-name` below in the file wins: the element makes this one stronger. */
+a.repo-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.repo-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repo-name svg,
+.repo-visibility svg,
+.row-menu > div > a svg,
+.row-menu .confirm > summary svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.repo-name svg {
+  color: var(--ink-muted);
+}
+.repo-visibility {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.repo-visibility svg {
+  width: 14px;
+  height: 14px;
+}
+.tag svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+.row-menu > div > a {
+  gap: var(--space-2);
+}
+@media (max-width: 480px) {
+  /* The numbers need the width: Previous and Next keep their icon, and their word for a screen reader. */
+  .pager-numbered .pager-step {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
 
 .table-wrap {
   /* The containing block of the hidden labels of the rows: without it they sit past the table and widen the page. */
@@ -1488,14 +1589,6 @@ a.finding-title:hover {
 }
 .status-mono {
   font-family: var(--font-mono);
-}
-.findings-pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
 }
 
 /* REV-18. The actions on the findings checked: a bar of ink that floats at the foot of the screen. */
