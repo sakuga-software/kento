@@ -719,6 +719,12 @@ select.bar-org-box:hover {
   font-size: var(--text-base);
   line-height: var(--leading-base);
 }
+/* KNT-141. A short line at the right of the title (the dashboard: "Updated 8 s ago · Refresh"). The
+   header then aligns its items on the baseline of the title; the line wraps under the title, at its
+   start, when the header is too narrow. */
+.page-header:has(> .page-meta) {
+  align-items: last baseline;
+}
 .page-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2986,10 +2992,17 @@ a.finding-title:hover {
 .dashboard > .banner {
   margin: 0;
 }
-/* "Updated at 10:12:04 · Refresh": the lead of the page, under its title. */
+/* KNT-141. "Updated 8 s ago · Refresh": at the right of the title, on its baseline (.page-meta). */
 .dash-updated {
-  margin-top: calc(-1 * var(--space-8) + var(--space-1));
   color: var(--ink-muted);
+}
+/* The text changes as the time passes ("Updated at 10:00:00", "Updated 9 s ago", "Updated 59 min
+   ago"). It keeps the width of the longest one, so the line never wraps or unwraps on its own and
+   the dashboard under it never moves. */
+.dash-updated [data-updated] {
+  display: inline-block;
+  min-width: 16ch;
+  text-align: end;
 }
 .dash-estimate {
   font-weight: 500;
@@ -3442,9 +3455,6 @@ a.finding-title:hover {
 @media (max-width: 760px) {
   .dashboard {
     gap: var(--space-6);
-  }
-  .dash-updated {
-    margin-top: calc(-1 * var(--space-6) - var(--space-2));
   }
   .todo {
     grid-template-columns: minmax(0, 1fr);
