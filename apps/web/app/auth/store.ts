@@ -1,6 +1,7 @@
 import type postgres from 'postgres'
 
-import type { InstallationAccount, OrgRole } from './github.ts'
+import type { MembershipSource, OrgRole } from '../db/schema.ts'
+import type { InstallationAccount } from './github.ts'
 
 export interface UserRow {
   id: string
@@ -28,6 +29,8 @@ export interface OrgInstallation extends InstallationAccount {
 export interface MembershipRow {
   org: OrgRow
   role: OrgRole
+  source: MembershipSource
+  /** When GitHub last confirmed a membership of `source = github`. */
   checkedAt: Date
 }
 
@@ -46,8 +49,10 @@ export interface AuthStore {
   activeOrgs(): Promise<OrgRow[]>
   /** The memberships of a user, in the orgs that are still active, by org name. */
   memberships(userId: string): Promise<MembershipRow[]>
-  /** Writes the role of a user in an org, checked now. */
-  saveMembership(userId: string, orgId: string, role: OrgRole): Promise<void>
+  /** Writes the role of a user in an org, checked now. A membership that exists keeps its source. */
+  saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<void>
+  /** KNT-150. The org has at least one owner. */
+  hasOwner(orgId: string): Promise<boolean>
   deleteMembership(userId: string, orgId: string): Promise<void>
 }
 
@@ -84,25 +89,30 @@ export function createAuthStore(sql: postgres.Sql): AuthStore {
     },
 
     async memberships(userId) {
-      let rows = await sql<{ orgId: string; role: OrgRole; checkedAt: Date }[]>`
-        select org_id as "orgId", role, checked_at as "checkedAt" from memberships where user_id = ${userId}
+      let rows = await sql<{ orgId: string; role: OrgRole; source: MembershipSource; checkedAt: Date }[]>`
+        select org_id as "orgId", role, source, checked_at as "checkedAt" from memberships where user_id = ${userId}
       `
       let orgs = new Map((await readOrgs(sql, rows.map((r) => r.orgId))).map((org) => [org.id, org]))
       // drizzle shares this client and turns off its date conversion: a timestamp comes back as text.
       return rows
-        .flatMap(({ orgId, role, checkedAt }) => {
+        .flatMap(({ orgId, role, source, checkedAt }) => {
           let org = orgs.get(orgId)
-          return org ? [{ org, role, checkedAt: new Date(checkedAt) }] : []
+          return org ? [{ org, role, source, checkedAt: new Date(checkedAt) }] : []
         })
         .sort((a, b) => a.org.name.localeCompare(b.org.name))
     },
 
-    async saveMembership(userId, orgId, role) {
+    async saveMembership(userId, orgId, role, source = 'github') {
       await sql`
-        insert into memberships (user_id, org_id, role, checked_at)
-        values (${userId}, ${orgId}, ${role}, now())
+        insert into memberships (user_id, org_id, role, source, checked_at)
+        values (${userId}, ${orgId}, ${role}, ${source}, now())
         on conflict (user_id, org_id) do update set role = excluded.role, checked_at = now()
       `
+    },
+
+    async hasOwner(orgId) {
+      let [row] = await sql`select 1 from memberships where org_id = ${orgId} and role = 'owner' limit 1`
+      return row !== undefined
     },
 
     async deleteMembership(userId, orgId) {

@@ -2,7 +2,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { orgRole } from './access.ts'
-import type { LookupRole, OrgRole } from './github.ts'
+import type { GitHubRole, LookupRole } from './github.ts'
 import type { OrgRow } from './store.ts'
 
 // KNT-150. An org can hold several installations: GitHub gives a role in each of their accounts.
@@ -16,7 +16,7 @@ const ORG: OrgRow = {
 }
 const PERSON = { githubId: 1, login: 'octocat' }
 
-function lookup(answers: Record<string, OrgRole | null | 'error'>): { lookupRole: LookupRole; asked: string[] } {
+function lookup(answers: Record<string, GitHubRole | null | 'error'>): { lookupRole: LookupRole; asked: string[] } {
   let asked: string[] = []
   return {
     asked,

@@ -123,7 +123,7 @@ export function ConfigPage(handle: Handle<ConfigPageProps>) {
     // REV-32. A tab that the service does not have yet: named in the bar, with "Soon" and no link.
     let soon = (key: ConfigTab) => (key === 'rules' && !rules) || (key === 'assignment' && !assignment)
     let viewer = frame.viewer!
-    let admin = viewer.role === 'admin'
+    let admin = viewer.canEdit
     let name = shortName(view.fullName, viewer.org.name)
     let resolved = resolveConfig(view.orgConfig, view.config, view.defaultLevel)
     let ctx: FormContext = { csrf: frame.csrfToken, repoId: view.id, version: view.version, admin, form }

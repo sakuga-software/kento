@@ -9,7 +9,7 @@ import {
   sessionTokenHash,
   type KentoAuth,
 } from '../../app/auth/better-auth.ts'
-import type { GitHubOAuth, GitHubProfile, OrgRole } from '../../app/auth/github.ts'
+import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
 import { createAuthStore, type AuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -29,7 +29,7 @@ describe('the sign-in and the sessions in Postgres', () => {
   let store: AuthStore
   let auth: KentoAuth
   let profile: GitHubProfile
-  let roles: Map<string, OrgRole | null>
+  let roles: Map<string, GitHubRole | null>
   let router: ReturnType<typeof createAppRouter>
 
   before(async () => {

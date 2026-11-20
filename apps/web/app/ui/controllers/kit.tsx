@@ -7,6 +7,7 @@ import { createContextKey } from 'remix/router'
 
 import { UUID } from '@kento/protocol'
 
+import { canEdit } from '../../auth/access.ts'
 import type { MembershipRow, UserRow } from '../../auth/store.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
@@ -61,11 +62,11 @@ export function redirect(location: string) {
 }
 
 /**
- * True for an admin of the org on screen. For a member, logs `event` (when given) with the reason,
+ * True for an owner or an admin of the org on screen. For a member, logs `event` (when given) with the reason,
  * and the caller answers `forbidden()`.
  */
 export function isAdmin(signed: SignedIn, event?: string, fields: Record<string, unknown> = {}): boolean {
-  if (signed.membership.role === 'admin') return true
+  if (canEdit(signed.membership.role)) return true
   if (event) log('warn', event, { login: signed.user.login, org: signed.membership.org.name, ...fields, reason: 'not an admin' })
   return false
 }
@@ -140,8 +141,9 @@ export function createKit(deps: UiDependencies): UiKit {
         name: signed.user.name,
         avatarUrl: signed.user.avatarUrl,
         role: signed.membership.role,
+        canEdit: canEdit(signed.membership.role),
         org: { id: signed.membership.org.id, name: signed.membership.org.name },
-        orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name })),
+        orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name, role: m.role })),
       }
       return {
         theme: readTheme(context.headers.get('Cookie')),

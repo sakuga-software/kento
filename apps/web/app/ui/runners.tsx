@@ -183,7 +183,7 @@ export interface RunnersPageProps {
 export function RunnersPage(handle: Handle<RunnersPageProps>) {
   return () => {
     let { frame, screen, version, kentoUrl, created, form, notice } = handle.props
-    let admin = frame.viewer?.role === 'admin'
+    let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let host = new URL(kentoUrl).host
     let inService = screen.runners.filter((runner) => !runner.revokedAt)

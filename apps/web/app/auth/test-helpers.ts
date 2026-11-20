@@ -2,7 +2,8 @@ import { memoryAdapter } from 'better-auth/adapters/memory'
 
 import type { AuthDependencies } from '../ui/pages.tsx'
 import { createKentoAuth, type AuthDatabase } from './better-auth.ts'
-import type { GitHubOAuth, GitHubProfile, InstallationAccount, LookupRole, OrgRole } from './github.ts'
+import type { MembershipSource, OrgRole } from '../db/schema.ts'
+import type { GitHubOAuth, GitHubProfile, GitHubRole, InstallationAccount, LookupRole } from './github.ts'
 import type { AuthStore, MembershipRow, OrgRow, UserRow } from './store.ts'
 
 export const ORG: OrgRow = {
@@ -33,14 +34,31 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   // The clock starts now: Better Auth checks the end of a session and of a sign-in on the real
   // clock, and Kentō on this one.
   let clock = { now: Date.now() }
-  let roles = new Map<string, OrgRole | null | 'error'>()
-  let memberships = new Map<string, { role: OrgRole; checkedAt: Date }>()
+  let roles = new Map<string, GitHubRole | null | 'error'>()
   let lookups: string[] = []
   /** The code exchanges that the fake GitHub received, as GitHub checks them. */
   let exchanges: { code: string; codeVerifier: string | null; redirectUri: string }[] = []
   let profile: GitHubProfile = OCTOCAT
   // The tables of Better Auth, in memory, under the model names of Kentō.
-  let tables: Record<string, Record<string, unknown>[]> = { users: [], accounts: [], sessions: [], verifications: [] }
+  let tables: Record<string, Record<string, unknown>[]> = {
+    users: [],
+    accounts: [],
+    sessions: [],
+    verifications: [],
+    orgs: orgs.map((org) => ({ id: org.id, name: org.name, slug: org.name.toLowerCase(), createdAt: new Date() })),
+    memberships: [],
+  }
+  type Row = { id: string; userId: string; orgId: string; role: OrgRole; source: MembershipSource; checkedAt: Date; createdAt: Date }
+  let rows = () => tables.memberships as unknown as Row[]
+  /** The memberships, by `<user id>/<org id>`, as the tests read them. */
+  let memberships = {
+    get(key: string) {
+      return rows().find((m) => `${m.userId}/${m.orgId}` === key)
+    },
+    get size() {
+      return rows().length
+    },
+  }
   let database: AuthDatabase = memoryAdapter(tables) as unknown as AuthDatabase
 
   function userRow(row: Record<string, unknown>): UserRow {
@@ -73,18 +91,23 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       return orgs
     },
     async memberships(userId) {
-      let rows: MembershipRow[] = []
+      let found: MembershipRow[] = []
       for (let org of orgs) {
         let m = memberships.get(`${userId}/${org.id}`)
-        if (m) rows.push({ org, role: m.role, checkedAt: m.checkedAt })
+        if (m) found.push({ org, role: m.role, source: m.source, checkedAt: new Date(m.checkedAt) })
       }
-      return rows
+      return found
     },
-    async saveMembership(userId, orgId, role) {
-      memberships.set(`${userId}/${orgId}`, { role, checkedAt: new Date(clock.now) })
+    async saveMembership(userId, orgId, role, source = 'github') {
+      let m = memberships.get(`${userId}/${orgId}`)
+      if (m) Object.assign(m, { role, checkedAt: new Date(clock.now) })
+      else rows().push({ id: `membership-${rows().length + 1}`, userId, orgId, role, source, checkedAt: new Date(clock.now), createdAt: new Date(clock.now) })
+    },
+    async hasOwner(orgId) {
+      return rows().some((m) => m.orgId === orgId && m.role === 'owner')
     },
     async deleteMembership(userId, orgId) {
-      memberships.delete(`${userId}/${orgId}`)
+      tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId))
     },
   }
 
@@ -140,7 +163,7 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       return String(row.id)
     },
     /** What GitHub answers for the role of `person` in the account of an installation (the first of `org`). */
-    setRole(org: OrgRow | InstallationAccount, person: GitHubProfile, role: OrgRole | null | 'error') {
+    setRole(org: OrgRow | InstallationAccount, person: GitHubProfile, role: GitHubRole | null | 'error') {
       let login = 'installations' in org ? org.installations[0]!.login : org.login
       roles.set(`${login}/${person.login}`, role)
     },

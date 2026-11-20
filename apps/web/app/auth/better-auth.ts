@@ -12,10 +12,10 @@ import { createHash } from 'node:crypto'
 
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { genericOAuth } from 'better-auth/plugins'
+import { genericOAuth, organization } from 'better-auth/plugins'
 
 import type { Db } from '../db/client.ts'
-import { accounts, sessions, users, verifications } from '../db/schema.ts'
+import { accounts, memberships, orgs, sessions, users, verifications } from '../db/schema.ts'
 import { errorMessage, log } from '../log.ts'
 import { saveSignInRoles, decideSignIn, type SignInDecision } from './access.ts'
 import type { GitHubOAuth, GitHubProfile, LookupRole } from './github.ts'
@@ -55,7 +55,7 @@ export type AuthDatabase = (options: BetterAuthOptions) => Adapter
 
 /** The tables of Kentō, under the names of the models of Better Auth. */
 export function postgresAuthDatabase(db: Db): AuthDatabase {
-  return drizzleAdapter(db, { provider: 'pg', schema: { users, accounts, sessions, verifications } })
+  return drizzleAdapter(db, { provider: 'pg', schema: { users, accounts, sessions, verifications, orgs, memberships } })
 }
 
 export interface KentoAuthOptions {
@@ -135,9 +135,6 @@ export function createKentoAuth(options: KentoAuthOptions) {
       expiresIn: SESSION_TTL_MS / 1000,
       // 7 days from the sign-in, whatever happens in between.
       disableSessionRefresh: true,
-      additionalFields: {
-        activeOrganizationId: { type: 'string', required: false, input: false },
-      },
     },
     verification: { modelName: 'verifications' },
     databaseHooks: {
@@ -170,6 +167,24 @@ export function createKentoAuth(options: KentoAuthOptions) {
       },
     },
     plugins: [
+      // The orgs, their members and the org on screen (`activeOrganizationId` of the session). An
+      // org comes from an installation of the App (the webhook), never from this API.
+      organization({
+        allowUserToCreateOrganization: false,
+        disableOrganizationDeletion: true,
+        creatorRole: 'owner',
+        schema: {
+          organization: { modelName: 'orgs' },
+          member: {
+            modelName: 'memberships',
+            fields: { organizationId: 'orgId' },
+            additionalFields: {
+              source: { type: 'string', required: false, input: false, defaultValue: 'github' },
+            },
+          },
+          session: { fields: { activeOrganizationId: 'activeOrganizationId' } },
+        },
+      }),
       genericOAuth({
         config: [
           {
@@ -217,7 +232,7 @@ export function createKentoAuth(options: KentoAuthOptions) {
     ],
   } satisfies BetterAuthOptions
 
-  return betterAuth(config as BetterAuthOptions)
+  return betterAuth(config)
 }
 
 export type KentoAuth = ReturnType<typeof createKentoAuth>

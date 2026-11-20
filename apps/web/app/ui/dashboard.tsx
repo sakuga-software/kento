@@ -253,7 +253,7 @@ export function weekMeanDuration(week: DayStats[]): number | null {
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
     let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
-    let admin = frame.viewer?.role === 'admin'
+    let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let org = frame.viewer?.org.name ?? ''
     let steps = setupSteps(screen, { serviceKey: serviceKey ?? false, installationUrl: installationUrl ?? null })

@@ -346,8 +346,11 @@ export function createAuth(kit: UiKit) {
       let form = context.get(FormData)
       let orgId = form?.get('orgId')
       let signed = signedOf(context)
+      // Only an org where the person is a member now, as GitHub and Kentō say: an id of another org
+      // changes nothing, and gets no answer that tells it exists.
       if (typeof orgId === 'string' && signed.memberships.some((m) => m.org.id === orgId)) {
-        await auth!.store.setActiveOrg(signed.sessionId, orgId)
+        await auth!.auth.api.setActiveOrganization({ headers: context.headers, body: { organizationId: orgId } })
+        log('info', 'auth.org_switched', { login: signed.user.login, org: orgId })
       }
       return redirect(localPath(form?.get('returnTo')))
     }),
