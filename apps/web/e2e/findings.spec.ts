@@ -200,6 +200,13 @@ test.describe('the Findings screen', () => {
     let highlighted = page.locator('.select-popover:popover-open [role="option"][data-highlighted="true"]')
     await expect(highlighted).toHaveCount(1)
     expect(await highlighted.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    // The check mark of the chosen option stays drawn, in the colour of the text.
+    let mark = await page.locator('.select-popover:popover-open [aria-selected="true"]').evaluate((el) => {
+      let after = getComputedStyle(el, '::after')
+      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el).color }
+    })
+    expect(mark.adjust).toBe('none')
+    expect(mark.color).toBe(mark.text)
   })
 
   // KNT-143 follow-up: a radio button of a group where nothing is checked matches :indeterminate.

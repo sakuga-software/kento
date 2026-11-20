@@ -686,7 +686,9 @@ summary.button::-webkit-details-marker {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
+  /* The check mark is a background, like the chevron: keep it, in the colour of the text. */
   .select-option[aria-selected='true']::after {
+    forced-color-adjust: none;
     background-color: CanvasText;
   }
 }
