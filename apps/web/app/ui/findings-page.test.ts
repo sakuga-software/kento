@@ -92,6 +92,23 @@ describe('the findings to consider (REV-102)', () => {
   })
 })
 
+describe('the selects of the filters (KNT-165)', () => {
+  it('render the native select, then a component that hydrates next to it with its id only: the options stay once in the page', async () => {
+    let { signIn } = setup()
+    let { html } = await signIn()
+    for (let id of ['findings-repo', 'findings-priority', 'findings-rule', 'findings-type']) {
+      assert.match(html, new RegExp(`<span class="select select--native"><select [^>]*id="${id}"[^>]*>[\\s\\S]*?</select><!-- rmx:h:\\w+ --><!-- /rmx:h --></span>`), id)
+    }
+    let data = JSON.parse(html.match(/<script type="application\/json" id="rmx-data">(.*?)<\/script>/)![1]!) as {
+      h: Record<string, { exportName: string; props: Record<string, unknown> }>
+    }
+    let selects = Object.values(data.h).filter((entry) => entry.exportName === 'CustomSelect')
+    assert.deepEqual(selects.map((entry) => entry.props), ['findings-repo', 'findings-priority', 'findings-rule', 'findings-type'].map((target) => ({ target })))
+    // The labels of the options are written once: in the native select, not in the data of the page.
+    assert.doesNotMatch(html.match(/<script type="application\/json" id="rmx-data">.*?<\/script>/)![0], /P0 · critical|All repos/)
+  })
+})
+
 describe('the Findings screen, its selection and its actions', () => {
   it('gives an admin a checkbox per finding, the dialog of the reasons and "Mark wontfix"; a member none of them', async () => {
     let { signIn } = setup()

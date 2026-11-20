@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, goToSettingsLink, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
@@ -51,7 +51,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expect(form.getByLabel('Type')).toBeHidden()
     // REV-91: the button of the section opens it.
     await form.getByText('Add a provider', { exact: true }).click()
-    await form.getByLabel('Type').selectOption('anthropic')
+    await chooseOption(form, 'Type', 'anthropic')
     await form.getByLabel('Name').fill(label)
     await form.getByLabel('Key', { exact: true }).fill(key)
     await form.getByRole('button', { name: 'Add the provider' }).click()
@@ -158,7 +158,7 @@ test('a provider form with an error opens on its first field in error, in view a
   // A link to the anchor opens the folded form (the home screen has one).
   await page.goto('/settings#new-provider')
   let form = page.locator('#new-provider')
-  await form.getByLabel('Type').selectOption('openai_compatible')
+  await chooseOption(form, 'Type', 'openai_compatible')
   await form.getByLabel('Name').fill('vLLM')
   await form.getByLabel('Server URL').fill('http://llm.example.com/v1')
   await form.getByRole('button', { name: 'Add the provider' }).click()
@@ -193,7 +193,7 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
 
     await page.goto('/settings#new-provider')
     let form = page.locator('#new-provider')
-    await form.getByLabel('Type').selectOption('anthropic')
+    await chooseOption(form, 'Type', 'anthropic')
     await form.getByLabel('Name').fill(label)
     await form.getByLabel('Key', { exact: true }).fill(key)
     await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')

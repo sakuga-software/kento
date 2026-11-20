@@ -25,9 +25,10 @@
     if (bar && !event.composedPath().includes(bar)) setOpen(false)
   })
 
+  // KNT-165: the select of the org is a component in the browser; its hidden input sends `change`.
   document.addEventListener('change', (event) => {
     const select = event.target
-    if (!(select instanceof HTMLSelectElement) || select.name !== 'orgId') return
+    if (!(select instanceof Element) || !select.matches('select, input[data-select]') || select.name !== 'orgId') return
     select.closest('form[data-org-switch]')?.requestSubmit()
   })
 }

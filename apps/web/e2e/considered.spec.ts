@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // REV-102. The findings that their last review lists under "To consider (code already reviewed)" (REV-100):
 // the Findings screen tags them and filters them, and the detail of a finding says it. The second
@@ -101,7 +101,7 @@ test('a member sees the findings to consider, filters them, and reads why one do
   await expectNoAxeViolations(page)
 
   // The filter applies on change (findings.js), and the URL keeps it.
-  await page.getByLabel('Type').selectOption({ label: 'To consider (code already reviewed)' })
+  await chooseOption(page, 'Type', { label: 'To consider (code already reviewed)' })
   await expect(page).toHaveURL(/type=to-consider/)
   await expect(page.getByRole('rowheader')).toHaveCount(1)
   await expect(page.getByRole('rowheader').first()).toContainText(TITLE_CONSIDERED)

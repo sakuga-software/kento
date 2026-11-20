@@ -10,6 +10,13 @@ screen must follow.
   a button, `Input`, `Textarea`, `Select`, `Choice`, `Check` for a checkbox repeated on every row,
   `Field`). `public/assets/kento.css` draws them with the tokens of Paper and Sumi; a screen adds only
   its layout.
+- **A select is `Select`, with an `id`** (KNT-165). The server renders the native `<select>`; in the
+  browser `CustomSelect` (`app/ui/public/select.tsx`, the select of `@remix-run/ui`) takes its place:
+  it reads the options and the value from the native one, moves its `id` to its button (the
+  `<label for>` names it), hides and disables the native one, and posts the same `name` from a hidden
+  input (`input[data-select]`), which sends `change`. A script that reacts to a select listens to
+  `change` on `select, input[data-select]`. In e2e, `chooseOption()` and `selectValue()` of
+  `e2e/helpers.ts` replace `selectOption()`, which stays for a test without JavaScript.
 - **No React, and no third-party component or CSS framework.** The screens are `remix/component`
   JSX rendered on the server, and the styles are plain CSS in `kento.css`.
 - **Interactive widgets** (menu, popover, select, tabs, toast) use the headless primitives of

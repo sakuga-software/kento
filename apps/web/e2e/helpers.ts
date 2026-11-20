@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
@@ -64,6 +64,30 @@ export function watchConsole(page: Page): string[] {
 /** KNT-163: waits until the components of the page have hydrated (app/ui/public/runtime.ts). */
 export async function hydrated(page: Page) {
   await expect(page.locator('html')).toHaveAttribute('data-hydrated', '')
+}
+
+/**
+ * KNT-165: chooses an option of a select of the screens, the select of @remix-run/ui once it
+ * hydrated (`selectOption` of Playwright is for the native one, which hydration hides). `option`:
+ * its value, or `{ label }`.
+ */
+export async function chooseOption(scope: Page | Locator, label: string, option: string | { label: string }) {
+  let page = 'page' in scope ? scope.page() : scope
+  // Before hydration the label names the native select: this waits for the button.
+  let trigger = scope.getByLabel(label, { exact: true }).and(page.locator('button[aria-haspopup="listbox"]'))
+  await trigger.click()
+  let list = page.locator('.select-popover:popover-open')
+  let choice =
+    typeof option === 'string'
+      ? list.locator(`[role="option"][data-value="${option}"]`)
+      : list.getByRole('option', { name: option.label, exact: true })
+  await choice.click()
+  await expect(list).toHaveCount(0)
+}
+
+/** KNT-165: the value of a select of the screens, from the hidden input that the form posts. */
+export function selectValue(scope: Page | Locator, name: string) {
+  return scope.locator(`input[type="hidden"][data-select][name="${name}"]`)
 }
 
 /** REV-91: on the Repos screen, opens the menu "…" of a repository and its item "Open the config". */

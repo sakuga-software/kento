@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, goToSettingsLink, openRepoConfig, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, goToSettingsLink, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The rules of a repository and of the org (REV-19) in a browser, with the test of the ticket: a
 // rule written in Config › Rules goes with the next job to a runner that reads the rules; disabled,
@@ -106,7 +106,7 @@ test.describe('the rules of a repository and of the org', () => {
     await form.getByLabel('Title').fill(FK_RULE)
     await form.getByLabel('What the rule asks for').fill('Each foreign key that a migration adds has its index, in the same migration.')
     await form.getByLabel('Paths').fill('**/migrations/**')
-    await form.getByLabel('Lowest priority of a finding of this rule').selectOption('major')
+    await chooseOption(form, 'Lowest priority of a finding of this rule', 'major')
     await form.getByRole('button', { name: 'Add the rule' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Rule added.' })).toBeVisible()
     let item = page.getByRole('listitem').filter({ hasText: FK_RULE })
