@@ -68,6 +68,18 @@ export async function openRepoConfig(page: Page, repo: string) {
 }
 
 /**
+ * KNT-164: serves kento.css with another line height for the labels of the fields (18 px for
+ * example), from the first page. The content security policy refuses an inline style, and a style
+ * added after the load comes too late for the scroll to a field in error.
+ */
+export async function withLabelLineHeight(page: Page, lineHeight: string) {
+  await page.route('**/assets/kento.css*', async (route) => {
+    let response = await route.fetch()
+    await route.fulfill({ response, body: `${await response.text()}\n.label { line-height: ${lineHeight}; }\n` })
+  })
+}
+
+/**
  * KNT-149: follows a link of the sidebar of the settings. Under 900 px the list is folded under
  * "Section …": the helper opens it first, and the link folds it again.
  */

@@ -46,7 +46,7 @@
     sections.push({ link, target, parts })
   }
 
-  // Under 900 px, "Section …" opens the list over the page; a link folds it again.
+  // Under 900 px, "Section …" at the top of the page opens the list under it; a link folds it again.
   const setOpen = (open) => {
     if (!nav || !toggle) return
     nav.classList.toggle('settings-nav-open', open)
@@ -56,8 +56,7 @@
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
   })
-  // The list opens over the page: Escape, a click outside or the focus leaving it folds it, as the
-  // menu of the frame. The open list never hides the field that has the focus (WCAG 2.4.11).
+  // Escape, a click outside or the focus leaving the list folds it, as the menu of the frame.
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || toggle?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
