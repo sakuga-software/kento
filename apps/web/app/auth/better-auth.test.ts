@@ -41,9 +41,18 @@ describe('the hook before a session is written', () => {
   it('KNT-150: shows the org of an invitation when GitHub counts the person nowhere', async () => {
     let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
     auth.tables.users!.push({ id: 'user-2', githubId: CAMILLE.id, login: CAMILLE.login })
+    await auth.deps.store.saveMembership('user-2', OTHER_ORG.id, 'member', 'invitation')
     let scope: SignInScope = { profile: CAMILLE, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [OTHER_ORG] } }
     let result = await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW)
     assert.ok(result)
     assert.equal(result.data.activeOrganizationId, OTHER_ORG.id)
+  })
+
+  it('KNT-150: never shows an org where the person is not a member once the roles are saved', async () => {
+    let auth = fakeAuth({ orgs: [ORG] })
+    auth.tables.users!.push({ id: 'user-2', githubId: CAMILLE.id, login: CAMILLE.login })
+    // The invited org is gone (no membership any more), and GitHub gives no role: no org, no session.
+    let scope: SignInScope = { profile: CAMILLE, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [OTHER_ORG] } }
+    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW), false)
   })
 })

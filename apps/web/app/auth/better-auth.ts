@@ -240,13 +240,16 @@ export async function beforeSessionCreate(
 ): Promise<false | { data: Record<string, unknown> }> {
   let decision = scope?.decision
   if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
-  // The org on screen: the first org where GitHub counts the person as an admin, else the first one
-  // from GitHub, else the first one of an invitation. None: no session.
-  let first = decision.roles.find((r) => r.role === 'admin')?.org ?? decision.roles[0]?.org ?? decision.invited[0]
-  if (!first) return false
   let user = await store.findUser(session.userId)
   if (!user) return false
   await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
+  // The org on screen: the first org where GitHub counts the person as an admin, else the first one
+  // from GitHub, else the first one of an invitation; always one where the person is a member once
+  // the roles are saved (an org can go in between), else their first membership. None: no session.
+  let memberships = await store.memberships(user.id)
+  let wanted = [decision.roles.find((r) => r.role === 'admin')?.org, decision.roles[0]?.org, decision.invited[0]]
+  let first = wanted.find((org) => org && memberships.some((m) => m.org.id === org.id)) ?? memberships[0]?.org
+  if (!first) return false
   await store.touchSignIn(user.id)
   log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
   return { data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS) } }
