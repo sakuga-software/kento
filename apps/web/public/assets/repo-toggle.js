@@ -90,12 +90,13 @@
           headers: { Accept: 'text/html' },
         })
         // The server answers a change with a redirect to the screen; a sign-in page means the
-        // session is over.
+        // session is over. After a redirect the change is saved, even when the screen it leads to
+        // does not come: the browser goes there, as without JavaScript (Kentō #2e027b).
         const landed = new URL(response.url, location.href)
         if (response.ok && landed.pathname !== location.pathname) return showError(row, 'session')
-        if (!response.ok) return showError(row, 'refused')
+        if (!response.ok) return response.redirected ? location.assign(landed.href) : showError(row, 'refused')
         const next = (await parse(response)).getElementById('content')
-        if (!next) return showError(row, 'refused')
+        if (!next) return location.assign(landed.href)
         const nextRow = next.querySelector(`#${CSS.escape(row.id)}`) ?? (await rowByName(row))
         // The change is saved, but its row cannot be read: the page that the redirect gives.
         if (!nextRow) return location.assign(landed.href)

@@ -456,6 +456,22 @@ test.describe('the Repos screen', () => {
       await expect(rowOf(page, 'zz-18').getByRole('alert')).toHaveCount(0)
       await page.unroute('**/repos/*/enable*')
 
+      // Saved, but the screen after the redirect fails: no "did not save"; the browser goes to the
+      // screen of the redirect, as without JavaScript (Kentō #2e027b).
+      row = rowOf(page, 'zz-18')
+      await row.locator('.row-menu > summary').click()
+      await row.locator('summary', { hasText: 'Disable' }).click()
+      // The answer of the server stands in for a saved change whose screen fails: a redirect to a
+      // page that answers 404.
+      await page.route('**/repos/*/disable*', (route) =>
+        route.fulfill({ status: 303, headers: { Location: '/no-such-screen?done=disabled' } }),
+      )
+      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await page.waitForURL(/\/no-such-screen\?done=disabled$/)
+      await page.unroute('**/repos/*/disable*')
+      // The route answered in place of the server: zz-18 is still enabled.
+      await page.goto('/repos?q=zz-')
+
       // The network is gone: the row says so.
       row = rowOf(page, 'zz-18')
       await row.locator('.row-menu > summary').click()
