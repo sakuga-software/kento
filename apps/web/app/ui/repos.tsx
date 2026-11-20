@@ -167,7 +167,16 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </>
         }
       >
-        {notice ? <Notice notice={notice} org={org} /> : null}
+        {notice?.kind === 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+        {/* KNT-147: a live region on every load, empty when there is no notice. repo-toggle.js fills
+            it after a change in place: a screen reader reads a change of its content, not a region
+            that comes in already filled. */}
+        {admin || (notice && notice.kind !== 'check_failed') ? (
+          // Only for an admin when empty: a member has the "Read only" status, and changes nothing.
+          <div class="notice-slot" role="status">
+            {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+          </div>
+        ) : null}
 
 
         <p class="repos-summary" aria-live="polite">
@@ -313,6 +322,8 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </div>
         </details>
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
+        {/* KNT-147: "Enable" and "Disable" change the row in place, with no reload and no jump. */}
+        {admin ? <script src={`/assets/repo-toggle.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
         {/* REV-91: the menus "…" of the rows close on Escape and on a click outside. */}
         <script src={`/assets/row-menu.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
@@ -351,8 +362,9 @@ function Notice(handle: Handle<{ notice: ReposNotice; org: string }>) {
           . The published reviews stay.
         </p>
       )
+    // In the slot `role="status"` of the screen: no role of its own.
     return (
-      <div class="banner banner-ok" role="status">
+      <div class="banner banner-ok">
         <CheckIcon />
         {text}
       </div>
