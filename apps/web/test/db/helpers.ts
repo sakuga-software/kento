@@ -70,12 +70,17 @@ export async function seedEnabledRepoBefore0029(sql: postgres.Sql): Promise<{ or
  * enabled, as an admin leaves it on the Repos screen. An event of GitHub never enables a repository.
  */
 export async function seedEnabledRepo(sql: postgres.Sql, installationId = 1001): Promise<{ orgId: string; repoId: string }> {
-  let [known] = await sql<{ orgId: string }[]>`
-    select org_id as "orgId" from installations where github_installation_id = ${installationId}`
-  let orgId = known?.orgId ?? (await insertOrg(sql, 'sakuga-software', installationId, 2001))
+  let find = () => sql<{ id: string; orgId: string }[]>`
+    select id, org_id as "orgId" from installations where github_installation_id = ${installationId}`
+  let [installation] = await find()
+  if (!installation) {
+    await insertOrg(sql, 'sakuga-software', installationId, 2001)
+    ;[installation] = await find()
+  }
+  let { id, orgId } = installation!
   let [repo] = await sql<{ id: string }[]>`
-    insert into repos (org_id, installation_id, installation_id, github_repo_id, full_name, enabled)
-    values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${await installationOf(sql, orgId)}, 3001, 'sakuga-software/sakuga-review', true)
+    insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+    values (${orgId}, ${id}, 3001, 'sakuga-software/sakuga-review', true)
     on conflict (github_repo_id) do update set enabled = true
     returning id`
   return { orgId, repoId: repo!.id }

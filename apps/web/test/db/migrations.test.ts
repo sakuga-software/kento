@@ -133,7 +133,7 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 29)
+      assert.equal(row!.applied, 30)
     } finally {
       await a.close()
       await other.drop()
@@ -327,7 +327,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 29)
+    assert.equal(body.database.migrations, 30)
   })
 
   it('returns 503 when the database was never migrated', async () => {

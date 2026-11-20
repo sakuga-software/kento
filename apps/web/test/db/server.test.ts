@@ -80,7 +80,7 @@ describe('server', () => {
       assert.equal(response.status, 200, first.output())
       assert.equal(body.status, 'ok')
       assert.equal(body.commit, 'abc1234')
-      assert.equal(body.database.migrations, 29)
+      assert.equal(body.database.migrations, 30)
       assert.match(first.output(), /"event":"startup.migrations_applied"/)
     } finally {
       assert.equal(await stop(first), 0, first.output())
@@ -93,7 +93,7 @@ describe('server', () => {
     try {
       let response = await waitForHealthz(port, second)
       assert.equal(response.status, 200, second.output())
-      let [row] = await sql<{ logins: string[] }[]>`select array_agg(login) as logins from orgs`
+      let [row] = await sql<{ logins: string[] }[]>`select array_agg(name) as logins from orgs`
       assert.deepEqual(row!.logins, ['kept'])
     } finally {
       await sql.end()

@@ -277,7 +277,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
     it('a new org trusts KENTO_DEFAULT_TRUSTED_BOTS; an event keeps the bots of a known org (REV-127)', async () => {
       let apply = createWebhookStore(database.db)
       let installation = { githubInstallationId: 5005, githubAccountId: 6006, login: 'acme' }
-      let trustedOf = async () => (await sql<{ trustedBots: string[] }[]>`select trusted_bots as "trustedBots" from orgs where github_installation_id = 5005`)[0]!.trustedBots
+      let trustedOf = async () => (await sql<{ trustedBots: string[] }[]>`select orgs.trusted_bots as "trustedBots" from orgs join installations on installations.org_id = orgs.id where installations.github_installation_id = 5005`)[0]!.trustedBots
       await withInstance({ defaultTrustedBots: ['acme-agent[bot]'] }, async () => {
         assert.deepEqual([...(await createOrgSettingsStore(database).trustedBotsFor(5005))], ['acme-agent[bot]'], 'an installation that Kentō does not know yet')
         await apply({ type: 'upsert_installation', installation, repositories: [], suspended: false }, nextDelivery())
@@ -289,7 +289,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
       await withInstance({ defaultTrustedBots: [] }, async () => {
         await apply({ type: 'upsert_installation', installation: { ...installation, githubInstallationId: 5006, githubAccountId: 6007, login: 'bare' }, repositories: [], suspended: false }, nextDelivery())
       })
-      assert.deepEqual((await sql<{ trustedBots: string[] }[]>`select trusted_bots as "trustedBots" from orgs where github_installation_id = 5006`)[0]!.trustedBots, [])
+      assert.deepEqual((await sql<{ trustedBots: string[] }[]>`select orgs.trusted_bots as "trustedBots" from orgs join installations on installations.org_id = orgs.id where installations.github_installation_id = 5006`)[0]!.trustedBots, [])
     })
   })
 
