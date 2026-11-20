@@ -1,5 +1,5 @@
-import { parseJob, RUNNER_TOKEN_PREFIX, type Job, type ReviewPayload } from '@kento/protocol'
-import { findingKey } from '@kento/engine/findings'
+import { parseJob, RUNNER_TOKEN_PREFIX, type Job, type ReviewPayload } from '@kento-review/protocol'
+import { findingKey } from '@kento-review/engine/findings'
 import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 

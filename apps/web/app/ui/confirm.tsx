@@ -1,5 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
+import { Button, buttonClass } from './controls.tsx'
+
 export interface ConfirmProps {
   /** The text of the button that opens the confirmation: "Revoke…". */
   trigger: RemixNode
@@ -30,25 +32,25 @@ export function Confirm(handle: Handle<ConfirmProps>) {
     let { trigger, children, action, csrf, submit, form } = handle.props
     return (
       <details class="confirm" data-confirm>
-        <summary class="button button-danger">{trigger}</summary>
+        <summary class={buttonClass('danger-soft')}>{trigger}</summary>
         <div class="confirm-body">
           {children}
           <div class="confirm-actions">
             {form ? (
-              <button class="button button-danger-solid" type="submit" form={form} formaction={action}>
+              <Button variant="danger" type="submit" form={form} formaction={action}>
                 {submit}
-              </button>
+              </Button>
             ) : (
               <form method="post" action={action}>
                 {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
-                <button class="button button-danger-solid" type="submit">
+                <Button variant="danger" type="submit">
                   {submit}
-                </button>
+                </Button>
               </form>
             )}
-            <button class="button" type="button" data-confirm-cancel hidden>
+            <Button type="button" data-confirm-cancel hidden>
               Cancel
-            </button>
+            </Button>
           </div>
         </div>
       </details>

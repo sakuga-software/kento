@@ -1,7 +1,7 @@
 // REV-100. A new finding on code that an earlier review already read, not critical, gets no thread
 // and does not ask for changes: the block lists it under "To consider (code already reviewed)", and the
 // database keeps it. A critical one keeps its thread and blocks. The finding is the one of dojo#91.
-import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
+import type { ReviewFinding, ReviewPayload } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

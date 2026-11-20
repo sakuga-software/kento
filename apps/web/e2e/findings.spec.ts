@@ -116,12 +116,39 @@ test.describe('the Findings screen', () => {
     await seed()
     await page.route('**/assets/findings.js*', (route) => route.abort())
     await page.goto('/findings')
+    // KNT-143: without findings.js, "Select all" stays hidden (`.check` keeps `hidden` working).
+    await expect(page.locator('#findings-all')).toBeHidden()
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
     await expect(bar).toBeHidden()
     await page.getByRole('checkbox', { name: /Finding 01/ }).check()
     await expect(bar).toBeVisible()
     await page.getByRole('checkbox', { name: /Finding 01/ }).uncheck()
     await expect(bar).toBeHidden()
+  })
+
+  // KNT-143: in forced colors (Windows High Contrast), the browser drops the drawn check mark, dot
+  // and focus ring of kento.css. The native inputs come back, and the focus has an outline.
+  test('in forced colors, the checkboxes and radio buttons are native, and the focus has an outline', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    await page.emulateMedia({ forcedColors: 'active' })
+    await page.goto('/findings')
+    let row = page.getByRole('checkbox', { name: /Finding 01/ })
+    await row.check()
+    expect(await row.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
+    let radio = page.locator('input[type=radio][name=reason]').first()
+    expect(await radio.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
+    // Keyboard focus, from the search field to the first box of a row.
+    await page.locator('#findings-q').focus()
+    expect(await page.locator('#findings-q').evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    for (let i = 0; i < 30 && !(await page.evaluate(() => document.activeElement?.matches('input.check') ?? false)); i++) {
+      await page.keyboard.press('Tab')
+    }
+    let focused = await page.evaluate(() => {
+      let el = document.activeElement as HTMLElement
+      return { check: el.matches('input.check'), outline: getComputedStyle(el).outlineStyle }
+    })
+    expect(focused).toEqual({ check: true, outline: 'solid' })
   })
 
   test('an admin dismisses two findings "Off topic": both threads get the reply, and the reason counts two more', async ({ page }) => {
@@ -136,6 +163,8 @@ test.describe('the Findings screen', () => {
     await page.goto('/findings?view=precision')
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('3')
     await page.goto('/findings')
+    // KNT-143: findings.js shows "Select all".
+    await expect(page.locator('#findings-all')).toBeVisible()
     // REV-91: the bar of the actions shows once a finding is checked, and "Deselect" empties it.
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
     await expect(bar).toBeHidden()

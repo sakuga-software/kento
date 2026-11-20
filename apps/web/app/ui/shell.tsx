@@ -1,6 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
+import { Button, Select } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
 import type { Theme } from './theme.ts'
@@ -178,16 +179,16 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
         <label class="visually-hidden" for="org-switch">
           Organization
         </label>
-        <select class="bar-org-box" id="org-switch" name="orgId">
+        <Select class="mono" wrapperClass="bar-org-select" id="org-switch" name="orgId">
           {viewer.orgs.map((org) => (
             <option value={org.id} selected={org.id === viewer.org.id}>
               {org.login}
             </option>
           ))}
-        </select>
-        <button class="button" type="submit">
+        </Select>
+        <Button type="submit">
           Switch
-        </button>
+        </Button>
       </form>
     )
   }
@@ -233,10 +234,10 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
         <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Member'}</span>
         <form method="post" action={routes.signOut.href()}>
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
-          <button class="button button-ghost" type="submit">
+          <Button variant="ghost" type="submit">
             <SignOutIcon />
             Sign out
-          </button>
+          </Button>
         </form>
       </div>
     )

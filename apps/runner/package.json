@@ -1,5 +1,5 @@
 {
-  "name": "@kento/runner",
+  "name": "@kento-review/runner",
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -13,7 +13,7 @@
     "test": "node --test 'test/*.test.ts'"
   },
   "dependencies": {
-    "@kento/engine": "workspace:*",
-    "@kento/protocol": "workspace:*"
+    "@kento-review/engine": "workspace:*",
+    "@kento-review/protocol": "workspace:*"
   }
 }

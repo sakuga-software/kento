@@ -229,7 +229,7 @@ describe('the Runners screen', () => {
     assert.match(html, /Protocol/)
     assert.match(html, /Reservation and attempts/)
     // REV-30: "Key on the runner" is the choice by default; the key of the app is an explicit choice.
-    assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
+    assert.match(html, /<input type="radio" name="keyMode" value="runner" checked class="check" \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
     // REV-51: no screen sets the pool of a repository, so the help of the labels does not name it.
     assert.doesNotMatch(html, /pool/i)
@@ -257,8 +257,8 @@ describe('the Runners screen', () => {
     assert.match(silent, /^class="runner-silent"><summary>1 runner silent for more than 24 h<\/summary>/)
     assert.match(silent, /Offline for 3 d/)
     assert.match(silent, /<form id="revoke-silent" method="post" action="\/runners\/revoke-silent" hidden><input type="hidden" name="_csrf" value="[0-9a-f]+" \/><input type="hidden" name="id" value="33333333-3333-4333-8333-333333333335" \/><\/form>/)
-    assert.match(silent, /<summary class="button button-danger">Revoke this runner…<\/summary>/)
-    assert.match(silent, /<button type="submit" form="revoke-silent" formaction="\/runners\/revoke-silent" class="button button-danger-solid">Revoke ci-ephemeral-7<\/button>/)
+    assert.match(silent, /<summary class="button button--danger-soft">Revoke this runner…<\/summary>/)
+    assert.match(silent, /<button type="submit" form="revoke-silent" formaction="\/runners\/revoke-silent" class="button button--danger">Revoke ci-ephemeral-7<\/button>/)
     assert.match(html, /Revoked <span class="count">1<\/span>/)
   })
 

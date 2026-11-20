@@ -1,7 +1,7 @@
 // Writes the frames of the board design/socle/ from the real components of the app, so that the
 // board shows the markup and the stylesheet that the screens use.
 //
-//   pnpm -F @kento/web design:board
+//   pnpm -F @kento-review/web design:board
 //
 // Each frame is one HTML document; the board shows it in an <iframe> at its width, so that the
 // media queries of the stylesheet apply as on a screen of that width.

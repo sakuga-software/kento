@@ -37,7 +37,7 @@ the tests against Postgres, the tests of the screens in a browser, and the migra
 2. Make one change per pull request. Keep it small enough to review.
 3. Add or update the tests. A fix comes with a test that fails without it.
 4. Run `pnpm typecheck` and `pnpm test`, and the commands of the package that you changed
-   (`pnpm -F @kento/web lint`, `test:db`, `e2e`).
+   (`pnpm -F @kento-review/web lint`, `test:db`, `e2e`).
 5. Update the documentation that your change makes wrong: the README of the package,
    [apps/web/DEPLOY.md](apps/web/DEPLOY.md) for a new variable or permission, and the
    `Unreleased` section of [apps/web/CHANGELOG.md](apps/web/CHANGELOG.md) for a change that an
