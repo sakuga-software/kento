@@ -61,12 +61,12 @@ describe('the measures of the reviews', () => {
     database = createDatabase(test.url)
     let sql = database.sql
     let [org] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (1, 11, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 1, 11, 'sakuga-software' from org returning org_id as id`
     let [other] = await sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (2, 22, 'other') returning id`
+      with org as (insert into orgs (name, slug) values ('other', lower('other')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 2, 22, 'other' from org returning org_id as id`
     let repos = await sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled)
-      values (${org!.id}, 3001, 'sakuga-software/pantry', true), (${other!.id}, 3002, 'other/orchard', true)
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${org!.id}, (select id from installations where org_id = ${org!.id} order by created_at limit 1), 3001, 'sakuga-software/pantry', true), (${other!.id}, (select id from installations where org_id = ${other!.id} order by created_at limit 1), 3002, 'other/orchard', true)
       returning id`
     ;[pantry, orchard] = [repos[0]!.id, repos[1]!.id]
 
@@ -141,7 +141,7 @@ describe('the measures of the reviews', () => {
     let sql = readOnlyDatabase()
     try {
       assert.equal((await measuresReport(sql, SINCE)).weeks.length, 2)
-      await assert.rejects(sql`insert into orgs (github_installation_id, github_account_id, login) values (3, 33, 'x')`, /read-only transaction/)
+      await assert.rejects(sql`insert into orgs (name, slug) values ('x', 'x')`, /read-only transaction/)
     } finally {
       await sql.end({ timeout: 5 })
       if (saved === undefined) delete process.env.DATABASE_URL

@@ -85,8 +85,8 @@ describe('POST /webhooks/github against Postgres', () => {
     let [repo] = await sql`select full_name, enabled from repos`
     assert.equal(repo!.full_name, 'sakuga-software/sakuga-review')
     assert.equal(repo!.enabled, true)
-    let [org] = await sql`select github_installation_id, login from orgs`
-    assert.equal(Number(org!.github_installation_id), 1001)
+    let [installation] = await sql`select github_installation_id, account_login from installations`
+    assert.equal(Number(installation!.github_installation_id), 1001)
   })
 
   it('2. a second push cancels the job of the first head', async () => {
@@ -395,9 +395,10 @@ describe('POST /webhooks/github against Postgres', () => {
       await post(payload, { event: 'installation', deliveryId })
       await post(payload, { event: 'installation', deliveryId })
       assert.deepEqual(await repoNames(), ['sakuga-software/fruitback', 'sakuga-software/sakuga-review'])
-      let orgs = await sql`select login, suspended_at from orgs`
-      assert.equal(orgs.length, 1)
-      assert.equal(orgs[0]!.suspended_at, null)
+      let installations = await sql`select account_login, suspended_at from installations`
+      assert.equal(installations.length, 1)
+      assert.equal(installations[0]!.suspended_at, null)
+      assert.equal((await sql`select 1 from orgs`).length, 1)
     })
 
     it('installation_repositories adds, renames and removes repositories', async () => {
@@ -440,8 +441,61 @@ describe('POST /webhooks/github against Postgres', () => {
       await post({ action: 'deleted', installation }, { event: 'installation' })
       assert.deepEqual(await repoNames(), ['sakuga-software/sakuga-review'])
       assert.deepEqual((await jobRows()).map((row) => row.state), ['cancelled'])
-      let [org] = await sql`select suspended_at from orgs`
-      assert.notEqual(org!.suspended_at, null)
+      let [row] = await sql`select suspended_at from installations`
+      assert.notEqual(row!.suspended_at, null)
+    })
+
+    async function orgsOfInstallations() {
+      let rows = await sql<{ githubInstallationId: string; name: string; slug: string; orgId: string }[]>`
+        select installations.github_installation_id::text as "githubInstallationId", orgs.name, orgs.slug, orgs.id as "orgId"
+        from installations join orgs on orgs.id = installations.org_id order by installations.github_installation_id`
+      return rows.map((r) => ({ ...r }))
+    }
+
+    it('KNT-150: a new installation of another account gets an org of its own, named after the account', async () => {
+      await sql`truncate orgs cascade`
+      let globex = { id: 2002, login: 'Globex', type: 'Organization' }
+      await post({ action: 'created', installation, repositories: [review] }, { event: 'installation' })
+      await post({ action: 'created', installation: { id: 1002, account: globex }, repositories: [{ id: 4001, name: 'app', full_name: 'Globex/app' }] }, { event: 'installation' })
+      let rows = await orgsOfInstallations()
+      assert.deepEqual(rows.map((r) => ({ githubInstallationId: r.githubInstallationId, name: r.name, slug: r.slug })), [
+        { githubInstallationId: '1001', name: 'sakuga-software', slug: 'sakuga-software' },
+        { githubInstallationId: '1002', name: 'Globex', slug: 'globex' },
+      ])
+      assert.notEqual(rows[0]!.orgId, rows[1]!.orgId)
+      let repos = await sql<{ fullName: string; orgId: string }[]>`select full_name as "fullName", org_id as "orgId" from repos order by full_name`
+      assert.deepEqual(repos.map((r) => [r.fullName, r.orgId]), [['Globex/app', rows[1]!.orgId], ['sakuga-software/sakuga-review', rows[0]!.orgId]])
+    })
+
+    it('KNT-150: an account that installs the App again keeps its org, its settings and its repositories', async () => {
+      await post({ action: 'created', installation, repositories: [review] }, { event: 'installation' })
+      let [before] = await sql<{ id: string }[]>`select org_id as id from installations where github_installation_id = 1001`
+      await sql`update orgs set daily_cap_usd = 7 where id = ${before!.id}`
+      await post({ action: 'deleted', installation }, { event: 'installation' })
+      await post({ action: 'created', installation: { id: 1003, account }, repositories: [review] }, { event: 'installation' })
+      let rows = await orgsOfInstallations()
+      assert.deepEqual(rows.map((r) => [r.githubInstallationId, r.orgId]), [['1001', before!.id], ['1003', before!.id]])
+      let [org] = await sql`select daily_cap_usd from orgs where id = ${before!.id}`
+      assert.equal(org!.daily_cap_usd, '7.00')
+      // The repository moved to the new installation, in the same org: its pushes are reviewed again.
+      let [repo] = await sql`select repos.org_id, installations.github_installation_id from repos join installations on installations.id = repos.installation_id`
+      assert.deepEqual([repo!.org_id, Number(repo!.github_installation_id)], [before!.id, 1003])
+      assert.equal((await post({ ...pullRequestPayload({ head: headSha(9) }), installation: { id: 1003, account } })).body.outcome, 'queued')
+    })
+
+    it('KNT-150: a slug that another org holds gets the installation id as a suffix', async () => {
+      await sql`truncate orgs cascade`
+      await sql`insert into orgs (name, slug) values ('Created in Kentō', 'acme')`
+      await post({ action: 'created', installation: { id: 1004, account: { id: 2004, login: 'Acme', type: 'Organization' } }, repositories: [] }, { event: 'installation' })
+      assert.deepEqual((await orgsOfInstallations()).map((r) => [r.name, r.slug]), [['Acme', 'acme-1004']])
+    })
+
+    it('KNT-150: two first events of a new installation at once create one org', async () => {
+      await sql`truncate orgs cascade`
+      let payload = { action: 'created', installation: { id: 1005, account: { id: 2005, login: 'initech', type: 'Organization' } }, repositories: [] }
+      await Promise.all([post(payload, { event: 'installation' }), post(payload, { event: 'installation' })])
+      assert.equal((await sql`select 1 from orgs`).length, 1)
+      assert.equal((await sql`select 1 from installations`).length, 1)
     })
   })
 })

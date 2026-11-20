@@ -10,7 +10,7 @@ import type { CapHit } from '../org-settings/model.ts'
 import { jobConfig, pathsMatch, readOverrides, resolveConfig, type Trigger } from '../repo-config/model.ts'
 import type { Db, Tx } from './client.ts'
 import { orgCapHit, readRepoMonthCost } from './costs.ts'
-import { assignmentRules, jobs, orgs, pullAuthors, repos, resolutions, reviews, userPrefs, users } from './schema.ts'
+import { assignmentRules, installations, jobs, orgs, pullAuthors, repos, resolutions, reviews, userPrefs, users } from './schema.ts'
 
 /** What a verified webhook changed. The route returns it as JSON, for the deliveries page of the App. */
 export type WebhookResult =
@@ -206,30 +206,30 @@ export function createWebhookStore(db: Db, options: StoreOptions = {}): ApplyWeb
           return { outcome: 'retargeted', jobs: moved.length }
         }
         case 'upsert_installation': {
-          let org = await upsertOrg(tx, command.installation, command.suspended)
-          let count = await upsertRepos(tx, org.id, command.repositories)
-          let cancelled = command.suspended ? await cancelOrgJobs(tx, org.id, CANCEL_REASON.suspended) : 0
+          let target = await upsertInstallation(tx, command.installation, command.suspended)
+          let count = await upsertRepos(tx, target, command.repositories)
+          let cancelled = command.suspended ? await cancelInstallationJobs(tx, target.installation.id, CANCEL_REASON.suspended) : 0
           return { outcome: 'updated', repositories: count, cancelled }
         }
         case 'delete_installation': {
-          // The rows stay, so the history of the reviews stays. A new installation gets a new id,
-          // and its events move the repositories to its org.
-          let org = await upsertOrg(tx, command.installation, true)
-          let cancelled = await cancelOrgJobs(tx, org.id, CANCEL_REASON.uninstalled)
+          // The rows stay, so the history of the reviews stays. A new installation of the same
+          // account gets a new id, joins the same org, and its events move the repositories to it.
+          let { installation } = await upsertInstallation(tx, command.installation, true)
+          let cancelled = await cancelInstallationJobs(tx, installation.id, CANCEL_REASON.uninstalled)
           return { outcome: 'updated', repositories: 0, cancelled }
         }
         case 'add_repositories': {
-          let org = await upsertOrg(tx, command.installation, null)
-          let count = await upsertRepos(tx, org.id, command.repositories)
+          let target = await upsertInstallation(tx, command.installation, null)
+          let count = await upsertRepos(tx, target, command.repositories)
           return { outcome: 'updated', repositories: count, cancelled: 0 }
         }
         case 'remove_repositories': {
           if (command.githubRepoIds.length === 0) return { outcome: 'updated', repositories: 0, cancelled: 0 }
-          let org = await upsertOrg(tx, command.installation, null)
+          let { installation } = await upsertInstallation(tx, command.installation, null)
           // The App cannot read these repositories any more. Their jobs and reviews go with them.
           let removed = await tx
             .delete(repos)
-            .where(and(eq(repos.orgId, org.id), inArray(repos.githubRepoId, command.githubRepoIds)))
+            .where(and(eq(repos.installationId, installation.id), inArray(repos.githubRepoId, command.githubRepoIds)))
             .returning({ id: repos.id })
           return { outcome: 'updated', repositories: removed.length, cancelled: 0 }
         }
@@ -325,8 +325,8 @@ export async function isRepoEnabled(db: Db, githubRepoId: number): Promise<boole
   let [row] = await db
     .select({ enabled: repos.enabled })
     .from(repos)
-    .innerJoin(orgs, eq(orgs.id, repos.orgId))
-    .where(and(eq(repos.githubRepoId, githubRepoId), sql`${orgs.suspendedAt} is null`))
+    .innerJoin(installations, eq(installations.id, repos.installationId))
+    .where(and(eq(repos.githubRepoId, githubRepoId), sql`${installations.suspendedAt} is null`))
   return row?.enabled === true
 }
 
@@ -379,9 +379,10 @@ export type CommandJobResult =
  */
 export function enqueueCommandJob(db: Db, input: CommandJobInput): Promise<CommandJobResult> {
   return db.transaction(async (tx): Promise<CommandJobResult> => {
-    let org = await upsertOrg(tx, input.installation, null)
-    if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
-    let [repo] = await upsertRepoRows(tx, org.id, [input.repository])
+    let target = await upsertInstallation(tx, input.installation, null)
+    let { org } = target
+    if (target.installation.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
+    let [repo] = await upsertRepoRows(tx, target, [input.repository])
     if (!repo) throw new Error('upsert of the repository returned no row')
     if (!repo.enabled) return { outcome: 'skipped', reason: 'repository is not enabled' }
     if (input.author) await recordPullAuthor(tx, repo.id, input.prNumber, input.author)
@@ -497,9 +498,10 @@ async function enqueueReview(
   deliveryId: string,
   files: string[] | null = null,
 ): Promise<WebhookResult> {
-  let org = await upsertOrg(tx, command.installation, null)
-  if (org.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
-  let [repo] = await upsertRepoRows(tx, org.id, [command.repository])
+  let target = await upsertInstallation(tx, command.installation, null)
+  let { org } = target
+  if (target.installation.suspendedAt !== null) return { outcome: 'skipped', reason: 'installation is suspended' }
+  let [repo] = await upsertRepoRows(tx, target, [command.repository])
   if (!repo) throw new Error('upsert of the repository returned no row')
   // REV-59. A reopen ends the close, even when it queues no job: the failures of the pull request
   // show again on the dashboard.
@@ -668,59 +670,115 @@ async function cancelActive(tx: Tx, where: ReturnType<typeof and>, reason: Cance
   return rows.length
 }
 
-function cancelOrgJobs(tx: Tx, orgId: string, reason: CancelReason): Promise<number> {
-  let orgRepos = tx.select({ id: repos.id }).from(repos).where(eq(repos.orgId, orgId))
-  return cancelActive(tx, inArray(jobs.repoId, orgRepos), reason)
+function cancelInstallationJobs(tx: Tx, installationId: string, reason: CancelReason): Promise<number> {
+  let installationRepos = tx.select({ id: repos.id }).from(repos).where(eq(repos.installationId, installationId))
+  return cancelActive(tx, inArray(jobs.repoId, installationRepos), reason)
+}
+
+/** An installation as the webhook store uses it: its row, and what the jobs need of its org. */
+interface InstallationOrg {
+  installation: { id: string; orgId: string; suspendedAt: Date | null }
+  org: { id: string; config: unknown; dailyCapUsd: string | null; monthlyCapUsd: string | null }
 }
 
 /**
- * Inserts or updates the org of an installation. `suspended`: true sets `suspended_at`, false clears
- * it, null keeps it (an event that says nothing about the state of the installation). A new org
- * trusts the default bots of the instance (KENTO_DEFAULT_TRUSTED_BOTS); an update keeps the trusted
- * bots that an admin set.
+ * KNT-150. Inserts or updates an installation, and returns it with its org. `suspended`: true sets
+ * `suspended_at`, false clears it, null keeps it (an event that says nothing about the state of the
+ * installation).
+ *
+ * A new installation joins the org of the latest earlier installation of the same GitHub account
+ * (the App was uninstalled, then installed again): the org keeps its settings, members and
+ * repositories. Otherwise it gets a new org, named after the account, that trusts the default bots
+ * of the instance (KENTO_DEFAULT_TRUSTED_BOTS). The org of an installation never comes from a
+ * session.
  */
-async function upsertOrg(tx: Tx, installation: Installation, suspended: boolean | null) {
+async function upsertInstallation(tx: Tx, installation: Installation, suspended: boolean | null): Promise<InstallationOrg> {
   let suspendedAt = suspended === null ? undefined : suspended ? new Date() : null
-  let [org] = await tx
-    .insert(orgs)
-    .values({ ...installation, suspendedAt: suspendedAt ?? null, trustedBots: [...instance().defaultTrustedBots] })
-    .onConflictDoUpdate({
-      target: orgs.githubInstallationId,
-      set: {
-        githubAccountId: installation.githubAccountId,
-        login: installation.login,
-        ...(suspendedAt === undefined ? {} : { suspendedAt }),
-        updatedAt: sql`now()`,
-      },
+  // Two first events of the same installation wait for each other here, so that only one creates
+  // its org. The lock ends with the transaction.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`kento.installation:${installation.githubInstallationId}`}, 0))`)
+  let [known] = await tx
+    .update(installations)
+    .set({
+      githubAccountId: installation.githubAccountId,
+      accountLogin: installation.login,
+      ...(suspendedAt === undefined ? {} : { suspendedAt }),
+      updatedAt: sql`now()`,
     })
-    .returning({ id: orgs.id, suspendedAt: orgs.suspendedAt, config: orgs.config, dailyCapUsd: orgs.dailyCapUsd, monthlyCapUsd: orgs.monthlyCapUsd })
-  if (!org) throw new Error('upsert of the org returned no row')
-  return org
+    .where(eq(installations.githubInstallationId, installation.githubInstallationId))
+    .returning({ id: installations.id, orgId: installations.orgId, suspendedAt: installations.suspendedAt })
+  let row = known ?? (await insertInstallation(tx, installation, suspendedAt ?? null))
+  // The lock of the org: a push, a command and a retry of the same org check its cost limit one
+  // after the other, each one with the jobs of the others.
+  let [org] = await tx
+    .select({ id: orgs.id, config: orgs.config, dailyCapUsd: orgs.dailyCapUsd, monthlyCapUsd: orgs.monthlyCapUsd })
+    .from(orgs)
+    .where(eq(orgs.id, row.orgId))
+    .for('update')
+  if (!org) throw new Error('the org of the installation is gone')
+  return { installation: row, org }
 }
 
-async function upsertRepos(tx: Tx, orgId: string, repositories: Repository[]): Promise<number> {
+async function insertInstallation(tx: Tx, installation: Installation, suspendedAt: Date | null) {
+  let [earlier] = await tx
+    .select({ orgId: installations.orgId })
+    .from(installations)
+    .where(eq(installations.githubAccountId, installation.githubAccountId))
+    .orderBy(desc(installations.createdAt))
+    .limit(1)
+  let orgId = earlier?.orgId ?? (await insertOrg(tx, installation))
+  let [row] = await tx
+    .insert(installations)
+    .values({
+      orgId,
+      githubInstallationId: installation.githubInstallationId,
+      githubAccountId: installation.githubAccountId,
+      accountLogin: installation.login,
+      suspendedAt,
+    })
+    .returning({ id: installations.id, orgId: installations.orgId, suspendedAt: installations.suspendedAt })
+  if (!row) throw new Error('insert of the installation returned no row')
+  return row
+}
+
+/** A new org for an installation: its slug is the login, or the login and the installation id when taken. */
+async function insertOrg(tx: Tx, installation: Installation): Promise<string> {
+  let base = installation.login.toLowerCase()
+  for (let slug of [base, `${base}-${installation.githubInstallationId}`]) {
+    let [org] = await tx
+      .insert(orgs)
+      .values({ name: installation.login, slug, trustedBots: [...instance().defaultTrustedBots] })
+      .onConflictDoNothing({ target: orgs.slug })
+      .returning({ id: orgs.id })
+    if (org) return org.id
+  }
+  throw new Error('no free slug for the org of the installation')
+}
+
+async function upsertRepos(tx: Tx, installation: InstallationOrg, repositories: Repository[]): Promise<number> {
   if (repositories.length === 0) return 0
-  return (await upsertRepoRows(tx, orgId, repositories)).length
+  return (await upsertRepoRows(tx, installation, repositories)).length
 }
 
 // A repository keeps its row when it is renamed, or moved to another installation: its GitHub id
 // does not change. `enabled` and `default_level` are settings of the Repos screen that an event never
 // changes: a new repository comes in disabled. One insert cannot update the same row twice: a
 // repository listed twice keeps its last entry.
-function upsertRepoRows(tx: Tx, orgId: string, repositories: Repository[]) {
+function upsertRepoRows(tx: Tx, { installation }: InstallationOrg, repositories: Repository[]) {
   let unique = [...new Map(repositories.map((repo) => [repo.githubRepoId, repo])).values()]
   return tx
     .insert(repos)
     .values(
       unique.map((repo) => ({
-        orgId,
+        orgId: installation.orgId,
+        installationId: installation.id,
         githubRepoId: repo.githubRepoId,
         fullName: repo.fullName,
       })),
     )
     .onConflictDoUpdate({
       target: repos.githubRepoId,
-      set: { orgId, fullName: sql`excluded.full_name`, updatedAt: sql`now()` },
+      set: { orgId: installation.orgId, installationId: installation.id, fullName: sql`excluded.full_name`, updatedAt: sql`now()` },
     })
     .returning({ id: repos.id, defaultLevel: repos.defaultLevel, enabled: repos.enabled, config: repos.config, configVersion: repos.configVersion })
 }

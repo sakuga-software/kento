@@ -265,7 +265,7 @@ export function createAuth(kit: UiKit) {
         session.set('orgId', first.org.id)
         log('info', 'auth.signed_in', {
           login: user.login,
-          orgs: decision.roles.map((r) => `${r.org.login}:${r.role}`),
+          orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`),
         })
         let done = redirect(localPath(returnTo ?? '/'))
         done.headers.append('Set-Cookie', signedIn)

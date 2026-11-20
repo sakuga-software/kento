@@ -142,7 +142,7 @@ export interface RunnerCounts {
 export interface SetupState {
   /** A review of the org is published on GitHub: the list is not shown again. */
   published: boolean
-  /** The installation of the App is suspended on GitHub. */
+  /** Every installation of the App in the org is suspended on GitHub. */
   suspended: boolean
   /** The repositories enabled on the Repos screen. */
   enabledRepos: number
@@ -582,7 +582,7 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
           select 1 from reviews join repos on repos.id = reviews.repo_id
           where repos.org_id = ${orgId} and reviews.published_at is not null
         ) as published,
-        (select suspended_at is not null from orgs where id = ${orgId}) as suspended,
+        not exists (select 1 from installations where org_id = ${orgId} and suspended_at is null) as suspended,
         (select count(*) from repos where org_id = ${orgId} and enabled) as "enabledRepos",
         (select count(*) from providers where org_id = ${orgId}) as providers,
         (select count(*) from runners where org_id is null and trusted and revoked_at is null) as "serviceRunners",
@@ -646,11 +646,11 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
 
     async retryTarget(orgId, jobId) {
       let [row] = await sql<{ installationId: string; githubRepoId: string; fullName: string; prNumber: number; headSha: string }[]>`
-        select orgs.github_installation_id as "installationId", repos.github_repo_id as "githubRepoId",
+        select installations.github_installation_id as "installationId", repos.github_repo_id as "githubRepoId",
           repos.full_name as "fullName", jobs.pr_number as "prNumber", jobs.head_sha as "headSha"
         from jobs
         join repos on repos.id = jobs.repo_id
-        join orgs on orgs.id = repos.org_id
+        join installations on installations.id = repos.installation_id
         where jobs.id = ${jobId} and repos.org_id = ${orgId} and jobs.state = 'failed' and jobs.kind = 'review'`
       if (!row) return null
       return {
@@ -690,8 +690,9 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
           from jobs
           join repos on repos.id = jobs.repo_id
           join orgs on orgs.id = repos.org_id
+          join installations on installations.id = repos.installation_id
           where jobs.id = ${jobId} and repos.org_id = ${orgId} and jobs.state = 'failed' and jobs.kind = 'review'
-            and repos.enabled and orgs.suspended_at is null
+            and repos.enabled and installations.suspended_at is null
           for update of repos`)
         if (!failed || failed.baseRef === null) return { kind: 'not_found' } as const
         // GitHub knows a push that Kentō did not get (a disabled repository, a lost delivery).

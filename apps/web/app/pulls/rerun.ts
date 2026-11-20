@@ -58,8 +58,8 @@ export async function rerunReview(
     >`
       select orgs.config as "orgConfig", repos.config as "repoConfig", repos.config_version as "configVersion",
         repos.default_level as "defaultLevel", orgs.daily_cap_usd as "dailyCapUsd", orgs.monthly_cap_usd as "monthlyCapUsd"
-      from repos join orgs on orgs.id = repos.org_id
-      where repos.id = ${input.repoId} and repos.org_id = ${input.orgId} and repos.enabled and orgs.suspended_at is null
+      from repos join orgs on orgs.id = repos.org_id join installations on installations.id = repos.installation_id
+      where repos.id = ${input.repoId} and repos.org_id = ${input.orgId} and repos.enabled and installations.suspended_at is null
       for update of repos`
     if (!repo) return { kind: 'not_found' } as const
     let [last] = await tx<{ headSha: string; baseRef: string | null }[]>`

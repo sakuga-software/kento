@@ -46,16 +46,33 @@ function resultFinding(name: Name, line: number) {
   }
 }
 
+/**
+ * KNT-150. The org of the fake GitHub and its one installation, once: a second call changes nothing.
+ * Returns the id of the org and of the installation.
+ */
+export async function seedFakeOrg(sql: postgres.Sql): Promise<{ orgId: string; installationId: string }> {
+  let [known] = await sql<{ orgId: string; installationId: string }[]>`
+    select org_id as "orgId", id as "installationId" from installations where github_installation_id = ${FAKE_ORG.installationId}`
+  if (known) return known
+  let [row] = await sql<{ orgId: string; installationId: string }[]>`
+    with org as (
+      insert into orgs (name, slug) values (${FAKE_ORG.login}, ${FAKE_ORG.login.toLowerCase()})
+      on conflict (slug) do update set name = excluded.name
+      returning id
+    )
+    insert into installations (org_id, github_installation_id, github_account_id, account_login)
+    select id, ${FAKE_ORG.installationId}, ${FAKE_ORG.accountId}, ${FAKE_ORG.login} from org
+    on conflict (github_installation_id) do update set account_login = excluded.account_login
+    returning org_id as "orgId", id as "installationId"`
+  return row!
+}
+
 /** Writes orchard #142 (and its org and repository) once; a second call changes nothing. */
 export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<Seeded> {
-  let [org] = await sql<{ id: string }[]>`
-    insert into orgs (github_installation_id, github_account_id, login)
-    values (${FAKE_ORG.installationId}, ${FAKE_ORG.accountId}, ${FAKE_ORG.login})
-    on conflict (github_installation_id) do update set login = excluded.login
-    returning id`
+  let org = await seedFakeOrg(sql)
   let [repo] = await sql<{ id: string }[]>`
-    insert into repos (org_id, github_repo_id, full_name, enabled)
-    values (${org!.id}, ${PULL_REPO.githubRepoId}, ${PULL_REPO.fullName}, true)
+    insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+    values (${org.orgId}, ${org.installationId}, ${PULL_REPO.githubRepoId}, ${PULL_REPO.fullName}, true)
     on conflict (github_repo_id) do update set enabled = true
     returning id`
   let repoId = repo!.id
@@ -63,7 +80,7 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
   if (existing.length) {
     let ids = Object.fromEntries((Object.keys(FINDINGS) as Name[]).map((n) => [n, existing.find((e) => e.title === FINDINGS[n].title)!.id]))
     let reviews = await sql<{ id: string }[]>`select id from reviews where repo_id = ${repoId} and pr_number = ${PULL_NUMBER} order by created_at`
-    return { orgId: org!.id, repoId, findings: ids as Seeded['findings'], reviews: reviews.map((r) => r.id) }
+    return { orgId: org.orgId, repoId, findings: ids as Seeded['findings'], reviews: reviews.map((r) => r.id) }
   }
 
   let minutes = (m: number) => new Date(now - m * 60_000).toISOString()
@@ -116,5 +133,5 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
   await event('D', 1, 'opened', 'kento', null, 120.5)
   await event('C', null, 'dismissed', 'camille', 'False positive', 90)
   await event('D', null, 'wontfix', 'octocat', 'Off topic for this PR', 30)
-  return { orgId: org!.id, repoId, findings: ids, reviews }
+  return { orgId: org.orgId, repoId, findings: ids, reviews }
 }

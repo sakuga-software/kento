@@ -70,7 +70,7 @@ export function findingsActions(kit: UiKit) {
       let outcome = await setStatus({ orgId: signed.membership.org.id, ids: read.ids, status: read.status, reason: read.reason, actor: signed.user.login })
       log('info', 'findings.status_set', {
         login: signed.user.login,
-        org: signed.membership.org.login,
+        org: signed.membership.org.name,
         status: read.status,
         asked: read.ids.length,
         ...outcome,

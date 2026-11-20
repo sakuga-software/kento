@@ -93,15 +93,15 @@ describe('the runners of the Runners screen', () => {
     database = createDatabase(test.url, { max: 8 })
     admin = createRunnersAdminStore(database.sql)
     let [a] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (77, 2001, 'sakuga-software') returning id`
+      with org as (insert into orgs (name, slug) values ('sakuga-software', lower('sakuga-software')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 77, 2001, 'sakuga-software' from org returning org_id as id`
     let [b] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (78, 2002, 'orchard') returning id`
+      with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 78, 2002, 'orchard' from org returning org_id as id`
     org = a!.id
     otherOrg = b!.id
     let [r1] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${org}, 3001, 'sakuga-software/sakuga-review', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${org}, (select id from installations where org_id = ${org} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true) returning id`
     let [r2] = await database.sql<{ id: string }[]>`
-      insert into repos (org_id, github_repo_id, full_name, enabled) values (${otherOrg}, 3002, 'orchard/app', true) returning id`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${otherOrg}, (select id from installations where org_id = ${otherOrg} order by created_at limit 1), 3002, 'orchard/app', true) returning id`
     repo = r1!.id
     otherRepo = r2!.id
   })

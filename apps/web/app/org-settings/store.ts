@@ -19,8 +19,13 @@ export interface DeliveryView {
   receivedAt: Date
 }
 
-/** What the settings screen reads about an org. */
+/**
+ * What the settings screen reads about an org. `login`, `githubInstallationId`, `suspendedAt` and
+ * `deliveries` are those of one installation of the org: the oldest one that is not suspended, else
+ * the oldest one (KNT-150: an org can hold several).
+ */
 export interface OrgSettingsView {
+  /** The login of the GitHub account of the installation. */
   login: string
   githubInstallationId: number
   suspendedAt: Date | null
@@ -109,13 +114,20 @@ export function createOrgSettingsStore({ sql, db }: Pick<Database, 'sql' | 'db'>
           enabled: number
         }[]
       >`
-        select orgs.login, orgs.github_installation_id as "installationId", orgs.suspended_at as "suspendedAt",
-          orgs.daily_cap_usd as "dailyCapUsd", orgs.monthly_cap_usd as "monthlyCapUsd", orgs.cap_alert_pct as "alertPct",
+        select installations.account_login as login, installations.github_installation_id as "installationId",
+          installations.suspended_at as "suspendedAt", orgs.daily_cap_usd as "dailyCapUsd", orgs.monthly_cap_usd as "monthlyCapUsd", orgs.cap_alert_pct as "alertPct",
           orgs.trusted_bots as "trustedBots", orgs.config, orgs.settings_version as version,
           users.login as "updatedBy", orgs.settings_updated_at as "updatedAt",
           (select count(*)::int from repos where repos.org_id = orgs.id) as total,
           (select count(*)::int from repos where repos.org_id = orgs.id and repos.enabled) as enabled
-        from orgs left join users on users.id = orgs.settings_updated_by
+        from orgs
+        join lateral (
+          select account_login, github_installation_id, suspended_at from installations
+          where installations.org_id = orgs.id
+          order by suspended_at is not null, created_at, github_installation_id
+          limit 1
+        ) installations on true
+        left join users on users.id = orgs.settings_updated_by
         where orgs.id = ${orgId}`
       if (!row) return null
       let installationId = Number(row.installationId)
@@ -194,7 +206,8 @@ export function createOrgSettingsStore({ sql, db }: Pick<Database, 'sql' | 'db'>
     async trustedBotsFor(githubInstallationId) {
       if (githubInstallationId === null) return new Set(instance().defaultTrustedBots)
       let [row] = await sql<{ trustedBots: string[] }[]>`
-        select trusted_bots as "trustedBots" from orgs where github_installation_id = ${githubInstallationId}`
+        select orgs.trusted_bots as "trustedBots" from orgs join installations on installations.org_id = orgs.id
+        where installations.github_installation_id = ${githubInstallationId}`
       return new Set(row ? readTrustedBots(row.trustedBots) : instance().defaultTrustedBots)
     },
 

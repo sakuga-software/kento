@@ -44,7 +44,7 @@ describe('pulls store', () => {
   it('never finds the pull request from another org, nor one with no job', async () => {
     let store = createPullsStore(database.sql)
     let [other] = await database.sql<{ id: string }[]>`
-      insert into orgs (github_installation_id, github_account_id, login) values (99, 99, 'someone-else') returning id`
+      with org as (insert into orgs (name, slug) values ('someone-else', lower('someone-else')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 99, 99, 'someone-else' from org returning org_id as id`
     assert.equal(await store.summary(other!.id, seeded.repoId, PULL_NUMBER), null)
     assert.equal(await store.summary(seeded.orgId, seeded.repoId, 999), null)
     assert.equal(await store.summary(seeded.orgId, 'not-a-uuid', PULL_NUMBER), null)
@@ -127,7 +127,7 @@ describe('pulls store', () => {
     )
     assert.equal(moved.rule, null)
     assert.equal(moved.githubCommentId, 914201)
-    let [other] = await database.sql<{ id: string }[]>`select id from orgs where login = 'someone-else'`
+    let [other] = await database.sql<{ id: string }[]>`select id from orgs where slug = 'someone-else'`
     assert.equal(await store.finding(other!.id, seeded.findings.A), null)
   })
 
