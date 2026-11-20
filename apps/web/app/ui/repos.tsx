@@ -311,6 +311,8 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </div>
         </details>
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
+        {/* KNT-147: "Enable" and "Disable" change the row in place, with no reload and no jump. */}
+        {admin ? <script src={`/assets/repo-toggle.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
         {/* REV-91: the menus "…" of the rows close on Escape and on a click outside. */}
         <script src={`/assets/row-menu.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>

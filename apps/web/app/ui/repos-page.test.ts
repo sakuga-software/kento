@@ -185,10 +185,13 @@ describe('the Repos screen', () => {
     assert.match(admin, new RegExp(`action="/repos/${ORCHARD}/enable"`))
     assert.match(admin, new RegExp(`action="/repos/${FRUITBACK}/disable"`))
     assert.match(admin, /action="\/repos\/check"/)
+    // KNT-147: the script that changes a row in place, after confirm.js, for an admin only.
+    assert.equal(admin.match(/src="\/assets\/repo-toggle\.js\?v=1\.2\.3"/g)?.length, 1)
+    assert.ok(admin.indexOf('/assets/confirm.js') < admin.indexOf('/assets/repo-toggle.js'))
 
     let member = (await signIn(CAMILLE)).html
     assert.match(member, /Read only<\/strong>/)
-    assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation/)
+    assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation|repo-toggle\.js/)
   })
 
   it('enables a repository for an admin, with CSRF, and says what the next push does', async () => {

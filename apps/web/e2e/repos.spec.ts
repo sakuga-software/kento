@@ -377,6 +377,74 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('"Enable" and "Disable" change the row in place: no reload, no jump, the focus stays in the row, an error in the row (KNT-147)', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      await sql`
+        insert into repos (org_id, github_repo_id, full_name, enabled, workflow)
+        select org_id, 890000 + g, 'sakuga-software/zz-' || lpad(g::text, 2, '0'), false, 'none'
+        from repos, generate_series(1, 20) g where full_name = 'sakuga-software/orchard'`
+      // One page of 20 rows, whatever the other tests added to the org.
+      await page.goto('/repos?q=zz-')
+      // A row far down the page: the case of the ticket.
+      let row = rowOf(page, 'zz-18')
+      await row.scrollIntoViewIfNeeded()
+      await page.evaluate(() => window.scrollBy(0, -120))
+      let y = await page.evaluate(() => window.scrollY)
+      expect(y).toBeGreaterThan(200)
+      // A mark on the window: a reload would lose it.
+      await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
+
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
+      row = rowOf(page, 'zz-18')
+      await expect(row.locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toHaveCount(0)
+      expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+      // The enabled rows come first: the row moved up, but the page did not scroll.
+      expect(Math.abs((await page.evaluate(() => window.scrollY)) - y)).toBeLessThan(4)
+      await expect(row.locator('.row-menu > summary')).toBeFocused()
+
+      // Disable, in place too: the row goes back to "none", with its "Enable" focused.
+      await row.locator('.row-menu > summary').click()
+      await row.locator('summary', { hasText: 'Disable' }).click()
+      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is disabled.' })).toBeAttached()
+      row = rowOf(page, 'zz-18')
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeFocused()
+      expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+
+      // The server refuses: the row says so, and stays as it was; a second try works.
+      let refuse = true
+      await page.route('**/repos/*/enable*', (route) => (refuse ? route.fulfill({ status: 500, body: 'no' }) : route.continue()))
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
+      await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeVisible()
+      refuse = false
+      await row.getByRole('button', { name: 'Enable zz-18' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
+      await expect(rowOf(page, 'zz-18').getByRole('alert')).toHaveCount(0)
+      await page.unroute('**/repos/*/enable*')
+
+      // The network is gone: the row says so.
+      row = rowOf(page, 'zz-18')
+      await row.locator('.row-menu > summary').click()
+      await row.locator('summary', { hasText: 'Disable' }).click()
+      await page.route('**/repos/*/disable*', (route) => route.abort())
+      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await expect(row.getByRole('alert')).toHaveText('Kentō could not be reached. Check the connection, then try again.')
+      await page.unroute('**/repos/*/disable*')
+      await expectNoAxeViolations(page)
+      expect(errors.filter((error) => !/Failed to load resource|net::ERR_FAILED/.test(error))).toEqual([])
+    } finally {
+      await sql`delete from repos where github_repo_id between 890001 and 890020`
+      await sql.end()
+    }
+  })
+
   test('a member reads the list under "Read only", with no action', async ({ page }) => {
     await signIn(page, 'camille')
     await page.goto('/repos')
@@ -405,6 +473,22 @@ test.describe('the Repos screen', () => {
 
 test.describe('the Repos screen without JavaScript', () => {
   test.use({ javaScriptEnabled: false })
+
+  test('"Enable" posts the form and comes back to the row, with no script (KNT-147)', async ({ page, browser, baseURL }) => {
+    await reset()
+    let reader = await browser.newContext({ baseURL, javaScriptEnabled: true })
+    let readerPage = await reader.newPage()
+    await signIn(readerPage, 'octocat')
+    await checkNow(readerPage)
+    await reader.close()
+
+    await signIn(page, 'octocat')
+    await page.goto('/repos')
+    await rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' }).click()
+    await expect(page).toHaveURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-[0-9a-f-]+$/)
+    await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
+    await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
+  })
 
   test('the menu "…" of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
     // The list comes from GitHub: read once in a browser with JavaScript, which waits for it.

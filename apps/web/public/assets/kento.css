@@ -973,6 +973,18 @@ select.bar-org-box:hover {
   width: 16px;
   height: 16px;
 }
+/* KNT-147. A row on its way to the server, and the error of its change, in its action cell. */
+.repos-table tr[aria-busy='true'] .row-action {
+  opacity: 0.6;
+  cursor: progress;
+}
+.row-error {
+  margin: var(--space-1) 0 0;
+  color: var(--shu);
+  font: 400 var(--text-xs) / var(--leading-xs) var(--font-ui);
+  white-space: normal;
+  text-align: inherit;
+}
 /* KNT-146. The icons of the Repos screen: the magnifier in the search, the icons of a row. */
 .list-search {
   position: relative;
