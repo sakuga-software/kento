@@ -24,7 +24,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
-- The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser.
+- The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
+  their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
   org and of the service with their state, version, last call and jobs; registration tokens
   (`kento_reg_…`, shown once, one use, one hour, kept as a hash); trust and revocation for an admin.
