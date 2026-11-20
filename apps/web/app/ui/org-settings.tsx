@@ -1,7 +1,7 @@
 import type { Handle } from 'remix/component'
 
-import { levelCost } from '@sakuga-review/engine/levels'
-import { LEVELS, type Level } from '@sakuga-review/protocol'
+import { levelCost } from '@kento/engine/levels'
+import { LEVELS, type Level } from '@kento/protocol'
 
 import { mention } from '../instance.ts'
 import type { AppStatus } from '../org-settings/app-status.ts'

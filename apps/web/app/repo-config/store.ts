@@ -1,4 +1,4 @@
-import { UUID as LOWER_UUID, type Level } from '@sakuga-review/protocol'
+import { UUID as LOWER_UUID, type Level } from '@kento/protocol'
 
 import type { Database } from '../db/client.ts'
 import { readRepoMonthCost } from '../db/costs.ts'
