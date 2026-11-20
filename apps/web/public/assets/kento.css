@@ -534,10 +534,9 @@ kbd,
 
 /* ---------------------------------------------------------------- Frame of the app */
 
-/* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */
 /* KNT-144. The bar at the top of the window while the next page loads (public/assets/progress.js), in
-   the spirit of nprogress. It waits 120 ms, so a fast page shows none, then grows fast and slows
-   down near 90 %: the next page replaces it. */
+   the spirit of nprogress. The script adds it after 120 ms, so a fast page shows none. It grows fast,
+   then slows down near 90 %: the next page replaces it. */
 .nav-progress {
   position: fixed;
   inset: 0 0 auto;
@@ -547,7 +546,7 @@ kbd,
   box-shadow: 0 0 6px var(--shu);
   transform-origin: left center;
   pointer-events: none;
-  animation: nav-progress 12s cubic-bezier(0.1, 0.6, 0.2, 1) 120ms both;
+  animation: nav-progress 12s cubic-bezier(0.1, 0.6, 0.2, 1) forwards;
 }
 @keyframes nav-progress {
   0% {
@@ -570,6 +569,7 @@ kbd,
   }
 }
 
+/* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */
 .bar {
   position: relative;
   z-index: 20;

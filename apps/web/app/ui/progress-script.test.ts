@@ -54,6 +54,7 @@ interface FakeEvent {
   altKey?: boolean
   submitter?: FakeElement | null
   persisted?: boolean
+  key?: string
 }
 
 /** Runs the script on a fake page. `bars()` counts the bars in the body; `run()` fires the timers. */
@@ -94,13 +95,14 @@ function load() {
   }
   let click = (attributes: Record<string, string>, event: Partial<FakeEvent> = {}) => {
     fire('click', { target: new FakeLink(attributes), defaultPrevented: false, button: 0, ...event })
-    run()
+    run(120)
   }
   let submit = (attributes: Record<string, string>, event: Partial<FakeEvent> = {}) => {
     fire('submit', { target: new FakeForm(attributes), defaultPrevented: false, submitter: null, ...event })
-    run()
+    run(120)
   }
-  return { bars: () => body.filter((element) => (element as unknown as { className: string }).className === 'nav-progress').length, click, submit, fire, run }
+  let found = () => body.filter((element) => (element as unknown as { className: string }).className === 'nav-progress')
+  return { bars: () => found().length, bar: () => found()[0], click, submit, fire, run }
 }
 
 describe('the bar of a navigation (KNT-144)', () => {
@@ -108,8 +110,45 @@ describe('the bar of a navigation (KNT-144)', () => {
     let page = load()
     page.click({ href: '/findings' })
     assert.equal(page.bars(), 1)
+    let first = page.bar()
     page.click({ href: '/runners' })
-    assert.equal(page.bars(), 1, 'a second click replaces the bar')
+    page.submit({ method: 'post' })
+    assert.equal(page.bars(), 1)
+    assert.equal(page.bar(), first, 'a second click or submit keeps the bar where it is, never back to 0')
+  })
+
+  it('shows nothing for a page that comes within 120 ms, with or without motion (the delay is in the script)', () => {
+    let page = load()
+    page.fire('click', { target: new FakeLink({ href: '/findings' }), defaultPrevented: false, button: 0 })
+    page.run(0)
+    page.run(119)
+    assert.equal(page.bars(), 0)
+    page.run(120)
+    assert.equal(page.bars(), 1)
+
+    // The next page came before 120 ms: back from the cache of the browser, nothing shows.
+    let fast = load()
+    fast.fire('click', { target: new FakeLink({ href: '/findings' }), defaultPrevented: false, button: 0 })
+    fast.run(0)
+    fast.fire('pageshow', { target: null, defaultPrevented: false, persisted: true })
+    fast.run(120)
+    assert.equal(fast.bars(), 0)
+  })
+
+  it('takes the bar away on Escape, which stops the loading of the page', () => {
+    let page = load()
+    page.click({ href: '/findings' })
+    assert.equal(page.bars(), 1)
+    page.fire('keydown', { target: null, defaultPrevented: false, key: 'Enter' } as FakeEvent)
+    assert.equal(page.bars(), 1)
+    page.fire('keydown', { target: null, defaultPrevented: false, key: 'Escape' } as FakeEvent)
+    assert.equal(page.bars(), 0)
+    // Escape before the 120 ms: no bar later.
+    page.fire('click', { target: new FakeLink({ href: '/findings' }), defaultPrevented: false, button: 0 })
+    page.run(0)
+    page.fire('keydown', { target: null, defaultPrevented: false, key: 'Escape' } as FakeEvent)
+    page.run(120)
+    assert.equal(page.bars(), 0)
   })
 
   it('shows none for a link that this window does not follow to another page', () => {

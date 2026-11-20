@@ -1,26 +1,37 @@
 // KNT-144. A thin bar at the top of the window while the next page loads, in the spirit of
 // nprogress: a click on a link to another page of Kentō, or the submit of a form. Every screen is a
-// whole page from the server, so the bar lives until the browser shows the next page. The motion is
-// in kento.css (.nav-progress), and it stops under prefers-reduced-motion.
+// whole page from the server, so the bar lives until the browser shows the next page. It shows after
+// 120 ms only, so a fast page shows none, with or without motion. The motion is in kento.css
+// (.nav-progress), and it stops under prefers-reduced-motion.
 // Its names stay in a block: the scripts of a page share one global scope.
 {
+  const DELAY = 120
   let bar = null
-  let timer = 0
+  let pending = 0
+  let watchdog = 0
 
   const stop = () => {
-    clearTimeout(timer)
+    clearTimeout(pending)
+    clearTimeout(watchdog)
+    pending = 0
     bar?.remove()
     bar = null
   }
 
-  const start = () => {
-    stop()
+  const show = () => {
+    pending = 0
     bar = document.createElement('div')
     bar.className = 'nav-progress'
     bar.setAttribute('aria-hidden', 'true')
     document.body.append(bar)
-    // A navigation that never ends (a download, Escape, a server that does not answer) leaves no bar.
-    timer = setTimeout(stop, 30000)
+  }
+
+  // A second click or submit while the page loads keeps the bar where it is.
+  const start = () => {
+    if (!bar && !pending) pending = setTimeout(show, DELAY)
+    // A navigation that never ends (a download, a server that does not answer) leaves no bar.
+    clearTimeout(watchdog)
+    watchdog = setTimeout(stop, 30000)
   }
 
   // True for a link that this window follows to another page of Kentō.
@@ -50,6 +61,11 @@
     setTimeout(() => {
       if (!event.defaultPrevented) start()
     })
+  })
+
+  // Escape stops the loading of the page in the browsers: the bar goes too.
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') stop()
   })
 
   // Back to this page from the cache of the browser: the bar of the click that left it goes away.
