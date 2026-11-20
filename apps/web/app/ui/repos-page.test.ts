@@ -186,8 +186,8 @@ describe('the Repos screen', () => {
     let labs = { id: 'installation-3', githubInstallationId: 13, githubAccountId: 902, login: 'acme-labs' }
     let { signIn } = setup(null, [{ ...ORG, installations: [...ORG.installations, labs] }, OTHER_ORG])
     let html = (await signIn(OCTOCAT)).html
-    assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"[^>]*>Manage sakuga-software on GitHub/)
-    assert.match(html, /href="https:\/\/github\.com\/organizations\/acme-labs\/settings\/installations\/13"[^>]*>Manage acme-labs on GitHub/)
+    assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"[^>]*>(?:<svg.*?<\/svg>)?Manage sakuga-software on GitHub/)
+    assert.match(html, /href="https:\/\/github\.com\/organizations\/acme-labs\/settings\/installations\/13"[^>]*>(?:<svg.*?<\/svg>)?Manage acme-labs on GitHub/)
   })
 
   it('gives an admin "Enable", "Disable" and "Read GitHub again", and a member none of them', async () => {
