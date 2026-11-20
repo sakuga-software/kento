@@ -40,21 +40,28 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
 
 ### Sign-in, sessions and roles (`app/auth/`)
 
-- `GET /login`, then `GET /login/github`, then GitHub, then `GET /auth/github/callback`: the user authorization of
-  the GitHub App, authorization code with PKCE and `state`. The user token reads `GET /user` once and
-  is dropped.
+- KNT-150: [Better Auth](https://www.better-auth.com) (`app/auth/better-auth.ts`) runs the
+  sign-in and the sessions. Its HTTP API is not mounted: only the callback of GitHub reaches its
+  handler, and the forms of Kentō call it on the server.
+- `GET /login`, then `GET /login/github`, then GitHub, then `GET /auth/github/callback` (the callback
+  URL of the App, as before): the user authorization of the GitHub App, authorization code with
+  PKCE and `state` (in `verifications`, 10 minutes). The user token reads `GET /user` once and is
+  dropped: `accounts` holds no token, and a check of the table refuses one.
 - The role comes from GitHub, never from Kentō: `GET /orgs/{org}/memberships/{login}` with an
   installation token limited to `members: read`. `admin` edits, `member` reads (the "Read only"
   banner), `pending` or absent gets nothing. The owner of a personal account is its admin. In an org
   of several installations, the role is the highest that their accounts give. Someone in none of
   the orgs of the App is refused, and nothing is written. The role is read again after 10
   minutes; while GitHub fails, the last one holds 1 hour, then the access ends.
-- Sessions in Postgres (`sessions`): a random id in a signed cookie (`__Host-kento_session`, HttpOnly,
-  Secure, SameSite=Lax, 7 days), only its SHA-256 in the table. A new id at the sign-in, the row
-  deleted at sign-out. A visit writes nothing: only a signed-in session or a sign-in on its way (10
-  minutes) has a row. Expired rows leave every hour.
+- Sessions in Postgres (`sessions`): a random token in a signed cookie (`__Secure-kento_session`,
+  HttpOnly, Secure, SameSite=Lax, no Domain, 7 days from the sign-in, never longer), only its
+  SHA-256 in the table (`token_hash`). A new session at each sign-in, and the row of the one before
+  goes; the row is deleted at sign-out. A visit writes nothing. Expired sessions and sign-ins leave
+  every hour. A user's e-mail is `<github id>@users.github.invalid`: Better Auth needs one, the App
+  reads none, and Kentō never sends mail.
 - Forms: `cop()` (Sec-Fetch-Site, Origin) and the CSRF token of the session (`csrf()`, the hidden
-  `_csrf` field). The webhook and the runner API are outside of it.
+  `_csrf` field): an HMAC of the session id with the session secret, never stored. The webhook and
+  the runner API are outside of it.
 - Logs: `auth.signed_in`, `auth.sign_in_refused`, `auth.sign_in_failed`, `auth.signed_out`,
   `auth.access_lost`, `auth.role_check_failed`, `sessions.swept`. No token or secret.
 - REV-9, REV-10, REV-13, REV-14 and REV-18 fill the screens; each one is an empty "Soon here"

@@ -323,7 +323,8 @@ export function createAuth(kit: UiKit) {
         // keeps nothing of it: its row goes.
         if (previous) await auth.store.deleteSession(previous.sessionId)
         let done = withCookiesOf(answer.headers, localPath(`${location.pathname}${location.search}`))
-        if (hasRefused(context.headers.get('Cookie'))) done.headers.append('Set-Cookie', await clearRefused())
+        // The login of an earlier refusal has no use now.
+        if (refusedCookie) done.headers.append('Set-Cookie', await clearRefused())
         return done
       },
     },

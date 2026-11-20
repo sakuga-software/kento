@@ -20,8 +20,8 @@ export const OCTOCAT: GitHubProfile = { id: 1, login: 'octocat', name: 'Octocat'
 export const CAMILLE: GitHubProfile = { id: 2, login: 'camille', name: null, avatarUrl: null }
 export const STRANGER: GitHubProfile = { id: 3, login: 'stranger', name: null, avatarUrl: null }
 
-/** The name of the session cookie over plain HTTP (the tests of the routes run on http://localhost). */
-export const SESSION_COOKIE = 'kento_session'
+/** The name of the session cookie of Better Auth on the https service of the tests. */
+export const SESSION_COOKIE = '__Secure-kento_session'
 
 /**
  * The sign-in with a fake GitHub, Better Auth on a store in memory, and a clock that the test moves.
@@ -36,6 +36,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let roles = new Map<string, OrgRole | null | 'error'>()
   let memberships = new Map<string, { role: OrgRole; checkedAt: Date }>()
   let lookups: string[] = []
+  /** The code exchanges that the fake GitHub received, as GitHub checks them. */
+  let exchanges: { code: string; codeVerifier: string | null; redirectUri: string }[] = []
   let profile: GitHubProfile = OCTOCAT
   // The tables of Better Auth, in memory, under the model names of Kentō.
   let tables: Record<string, Record<string, unknown>[]> = { users: [], accounts: [], sessions: [], verifications: [] }
@@ -98,9 +100,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     clientSecret: 'client-secret-for-the-tests',
     authorizationUrl: 'https://github.test/login/oauth/authorize',
     tokenUrl: 'https://github.test/login/oauth/access_token',
-    redirectUri: new URL('/auth/github/callback', options.publicUrl ?? 'http://localhost'),
-    async exchangeCode({ code }) {
-      if (code !== 'good') throw new Error('GitHub refused the code: 400 bad_verification_code')
+    redirectUri: new URL('/auth/github/callback', options.publicUrl ?? 'https://review.test'),
+    async exchangeCode(exchange) {
+      exchanges.push(exchange)
+      if (exchange.code !== 'good') throw new Error('GitHub refused the code: 400 bad_verification_code')
       return { accessToken: 'gho_user_token' }
     },
     async readProfile() {
@@ -108,7 +111,7 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     },
   }
 
-  let publicUrl = new URL(options.publicUrl ?? 'http://localhost')
+  let publicUrl = new URL(options.publicUrl ?? 'https://review.test')
   let sessionSecrets = ['a-session-secret-for-the-tests-0123456789']
   let deps: AuthDependencies = {
     publicUrl,
@@ -125,6 +128,7 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     tables,
     memberships,
     lookups,
+    exchanges,
     /** The users that Better Auth wrote. */
     get users() {
       return tables.users!

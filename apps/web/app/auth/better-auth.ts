@@ -83,8 +83,12 @@ export function createKentoAuth(options: KentoAuthOptions) {
     trustedOrigins: [options.publicUrl.origin],
     telemetry: { enabled: false },
     logger: {
-      log(level: 'debug' | 'info' | 'success' | 'warn' | 'error', message: string) {
-        if (level === 'warn' || level === 'error') log(level, 'auth.better_auth', { message })
+      // The message, and the message of an error that comes with it: never the other arguments,
+      // which can hold a row or a request.
+      log(level: 'debug' | 'info' | 'success' | 'warn' | 'error', message: string, ...args: unknown[]) {
+        if (level !== 'warn' && level !== 'error') return
+        let error = args.find((arg) => arg instanceof Error)
+        log(level, 'auth.better_auth', { message, ...(error ? { error: errorMessage(error) } : {}) })
       },
     },
     database: (adapterOptions: BetterAuthOptions) => hashSessionTokens(options.database(adapterOptions)),
@@ -101,7 +105,9 @@ export function createKentoAuth(options: KentoAuthOptions) {
       // which an account may not have, is `githubName`.
       fields: { name: 'login', image: 'avatarUrl' },
       additionalFields: {
-        githubId: { type: 'number', required: true, input: false },
+        // Set by the hooks of the user from the profile of the sign-in, never from a request (the
+        // column is not null).
+        githubId: { type: 'number', required: false, input: false },
         githubName: { type: 'string', required: false, input: false, fieldName: 'name' },
       },
       // The gate of the sign-in: GitHub counts the person in an org of the App. Anyone else is
@@ -109,7 +115,8 @@ export function createKentoAuth(options: KentoAuthOptions) {
       async validateUserInfo(data: { user: Record<string, unknown> }) {
         let scope = signInScope.getStore()
         let profile = scope?.profile
-        if (!scope || !profile || data.user.githubId !== profile.id) return { error: 'failed' }
+        // The identity that Better Auth checks is the one that this sign-in read on GitHub.
+        if (!scope || !profile || data.user.email !== githubEmail(profile.id)) return { error: 'failed' }
         let decision = await decideSignIn(store, lookupRole, profile)
         scope.decision = decision
         if (decision.kind === 'allowed') return
@@ -134,6 +141,11 @@ export function createKentoAuth(options: KentoAuthOptions) {
     },
     verification: { modelName: 'verifications' },
     databaseHooks: {
+      user: {
+        // The GitHub id and name of the person, from the profile that this sign-in read.
+        create: { before: async (user: Record<string, unknown>) => withProfile(user) },
+        update: { before: async (user: Record<string, unknown>) => withProfile(user) },
+      },
       account: {
         create: { before: async (account: Record<string, unknown>) => ({ data: withoutTokens(account) }) },
         update: { before: async (account: Record<string, unknown>) => ({ data: withoutTokens(account) }) },
@@ -174,8 +186,10 @@ export function createKentoAuth(options: KentoAuthOptions) {
             scopes: [],
             authorizationUrlParams: { allow_signup: 'false' },
             accountSubject: ({ profile }: { profile: Record<string, unknown> }) => String(profile.id),
-            getToken: ({ code, codeVerifier, redirectURI }: { code: string; codeVerifier?: string; redirectURI: string }) =>
-              github.exchangeCode({ code, codeVerifier: codeVerifier ?? null, redirectUri: redirectURI }),
+            // The redirect_uri of the exchange must be the one of the authorization: the callback URL
+            // of the App, not the path of Better Auth that it passes here.
+            getToken: ({ code, codeVerifier }: { code: string; codeVerifier?: string }) =>
+              github.exchangeCode({ code, codeVerifier: codeVerifier ?? null, redirectUri: github.redirectUri.href }),
             async getUserInfo(tokens: { accessToken?: string }) {
               if (!tokens.accessToken) return null
               let profile: GitHubProfile
@@ -195,14 +209,6 @@ export function createKentoAuth(options: KentoAuthOptions) {
                 image: profile.avatarUrl ?? undefined,
               }
             },
-            mapProfileToUser(profile: Record<string, unknown>) {
-              let scope = signInScope.getStore()
-              let known = scope?.profile
-              return {
-                githubId: Number(profile.id),
-                githubName: known?.name ?? null,
-              }
-            },
             // The login, the name and the avatar follow GitHub at each sign-in.
             overrideUserInfo: true,
           },
@@ -216,10 +222,31 @@ export function createKentoAuth(options: KentoAuthOptions) {
 
 export type KentoAuth = ReturnType<typeof createKentoAuth>
 
-/** The columns of an account that could hold a secret of GitHub. Kentō writes none of them. */
+/**
+ * The GitHub fields of a user that Better Auth writes, from the profile of the sign-in in progress.
+ * A write outside of a sign-in (there is none today) changes nothing of them.
+ */
+function withProfile(user: Record<string, unknown>) {
+  let profile = signInScope.getStore()?.profile
+  if (!profile) return { data: user }
+  return { data: { ...user, githubId: profile.id, githubName: profile.name } }
+}
+
+/**
+ * The columns of an account that could hold a secret of GitHub. Kentō writes none of them. Better
+ * Auth merges the answer of a hook into the row, so each one is set to null, not left out.
+ */
 function withoutTokens(account: Record<string, unknown>): Record<string, unknown> {
-  let { accessToken: _a, refreshToken: _r, idToken: _i, accessTokenExpiresAt: _e, refreshTokenExpiresAt: _f, password: _p, scope: _s, ...rest } = account
-  return rest
+  return {
+    ...account,
+    accessToken: null,
+    refreshToken: null,
+    idToken: null,
+    accessTokenExpiresAt: null,
+    refreshTokenExpiresAt: null,
+    scope: null,
+    password: null,
+  }
 }
 
 type Adapter = ReturnType<ReturnType<typeof drizzleAdapter>>

@@ -111,7 +111,7 @@ Make each secret with `openssl rand -hex 32` for the webhook, registration and s
 | `KENTO_PUBLIC_URL` | for the sign-in | `https://kento.example.com` | The origin as the browser sees it: the callback URL, the expected `Origin` of a form, the `Secure` cookie. `http://` only on `localhost` or `127.0.0.1`. Also the link to the Config screen in the comment of a failed job, the page of the commands and the icons of the texts on GitHub. |
 | `GITHUB_APP_CLIENT_ID` | for the sign-in | `Iv23li…` | The client of the user authorization. |
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | from section 3 | A secret. |
-| `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | Signs the session cookie; 32 characters or more. Comma-separated during a rotation (section 9). A secret. |
+| `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | The first one signs the session cookie and the state of a sign-in, and keys the CSRF tokens; 32 characters or more. A new first one signs everybody out (section 9). A secret. |
 | `KENTO_SECRETS_KEY` | to store provider keys | 44 base64 characters | The master key of the keys of the providers (AES-256-GCM). Without it, the Settings screen stores no key (`startup.secrets_disabled`). See [SECURITY.md](../../SECURITY.md#the-master-key). A secret. |
 | `KENTO_PROVIDER_API_KEY` | no | an OpenRouter key | The key of the service, for the jobs of an org that has no provider. Sent with a job only to a trusted runner of the service with no key of its own, never to a runner of an org. A secret. |
 
@@ -269,9 +269,9 @@ previous release runs on the newer schema. Read the entry of the release in
 - **Webhook secret**: a new value in the environment, deploy, then the same value in the App
   settings, one right after the other. The deliveries in between get 401: redeliver them from
   **Recent Deliveries**.
-- **Session secret**: put the new one first and keep the old one after a comma
-  (`KENTO_SESSION_SECRET=<new>,<old>`), deploy, and remove the old one 7 days later. Removing it at
-  once signs everybody out: that is the way to end every session now.
+- **Session secret**: since KNT-150, Better Auth signs the session cookie with the first secret
+  only. A new first secret signs everybody out: each person signs in again with one click on
+  GitHub, and keeps their rights. That is also the way to end every session now.
 - **Master key of the provider keys**: [SECURITY.md](../../SECURITY.md#the-master-key)
   (`KENTO_SECRETS_PREVIOUS_KEYS`, then `node app/providers/rotate-keys.ts --apply`).
 - **Private key of the App**: generate a new key in the App settings, put it in the environment,

@@ -71,7 +71,7 @@ describe('the config of a repository against Postgres', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews, resolutions, users, runners cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (1, 'octocat', '1@users.github.invalid') returning id`
     userId = user!.id
     changedFiles = null
     listed = 0

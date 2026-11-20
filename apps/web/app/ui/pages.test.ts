@@ -1,16 +1,18 @@
+import { createHash } from 'node:crypto'
+
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { SESSION_TTL_MS } from '../auth/better-auth.ts'
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { ICON_FILES, ICON_VERSION } from '@kento/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 
 const INSTALL_URL = 'https://github.com/apps/kento-review/installations/new'
 
@@ -42,10 +44,10 @@ function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
   async function signIn(profile = OCTOCAT, returnTo?: string) {
     auth.as(profile)
     let start = await request(`/login/github${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`)
-    assert.equal(start.status, 302)
+    assert.equal(start.status, 303)
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let pending = cookieOf(start, COOKIE)
-    assert.ok(pending, 'the start of the sign-in sets a session cookie')
+    let pending = cookiesOf(start)
+    assert.ok(pending, 'the start of the sign-in sets the cookie of its state')
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: pending })
     return { callback, pending, cookie: cookieOf(callback, COOKIE) }
   }
@@ -105,7 +107,7 @@ describe('the GitHub sign-in', () => {
     assert.match(html, /<span class="bar-org-box">sakuga-software<\/span>/)
     assert.doesNotMatch(html, /Read only/)
     assert.match(html, /action="\/logout"/)
-    assert.equal(auth.memberships.get('user-1/org-1')?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'admin')
   })
 
   it('shows "Read only" to a member', async () => {
@@ -122,9 +124,9 @@ describe('the GitHub sign-in', () => {
     let { callback, cookie } = await signIn(STRANGER)
 
     assert.equal(callback.headers.get('Location'), '/login?notice=not_member')
-    // The pending sign-in is dropped: the cookie is cleared, and there is no user.
-    assert.equal(cookie, `${COOKIE}=`)
-    assert.equal(auth.users.size, 0)
+    // No session and no user: the person never gets a session cookie.
+    assert.equal(cookie, null)
+    assert.equal(auth.users.length, 0)
     assert.equal((await request('/', { cookie })).status, 303)
     assert.match(await (await request('/login?notice=not_member')).text(), /Access refused\./)
   })
@@ -182,7 +184,7 @@ describe('the GitHub sign-in', () => {
   it('a new sign-in empties the cookie of an earlier refusal (REV-32)', async () => {
     let { request } = setup()
     let start = await request('/login/github?switch=1', { cookie: '__Host-kento_refused=leftover' })
-    assert.equal(start.status, 302)
+    assert.equal(start.status, 303)
     assert.match(start.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /Max-Age=0/)
     assert.equal((await request('/login/github')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
   })
@@ -211,7 +213,7 @@ describe('the GitHub sign-in', () => {
     let { callback } = await signIn(OCTOCAT)
 
     assert.equal(callback.headers.get('Location'), '/login?notice=failed')
-    assert.equal(auth.users.size, 0)
+    assert.equal(auth.users.length, 0)
   })
 
   it('refuses a callback with a wrong state or a refused code', async () => {
@@ -229,7 +231,7 @@ describe('the GitHub sign-in', () => {
       cookie: cookieOf(again, COOKIE),
     })
     assert.equal(badCode.headers.get('Location'), '/login?notice=failed')
-    assert.equal(auth.users.size, 0)
+    assert.equal(auth.users.length, 0)
     assert.ok(state)
   })
 
@@ -241,7 +243,7 @@ describe('the GitHub sign-in', () => {
     auth.as(CAMILLE)
     let start = await request('/login/github', { cookie: first.cookie })
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let pending = cookieOf(start, COOKIE) ?? first.cookie
+    let pending = [first.cookie, cookiesOf(start)].filter(Boolean).join('; ')
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: pending })
     let cookie = cookieOf(callback, COOKIE)!
 
@@ -252,6 +254,23 @@ describe('the GitHub sign-in', () => {
     assert.equal((await request('/', { cookie: first.cookie })).status, 303)
   })
 
+  it('KNT-150: trades the code with the redirect_uri and the PKCE verifier of the authorization', async () => {
+    let { auth, request } = setup()
+    auth.as(OCTOCAT)
+    let start = await request('/login/github')
+    let authorize = new URL(start.headers.get('Location')!)
+    assert.equal(authorize.origin + authorize.pathname, 'https://github.test/login/oauth/authorize')
+    assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256')
+    assert.equal(authorize.searchParams.get('allow_signup'), 'false')
+    let callback = await request(`/auth/github/callback?code=good&state=${authorize.searchParams.get('state')}`, { cookie: cookiesOf(start) })
+    assert.equal(callback.status, 303)
+    let [exchange] = auth.exchanges
+    assert.equal(exchange!.redirectUri, authorize.searchParams.get('redirect_uri'))
+    assert.equal(exchange!.redirectUri, 'https://review.test/auth/github/callback')
+    assert.equal(createHash('sha256').update(exchange!.codeVerifier!).digest('base64url'), authorize.searchParams.get('code_challenge'))
+    assert.ok(!authorize.href.includes(exchange!.codeVerifier!), 'the verifier never goes to the browser')
+  })
+
   it('gives a new session id at the sign-in', async () => {
     let { signIn } = setup()
     let { pending, cookie } = await signIn(OCTOCAT)
@@ -259,10 +278,9 @@ describe('the GitHub sign-in', () => {
   })
 
   it('sets a hardened session cookie', async () => {
-    let { auth, request } = setup()
-    auth.as(OCTOCAT)
-    let start = await request('/login/github')
-    let header = start.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
+    let { signIn } = setup()
+    let { callback } = await signIn(OCTOCAT)
+    let header = callback.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
     assert.match(header, /; Path=\//)
     assert.match(header, /; HttpOnly/)
     assert.match(header, /; Secure/)
@@ -365,7 +383,7 @@ describe('the role, from GitHub', () => {
 
     // She comes back to orchard: the session stays on the org it moved to.
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
-    await auth.deps.store.saveMembership('user-2', 'org-2', 'admin')
+    await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-2', 'admin')
     assert.match(await (await request('/', { cookie })).text(), /<option value="org-1" selected>sakuga-software<\/option>/)
   })
 
@@ -383,18 +401,18 @@ describe('the role, from GitHub', () => {
     let { signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
     let { cookie } = await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2')?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin')
 
     // GitHub fails for orchard at the next sign-in, and answers for sakuga-software.
     auth.clock.now += 60_000
     auth.setRole(OTHER_ORG, CAMILLE, 'error')
     await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2')?.role, 'admin', 'GitHub never said that camille left orchard')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin', 'GitHub never said that camille left orchard')
 
     // A "not a member" from GitHub does forget it.
     auth.setRole(OTHER_ORG, CAMILLE, null)
     await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2'), undefined)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`), undefined)
     assert.ok(cookie)
   })
 

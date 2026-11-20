@@ -56,7 +56,7 @@ describe('the preferences of a user and their screen', () => {
       insert into repos (org_id, installation_id, github_repo_id, full_name, enabled) values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${ORCHARD.id}, ${ORCHARD.full_name}, true) returning id`
     orchardId = orchard!.id
     let [user] = await sql<{ id: string }[]>`
-      insert into users (github_id, login, name) values (101, 'octocat', 'Alex Martin') returning id`
+      insert into users (github_id, login, name, email) values (101, 'octocat', 'Alex Martin', '101@users.github.invalid') returning id`
     octocat = user!.id
     await sql`insert into memberships (user_id, org_id, role) values (${octocat}, ${orgId}, 'admin')`
   })

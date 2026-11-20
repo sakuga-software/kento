@@ -19,7 +19,17 @@ Each entry says, when it applies:
 
 ## Unreleased
 
-- **Migrations**: 30. `0029_installations` (KNT-150) moves the GitHub App installation out of
+- **Migrations**: 31. `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
+  `users` gets the e-mail that Better Auth needs (`<github id>@users.github.invalid`, never mailed),
+  `accounts` the GitHub account of each user (no token, ever), `verifications` the state of a
+  sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and
+  keeps their rights (`memberships` stay). The GitHub App needs no change: the callback URL is the
+  same.
+- **Session cookie**: `__Secure-kento_session` (was `__Host-kento_session`), still HttpOnly,
+  SameSite=Lax, no Domain, 7 days.
+- **Variables**: `KENTO_SESSION_SECRET` signs with its first secret only; a new first secret signs
+  everybody out (DEPLOY.md, section 9).
+- **Migrations** (before it): `0029_installations` (KNT-150) moves the GitHub App installation out of
   `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
   org keeps its id, its settings and its members, and gets one installation with the same GitHub
   ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a

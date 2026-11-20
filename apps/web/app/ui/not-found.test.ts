@@ -3,7 +3,7 @@ import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { SESSION_TTL_MS } from '../auth/better-auth.ts'
-import { cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
+import { cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { spyStore, webhookDeps } from '../github/test-helpers.ts'
 import type { RepoConfigStore } from '../repo-config/store.ts'
 import { serviceProviders } from '../repo-config/providers.ts'
@@ -11,7 +11,7 @@ import { createAppRouter, type AppDependencies } from '../router.ts'
 import type { RunnerApiDependencies } from '../runner/controller.ts'
 import type { RunnerStore } from '../runner/store.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const UNKNOWN = '00000000-0000-4000-8000-000000000009'
 /** What a browser sends when it opens a page. */
 const BROWSER = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
@@ -60,7 +60,7 @@ function setup(overrides: Partial<AppDependencies> = {}) {
     auth.as(OCTOCAT)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request('/', { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''
