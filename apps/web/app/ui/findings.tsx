@@ -17,7 +17,7 @@ import { BULK_MAX, type BulkStatus } from '../findings/dismiss.ts'
 import { decodeCursor, REASON_MAX } from '../findings/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { PRECISION_DAYS, PRECISION_MIN, reasonText, type PrecisionReport } from '../findings/precision.ts'
-import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
+import { Button, Check, Input, Select, buttonClass } from './controls.tsx'
 import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
@@ -283,7 +283,7 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
                       {admin ? (
                         <th scope="col" class="finding-check">
                           {/* public/assets/findings.js shows it: without JavaScript, each row is checked by hand. */}
-                          <Choice type="checkbox" id="findings-all" data-select-all hidden aria-label="Select all the findings of the page" />
+                          <Check id="findings-all" data-select-all hidden aria-label="Select all the findings of the page" />
                         </th>
                       ) : null}
                       <th scope="col">Finding</th>
@@ -470,8 +470,7 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
         {select ? (
           <td class="finding-check">
             {row.status !== 'fixed' ? (
-              <Choice
-                type="checkbox"
+              <Check
                 name="ids"
                 value={row.id}
                 form={BULK_FORM}

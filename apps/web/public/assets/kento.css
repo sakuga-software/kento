@@ -356,7 +356,7 @@ kbd,
 }
 
 /* The controls of HeroUI (heroui.css) draw their own focus ring, in their own shape. */
-:focus-visible:where(:not(.button, .input, .textarea, .select__trigger)) {
+:focus-visible:where(:not(.button, .input, .textarea, .select__trigger, .check)) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
@@ -1389,8 +1389,8 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
 .finding-check {
   width: 18px;
 }
-.finding-check .choice {
-  padding: 0;
+.finding-check .check {
+  vertical-align: middle;
 }
 /* A checked row: a wash of indigo. */
 .findings-table tbody tr:has(input[name='ids']:checked) > * {

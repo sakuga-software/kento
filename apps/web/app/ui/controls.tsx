@@ -55,8 +55,9 @@ export function Textarea(handle: Handle<Props<'textarea'>>) {
 }
 
 /**
- * A native `<select>` in the trigger of HeroUI, with its chevron. `class` goes to the `<select>`;
- * `wrapperClass` goes to the box around it, for the layout of a screen.
+ * A native `<select>` in the trigger of HeroUI. The box around it draws the chevron in CSS (no SVG:
+ * the Findings screen has four selects in its filters). `class` goes to the `<select>`;
+ * `wrapperClass` goes to the box, for the layout of a screen.
  */
 export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string }>) {
   return () => {
@@ -66,9 +67,6 @@ export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string 
         <select {...rest} class={classes('select__trigger', extra as string | undefined)}>
           {children}
         </select>
-        <svg class="select__indicator" data-slot="select-default-indicator" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
-          <path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
       </span>
     )
   }
@@ -111,6 +109,18 @@ export function Choice(handle: Handle<ChoiceProps>) {
         </span>
       </label>
     )
+  }
+}
+
+/**
+ * A checkbox of a list that repeats it on every row (the selection of the Findings screen): the
+ * native input alone, drawn as the box of HeroUI by `.check` in styles/heroui.css. The markup of
+ * `Choice` on each of 50 rows would weigh about 28 KB of HTML. It needs an `aria-label`.
+ */
+export function Check(handle: Handle<Omit<Props<'input'>, 'type' | 'role'>>) {
+  return () => {
+    let { class: extra, ...rest } = handle.props
+    return <input type="checkbox" {...rest} class={classes('check', extra as string | undefined)} />
   }
 }
 
