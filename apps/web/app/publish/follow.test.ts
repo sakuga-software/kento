@@ -2,8 +2,8 @@
 // that finding: Kentō answers in it, opens it again when it was resolved, and opens no new thread. A
 // defect that no earlier finding names still gets its own thread. The titles translate those of
 // example-repo#62 (2026-11-08).
-import { findingKey } from '@sakuga-review/engine/findings'
-import type { ReviewFinding, ReviewPayload } from '@sakuga-review/protocol'
+import { findingKey } from '@kento/engine/findings'
+import type { ReviewFinding, ReviewPayload } from '@kento/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 

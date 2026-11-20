@@ -20,7 +20,7 @@ import {
   type JobEarlier,
   type RejectedFinding,
   type ResolveThread,
-} from '@sakuga-review/protocol'
+} from '@kento/protocol'
 import { createController } from 'remix/router'
 
 import { GITHUB_API_URL, type InstallationToken, type MintInstallationToken } from '../github/installation-token.ts'

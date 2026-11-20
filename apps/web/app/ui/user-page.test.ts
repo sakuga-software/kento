@@ -100,7 +100,13 @@ describe('the screen of a user', () => {
     assert.match(html, /sakuga-software\/orchard<\/th><td>off<\/td><td>heavy<\/td>/)
     assert.match(html, new RegExp(`action="/users/octocat/prefs/${ORCHARD}/remove"`))
     assert.match(html, /Add a repo/)
-    assert.match(html, /id="user-theme-title"/)
+    // KNT-142: the theme is here, in a section of its own, and comes back to this screen without JavaScript.
+    assert.match(html, /<h2 id="user-theme-title" class="section-title">Theme<\/h2>/)
+    assert.match(html, /<form method="post" action="\/preferences\/theme" data-theme-switch="" class="user-pref-form">/)
+    assert.match(html, /<input type="hidden" name="returnTo" value="\/users\/octocat" \/>/)
+    assert.match(html, /<fieldset aria-describedby="theme-hint" class="field theme-switch"><legend class="field-label">Theme of this browser<\/legend>/)
+    assert.match(html, /<p id="theme-hint" class="field-hint">For every screen of Kentō in this browser\./)
+    assert.match(html, /<input type="radio" name="theme" value="system" checked/)
     assert.match(html, /Findings received · 30 days/)
     assert.match(html, /<a href="\/findings\?author=octocat&amp;days=30">See my 4 open findings<\/a>/)
     assert.match(html, /My reviewed PRs <span class="count">12<\/span>/)
@@ -113,6 +119,15 @@ describe('the screen of a user', () => {
     assert.match(html, /<a href="\/users\/octocat" aria-current="page" title="octocat" class="bar-avatar">/)
   })
 
+  it('checks the theme of the cookie in the switch (KNT-142)', async () => {
+    let { signIn, request } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    let html = await (await request('/users/octocat', `${cookie}; kento_theme=sumi`)).text()
+    assert.match(html, /<html lang="en" data-theme="sumi">/)
+    assert.match(html, /<input type="radio" name="theme" value="sumi" checked \/>Sumi/)
+    assert.match(html, /<input type="radio" name="theme" value="system" \/>Device/)
+  })
+
   it('shows another member the same screen to read, with no form', async () => {
     let { signIn, request } = setup()
     let { cookie } = await signIn(CAMILLE)
@@ -120,6 +135,7 @@ describe('the screen of a user', () => {
     assert.match(html, /Reviews of their PRs/)
     assert.doesNotMatch(html, /action="\/users\/octocat\/prefs/)
     assert.doesNotMatch(html, /id="user-theme-title"/)
+    assert.doesNotMatch(html, /name="theme"/)
     assert.match(html, /Automatic review on · level from the repo\./)
     assert.match(html, /See their 4 open findings/)
   })

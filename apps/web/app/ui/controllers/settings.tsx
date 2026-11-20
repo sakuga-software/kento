@@ -2,7 +2,7 @@
 // defaults, the trusted bots and the providers with their keys.
 import { createAction } from 'remix/router'
 
-import { UUID, type Level } from '@sakuga-review/protocol'
+import { UUID, type Level } from '@kento/protocol'
 
 import { log } from '../../log.ts'
 import { readCapsForm, readTrustedBotsForm } from '../../org-settings/model.ts'
