@@ -1,5 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
+import { bootScript } from '../assets.ts'
 import type { Theme } from './theme.ts'
 
 export interface DocumentProps {
@@ -16,6 +17,7 @@ export function Document(handle: Handle<DocumentProps>) {
   return () => {
     let { title, theme, assetVersion, children } = handle.props
     let v = encodeURIComponent(assetVersion)
+    let boot = bootScript()
     return (
       <html lang="en" data-theme={theme}>
         <head>
@@ -41,6 +43,12 @@ export function Document(handle: Handle<DocumentProps>) {
           <script src={`/assets/frame.js?v=${v}`} defer></script>
           {/* KNT-144: the bar at the top of the window while the next page loads. */}
           <script src={`/assets/progress.js?v=${v}`} defer></script>
+          {/*
+           * KNT-163: loads the runtime of the components when the page has one to hydrate. A module
+           * runs after the parse, like a deferred script. render() writes the import map of those
+           * components, the one inline script, with the nonce of the request.
+           */}
+          {boot ? <script type="module" src={boot.href} data-runtime={boot.runtime}></script> : null}
         </head>
         <body>{children}</body>
       </html>

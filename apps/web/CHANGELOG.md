@@ -19,6 +19,12 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/`, `/assets/fr/` and `/assets/npm/`: the proxy routes all of `/assets/`
+  to it, as before.
 - **Migrations**: none (still 29).
 - **Order**: the service, then the runners (the engine changes).
 - **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in

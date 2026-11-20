@@ -1672,21 +1672,103 @@ a.repo-name {
 .row-action:has(.row-menu[open]) {
   z-index: 16;
 }
-/* Set by row-menu.js: a browser without :has() also gets the open cell above the rows under it. */
-.row-action.row-action-open {
-  z-index: 16;
-}
-/* Without JavaScript nothing measures: the menu of the last two rows opens upwards, over the rows
-   above it (at least three, else there is no room there either). */
-html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)) .row-menu > div {
+/* Until the menu hydrates (KNT-163) nothing measures: the menu of the last two rows opens upwards,
+   over the rows above it (at least three, else there is no room there either). The table scrolls
+   sideways, so it would clip a menu that goes past its bottom. */
+html:not([data-hydrated]) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)) .row-menu > div {
   top: auto;
   bottom: calc(100% + var(--space-1));
 }
-/* The table scrolls sideways, so it also clips a menu that goes past its bottom: row-menu.js measures
-   the open menu and gives the table that room (padding-bottom), and takes it back once closed. */
+/* KNT-163. The menu once it hydrates: a button, and a popover in the top layer, placed by
+   @remix-run/ui against the button. No table clips it, and it flips upwards when there is no room.
+   Its own classes: the rules of `.row-menu > div` are for the `<details>` without JavaScript. */
+.row-menu-box {
+  display: inline-block;
+  margin-left: var(--space-1);
+}
+.row-menu-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.row-menu-trigger:hover,
+.row-menu-trigger[aria-expanded='true'] {
+  border-color: var(--line-strong);
+  background: var(--paper-raised);
+}
+.row-menu-popover {
+  min-width: 220px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  margin: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+}
+.row-menu-list {
+  display: grid;
+}
+.row-menu-list:focus {
+  outline: none;
+}
+.row-menu-list > [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.row-menu-list > [role='menuitem'] svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.row-menu-list > [data-highlighted] {
+  background: var(--paper);
+}
+.row-menu-list > .row-menu-danger {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--enji);
+}
+/* The confirmation of a destructive action once it hydrates: the same panel, in a popover. A
+   closed popover is hidden by the browser, unless a class sets `display`: `.confirm-body` does. */
+.confirm-popover:not(:popover-open) {
+  display: none;
+}
+.confirm-popover {
+  width: min(22rem, calc(100vw - 2 * var(--space-4)));
+  max-width: none;
+  margin: 0;
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+@media (forced-colors: active) {
+  .row-menu-list > [data-highlighted] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
 @media (max-width: 760px) {
   /* A row is a card and "…" is at its left: the menu opens to the right, in the page. */
-  .row-menu {
+  .row-menu,
+  .row-menu-box {
     margin-left: 0;
   }
   .row-menu > div {
