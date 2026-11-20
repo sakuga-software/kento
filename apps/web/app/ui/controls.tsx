@@ -1,10 +1,10 @@
-// KNT-143. The form controls of every screen, in the look of HeroUI v3 (public/assets/heroui.css,
-// built from styles/heroui.css). HeroUI's React components need React, and this app has none: the
-// helpers write native elements with the BEM classes of @heroui/styles. Every other attribute
-// (`name`, `id`, `form`, `formaction`, `aria-*`, `data-*`…) goes to the element as is.
+// KNT-143. The form controls of every screen: native elements (button, input, select, textarea), with
+// the classes that public/assets/kento.css draws in the tokens of the two themes. No framework: the
+// guideline is in apps/web/CLAUDE.md, "UI components". Every other attribute (`name`, `id`, `form`,
+// `formaction`, `aria-*`, `data-*`…) goes to the element as is.
 import type { Handle, Props, RemixNode } from 'remix/component'
 
-/** The variants of HeroUI that the screens use. `outline` is the default button of Kentō. */
+/** The variants that the screens use. `outline` is the default button of Kentō. */
 export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger' | 'danger-soft'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
@@ -55,9 +55,9 @@ export function Textarea(handle: Handle<Props<'textarea'>>) {
 }
 
 /**
- * A native `<select>` in the trigger of HeroUI. The box around it draws the chevron in CSS (no SVG:
- * the Findings screen has four selects in its filters). `class` goes to the `<select>`;
- * `wrapperClass` goes to the box, for the layout of a screen.
+ * A native `<select>`. The box around it draws the chevron in CSS (no SVG: the Findings screen has
+ * four selects in its filters). `class` goes to the `<select>`; `wrapperClass` goes to the box, for
+ * the layout of a screen.
  */
 export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string }>) {
   return () => {
@@ -74,48 +74,28 @@ export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string 
 
 export type ChoiceProps = Omit<Props<'input'>, 'type' | 'role'> & {
   type: 'checkbox' | 'radio'
-  /** The text next to the box. Without it, the input needs an `aria-label`. */
-  label?: RemixNode
+  /** The text next to the box. */
+  label: RemixNode
   /** A class of the screen on the `<label>`. */
   wrapperClass?: string
 }
 
-/**
- * A checkbox or a radio button of HeroUI around the native input. The input covers the box,
- * transparent: the click, the keyboard and the form use it.
- */
+/** A checkbox or a radio button with its text, in one `<label>`: the native input, drawn by `.check`. */
 export function Choice(handle: Handle<ChoiceProps>) {
   return () => {
-    let { type, label, wrapperClass, ...rest } = handle.props
+    let { type, label, wrapperClass, class: extra, ...rest } = handle.props
     return (
-      <label class={classes(type, 'choice', wrapperClass)}>
-        <span class={`${type}__content`}>
-          <span class={`${type}__control`}>
-            <input type={type} {...rest} />
-            {type === 'checkbox' ? (
-              <span class="checkbox__indicator" aria-hidden="true">
-                <svg data-slot="checkbox-default-indicator--checkmark" viewBox="0 0 17 18" fill="none" focusable="false">
-                  <polyline points="1 9 7 14 15 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-                <svg data-slot="checkbox-default-indicator--indeterminate" viewBox="0 0 12 12" fill="none" focusable="false">
-                  <path d="M2 6h8" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                </svg>
-              </span>
-            ) : (
-              <span class="radio__indicator" aria-hidden="true"></span>
-            )}
-          </span>
-          {label === undefined ? null : <span data-slot="label">{label}</span>}
-        </span>
+      <label class={classes('choice', wrapperClass)}>
+        <input type={type} {...rest} class={classes('check', extra as string | undefined)} />
+        <span>{label}</span>
       </label>
     )
   }
 }
 
 /**
- * A checkbox of a list that repeats it on every row (the selection of the Findings screen): the
- * native input alone, drawn as the box of HeroUI by `.check` in styles/heroui.css. The markup of
- * `Choice` on each of 50 rows would weigh about 28 KB of HTML. It needs an `aria-label`.
+ * A checkbox with no text of its own, for a list that repeats it on every row (the selection of
+ * the Findings screen): the native input alone, drawn by `.check`. It needs an `aria-label`.
  */
 export function Check(handle: Handle<Omit<Props<'input'>, 'type' | 'role'>>) {
   return () => {

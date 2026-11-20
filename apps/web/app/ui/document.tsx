@@ -32,8 +32,6 @@ export function Document(handle: Handle<DocumentProps>) {
             type="font/woff2"
             crossOrigin="anonymous"
           />
-          {/* KNT-143: the form controls of HeroUI, in cascade layers, before kento.css. */}
-          <link rel="stylesheet" href={`/assets/heroui.css?v=${v}`} />
           <link rel="stylesheet" href={`/assets/kento.css?v=${v}`} />
           {/* Blocking and tiny: it marks <html> as scripted before the first paint. */}
           <script src={`/assets/theme.js?v=${v}`}></script>

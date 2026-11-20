@@ -127,7 +127,7 @@ test.describe('the Findings screen', () => {
   })
 
   // KNT-143: in forced colors (Windows High Contrast), the browser drops the drawn check mark, dot
-  // and focus ring of HeroUI. The native inputs come back, and the focus has an outline.
+  // and focus ring of kento.css. The native inputs come back, and the focus has an outline.
   test('in forced colors, the checkboxes and radio buttons are native, and the focus has an outline', async ({ page }) => {
     await signIn(page, 'octocat')
     await seed()
@@ -137,7 +137,7 @@ test.describe('the Findings screen', () => {
     await row.check()
     expect(await row.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
     let radio = page.locator('input[type=radio][name=reason]').first()
-    expect(await radio.evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+    expect(await radio.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
     // Keyboard focus, from the search field to the first box of a row.
     await page.locator('#findings-q').focus()
     expect(await page.locator('#findings-q').evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')

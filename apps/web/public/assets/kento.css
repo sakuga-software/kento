@@ -355,7 +355,7 @@ kbd,
   font-size: 0.92em;
 }
 
-/* The controls of HeroUI (heroui.css) draw their own focus ring, in their own shape. */
+/* The form controls (KNT-143, below) draw their own focus ring, in their own shape. */
 :focus-visible:where(:not(.button, .input, .textarea, .select__trigger, .check)) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -416,28 +416,317 @@ kbd,
 /* ---------------------------------------------------------------- Controls */
 
 /*
- * KNT-143. The buttons, fields, selects, checkboxes and radio buttons are the controls of HeroUI
- * (heroui.css, built from styles/heroui.css; markup in app/ui/controls.tsx). Three levels of button:
- * `button--primary` in ink (one per screen), `button--outline`, `button--ghost`; a destructive action
- * is `button--danger-soft` to open its confirmation, `button--danger` to act. The rules here only
- * place a control in a screen.
+ * KNT-143. The form controls: app/ui/controls.tsx writes them, these rules draw them. Native
+ * elements only (button, input, select, textarea), no framework: the tokens of the two themes above.
+ * Three levels of button: `button--primary` in ink (one per screen), `button--outline`, `button--ghost`;
+ * a destructive action is `button--danger-soft` to open its confirmation, `button--danger` to act.
+ * Pill buttons, 12 px fields, one focus ring (2 px of the page, then 2 px of --focus).
  */
-.button {
-  text-decoration: none;
-}
-/*
- * A link that looks like a button takes the colour of its variant. Without this, `a { color }` above
- * (unlayered) beats the layered `.button` of HeroUI: ink on the ink of a primary button.
- */
-a.button {
-  color: revert-layer;
-}
-/* Fields: the full width of their column, up to a readable line. */
+.button,
 .input,
 .textarea,
-.select--native {
+.select__trigger,
+.check {
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+}
+.button {
+  --button-bg: transparent;
+  --button-bg-hover: var(--button-bg);
+  --button-fg: var(--ink);
+  --button-border: transparent;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--control-h);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--button-border);
+  border-radius: var(--radius-pill);
+  background-color: var(--button-bg);
+  color: var(--button-fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 250ms ease,
+    background-color 100ms var(--ease),
+    box-shadow 100ms var(--ease);
+}
+/* A link that looks like a button: the colour of its variant, not the ink of `a`. */
+a.button {
+  color: var(--button-fg);
+}
+summary.button {
+  list-style: none;
+}
+summary.button::-webkit-details-marker {
+  display: none;
+}
+.button:hover {
+  background-color: var(--button-bg-hover);
+}
+.button:active {
+  transform: scale(0.97);
+}
+.button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.button:disabled,
+.button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* `hidden` until a script shows it: the `display` above would beat the one of the browser. */
+.button[hidden] {
+  display: none;
+}
+.button svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+.button--primary {
+  --button-bg: var(--action);
+  --button-bg-hover: color-mix(in oklab, var(--action) 86%, var(--paper));
+  --button-fg: var(--on-action);
+}
+.button--outline {
+  --button-border: var(--line-strong);
+  --button-bg-hover: var(--paper-sunken);
+}
+.button--ghost {
+  --button-bg-hover: var(--paper-sunken);
+}
+.button--danger {
+  --button-bg: var(--shu);
+  --button-bg-hover: color-mix(in oklab, var(--shu) 86%, var(--paper));
+  --button-fg: var(--on-shu);
+}
+.button--danger-soft {
+  --button-bg: var(--shu-wash);
+  --button-bg-hover: color-mix(in oklab, var(--shu-wash) 88%, var(--shu));
+  --button-fg: var(--shu-strong);
+}
+.button--sm {
+  height: 32px;
+  padding: 0 var(--space-3);
+}
+.button--lg {
+  height: var(--control-h-touch);
+  padding: 0 var(--space-5);
+  font-size: var(--text-base);
+}
+
+/* Fields: the sheet, a rule strong enough for WCAG 1.4.11, the indigo when focused. */
+.input,
+.textarea,
+.select__trigger {
   width: 100%;
   max-width: 420px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background-color: var(--paper-raised);
+  color: var(--ink);
+  font-size: var(--text-base);
+  line-height: var(--leading-base);
+  caret-color: var(--ai);
+  transition:
+    border-color 150ms var(--ease),
+    box-shadow 150ms var(--ease);
+}
+.input,
+.select__trigger {
+  min-height: var(--control-h);
+  padding: 0 var(--space-3);
+}
+.textarea {
+  min-height: 38px;
+  padding: var(--space-2) var(--space-3);
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--ink-faint);
+}
+.input:hover,
+.textarea:hover,
+.select__trigger:hover {
+  border-color: var(--ink-muted);
+}
+.input:focus,
+.textarea:focus,
+.select__trigger:focus {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+.input:focus-visible,
+.textarea:focus-visible,
+.select__trigger:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+.input[aria-invalid='true'],
+.textarea[aria-invalid='true'],
+.select__trigger[aria-invalid='true'] {
+  border-color: var(--shu);
+}
+.input:disabled,
+.textarea:disabled,
+.select__trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A native <select>, its chevron drawn after it in the colour of its text. */
+.select--native {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  max-width: 420px;
+}
+.select--native > .select__trigger {
+  appearance: none;
+  max-width: none;
+  padding-right: var(--space-8);
+  cursor: pointer;
+}
+.select--native::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--space-2);
+  width: 16px;
+  height: 16px;
+  margin: auto 0;
+  background-color: var(--ink);
+  clip-path: polygon(20% 35%, 28% 27%, 50% 49%, 72% 27%, 80% 35%, 50% 65%);
+  pointer-events: none;
+}
+
+/*
+ * A checkbox or a radio button: the native input, drawn as a 16 px box (a circle for a radio
+ * button) with no wrapper, so that a list of 50 rows stays light. `Check` and `Choice` write it.
+ */
+.check {
+  appearance: none;
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background-color: var(--paper-raised);
+  cursor: pointer;
+  transition:
+    background-color 200ms var(--ease),
+    border-color 200ms var(--ease);
+}
+.check[type='radio'] {
+  border-radius: 50%;
+}
+/* The check mark, a dash when indeterminate, or the dot of a radio button: the colour on the ink. */
+.check::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background-color: var(--on-action);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  scale: 0;
+  transition: scale 100ms var(--ease);
+}
+.check[type='radio']::before {
+  width: 6px;
+  height: 6px;
+  clip-path: circle(50%);
+}
+.check:checked,
+.check:indeterminate {
+  border-color: transparent;
+  background-color: var(--action);
+}
+.check:checked::before {
+  scale: 1;
+}
+.check:indeterminate::before {
+  clip-path: inset(40% 0 40% 0 round 1px);
+  scale: 1;
+}
+.check:hover:not(:checked, :indeterminate) {
+  border-color: var(--ink-muted);
+}
+.check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.check:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* `hidden` until a script shows it: the `display` above would beat the one of the browser. */
+.check[hidden] {
+  display: none;
+}
+
+/* A field: its label, its control, then its hint or its error. */
+.label {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-sm);
+}
+.description {
+  color: var(--ink-muted);
+  font-size: var(--text-xs);
+  line-height: var(--leading-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .input,
+  .textarea,
+  .select__trigger,
+  .check,
+  .check::before {
+    transition: none;
+  }
+  .button:active {
+    transform: none;
+  }
+}
+
+/*
+ * Forced colors (Windows High Contrast): the browser drops the box-shadow of the focus ring and the
+ * backgrounds that draw a check mark or a dot. The native checkbox and radio button come back, and a
+ * focused control gets an outline in the colour of the system.
+ */
+@media (forced-colors: active) {
+  .check {
+    appearance: auto;
+  }
+  .check::before {
+    display: none;
+  }
+  .button:focus-visible,
+  .input:focus,
+  .textarea:focus,
+  .select__trigger:focus,
+  .check:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 /* Paper / Sumi / Device on the screen of a user (KNT-142): three radios that look like one segmented control. */
@@ -2133,20 +2422,18 @@ a.finding-title:hover {
   line-height: var(--leading-xs);
 }
 .choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
   max-width: 640px;
   padding: var(--space-2) 0;
-}
-/* A choice of several lines: the box on the first line, the text at its usual weight. */
-.choice > :is(.checkbox__content, .radio__content) {
-  align-items: flex-start;
-  font-size: var(--text-base);
   line-height: var(--leading-base);
-  font-weight: 400;
 }
-.choice :is(.checkbox__control, .radio__control) {
+/* The box on the first line of a choice of several lines. */
+.choice > .check {
   margin-top: 2px;
 }
-/* An input that a script shows (`hidden` until then) hides its box too. */
+/* An input that a script shows (`hidden` until then) hides its choice too. */
 .choice:has(input[hidden]) {
   display: none;
 }

@@ -21,11 +21,9 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
 - `public/assets/kento.css`: every token (colours of the two themes, type scale, radii, shadows) and
   the frame. A screen writes a token name, never a colour value.
-- `public/assets/heroui.css` (KNT-143): the form controls of [HeroUI](https://heroui.com) v3 without
-  React, built from `styles/heroui.css` by `css:build` and committed (the service has no build step).
-  `app/ui/controls.tsx` writes them (`Button`, `buttonClass`, `Input`, `Textarea`, `Select`,
-  `Choice`, `Check`, `Field`); their colours are the tokens of `kento.css`. Licences:
-  `public/assets/LICENSE-HeroUI.txt` (Apache-2.0) and `public/assets/LICENSE-TailwindCSS.txt` (MIT).
+- `app/ui/controls.tsx` (KNT-143): the form controls, native elements (`Button`, `buttonClass`,
+  `Input`, `Textarea`, `Select`, `Choice`, `Check`, `Field`) drawn by `kento.css`. The rules for the
+  controls of every screen are in [CLAUDE.md](CLAUDE.md#ui-components).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
   of GitHub, and no inline script or style.
@@ -210,7 +208,6 @@ DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/postgres pnpm -F @kent
 | ------------------------------------------ | ------------------------------------------------------------ |
 | `pnpm -F @kento/web lint`          | oxlint                                                       |
 | `pnpm -F @kento/web typecheck`     | `tsc --noEmit`                                               |
-| `pnpm -F @kento/web css:build`     | Writes `public/assets/heroui.css` from `styles/heroui.css` (Tailwind CSS 4, minified). A unit test fails while the committed file is stale. |
 | `pnpm -F @kento/web test`          | Unit tests, no database.                                     |
 | `pnpm -F @kento/web test:db`       | Tests against Postgres. Needs `TEST_DATABASE_URL`, see below. |
 | `pnpm -F @kento/web db:generate`   | Writes the next migration after a change of `app/db/schema.ts`. |

@@ -229,7 +229,7 @@ describe('the Runners screen', () => {
     assert.match(html, /Protocol/)
     assert.match(html, /Reservation and attempts/)
     // REV-30: "Key on the runner" is the choice by default; the key of the app is an explicit choice.
-    assert.match(html, /<input type="radio" name="keyMode" value="runner" checked \/>/)
+    assert.match(html, /<input type="radio" name="keyMode" value="runner" checked class="check" \/>/)
     assert.doesNotMatch(html, /<input type="radio" name="keyMode" value="app" checked/)
     // REV-51: no screen sets the pool of a repository, so the help of the labels does not name it.
     assert.doesNotMatch(html, /pool/i)
