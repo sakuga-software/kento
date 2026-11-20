@@ -27,6 +27,8 @@ interface Native {
   form: string | null
   describedBy: string | null
   invalid: string | null
+  /** The classes of the native select (`select__trigger` and those of the screen, `mono`). */
+  className: string
   /** The id of the label of the control, given one when it had none. */
   labelId: string | null
   options: Choice[]
@@ -51,6 +53,7 @@ function adopt(id: string): Native | null {
     form: element.getAttribute('form'),
     describedBy: element.getAttribute('aria-describedby'),
     invalid: element.getAttribute('aria-invalid'),
+    className: element.className,
     labelId: label?.id ?? null,
     options: [...element.options].map((option) => ({ value: option.value, label: option.label, disabled: option.disabled })),
   }
@@ -85,14 +88,14 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
   return () => {
     if (!native) return null
     let { target } = handle.props
-    let { name, value, label, disabled, form, describedBy, invalid, labelId, options } = native
+    let { name, value, label, disabled, form, describedBy, invalid, className, labelId, options } = native
     let valueId = `${target}-value`
     return (
       <select.Context name={name} defaultValue={value} defaultLabel={label} disabled={disabled}>
         <button
           type="button"
           id={target}
-          class="select__trigger select__button"
+          class={`${className} select__button`}
           aria-labelledby={labelId ? `${labelId} ${valueId}` : undefined}
           aria-describedby={describedBy ?? undefined}
           aria-invalid={invalid === 'true' ? 'true' : undefined}
