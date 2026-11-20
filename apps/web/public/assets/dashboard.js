@@ -15,7 +15,9 @@
       const stamp = document.querySelector('[data-updated]')
       if (!stamp) return
       const seconds = Math.max(0, Math.round((Date.now() - Date.parse(stamp.dataset.updated)) / 1000))
-      stamp.textContent = seconds < 60 ? `Updated ${seconds} s ago` : `Updated ${Math.floor(seconds / 60)} min ago`
+      // Never longer than "Updated 59 min ago": kento.css keeps that width for the stamp.
+      stamp.textContent =
+        seconds < 60 ? `Updated ${seconds} s ago` : seconds < 3600 ? `Updated ${Math.floor(seconds / 60)} min ago` : `Updated ${Math.floor(seconds / 3600)} h ago`
     }
 
     const refresh = async () => {
