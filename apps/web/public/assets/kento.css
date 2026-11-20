@@ -539,10 +539,31 @@ kbd,
 
 /* ---------------------------------------------------------------- Frame of the app */
 
+/* KNT-145. View transitions between the pages: each screen is a whole page from the server, so the
+   browser runs them across documents. The page fades in 150 ms. The bar at the top is its own part:
+   it does not move or fade, so the header never shifts. Nothing under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+::view-transition-group(root) {
+  animation-duration: 150ms;
+}
+::view-transition-group(bar),
+::view-transition-old(bar),
+::view-transition-new(bar) {
+  animation: none;
+}
+::view-transition-old(bar) {
+  display: none;
+}
+
 /* The bar: the mark, the five screens, the org and the avatar. Under 720 px, "Menu" opens the list. */
 .bar {
   position: relative;
   z-index: 20;
+  view-transition-name: bar;
   background: var(--paper-raised);
   border-bottom: 1px solid var(--line);
 }
