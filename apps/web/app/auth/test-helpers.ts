@@ -112,7 +112,7 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     },
     async saveMembership(userId, orgId, role, source = 'github') {
       let m = memberships.get(`${userId}/${orgId}`)
-      if (m) Object.assign(m, { role, checkedAt: new Date(clock.now) })
+      if (m) Object.assign(m, { role: m.source === 'invitation' && source === 'github' ? m.role : role, checkedAt: new Date(clock.now) })
       else rows().push({ id: `membership-${rows().length + 1}`, userId, orgId, role, source, checkedAt: new Date(clock.now), createdAt: new Date(clock.now) })
     },
     async invitedOrgs(githubId) {

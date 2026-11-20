@@ -242,6 +242,20 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.deepEqual(roles_!.roles, ['member', 'owner'])
   })
 
+  it('KNT-150: a write from GitHub never changes the role or the source of a membership from an invitation', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'member')
+    await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    await database.sql`update memberships set role = 'admin', source = 'invitation'`
+    await store.saveMembership(user!.id, acme, 'member', 'github')
+    let [row] = await database.sql`select role, source from memberships`
+    assert.deepEqual({ ...row }, { role: 'admin', source: 'invitation' })
+    // Kentō itself still changes it.
+    await store.saveMembership(user!.id, acme, 'member', 'invitation')
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'member')
+  })
+
   it('the table refuses a token of GitHub in an account', async () => {
     await insertOrgRow(database.sql, 'acme', 11)
     roles.set('acme/octocat', 'admin')
