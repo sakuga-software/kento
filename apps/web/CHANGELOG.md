@@ -49,7 +49,9 @@ Each entry says, when it applies:
   admin who reads the table; nothing shows them.
 - **Variables**: `KENTO_SESSION_SECRET` signs with its first secret only; a new first secret signs
   everybody out (DEPLOY.md, section 9).
-- **Variables**: new `KENTO_TRUSTED_PROXY_HOPS` (default 0) and `KENTO_SIGN_IN_LIMIT` (default 10).
+- **Variables**: new `KENTO_TRUSTED_PROXY_HOPS`, **required when `KENTO_PUBLIC_URL` is https** (the
+  service does not start without it: `1` behind Traefik alone, an explicit `0` when nothing is in
+  front), and `KENTO_SIGN_IN_LIMIT` (default 10, per process).
 - **Migrations** (before it): `0029_installations` (KNT-150) moves the GitHub App installation out of
   `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
   org keeps its id, its settings and its members, and gets one installation with the same GitHub

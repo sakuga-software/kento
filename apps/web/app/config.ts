@@ -342,9 +342,22 @@ function readSignIn(
     sessionSecrets,
     oauthUrl,
     apiUrl: githubApp.apiUrl.replace(/\/+$/, ''),
-    trustedProxyHops: readInteger(env, 'KENTO_TRUSTED_PROXY_HOPS', 0, 0, 10, problems),
+    trustedProxyHops: readProxyHops(env, publicUrl, problems),
     signInLimit: readInteger(env, 'KENTO_SIGN_IN_LIMIT', SIGN_IN_STARTS_PER_MINUTE, 1, 10_000, problems),
   }
+}
+
+/**
+ * KNT-150. KENTO_TRUSTED_PROXY_HOPS. The service speaks only HTTP: an https KENTO_PUBLIC_URL means a
+ * proxy in front, and with 0 hops every client would have its address and share one sign-in limit.
+ * So it must be written then (an explicit 0 stays allowed); on the machine itself it defaults to 0.
+ */
+function readProxyHops(env: Record<string, string | undefined>, publicUrl: URL, problems: string[]): number {
+  if (publicUrl.protocol === 'https:' && !env.KENTO_TRUSTED_PROXY_HOPS?.trim()) {
+    problems.push('KENTO_TRUSTED_PROXY_HOPS must be set when KENTO_PUBLIC_URL is https: 1 behind Traefik alone, 0 when nothing is in front')
+    return 0
+  }
+  return readInteger(env, 'KENTO_TRUSTED_PROXY_HOPS', 0, 0, 10, problems)
 }
 
 function isLoopback(hostname: string): boolean {

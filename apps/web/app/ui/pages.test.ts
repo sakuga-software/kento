@@ -416,6 +416,34 @@ describe('the GitHub sign-in', () => {
     assert.equal(auth.tables.sessions!.length, 1)
   })
 
+  it('KNT-150: a failed write of the sign-in reaches no log with the parameters of its query', async () => {
+    let { request, auth } = setup()
+    auth.as(OCTOCAT)
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let written: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    let stdout = process.stdout.write.bind(process.stdout)
+    let consoleError = console.error
+    process.stderr.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stderr.write
+    process.stdout.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stdout.write
+    console.error = (...args: unknown[]) => void written.push(args.map((a) => (a instanceof Error ? `${a.message}` : String(a))).join(' '))
+    let callback: Response
+    try {
+      auth.failSessions(true)
+      callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
+    } finally {
+      auth.failSessions(false)
+      process.stderr.write = stderr
+      process.stdout.write = stdout
+      console.error = consoleError
+    }
+    assert.equal(callback.headers.get('Location'), '/login?notice=failed')
+    let all = written.join('')
+    assert.match(all, /auth\.sign_in_failed/)
+    assert.doesNotMatch(all, /params:|the-token-hash-param|SERVER_ERROR/)
+  })
+
   it('KNT-150: no path of the API of Better Auth is served', async () => {
     let { request, signIn } = setup()
     let { cookie } = await signIn(OCTOCAT)
@@ -453,6 +481,13 @@ describe('the GitHub sign-in', () => {
     // After a minute, the client signs in again.
     auth.clock.now += 60_000
     assert.equal((await request('/login/github', { ip: '203.0.113.7' })).status, 303)
+  })
+
+  it('KNT-150: a request with no known address is limited too, never let through', async () => {
+    let { request } = setup()
+    let codes: number[] = []
+    for (let n = 0; n < 11; n++) codes.push((await request('/login/github')).status)
+    assert.deepEqual(codes, [...Array(10).fill(303), 429])
   })
 
   it('KNT-150: callbacks from many clients never lock the others out (no shared bucket)', async () => {
