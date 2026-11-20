@@ -243,7 +243,9 @@ test('on a phone, a provider form sent back with its errors has no field under t
   let bar = page.locator('[data-settings-nav]')
   await expect(bar).toHaveCSS('position', 'static')
   // The page scrolled to the field: the bar stayed at the top, out of view.
-  expect((await bar.boundingBox())!.y + (await bar.boundingBox())!.height).toBeLessThanOrEqual(0)
+  let box = await bar.boundingBox()
+  expect(box, 'the bar has a box').not.toBeNull()
+  expect(box!.y + box!.height).toBeLessThanOrEqual(0)
   await expect(lite).toBeInViewport({ ratio: 1 })
   await expectNoAxeViolations(page)
 })
