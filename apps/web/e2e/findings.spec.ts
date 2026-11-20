@@ -109,6 +109,8 @@ test.describe('the Findings screen', () => {
     await seed()
     await page.route('**/assets/findings.js*', (route) => route.abort())
     await page.goto('/findings')
+    // KNT-143: without findings.js, the box of "Select all" stays hidden with its input.
+    await expect(page.locator('label:has(#findings-all)')).toBeHidden()
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
     await expect(bar).toBeHidden()
     await page.getByRole('checkbox', { name: /Finding 01/ }).check()
@@ -129,6 +131,8 @@ test.describe('the Findings screen', () => {
     await page.goto('/findings?view=precision')
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('3')
     await page.goto('/findings')
+    // KNT-143: findings.js shows the box of "Select all" with its input.
+    await expect(page.locator('label:has(#findings-all)')).toBeVisible()
     // REV-91: the bar of the actions shows once a finding is checked, and "Deselect" empties it.
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
     await expect(bar).toBeHidden()
