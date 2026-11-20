@@ -200,19 +200,27 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     let page = Math.min(asked, pages)
     let offset = (page - 1) * limit
 
+    // The ids of the page first: the skipped rows of a deep page cost an index read each, and the
+    // columns and `considered` are read for the rows of the page only.
     let rows = await tx<Row[]>`
+      with page as (
+        select findings.id from findings
+        join repos on repos.id = findings.repo_id
+        where ${filters} and ${inView}
+        order by findings.created_at desc, findings.id desc
+        limit ${limit} offset ${offset}
+      )
       select findings.id, findings.repo_id as "repoId", repos.full_name as repo, findings.pr_number as "prNumber",
         findings.path, findings.line, findings.title, findings.severity, findings.category, findings.confidence,
         findings.status, findings.status_reason as "statusReason", findings.rule_id as "ruleId", rules.title as "ruleTitle",
         findings.first_seen_sha as "firstSeenSha", findings.last_seen_sha as "lastSeenSha",
         findings.github_comment_id::float8 as "githubCommentId", ${consideredSql(sql)} as considered,
         findings.created_at as "createdAt", findings.updated_at as "updatedAt"
-      from findings
+      from page
+      join findings on findings.id = page.id
       join repos on repos.id = findings.repo_id
       left join rules on rules.id = findings.rule_id
-      where ${filters} and ${inView}
-      order by findings.created_at desc, findings.id desc
-      limit ${limit} offset ${offset}`
+      order by findings.created_at desc, findings.id desc`
 
     return {
       rows: rows.map(toRow),
