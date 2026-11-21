@@ -59,3 +59,12 @@ export function profileMetrics(rows: readonly ScoredRow[], profile: Profile): Pr
     matched_excluded: excluded,
   };
 }
+
+/**
+ * KNT-111. The rows as a review would publish them with a minimum confidence: the findings below it
+ * go, with their matches. A row without `confidences` (a file written before KNT-111) gives null.
+ */
+export function atMinConfidence<R extends ScoredRow & { confidences?: number[] }>(rows: readonly R[], minimum: number): R[] | null {
+  if (!rows.every((row) => Array.isArray(row.confidences) && row.confidences.length === row.matches.length)) return null;
+  return rows.map((row) => ({ ...row, matches: row.matches.filter((_, i) => row.confidences![i] >= minimum) }));
+}

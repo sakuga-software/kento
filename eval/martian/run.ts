@@ -101,6 +101,8 @@ type Pr = {
 };
 type Review = {
   findings: string[];
+  /** KNT-111: the confidence of each finding, in the order of `findings`, for `rescore.ts --min-confidence`. */
+  confidences?: number[];
   cost: number;
   seconds: number;
   model?: string;
@@ -216,6 +218,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       const out = await reviewInPasses(input, { passConfig, verifyConfig });
       return {
         findings: out.findings.map(candidate),
+        confidences: out.findings.map((f) => f.confidence),
         cost: out.usage.cost ?? 0,
         seconds: Math.round((Date.now() - start) / 1000),
         model: out.passes.find((p) => p.model)?.model ?? undefined,
@@ -233,11 +236,12 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
       const outs = await Promise.all(Array.from({ length: mode.samples }, () => reviewPullRequest({ ...input, config })));
       const { findings, merged } = mergeSamples(outs.map((out) => out.findings));
       const cost = outs.reduce((total, out) => total + (out.usage.cost ?? 0), 0);
-      return { findings: findings.map(candidate), cost, seconds: Math.round((Date.now() - start) / 1000), model: outs[0].usage.model, error: failures[0], merged };
+      return { findings: findings.map(candidate), confidences: findings.map((f) => f.confidence), cost, seconds: Math.round((Date.now() - start) / 1000), model: outs[0].usage.model, error: failures[0], merged };
     }
     const out = await reviewPullRequest({ ...input, config });
     return {
       findings: out.findings.map(candidate),
+      confidences: out.findings.map((f) => f.confidence),
       cost: out.usage.cost ?? 0,
       seconds: Math.round((Date.now() - start) / 1000),
       model: out.usage.model,
