@@ -12,5 +12,6 @@
 - [ ] A fix comes with a test that fails without it.
 - [ ] `pnpm typecheck` and `pnpm test` pass, and the commands of the package that I changed.
 - [ ] A migration only adds, and the previous release still runs on the new schema.
-- [ ] The documentation is up to date, and `apps/web/CHANGELOG.md` (`Unreleased`) has an entry for a change that an operator sees.
+- [ ] The documentation is up to date.
+- [ ] A changeset in `.changeset/` gives the entry of the changelog (`pnpm changeset`), or an empty one says that nobody who runs Kentō sees the change (`pnpm changeset --empty`).
 - [ ] No secret, token, private code or personal data in the diff, the fixtures or this text.

@@ -9,9 +9,11 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "pnpm --recursive --if-present test && node --test 'eval/martian/*.test.ts'"
+    "test": "pnpm --recursive --if-present test && node --test 'eval/martian/*.test.ts' && .github/scripts/check-changeset.test.sh"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2"
   }
