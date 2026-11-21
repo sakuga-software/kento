@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { memoryAdapter } from 'better-auth/adapters/memory'
 
 import type { AuthDependencies } from '../ui/pages.tsx'
@@ -52,6 +53,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   }
   type Row = { id: string; userId: string; orgId: string; role: OrgRole; source: MembershipSource; checkedAt: Date; createdAt: Date }
   let rows = () => tables.memberships as unknown as Row[]
+  /** The org whose lock the `withOrgLock` of the fake that runs this code holds. */
+  let lockOf = new AsyncLocalStorage<string>()
   /** The memberships, by `<user id>/<org id>`, as the tests read them. */
   let memberships = {
     get(key: string) {
@@ -142,14 +145,25 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     async pendingInvitations(githubId) {
       return pending.get(githubId) ?? 0
     },
-    async withOrgLock(_orgId, work) {
-      return work(store)
+    async withOrgLock(orgId, work) {
+      // As the store of Postgres: the lock of the same org again inside a lock runs the work in it,
+      // and the lock of another org there is refused. The lock belongs to the call that took it and
+      // to the work it runs, not to the store: two calls at the same time hold their own.
+      let held = lockOf.getStore()
+      if (held !== undefined) {
+        if (held !== orgId) throw new Error(`withOrgLock: the lock of ${held} is held, not the one of ${orgId}`)
+        return work(store)
+      }
+      return lockOf.run(orgId, () => work(store))
     },
     async deleteMembership(userId, orgId) {
-      await store.forgetMembership(userId, orgId)
+      await store.withOrgLock(orgId, (inside) => inside.forgetMembership(userId, orgId))
     },
     async forgetMembership(userId, orgId) {
-      tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId))
+      // KNT-173. The rule of the store of Postgres: under the lock of the org, and a membership from
+      // GitHub only; one from an invitation is Kentō's.
+      if (lockOf.getStore() !== orgId) throw new Error('forgetMembership runs under the lock of its org')
+      tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId && m.source === 'github'))
     },
   }
 
