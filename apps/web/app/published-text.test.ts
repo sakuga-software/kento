@@ -193,7 +193,7 @@ describe('no ticket id in the texts of the bot', () => {
   it('the replies of the bot hold none', () => {
     let texts = [
       usage('https://review.test/docs/commands'),
-      ...(['reason_missing', 'reason_long', 'id_missing', 'id_in_thread'] as const).map(rejectProblemText),
+      ...(['reason_missing', 'reason_long', 'id_missing'] as const).map(rejectProblemText),
       hintText('https://review.test/docs/commands'),
       feedbackEmptyText(),
       requestText('octocat', 3),

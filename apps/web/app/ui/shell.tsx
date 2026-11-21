@@ -186,7 +186,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
     let { frame, viewer } = handle.props
     return (
       <details class="bar-org org-menu">
-        <summary class="bar-org-box">
+        <summary class="bar-org-box" title={viewer.org.name}>
           <span class="visually-hidden">Organization: </span>
           <span class="org-menu-name">{viewer.org.name}</span>
         </summary>
@@ -196,7 +196,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
             {viewer.orgs.map((org) =>
               org.id === viewer.org.id ? (
                 <li>
-                  <span class="org-menu-item" aria-current="true">
+                  <span class="org-menu-item" aria-current="true" title={org.name}>
                     <span class="org-menu-item-name">{org.name}</span>
                     <span class="tag tag-quiet">{ROLE_LABELS[org.role]}</span>
                   </span>
@@ -207,7 +207,7 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
                     {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
                     <input type="hidden" name="returnTo" value={frame.path} />
                     <input type="hidden" name="orgId" value={org.id} />
-                    <button class="org-menu-item" type="submit">
+                    <button class="org-menu-item" type="submit" title={org.name}>
                       <span class="org-menu-item-name">{org.name}</span>
                       <span class="tag tag-quiet">{ROLE_LABELS[org.role]}</span>
                     </button>

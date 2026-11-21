@@ -378,13 +378,38 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     assert.match((await signIn(OCTOCAT)).html, /of \$150\.00 · alert at 80%/)
   })
 
-  it('says that nothing is to do when nothing is', async () => {
+  it('shows no "To do" when nothing is to do (KNT-193)', async () => {
     let { signIn } = setup(
       screen({ banner: null, workflowRepos: [], runners: [], caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } }),
     )
     let { html } = await signIn(OCTOCAT)
-    assert.match(html, /To do <span class="count">0<\/span>/)
-    assert.match(html, /Nothing to do/)
+    assert.doesNotMatch(html, /id="todo-title"/)
+    assert.doesNotMatch(html, /class="dash-todo"/)
+    assert.doesNotMatch(html, /Nothing to do/)
+    // The rest of the dashboard stays.
+    assert.match(html, /aria-label="At a glance"/)
+  })
+
+  it('makes "No cap" a link to the caps of the settings for an admin, and plain text for a member (KNT-190)', async () => {
+    let noCap = screen({ caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } })
+    let admin = (await setup(noCap).signIn(OCTOCAT)).html
+    let link = /<a href="\/settings#cap">No cap<span class="visually-hidden">: set a cap in the settings<\/span><\/a>/g
+    // The meter of the day and the one of the month.
+    assert.equal(admin.match(link)?.length, 2)
+    let kpis = admin.slice(admin.indexOf('aria-label="At a glance"'), admin.indexOf('</section>', admin.indexOf('aria-label="At a glance"')))
+    assert.match(kpis, /<a href="\/settings#cap">no cap<span class="visually-hidden">: set a cap in the settings<\/span><\/a>/)
+
+    let member = (await setup(noCap).signIn(CAMILLE)).html
+    assert.doesNotMatch(member, /<a href="\/settings#cap">(No|no) cap/)
+    assert.match(member, /<span class="status status-stale">No cap<\/span>/)
+    assert.match(member, /<span class="kpi-sub\s*">no cap<\/span>/)
+    // The hint of a member leads to the same section of the settings; an admin has the links instead.
+    assert.match(member, /An admin sets it in <a href="\/settings#cap">Settings<\/a>\./)
+    assert.doesNotMatch(admin, /An admin sets it in/)
+
+    // A cap that is set: no link on its state.
+    let capped = (await setup(screen({ caps: { dailyCapUsd: 5, monthlyCapUsd: 100, alertPct: 80 } })).signIn(OCTOCAT)).html
+    assert.doesNotMatch(capped, /(No|no) cap/)
   })
 })
 
@@ -418,6 +443,8 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b/, 'no milestone of the team on screen, the paths of the icons aside (REV-43)')
     assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
     assert.match(html, /still on\s*<code>review.yml<\/code>/)
+    // KNT-179: its link opens the filter of the repos that still hold review.yml.
+    assert.match(html, /<a href="\/repos\?filter=switching" class="button">\s*See the repos/)
     assert.match(html, /src="\/assets\/dashboard.js\?v=1.2.3"/)
   })
 
@@ -570,7 +597,9 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /<\/span> failed/)
     assert.match(html, /No review yet/)
     assert.match(html, /No failure to handle over 7 days/)
-    assert.match(html, /The organization has no cap/)
+    // An admin: "No cap" leads to the caps (KNT-190); the hint for a member is in the test of KNT-190.
+    assert.match(html, /No cap<span class="visually-hidden">: set a cap in the settings<\/span>/)
+    assert.doesNotMatch(html, /The organization has no cap/)
     assert.match(html, /No runner/)
     assert.doesNotMatch(html, /review.yml/)
   })

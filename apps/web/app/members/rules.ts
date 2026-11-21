@@ -87,6 +87,9 @@ export function decideReclaim(actor: MemberFacts | null, githubAdmin: boolean): 
 /** A person asks GitHub for the take-back of the owner role once in this time, per org. */
 export const RECLAIM_COOLDOWN_MS = 60 * 1000
 
+/** After a failure of GitHub, the person asks again after this time, not after the whole cooldown. */
+export const RECLAIM_RETRY_MS = 10 * 1000
+
 /** The roles that `actor` may set on `target` now, for the select of the screen. */
 export function rolesFor(actor: MemberFacts, target: MemberFacts, otherOwners: number): OrgRole[] {
   let roles: OrgRole[] = ['owner', 'admin', 'member']

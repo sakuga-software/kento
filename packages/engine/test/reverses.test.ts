@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { earlierFindingsSection, isNewDefect, linkEarlier, type HeldEarlier } from '../src/earlier.ts';
+import { earlierFindingsSection, isNewDefect, linkEarlier, MAX_EARLIER_BYTES, type HeldEarlier } from '../src/earlier.ts';
 import { findingKey, isBlocking, reversesAFix, score, verdict, type Answer, type Finding } from '../src/findings.ts';
 import { levelConfig } from '../src/levels.ts';
 import { linkFindings, linkMessage } from '../src/link.ts';
@@ -136,14 +136,22 @@ test('Kentō says that it changes its mind, in the thread and in the block', () 
 
 test('the prompts ask to read a fix before reporting its opposite, and to say why', () => {
   const review = readFileSync(join(import.meta.dirname, '..', 'prompts', 'review.md'), 'utf8').replace(/\s+/g, ' ');
-  assert.match(review, /Before you report a change that undoes the fix of a `fixed` earlier finding \(the opposite change at the same place\), read that fix in the diff\. Report it only when the fix is wrong\./);
+  assert.match(review, /Before you report a change that undoes the fix of a `fixed` earlier finding \(the opposite change at the same place\), read the code at the head near its line\. Report it only when the fix is wrong\./);
   // The reader of the comment never sees `E1`: the scenario names the finding by its title.
   assert.match(review, /start the scenario with the title of that finding, in quotes, never its reference/);
   const link = readFileSync(join(import.meta.dirname, '..', 'prompts', 'link.md'), 'utf8').replace(/\s+/g, ' ');
   assert.match(link, /`reverses`: the reference of an earlier finding of status `fixed` whose fix this finding asks to undo/);
   const { key, path, line, title, severity, category, status, reason, commit } = held('fixed');
   const { section } = earlierFindingsSection(process.cwd(), 'HEAD', [{ key, path, line, title, severity, category, status, reason, commit }]);
-  assert.match(section.replace(/\s+/g, ' '), /Before you report a change that undoes one of these fixes \(the opposite change at the same place\), read that fix in the diff\./);
+  assert.match(section.replace(/\s+/g, ' '), /Before you report a change that undoes the fix of a `fixed` finding of this list \(the opposite change at the same place\), read the code at the head near its line\./);
+  // Only with a fixed finding in the list, and its room is kept before the rows.
+  const open = earlierFindingsSection(process.cwd(), 'HEAD', [{ key, path, line, title, severity, category, status: 'open', reason, commit }]).section;
+  assert.doesNotMatch(open, /undoes the fix of a `fixed` finding of this list/);
+  const many = Array.from({ length: 100 }, (_, i) => ({ key: `${i}`.padStart(12, '0'), path, line, title: `${'A long title of a fixed finding, '.repeat(6)}${i}`, severity, category, status: 'fixed' as const, reason, commit }));
+  const full = earlierFindingsSection(process.cwd(), 'HEAD', many).section;
+  assert.match(full, /undoes the fix of a `fixed` finding of this list/);
+  const body = full.slice(full.indexOf('- E1 '));
+  assert.ok(body.length <= MAX_EARLIER_BYTES + 2, `${body.length} bytes`);
   assert.match(section.replace(/\s+/g, ' '), /start the scenario with the title of that finding, in quotes, never its reference/);
 });
 

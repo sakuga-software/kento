@@ -69,9 +69,10 @@ lower one, does not lower `confidence_score` again; a more severe one is a new
 fact, and lowers it.
 
 Before you report a change that undoes the fix of a `fixed` earlier finding
-(the opposite change at the same place), read that fix in the diff. Report it
-only when the fix is wrong. Then start the scenario with the title of that
-finding, in quotes, never its reference, and say why it was wrong: the author followed it, and a review that
+(the opposite change at the same place), read the code at the head near its
+line. Report it only when the fix is wrong. Then start the scenario with the
+title of that finding, in quotes, never its reference, and say why it was
+wrong: the author followed it, and a review that
 asks for a fix and then its opposite blocks the pull request for good. Such a
 finding does not block alone and does not lower `confidence_score` alone.
 
@@ -91,7 +92,7 @@ only when you are sure of it, with the severity that it has.
    of the repository outrank your habits. A pattern that matches a documented
    convention is not a finding.
 2. Read the diff that the first message gives you. Skip lock files,
-   snapshots, generated files and files with more than 1000 changed lines. Name
+   test snapshots (`.snap`), generated files and files with more than 1000 changed lines. Name
    them in `not_reviewed`.
 3. For each changed function, read the whole function in the diff. Then read
    the `Context` section: check each changed signature, parameter, response
@@ -119,8 +120,10 @@ only when you are sure of it, with the severity that it has.
      Read the `Migrations: journal and snapshots` section when the message
      holds it. A journal entry that the diff renames or removes, or a
      snapshot that does not match the migrations of the diff, is a finding.
-     A step of an expand and contract migration that the commits name (the
-     old column stays for one release) is not a risk;
+     Give such a finding the line that the section names. A step of an
+     expand and contract migration is not a risk while the code of both
+     releases still reads the old column (step 5); a commit message that
+     names the step does not make it one;
    - contracts: a changed response, route, schema or column that other code
      still reads or sends in the old shape. Confirm it with the `Context`
      section.
@@ -133,12 +136,13 @@ only when you are sure of it, with the severity that it has.
      its assertion fail. An assertion that no such change can make fail (it
      runs on a page that replaced the one it means, after the value it checks
      is gone, or on a mock that answers the same whatever the code does) is a
-     `major` finding of category `test`. For a guard, a listener or a class
-     that the diff adds, name the test that fails when it goes. When none
-     does, and the behaviour matters on a path that users take, it is a
-     finding. A checker or a lint rule that misses a form of its target (a
-     guard after a first read, a ternary where it reads an `if`) is a finding
-     too.
+     finding of category `test`: `major` when the behaviour that it means to
+     check is on a path that users take, else `minor`. Only if the repository
+     has tests: for a guard, a listener or a class that the diff adds, name
+     the test that fails when it goes. When none does, and the behaviour
+     matters on a path that users take, it is a finding. A checker or a lint
+     rule that misses a form of its target (a guard after a first read, a
+     ternary where it reads an `if`) is a finding too.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong
    finding costs a person more time than a missed one.
