@@ -329,6 +329,17 @@ export function descriptionBlock(
     considered.forEach(item);
     out.push('');
   }
+  // KNT-153. What the review asks the author to confirm: no thread, no block, no weight in the score.
+  const questions = (answer.questions ?? []).filter((q) => typeof q?.question === 'string' && q.question.trim());
+  if (questions.length) {
+    out.push('<h3>Questions</h3>', '', 'The review asks these questions. They name no defect and do not block the PR.', '');
+    // The path goes in one inline code span, and the text shows `<` and `>` as text: a model text must
+    // not close the span or a list item, nor write HTML or a marker of the block of the description.
+    const path = (text: string) => text.replace(/`/g, "'").replace(/\s+/g, ' ').trim();
+    const plain = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\s+/g, ' ').trim();
+    questions.forEach((q, i) => out.push(`${i + 1}. ${q.path?.trim() ? `\`${path(q.path)}\` ` : ''}${plain(q.question)}`));
+    out.push('');
+  }
   out.push('<details><summary>Summary</summary>', '', answer.summary, '');
   if (resolved) {
     out.push(
