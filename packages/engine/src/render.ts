@@ -373,6 +373,25 @@ export function descriptionBlock(
 }
 
 /**
+ * The path and the reason of a « Not reviewed » line (`path: reason`, `path (reason)`, `path - reason`),
+ * or null. A loop, not a regular expression: the line is text of the model, and a pattern with two
+ * runs of spaces backtracks for a time that grows with the square of its length.
+ */
+function pathAndReason(text: string): { path: string; reason: string } | null {
+  const i = text.startsWith('`') ? 1 : 0;
+  let j = i;
+  while (j < text.length && !' \t\n\r:`()'.includes(text[j]!)) j++;
+  if (j === i) return null;
+  const path = text.slice(i, j);
+  if (text[j] === '`') j++;
+  let k = j;
+  while (k < text.length && (text[k] === ' ' || text[k] === '\t')) k++;
+  if (text[k] === ':' || text[k] === '(') return { path, reason: text.slice(k + 1).trim() };
+  if (k > j && '-–—'.includes(text[k] ?? 'x') && text[k + 1] === ' ') return { path, reason: text.slice(k + 2).trim() };
+  return null;
+}
+
+/**
  * KNT-158. The « Not reviewed » lines: those of the pack, then those of the model, keyed on the path
  * and the reason. Two lines merge only when one reason starts with the other, as `a.json: generated
  * or binary file` and `a.json (generated)`: two findings moved to « Not reviewed » on one file, or a
@@ -384,9 +403,9 @@ export function notReviewedLines(skipped: readonly string[], model: readonly str
   for (const line of [...skipped, ...model]) {
     const text = String(line ?? '').trim();
     if (!text) continue;
-    const match = /^`?([^\s:`()]+)`?\s*(?::|\(|\s[-–—]\s)\s*(.*)$/.exec(text);
-    const path = match && /[./]/.test(match[1]!) ? match[1]!.replace(/^\/+/, '') : '';
-    const reason = words(path ? match![2]! : text);
+    const split = pathAndReason(text);
+    const path = split && /[./]/.test(split.path) ? split.path.replace(/^\/+/, '') : '';
+    const reason = words(path ? split!.reason : text);
     const same = kept.find((k) => k.path === path && (k.reason === reason || (reason && k.reason.startsWith(reason)) || (k.reason && reason.startsWith(k.reason))));
     if (same) continue;
     kept.push({ path, reason, text });

@@ -261,3 +261,10 @@ test('after a merge of the base, the zones changed since the last review are tho
   assert.match(changedZonesSection(seenCode(repo, reviewed, head), ["a.ts"]), /- `a\.ts`: lines 2, 4–14\n/);
   void main2;
 });
+
+test('a « Not reviewed » line of the model of any length is read in linear time (CodeQL on #48)', () => {
+  const line = `!:${' '.repeat(100_000)}\n!`;
+  const started = performance.now();
+  assert.deepEqual(notReviewedLines([], [line, line]), [line]);
+  assert.ok(performance.now() - started < 500, `took ${Math.round(performance.now() - started)} ms`);
+});
