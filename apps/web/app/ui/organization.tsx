@@ -103,9 +103,10 @@ export function OrganizationPage(handle: Handle<OrganizationPageProps>) {
           </h2>
           <p class="hint">
             Each installation brings the repositories that its GitHub account chose. An owner who is also an admin of that
-            account on GitHub moves an installation to another organization of theirs, or to a new one: its repositories
-            go with it, with their reviews, findings, rules and assignment rules. The settings, the providers, the runners and
-            the rules of this organization stay here.
+            account on GitHub moves an installation to a new organization, or to another organization of theirs where GitHub
+            counts them as an admin of an account too. An installation on a personal account stays in an organization of its
+            own. The repositories go with the installation, with their reviews, findings, rules and assignment rules. The
+            settings, the providers, the runners and the rules of this organization stay here.
           </p>
           <ul class="member-list">
             {org.installations.map((installation) => (
