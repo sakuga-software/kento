@@ -18,17 +18,25 @@ function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
 }
 
-/** KNT-177: waits for the end of a smooth scroll, when the page stays still for a few frames. */
+/**
+ * KNT-177: waits for the end of a smooth scroll, when the page stays still for 300 ms and at least
+ * 5 frames: a time window, so that a runner that stalls for a few frames does not end it early.
+ */
 async function scrollSettled(page: Page) {
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {
         let last = -1
         let still = 0
+        let since = performance.now()
         let step = () => {
-          still = window.scrollY === last ? still + 1 : 0
+          if (window.scrollY === last) still += 1
+          else {
+            still = 0
+            since = performance.now()
+          }
           last = window.scrollY
-          if (still >= 5) resolve()
+          if (still >= 5 && performance.now() - since >= 300) resolve()
           else requestAnimationFrame(step)
         }
         requestAnimationFrame(step)
