@@ -56,15 +56,23 @@ async function watchPolicy(page: Page) {
   page.on('console', (message) => {
     if (/Content Security Policy|Refused to (apply|execute|load)/.test(message.text())) refusals.push(`console: ${message.text()}`)
   })
-  /** Adds the refusals of the page in view, once the events of its last actions are out. */
-  let collect = async () => {
-    let found = await page.evaluate(
+  /**
+   * Adds the refusals of the page in view, once the events of its last actions are out. Kentō
+   * #109d70: the page must still be the one of `path`, with its list: a page left or a list that
+   * the init script did not make fails the test, instead of losing its refusals.
+   */
+  let collect = async (path: string) => {
+    let { at, found } = await page.evaluate(
       () =>
-        new Promise<string[]>((resolve) =>
-          requestAnimationFrame(() => setTimeout(() => resolve((window as unknown as { cspRefusals: string[] }).cspRefusals), 0)),
+        new Promise<{ at: string; found: string[] | undefined }>((resolve) =>
+          requestAnimationFrame(() =>
+            setTimeout(() => resolve({ at: location.pathname + location.search, found: (window as unknown as { cspRefusals?: string[] }).cspRefusals }), 0),
+          ),
         ),
     )
-    refusals.push(...found)
+    expect(at, 'the page in view').toBe(path)
+    expect(Array.isArray(found), `the list of refusals of ${path}`).toBe(true)
+    refusals.push(...found!)
   }
   return { refusals, collect }
 }
@@ -93,7 +101,7 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
           await expect(page.locator('.select-popover:popover-open')).toHaveCount(0)
         }
       }
-      await collect()
+      await collect(path)
     }
     expect(refusals).toEqual([])
   })
