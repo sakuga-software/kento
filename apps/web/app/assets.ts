@@ -60,6 +60,10 @@ const MOUNTS = {
   rp: distOf('@remix-run/route-pattern', fromRemix),
   fr: distOf('@remix-run/fetch-router', fromRemix),
   ui: distOf('@remix-run/ui'),
+  // KNT-188: no mount for chart.js and @kurkle/color. The asset server serves them from its own
+  // mount of the pnpm store (`/assets/__@remix/virtual-store/…`): with a mount of `chart.js/dist`,
+  // the import map put the scope of `@kurkle/color` under the store and the chunk of Chart.js under
+  // the mount, and the browser could not resolve it. `allowPackages` still allows only these two.
 }
 
 /**
@@ -69,6 +73,7 @@ const MOUNTS = {
  *   icons, which a component that hydrates also makes. They import only `remix/routes` and
  *   `remix/component`.
  * - The packages `remix` (and its `@remix-run/component`, the runtime) and `@remix-run/ui`.
+ * - KNT-188: `chart.js` and its `@kurkle/color`, for the charts of the Costs screen.
  * A browser module that imports any other file of the server gets an error, never the file.
  */
 export const ALLOWED_FILES = ['app/**/public/**', 'app/routes.ts', 'app/ui/controls.tsx', 'app/ui/lucide.tsx']
@@ -78,7 +83,7 @@ export const assets = createAssetServer({
   rootDir: ROOT_DIR,
   mounts: MOUNTS,
   allowFiles: ALLOWED_FILES,
-  allowPackages: ['remix', '@remix-run/ui'],
+  allowPackages: ['remix', '@remix-run/ui', 'chart.js', '@kurkle/color'],
   denyFiles: ['app/**/*.test.*'],
   // Production: minified, and each URL carries the hash of its content (cached for a year).
   // Elsewhere: stable URLs, checked again on each load.

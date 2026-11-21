@@ -8,7 +8,7 @@ import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plura
 import { ExternalIcon } from './icons.tsx'
 import type { OrgCostsDetail } from '../db/costs.ts'
 import type { OrgCaps } from '../org-settings/model.ts'
-import { pageRoutes as routes, pullRoutes } from '../routes.ts'
+import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { jobReason, reasonSentence, TechDetails, type Reason } from './reasons.tsx'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -659,8 +659,11 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           <span class={`kpi-value ${weekFailed > 0 ? 'kpi-alert' : ''}`}>{weekFailed}</span>
           <span class="kpi-sub">{weekFailed === 0 ? 'no failed job' : `failed ${plural(weekFailed, 'job')}`}</span>
         </div>
-        <div class="kpi">
-          <span class="kpi-label">Cost of the month</span>
+        {/* KNT-188: the whole tile opens the Costs screen (the link stretches over it, kento.css). */}
+        <div class="kpi kpi-linked">
+          <a class="kpi-label kpi-link" href={costRoutes.costs.href()}>
+            Cost of the month<span class="visually-hidden">: see the costs</span>
+          </a>
           <span class="kpi-value">{usdPrecise(month)}</span>
           {cap !== null && cap > 0 ? (
             <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />

@@ -81,18 +81,22 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
       let [clock] = await sql<{ now: Date | string }[]>`select now() as now`
       let now = toDate(clock!.now)
       let range = periodRange(period, now)
-      let { start, end, previousStart, previousEnd } = range
+      let { previousStart, previousEnd } = range
+      // postgres.js sends a parameter untyped: the bounds go as text, cast in the query.
+      let start = range.start.toISOString()
+      let end = range.end.toISOString()
+      let from = previousStart.toISOString()
       // The reviews and the resolutions of the org from the start of the period before to the end.
       let costs = sql`
         select 'review'::text as source_table, r.id, r.job_id, r.repo_id, r.pr_number, r.model, r.cost_usd, r.created_at,
           r.result->>'costSource' as cost_source
         from reviews r join repos on repos.id = r.repo_id
-        where repos.org_id = ${orgId} and r.created_at >= ${previousStart} and r.created_at < ${end}
+        where repos.org_id = ${orgId} and r.created_at >= ${from}::timestamptz and r.created_at < ${end}::timestamptz
         union all
         select 'resolution', s.id, s.job_id, s.repo_id, s.pr_number, s.model, s.cost_usd, s.created_at,
           s.result->>'costSource'
         from resolutions s join repos on repos.id = s.repo_id
-        where repos.org_id = ${orgId} and s.created_at >= ${previousStart} and s.created_at < ${end}`
+        where repos.org_id = ${orgId} and s.created_at >= ${from}::timestamptz and s.created_at < ${end}::timestamptz`
       let [days, repos, levels, models, top, totals, caps] = await Promise.all([
         sql<{ day: string; usd: string }[]>`
           with costs as (${costs})
@@ -102,19 +106,19 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           with costs as (${costs})
           select repos.id as key, repos.full_name as label, coalesce(sum(costs.cost_usd), 0)::text as usd, count(*)::text as count
           from costs join repos on repos.id = costs.repo_id
-          where costs.created_at >= ${start}
+          where costs.created_at >= ${start}::timestamptz
           group by repos.id, repos.full_name
           order by sum(costs.cost_usd) desc nulls last, repos.full_name`,
         sql<{ key: Level; usd: string; count: string }[]>`
           with costs as (${costs})
           select jobs.level as key, coalesce(sum(costs.cost_usd), 0)::text as usd, count(*)::text as count
           from costs join jobs on jobs.id = costs.job_id
-          where costs.created_at >= ${start}
+          where costs.created_at >= ${start}::timestamptz
           group by jobs.level`,
         sql<{ key: string | null; usd: string; count: string }[]>`
           with costs as (${costs})
           select model as key, coalesce(sum(cost_usd), 0)::text as usd, count(*)::text as count
-          from costs where created_at >= ${start}
+          from costs where created_at >= ${start}::timestamptz
           group by model
           order by sum(cost_usd) desc nulls last, model`,
         sql<{ id: string; kind: JobKind; repoId: string; repo: string; prNumber: number; level: Level; model: string | null; usd: string; createdAt: Date | string }[]>`
@@ -122,14 +126,14 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           select costs.id, jobs.kind, costs.repo_id as "repoId", repos.full_name as repo, costs.pr_number as "prNumber",
             jobs.level, costs.model, costs.cost_usd::text as usd, costs.created_at as "createdAt"
           from costs join jobs on jobs.id = costs.job_id join repos on repos.id = costs.repo_id
-          where costs.created_at >= ${start} and costs.cost_usd is not null
+          where costs.created_at >= ${start}::timestamptz and costs.cost_usd is not null
           order by costs.cost_usd desc, costs.created_at desc, costs.id
           limit ${TOP_LIMIT}`,
         sql<{ count: string; unknown: string }[]>`
           with costs as (${costs})
           select count(*)::text as count,
             count(*) filter (where cost_usd is null or cost_source = 'unknown')::text as unknown
-          from costs where created_at >= ${start}`,
+          from costs where created_at >= ${start}::timestamptz`,
         sql<{ daily: string | null; monthly: string | null; alert: number | null }[]>`
           select daily_cap_usd as daily, monthly_cap_usd as monthly, cap_alert_pct as alert from orgs where id = ${orgId}`,
       ])
@@ -168,8 +172,8 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
       return {
         period,
         now,
-        start,
-        end,
+        start: range.start,
+        end: range.end,
         days: series,
         totalUsd,
         previousTotalUsd,

@@ -208,6 +208,11 @@ const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string
     lead: 'The machines that do the reviews.',
     empty: 'The runners, their last signal and their jobs will show here.',
   },
+  costs: {
+    title: 'Costs',
+    lead: 'What the reviews of the organization cost, and where.',
+    empty: 'The costs by day, repo, level and model will show here.',
+  },
   settings: {
     title: 'Settings',
     lead: 'What applies to the whole organization.',

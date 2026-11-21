@@ -37,6 +37,14 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   JavaScript, each one stays the `<details>` of the server. Every select of the screens (KNT-165,
   `public/select.tsx`) is the select of `@remix-run/ui` in the browser, and the native `<select>`
   without JavaScript.
+- `app/ui/costs.tsx`, `app/costs/` (KNT-188): the Costs screen, `/costs`. Every member of the org
+  reads it. What the reviews and resolutions of the org cost over a period (`?period=` this month,
+  the default; `last-month`, `30d`, `90d`), against the period before: by UTC day, repo, level and
+  model, the most expensive runs, and for this month the projection and the cap. Each breakdown is a
+  table of the server; in the browser `app/costs/public/cost-chart.tsx` draws its chart with
+  [Chart.js](https://www.chartjs.org) 4 (MIT; served by the asset server, from the pnpm store, with
+  its `@kurkle/color`) and folds the table under "Show the data". The tile "Cost of the month" of the
+  dashboard opens it.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the

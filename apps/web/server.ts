@@ -5,6 +5,7 @@ import { createRequestListener, type ClientAddress } from 'remix/node-fetch-serv
 import { createCommandHandler } from './app/commands/handler.ts'
 import { createFeedbackHandler } from './app/feedback/handler.ts'
 import { createFeedbackStore } from './app/feedback/store.ts'
+import { createCostsStore } from './app/costs/store.ts'
 import { DOCS_PATH } from './app/commands/hint.ts'
 import { loadConfig } from './app/config.ts'
 import { createDatabase } from './app/db/client.ts'
@@ -246,6 +247,8 @@ let router = createAppRouter({
   users: { store: createUsersStore(database.sql) },
   // REV-107. The answers about the reviews of the org.
   feedback: { store: createFeedbackStore(database.sql) },
+  // KNT-188. The costs of the org, by day, repo, level and model.
+  costs: { store: createCostsStore(database) },
   // KNT-150. The members and the invitations of an org.
   members: { store: createMembersStore(database.sql), lookupUser: people?.lookupUser ?? null, lookupRole },
   organization: { store: createOrgsStore(database.sql), lookupRole, lookupAccountType: people?.lookupAccountType ?? null },
