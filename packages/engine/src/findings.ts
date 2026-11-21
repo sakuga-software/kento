@@ -334,9 +334,22 @@ export const MAX_PATCH_LINES = 40;
  */
 const PLACEHOLDERS = new Set(['follows', 'none', 'null', 'n/a', 'nothing', 'no patch', 'no suggestion', 'no fix', 'not applicable', 'tbd', 'todo', '-', '...', '…']);
 
-/** KNT-159. Whether a text is only a placeholder word, or empty after trim. */
+/** The quotes around a placeholder, and the dot after it. */
+const QUOTES = `"'\``;
+
+/**
+ * KNT-159. Whether a text is only a placeholder word, or empty after trim. No regular expression on
+ * the ends: the text comes from the model, and a run of quotes would make one slow.
+ */
 export function isPlaceholder(text: string): boolean {
-  const word = text.trim().replace(/^["'`]+|["'`.]+$/g, '').trim().toLowerCase();
+  const trimmed = text.trim();
+  // The longest placeholder has 14 characters: a longer text is code or a sentence.
+  if (trimmed.length > 40) return false;
+  let start = 0;
+  let end = trimmed.length;
+  while (start < end && QUOTES.includes(trimmed[start]!)) start++;
+  while (end > start && (QUOTES.includes(trimmed[end - 1]!) || trimmed[end - 1] === '.')) end--;
+  const word = trimmed.slice(start, end).trim().toLowerCase();
   return word === '' || PLACEHOLDERS.has(word) || /^e\d+$/.test(word);
 }
 
@@ -380,7 +393,10 @@ function readsAsDiff(patch: string): boolean {
  * or it is not a diff (KNT-159).
  */
 export function shownPatch(finding: Finding): string | null {
-  const patch = (finding.patch ?? '').replace(/\r/g, '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
+  // The fence around the patch goes: its first line, and the backquotes at its end. trimEnd and
+  // endsWith, not a regular expression on the end: a long run of spaces would make one slow.
+  let patch = (finding.patch ?? '').replaceAll('\r', '').replace(/^\s*```(diff)?[^\n]*\n/i, '').trimEnd();
+  if (patch.endsWith('```')) patch = patch.slice(0, -3).trimEnd();
   // A fence in the patch would close the code block of the comment.
   if (!patch.trim() || patch.includes('```') || patch.split('\n').length > MAX_PATCH_LINES) return null;
   return readsAsDiff(patch) ? patch : null;

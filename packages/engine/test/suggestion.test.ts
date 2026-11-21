@@ -145,3 +145,12 @@ function answering(answer: Answer, bodies: unknown[] = []): typeof globalThis.fe
     return new Response(JSON.stringify({ model: body.model, choices: [{ message: { content: JSON.stringify(answer) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
   }) as typeof globalThis.fetch;
 }
+
+test('a long run of spaces or quotes from the model is read in linear time (KNT-159, CodeQL)', () => {
+  const started = performance.now();
+  assert.equal(shownPatch(finding({ patch: `-a\n+${' '.repeat(100_000)}b` }))?.length, 100_005);
+  assert.equal(shownPatch(finding({ patch: `${' '.repeat(100_000)}\n` })), null);
+  assert.equal(isPlaceholder(`${'"'.repeat(100_000)}x`), false);
+  assert.equal(isPlaceholder(`"${'.'.repeat(30)}follows`), false);
+  assert.ok(performance.now() - started < 500, `took ${Math.round(performance.now() - started)} ms`);
+});
