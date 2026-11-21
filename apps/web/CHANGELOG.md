@@ -26,6 +26,9 @@ Each entry says, when it applies:
   installation deletes the empty org, after a confirmation by its name that lists its members and
   invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
   an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+- **Dashboard** (KNT-190, KNT-193): "No cap", on the card Cost and in "At a glance", links to
+  the section "Costs and cap" of the settings for an owner or an admin (plain text for a member).
+  The section "To do" shows only when it has something in it.
 
 ## 0.2.0 (2026-11-21)
 

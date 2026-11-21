@@ -378,13 +378,35 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     assert.match((await signIn(OCTOCAT)).html, /of \$150\.00 · alert at 80%/)
   })
 
-  it('says that nothing is to do when nothing is', async () => {
+  it('shows no "To do" when nothing is to do (KNT-193)', async () => {
     let { signIn } = setup(
       screen({ banner: null, workflowRepos: [], runners: [], caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } }),
     )
     let { html } = await signIn(OCTOCAT)
-    assert.match(html, /To do <span class="count">0<\/span>/)
-    assert.match(html, /Nothing to do/)
+    assert.doesNotMatch(html, /id="todo-title"/)
+    assert.doesNotMatch(html, /class="dash-todo"/)
+    assert.doesNotMatch(html, /Nothing to do/)
+    // The rest of the dashboard stays.
+    assert.match(html, /aria-label="At a glance"/)
+  })
+
+  it('makes "No cap" a link to the caps of the settings for an admin, and plain text for a member (KNT-190)', async () => {
+    let noCap = screen({ caps: { dailyCapUsd: null, monthlyCapUsd: null, alertPct: 80 } })
+    let admin = (await setup(noCap).signIn(OCTOCAT)).html
+    let link = /<a href="\/settings#cap">No cap<span class="visually-hidden">: set a cap in the settings<\/span><\/a>/g
+    // The meter of the day and the one of the month.
+    assert.equal(admin.match(link)?.length, 2)
+    let kpis = admin.slice(admin.indexOf('aria-label="At a glance"'), admin.indexOf('</section>', admin.indexOf('aria-label="At a glance"')))
+    assert.match(kpis, /<a href="\/settings#cap">no cap<span class="visually-hidden">: set a cap in the settings<\/span><\/a>/)
+
+    let member = (await setup(noCap).signIn(CAMILLE)).html
+    assert.doesNotMatch(member, /<a href="\/settings#cap">(No|no) cap/)
+    assert.match(member, /<span class="status status-stale">No cap<\/span>/)
+    assert.match(member, /<span class="kpi-sub ">no cap<\/span>/)
+
+    // A cap that is set: no link on its state.
+    let capped = (await setup(screen({ caps: { dailyCapUsd: 5, monthlyCapUsd: 100, alertPct: 80 } })).signIn(OCTOCAT)).html
+    assert.doesNotMatch(capped, /(No|no) cap/)
   })
 })
 
