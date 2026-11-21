@@ -536,7 +536,8 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
                 <p class="hint">{screen.workflowRepos.join(', ')}. Kentō does not track their findings here.</p>
               </div>
               <div class="todo-actions">
-                <a class={buttonClass()} href={routes.repos.href()}>
+                {/* KNT-179: the filter of the repos that still hold review.yml. */}
+                <a class={buttonClass()} href={`${routes.repos.href()}?filter=switching`}>
                   See the repos
                 </a>
               </div>
