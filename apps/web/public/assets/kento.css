@@ -1650,6 +1650,58 @@ a.repo-name {
 .repo-name svg {
   color: var(--ink-muted);
 }
+/* KNT-183, KNT-187. A confidence score (app/ui/score.tsx): five marks filled up to the score, in the
+   colour of its band, then the number in ink. The box gives the count (score-n0 to score-n5) and the
+   band. The number carries the value; the marks only repeat it (aria-hidden), so an empty mark is
+   pale, to stand apart from a filled one. */
+.score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  --score-mark: var(--matsu);
+}
+.score-mid {
+  --score-mark: var(--kuchiba);
+}
+.score-low {
+  --score-mark: var(--shu);
+}
+.score-marks {
+  display: inline-flex;
+  gap: 2px;
+}
+.score-marks > span {
+  width: 6px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--line);
+}
+.score-n1 .score-marks > :nth-child(-n + 1),
+.score-n2 .score-marks > :nth-child(-n + 2),
+.score-n3 .score-marks > :nth-child(-n + 3),
+.score-n4 .score-marks > :nth-child(-n + 4),
+.score-n5 .score-marks > :nth-child(-n + 5) {
+  background: var(--score-mark);
+}
+.score-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Windows High Contrast drops the backgrounds: the filled marks keep a colour of the system. */
+@media (forced-colors: active) {
+  .score-marks > span {
+    background: GrayText;
+  }
+  .score-n1 .score-marks > :nth-child(-n + 1),
+  .score-n2 .score-marks > :nth-child(-n + 2),
+  .score-n3 .score-marks > :nth-child(-n + 3),
+  .score-n4 .score-marks > :nth-child(-n + 4),
+  .score-n5 .score-marks > :nth-child(-n + 5) {
+    background: CanvasText;
+  }
+}
+
 /* KNT-182. The last review on one line. In the table the column takes the width of the line, and the
    table scrolls sideways before it cuts a text that the keyboard could not read. On a card (under
    760 px, below), the link stays whole and only the date can shrink. */
@@ -1815,6 +1867,9 @@ a.repo-name {
     content: 'Last review';
   }
   .repos-table td:nth-child(5)::before {
+    content: 'Confidence 30 d';
+  }
+  .repos-table td:nth-child(6)::before {
     content: 'Precision 30 d';
   }
   /* KNT-182: the last review takes the width of the card, so that its line is seldom cut; then the

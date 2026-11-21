@@ -28,6 +28,7 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
     workflowCheckedAt: new Date('2026-10-28T11:58:00Z'),
     streak: 0,
     lastReview: null,
+    confidence: null,
     ...fields,
   }
 }
@@ -47,6 +48,7 @@ function setup(findings: FindingsScreenStore | null = null, orgs = [ORG, OTHER_O
         id: FRUITBACK, fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
         workflowPath: '.github/workflows/sakuga-review.yml', streak: 3,
         lastReview: { prNumber: 677, score: 4, model: 'anthropic/claude-haiku-5.5', publishedAt: new Date('2026-10-28T11:00:00Z') },
+        confidence: { average: 3.2, reviews: 12 },
       }),
     ],
     [OTHER_ORG.id]: [row({ id: ELSEWHERE, fullName: 'orchard/app', enabled: true })],
@@ -143,16 +145,24 @@ describe('the Repos screen', () => {
     assert.match(html, new RegExp(`href="/findings\\?status=closed&amp;repo=${ORCHARD}"><span [^>]*class="precision-value precision-pending">n = 3 of 10`))
   })
 
-  it('shows each repository with its visibility, level, model and last review, in five columns (KNT-179, KNT-181)', async () => {
+  it('shows each repository with its visibility, level, model, last review and confidence, in six columns (KNT-179, KNT-181, KNT-183)', async () => {
     let { signIn, rows } = setup()
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     // KNT-179, KNT-181: no column "Reviews by" nor "Switch"; the last one has no visible name.
     assert.match(
       html,
-      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
+      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Confidence 30 d<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
     )
     assert.doesNotMatch(html, /Reviews by|review\.yml@stable|copy of review\.yml|3\/20|set back to zero|class="switch/)
+    // KNT-183: the average of 30 days, drawn as the score of the dashboard (3 marks of the middle band),
+    // its number with one decimal, its count in the title; "–" with no review in the 30 days.
+    assert.match(
+      html,
+      /<td><span title="Average of 12 reviews over 30 days" class="score score-mid score-n3"><span aria-hidden="true" class="score-marks">(?:<span><\/span>){5}<\/span><span class="score-value">3\.2\/5<\/span><\/span><\/td>/,
+    )
+    let orchardRow = html.slice(html.indexOf(`id="repo-${ORCHARD}"`), html.indexOf('</tr>', html.indexOf(`id="repo-${ORCHARD}"`)))
+    assert.doesNotMatch(orchardRow, /class="score/)
     assert.match(html, /claude-haiku-5\.5/)
     assert.match(html, new RegExp(`href="/repos/${FRUITBACK}/pulls/677"`))
     // KNT-182: the last review on one line, its date after the score, the whole of it in the title.
