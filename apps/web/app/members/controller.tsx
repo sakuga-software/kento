@@ -11,7 +11,7 @@ import { errorMessage, log } from '../log.ts'
 import { invitationRoutes, memberRoutes, pageRoutes } from '../routes.ts'
 import { InvitationsPage, isMemberNotice, MembersPage, refusalNotice, type MemberNotice } from '../ui/members.tsx'
 import type { ScreenKit } from '../ui/pages.tsx'
-import { decideInvite, isInvitationRole, RECLAIM_COOLDOWN_MS, type MemberChange } from './rules.ts'
+import { decideInvite, isInvitationRole, type MemberChange } from './rules.ts'
 import type { MembersStore } from './store.ts'
 
 /** The members screen. Null: it answers 404. */
@@ -31,23 +31,7 @@ function toMembers(notice: MemberNotice, extra: Record<string, string> = {}) {
   return new Response(null, { status: 303, headers: { Location: `${memberRoutes.members.href()}?${query}` } })
 }
 
-/** The most people and orgs that the cooldown of the take-back keeps in memory. */
-const RECLAIM_KEYS_MAX = 10_000
-
 export function createMemberControllers(kit: ScreenKit, deps: MembersDependencies | null) {
-  /** When each person last asked GitHub for the take-back of the owner role, per org: `org:user`. */
-  let reclaimAsked = new Map<string, number>()
-  function rememberReclaim(key: string, now: number) {
-    reclaimAsked.delete(key)
-    reclaimAsked.set(key, now)
-    if (reclaimAsked.size <= RECLAIM_KEYS_MAX) return
-    // The oldest first: a Map keeps the order of the writes.
-    for (let [old, at] of reclaimAsked) {
-      if (reclaimAsked.size <= RECLAIM_KEYS_MAX && now - at < RECLAIM_COOLDOWN_MS) break
-      reclaimAsked.delete(old)
-    }
-  }
-
   let members = createController(memberRoutes, {
     middleware: kit.middleware,
     actions: {
@@ -137,20 +121,24 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
         let signed = kit.signedIn(context)
         let org = signed.membership.org
         if (!deps.lookupRole) return toMembers('github_failed')
-        // One question to GitHub per person and org a minute: a member cannot spend the quota of
-        // the installation, the one of the reviews, by posting the form again and again.
-        let key = `${org.id}:${signed.user.id}`
-        let asked = reclaimAsked.get(key)
-        if (asked !== undefined && kit.now() - asked < RECLAIM_COOLDOWN_MS) {
-          log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id })
-          return toMembers('reclaim_wait')
+        // One question to GitHub per person and org a minute, counted in Postgres for every process:
+        // a member cannot spend the quota of the installation, the one of the reviews, by posting
+        // the form again and again.
+        let asked = await deps.store.askReclaim(org.id, signed.user.id)
+        if (asked !== 'allowed') {
+          log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id, outcome: asked })
+          return toMembers(asked === 'gone' ? 'not_found' : 'reclaim_wait')
         }
-        rememberReclaim(key, kit.now())
         let githubAdmin: boolean
         try {
           githubAdmin = (await orgRole(deps.lookupRole, org, { githubId: signed.user.githubId, login: signed.user.login })) === 'admin'
         } catch (error) {
           log('warn', 'members.lookup_failed', { org: org.name, error: errorMessage(error) })
+          // A failure of GitHub does not cost the person the whole minute. A failure to write that
+          // changes nothing of the answer: GitHub failed.
+          await deps.store.reclaimFailed(org.id, signed.user.id).catch((failure: unknown) =>
+            log('warn', 'members.reclaim_retry_not_saved', { org: org.id, error: errorMessage(failure) }),
+          )
           return toMembers('github_failed')
         }
         let outcome = await deps.store.reclaim(org.id, signed.user.id, githubAdmin)

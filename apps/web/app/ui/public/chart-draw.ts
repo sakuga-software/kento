@@ -85,6 +85,11 @@ export function shortLabel(label: string, max = LABEL_MAX): string {
   return label.length > max ? `${label.slice(0, max - 1)}…` : label
 }
 
+/** The callback of the ticks of a category axis: each label cut to LABEL_MAX characters. */
+export function tickLabel(labels: string[]): (value: number | string, index: number) => string {
+  return (_value, index) => shortLabel(labels[index] ?? '')
+}
+
 /** "$0.004" under ten cents, "$12.50" above: `usdPrecise` of app/ui/format.ts. */
 export function money(value: number): string {
   return value > 0 && value < 0.1 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`
@@ -217,7 +222,7 @@ function config({ kind, unit, tone }: ChartOptions, data: SourceData, reduce: bo
         y: {
           grid: { display: false },
           border: { color: colors.grid },
-          ticks: { color: colors.ink, font, callback: (_value: number | string, index: number) => shortLabel(data.labels[index] ?? '') },
+          ticks: { color: colors.ink, font, callback: tickLabel(data.labels) },
         },
       },
       // One series: its title names it, no legend.

@@ -185,4 +185,36 @@ describe('the costs of an org by period (KNT-188)', () => {
       ],
     )
   })
+
+  it('runs three queries at most at once for one report (Fable P3)', async () => {
+    // A query of postgres.js runs when it is awaited: count the ones whose `then` ran and did not end.
+    // A fragment (the CTE of the costs) is never awaited, so it is not counted.
+    let running = 0
+    let most = 0
+    let counted = new Proxy(database.sql, {
+      apply(target, self, args) {
+        let query = Reflect.apply(target, self, args) as PromiseLike<unknown> & { then: PromiseLike<unknown>['then'] }
+        let then = query.then.bind(query)
+        // oxlint-disable-next-line unicorn/no-thenable -- the test wraps the `then` of a query of postgres.js to count it while it runs.
+        query.then = ((resolve?: (value: unknown) => unknown, reject?: (error: unknown) => unknown) => {
+          running += 1
+          most = Math.max(most, running)
+          return then(
+            (value) => ((running -= 1), resolve ? resolve(value) : value),
+            (error) => {
+              running -= 1
+              if (reject) return reject(error)
+              throw error
+            },
+          )
+        }) as typeof query.then
+        return query
+      },
+    })
+    let counting = createCostsStore({ sql: counted })
+    let report = await counting.report(org, '90d')
+    assert.equal(report.totalUsd, (await store.report(org, '90d')).totalUsd)
+    assert.ok(most > 1, `the queries still run in parallel: ${most}`)
+    assert.ok(most <= 3, `at most three at once: ${most}`)
+  })
 })

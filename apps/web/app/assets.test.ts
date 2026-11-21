@@ -208,8 +208,24 @@ describe('the charts of the Costs screen and the asset server (KNT-188)', () => 
         let response = await fetch(storeUrl(path.join(CHART_DIR, file)))
         statuses[file] = response.status
       }
+      // Repeated slashes reach the same files (Fable re-check).
+      let umd = storeUrl(path.join(CHART_DIR, 'dist/chart.umd.min.js'))
+      let types = storeUrl(path.join(CHART_DIR, 'dist/types.d.ts'))
+      for (let url of [
+        umd.replace('/assets/', '/assets//'),
+        umd.replace('/assets/', '/assets///'),
+        umd.replace('__@remix/virtual-store', '__@remix//virtual-store'),
+        types.replace('/assets/', '/assets//'),
+      ]) {
+        statuses[url] = (await fetch(url)).status
+      }
     })
-    assert.deepEqual(statuses, { 'dist/chart.umd.min.js': 404, 'dist/chart.umd.js': 404, 'dist/types.d.ts': 404, 'dist/chart.cjs': 404 })
+    assert.deepEqual(
+      Object.values(statuses).filter((status) => status !== 404),
+      [],
+      JSON.stringify(statuses),
+    )
+    assert.equal(Object.keys(statuses).length, 8)
     assert.deepEqual(
       lines.filter((line) => line.level === 'error'),
       [],
