@@ -182,7 +182,7 @@ test.describe('the settings of the org', () => {
     await page.goto('/settings')
     let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
     let mobile = info.project.name === 'mobile'
-    // Under 900 px the list is folded under "Section …"; on a desktop it stays in view on the left.
+    // Under 900 px the list is folded under "Sections"; on a desktop it stays in view on the left.
     await expect(nav.locator('[data-settings-nav-toggle]')).toBeVisible({ visible: mobile })
     await expect(nav.getByRole('link', { name: 'Costs and cap' })).toBeVisible({ visible: !mobile })
     for (let [name, id] of [
@@ -208,7 +208,8 @@ test.describe('the settings of the org', () => {
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
       await page.evaluate(() => window.scrollTo(0, 0))
     }
-    // The sidebar marks the section on screen, and the part on screen under it (folded on a phone).
+    // The sidebar marks the section on screen, and the part on screen under it. On a phone, the list
+    // marks the section and the part chosen in it (KNT-168).
     await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).toHaveAttribute('aria-current', 'location')
     await expect(nav.locator('[aria-current="location"]')).toHaveCount(1)
     await goToSettingsLink(page, 'heavy')
@@ -216,10 +217,10 @@ test.describe('the settings of the org', () => {
     await expect(nav.getByRole('link', { name: 'heavy', exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
     await expect(nav.getByRole('link', { name: 'Costs and cap', includeHidden: true })).not.toHaveAttribute('aria-current', /.*/)
     if (mobile) {
-      // The button names the section on screen, and the list is folded again after a link.
+      // The list is folded again after a link. KNT-168: the button names no section.
       let toggle = nav.locator('[data-settings-nav-toggle]')
       await expect(toggle).toHaveAttribute('aria-expanded', 'false')
-      await expect(nav.locator('[data-settings-nav-current]')).toHaveText('Levels and models')
+      await expect(toggle).toHaveText('Sections')
       // KNT-164. Tab past the last link: the list stays open (a disclosure in the page), and the
       // field that gets the focus is on screen.
       await toggle.click()
@@ -263,6 +264,59 @@ test.describe('the settings of the org', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
+  // KNT-168. On a phone the bar is at the top of the page. Each section ends with "Sections": the
+  // link leads back to the bar, opens the list on that section, and gives the focus to the button.
+  test('on a phone, "Sections" at the end of a section opens the list on that section', async ({ page }, info) => {
+    let errors = watchConsole(page)
+    let mobile = info.project.name === 'mobile'
+    await signIn(page, 'octocat')
+    await page.goto('/settings#app')
+    let back = page.locator('a[data-settings-back="app"]')
+    // A desktop has its sidebar in view: no link back.
+    await expect(back).toBeVisible({ visible: mobile })
+    test.skip(!mobile, 'the links back exist under 900 px only')
+    await back.scrollIntoViewIfNeeded()
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    let toggle = nav.locator('[data-settings-nav-toggle]')
+    // Its name says where it leads and where from.
+    await expect(back).toHaveAccessibleName('Back to the Sections from GitHub App')
+    // Ctrl or Cmd + click opens another tab, and leaves this page as it is.
+    let [tab] = await Promise.all([page.context().waitForEvent('page'), back.click({ modifiers: ['ControlOrMeta'] })])
+    await tab.close()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await back.click()
+    await expect(page).toHaveURL(/\/settings#settings-nav$/)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(toggle).toBeFocused()
+    await expect(toggle).toBeInViewport()
+    // The margin of the nav keeps the button off the top edge of the screen.
+    expect(await toggle.evaluate((e) => e.getBoundingClientRect().top)).toBeGreaterThan(0)
+    await expect(nav.getByRole('link', { name: 'GitHub App' })).toHaveAttribute('aria-current', 'location')
+    await expect(nav.locator('[aria-current]')).toHaveCount(1)
+    // Tab goes on into the list; a choice leads to the section, and the list marks it.
+    await page.keyboard.press('Tab')
+    await expect(nav.getByRole('link', { name: 'Costs and cap' })).toBeFocused()
+    await nav.getByRole('link', { name: 'Trusted bots' }).click()
+    await expect(page).toHaveURL(/\/settings#bots$/)
+    await expect(page.locator('#bots')).toBeInViewport()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(nav.getByRole('link', { name: 'Trusted bots', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    // Out of the chosen section, by hand, the mark goes: the list never names a section that the
+    // person left. Down to the bottom of the page, then back up to the top.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect(nav.locator('[aria-current]')).toHaveCount(0)
+    await nav.getByRole('link', { name: 'Trusted bots', includeHidden: true }).evaluate((a) => (a as HTMLAnchorElement).click())
+    await expect(nav.getByRole('link', { name: 'Trusted bots', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await expect(nav.locator('[aria-current]')).toHaveCount(0)
+    // The last section, at the bottom of a long page, leads back too.
+    await page.locator('a[data-settings-back="providers"]').click()
+    await expect(toggle).toBeInViewport()
+    await expect(nav.getByRole('link', { name: 'Providers and keys' })).toHaveAttribute('aria-current', 'location')
+    await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
+  })
+
   // KNT-169. Forced colors (Windows High Contrast) draw a transparent border in the colour of the
   // text: only the current link of the sidebar may have a border, or every link looks current.
   test('in forced colors, only the current link of the sidebar has a border', async ({ page }) => {
@@ -284,6 +338,45 @@ test.describe('the settings of the org', () => {
     expect(new Set(current.map((b) => b.style))).toEqual(new Set(['solid']))
     expect(new Set(others.map((b) => b.style))).toEqual(new Set(['none']))
     // No axe here: Chromium emulates the media query only, and does not force the colours.
+  })
+
+  // KNT-168. The marks of the scroll belong to the sidebar of a wide screen: a window that narrows to
+  // a phone drops them, and the list starts with no mark until a choice.
+  test('a window that narrows to a phone drops the marks of the scroll', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'starts with the sidebar of a wide screen')
+    await signIn(page, 'octocat')
+    await page.goto('/settings#bots')
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'Trusted bots' })).toHaveAttribute('aria-current', 'location')
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(nav.locator('[aria-current]')).toHaveCount(0)
+    // A choice in the list marks it again.
+    await goToSettingsLink(page, 'GitHub App')
+    await expect(nav.getByRole('link', { name: 'GitHub App', includeHidden: true })).toHaveAttribute('aria-current', 'location')
+  })
+
+  // KNT-168. A sidebar taller than the window scrolls to its marked link. After a phone width, the
+  // window widens again: the sidebar scrolls to its marked link again, even the same one as before.
+  test('a sidebar taller than the window shows its marked link again after a phone width', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'starts with the sidebar of a wide screen')
+    await page.setViewportSize({ width: 1440, height: 360 })
+    await signIn(page, 'octocat')
+    await page.goto('/settings#providers')
+    let nav = page.locator('[data-settings-nav]')
+    let link = nav.getByRole('link', { name: 'Providers and keys' })
+    let inSidebar = async () => {
+      let box = (await nav.boundingBox())!
+      let row = (await link.boundingBox())!
+      return row.y >= box.y - 1 && row.y + row.height <= box.y + box.height + 1
+    }
+    await expect(link).toHaveAttribute('aria-current', 'location')
+    await expect.poll(inSidebar).toBe(true)
+    await page.setViewportSize({ width: 390, height: 360 })
+    await expect(nav.locator('[aria-current]')).toHaveCount(0)
+    await page.setViewportSize({ width: 1440, height: 360 })
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await expect(link).toHaveAttribute('aria-current', 'location')
+    await expect.poll(inSidebar).toBe(true)
   })
 
   test('without settings.js, a phone still has the list of the sections in the page', async ({ page }, info) => {

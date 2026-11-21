@@ -3982,9 +3982,29 @@ a.finding-title:hover {
     padding-left: var(--space-3);
   }
 }
-/* "Section …" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
+/* "Sections" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
 .settings-nav-toggle {
   display: none;
+}
+/* KNT-168. The links back to the bar of a phone: no use where the sidebar stays in view. */
+.settings-back {
+  display: none;
+}
+.settings-back a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-touch);
+  font-weight: 500;
+}
+.settings-back a::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-top: 1.75px solid currentColor;
+  border-left: 1.75px solid currentColor;
+  transform: rotate(45deg);
 }
 .settings-content [id] {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
@@ -4030,7 +4050,7 @@ a.finding-title:hover {
   margin-top: var(--space-3);
 }
 
-/* Under 900 px the sidebar is a bar at the top of the page, "Section …", that opens the list under
+/* Under 900 px the sidebar is a bar at the top of the page, "Sections", that opens the list under
    it. KNT-164: the bar does not stay in view. A sticky bar that holds a button always covers part of
    some field at some scroll position (a form sent back with its errors scrolls to its field).
    settings.js sets .settings-nav-ready once it handles the bar: until then, or without it, the list
@@ -4044,6 +4064,8 @@ a.finding-title:hover {
     position: static;
     max-height: none;
     overflow: visible;
+    /* KNT-168: a link "Sections" leads here. */
+    scroll-margin-top: var(--space-4);
   }
   .settings-nav-ready .settings-nav-toggle {
     display: flex;
@@ -4068,15 +4090,12 @@ a.finding-title:hover {
     box-shadow: var(--focus-ring);
   }
   .settings-nav-toggle-label {
-    color: var(--ink-muted);
-    font-weight: 500;
-  }
-  .settings-nav-toggle-current {
     flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+  /* KNT-168. "Sections" at the end of each section, back to the bar at the top of the page. */
+  .settings-back {
+    display: block;
+    margin: calc(-1 * var(--space-2)) 0 0;
   }
   /* The chevron: down when folded, up when open. */
   .settings-nav-toggle::after {
