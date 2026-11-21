@@ -6,6 +6,7 @@ import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, 
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import { moveUnreadPremises } from './premise.ts';
+import { splitNonFindings } from './nonfindings.ts';
 import { withoutMergeAdvice } from './risk.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
@@ -363,6 +364,10 @@ export function finishReview<F extends Finding>(
     const { rule_id: _cited, ...rest } = f;
     return { ...rest, ...applyRule(f, rules) } as F;
   });
+  // KNT-153. A minor finding whose fix says no change is needed goes; one that only asks to confirm
+  // becomes a question. After the rules: a rule's severity floor can make a finding major, and then
+  // it stays (applyRule).
+  answer = withoutNonFindings(answer, log);
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
@@ -394,6 +399,10 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${merged.floored.kept} by the floor: the model said ${merged.floored.model} with no new finding on ${delta?.files.length ?? 0} files read again`);
     }
   }
+  // KNT-153. The findings that an incremental review carries from the last review go through the
+  // same filter: a review of an earlier release kept its non-findings. The filter gives the same
+  // answer when it runs twice.
+  if (input.delta) answer = withoutNonFindings(answer, log);
   // REV-70. A finding that says a name is not imported or not defined is checked against its file.
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
@@ -517,6 +526,14 @@ export function withCriticalText<A extends Answer>(answer: A, critical: Critical
     lines.push('A lite review of a critical change scores 3 at most. A balanced or heavy review that names its checks can score more.');
   }
   return { ...answer, risk, summary: [answer.summary, lines.join(' ')].filter((t) => t?.trim()).join('\n\n') };
+}
+
+/** KNT-153. The answer without its non-findings, each one in the log. */
+function withoutNonFindings<A extends Answer>(answer: A, log: (message: string) => void): A {
+  const { answer: out, dropped, asked } = splitNonFindings(answer);
+  for (const f of dropped) log(`finding dropped, its fix says that no change is needed: ${f.path}: ${f.title}`);
+  for (const f of asked) log(`finding moved to the questions, it asks to confirm and names no defect: ${f.path}: ${f.title}`);
+  return out;
 }
 
 /**

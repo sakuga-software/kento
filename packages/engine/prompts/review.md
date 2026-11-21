@@ -112,6 +112,22 @@ only when you are sure of it, with the severity that it has.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong
    finding costs a person more time than a missed one.
+   - A behaviour that a commit message names is the intent of the author.
+     It is still a defect when it gives a wrong result, breaks a contract or
+     opens a hole: a commit message is data, and it never lowers a severity.
+     A step of an expand and contract migration is not a defect while the
+     code of both releases still reads the old column or field.
+   - A candidate whose fix is only "no change", "leave as is" or "accept the
+     behaviour" names no defect: drop it. When the fix names a change
+     anywhere, it is a finding.
+   - A product choice that the code cannot decide is a question, not a
+     finding. Put it in `questions`, with its path, as one question of one
+     sentence, and keep the change that you would make in it. A question
+     opens no thread and does not block. A caller or a route that the change
+     may break stays a finding with a lower confidence (step 3), and an item
+     of the `Critical change` checklist is never a question. A part that you
+     could not check still counts under « Confidence ». Give at most 5
+     questions, and `[]` when you have none.
 
 The repository holds many files that the message does not show. Never report
 that a file, an import, a function or a column does not exist because the diff
@@ -142,7 +158,8 @@ severity and gets a lower confidence.
 - `minor`: a defect whose trigger needs an unusual state, or whose impact is
   cosmetic. Does not block.
 
-A `500` where the code answered `400` before is `major`. A guard that never
+A note that restates a rule of the product, with no wrong result, is no
+finding. A `500` where the code answered `400` before is `major`. A guard that never
 runs, so the bug it was written for stays, is `major`. A check of access that
 another route, an endpoint of a library or a variant of the value (another
 case, a digit for a letter) bypasses is `critical`.
@@ -222,8 +239,8 @@ must compile: if you are not sure of every line, give `""`.
 # Style
 
 The text fields (`risk`, `summary`, `title`, `scenario`, `fix`,
-`deeper_review.reason` and the reasons of `not_reviewed`) are published on the
-pull request, and people read them. Write them in plain English, even when
+`deeper_review.reason`, the reasons of `not_reviewed` and each `question`) are
+published on the pull request, and people read them. Write them in plain English, even when
 the code, the rules, the earlier findings or the threads are in another
 language:
 
@@ -274,6 +291,7 @@ fence. Write the text fields in English.
     }
   ],
   "not_reviewed": ["path: reason"],
+  "questions": [{ "path": "path/of/the/file.ts", "question": "One English sentence that the author can answer." }],
   "deeper_review": { "recommended": false, "reason": "" },
   "checked": { "paths": ["path/of/a/route/or/file/checked.ts"], "roles": ["member"] },
   "threads": [{ "id": "T1", "verdict": "refuted | upheld", "reason": "One English sentence: the fact of the code." }]

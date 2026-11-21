@@ -40,7 +40,7 @@ function fakeGitHub(now?: () => number) {
   }) as typeof globalThis.fetch
 
   let saved: CheckedRepo[][] = []
-  let targets: { orgId: string; installationId: string }[] = []
+  let targets: string[] = []
   let store: ReposStore = {
     list: async () => {
       throw new Error('the check does not list')
@@ -96,10 +96,7 @@ describe('the check of the repositories on GitHub', () => {
       mints.map((mint) => mint.installationId),
       [11, 12],
     )
-    assert.deepEqual(targets, [
-      { orgId: 'org-1', installationId: 'installation-1' },
-      { orgId: 'org-1', installationId: 'installation-2' },
-    ])
+    assert.deepEqual(targets, ['installation-1', 'installation-2'])
   })
 
   it('KNT-150: checks the other installations of the org when one of them fails, then fails', async () => {
@@ -125,7 +122,7 @@ describe('the check of the repositories on GitHub', () => {
       },
     })
     await assert.rejects(check.run({ ...ORG, installations: [gone, ...ORG.installations] }), /404/)
-    assert.deepEqual(targets, [{ orgId: 'org-1', installationId: 'installation-1' }], 'the live installation is still read')
+    assert.deepEqual(targets, ['installation-1'], 'the live installation is still read')
   })
 
   it('starts in the background only when the rows are old or never checked, once at a time', async () => {

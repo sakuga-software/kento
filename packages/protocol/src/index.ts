@@ -104,12 +104,15 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `patch`: a finding of the result can carry `patch`, a short diff of its fix (REV-104), and so can
  *   a finding of `delta`. A service of an earlier release refuses the claim of this feature, and so
  *   never receives the field.
+ * - `questions`: the result can carry `questions`, what the review asks the author to confirm
+ *   (KNT-153). A service of an earlier release refuses the claim of this feature, and so never
+ *   receives the field.
  * - `moved`: a review can carry `moved`, the findings that the engine moved to « Not reviewed »
  *   because their premise is code that the review did not read (KNT-151). The service matches them
  *   to its open findings and leaves those open: a moved finding is never `fixed`. A service of an
  *   earlier release refuses the claim of this feature, and so never receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'moved'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -631,6 +634,11 @@ export type ReviewPayload = {
    */
   refutedThreads?: string[];
   /**
+   * KNT-153, with the feature `questions`: what the review asks the author to confirm or to check.
+   * No thread, no block, no weight in the score. Absent: no question.
+   */
+  questions?: { path: string; question: string }[];
+  /**
    * KNT-151, with the feature `moved`: the findings that the engine moved to « Not reviewed ». They
    * are not findings of the review; the service only keeps their open findings open.
    */
@@ -701,6 +709,7 @@ const review = obj({
   cachedTokens: optional(tokens),
   delta: optional(obj({ since: sha, files: int({ min: 0, max: 100_000 }) })),
   refutedThreads: optional(arr(str({ min: 1, max: 100 }), { max: MAX_RESOLVE_THREADS })),
+  questions: optional(arr(obj({ path: text(1000), question: text(2000) }), { max: 20 })),
   moved: optional(arr(finding, { max: 100 })),
 });
 const resultRequest = tagged('outcome', {

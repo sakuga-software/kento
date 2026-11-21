@@ -27,6 +27,12 @@ export type OrgRefusal =
   | 'bad_name'
   | 'not_found'
 
+/**
+ * KNT-173. A person moves or detaches at most this many installations in a minute, whatever the
+ * org: each move asks GitHub once or twice per installation it touches.
+ */
+export const MOVES_PER_MINUTE = 10
+
 /** The longest name of an org. */
 export const ORG_NAME_MAX = 60
 
