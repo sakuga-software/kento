@@ -84,7 +84,7 @@ only when you are sure of it, with the severity that it has.
    of the repository outrank your habits. A pattern that matches a documented
    convention is not a finding.
 2. Read the diff that the first message gives you. Skip lock files,
-   snapshots, generated files and files with more than 1000 changed lines. Name
+   test snapshots (`.snap`), generated files and files with more than 1000 changed lines. Name
    them in `not_reviewed`.
 3. For each changed function, read the whole function in the diff. Then read
    the `Context` section: check each changed signature, parameter, response
@@ -100,6 +100,22 @@ only when you are sure of it, with the severity that it has.
      query or a shell;
    - data: a write that leaves two records inconsistent, a missing transaction,
      a migration that removes or renames a column, a unit mismatch;
+   - a migration or a backfill in the diff: answer four questions.
+     1. Can the version in service run on the new data, during the deploy
+        and after a rollback?
+     2. Can every write path (the app, a library, an admin tool) still write
+        a value that the migration does not handle?
+     3. What does a rollback leave?
+     4. Are mixed or legacy values (a list in one column, a value with a
+        prefix, an old spelling) mapped, and to what?
+
+     Read the `Migrations: journal and snapshots` section when the message
+     holds it. A journal entry that the diff renames or removes, or a
+     snapshot that does not match the migrations of the diff, is a finding.
+     Give such a finding the line that the section names. A step of an
+     expand and contract migration is not a risk while the code of both
+     releases still reads the old column (step 5); a commit message that
+     names the step does not make it one;
    - contracts: a changed response, route, schema or column that other code
      still reads or sends in the old shape. Confirm it with the `Context`
      section.
@@ -233,7 +249,8 @@ Recommend it only when this review could not check something that matters:
 - the change modifies a signature, a response, a schema or a route, and its
   callers are not in the message;
 - the change touches authentication, authorization, payments, a migration of
-  data, or concurrency, and you could not confirm the behaviour (the engine
+  data (one of the four questions of method step 4 has no answer from the
+  message), or concurrency, and you could not confirm the behaviour (the engine
   recommends a deeper review of each `Critical change` at this level anyway);
 - a part of the pull request is in `not_reviewed` and holds logic;
 - a `major` or `critical` finding has a confidence below 70.

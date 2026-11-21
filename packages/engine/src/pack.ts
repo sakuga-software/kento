@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto';
 import { git } from './git.ts';
 import { importsSection } from './imports.ts';
+import { isMigrationMeta, migrationSection } from './migrations.ts';
 import type { ContextKind } from './levels.ts';
 import type { MessagePart } from './providers.ts';
 import { rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
@@ -298,13 +299,20 @@ export function buildPack(
   // A rule covers a file of the change, even one that the pack leaves out, and the old path of a rename.
   const touched = changes.flatMap(({ path, from }) => (from ? [from, path] : [path]));
   const { section: rulesText, packed, skipped: rulesSkipped } = rulesSection(rulesForPaths(rules, touched));
+  // KNT-155. The journal and the snapshots of the migrations go to their own section, not to the diff.
+  const meta: string[] = [];
   for (const { added, removed, path, from } of changes) {
-    if (SKIP.test(path)) skipped.push(`${path}: generated or binary file`);
+    if (isMigrationMeta(path)) meta.push(path);
+    else if (SKIP.test(path)) skipped.push(`${path}: generated or binary file`);
     else if (added !== '-' && Number(added) + Number(removed) > MAX_FILE_CHANGED_LINES)
       skipped.push(`${path}: more than ${MAX_FILE_CHANGED_LINES} changed lines`);
     else reviewed.push(path);
     if (from) renamedFrom.set(path, from);
   }
+
+  const migrations = migrationSection(repo, base, head, meta);
+  // A file that the section cannot hold goes to « Not reviewed » with its reason, never as generated.
+  skipped.push(...migrations.skipped);
 
   const hunks = new Map<string, string>();
   for (const path of reviewed) {
@@ -330,7 +338,7 @@ export function buildPack(
   const importsSize = [...importsOf.values()].reduce((sum, text) => sum + text.length, 0);
 
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
-  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
+  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - migrations.section.length - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // KNT-156. Over the budget, a test file that shows its whole tests goes back to three lines of
   // context before any file goes: the largest first.
@@ -387,11 +395,11 @@ export function buildPack(
   // review 3 times in 49. A cache mark after them would cost more than it saves.
   const parts: MessagePart[] = [
     { text: docs, cache: '1h' },
-    { text: header + notReviewed + rulesText + answered + unkeyed + diff + importsPart + contextPart },
+    { text: header + notReviewed + rulesText + answered + unkeyed + diff + migrations.section + importsPart + contextPart },
   ];
   // REV-89. `body`: the pack without its heads and its commits, which a merge of the base branch
   // changes, and without `unkeyed`. The reuse key reads it (reuse.ts), in the order of REV-89.
-  const body = notReviewed + docs + rulesText + answered + diff + importsPart + contextPart;
+  const body = notReviewed + docs + rulesText + answered + diff + migrations.section + importsPart + contextPart;
   // REV-113. A short hash of the rules, the imports and the context: the logs of the runner tell how
   // often a review of a pull request holds the same ones as the last review.
   const contextHash = createHash('sha256').update(rulesText + importsPart + contextPart).digest('hex').slice(0, 12);
