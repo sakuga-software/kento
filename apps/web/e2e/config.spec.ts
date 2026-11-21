@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, openRepoConfig, selectValue, signIn, watchConsole } from './helpers.ts'
 
 // The Config screen of a repository (REV-12) in a browser, against the server, Postgres and the
 // fake GitHub, with the tests of the ticket: a model replaced on balanced goes into the next job and
@@ -183,10 +183,10 @@ test.describe('the Config screen of a repository', () => {
 
     await openRepoConfig(page, 'orchard')
     let balanced = page.getByRole('region', { name: 'balanced' })
-    await expect(balanced.getByLabel('Fallback provider on a usage limit')).toHaveValue('')
+    await expect(selectValue(balanced, 'fallbackProvider')).toHaveValue('')
 
     // A fallback provider without its model is refused, with the reason next to the field.
-    await balanced.getByLabel('Fallback provider on a usage limit').selectOption({ label: 'Acme Anthropic' })
+    await chooseOption(balanced, 'Fallback provider on a usage limit', { label: 'Acme Anthropic' })
     await balanced.getByRole('button', { name: 'Set here for balanced' }).click()
     balanced = page.getByRole('region', { name: 'balanced' })
     await expect(balanced.getByText('Enter the model of the fallback provider.').first()).toBeVisible()
@@ -197,7 +197,7 @@ test.describe('the Config screen of a repository', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Config saved (v1)' })).toBeVisible()
     balanced = page.getByRole('region', { name: 'balanced' })
     await expect(balanced.locator('.effective-line')).toContainText('on a usage limit, Acme Anthropic')
-    await expect(balanced.getByLabel('Fallback provider on a usage limit')).toHaveValue(providerId)
+    await expect(selectValue(balanced, 'fallbackProvider')).toHaveValue(providerId)
     await expect(balanced.getByLabel('Model of the fallback provider')).toHaveValue('claude-sonnet-5-5')
     await expectNoAxeViolations(page)
 
