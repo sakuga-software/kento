@@ -5,7 +5,9 @@
 // The order of the locks, everywhere an installation, its org or its repositories are written:
 //   1. the advisory locks of the owners of the orgs, in the order of their ids (the members screen,
 //      the checks of GitHub and the moves);
-//   2. the row of the installation (the webhook updates it first, `upsertInstallation`);
+//   2. the row of the installation (the webhook updates it first, `upsertInstallation`; a new
+//      installation of the same account locks the earlier one, `insertInstallation`; the check of
+//      the repositories locks its key, `repos/store.ts` `saveCheck`);
 //   3. the rows of the orgs, in the order of their ids (the webhook locks its org next; a rule and an
 //      assignment rule of a repository lock the key of their org first, `rules/store.ts`,
 //      `assignment/store.ts`);
@@ -13,10 +15,11 @@
 // Two transactions that take two of these locks take them in this order, and never wait on each other.
 import type postgres from 'postgres'
 
+import { takeGitHubAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { MembershipSource, OrgRole } from '../db/schema.ts'
 import { instance } from '../instance.ts'
-import { decideMove, slugOf, type MoveTarget, type OrgRefusal } from './rules.ts'
+import { decideMove, MOVES_PER_MINUTE, slugOf, type MoveTarget, type OrgRefusal } from './rules.ts'
 
 export interface OrgInstallationView {
   id: string
@@ -58,6 +61,11 @@ export interface OrgsStore {
   view(orgId: string): Promise<OrgView | null>
   /** The orgs where the person is an owner, other than `exceptOrgId`, by name. */
   ownedOrgs(userId: string, exceptOrgId: string): Promise<{ id: string; name: string }[]>
+  /**
+   * KNT-173. Counts a move of a person in an org, at most `MOVES_PER_MINUTE` a minute, for every
+   * process of the service. False: over the limit, and the move must not ask GitHub.
+   */
+  askMove(orgId: string, userId: string, now: number): Promise<boolean>
   /** The active installations of an org, for the questions to GitHub before a move into it. */
   activeInstallations(orgId: string): Promise<OrgInstallationView[]>
   rename(orgId: string, actorUserId: string, name: string): Promise<OrgChangeOutcome>
@@ -156,6 +164,10 @@ export function createOrgsStore(sql: postgres.Sql): OrgsStore {
           and exists (select 1 from installations s where s.org_id = o.id and s.suspended_at is null)
         order by lower(o.name), o.id
       `
+    },
+
+    async askMove(orgId, userId, now) {
+      return takeGitHubAsk(sql, { orgId, userId, action: 'move', now, limit: MOVES_PER_MINUTE, windowMs: 60 * 1000 })
     },
 
     async activeInstallations(orgId) {

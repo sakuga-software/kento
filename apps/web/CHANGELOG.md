@@ -19,6 +19,14 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Migrations**: 34. `0033_github_asks` (KNT-173) adds the table `github_asks`: the counts of the
+  questions to GitHub that the forms of an org ask. It only adds: the release before runs on it.
+- **Limits** (KNT-173): the take-back of the owner role asks GitHub once a minute per person and
+  org for every process of the service (it was per process), and 10 s after a failure of GitHub. A
+  person moves or detaches at most 10 installations of an org a minute.
+- **Fixes** (KNT-173): a check of the repositories, and a new installation of an account, during a
+  move of its installation no longer answer 500: they wait for the move, and follow the
+  installation to its new org.
 - **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
   installation of the App, with its repositories, to another org of theirs, to a new org, or to a
   new org with no member (a detach). GitHub must count the person as an admin of the accounts that

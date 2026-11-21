@@ -5,9 +5,10 @@
 import type postgres from 'postgres'
 
 import { canEdit, OWNER_ACTIVE_MS } from '../auth/access.ts'
+import { shortenGitHubAsk, takeGitHubAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { InvitationRole, MembershipSource, OrgRole } from '../db/schema.ts'
-import { decideMemberChange, decideReclaim, INVITATION_TTL_MS, MAX_PENDING_INVITATIONS, type MemberChange, type MemberFacts, type MemberRefusal } from './rules.ts'
+import { decideMemberChange, decideReclaim, INVITATION_TTL_MS, MAX_PENDING_INVITATIONS, RECLAIM_COOLDOWN_MS, RECLAIM_RETRY_MS, type MemberChange, type MemberFacts, type MemberRefusal } from './rules.ts'
 
 export interface MemberView {
   membershipId: string
@@ -63,6 +64,13 @@ export interface MembersStore {
    * role (`decideReclaim`). `githubAdmin`: the answer of GitHub, asked by the caller.
    */
   reclaim(orgId: string, userId: string, githubAdmin: boolean): Promise<ChangeOutcome>
+  /**
+   * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
+   * and org, for every process of the service. False: the person asked within it.
+   */
+  askReclaim(orgId: string, userId: string, now: number): Promise<boolean>
+  /** KNT-173. GitHub failed for the take-back: the person asks again after `RECLAIM_RETRY_MS`. */
+  reclaimFailed(orgId: string, userId: string, now: number): Promise<void>
   /** A change of a membership of the org by a member of it, decided by `decideMemberChange`. */
   change(input: { orgId: string; actorUserId: string; membershipId: string | null; change: MemberChange; now: number }): Promise<ChangeOutcome>
   /** The pending invitations of a GitHub account, in the active orgs, not expired. */
@@ -240,6 +248,14 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
         await audit(tx, orgId, actor!, 'reclaim', actor!, null, actor!.role, 'owner', actor!.source === 'invitation' ? { sourceBefore: 'invitation' } : null)
         return { ok: true, role: 'owner', target: actor!.login } as const
       })
+    },
+
+    async askReclaim(orgId, userId, now) {
+      return takeGitHubAsk(sql, { orgId, userId, action: 'reclaim', now, limit: 1, windowMs: RECLAIM_COOLDOWN_MS })
+    },
+
+    async reclaimFailed(orgId, userId, now) {
+      await shortenGitHubAsk(sql, { orgId, userId, action: 'reclaim', now, windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS })
     },
 
     async own(githubId) {

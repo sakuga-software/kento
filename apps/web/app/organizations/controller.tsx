@@ -88,6 +88,12 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
           return kit.errorPage(context, 400, 'form', 'settings', EXIT)
         }
         if (!deps.lookupRole || !deps.lookupAccountType) return toOrganization('github_failed')
+        // KNT-173. Each move asks GitHub once or twice per installation it touches: a limit per
+        // person and org, before any question.
+        if (!(await deps.store.askMove(org.id, signed.user.id, kit.now()))) {
+          log('warn', 'organizations.move_throttled', { login: signed.user.login, org: org.id })
+          return toOrganization('move_wait')
+        }
         let { lookupRole, lookupAccountType } = deps
         let person = { githubId: signed.user.githubId, login: signed.user.login }
         // GitHub, now, before the locks: the store decides with these answers, and refuses when the

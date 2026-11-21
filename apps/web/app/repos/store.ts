@@ -102,7 +102,10 @@ export interface ReposStore {
   setEnabled(orgId: string, repoId: string, enabled: boolean): Promise<{ fullName: string; cancelled: number } | null>
   /**
    * Writes what GitHub said about the repositories of an installation of an org. A new repository
-   * comes in disabled; an existing one keeps `enabled` and its level.
+   * comes in disabled; an existing one keeps `enabled` and its level. KNT-173: the repositories go
+   * to the org that holds the installation when they are written, which a move may have changed
+   * since the check began (`orgId` is the one the check read). An installation that is gone writes
+   * nothing.
    */
   saveCheck(installation: { orgId: string; installationId: string }, repos: CheckedRepo[]): Promise<void>
 }
@@ -309,30 +312,39 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       })
     },
 
-    async saveCheck({ orgId, installationId }, checked) {
+    async saveCheck({ installationId }, checked) {
       if (checked.length === 0) return
       let unique = [...new Map(checked.map((repo) => [repo.githubRepoId, repo])).values()]
       let now = new Date().toISOString()
-      let rows = unique.map((repo) => ({
-        org_id: orgId,
-        installation_id: installationId,
-        github_repo_id: repo.githubRepoId,
-        full_name: repo.fullName,
-        private: repo.private,
-        default_branch: repo.defaultBranch,
-        workflow: repo.workflow.mode,
-        workflow_path: repo.workflow.path,
-        workflow_ref: repo.workflow.ref,
-        workflow_checked_at: now,
-      }))
-      await sql`
-        insert into repos ${sql(rows, 'org_id', 'installation_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
-        on conflict (github_repo_id) do update set
-          org_id = excluded.org_id, installation_id = excluded.installation_id, full_name = excluded.full_name, private = excluded.private,
-          default_branch = excluded.default_branch, workflow = excluded.workflow,
-          workflow_path = excluded.workflow_path, workflow_ref = excluded.workflow_ref,
-          workflow_checked_at = excluded.workflow_checked_at, updated_at = now()
-      `
+      await sql.begin(async (tx) => {
+        // KNT-173. The order of the locks of a move (organizations/store.ts): the row of the
+        // installation first, then (through the foreign keys of the insert) its org, then the
+        // repositories. A move that holds the installation makes this wait, then this reads the org
+        // where the move put it.
+        let [installation] = await tx<{ orgId: string }[]>`
+          select org_id as "orgId" from installations where id = ${installationId} for key share`
+        if (!installation) return
+        let rows = unique.map((repo) => ({
+          org_id: installation.orgId,
+          installation_id: installationId,
+          github_repo_id: repo.githubRepoId,
+          full_name: repo.fullName,
+          private: repo.private,
+          default_branch: repo.defaultBranch,
+          workflow: repo.workflow.mode,
+          workflow_path: repo.workflow.path,
+          workflow_ref: repo.workflow.ref,
+          workflow_checked_at: now,
+        }))
+        await tx`
+          insert into repos ${tx(rows, 'org_id', 'installation_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
+          on conflict (github_repo_id) do update set
+            org_id = excluded.org_id, installation_id = excluded.installation_id, full_name = excluded.full_name, private = excluded.private,
+            default_branch = excluded.default_branch, workflow = excluded.workflow,
+            workflow_path = excluded.workflow_path, workflow_ref = excluded.workflow_ref,
+            workflow_checked_at = excluded.workflow_checked_at, updated_at = now()
+        `
+      })
     },
   }
 }

@@ -10,7 +10,7 @@ import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
-import { RECLAIM_COOLDOWN_MS } from '../../app/members/rules.ts'
+import { RECLAIM_COOLDOWN_MS, RECLAIM_RETRY_MS } from '../../app/members/rules.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase, insertOrg } from './helpers.ts'
@@ -446,6 +446,27 @@ describe('the members and the invitations of an org', () => {
     clock.now += RECLAIM_COOLDOWN_MS
     await request('/settings/members/reclaim', camille, { _csrf: csrf })
     assert.equal(gitHub.calls, 2)
+  })
+
+  it('the limit of the take-back holds for every process, and a failure of GitHub costs only a short wait', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
+    // Another process of the service counted a question of camille a moment ago: this one asks nothing.
+    assert.equal(await createMembersStore(database.sql).askReclaim(acme, user!.id, clock.now), true)
+    gitHub.calls = 0
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
+    assert.equal(gitHub.calls, 0)
+    // A minute later GitHub fails: camille asks again after RECLAIM_RETRY_MS, not after a minute.
+    clock.now += RECLAIM_COOLDOWN_MS
+    gitHub.fail = true
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
+    gitHub.fail = false
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
+    clock.now += RECLAIM_RETRY_MS
+    gitHub.calls = 0
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+    assert.equal(gitHub.calls, 1)
   })
 
   it('a GitHub admin who joined from an invitation takes the owner role; an owner from an invitation then neither demotes nor removes them', async () => {

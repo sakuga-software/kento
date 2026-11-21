@@ -4,6 +4,7 @@ import { describe, it } from 'remix/test'
 import { orgRole } from './access.ts'
 import type { GitHubRole, LookupRole } from './github.ts'
 import type { OrgRow } from './store.ts'
+import { fakeAuth } from './test-helpers.ts'
 
 // KNT-150. An org can hold several installations: GitHub gives a role in each of their accounts.
 const ORG: OrgRow = {
@@ -55,5 +56,19 @@ describe('the role of a person in an org of several installations', () => {
 
   it('throws when GitHub fails and no account gives a role: the answer is unknown, not "no access"', async () => {
     await assert.rejects(orgRole(lookup({ acme: 'error', 'acme-labs': null }).lookupRole, ORG, PERSON), /502/)
+  })
+})
+
+describe('KNT-173: the fake store of the unit tests ends a membership as the store of Postgres', () => {
+  it('only under the lock of the org, and only a membership from GitHub', async () => {
+    let auth = fakeAuth()
+    let store = auth.deps.store
+    await store.saveMembership('user-github', 'org-1', 'admin', 'github')
+    await store.saveMembership('user-invited', 'org-1', 'member', 'invitation')
+    await assert.rejects(store.forgetMembership('user-github', 'org-1'), /under the lock of its org/)
+    await store.deleteMembership('user-invited', 'org-1')
+    assert.deepEqual(await store.membershipOf('user-invited', 'org-1'), { role: 'member', source: 'invitation' })
+    await store.deleteMembership('user-github', 'org-1')
+    assert.equal(await store.membershipOf('user-github', 'org-1'), null)
   })
 })

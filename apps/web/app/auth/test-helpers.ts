@@ -52,6 +52,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   }
   type Row = { id: string; userId: string; orgId: string; role: OrgRole; source: MembershipSource; checkedAt: Date; createdAt: Date }
   let rows = () => tables.memberships as unknown as Row[]
+  /** The orgs whose lock a `withOrgLock` of the fake holds now. */
+  let locked = new Set<string>()
   /** The memberships, by `<user id>/<org id>`, as the tests read them. */
   let memberships = {
     get(key: string) {
@@ -142,14 +144,23 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     async pendingInvitations(githubId) {
       return pending.get(githubId) ?? 0
     },
-    async withOrgLock(_orgId, work) {
-      return work(store)
+    async withOrgLock(orgId, work) {
+      // One lock of an org at a time per call, as the store of Postgres: `forgetMembership` checks it.
+      locked.add(orgId)
+      try {
+        return await work(store)
+      } finally {
+        locked.delete(orgId)
+      }
     },
     async deleteMembership(userId, orgId) {
-      await store.forgetMembership(userId, orgId)
+      await store.withOrgLock(orgId, (inside) => inside.forgetMembership(userId, orgId))
     },
     async forgetMembership(userId, orgId) {
-      tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId))
+      // KNT-173. The rule of the store of Postgres: under the lock of the org, and a membership from
+      // GitHub only; one from an invitation is Kentō's.
+      if (!locked.has(orgId)) throw new Error('forgetMembership runs under the lock of its org')
+      tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId && m.source === 'github'))
     },
   }
 

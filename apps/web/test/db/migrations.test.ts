@@ -60,7 +60,7 @@ describe('migrations', () => {
       where table_schema = 'public' order by table_name`
     assert.deepEqual(
       tables.map((t) => t.table_name),
-      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'installations', 'invitations', 'jobs', 'memberships', 'org_audit', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
+      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'github_asks', 'installations', 'invitations', 'jobs', 'memberships', 'org_audit', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
     )
   })
 
@@ -88,7 +88,7 @@ describe('migrations', () => {
   it('applied a second time, changes nothing and keeps every row', async () => {
     await seed(database)
     let before = await counts(database)
-    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 33 })
+    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 34 })
 
     await runMigrations(test.url)
 
@@ -119,7 +119,7 @@ describe('migrations', () => {
       await runMigrations(test.url, next)
       await runMigrations(test.url, next)
 
-      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 34 })
+      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 35 })
       let [repo] = await database.sql<{ full_name: string; note: string }[]>`select full_name, note from repos`
       assert.deepEqual({ ...repo }, { full_name: 'sakuga-software/sakuga-review', note: 'kept' })
     } finally {
@@ -133,7 +133,7 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 33)
+      assert.equal(row!.applied, 34)
     } finally {
       await a.close()
       await other.drop()
@@ -405,6 +405,43 @@ describe('migrations', () => {
     }
   })
 
+  it('0033 adds the counts of the questions to GitHub and keeps every row of the release before (KNT-173)', async () => {
+    let other = await createTestDatabase()
+    let earlier = await mkdtemp(path.join(tmpdir(), 'kento-migrations-'))
+    let check = createDatabase(other.url, { max: 1 })
+    try {
+      // The release before: every migration up to 0032.
+      await cp(migrationsFolder, earlier, { recursive: true })
+      let journalPath = path.join(earlier, 'meta', '_journal.json')
+      let journal = JSON.parse(await readFile(journalPath, 'utf8'))
+      journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0033')
+      await writeFile(journalPath, JSON.stringify(journal))
+      await runMigrations(other.url, earlier)
+      let sql = check.sql
+      let acme = await insertOrg(sql, 'acme', 11)
+      let [user] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (7, 'octocat', '7@users.github.invalid') returning id`
+      await sql`insert into memberships (user_id, org_id, role, source) values (${user!.id}, ${acme}, 'owner', 'github')`
+      let before = await sql`select count(*)::int as n from memberships`
+
+      await runMigrations(other.url)
+
+      assert.deepEqual(await sql`select count(*)::int as n from memberships`, before)
+      let ask = (action: string) =>
+        sql`insert into github_asks (org_id, user_id, action, window_start, count) values (${acme}, ${user!.id}, ${action}, now(), 1)`
+      await ask('reclaim')
+      await ask('move')
+      // One row per person, org and kind of question.
+      await assert.rejects(ask('move'), /github_asks_org_id_user_id_action_pk/)
+      // The counts go with their person, and with their org.
+      await sql`delete from users where id = ${user!.id}`
+      assert.equal((await sql`select count(*)::int as n from github_asks`)[0]!.n, 0)
+    } finally {
+      await check.close()
+      await rm(earlier, { recursive: true, force: true })
+      await other.drop()
+    }
+  })
+
   it('a failed migration releases the lock for the next attempt', async () => {
     let other = await createTestDatabase()
     let broken = await mkdtemp(path.join(tmpdir(), 'kento-migrations-'))
@@ -420,7 +457,7 @@ describe('migrations', () => {
       let check = createDatabase(other.url, { max: 1 })
       try {
         let [row] = await check.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-        assert.equal(row!.applied, 33)
+        assert.equal(row!.applied, 34)
       } finally {
         await check.close()
       }
@@ -461,7 +498,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 33)
+    assert.equal(body.database.migrations, 34)
   })
 
   it('returns 503 when the database was never migrated', async () => {

@@ -656,6 +656,28 @@ export const orgAudit = pgTable(
 )
 
 /**
+ * KNT-173. The questions to GitHub that a person asks through a form of an org (the take-back of the
+ * owner role, the moves of installations), counted in a window: the limit holds for every process
+ * of the service. One row per person, org and kind of question.
+ */
+export const githubAsks = pgTable(
+  'github_asks',
+  {
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** reclaim, move. */
+    action: text('action').notNull(),
+    windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+    count: integer('count').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.orgId, table.userId, table.action] })],
+)
+
+/**
  * A browser session (KNT-150: the `session` of Better Auth). The cookie holds a random token, signed;
  * the table keeps only its SHA-256 (`token_hash`), so a copy of the table opens no session. A row
  * ends at `expires_at`, 7 days after the sign-in, at sign-out, or with its user.
