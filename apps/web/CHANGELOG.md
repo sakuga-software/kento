@@ -20,6 +20,152 @@ Each entry says, when it applies:
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
 
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
+  to it, as before.
+- **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
+  row per change of the members). It only adds: the release before runs on it.
+- **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu
+  of the org and the settings) and `/invitations` (the invitations of the person). An owner or an
+  admin invites a GitHub login; a person whom GitHub counts in no org of the App signs in with a
+  pending invitation, and sees only it until they accept. No change leaves an org without an
+  active owner.
+- **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
+  and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
+  of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:
+  an owner holds only while GitHub says admin, and one whom GitHub demotes to member becomes a member
+  at the next check (10 minutes), as an admin would. A GitHub admin of an org with no active owner
+  (one checked or signed in within 30 days) becomes its owner at their next check.
+- **Rollback**: the release before reads `owner` as no admin: each owner reads only until GitHub is
+  asked again (10 minutes at most), and that release writes `admin` back. This release makes such an
+  admin the owner again at the next check when the org has no active owner.
+- **Screens**: the box of the org in the header is a menu of every org of the person, with their
+  role in each.
+- **Migrations** (before it): `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
+  `users` gets the e-mail that Better Auth needs (`<github id>@users.github.invalid`, never mailed),
+  `accounts` the GitHub account of each user (no token, ever), `verifications` the state of a
+  sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and
+  keeps their rights (`memberships` stay). The GitHub App needs no change: the callback URL is the
+  same.
+- **Session cookie**: still `__Host-kento_session` over HTTPS (HttpOnly, Secure, SameSite=Lax,
+  Path=/, no Domain, 7 days), now written by Better Auth. The cookie of the release before opens no
+  session: its holder sees "Session ended." once, the cookie is cleared, and they sign in again. The
+  state of a sign-in in progress has its own cookie, `__Host-kento_state` (10 minutes).
+- **Sign-in limits**: Kentō limits the starts of a sign-in (10 a minute) and the callbacks of GitHub
+  (20 a minute) by client; over it, the sign-in page answers 429 (`auth.sign_in_limited`). The
+  limiter of Better Auth is off. **Behind a proxy, set `KENTO_TRUSTED_PROXY_HOPS`** (1 behind
+  Traefik alone) before the deploy: with the default 0, every client has the address of the proxy
+  and shares one limit.
+- **Sessions keep** the address of the client (as resolved above) and its user agent, for an
+  admin who reads the table; nothing shows them.
+- **Variables**: `KENTO_SESSION_SECRET` signs with its first secret only; a new first secret signs
+  everybody out (DEPLOY.md, section 9).
+- **Variables**: new `KENTO_TRUSTED_PROXY_HOPS`, **required when `KENTO_PUBLIC_URL` is https** (the
+  service does not start without it: `1` behind Traefik alone, an explicit `0` when nothing is in
+  front), and `KENTO_SIGN_IN_LIMIT` (default 10, per process).
+- **Migrations** (before it): `0029_installations` (KNT-150) moves the GitHub App installation out of
+  `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
+  org keeps its id, its settings and its members, and gets one installation with the same GitHub
+  ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
+  `name` and a unique `slug` (the login; an account that installed the App twice has a second org
+  with the installation id as a suffix). The release before it does not run on the new schema:
+  **follow [DEPLOY.md](DEPLOY.md#the-deployment-of-migration-0029)**: check that no slug
+  collides, take a backup (there is no down migration), stop the previous release before the new
+  one starts, and redeliver from the App page the webhooks that failed in between if they overlapped.
+  The live org of an account that installed the App twice gets the clean slug. An installation that
+  still has repositories cannot be deleted (their history stays).
+- **Webhook**: a new installation of an account that had one before joins the org of that earlier
+  installation, with its settings, instead of a new org.
+- **Order**: the service, then the runners (the engine changes).
+- **Database driver**: postgres.js 4. With no `PG*` variable and no ssl parameter in
+  `DATABASE_URL`, the service connects as before. Version 4 reads more of the environment:
+  - `PGSSLMODE`, which version 3 ignored. `require` uses TLS, and fails against a server without
+    it. `prefer` and `allow` use TLS when the server offers it. `verify-ca` and `verify-full` check
+    the certificate against the CAs of Node, not `PGSSLROOTCERT` or `~/.postgresql/root.crt`: with
+    a private CA, the migrations fail and the service does not start.
+  - `sslrootcert`, `sslcert` and `sslkey` in `DATABASE_URL` are read as files. Version 3 sent them
+    to the server, which refused the connection (`42704`).
+  - `PGCHANNELBINDING`, and `PGPASSFILE` or `~/.pgpass` when `DATABASE_URL` has no password.
+  - `PGQUERY_TIMEOUT`, `PGQUEUE_TIMEOUT`, `PGCANCEL_TIMEOUT`, `PGMIN`, `PGINFER`, `PGSCHEDULER` and
+    `PGSSLNEGOTIATION`, new options of version 4.
+
+  Before you deploy, check `env | grep '^PG'` and `~/.pgpass` in the container of the service.
+
+### Changed
+
+- The packages of the repository are `@kento-review/web`, `@kento-review/runner`,
+  `@kento-review/engine` and `@kento-review/protocol` (before `@sakuga-review/…`): use these names
+  with `pnpm -F`. The images, the markers in the texts on GitHub and the commands do not change.
+- Kentō is under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). The image of
+  the runner says so in `org.opencontainers.image.licenses`.
+- The Settings screen has a sidebar in place of the tabs under its title: the sections, and under
+  each one its parts (the levels, the parts of the GitHub App, each provider, "New rule", "Add a
+  provider"). It stays in view while the page scrolls and marks the section and the part on screen
+  (on a phone, the section that the person chose, while they are in it).
+  Under 900 px it is a bar, "Sections", at the top of the page, that opens the list under it. It does
+  not follow the scroll: a sticky bar covered part of a field after a form came back with its
+  errors. Instead, each section ends with a link "Sections" that leads back to the bar and opens
+  the list on that section. The addresses of the sections do not change (`/settings#cap`,
+  `#defaults`, `#bots`, `#app`, `#org-rules`, `#providers`).
+
+### Fixed
+
+- The thread of a finding that a push fixed is resolved again. The review asked GitHub with a token
+  that cannot write the contents, and GitHub refused: Kentō answered "The thread can be resolved."
+  and left it open. The publisher now asks a token with `contents: write` for the thread only.
+- `@kento-review resolve` works again. The service read the threads with a token that cannot read
+  the contents, and GitHub refused the commit of each comment (`FORBIDDEN` on `originalCommit`).
+- `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
+  HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
+  your reverse proxy runs on another machine, publish the port on a private address.
+- A job with no choice of models in its config no longer logs `warn job.models_not_sent` when it
+  runs on the default provider of the org. That is the normal path. The warning stays for models that
+  the config chose and that the job cannot run (KNT-139).
+
+### Security
+
+- The OpenRouter key of the service (`KENTO_PROVIDER_API_KEY`) goes only to a trusted runner of the
+  service, never to a runner of an organization: its admin could read the key and spend it outside
+  Kentō. A trusted runner of an organization still gets the keys of the providers of its
+  organization. A job of an organization with no provider now runs on a runner of the service, or on
+  a runner of the organization with its own OpenRouter key. On the Runners screen, the mode "Key of
+  the service" is now "Keys stored in Kentō". An instance whose runners are all runners of the
+  service sees no change.
+- On the Settings screen, the text that confirms the removal of the default provider says what
+  the jobs use next, with and without the OpenRouter key of the service.
+- The Dashboard says why a job with no provider waits: after 10 min, "To do" says that it waits for
+  a runner with an OpenRouter key. "Getting started" counts the key of the service only while the
+  service has a trusted runner.
+- `returnTo` can no longer send a signed-in member to another site: `/.//host` became `//host` after
+  the parse. The path is now checked after the parse.
+- The tools of the engine can no longer block the runner or fill its memory. git runs
+  asynchronously, so the heartbeat goes on during a call. One call stops after 10 s, and the calls
+  of one review after 60 s in all. Each git process has at most 512 MB of virtual memory
+  (`ulimit -v`) and 2 grep threads: a pattern such as `((a{1,100}){1,100}){1,100}b`, which filled the
+  2 GB of the runner in 3 s, now makes git stop with "Memory exhausted" in 0.2 s, and the model gets
+  that cause. `grep` also refuses a back reference (`\1` to `\9`) and a pattern whose repetitions
+  make more than 1,000 copies, as a first filter.
+- What the memory limit costs. `ulimit -v` counts the address space, so the maps of the pack files
+  count in full: with maps of up to 256 MB, 5 to 10 % of the greps with no glob failed on a pack of
+  288 MB, and every grep failed on a pack of three files of 99 MB. git now maps at most 96 MB of the
+  pack files at once, keeps at most 16 MB of delta bases, and uses one malloc arena. Measured on the
+  same packs: no failure, and a peak of 240 MB and 317 MB. The price is time: the median grep with
+  no glob on the pack of 288 MB takes 2.4 s instead of 2.2 s (7 % more). A grep that holds several
+  files of close to 100 MB rebuilt from deltas still comes near the limit (500 MB at most, no
+  failure in 30). When git runs out of memory, `grep` now says why: a pattern that git cannot
+  compile gets "use a simpler pattern", and files that git cannot map or read get "narrow the
+  glob". The cause comes from the error of git, not from the words of the pattern that git quotes.
+- The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
+  judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
+  are refused.
+
 ## 0.1.0
 
 The state of Kentō before its first public release. The earlier changes are in the history of
