@@ -1,6 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
-import { feedbackRoutes, invitationRoutes, memberRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
+import { feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Button } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
@@ -221,6 +221,9 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
           </a>
           <a class="org-menu-link" href={memberRoutes.members.href()}>
             Members
+          </a>
+          <a class="org-menu-link" href={organizationRoutes.organization.href()}>
+            Name and installations
           </a>
         </div>
       </details>

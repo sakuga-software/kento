@@ -110,6 +110,16 @@ export const memberRoutes = route({
   memberReclaim: post('/settings/members/reclaim'),
 })
 
+/**
+ * KNT-150. The org on screen: its name and its installations. Every member reads it; an owner
+ * renames it, and moves an installation to another org of theirs or to a new org.
+ */
+export const organizationRoutes = route({
+  organization: get('/settings/organization'),
+  organizationRename: post('/settings/organization/name'),
+  installationMove: post('/settings/organization/installations/:id/move'),
+})
+
 /** KNT-150. The invitations of the signed-in person, in any org: also for a person with no org yet. */
 export const invitationRoutes = route({
   invitations: get('/invitations'),
