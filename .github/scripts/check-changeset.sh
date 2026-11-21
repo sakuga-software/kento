@@ -3,6 +3,7 @@
 # 1. the pull request adds a changeset, a new file `.changeset/*.md`;
 # 2. each changeset that it adds or changes is valid, and names `@kento-review/web` only, the
 #    package of the changelog of Kentō. An empty changeset names no package, and passes.
+# 3. no changeset asks for a `major` bump while the version is below 1.0 (CONTRIBUTING.md).
 # Usage: check-changeset.sh <base>, where <base> is the commit that the pull request merges into.
 # Run it at the root of the repository, after `pnpm install` (step 2 runs the changesets CLI).
 set -euo pipefail
@@ -33,8 +34,13 @@ fi
 PRODUCT="$product" HOW="$how" node --input-type=module - "$plan" <<'EOF'
 import { readFileSync } from 'node:fs'
 const plan = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+const version = JSON.parse(readFileSync('apps/web/package.json', 'utf8')).version
 let failed = false
 for (const changeset of plan.changesets) {
+  if (Number(version.split('.')[0]) < 1 && changeset.releases.some((release) => release.type === 'major')) {
+    failed = true
+    console.log(`::error file=.changeset/${changeset.id}.md,title=Major bump::This changeset asks for a major bump, which would make Kentō 1.0.0. Before 1.0, a change that breaks something is a minor bump (CONTRIBUTING.md, section "Changesets").`)
+  }
   const others = changeset.releases.map((release) => release.name).filter((name) => name !== process.env.PRODUCT)
   if (others.length > 0) {
     failed = true

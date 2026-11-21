@@ -58,6 +58,13 @@ run
 grep -q -F 'file=.changeset/runner-change.md,title=Wrong package' <<< "$out" || fail "the error names the changeset of the wrong package"
 git rm -q .changeset/runner-change.md
 
+changeset '"@kento-review/web": major\n' 'A breaking change.' breaking
+commit 'a major changeset before 1.0'
+run
+[ "$status" -eq 1 ] || fail "a major bump before 1.0 fails (status $status)"
+grep -q -F 'file=.changeset/breaking.md,title=Major bump' <<< "$out" || fail "the error names the major changeset"
+git rm -q .changeset/breaking.md
+
 changeset '"@kento-review/nothing": patch\n' 'A package that is not in the workspace.' unknown
 commit 'a changeset of an unknown package'
 run

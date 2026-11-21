@@ -234,18 +234,24 @@ For the maintainers of `sakuga-software/kento`. A tag `vX.Y.Z` starts the Releas
    for `linux/amd64` and `linux/arm64`;
 3. creates the GitHub release with the notes of that section.
 
-The tag comes from the changesets (CONTRIBUTING.md, "Changesets"). Each push to `main` updates
+The tag comes from the changesets (CONTRIBUTING.md, "Changesets"). The workflow opens its pull
+request with its own token: the repository setting "Allow GitHub Actions to create and approve pull
+requests" (Settings, Actions, General) must be on. Each push to `main` updates
 the pull request "chore: version packages": it sets the version `X.Y.Z` in the two `package.json`
 files, writes the section `## X.Y.Z` of the CHANGELOG and removes the changesets. GitHub runs no
 check by itself on that pull request, which the token of a workflow opened: close and reopen it to
 run the CI. Merge it, and the job "Tag the release" of `.github/workflows/changesets.yml` tags the
 merge commit `vX.Y.Z` (an annotated tag, not signed) and starts the Release workflow on it. When
 that job fails, rerun it: it keeps the tag, and starts the release unless the release or a run of
-Release on the tag that did not fail already exists.
+Release on the tag that is queued, running or passed already exists.
 
 When the Release workflow fails on a cause outside the code (the access to the package, an outage
-of GitHub), fix it and start the workflow again on the tag: Actions, Release, "Run workflow", with
-the tag as "Use workflow from". A GitHub release that already exists makes its last job fail.
+of GitHub), fix it, open the failed run and use "Re-run failed jobs": it runs only the jobs that
+failed. Start the workflow again on the tag (Actions, Release, "Run workflow", with the tag as "Use
+workflow from") only when no run exists for the tag. A tag can run it this way from `v0.2.1` on: the
+older tags hold a `release.yml` without `workflow_dispatch`. The workflow stops when the GitHub
+release of the tag already exists, so that a second run never replaces the image of a release or
+moves `latest` back.
 
 The package `kento-runner` must be public, and the repository `kento` must have write access to it
 (package settings, "Manage Actions access").

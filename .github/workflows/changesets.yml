@@ -56,7 +56,8 @@ jobs:
 
   version:
     name: Version pull request
-    if: github.event_name == 'push'
+    # Not on a fork: its main would open version pull requests and releases of its own.
+    if: github.event_name == 'push' && github.repository == 'sakuga-software/kento'
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-light"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     # The newest commit of main holds every changeset: a newer run replaces an older one.
@@ -68,8 +69,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The whole history: `changeset version` looks for the commit that added each changeset, for
+      # its link. With a shallow clone it fetches more, and with no credentials that fails on a
+      # private repository.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-pnpm
         with:
@@ -84,7 +89,7 @@ jobs:
 
   tag:
     name: Tag the release
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'sakuga-software/kento'
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-light"]') || 'ubuntu-latest' }}
     timeout-minutes: 5
     # No concurrency group: a pending run of a group can be cancelled, and each push must be seen.
@@ -119,6 +124,12 @@ jobs:
             exit 0
           fi
           tag="v$version"
+          # release.yml refuses a tag whose runner has another version: check it before the tag.
+          runner=$(node -p "require('./apps/runner/package.json').version")
+          if [ "$runner" != "$version" ]; then
+            echo "::error file=apps/runner/package.json::apps/web is $version, but apps/runner is $runner: no tag. They share one version (.changeset/config.json, fixed)."
+            exit 1
+          fi
           if ! grep -Eq "^## ${version//./\\.}( |$)" apps/web/CHANGELOG.md; then
             echo "::error file=apps/web/CHANGELOG.md::The version went from $before to $version, but the changelog has no section '## $version'."
             exit 1
@@ -133,13 +144,14 @@ jobs:
             echo "Tagged $tag on $SHA."
           fi
           # A rerun of this job finds the tag: it starts the release unless the release exists, or a
-          # run of release.yml on the tag that did not fail (a tag pushed by hand starts one).
+          # run of release.yml on the tag that is queued, running or passed (a tag pushed by hand
+          # starts one).
           if gh api "repos/$REPO/releases/tags/$tag" --silent 2>/dev/null; then
             echo "::notice title=Release::The GitHub release $tag already exists."
             exit 0
           fi
           runs=$(gh api "repos/$REPO/actions/workflows/release.yml/runs?branch=$tag&per_page=100" \
-            --jq '[.workflow_runs[] | select(.conclusion != "failure" and .conclusion != "cancelled")] | length')
+            --jq '[.workflow_runs[] | select(.conclusion == null or .conclusion == "success")] | length')
           if [ "$runs" -gt 0 ]; then
             echo "::notice title=Release::release.yml runs or ran on $tag: see that run."
             exit 0
