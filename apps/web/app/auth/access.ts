@@ -189,7 +189,11 @@ export async function saveSignInRoles(
         if (membership?.source === 'github') await store.deleteMembership(user.id, org.id)
         continue
       }
-      await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, again, now)
+      // Changed again: the membership stays as it was, as for an org where GitHub failed; the first
+      // request asks GitHub again.
+      if ((await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, again, now)) === 'changed') {
+        log('warn', 'auth.role_check_changed_again', { login: user.login, org: org.name })
+      }
     } catch (error) {
       log('warn', 'auth.role_check_failed', { org: org.name, login: user.login, error: errorMessage(error) })
     }
