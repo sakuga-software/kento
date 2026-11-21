@@ -50,8 +50,9 @@ screen must follow, and the one of every pull request.
   - A closed popover is hidden by the browser, unless a class of `kento.css` sets `display`: give it
     a `:not(:popover-open) { display: none }` rule then. Give the hydrated markup its own classes: the
     structural rules of the fallback (`.row-menu > div`) would apply to it too.
-  - A new popover or menu panel joins the motion of KNT-186 in `kento.css` (a fade of 140 ms, in
-    `prefers-reduced-motion: no-preference`): add its class to that block, and to `e2e/motion.spec.ts`.
+  - A new popover or menu panel joins the motion of KNT-186 in `kento.css` (a fade of 140 ms in and
+    80 ms out, in `prefers-reduced-motion: no-preference`): add its class to that block, and to
+    `e2e/motion.spec.ts`. A panel that stays drawn while it closes is made inert at once.
   - e2e: `hydrated(page)` (`e2e/helpers.ts`) waits for the runtime; test the widget with JavaScript
     and its fallback in a `test.use({ javaScriptEnabled: false })` block.
 - **Scripts.** The content security policy allows the scripts of the app (`'self'`) and one inline

@@ -1076,6 +1076,7 @@ summary.button::-webkit-details-marker {
      on the right edge of the box. */
   width: max-content;
   min-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   max-width: min(320px, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-2);
   border: 1px solid var(--line);
@@ -1085,6 +1086,9 @@ summary.button::-webkit-details-marker {
 }
 .org-menu-panel ul {
   display: grid;
+  /* KNT-186: one column that may shrink, so that a long name is cut with an ellipsis instead of
+     pushing the items out of the menu and the page sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -2619,20 +2623,27 @@ a.finding-title:hover {
   }
 }
 
-/* KNT-186. The lists of the selects, the menus "…" and the confirmations open and close in 140 ms:
-   they fade in and come down 4 px. A popover that closes keeps its box and its place in the top
-   layer for that time (`allow-discrete` on display and overlay), then hides. The menu of the orgs,
-   a <details>, does the same: its content stays drawn for the time of the close (content-visibility).
-   Nothing moves under prefers-reduced-motion. */
+/* KNT-186. The lists of the selects, the menus "…", the confirmations and the menu of the orgs open
+   in 140 ms and close in 80 ms: they fade and travel 4 px. A transition takes the duration of the
+   state it goes to: the closed rules say 80 ms, the open ones 140 ms (a click right after Escape is
+   not held up by a long close). A popover that closes keeps its box and its place in the top layer
+   for that time (`allow-discrete` on display and overlay; Chromium, WebKit has no `overlay`), then
+   hides. The menu of the orgs, a <details>, stays drawn while it closes (content-visibility), but
+   inert: no click and no focus reaches it then. Nothing moves under prefers-reduced-motion. */
 @media (prefers-reduced-motion: no-preference) {
   .select-popover,
   .row-menu-popover,
   .confirm-popover {
     transition:
-      opacity 140ms var(--ease),
-      translate 140ms var(--ease),
-      display 140ms allow-discrete,
-      overlay 140ms allow-discrete;
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease),
+      display 80ms allow-discrete,
+      overlay 80ms allow-discrete;
+  }
+  .select-popover:popover-open,
+  .row-menu-popover:popover-open,
+  .confirm-popover:popover-open {
+    transition-duration: 140ms;
   }
   .select-popover:not(:popover-open),
   .row-menu-popover:not(:popover-open),
@@ -2649,16 +2660,15 @@ a.finding-title:hover {
     }
   }
   .org-menu::details-content {
-    transition: content-visibility 140ms allow-discrete;
+    transition: content-visibility 80ms allow-discrete;
   }
   .org-menu-panel {
     transition:
-      opacity 140ms var(--ease),
-      translate 140ms var(--ease);
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease);
   }
-  .org-menu:not([open]) .org-menu-panel {
-    opacity: 0;
-    translate: 0 -4px;
+  .org-menu[open] .org-menu-panel {
+    transition-duration: 140ms;
   }
   @starting-style {
     .org-menu[open] .org-menu-panel {
@@ -2666,6 +2676,14 @@ a.finding-title:hover {
       translate: 0 -4px;
     }
   }
+}
+/* KNT-186, critique P2-1. A menu of the orgs that closes is out of reach at once, with or without
+   motion: a click goes to the page under it, and Tab to the next control of the bar. */
+.org-menu:not([open]) .org-menu-panel {
+  opacity: 0;
+  translate: 0 -4px;
+  pointer-events: none;
+  interactivity: inert;
 }
 
 /* ---------------------------------------------------------------- Shared parts: sections, tags, states, fields (REV-10) */
