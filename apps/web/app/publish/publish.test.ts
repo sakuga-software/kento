@@ -7,7 +7,7 @@ import { describe, it } from 'remix/test'
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
 import { withInstance } from '../../test/instance.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, checkName, FIXED_NEAR_LINES, LABEL_DESCRIPTION, publishReview, publishUnchanged, touchedLines, usageOf } from './publish.ts'
+import { anchorOf, answerOf, checkName, FIXED_NEAR_LINES, LABEL_DESCRIPTION, ledgerEntries, publishReview, publishUnchanged, touchedLines, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -252,6 +252,19 @@ describe('publishReview', () => {
     let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
     assert.equal(outcome.resolved, 1)
     assert.equal(fake.repliesTo(old).length, 1)
+  })
+
+  it('moves the line of a suppressed follower with its head, so that the line is always one of the file at that head (KNT-160)', () => {
+    let stored = {
+      id: '00000000-0000-4000-8000-0000000000aa', fingerprint: 'fp', key: 'aaaaaaaaaaaa', ruleId: null, path: 'src/sum.ts', line: 2,
+      title: 'The sum subtracts', severity: 'major' as const, category: 'bug', confidence: 90, status: 'dismissed' as const,
+      statusReason: 'not a bug', loadedStatus: 'dismissed' as const, lastSeenSha: HEAD1, githubCommentId: 7, githubThreadId: 'PRRT_7',
+    }
+    let match = (f: ReviewFinding) => ({ finding: f, stored, carrier: null, suppressed: true, reopened: false, followIn: null, followed: true })
+    let [same] = ledgerEntries([match(finding({ line: 9, anchor: 9 }))], [], [], new Map(), HEAD3)
+    assert.deepEqual({ line: same!.values.line, sha: same!.values.lastSeenSha, status: same!.values.status, title: same!.values.title }, { line: 9, sha: HEAD3, status: 'dismissed', title: 'The sum subtracts' })
+    let [other] = ledgerEntries([match(finding({ path: 'src/other.ts', line: 30, anchor: 30 }))], [], [], new Map(), HEAD3)
+    assert.deepEqual({ line: other!.values.line, sha: other!.values.lastSeenSha, path: other!.values.path }, { line: 2, sha: HEAD1, path: 'src/sum.ts' })
   })
 
   it('reads the lines that a patch removes, and the lines around the place where it adds (KNT-160)', () => {

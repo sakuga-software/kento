@@ -793,9 +793,13 @@ export function ledgerEntries(
     let s = m.stored
     if (m.followed && m.suppressed && s && s.id !== null) {
       // REV-99. A follower that a decision of a person keeps out: the row keeps the words that the
-      // person set aside, and only the head of its last review moves.
+      // person set aside, and only the head of its last review moves. KNT-160: its line moves with
+      // the head, so that `line` is always a line of the file at `lastSeenSha` (the fixed check reads
+      // the two together, if a person opens the finding again). A follower in another file moves nothing.
       let { id, ...values } = s
-      entries.push({ id, values: { ...values, lastSeenSha: head }, events: byReaction(s) })
+      let samePath = f.path.replace(/^\/+/, '') === s.path
+      let moved = samePath ? { line: f.anchor ?? f.line, lastSeenSha: head } : {}
+      entries.push({ id, values: { ...values, ...moved }, events: byReaction(s) })
       continue
     }
     let key = findingKey(f)
