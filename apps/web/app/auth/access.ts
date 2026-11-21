@@ -95,19 +95,21 @@ export function roleFromGitHub(current: OrgRole | null, github: GitHubRole): Org
  * that has no active owner (`OWNER_ACTIVE_MS`) becomes its owner: a new installation gets one, and
  * so does an org whose owner left. The check and the write run under one lock of the org (the one
  * of the changes of the members screen too), and start from the role stored under that lock: an
- * owner given or taken in Kentō in between is not overwritten from a stale read. `_read`, the role
- * read before, is only what the caller saw.
+ * owner given or taken in Kentō in between is not overwritten from a stale read. `read`, the role
+ * that the caller saw: null for a person who joins. A membership that the caller saw and that is
+ * gone under the lock (removed or left in between) stays gone: null, nothing written.
  */
 export async function saveGitHubRole(
   store: AuthStore,
   userId: string,
   orgId: string,
-  _read: OrgRole | null,
+  read: OrgRole | null,
   github: GitHubRole,
   now: number,
-): Promise<OrgRole> {
+): Promise<OrgRole | null> {
   return store.withOrgLock(orgId, async (locked) => {
     let stored = await locked.membershipOf(userId, orgId)
+    if (stored === null && read !== null) return null
     // A membership from an invitation is Kentō's: GitHub changes nothing of it.
     if (stored?.source === 'invitation') return stored.role
     let role = roleFromGitHub(stored?.role ?? null, github)
@@ -175,6 +177,8 @@ export async function currentMemberships(
         continue
       }
       let role = await saveGitHubRole(store, user.id, membership.org.id, membership.role, github, now)
+      // Removed while GitHub was asked: the membership stays gone.
+      if (role === null) continue
       current.push({ ...membership, role, checkedAt: new Date(now) })
     } catch (error) {
       log('warn', 'auth.role_check_failed', { org: membership.org.name, login: user.login, error: errorMessage(error) })

@@ -341,6 +341,23 @@ describe('the members and the invitations of an org', () => {
     assert.equal((await membership('camille', acme))!.role, 'owner')
   })
 
+  it('a check of GitHub never brings back a membership removed while it ran; a sign-in joins', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    await post(owner, '/settings/members/invite', { login: 'guest', role: 'member' })
+    let guestCookie = (await signIn('guest')).cookie!
+    let [invitation] = await database.sql<{ id: string }[]>`select id from invitations`
+    await post(guestCookie, `/invitations/${invitation!.id}/accept`)
+    let guest = (await membership('guest', acme))!
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'guest'`
+    // A check read the membership, then the owner removed it, then the check writes.
+    await post(owner, `/settings/members/${guest.id}/remove`)
+    let auth = createAuthStore(database.sql)
+    assert.equal(await saveGitHubRole(auth, user!.id, acme, 'member', 'admin', Date.now()), null)
+    assert.equal(await membership('guest', acme), null)
+    // A person who joins from GitHub (nothing read before) gets a membership.
+    assert.equal(await saveGitHubRole(auth, user!.id, acme, null, 'member', Date.now()), 'member')
+  })
+
   it('a member sees the members and the invitations, with no form', async () => {
     let owner = (await signIn('octocat')).cookie!
     await post(owner, '/settings/members/invite', { login: 'guest', role: 'member' })
