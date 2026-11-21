@@ -220,6 +220,16 @@ describe('the name and the installations of an org', () => {
     roles.set('globex/octocat', 'admin')
     let owner = (await signIn('octocat')).cookie!
     let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    // A repository of that installation with its history: a job, its review, a finding source.
+    let [repo] = await database.sql<{ id: string }[]>`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${acme}, ${only!.id}, 5011, 'acme/history', true) returning id`
+    let [job] = await database.sql<{ id: string }[]>`
+      insert into jobs (repo_id, level, pr_number, head_sha, github_delivery_id)
+      values (${repo!.id}, 'lite', 7, 'abc1234', 'delivery-history') returning id`
+    await database.sql`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
+      values (${job!.id}, ${repo!.id}, 7, 'abc1234', 4, 'a-model', 0.01, ${JSON.stringify({ findings: [] })}::jsonb)`
     assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=last_installation')
     assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'not the name' })).headers.get('Location'), '/settings/organization?notice=last_installation')
     assert.deepEqual(await orgOf('installations', `id = '${only!.id}'`), [acme])
@@ -227,6 +237,10 @@ describe('the name and the installations of an org', () => {
     assert.equal(moved.headers.get('Location'), '/settings/organization?notice=moved')
     assert.equal((await database.sql`select count(*)::int as n from orgs where id = ${acme}`)[0]!.n, 0)
     assert.equal(await membership('octocat', acme), null)
+    // The history of the repository went with it: nothing of it went with the org.
+    assert.deepEqual(await orgOf('repos', `id = '${repo!.id}'`), [globex])
+    assert.equal((await database.sql`select count(*)::int as n from jobs where repo_id = ${repo!.id}`)[0]!.n, 1)
+    assert.equal((await database.sql`select count(*)::int as n from reviews where repo_id = ${repo!.id}`)[0]!.n, 1)
     assert.match(await (await request('/', owner)).text(), /<span class="org-menu-name">globex<\/span>/)
   })
 
@@ -263,6 +277,18 @@ describe('the name and the installations of an org', () => {
     roles.set('acme-labs/camille', 'admin')
     await signIn('camille')
     assert.deepEqual({ ...(await membership('camille', labs!.id)), id: undefined }, { id: undefined, role: 'owner', source: 'github' })
+  })
+
+  it('knows every table that carries an org: a new one must say whether it follows a moved repository', async () => {
+    let rows = await database.sql<{ table: string }[]>`
+      select table_name as table from information_schema.columns
+      where table_schema = 'public' and column_name = 'org_id' order by table_name`
+    // repos, rules and assignment_rules follow a moved installation (moveInstallation); the others
+    // belong to the org itself, and go with it when it is deleted. A new table with an org_id fails
+    // here until moveInstallation decides for it.
+    assert.deepEqual(rows.map((r) => r.table), [
+      'assignment_rules', 'installations', 'invitations', 'memberships', 'org_audit', 'providers', 'repos', 'rules', 'runner_registrations', 'runners',
+    ])
   })
 
   it('the store refuses by itself: a rename by an admin, an installation of another org', async () => {
