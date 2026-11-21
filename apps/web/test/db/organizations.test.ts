@@ -279,6 +279,25 @@ describe('the name and the installations of an org', () => {
     assert.deepEqual({ ...(await membership('camille', labs!.id)), id: undefined }, { id: undefined, role: 'owner', source: 'github' })
   })
 
+  it('an installation that the webhook adds during the move of the last one keeps the org', async () => {
+    roles.set('globex/octocat', 'admin')
+    await signIn('octocat')
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'octocat'`
+    // The webhook inserts a new installation of acme, and commits a moment later.
+    let webhook = database.sql.begin(async (tx) => {
+      await tx`insert into installations (org_id, github_installation_id, github_account_id, account_login) values (${acme}, 16, 1016, 'acme-new')`
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    let outcome = await createOrgsStore(database.sql).moveInstallation({
+      fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: user!.id, githubAdmin: true, deleteEmpty: true,
+    })
+    await webhook
+    assert.deepEqual(outcome, { ok: true, orgId: globex, deleted: false })
+    assert.deepEqual(await orgOf('installations', `github_installation_id = 16`), [acme])
+  })
+
   it('knows every table that carries an org: a new one must say whether it follows a moved repository', async () => {
     let rows = await database.sql<{ table: string }[]>`
       select table_name as table from information_schema.columns

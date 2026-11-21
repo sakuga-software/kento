@@ -106,6 +106,10 @@ export function createOrgsStore(sql: postgres.Sql): OrgsStore {
         for (let id of [fromOrgId, ...(targetId ? [targetId] : [])].sort()) {
           await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(id)}, 0))`
         }
+        // The rows of the orgs too: the webhook locks the row of an org when an installation joins it,
+        // and the insert of an installation holds a key lock on it. The count of the installations
+        // below sees an installation that joined in between, or the webhook waits for this move.
+        await tx`select id from orgs where id in ${tx([fromOrgId, ...(targetId ? [targetId] : [])])} order by id for update`
         let [installation] = await tx<{ id: string }[]>`
           select id from installations where id = ${installationId} and org_id = ${fromOrgId} for update
         `
