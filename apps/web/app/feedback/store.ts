@@ -3,6 +3,7 @@ import { UUID } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { toDate } from '../db/rows.ts'
+import { cursorAt, decodeCursor, encodeCursor, type Cursor } from '../findings/store.ts'
 import { FEEDBACK_AFTER_REVIEWS } from './request.ts'
 
 export const FEEDBACK_SOURCES = ['command', 'quote', 'reaction'] as const
@@ -12,8 +13,8 @@ export type FeedbackSource = (typeof FEEDBACK_SOURCES)[number]
 export const FEEDBACK_KINDS = ['person', 'agent'] as const
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number]
 
-/** The most answers that the page shows. */
-export const FEEDBACK_PAGE_MAX = 200
+/** The answers on one page of the screen. */
+export const FEEDBACK_PAGE_SIZE = 25
 
 export interface FeedbackInput {
   repoId: string
@@ -96,6 +97,8 @@ export interface FeedbackQuery {
   repoId?: string | null
   source?: FeedbackSource | null
   kind?: FeedbackKind | null
+  /** KNT-176. `?before=`: the page starts after this answer, in the order of the list. */
+  before?: string | null
 }
 
 export interface FeedbackRow {
@@ -114,9 +117,15 @@ export interface FeedbackRow {
 }
 
 export interface FeedbackScreen {
+  /** At most FEEDBACK_PAGE_SIZE answers, the newest first. */
   rows: FeedbackRow[]
-  /** The answers that match the filters, beyond FEEDBACK_PAGE_MAX too. */
-  total: number
+  /** The `before` of the next page, with older answers. Null on the last page. */
+  older: string | null
+  /**
+   * The page with newer answers: its `before`, or null for the first page. Null itself when no
+   * answer is newer, on the first page and when the cursor is invalid.
+   */
+  newer: { before: string | null } | null
   /** The repositories of the org that have an answer: the choices of the filter. */
   repos: { id: string; fullName: string }[]
 }
@@ -125,39 +134,97 @@ type Row = Omit<FeedbackRow, 'prNumber' | 'score' | 'createdAt'> & {
   prNumber: number | string
   score: number | string | null
   createdAt: Date | string
-  total: string | number
+  cursorAt: string
 }
 
-/** The answers of an org, the newest first. */
+/** The cursor of `?before=`, or null: a value that is not a cursor gives the first page. */
+export function readFeedbackCursor(value: string | null | undefined): Cursor | null {
+  try {
+    return decodeCursor(value)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * KNT-176. One page of the answers of an org, the newest first: keyset pages on (`created_at`, `id`),
+ * so that two answers of the same instant keep their order, and a new answer does not move a page.
+ */
 export async function listFeedback(sql: postgres.Sql, orgId: string, query: FeedbackQuery = {}): Promise<FeedbackScreen> {
   let repoId = query.repoId && UUID.test(query.repoId) ? query.repoId : null
   let source = query.source && FEEDBACK_SOURCES.includes(query.source) ? query.source : null
   let kind = query.kind && FEEDBACK_KINDS.includes(query.kind) ? query.kind : null
+  let cursor = readFeedbackCursor(query.before)
+  let limit = FEEDBACK_PAGE_SIZE + 1
+
+  /**
+   * The `limit` answers nearest to the cursor: older than it, the newest first, or from it on, the
+   * oldest first. Each repository of the org reads its own nearest ones backward or forward in the
+   * index `feedback_repo_created_at_idx` (repo_id, created_at), and the page is the nearest of
+   * those: no read of the whole org. The bound on `created_at` alone lets the index start at the
+   * cursor; the pair keeps the ties in order.
+   */
+  let nearest = (direction: 'older' | 'newer') => {
+    let order = direction === 'older' ? sql`feedback.created_at desc, feedback.id desc` : sql`feedback.created_at asc, feedback.id asc`
+    let bound = !cursor
+      ? sql``
+      : direction === 'older'
+        ? sql`and feedback.created_at <= ${cursor.at}::timestamptz
+            and (feedback.created_at, feedback.id) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
+        : sql`and feedback.created_at >= ${cursor.at}::timestamptz
+            and (feedback.created_at, feedback.id) >= (${cursor.at}::timestamptz, ${cursor.id}::uuid)`
+    return sql`
+      select feedback.*, repos.full_name, ${sql.unsafe(cursorAt('feedback.created_at'))} as cursor_at
+      from repos
+      cross join lateral (
+        select * from feedback
+        where feedback.repo_id = repos.id
+          ${source ? sql`and feedback.source = ${source}` : sql``}
+          ${kind ? sql`and feedback.author_is_bot = ${kind === 'agent'}` : sql``}
+          ${bound}
+        order by ${order}
+        limit ${limit}
+      ) feedback
+      where repos.org_id = ${orgId} ${repoId ? sql`and repos.id = ${repoId}` : sql``}
+      order by ${order}
+      limit ${limit}`
+  }
+
   let rows = await sql<Row[]>`
-    select feedback.id, feedback.repo_id as "repoId", repos.full_name as repo, feedback.pr_number as "prNumber",
-      feedback.author_login as "authorLogin", feedback.author_is_bot as "authorIsBot", feedback.source, feedback.text, feedback.url,
-      feedback.created_at as "createdAt", last.score, count(*) over () as total
-    from feedback
-    join repos on repos.id = feedback.repo_id
+    with page as (${nearest('older')})
+    select page.id, page.repo_id as "repoId", page.full_name as repo, page.pr_number as "prNumber",
+      page.author_login as "authorLogin", page.author_is_bot as "authorIsBot", page.source, page.text, page.url,
+      page.created_at as "createdAt", page.cursor_at as "cursorAt", last.score
+    from page
     left join lateral (
       select reviews.score from reviews
-      where reviews.repo_id = feedback.repo_id and reviews.pr_number = feedback.pr_number and reviews.github_review_id is not null
+      where reviews.repo_id = page.repo_id and reviews.pr_number = page.pr_number and reviews.github_review_id is not null
       order by reviews.published_at desc nulls last, reviews.created_at desc limit 1
     ) last on true
-    where repos.org_id = ${orgId}
-      ${repoId ? sql`and feedback.repo_id = ${repoId}` : sql``}
-      ${source ? sql`and feedback.source = ${source}` : sql``}
-      ${kind ? sql`and feedback.author_is_bot = ${kind === 'agent'}` : sql``}
-    order by feedback.created_at desc, feedback.id desc
-    limit ${FEEDBACK_PAGE_MAX}`
+    order by page.created_at desc, page.id desc`
+  let shown = rows.slice(0, FEEDBACK_PAGE_SIZE)
+  let last = shown.at(-1)
+  let older = rows.length > FEEDBACK_PAGE_SIZE && last ? encodeCursor({ at: last.cursorAt, id: last.id }) : null
+
+  // The page before: the answers from the cursor on, the oldest first. The one after the
+  // FEEDBACK_PAGE_SIZE nearest is its cursor; with fewer, it is the first page.
+  let newer: FeedbackScreen['newer'] = null
+  if (cursor) {
+    let above = await sql<{ id: string; cursorAt: string }[]>`
+      with near as (${nearest('newer')}) select near.id, near.cursor_at as "cursorAt" from near order by near.created_at asc, near.id asc`
+    let start = above[FEEDBACK_PAGE_SIZE]
+    if (above.length > 0) newer = { before: start ? encodeCursor({ at: start.cursorAt, id: start.id }) : null }
+  }
+
   let repos = await sql<{ id: string; fullName: string }[]>`
     select repos.id, repos.full_name as "fullName" from repos
     where repos.org_id = ${orgId} and exists (select 1 from feedback where feedback.repo_id = repos.id)
     order by lower(repos.full_name), repos.id`
   return {
-    total: Number(rows[0]?.total ?? 0),
     repos,
-    rows: rows.map(({ total: _total, ...row }) => ({
+    older,
+    newer,
+    rows: shown.map(({ cursorAt: _cursorAt, ...row }) => ({
       ...row,
       prNumber: Number(row.prNumber),
       score: row.score === null ? null : Number(row.score),

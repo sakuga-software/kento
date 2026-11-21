@@ -87,8 +87,16 @@ export function encodeCursor(cursor: Cursor): string {
 export function decodeCursor(value: string | null | undefined): Cursor | null {
   if (!value) return null
   let [at, id] = Buffer.from(value, 'base64url').toString().split('|')
-  if (!at || !id || !UUID.test(id) || !CURSOR_AT.test(at)) throw new InvalidCursorError()
+  if (!at || !id || !UUID.test(id) || !CURSOR_AT.test(at) || !isInstant(at)) throw new InvalidCursorError()
   return { at, id }
+}
+
+// KNT-176. The pattern lets through a date that does not exist (`2026-02-30`, hour 24, year 0), and
+// Postgres refuses it with an error: the date must read back the same in JavaScript, to the millisecond.
+function isInstant(at: string): boolean {
+  let ms = `${at.slice(0, 23)}Z`
+  let date = new Date(ms)
+  return !Number.isNaN(date.getTime()) && date.getUTCFullYear() >= 1 && date.toISOString() === ms
 }
 
 function limitOf(request: PageRequest): number {
