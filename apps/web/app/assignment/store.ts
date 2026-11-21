@@ -54,8 +54,13 @@ function view(row: Row): AssignmentView {
 const PARKED = 0
 
 export function createAssignmentStore(sql: postgres.Sql): AssignmentStore {
-  /** The repository of the org, locked until the end of the transaction; null when it is not of the org. */
+  /**
+   * The repository of the org, locked until the end of the transaction; null when it is not of the
+   * org. KNT-150: the key of the org first, then the repository, the order of a move
+   * (`organizations/store.ts`): an insert of a rule needs that key.
+   */
   async function lockRepo(tx: postgres.TransactionSql, orgId: string, repoId: string): Promise<boolean> {
+    await tx`select 1 from orgs where id = ${orgId} for key share`
     let [row] = await tx<{ id: string }[]>`select id from repos where id = ${repoId} and org_id = ${orgId} for update`
     return row !== undefined
   }

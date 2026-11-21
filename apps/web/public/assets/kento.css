@@ -5466,3 +5466,10 @@ a.sheet-title {
   margin: 0 0 var(--space-3);
   font-size: var(--text-base);
 }
+.installation-move {
+  flex-basis: 100%;
+}
+.installation-move form {
+  max-width: 28rem;
+  margin-top: var(--space-3);
+}

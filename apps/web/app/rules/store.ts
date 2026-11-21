@@ -106,7 +106,10 @@ export function createRulesStore(sql: postgres.Sql): RulesStore {
       if (repoId !== null && !UUID.test(repoId)) return { kind: 'not_found' }
       return sql.begin(async (tx): Promise<RuleOutcome> => {
         // The repository must be of the org: a form cannot add a rule to the repository of another org.
-        // Its lock (or the lock of the org) orders two additions, so the limit holds.
+        // Its lock (or the lock of the org) orders two additions, so the limit holds. KNT-150: the key
+        // of the org first, then the repository, the order of a move (`organizations/store.ts`): the
+        // insert below needs that key, and a move that holds the org waits for nothing of this one.
+        if (repoId) await tx`select 1 from orgs where id = ${orgId} for key share`
         let [owner] = repoId
           ? await tx<{ id: string }[]>`select id from repos where id = ${repoId} and org_id = ${orgId} for update`
           : await tx<{ id: string }[]>`select id from orgs where id = ${orgId} for update`
