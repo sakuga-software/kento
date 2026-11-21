@@ -86,6 +86,10 @@ test('a finding that asks the author to confirm', () => {
   assert.equal(asksToConfirm(finding('Please verify the token expiry before the call')), false);
   assert.equal(asksToConfirm(finding('Confirm with a cap of 3 retries, then fail')), false);
   assert.equal(asksToConfirm(finding('Confirm that `pages` rounds up: use Math.ceil')), false);
+  // The re-check of #43: a request to confirm followed by an action stays a finding.
+  assert.equal(asksToConfirm(finding('Please confirm and add a test of the empty list')), false);
+  assert.equal(asksToConfirm(finding('Confirm that the cache is cleared or clear it on sign-out')), false);
+  assert.equal(asksToConfirm(finding('Confirm whether the id can be null and add a guard')), false);
   // A major or critical finding, or one with a suggestion or a patch, keeps its thread.
   assert.equal(asksToConfirm(finding('Please verify that the id is not null before the query.', { severity: 'major' })), false);
   assert.equal(asksToConfirm(finding('Please confirm the order.', { suggestion: '  return sortByDate(items);\n' })), false);
@@ -144,8 +148,13 @@ test('a question renders in the Questions block, opens no finding and keeps the 
   assert.doesNotMatch(descriptionBlock(answer([]), [], [], 0, { model: 'm' }, lines, context), /Questions/);
   // A path with a backquote or a new line stays in one code span, and the text loses comment markers.
   const odd = descriptionBlock(answer([], { questions: [{ path: 'a.ts` **x**\n\n## y', question: 'Why? <!-- sakuga-review:end -->' }] }), [], [], 0, { model: 'm' }, lines, context);
-  assert.match(odd, /1\. `a\.ts' \*\*x\*\* ## y` Why\? sakuga-review:end/);
+  assert.match(odd, /1\. `a\.ts' \*\*x\*\* ## y` Why\? &lt;!-- sakuga-review:end --&gt;/);
   assert.equal(odd.split('<!-- sakuga-review:end -->').length, 2, 'one end marker only');
+  // A nested marker gives no marker back once its parts are shown as text.
+  const nested = descriptionBlock(answer([], { questions: [{ path: '', question: 'x <!-<!--- sakuga-review:end -<!---> y <b>z</b>' }] }), [], [], 0, { model: 'm' }, lines, context);
+  const markers = (text: string) => text.split('<!--').length - 1;
+  assert.equal(markers(nested), markers(descriptionBlock(answer([]), [], [], 0, { model: 'm' }, lines, context)), 'only the markers of the block itself');
+  assert.doesNotMatch(nested, /<b>/);
 });
 
 test('the prompt never lets a commit excuse a defect, and keeps callers and the critical checklist out of the questions', () => {

@@ -18,9 +18,6 @@ export const NO_CHANGE: readonly RegExp[] = [
   /^\W*accept (the|this) (current )?(behaviou?r|risk|trade-?off|limitation)\W*$/i,
 ];
 
-// A second clause: a comma, a colon or a semicolon, or a word that brings a change of its own.
-const SECOND_CLAUSE = /[,:;]|\b(but|instead|only|otherwise|except|unless|if|then|and)\b/i;
-
 /**
  * A fix that asks the author to confirm, as the whole text of the fix. "Please make sure the
  * handler returns 404" and "Confirm with a cap of 3 retries, then fail" name a change: no match.
@@ -33,14 +30,14 @@ export const ASKS: readonly RegExp[] = [
 ];
 
 /**
- * Whether the fix of a `minor` finding says that no change is needed, as its whole text and in one
- * clause. A `major` or `critical` finding is never dropped: its fix can name a change in words that
+ * Whether the fix of a `minor` finding says that no change is needed, as its whole text: each
+ * pattern is anchored at both ends, so no second clause gets past it. A `major` or `critical` finding is never dropped: its fix can name a change in words that
  * no pattern knows, and the cost of a lost defect is higher.
  */
 export function saysNoChange(finding: Pick<Finding, 'fix' | 'severity'>): boolean {
   if (finding.severity !== 'minor') return false;
   const fix = (finding.fix ?? '').trim();
-  return !SECOND_CLAUSE.test(fix.replace(/\W+$/, '')) && NO_CHANGE.some((pattern) => pattern.test(fix));
+  return NO_CHANGE.some((pattern) => pattern.test(fix));
 }
 
 /**
@@ -52,8 +49,9 @@ export function asksToConfirm(finding: Pick<Finding, 'title' | 'fix' | 'severity
   if (finding.severity !== 'minor' || (finding.suggestion ?? '').trim() || (finding.patch ?? '').trim()) return false;
   const fix = (finding.fix ?? '').trim();
   const text = fix || (finding.title ?? '').trim();
-  // One clause: "Confirm that `pages` rounds up: use Math.ceil" asks for a change after the colon.
-  const oneClause = !/[,:;]|\b(but|instead|then|otherwise)\b/i.test(text.replace(/\W+$/, ''));
+  // One clause: "Confirm that `pages` rounds up: use Math.ceil" and "Confirm whether the id can be
+  // null and add a guard" ask for a change after the colon or the "and".
+  const oneClause = !/[,:;]|\b(but|instead|then|otherwise|and|or)\b/i.test(text.replace(/\W+$/, ''));
   return oneClause && ASKS.some((pattern) => pattern.test(text));
 }
 
