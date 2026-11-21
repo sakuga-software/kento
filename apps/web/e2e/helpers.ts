@@ -61,10 +61,15 @@ export function watchConsole(page: Page): string[] {
   return errors
 }
 
-/** REV-91: on the Repos screen, opens the menu "…" of a repository and its link "Open the config". */
+/** KNT-163: waits until the components of the page have hydrated (app/ui/public/runtime.ts). */
+export async function hydrated(page: Page) {
+  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '')
+}
+
+/** REV-91: on the Repos screen, opens the menu "…" of a repository and its item "Open the config". */
 export async function openRepoConfig(page: Page, repo: string) {
-  await page.locator(`summary[aria-label="Actions of ${repo}"]`).click()
-  await page.locator(`summary[aria-label="Actions of ${repo}"] + div`).getByRole('link', { name: 'Open the config' }).click()
+  await page.getByRole('button', { name: `Actions of ${repo}`, exact: true }).click()
+  await page.getByRole('menu', { name: `Actions of ${repo}` }).getByRole('menuitem', { name: 'Open the config' }).click()
 }
 
 /**

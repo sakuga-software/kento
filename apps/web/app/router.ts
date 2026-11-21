@@ -5,6 +5,7 @@ import { staticFiles } from 'remix/middleware/static'
 import { createRouter, type RouterContext } from 'remix/router'
 
 import { createController } from './actions/controller.ts'
+import { clientAssets, clientEntries } from './assets.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { legacyQueryRedirect } from './legacy-urls.ts'
@@ -89,7 +90,7 @@ export function isPageRequest(request: Request, url: URL): boolean {
 
 export function createAppRouter(deps: AppDependencies) {
   // The 404 page needs the session and the frame of the screens: its own router, with their middleware.
-  let fallback = createRouter({ middleware: [render()] })
+  let fallback = createRouter({ middleware: [render({ assets: clientEntries })] })
   let router = createRouter({
     defaultHandler: (context) =>
       isPageRequest(context.request, context.url)
@@ -103,7 +104,9 @@ export function createAppRouter(deps: AppDependencies) {
         // and the fonts never change under one name.
         cacheControl: process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache',
       }),
-      render(),
+      // KNT-163: the browser modules (`/assets/app/…`, `/assets/npm/…`), compiled on request.
+      clientAssets(),
+      render({ assets: clientEntries }),
       legacyQueryRedirect(),
     ],
   })
