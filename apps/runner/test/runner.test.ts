@@ -10,6 +10,7 @@ import { parseJob, parseResultRequest, type Job, type ResultRequest } from '@ken
 import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment, isTransientGitError } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
+import { usageLimitOfReason } from '@kento-review/engine/providers';
 import { chooseModel, runJob } from '../src/job.ts';
 import { output, redact } from '../src/log.ts';
 import { runLoop, runnerToken } from '../src/runner.ts';
@@ -1169,4 +1170,20 @@ test('KNT-161. a failure of the fallback provider is not given as a status of th
   assert.equal(result.providerStatus, null, 'the key of the provider of the job is not the one that failed');
   assert.match(result.reason, new RegExp(`the fallback provider ${FALLBACK_ID} failed after a usage limit of the provider ${PROVIDER_ID}: .*OpenRouter answered 401`));
   assertNoSecretInLogs();
+});
+
+test('KNT-161. when the fallback provider refuses on its usage limit too, the reason keeps that limit and its reset time', async () => {
+  const { api, results } = fakeApi();
+  const stub = (async (url: string): Promise<Response> => {
+    if (String(url).includes('anthropic')) return new Response('{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}', { status: 429 });
+    return new Response('{"error":{"message":"Key limit exceeded until 2026-12-24T08:30:00Z"}}', { status: 403 });
+  }) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
+  assert.equal(outcome, 'failed');
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.equal(result.providerStatus, null);
+  // The service reads the limit of the fallback, and its reset time, in the reason.
+  assert.deepEqual(usageLimitOfReason(result.reason), { resetAt: '2026-12-24T08:30:00Z' });
 });
