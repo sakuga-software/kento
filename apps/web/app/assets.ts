@@ -30,9 +30,13 @@ function distOf(name: string, from = require): string {
  * keeps a budget of 80 KB of HTML.
  */
 const fromRemix = createRequire(require.resolve('remix/package.json'))
+/**
+ * Only the packages that the browser loads: no mount of `node_modules`, so that a request cannot
+ * make the server compile another file of a package (Fable critique P3-7). A new package that a
+ * component imports needs its mount here, else its module answers 404.
+ */
 const MOUNTS = {
   app: 'app',
-  npm: 'node_modules',
   c: distOf('@remix-run/component', fromRemix),
   rp: distOf('@remix-run/route-pattern', fromRemix),
   fr: distOf('@remix-run/fetch-router', fromRemix),
@@ -66,6 +70,12 @@ export const assets = createAssetServer({
   // The popover API (Baseline 2024) is the newest part of the platform that the components use.
   target: { chrome: '114', firefox: '125', safari: '17' },
   scripts: { define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') } },
+  // A file that does not compile, or that an allowed module imports from outside the mounts: a 404,
+  // logged as a warning. Anybody can ask for any path: it is not an error of the service.
+  onError(error) {
+    log('warn', 'assets.not_served', { error: errorMessage(error) })
+    return new Response('Not Found', { status: 404 })
+  },
 })
 
 /** The module of every page (see its comment). */
@@ -121,7 +131,12 @@ export function bootScript(): BootScript | null {
 /** Serves the browser modules under `/assets/`; anything else goes on. */
 export function clientAssets(): Middleware {
   return async (context, next) => {
-    if (context.url.pathname.startsWith('/assets/')) return (await assets.fetch(context.request)) ?? next()
-    return next()
+    if (!context.url.pathname.startsWith('/assets/')) return next()
+    let response = await assets.fetch(context.request)
+    if (!response) return next()
+    // As every file of the app: the browser runs a module only as the type that the server says.
+    let headers = new Headers(response.headers)
+    headers.set('X-Content-Type-Options', 'nosniff')
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
 }

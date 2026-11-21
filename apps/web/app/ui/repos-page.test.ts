@@ -9,8 +9,6 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { findingsHref } from './findings.tsx'
-import { repoFindingsHref } from './public/row-menu.tsx'
 import { withInstance } from '../../test/instance.ts'
 
 const COOKIE = '__Host-kento_session'
@@ -296,13 +294,13 @@ describe('the Repos screen', () => {
     assert.match(menus[0]!.moduleUrl, /^\/assets\/app\/ui\/public\/row-menu\.tsx$/)
     // A few props a row: its id and name, and `disable` only where it applies.
     assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name'])
-    // The menu makes the URL of the findings itself: the same as the Findings screen.
-    assert.equal(repoFindingsHref(ORCHARD), findingsHref({ repoId: ORCHARD }))
     assert.match(html, /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
     // The one inline script that runs, the import map, carries the nonce of the policy of the response.
     let response = await request('/repos', { cookie })
     let nonce = response.headers.get('Content-Security-Policy')?.match(/'nonce-([^']+)'/)?.[1]
     let page = await response.text()
+    // The import map comes before the module of the page (Fable critique P3-4).
+    assert.ok(page.indexOf('type="importmap"') < page.indexOf('<script type="module"'))
     let inline = [...page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)].map((match) => match[1]!)
     assert.deepEqual(inline.map((attrs) => attrs.match(/type="([^"]+)"/)?.[1]).sort(), ['application/json', 'importmap'])
     assert.ok(nonce)

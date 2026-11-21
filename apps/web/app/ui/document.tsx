@@ -43,14 +43,18 @@ export function Document(handle: Handle<DocumentProps>) {
           <script src={`/assets/frame.js?v=${v}`} defer></script>
           {/* KNT-144: the bar at the top of the window while the next page loads. */}
           <script src={`/assets/progress.js?v=${v}`} defer></script>
+        </head>
+        <body>
           {/*
            * KNT-163: loads the runtime of the components when the page has one to hydrate. A module
            * runs after the parse, like a deferred script. render() writes the import map of those
-           * components, the one inline script, with the nonce of the request.
+           * components, the one inline script, with the nonce of the request, at the end of <head>:
+           * this module comes after it, at the top of <body>, for a browser that reads only the
+           * import maps written before the first module (Chrome before 133, Safari before 18.4).
            */}
           {boot ? <script type="module" src={boot.href} data-runtime={boot.runtime}></script> : null}
-        </head>
-        <body>{children}</body>
+          {children}
+        </body>
       </html>
     )
   }
