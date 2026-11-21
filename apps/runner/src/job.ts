@@ -387,7 +387,7 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
     const threads = openThreads(job.resolve.threads);
     // As the Action: the diff of a thread whose commit is gone starts at the merge base.
     const base = mergeBase(checkout.repoDir, checkout.base, checkout.head);
-    const { pack, held } = resolvePack(checkout.repoDir, base, checkout.head, threads);
+    const { pack, held, others } = resolvePack(checkout.repoDir, base, checkout.head, threads);
     if (held.length === 0) return empty;
     const { answer, usage } = await askJson<{ threads: ThreadVerdict[] }>(
       {
@@ -411,12 +411,15 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
         log('warn', 'job.thread_without_verdict', { jobId: job.id, thread: t.id });
         continue;
       }
+      // A thread whose commit GitHub does not give: nobody can tell what changed since (null).
+      const own = t.comments[0]?.commit ? fileChangedSince(checkout.repoDir, t.comments[0].commit, checkout.head, t.path) : null;
       verdicts.push({
         id: t.id,
         verdict: v.verdict,
         reply: cut(v.reply, 10_000),
-        // A thread whose commit GitHub does not give: nobody can tell what changed since (null).
-        changed: t.comments[0]?.commit ? fileChangedSince(checkout.repoDir, t.comments[0].commit, checkout.head, t.path) : null,
+        // KNT-197. The fix of a thread can be in another file: a file changed since the thread, whose
+        // diff the model read, counts as a change too.
+        changed: own === false && (others.get(t.id)?.length ?? 0) > 0 ? true : own,
       });
     }
     return {
