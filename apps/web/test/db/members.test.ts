@@ -477,6 +477,22 @@ describe('the members and the invitations of an org', () => {
     assert.equal(gitHub.calls, 1)
   })
 
+  it('answers github_failed when GitHub fails, even when the shorter wait cannot be saved', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let saved = store.reclaimFailed
+    store.reclaimFailed = async () => {
+      throw new Error('the database refused the update')
+    }
+    try {
+      gitHub.fail = true
+      assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
+    } finally {
+      gitHub.fail = false
+      store.reclaimFailed = saved
+    }
+  })
+
   it('a GitHub admin who joined from an invitation takes the owner role; an owner from an invitation then neither demotes nor removes them', async () => {
     let owner = (await signIn('octocat')).cookie!
     let guest = await invitedGuest(owner, 'admin')
