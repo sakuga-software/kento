@@ -104,8 +104,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `patch`: a finding of the result can carry `patch`, a short diff of its fix (REV-104), and so can
  *   a finding of `delta`. A service of an earlier release refuses the claim of this feature, and so
  *   never receives the field.
+ * - `questions`: the result can carry `questions`, what the review asks the author to confirm
+ *   (KNT-153). A service of an earlier release refuses the claim of this feature, and so never
+ *   receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -626,6 +629,11 @@ export type ReviewPayload = {
    * hint of the command `reject`.
    */
   refutedThreads?: string[];
+  /**
+   * KNT-153, with the feature `questions`: what the review asks the author to confirm or to check.
+   * No thread, no block, no weight in the score. Absent: no question.
+   */
+  questions?: { path: string; question: string }[];
 };
 
 /**
@@ -692,6 +700,7 @@ const review = obj({
   cachedTokens: optional(tokens),
   delta: optional(obj({ since: sha, files: int({ min: 0, max: 100_000 }) })),
   refutedThreads: optional(arr(str({ min: 1, max: 100 }), { max: MAX_RESOLVE_THREADS })),
+  questions: optional(arr(obj({ path: text(1000), question: text(2000) }), { max: 20 })),
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),
