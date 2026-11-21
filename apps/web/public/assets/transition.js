@@ -19,6 +19,15 @@
 
   const running = () => document.activeViewTransition ?? revealed
 
+  // Kentō #36cca6: a page that the browser leaves replays nothing. The replay comes one frame after
+  // the press, on the page that the transition was showing: its elements are where the person saw them.
+  let leaving = false
+  window.addEventListener('pagehide', () => {
+    leaving = true
+    pending = null
+  })
+  window.addEventListener('pageshow', () => (leaving = false))
+
   window.addEventListener(
     'pointerdown',
     (event) => {
@@ -40,6 +49,7 @@
       // The click on <html> stops here: the one on the element replaces it.
       event.stopImmediatePropagation()
       press.transition.finished.finally(() => {
+        if (leaving) return
         const target = document.elementFromPoint(press.x, press.y)
         if (!(target instanceof HTMLElement) || target === document.documentElement || target === document.body) return
         // A field takes the focus, as from a real click; click() alone does not give it.

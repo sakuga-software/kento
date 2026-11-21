@@ -137,6 +137,27 @@ describe('a tap during the page transition (KNT-172)', () => {
     assert.equal(link.clicks, 0)
   })
 
+  it('replays nothing on a page that the browser left before the transition ended (Kentō #36cca6)', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeElement('a')
+    let page = load({ transition, under: link })
+    assert.equal(page.tap().stopped, true)
+    page.fire('pagehide', { target: null, timeStamp: 1100 })
+    transition.done()
+    await transition.finished
+    await Promise.resolve()
+    assert.equal(link.clicks, 0)
+    // Back from the cache of the browser, the page handles the next tap again.
+    let next = new FakeTransition()
+    page.document.activeViewTransition = next
+    page.fire('pageshow', { target: null, timeStamp: 5000 })
+    page.tap(page.html, { at: 6000 })
+    next.done()
+    await next.finished
+    await Promise.resolve()
+    assert.equal(link.clicks, 1)
+  })
+
   it('clicks nothing when the press was over no element of the page', async () => {
     let transition = new FakeTransition()
     let page = load({ transition, under: null })
