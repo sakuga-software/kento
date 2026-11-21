@@ -400,6 +400,29 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(count!.n, 1)
   })
 
+  it('KNT-150: a lock of another org taken inside a lock holds that org too', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    let order: string[] = []
+    let release!: () => void
+    let held = new Promise<void>((resolve) => (release = resolve))
+    let outer = store.withOrgLock(acme, (locked) =>
+      locked.withOrgLock(globex, async () => {
+        order.push('nested holds globex')
+        await held
+        order.push('nested ends')
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    let other = store.withOrgLock(globex, async () => {
+      order.push('other gets globex')
+    })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    release()
+    await Promise.all([outer, other])
+    assert.deepEqual(order, ['nested holds globex', 'nested ends', 'other gets globex'])
+  })
+
   it('KNT-150: a failure after the owner check, under the lock, writes nothing', async () => {
     let acme = await insertOrgRow(database.sql, 'acme', 11)
     let admin = await insertUser(221, 'midway')
