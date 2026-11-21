@@ -32,7 +32,7 @@ export function FieldMessage(handle: Handle<{ id: string; error?: string; hint?:
       )
     }
     return hint ? (
-      <p class="description" id={`${id}-hint`}>
+      <p class="field-hint" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null

@@ -239,7 +239,7 @@ test('on a phone, a provider form sent back with its errors has no field under t
   // The first field in error is "heavy" of the models: the form focuses the first model field.
   let lite = page.locator('#new-provider').getByLabel('lite')
   await expect(lite).toBeFocused()
-  await expect(page.locator('.label').first()).toHaveCSS('line-height', '18px')
+  await expect(page.locator('.field-label').first()).toHaveCSS('line-height', '18px')
   let bar = page.locator('[data-settings-nav]')
   await expect(bar).toHaveCSS('position', 'static')
   // The page scrolled down to the field, and the bar did not follow: it ends above the field,

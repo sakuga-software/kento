@@ -493,7 +493,7 @@ function ProviderItem(
                   <input type="hidden" name="_csrf" value={csrf} />
                   {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
-                    <label class="label" for={`key-${id}`}>
+                    <label class="field-label" for={`key-${id}`}>
                       New {KIND_LABELS[provider.kind]} key
                     </label>
                     <Input
@@ -513,7 +513,7 @@ function ProviderItem(
                         {keyError}
                       </p>
                     ) : (
-                      <p class="description" id={`key-${id}-hint`}>
+                      <p class="field-hint" id={`key-${id}-hint`}>
                         Kentō deletes the old key. The jobs already in progress keep the key that they got.
                       </p>
                     )}
@@ -566,7 +566,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           {errors[name]}
         </p>
       ) : (
-        <p class="description" id={`provider-${name}-hint`}>
+        <p class="field-hint" id={`provider-${name}-hint`}>
           {hint}
         </p>
       )
@@ -583,7 +583,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           <input type="hidden" name="_csrf" value={csrf} />
           <FormErrors errors={errors} />
           <div class="field">
-            <label class="label" for="provider-kind">
+            <label class="field-label" for="provider-kind">
               Type
             </label>
             <Select
@@ -603,7 +603,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                 {errors.kind}
               </p>
             ) : null}
-            <ul class="description kind-hints" id="provider-kind-hint">
+            <ul class="field-hint kind-hints" id="provider-kind-hint">
               {KINDS.map((kind) => (
                 <li>
                   <strong>{KIND_LABELS[kind]}</strong>: {KIND_HINTS[kind]}
@@ -612,21 +612,21 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             </ul>
           </div>
           <div class="field">
-            <label class="label" for="provider-label">
+            <label class="field-label" for="provider-label">
               Name
             </label>
             <Input id="provider-label" name="label" value={values.label} maxLength={60} required {...field('label')} />
             {message('label', 'What the screen shows, for example "Anthropic of Sakuga".')}
           </div>
           <div class="field">
-            <label class="label" for="provider-baseUrl">
+            <label class="field-label" for="provider-baseUrl">
               Server URL
             </label>
             <Input class="mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
             {message('baseUrl', 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
           </div>
           <div class="field">
-            <label class="label" for="provider-apiKey">
+            <label class="field-label" for="provider-apiKey">
               Key
             </label>
             <Input
@@ -654,10 +654,10 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             }
           />
           <fieldset class="field" aria-describedby={errors.models ? 'provider-models-error' : 'provider-models-hint'}>
-            <legend class="label">Models per level</legend>
+            <legend class="field-label">Models per level</legend>
             {LEVELS.map((level) => (
               <div class="model-field">
-                <label class="description" for={`provider-models-${level}`}>
+                <label class="field-hint" for={`provider-models-${level}`}>
                   {level}
                 </label>
                 <Input

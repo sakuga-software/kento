@@ -245,7 +245,7 @@ function CapSection(handle: Handle<SectionProps>) {
             {/* REV-91: the three limits on one line, each with a short hint. */}
             <div class="cap-fields">
               <div class="field">
-                <label class="label" for="cap-day">
+                <label class="field-label" for="cap-day">
                   Daily cap ($)
                 </label>
                 <Input
@@ -262,7 +262,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Set back to zero at midnight UTC." />
               </div>
               <div class="field">
-                <label class="label" for="cap-month">
+                <label class="field-label" for="cap-month">
                   Monthly cap ($)
                 </label>
                 <Input
@@ -279,7 +279,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Calendar month, in UTC." />
               </div>
               <div class="field">
-                <label class="label" for="cap-alert">
+                <label class="field-label" for="cap-alert">
                   Alert threshold (%)
                 </label>
                 <Input
@@ -437,7 +437,7 @@ function LevelDefault(
               <FormErrors errors={errors} />
               <div class="org-default-fields">
                 <div class="field">
-                  <label class="label" for={`${id}-provider`}>
+                  <label class="field-label" for={`${id}-provider`}>
                     Provider
                   </label>
                   <Select
@@ -461,7 +461,7 @@ function LevelDefault(
                   <FieldMessage id={`${id}-provider`} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint} />
                 </div>
                 <div class="field">
-                  <label class="label" for={`${id}-model`}>
+                  <label class="field-label" for={`${id}-model`}>
                     Model
                   </label>
                   <Input
@@ -479,7 +479,7 @@ function LevelDefault(
                   <FieldMessage id={`${id}-model`} error={errors.model} />
                 </div>
                 <div class="field">
-                  <label class="label" for={`${id}-fallback`}>
+                  <label class="field-label" for={`${id}-fallback`}>
                     Fallback
                   </label>
                   <Input
@@ -544,7 +544,7 @@ function BotsSection(handle: Handle<SectionProps>) {
             <VersionFields csrf={csrf} version={view.version} field="trustedBots" />
             <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
-              <label class="label" for="trusted-bots">
+              <label class="field-label" for="trusted-bots">
                 One login per line
               </label>
               <Textarea
