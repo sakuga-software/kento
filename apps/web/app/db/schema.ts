@@ -586,6 +586,75 @@ export const memberships = pgTable(
   ],
 )
 
+/** KNT-150. What becomes of an invitation. Only a `pending` one can be accepted, declined or canceled. */
+export const INVITATION_STATUSES = ['pending', 'accepted', 'declined', 'canceled'] as const
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+
+/** KNT-150. The roles that an invitation gives: an owner gives `owner` to a member afterwards. */
+export const INVITATION_ROLES = ['admin', 'member'] as const
+export type InvitationRole = (typeof INVITATION_ROLES)[number]
+
+/**
+ * KNT-150. An invitation of a GitHub account to an org of Kentō, by an owner or an admin. Kentō
+ * sends no mail: the person sees it after a sign-in with that GitHub account (by its id, not its
+ * login, which can change), and accepts or declines it. It ends at `expires_at` (7 days). One
+ * pending invitation at most per account and org.
+ */
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    githubId: bigint('github_id', { mode: 'number' }).notNull(),
+    /** The login at the time of the invitation, for the screens. */
+    githubLogin: text('github_login').notNull(),
+    role: text('role').$type<InvitationRole>().notNull(),
+    status: text('status').$type<InvitationStatus>().notNull().default('pending'),
+    inviterId: uuid('inviter_id').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('invitations_pending_idx').on(table.orgId, table.githubId).where(sql`${table.status} = 'pending'`),
+    index('invitations_github_id_idx').on(table.githubId),
+    check('invitations_role', sql`${table.role} in ('admin', 'member')`),
+    check('invitations_status', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled')`),
+  ],
+)
+
+/**
+ * KNT-150. What happened to the members and the invitations of an org: one row per change, written
+ * in the transaction of the change. The row stays when its org, its actor or its target goes: the
+ * names are copied.
+ */
+export const orgAudit = pgTable(
+  'org_audit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'set null' }),
+    orgName: text('org_name').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    actorLogin: text('actor_login').notNull(),
+    /**
+     * invite, cancel, role, remove, leave, accept, decline, reclaim, github_removed (GitHub ended a
+     * membership: the actor is `(GitHub)`, no user).
+     */
+    action: text('action').notNull(),
+    targetLogin: text('target_login'),
+    targetGithubId: bigint('target_github_id', { mode: 'number' }),
+    invitationId: uuid('invitation_id'),
+    roleBefore: text('role_before'),
+    roleAfter: text('role_after'),
+    /** What else the change did, for a person who reads the table: for example the invitations it canceled. */
+    detail: jsonb('detail').$type<Record<string, unknown>>(),
+    createdAt: createdAt(),
+  },
+  (table) => [index('org_audit_org_idx').on(table.orgId, table.createdAt)],
+)
+
 /**
  * A browser session (KNT-150: the `session` of Better Auth). The cookie holds a random token, signed;
  * the table keeps only its SHA-256 (`token_hash`), so a copy of the table opens no session. A row
