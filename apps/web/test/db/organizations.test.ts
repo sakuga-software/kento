@@ -49,6 +49,8 @@ describe('the name and the installations of an org', () => {
   /** The accounts that GitHub says are a person (`User`), by login; GitHub failing for roles or types. */
   let people: Set<string>
   let gitHub = { calls: 0, failRoles: false, failTypes: false }
+  /** KNT-199. Runs while GitHub is asked about an account, before its answer: a move in between. */
+  let duringLookup: ((installation: string, person: string) => Promise<void>) | null = null
   let failSessionSwitch = false
 
   before(async () => {
@@ -82,7 +84,9 @@ describe('the name and the installations of an org', () => {
     let lookupRole = async (installation: { login: string }, person: { login: string }) => {
       gitHub.calls++
       if (gitHub.failRoles) throw new Error('GitHub answered 502')
-      return roles.get(`${installation.login}/${person.login}`) ?? null
+      let answer = roles.get(`${installation.login}/${person.login}`) ?? null
+      if (duringLookup) await duringLookup(installation.login, person.login)
+      return answer
     }
     let lookupAccountType = async (installation: { login: string }) => {
       gitHub.calls++
@@ -131,6 +135,7 @@ describe('the name and the installations of an org', () => {
     clock.now = Date.now()
     people = new Set()
     gitHub = { calls: 0, failRoles: false, failTypes: false }
+    duringLookup = null
     failSessionSwitch = false
   })
 
@@ -923,5 +928,45 @@ describe('the name and the installations of an org', () => {
     assert.deepEqual(await move, { ok: true, orgId: globex, deleted: true })
     assert.equal(await asked, 'gone')
     assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
+  })
+
+  /** KNT-199. Moves acme-labs out of acme, once, while GitHub is asked about it for `login`. */
+  function moveLabsWhileAsked(login: string, installationId: string, actor: string) {
+    duringLookup = async (account, person) => {
+      if (account !== 'acme-labs' || person !== login) return
+      duringLookup = null
+      let moved = await createOrgsStore(database.sql).moveInstallation({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: false })
+      assert.equal(moved.ok, true)
+    }
+  }
+
+  it('a take-back whose admin installation leaves the org while GitHub is asked is refused', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    // camille: a member of acme on GitHub, an admin of acme-labs, so an admin of the org.
+    roles.set('acme-labs/camille', 'admin')
+    let camille = (await signIn('camille')).cookie!
+    await database.sql`update memberships set role = 'admin' where user_id = (select id from users where login = 'camille') and org_id = ${acme}`
+    moveLabsWhileAsked('camille', installationId, actor)
+    let response = await post(camille, '/settings/members/reclaim')
+    assert.equal(response.headers.get('Location'), '/settings/members?notice=changed')
+    // GitHub counts camille only a member of what stays in acme: she is not its owner.
+    assert.equal((await membership('camille', acme))!.role, 'admin')
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [globex])
+  })
+
+  it('a check of the role whose admin installation leaves the org while GitHub is asked writes nothing', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    let camille = (await signIn('camille')).cookie!
+    assert.equal((await membership('camille', acme))!.role, 'member')
+    // GitHub makes camille an admin of acme-labs; her next check asks it while acme-labs moves away.
+    roles.set('acme-labs/camille', 'admin')
+    clock.now += ROLE_TTL_MS + 1000
+    moveLabsWhileAsked('camille', installationId, actor)
+    assert.equal((await request('/', camille)).status, 200)
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [globex])
+    // Not an admin of acme from an account that left it.
+    assert.equal((await membership('camille', acme))!.role, 'member')
   })
 })
