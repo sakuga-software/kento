@@ -191,7 +191,8 @@ test('a review whose pack cut the schema is not « safe to merge » at 5: the mo
   assert.equal(result.coverage?.cut.length, 1);
   assert.equal(result.score, 3);
   assert.notEqual(result.verdict, 'APPROVE');
-  assert.match(result.answer.risk, /^Partial review: 1 file of logic not read, a schema, a migration or a store among them/);
+  // The fixture is a critical change too (KNT-154): its prefix comes first.
+  assert.match(result.answer.risk, /^(?:Critical change \([^)]*\)\. )?Partial review: 1 file of logic not read, a schema, a migration or a store among them/);
   assert.match(result.answer.summary, /This review did not read 1 of the 3 changed files: 1 to fit in its size \(`app\/db\/[a-z-]+\.ts`\)\./);
   assert.match(logs.join('\n'), /score capped at 3: the model said 5, and the review did not read 1 changed file of logic/);
 });
@@ -269,4 +270,10 @@ test('a file of logic over 1000 changed lines, and no cut: the review gives 4, a
   assert.deepEqual(result.coverage?.large, ['app/lib/steps.ts']);
   assert.equal(result.score, 4);
   assert.match(logs.join('\n'), /score capped at 4: the model said 5, and the review did not read 1 changed file of logic/);
+});
+
+test('a partial review of a critical change: « Critical change (…). » first, then « Partial review: … »', () => {
+  const reply = answer({ risk: 'Critical change (CI). The workflow gets a step. Low risk.' });
+  applyCoverage(reply, coverage({ cut: ['app/lib/pay.ts'], logic: ['app/lib/pay.ts'] }));
+  assert.equal(reply.risk, 'Critical change (CI). Partial review: 1 file of logic not read (see Not reviewed). The workflow gets a step.');
 });

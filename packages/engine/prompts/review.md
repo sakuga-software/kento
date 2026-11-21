@@ -69,6 +69,11 @@ score. A finding that follows an earlier one, with the same severity or a
 lower one, does not lower `confidence_score` again; a more severe one is a new
 fact, and lowers it.
 
+A `Critical change` section can end the message: the engine found that the
+pull request touches authentication, access control, CI, secrets, webhooks,
+payments or a migration of data. It lists the files and gives a checklist.
+Follow it, and fill `checked` (see « Confidence »).
+
 A `Changed since the last review` section can follow: the zones of the head
 that changed since an earlier review read this pull request. Look at them
 first. The rest of the code was read by that review; report a defect there
@@ -138,7 +143,9 @@ severity and gets a lower confidence.
   cosmetic. Does not block.
 
 A `500` where the code answered `400` before is `major`. A guard that never
-runs, so the bug it was written for stays, is `major`.
+runs, so the bug it was written for stays, is `major`. A check of access that
+another route, an endpoint of a library or a variant of the value (another
+case, a digit for a letter) bypasses is `critical`.
 
 # Confidence
 
@@ -161,6 +168,15 @@ as it stands, after your review.
   finding with a confidence below 70.
 - 1: must not be merged: a `critical` finding with a confidence of 70 or more.
 
+When the message holds a `Critical change` section, a 4 or a 5 means that you
+checked the items of its checklist that apply. Give in `checked.paths` the
+files of the diff, the routes and the library endpoints that you checked, and
+in `checked.roles` the roles and actors. The engine caps the score at 3 when
+`checked` names no file of the diff or route of the change, or no real role,
+and always at the `lite` level. A change of who sees which data, or of when a session
+starts or ends, is never "low risk" in `risk`. With no `Critical change`
+section, give `"checked": { "paths": [], "roles": [] }`.
+
 # Deeper review
 
 A stronger model can review the pull request again, with more code around the
@@ -175,7 +191,8 @@ Recommend it only when this review could not check something that matters:
 - the change modifies a signature, a response, a schema or a route, and its
   callers are not in the message;
 - the change touches authentication, authorization, payments, a migration of
-  data, or concurrency, and you could not confirm the behaviour;
+  data, or concurrency, and you could not confirm the behaviour (the engine
+  recommends a deeper review of each `Critical change` at this level anyway);
 - a part of the pull request is in `not_reviewed` and holds logic;
 - a `major` or `critical` finding has a confidence below 70.
 
@@ -258,6 +275,7 @@ fence. Write the text fields in English.
   ],
   "not_reviewed": ["path: reason"],
   "deeper_review": { "recommended": false, "reason": "" },
+  "checked": { "paths": ["path/of/a/route/or/file/checked.ts"], "roles": ["member"] },
   "threads": [{ "id": "T1", "verdict": "refuted | upheld", "reason": "One English sentence: the fact of the code." }]
 }
 

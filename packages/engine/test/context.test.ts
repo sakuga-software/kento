@@ -263,7 +263,9 @@ test('a review whose only blocking finding rests on unread code is not capped at
   const logs: string[] = [];
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'lite', apiKey: 'k', fetch, log: (m) => logs.push(m) });
   assert.deepEqual(result.findings, []);
-  assert.equal(result.score, 4);
+  // The blocking finding would cap at 2. The fixture is a critical change (KNT-154), and a critical
+  // change at lite is capped at 3.
+  assert.equal(result.score, result.critical ? 3 : 4);
   assert.match(result.answer.not_reviewed.join('\n'), /requireOwner can be reached without the admin check\. To check: /);
   assert.match(logs.join('\n'), /finding moved to not reviewed, its premise is code that the review did not read/);
 });
