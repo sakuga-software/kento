@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ANSWER_SCHEMA, withPatch, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
-import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type MessagePart, type Schema } from './providers.ts';
+import { ADAPTERS, defaultBaseUrl, ProviderError, RATE_LIMIT_TEXT, RateLimitError, rateLimited, refusedKey, UsageLimitError, usageLimited, type MessagePart, type Schema } from './providers.ts';
 import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 
 export { OPENROUTER_BASE_URL, type MessagePart, type Schema } from './providers.ts';
@@ -67,6 +67,8 @@ export async function askJson<T>(
   // Only Anthropic reads a prompt cache that the order of the requests changes.
   if (kind !== 'anthropic') start();
   let lastError: unknown;
+  // KNT-161. The reset times of the short rate limits: when every model gets one, the job waits for them.
+  const rateResets: (string | null)[] = [];
   for (const [attempt, model] of config.models.entries()) {
     // The calls and bytes of the tools are one budget for the review: a model that takes over gets
     // what the failed attempts left, and its own rounds.
@@ -92,12 +94,23 @@ export async function askJson<T>(
       start();
       lastError = error;
       (client.log ?? stderr)(`attempt ${attempt + 1} with ${model} failed: ${error}`);
-      // A refused key fails with every model: the next one would be refused too.
-      if (refusedKey(error)) break;
+      // A refused key fails with every model: the next one would be refused too. KNT-161: so does a
+      // usage limit of the provider. A short rate limit can be per model: the next model is tried.
+      if (refusedKey(error) || usageLimited(error)) break;
+      if (rateLimited(error)) rateResets.push(error.resetAt);
     }
   }
   const status = lastError instanceof ProviderError ? lastError.status : null;
-  throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
+  if (usageLimited(lastError)) throw new UsageLimitError(`no model gave a usable answer: ${lastError.message}`, status, lastError.resetAt);
+  if (rateLimited(lastError) && rateResets.length === config.models.length) {
+    // Every model got a short rate limit. The text names the latest reset first: the service reads it.
+    const resetAt = rateResets.filter((reset): reset is string => reset !== null).sort().at(-1) ?? null;
+    const until = resetAt ? `, until ${resetAt}` : '';
+    throw new RateLimitError(`no model gave a usable answer: every model ${RATE_LIMIT_TEXT} (${status}${until}): ${lastError.message}`, status, resetAt);
+  }
+  // KNT-161. Not every model got a short rate limit: the service queues a job again only when each one
+  // did. The phrase of a rate limit leaves the text, so the order of the models changes nothing.
+  throw new ProviderError(`no model gave a usable answer: ${String(lastError).replaceAll(RATE_LIMIT_TEXT, 'answered with a rate limit')}`, status);
 }
 
 /**
