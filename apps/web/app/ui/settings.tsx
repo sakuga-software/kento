@@ -6,7 +6,7 @@ import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
-import { memberRoutes, pageRoutes as routes } from '../routes.ts'
+import { memberRoutes, organizationRoutes, pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
@@ -135,7 +135,8 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         <p class="settings-members">
-          <a href={memberRoutes.members.href()}>Members and invitations</a>
+          <a href={memberRoutes.members.href()}>Members and invitations</a> ·{' '}
+          <a href={organizationRoutes.organization.href()}>Name and installations</a>
         </p>
 
         {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px.
