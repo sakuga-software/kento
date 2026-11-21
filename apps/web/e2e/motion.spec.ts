@@ -103,9 +103,12 @@ test.describe('the motion and the width of the lists and menus (KNT-186)', () =>
       expect(menu.left).toBe(16)
       expect(menu.right).toBe(screen - 16)
     }
-    // Closing: it fades out too, then the content of the <details> hides.
+    // Closing: it fades out too, then the content of the <details> hides. Kentō #907a06: only where
+    // the browser has ::details-content (Chromium 131 and later, Safari 18.4); elsewhere it closes at once.
     await summary.click()
-    expect(await transitionsOf(panel)).toEqual(['opacity 140', 'translate 140'])
+    if (await page.evaluate(() => CSS.supports('selector(::details-content)'))) {
+      expect(await transitionsOf(panel)).toEqual(['opacity 140', 'translate 140'])
+    }
     await expect(panel).toBeHidden()
   })
 
