@@ -348,6 +348,9 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
+  // KNT-154. The merge of an incremental review and the floor copy the answer. The critical state
+  // goes on the answer that the score, the verdict and the deeper review read, whatever they kept.
+  answer = { ...answer, critical };
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
     // REV-104. An applicable suggestion wins over the patch.

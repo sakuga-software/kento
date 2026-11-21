@@ -121,6 +121,7 @@ let repo = '';
 let base = '';
 let head = '';
 let copyHead = '';
+let pushed = '';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
 const write = (path: string, text: string) => {
   mkdirSync(dirname(join(repo, path)), { recursive: true });
@@ -141,6 +142,9 @@ before(() => {
   write('app/routes/members.ts', "export function remove(member: { role: string }) {\n  if (member.role === 'admin') throw new Error('no');\n}\n");
   git('commit', '-q', '-am', 'feat: admins cannot be removed');
   head = git('rev-parse', 'HEAD');
+  write('app/routes/members.ts', "export function remove(member: { role: string }) {\n  if (member.role === 'admin' || member.role === 'owner') throw new Error('no');\n}\n");
+  git('commit', '-q', '-am', 'fix: owners cannot be removed either');
+  pushed = git('rev-parse', 'HEAD');
   git('checkout', '-q', '-b', 'copy', base);
   write('app/components/Header.tsx', 'export const Header = () => <h1>Hello, sign in</h1>;\n');
   git('commit', '-q', '-am', 'copy: header');
@@ -182,6 +186,20 @@ test('the review of a critical change: the checklist in the pack, the cap, and t
   assert.match(checked.answer.summary, /Paths checked: `app\/routes\/members\.ts`\. Roles checked: `owner`, `admin`\./);
 
   const lite = await reviewPullRequest(input(named.fetch, head, 'lite'));
+  assert.match(lite.deeperReview ?? '', /changes access control/);
+});
+
+test('an incremental review of a critical change keeps the cap, the checklist and the text', async () => {
+  const model = fakeModel(answer({ checked: { paths: [], roles: [] } }));
+  const delta = { since: head, score: 5, findings: [], settled: [] };
+  const result = await reviewPullRequest({ ...input(model.fetch, pushed), delta });
+  assert.ok(result.delta, 'an incremental review');
+  assert.deepEqual(result.answer.critical?.areas, ['access']);
+  assert.equal(result.score, 3, 'the floor of the last review does not lift the cap');
+  assert.equal(result.verdict, 'COMMENT');
+  assert.match(model.messages[0]!, /# Critical change/);
+  assert.match(result.answer.risk, /^Critical change \(access control\)\./);
+  const lite = await reviewPullRequest({ ...input(model.fetch, pushed, 'lite'), delta });
   assert.match(lite.deeperReview ?? '', /changes access control/);
 });
 
