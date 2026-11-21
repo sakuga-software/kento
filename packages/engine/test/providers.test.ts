@@ -4,7 +4,7 @@ import { askJson, levelConfig, ProviderError, providerLevelConfig } from '../src
 import { costLine } from '../src/render.ts';
 import { defaultModels } from '../src/levels.ts';
 import { costFromTable, costKnown } from '../src/prices.ts';
-import { MAX_THINKING_MS, refusedKey, thinkingOff, thinkingWaitMs } from '../src/providers.ts';
+import { MAX_THINKING_MS, refusedKey, thinkingOff, thinkingWaitMs, usageLimited, usageLimitOf, usageLimitOfReason } from '../src/providers.ts';
 import { messageResponse, sseResponse, startEvents } from './sse.ts';
 
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
@@ -331,4 +331,56 @@ test('a prompt that the client gives replaces the file of prompts/ with that nam
   await askJson(client, config, 'verify.md', 'p', SCHEMA);
   assert.equal(calls[0]!.body.system[0].text, 'the old prompt');
   assert.notEqual(calls[1]!.body.system[0].text, 'the old prompt');
+});
+
+test('KNT-161. a usage limit stops at the first model of the provider, and the error keeps its reset time', async () => {
+  const body = { type: 'error', error: { type: 'invalid_request_error', message: 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.' } };
+  const { fetch, calls } = fakeFetch([() => json(body, 400), () => json({ content: [{ type: 'text', text: '{"ok":true}' }] })]);
+  const config = providerLevelConfig('lite', 'anthropic', ['claude-haiku-5-5', 'claude-sonnet-5-5']);
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, config, 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.ok(usageLimited(error), String(error));
+  assert.equal(calls.length, 1, 'the second model of the same provider is not called');
+  assert.equal(error.resetAt, '2026-12-01T00:00:00Z');
+  assert.equal(error.status, 400);
+  assert.ok(!refusedKey(error), 'a usage limit is not a refused key');
+  assert.deepEqual(usageLimitOfReason(String(error.message)), { resetAt: '2026-12-01T00:00:00Z' });
+});
+
+test('KNT-161. a 429 is a usage limit, with the reset time of retry-after or of the headers of the provider', async () => {
+  const now = Date.parse('2026-11-21T10:00:00Z');
+  const headers = (h: Record<string, string>) => new Headers(h);
+  assert.deepEqual(usageLimitOf(429, 'Too many requests', headers({ 'retry-after': '120' }), now), { resetAt: '2026-11-21T10:02:00Z' });
+  assert.deepEqual(usageLimitOf(429, '{}', headers({ 'anthropic-ratelimit-tokens-reset': '2026-11-21T10:05:00Z' }), now), { resetAt: '2026-11-21T10:05:00Z' });
+  assert.deepEqual(usageLimitOf(429, '{}', headers({ 'x-ratelimit-reset': String(Date.parse('2026-11-21T11:00:00Z')) }), now), { resetAt: '2026-11-21T11:00:00Z' });
+  assert.deepEqual(usageLimitOf(429, 'slow down', undefined, now), { resetAt: null });
+  assert.deepEqual(usageLimitOf(402, 'Insufficient credits', undefined, now), { resetAt: null });
+  assert.deepEqual(usageLimitOf(403, 'Key limit exceeded until 2026-12-24T08:30:00+01:00', undefined, now), { resetAt: '2026-12-24T07:30:00Z' });
+  assert.equal(usageLimitOf(401, 'invalid x-api-key', undefined, now), null);
+  assert.equal(usageLimitOf(400, 'max_tokens is too large', undefined, now), null);
+  assert.equal(usageLimitOf(500, 'rate limit of the upstream', undefined, now), null);
+  assert.equal(usageLimitOfReason('OpenRouter answered 500: overloaded'), null);
+});
+
+test('KNT-161. OpenRouter: a 429 on the first model is a usage limit, and GLM is not called after Haiku', async () => {
+  const { fetch, calls } = fakeFetch([() => new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429, headers: { 'retry-after': '30' } })]);
+  const error = await askJson({ apiKey: 'k', kind: 'openrouter', fetch, log: quiet }, levelConfig('lite'), 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.ok(usageLimited(error));
+  assert.equal(calls.length, 1);
+  assert.equal(error.status, 429);
+  assert.match(error.message, /refused the call on a usage limit \(429, until \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\)/);
+});
+
+test('KNT-161. the reason of a runner of an earlier release is read too: a 429, a 402 or a body that names a limit', () => {
+  assert.deepEqual(usageLimitOfReason('no model gave a usable answer: ProviderError: OpenRouter answered 403: {"error":{"message":"Key limit exceeded"}}'), { resetAt: null });
+  assert.deepEqual(
+    usageLimitOfReason('no model gave a usable answer: ProviderError: Anthropic answered 400: {"error":{"message":"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."}}'),
+    { resetAt: '2026-12-01T00:00:00Z' },
+  );
+  assert.deepEqual(usageLimitOfReason('OpenRouter answered 429: Rate limit exceeded'), { resetAt: null });
+  assert.equal(usageLimitOfReason('no model gave a usable answer: ProviderError: Anthropic answered 401: invalid x-api-key'), null);
+  assert.equal(usageLimitOfReason('OpenRouter answered 500: rate limit of the upstream'), null);
+  assert.equal(usageLimitOfReason('clone failed: exit 128'), null);
+  // A 401 stays a refused key, even when its body names a limit.
+  assert.equal(usageLimitOfReason('OpenRouter answered 401: {"error":{"message":"invalid key, see the rate limit page"}}'), null);
+  assert.equal(usageLimitOf(401, 'quota of the key', undefined), null);
 });

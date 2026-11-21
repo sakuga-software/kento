@@ -609,7 +609,7 @@ export function sameScoreLine(reusedFrom: string): string {
  * REV-89. Whether the check of Kentō is already on the head: a second try posts no second one. Only
  * a check of this App counts: the job "Sakuga Review" of the Action has the same name.
  */
-async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
+export async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
   let slug = botLogin.replace(/\[bot\]$/, '')
   let name = checkName()
   let out: { check_runs?: { name: string; app?: { slug?: string } | null }[] } = await checks.rest(
