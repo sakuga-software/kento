@@ -503,6 +503,27 @@ describe('the dashboard', () => {
     assert.match(section, /<a href="\/runners">and 22 more<span class="visually-hidden"> on the Runners screen<\/span><\/a>/)
   })
 
+  it('says how many runners are ready beside "Runners", and which runner of the service is busy elsewhere (KNT-189)', async () => {
+    let { signIn } = setup(
+      screen({
+        runners: [
+          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true },
+          { id: 'run2', name: 'runner-2', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: false },
+          { id: 'run3', name: 'shared-02', orgId: null, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: true },
+        ],
+      }),
+    )
+    let { html } = await signIn(OCTOCAT)
+    let section = html.slice(html.indexOf('aria-labelledby="queue-title"'))
+    assert.match(section, /data-ready="1"[^>]*class="runner-ready">1 ready \/ 3 online<\/span>/)
+    // "3 online" alone would repeat the count beside the title.
+    assert.doesNotMatch(section, /class="runner-counts"/)
+    assert.match(section, /shared-02.*?Busy with a job of another organization/s)
+    // The live state of the browser: hidden in the HTML of the server.
+    assert.match(section, /<span[^>]*class="live-state"[^>]*hidden[^>]*>|<span[^>]*hidden[^>]*class="live-state"/)
+    assert.match(section, /data-live-queue/)
+  })
+
   it('says that jobs wait with no runner online, since when, and what to do (REV-52)', async () => {
     let since = new Date(NOW.getTime() - 14 * 60_000)
     let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)

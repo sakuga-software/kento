@@ -1082,7 +1082,8 @@ export function QueueCard(handle: Handle<{ card: QueueCardView; githubUrl: strin
             <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
           ) : (
             <>
-              <p class="runner-counts">{countsText(counts)}</p>
+              {/* KNT-189: "N online" alone would repeat the count beside the title. */}
+              {counts.late + counts.offline > 0 ? <p class="runner-counts">{countsText(counts)}</p> : null}
               {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
               <ul class="dash-jobs">
                 {runners.map((runner) => {

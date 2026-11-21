@@ -281,13 +281,13 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
-  test('the live card says "Reconnecting…" while its stream fails, then "Live" again (KNT-189)', async ({ page }) => {
+  test('the live card says "Retrying…" while its stream fails, then "Live" again (KNT-189)', async ({ page }) => {
     await seed()
     await page.route('**/dashboard/live', (route) => route.abort())
     await page.goto('/')
     await hydrated(page)
     let queue = page.getByRole('region', { name: 'Queue and runners' })
-    await expect(queue.getByRole('status')).toHaveText('Reconnecting…')
+    await expect(queue.getByRole('status')).toHaveText('Retrying…')
     await page.unroute('**/dashboard/live')
     // The waits grow from 1 s: the third try at the latest comes within 8 s.
     await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 10_000 })

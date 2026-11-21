@@ -3541,14 +3541,25 @@ a.finding-title:hover {
 .dash-subtitle:first-child {
   margin-top: 0;
 }
-/* KNT-189. "Live" beside the title of the queue while the stream keeps the card; "Reconnecting…" while it waits. */
+/* KNT-189. "Live" beside the title of the queue while the stream keeps the card; "Retrying…" while it waits. */
+/* A change of state never wraps the head: the card under it does not move. */
+.dash-section-head:has(.live-state) {
+  flex-wrap: nowrap;
+}
+.dash-section-head:has(.live-state) > :not(.live-state) {
+  flex: none;
+}
 .live-state {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   margin-right: auto;
+  overflow: hidden;
   color: var(--ink-soft);
   font: 400 var(--text-xs) / 1 var(--font-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .live-state[hidden] {
   display: none;

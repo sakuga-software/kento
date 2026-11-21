@@ -1,7 +1,7 @@
 // KNT-189. The card "Queue and runners" of the dashboard, live. The server renders the card and an
 // empty state; in the browser this component opens the stream of the card (`/dashboard/live`, the
 // org of the session only) and puts each card that comes in place of the one on the page. It says
-// "Live" while the stream is open, and "Reconnecting…" while it waits to try again. Without
+// "Live" while the stream is open, and "Retrying…" while it waits to try again. Without
 // JavaScript, or when the stream is closed, the card is the one of the page, and
 // public/assets/dashboard.js reads it again every 10 s.
 import { clientEntry, ref, type Handle } from 'remix/component'
@@ -144,7 +144,7 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
       let outcome = await connect()
       if (handle.signal.aborted) return
       if (outcome === 'refused') return setState('off')
-      // The tab hid during the stream: the loop waits for it without a "Reconnecting…".
+      // The tab hid during the stream: the loop waits for it without a "Retrying…".
       if (document.visibilityState !== 'visible') continue
       if (outcome === 'ended') {
         attempt = 0
@@ -185,9 +185,11 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
       data-state={state}
       role="status"
       hidden={state === 'off' || state === 'connecting'}
+      title={state === 'reconnecting' ? 'The live updates stopped. The card tries to connect again.' : undefined}
       mix={ref((element: HTMLElement) => (node = element))}
     >
-      {state === 'live' ? 'Live' : state === 'reconnecting' ? 'Reconnecting…' : ''}
+      {/* "Retrying…": "Reconnecting…" does not fit beside the title in the side column of 340 px. */}
+      {state === 'live' ? 'Live' : state === 'reconnecting' ? 'Retrying…' : ''}
     </span>
   )
 })
