@@ -67,9 +67,15 @@ export function planDelta(repo: string, base: string, head: string, since: strin
   // KNT-158. A merge since then that brought changes to a file of the pull request (a merge of the
   // base branch that touched it): the diff since that head holds the lines of the base too, and the
   // review judged them. Only the diff from the merge base holds the change of the pull request alone.
-  const merges = git(repo, 'rev-list', '--merges', `${since}..${head}`).split('\n').filter(Boolean);
-  const brought = new Set(merges.flatMap((m) => [...changedPaths(repo, `${m}^1..${m}`)]));
-  if (files.some((p) => brought.has(p))) return null;
+  // A history that git cannot read here (a shallow clone without the first parent) gives the whole
+  // review too: it is never wrong, only larger.
+  try {
+    const merges = git(repo, 'rev-list', '--merges', `${since}..${head}`).split('\n').filter(Boolean);
+    const brought = new Set(merges.flatMap((m) => [...changedPaths(repo, `${m}^1..${m}`)]));
+    if (files.some((p) => brought.has(p))) return null;
+  } catch {
+    return null;
+  }
   return { since, files, pullFiles: [...now].sort() };
 }
 
