@@ -317,6 +317,18 @@ test.describe('the Repos screen', () => {
     // The menu would give the focus back to "…" a frame or two later: it does not.
     await page.waitForTimeout(300)
     await expect(search).toBeFocused()
+    // A slow click (700 ms between press and release) too, on the row beside the menu: the menu
+    // closes on the release, and "…" does not take the focus back then (Fable critique P2-2).
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    let cell = (await rowOf(page, 'fruitback').getByRole('rowheader').boundingBox())!
+    await page.mouse.move(cell.x + 4, cell.y + cell.height - 4)
+    await page.mouse.down()
+    await page.waitForTimeout(700)
+    await page.mouse.up()
+    await expect(fruitback.menu).toBeHidden()
+    await page.waitForTimeout(300)
+    await expect(fruitback.trigger).not.toBeFocused()
     // A click on the "…" of another row: the focus goes to its open menu.
     await orchard.trigger.click()
     await fruitback.trigger.click()
@@ -606,6 +618,31 @@ test.describe('the Repos screen', () => {
       await sql`delete from repos where github_repo_id between 893001 and 893051`
       await sql.end()
     }
+  })
+
+  test('a row swapped 4 times in place leaves no listener behind on the document (Fable critique P3-3)', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'the listeners are counted through the Chrome DevTools Protocol')
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    await page.goto('/repos')
+    await hydrated(page)
+    let cdp = await page.context().newCDPSession(page)
+    let listeners = async () => {
+      let { result } = await cdp.send('Runtime.evaluate', { expression: 'document' })
+      let { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! })
+      return listeners.length
+    }
+    let before = await listeners()
+    for (let round = 0; round < 2; round++) {
+      await rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'garden is enabled.' })).toBeAttached()
+      await expect(menuOf(page, 'garden').trigger).toBeFocused()
+      await (await chooseDisable(page, 'garden')).click()
+      await expect(page.getByRole('status').filter({ hasText: 'garden is disabled.' })).toBeAttached()
+      await expect(rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' })).toBeFocused()
+      await expect(menuOf(page, 'garden').trigger).toBeVisible()
+    }
+    expect(await listeners()).toBe(before)
   })
 
   test('a server that does not answer: the row says so after the timeout (KNT-147)', async ({ page }) => {
