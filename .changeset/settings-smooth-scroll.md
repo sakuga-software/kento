@@ -1,5 +1,6 @@
 ---
-'@kento-review/web': patch
+"@kento-review/web": patch
 ---
 
-Settings: on a desktop, a link of the sidebar scrolls smoothly to its section. The page jumps as before with reduced motion, and on a phone (KNT-177).
+**Screens**: `/settings` (KNT-177): on a desktop, a link of the sidebar scrolls smoothly to its
+section. The page still jumps at once with reduced motion, and under 900 px. No migration.
