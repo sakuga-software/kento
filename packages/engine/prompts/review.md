@@ -93,7 +93,8 @@ only when you are sure of it, with the severity that it has.
    its confidence.
 4. Look, in this order, for:
    - correctness: wrong logic, a missing case, an inverted condition, an
-     off-by-one, an unhandled `null`, an unawaited promise, a race;
+     off-by-one, an unhandled `null`, an unawaited promise, a race (see
+     step 5);
    - security: a missing authentication or authorization check, data of another
      organization reachable, a secret exposed, unvalidated input that reaches a
      query or a shell;
@@ -114,6 +115,18 @@ only when you are sure of it, with the severity that it has.
      they name (the old column stays for one release).
    - A candidate whose fix is "no change", "leave as is" or "accept the
      behaviour" names no defect: drop it. The engine drops it too.
+   - A race, an order of events or a timeout: give in `interleaving` the
+     steps that the runtime allows, two or more, each with its `path`, its
+     `line` and what runs there. JavaScript runs one thread and one event
+     loop: code with no `await` between two lines runs in one turn, and a
+     timer or a callback cannot run in the middle of it. A lock or a
+     transaction that the caller holds orders the steps too. If you cannot
+     write the steps, the race is a doubt: put it in `questions`. The engine
+     moves a race finding with fewer than two steps there. Give
+     `interleaving: []` for any other finding.
+   - A claim that some work is too slow or exceeds a time limit gives a
+     number (a duration, a count of rows, of calls or of files) or the input
+     that makes it slow. Without one, it is a question.
    - A request to confirm, a product choice to check, or a caller to verify
      is not a finding. Put it in `questions`, with its path, as one question
      of one sentence. A question opens no thread, does not block and does not
@@ -276,6 +289,7 @@ fence. Write the text fields in English.
       "scenario": "The input or state, and the wrong result it gives, in two or three sentences.",
       "fix": "The change that removes the defect, in one or two sentences.",
       "suggestion": "",
+      "interleaving": [{ "path": "src/queue.ts", "line": 12, "step": "Request A reads the count." }, { "path": "src/queue.ts", "line": 14, "step": "Request B reads the same count before A writes it." }],
       "follows": null
     }
   ],

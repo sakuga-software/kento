@@ -207,6 +207,8 @@ async function verify(input: ReviewInput, config: LevelConfig, pack: string, fin
     title: f.title,
     scenario: f.scenario,
     fix: f.fix,
+    // KNT-152. The check reads the steps of a race first (verify.md).
+    ...(f.interleaving?.length ? { interleaving: f.interleaving } : {}),
   }));
   const message = `${pack}\n\n# Findings to check\n\n${JSON.stringify(list, null, 2)}\n`;
   try {

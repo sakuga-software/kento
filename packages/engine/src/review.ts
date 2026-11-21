@@ -5,6 +5,7 @@ import { criticalSection, diffCriticality, namesChecks, areasText, type Critical
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type CriticalReview, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
+import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
 import { inHistory } from './history.ts';
@@ -288,6 +289,10 @@ export function finishReview<F extends Finding>(
   // checked. The score, the verdict and the deeper review read it.
   const critical: CriticalReview | null = prepared.critical ? { ...prepared.critical, checked: namesChecks(answer.checked, (p) => fileAt(p) !== null) } : null;
   answer = critical ? withCriticalText({ ...answer, critical }, critical) : { ...answer, critical: null };
+  // KNT-152. A race with no traced steps, or a timing claim with no number, becomes a question.
+  const timing = splitUntracedTiming(answer, (p) => fileAt(p) !== null);
+  answer = timing.answer;
+  for (const f of timing.asked) log(`finding moved to the questions, it traces no interleaving or gives no number: ${f.path}: ${f.title}`);
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.

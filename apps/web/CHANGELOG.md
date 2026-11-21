@@ -158,6 +158,9 @@ Each entry says, when it applies:
 - **Protocol** (KNT-153): the runner claims the feature `questions`, and the result of a review can
   carry `questions`. **Order**: the service first, as always; a service of the release before
   refuses the claim of a runner of this release.
+- **Reviews** (KNT-152): a finding about a race, an order of events or a timeout gives the steps
+  that the runtime allows, each at a file and a line. Without two such steps, or without a number
+  for a claim that some work is too slow, it becomes a question.
 
 ## 0.1.0
 

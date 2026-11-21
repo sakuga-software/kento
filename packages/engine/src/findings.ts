@@ -1,6 +1,7 @@
 // The findings of a review: the answer schema, the lines that a finding anchors on, the score and the verdict.
 import { createHash } from 'node:crypto';
 import type { Checked, Criticality } from './critical.ts';
+import type { Step } from './timing.ts';
 import { areasText } from './critical.ts';
 import { git } from './git.ts';
 import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
@@ -46,6 +47,11 @@ export type Finding = {
    * on the pull request (seen.ts). The engine sets it; the model never gives it.
    */
   seen?: boolean;
+  /**
+   * KNT-152. For a race, an order of events or a timeout: the steps that the runtime allows, each
+   * with its file and line. Empty for any other finding. A finding of an earlier release has none.
+   */
+  interleaving?: Step[];
 };
 export type Answer = {
   confidence_score: number;
@@ -151,8 +157,18 @@ const FINDING_SCHEMA = {
     scenario: { type: 'string' },
     fix: { type: 'string' },
     suggestion: { type: 'string' },
+    // KNT-152. Empty for a finding that is not about a race, an order or a timeout.
+    interleaving: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { path: { type: 'string' }, line: { type: 'integer' }, step: { type: 'string' } },
+        required: ['path', 'line', 'step'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion'],
+  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion', 'interleaving'],
   additionalProperties: false,
 };
 
