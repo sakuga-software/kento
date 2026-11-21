@@ -103,6 +103,9 @@ test('a race with no traced steps and a slow claim with no number become questio
   assert.deepEqual(capped.answer.findings, races.slice(5));
   assert.equal(capped.answer.questions?.length, 5);
   assert.match(capped.answer.questions?.[0]?.question ?? '', /^Race 0 between two writers\?/);
+  // A finding with no `interleaving` field at all (a provider with no strict schema) stays (Kentō #ad5b83).
+  const { interleaving: _none, ...bare } = finding('Concurrent requests both insert the row');
+  assert.deepEqual(splitUntracedTiming(answer([bare as Finding]), exists).answer.findings, [bare]);
   const none = answer([plain]);
   assert.equal(splitUntracedTiming(none, exists).answer, none, 'nothing to move: the same answer');
 });
