@@ -233,6 +233,9 @@ export async function publishReview(
     }
   }
   let { matches, unmatched } = matchFindings(review.findings, stored, threads)
+  // KNT-151. A finding that the engine moved to « Not reviewed » (its premise is code that the review
+  // did not read) is not found again, and not fixed either: its open finding and its thread stay.
+  let movedAway = new Set(matchFindings(review.moved ?? [], unmatched, threads).matches.flatMap((m) => (m.stored ? [m.stored] : [])))
   let changedSince = filesChangedSince(github, repo, head)
   // REV-99. A follower of a finding that a person dismissed or kept comes back only when the file of
   // that finding changed since its last review, as the runner checked: GitHub says it again, so that
@@ -296,7 +299,7 @@ export async function publishReview(
   // An error on one finding (the compare API) leaves it open and never stops the review.
   for (let s of unmatched) {
     // A stale finding of a reopened pull request is fixed the same way, and its thread closed.
-    if (s.status !== 'open' && s.status !== 'stale') continue
+    if ((s.status !== 'open' && s.status !== 'stale') || movedAway.has(s)) continue
     let thread = liveThread(s, threads)
     try {
       let changed = await changedSince(s.lastSeenSha || undefined, s.path)

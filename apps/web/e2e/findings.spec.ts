@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, hydrated, selectValue, signIn, watchConsole } from './helpers.ts'
 
 // The Findings screen (REV-18) in a browser, against the server and Postgres: the pages of the list,
 // the filters, and the empty state of a filter with its link to the closed findings.
@@ -80,13 +80,13 @@ test.describe('the Findings screen', () => {
       // P0 only: one in three.
       // REV-91: a filter applies on change, with no "Filter" button.
       await expect(page.getByRole('button', { name: 'Filter' })).toBeHidden()
-      await page.getByLabel('Priority').selectOption({ label: 'P0 · critical' })
+      await chooseOption(page, 'Priority', { label: 'P0 · critical' })
       await expect(page).toHaveURL(/priority=critical/)
       await expect(page.getByRole('rowheader')).toHaveCount(20)
 
       // fruitback has no open finding: the empty state leads to its closed ones.
       await page.getByRole('link', { name: 'Clear the filters' }).first().click()
-      await page.getByLabel('Repo').selectOption({ label: 'fruitback' })
+      await chooseOption(page, 'Repo', { label: 'fruitback' })
       await expect(page).toHaveURL(/repo=/)
       await expect(page.getByRole('heading', { name: 'No open finding for these filters' })).toBeVisible()
       await expectNoAxeViolations(page)
@@ -124,6 +124,132 @@ test.describe('the Findings screen', () => {
     await expect(bar).toBeVisible()
     await page.getByRole('checkbox', { name: /Finding 01/ }).uncheck()
     await expect(bar).toBeHidden()
+  })
+
+  // KNT-165: the selects of the filters are the select of @remix-run/ui once they hydrate: a
+  // button named by its label and its value, a listbox, the keyboard of a select, and the same
+  // name and value in a hidden input of the form.
+  for (let theme of ['paper', 'sumi'] as const) {
+    test(`a filter is a custom select: keyboard, screen reader names, focus, the form value (${theme})`, async ({ page, context, baseURL }) => {
+      let errors = watchConsole(page)
+      await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
+      await signIn(page, 'octocat')
+      await seed()
+      // No rule: "Source" is disabled (rules.spec.ts starts from no rule too).
+      let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
+      await sql`delete from rules`
+      await sql.end()
+      await page.goto('/findings')
+      await hydrated(page)
+      // The native select is still in the page, hidden and disabled: the form posts the hidden input only.
+      await expect(page.locator('select#findings-priority-native')).toBeHidden()
+      await expect(page.locator('select#findings-priority-native')).toBeDisabled()
+      await expect(selectValue(page, 'priority')).toHaveValue('')
+      // "Source" is disabled when the org has no rule: then its hidden input is disabled too, and the
+      // form does not post it, as a disabled native select (Kentō #117783).
+      let source = page.getByRole('button', { name: /^Source / })
+      await expect(source).toBeDisabled()
+      await expect(selectValue(page, 'rule')).toBeDisabled()
+      let trigger = page.getByRole('button', { name: 'Priority All' })
+      await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      // The value is read once, in the name: the button has no description of its own.
+      await expect(trigger).toHaveAccessibleDescription('')
+      // The <label for> of the server now points at the button; it names it, with the value.
+      await expect(page.locator('#findings-priority')).toHaveJSProperty('tagName', 'BUTTON')
+      // The focus ring of a field, from the keyboard.
+      await trigger.focus()
+      await page.keyboard.press('Shift+Tab')
+      await page.keyboard.press('Tab')
+      await expect(trigger).toBeFocused()
+      expect(await trigger.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none')
+
+      // ArrowDown opens the list, on the chosen option; End, then Escape: nothing changes, the focus comes back.
+      await page.keyboard.press('ArrowDown')
+      let list = page.getByRole('listbox', { name: 'Priority' })
+      await expect(list).toBeFocused()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      await expect(list.getByRole('option', { name: 'All' })).toHaveAttribute('aria-selected', 'true')
+      await expect(list.getByRole('option')).toHaveCount(4)
+      await expectNoAxeViolations(page)
+      await page.keyboard.press('End')
+      await expect(list.getByRole('option', { name: 'P2 · minor' })).toHaveAttribute('data-highlighted', 'true')
+      await page.keyboard.press('Home')
+      await expect(list.getByRole('option', { name: 'All' })).toHaveAttribute('data-highlighted', 'true')
+      // Typeahead in the list: "P1".
+      await page.keyboard.type('P1')
+      await expect(list.getByRole('option', { name: 'P1 · major' })).toHaveAttribute('data-highlighted', 'true')
+      await page.keyboard.press('Escape')
+      await expect(list).toBeHidden()
+      await expect(trigger).toBeFocused()
+      await expect(page).not.toHaveURL(/priority=/)
+
+      // Tab and Shift+Tab leave an open list, as they leave a native select: the list closes, the
+      // value stays, and the focus goes to the next field ("Source" is disabled) or to the one before.
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Tab')
+      await expect(list).toBeHidden()
+      let type = page.getByRole('button', { name: /^Type / })
+      await expect(type).toBeFocused()
+      // When the list closes, @remix-run/ui gives the focus back to the button; after a Tab, it must not.
+      await page.waitForTimeout(300)
+      await expect(type).toBeFocused()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      await expect(selectValue(page, 'priority')).toHaveValue('')
+      await expect(page).not.toHaveURL(/priority=/)
+      await page.keyboard.press('Shift+Tab')
+      await expect(trigger).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('Shift+Tab')
+      await expect(list).toBeHidden()
+      await page.waitForTimeout(300)
+      await expect(page.getByRole('button', { name: /^Repo / })).toBeFocused()
+      // Escape still gives the focus back to the button: the Tab does not leave a trace.
+      await page.keyboard.press('Tab')
+      await expect(trigger).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(list).toBeHidden()
+      await expect(trigger).toBeFocused()
+
+      // Enter on an option: the value goes to the hidden input, and the filter applies (findings.js).
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/priority=critical/)
+      await hydrated(page)
+      await expect(page.getByRole('button', { name: 'Priority P0 · critical' })).toBeVisible()
+      await expect(selectValue(page, 'priority')).toHaveValue('critical')
+      await expect(page.getByRole('rowheader')).toHaveCount(20)
+      await expectNoAxeViolations(page)
+      expect(errors).toEqual([])
+    })
+  }
+
+  test('in forced colors, the option under the pointer or the keyboard has an outline (KNT-165)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    await page.emulateMedia({ forcedColors: 'active' })
+    await page.goto('/findings')
+    await hydrated(page)
+    await page.getByRole('button', { name: 'Priority All' }).focus()
+    expect(await page.getByRole('button', { name: 'Priority All' }).evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    await page.keyboard.press('ArrowDown')
+    let highlighted = page.locator('.select-popover:popover-open [role="option"][data-highlighted="true"]')
+    await expect(highlighted).toHaveCount(1)
+    expect(await highlighted.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
+    // The check mark of the chosen option stays drawn, in the colour of the text.
+    let mark = await page.locator('.select-popover:popover-open [aria-selected="true"]').evaluate((el) => {
+      let after = getComputedStyle(el, '::after')
+      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el).color }
+    })
+    expect(mark.adjust).toBe('none')
+    expect(mark.color).toBe(mark.text)
   })
 
   // KNT-143 follow-up: a radio button of a group where nothing is checked matches :indeterminate.
@@ -180,7 +306,8 @@ test.describe('the Findings screen', () => {
     // The chevron of a select stays drawn, in the colour of the text of the field (FieldText).
     let chevron = await page.locator('.select-box').first().evaluate((el) => {
       let after = getComputedStyle(el, '::after')
-      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('select')!).color }
+      // KNT-165: the field on screen is the button of the custom select; the native one is hidden.
+      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('.select-input:not([hidden])')!).color }
     })
     expect(chevron.adjust).toBe('none')
     expect(chevron.color).toBe(chevron.text)
@@ -226,5 +353,21 @@ test.describe('the Findings screen', () => {
     expect(posted[0]!.body).toContain('by @octocat on Kentō. Reason: "Off topic"')
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
+  })
+})
+
+test.describe('the Findings screen without JavaScript (KNT-165)', () => {
+  test.use({ javaScriptEnabled: false })
+
+  test('a filter is the native select, and "Filter" posts it', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    await page.goto('/findings')
+    let select = page.getByLabel('Priority')
+    await expect(select).toHaveJSProperty('tagName', 'SELECT')
+    await select.selectOption({ label: 'P0 · critical' })
+    await page.getByRole('button', { name: 'Filter' }).click()
+    await expect(page).toHaveURL(/priority=critical/)
+    await expect(page.getByRole('rowheader')).toHaveCount(20)
   })
 })

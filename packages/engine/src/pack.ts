@@ -11,6 +11,8 @@ const MAX_PACK_BYTES = 240_000;
 const MAX_FILE_CHANGED_LINES = 1000;
 const MAX_DOC_LINES = 400;
 const MAX_CONTEXT_BYTES = 60_000;
+// KNT-151. The room that the context keeps on a large pull request, at most: 12 % of the pack.
+const CONTEXT_RESERVE = 28_800;
 
 const SKIP =
   /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$|\.snap$|(^|\/)(dist|build|vendor|\.next|\.react-router)\/|drizzle\/migrations\/meta\/|\.gen\.[a-z]+$|\.(png|jpe?g|gif|webp|avif|svg|ico|pdf|mp4|webm|woff2?|ttf|otf|zip|tgz)$/;
@@ -27,13 +29,29 @@ const WHOLE_FILE_CONTEXT = 100_000;
  * code that refutes a wrong finding were there.
  */
 export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, core: 5 } as const;
-const GENERATED_LIKE = /\.min\.(js|css)$|\.map$|(^|\/)public\/(assets|build)\/|(^|\/)(fixtures?|__fixtures__|testdata)\//;
-const DOC_FILE = /\.(md|mdx|markdown|rst|adoc|txt)$|(^|\/)docs?\//i;
+// A build output or a generated file: minified, a source map, a fixture, the snapshots and the journal
+// of Drizzle (`drizzle/meta/0029_snapshot.json`: about 3 900 generated lines).
+const GENERATED_LIKE = /\.min\.(js|css)$|\.map$|(^|\/)(fixtures?|__fixtures__|testdata)\/|(^|\/)drizzle\/(migrations\/)?meta\/|(^|\/)_journal\.json$/;
+const FIXTURE = /(^|\/)(fixtures?|__fixtures__|testdata)\//;
+// Under `public/assets/` or `public/build/`, a file is a build output only with a sign of a build: a
+// hashed name (`index-BpX3k9aF.js`) or very long lines. A hand-written `kento.css` is source.
+const PUBLIC_BUILD = /(^|\/)public\/(assets|build)\//;
+const HASHED_NAME = /[.-](?=[A-Za-z0-9_]*\d)[A-Za-z0-9_]{8,}\.(js|mjs|css)$/;
+const LONG_LINE = /^[+ ].{1000,}$/m;
+// Docs by their extension only: code under `docs/`, `requirements.txt` or `CMakeLists.txt` is not docs.
+const DOC_FILE = /\.(md|mdx|markdown|rst|adoc)$|(^|\/)docs?\/(.*\/)?[^/]+\.txt$/i;
 const E2E_FILE = /(^|\/)e2e\//;
 const UI_FILE = /\.(css|scss|sass|less|html|vue|svelte)$|(^|\/)(ui|components?|views?|pages?|styles?)\/.*\.(tsx|jsx)$/;
 const CORE_FILE = /\.(sql|prisma)$|(^|\/)(migrations?|drizzle|prisma)\/|(^|\/)schema\.[a-z]+$|(^|\/)(db|database)\/|(^|[/-])(store|stores|repository|repositories|dao)(\.[a-z]+$|\/)/;
-export function trimRank(path: string): number {
+
+/**
+ * KNT-166. The rank of a changed file when the pack must cut: the lowest goes first. `diff` is the
+ * diff of the file in the pack (a build output has very long lines). The trim and the coverage of
+ * the review read this one function.
+ */
+export function trimRank(path: string, diff = ''): number {
   if (GENERATED_LIKE.test(path)) return TRIM_RANK.generated;
+  if (PUBLIC_BUILD.test(path) && (HASHED_NAME.test(path) || LONG_LINE.test(diff))) return TRIM_RANK.generated;
   if (DOC_FILE.test(path)) return TRIM_RANK.docs;
   if (TEST_FILE.test(path) || E2E_FILE.test(path)) return TRIM_RANK.tests;
   if (CORE_FILE.test(path)) return TRIM_RANK.core;
@@ -41,8 +59,13 @@ export function trimRank(path: string): number {
   return TRIM_RANK.source;
 }
 
-/** KNT-166. The changed files, and those that the review did not read or read with less context. */
-export type Coverage = { files: number; cut: string[]; narrowed: string[] };
+/**
+ * KNT-166. What the pack read of the changed files.
+ * - `cut`: removed to fit in the size of the review; `large`: over MAX_FILE_CHANGED_LINES.
+ * - `logic`: those of `cut` and `large` that hold logic (neither generated nor docs), `core` among them.
+ * - `narrowed`: read with three lines of context only.
+ */
+export type Coverage = { files: number; cut: string[]; large: string[]; narrowed: string[]; logic: string[]; core: string[] };
 
 // The context: unchanged code that the change uses or that uses the change
 
@@ -119,11 +142,10 @@ function workspacePackages(repo: string, head: string): Map<string, string> {
 }
 
 /** The names that the changed files import from the code of the repository, and that the added lines use. */
-function usedImports(repo: string, base: string, head: string, paths: string[], cache: Map<string, string[]>): { name: string; from: string; path: string }[] {
+function usedImports(repo: string, head: string, paths: string[], cache: Map<string, string[]>, diffOf: (path: string) => string, packages: Map<string, string>): { name: string; from: string; path: string }[] {
   const found: { name: string; from: string; path: string }[] = [];
-  const packages = workspacePackages(repo, head);
   for (const path of paths) {
-    const added = git(repo, 'diff', '-U0', `${base}...${head}`, '--', path)
+    const added = diffOf(path)
       .split('\n')
       .filter((row) => row.startsWith('+') && !row.startsWith('+++'))
       .join('\n');
@@ -144,10 +166,10 @@ function usedImports(repo: string, base: string, head: string, paths: string[], 
 }
 
 /** The exported names that the changed lines declare, or whose declaration encloses a changed line. */
-function changedExports(repo: string, base: string, head: string, paths: string[]): { name: string; path: string }[] {
+function changedExports(paths: string[], diffOf: (path: string) => string): { name: string; path: string }[] {
   const found: { name: string; path: string }[] = [];
   for (const path of paths) {
-    for (const row of git(repo, 'diff', '-U0', `${base}...${head}`, '--', path).split('\n')) {
+    for (const row of diffOf(path).split('\n')) {
       const text = row.startsWith('@@') ? row.replace(/^@@[^@]*@@\s?/, '') : row.startsWith('+') && !row.startsWith('+++') ? row.slice(1) : '';
       const name = DECLARATION.exec(text)?.[1];
       if (name && !found.some((f) => f.name === name)) found.push({ name, path });
@@ -162,10 +184,10 @@ const SQL_GLOBS = ['*.sql', '*.prisma', ...SOURCE_GLOBS];
 const MAX_SQL_NAMES = 12;
 
 /** The SQL names that the added lines of the changed source files write, with the files that write each one. */
-function addedSqlNames(repo: string, base: string, head: string, paths: string[]): Map<string, Set<string>> {
+function addedSqlNames(paths: string[], diffOf: (path: string) => string): Map<string, Set<string>> {
   const names = new Map<string, Set<string>>();
   for (const path of paths) {
-    for (const row of git(repo, 'diff', '-U0', `${base}...${head}`, '--', path).split('\n')) {
+    for (const row of diffOf(path).split('\n')) {
       if (!row.startsWith('+') || row.startsWith('+++')) continue;
       for (const [, name] of row.matchAll(SQL_NAME)) {
         if (!names.has(name) && names.size >= MAX_SQL_NAMES) continue;
@@ -221,13 +243,16 @@ function shownRanges(diff: string): [number, number][] {
   return ranges;
 }
 
-/** The added lines of the diff of a file, without their `+`. */
-function addedLines(repo: string, base: string, head: string, path: string): string {
-  return git(repo, 'diff', '-U0', `${base}...${head}`, '--', path)
-    .split('\n')
-    .filter((row) => row.startsWith('+') && !row.startsWith('+++'))
-    .map((row) => row.slice(1))
-    .join('\n');
+/** The added lines of a diff of `-U0`, without their `+`, with their line at the head. */
+function addedRows(diff: string): { line: number; text: string }[] {
+  const rows: { line: number; text: string }[] = [];
+  let line = 0;
+  for (const row of diff.split('\n')) {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(row);
+    if (hunk) line = Number(hunk[1]);
+    else if (row.startsWith('+') && !row.startsWith('+++')) rows.push({ line: line++, text: row.slice(1) });
+  }
+  return rows;
 }
 
 /**
@@ -299,58 +324,144 @@ function localImports(text: string, packages: Map<string, string>): Map<string, 
   return names;
 }
 
-type Site = { path: string; line: number; reason: string; maxLines?: number };
+/** A line without its strings and its comment, for the count of its brackets. */
+const codeOf = (line: string) => line.replace(/\/\/.*$/, '').replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""');
 
 /**
- * The definitions of the functions that the added lines of a file call: in the same file (`name(`,
- * `this.name(`), in the module of an imported object (`service.name(`), or for another object, the
- * only file of the repository that declares a method of that name. An imported name called bare is
- * the work of `usedImports`.
+ * The last line (from 1) of the declaration that starts on `line`, at most `maxLines` after it.
+ * - At column 0, it ends before the next line that starts at column 0 and is not a closing bracket.
+ * - Indented (a method, a property), it ends where its brackets close after its body opened, so a
+ *   signature on several lines (`async charge(\n    id: string,\n  ): Promise<void> {`) keeps its
+ *   body. A member on one line (`name: (a) => a + 1,`) ends on that line.
+ */
+export function declarationEnd(lines: readonly string[], line: number, maxLines: number): number {
+  const first = lines[line - 1] ?? '';
+  if (!/^\s/.test(first)) {
+    let end = line;
+    while (end < lines.length && end - line < maxLines && !(end > line && /^[^\s})\]]/.test(lines[end]!))) end++;
+    while (end > line && !lines[end - 1]!.trim()) end--;
+    return end;
+  }
+  let depth = 0;
+  let body = false;
+  for (let n = line; n <= Math.min(lines.length, line + maxLines); n++) {
+    for (const c of codeOf(lines[n - 1]!)) {
+      if (c === '(' || c === '[' || c === '{') {
+        if (c === '{' && depth === 0) body = true;
+        depth++;
+      } else if (c === ')' || c === ']' || c === '}') depth--;
+    }
+    if (depth <= 0 && (body || !/[{([=]\s*$|=>\s*$/.test(codeOf(lines[n - 1]!)))) return n;
+  }
+  return Math.min(lines.length, line + maxLines);
+}
+
+type Site = { path: string; line: number; reason: string; maxLines?: number };
+
+/** The class that encloses a line of a file: its first and last lines, or null. */
+function enclosingClass(lines: readonly string[], line: number): [number, number] | null {
+  for (let n = line; n >= 1; n--) {
+    if (/^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\b/.test(lines[n - 1]!)) {
+      const end = declarationEnd(lines, n, lines.length);
+      return end >= line ? [n, end] : null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The declared type of a name in a file, when a line gives it: `name: Type`, `name: ns.Type`, or
+ * `name = new Type(`. Gives the first identifier of the type, or null.
+ */
+function declaredType(lines: readonly string[], name: string): string | null {
+  const n = escapeRegExp(name);
+  for (const line of lines) {
+    const m = new RegExp(`\\b${n}\\s*\\??:\\s*(${IDENT})|\\b${n}\\s*=\\s*(?:await\\s+)?new\\s+(${IDENT})`).exec(line);
+    if (m) return m[1] ?? m[2] ?? null;
+  }
+  return null;
+}
+
+/** KNT-151. The most `git grep` calls that the callees of one review run. */
+export const MAX_CALLEE_GREPS = 40;
+
+/**
+ * The definitions of the functions that the added lines of a file call:
+ * - `name(`: in the same file; an imported name is the work of `usedImports`;
+ * - `this.name(`: in the class that encloses the call;
+ * - `service.name(`: in the module of the imported object, or of the type of a declared receiver;
+ * - another object of an unknown type: the only file of the repository that declares a method of that
+ *   name, labelled as such. A receiver whose type a package gives (`channel: amqp.Channel`) gets none:
+ *   a method of the repository of the same name is not the one called.
  */
 function callees(
   repo: string,
   head: string,
   path: string,
-  added: string,
+  added: readonly { line: number; text: string }[],
   cache: Map<string, string[]>,
   packages: Map<string, string>,
   files: Set<string>,
+  greps: { left: number },
 ): Site[] {
   const lines = fileAt(repo, head, path, cache);
-  const imports = localImports(lines.join('\n'), packages);
+  const text = lines.join('\n');
+  const imports = localImports(text, packages);
+  // Every name that the file imports, from a package too: a type of a package is no code of the repository.
+  const imported = new Set([...text.matchAll(IMPORT)].flatMap(([, , list]) => list.replace(/[{}]/g, ',').split(',').map((raw) => raw.replace(/^\s*(type\s+)?(\*\s+as\s+)?/, '').split(/\s+as\s+/).pop()!.trim()).filter(Boolean)));
   const sites: Site[] = [];
   const seen = new Set<string>();
-  for (const m of added.matchAll(CALL)) {
-    const [, object, name] = m;
-    const before = added.slice(0, m.index).trimEnd();
-    // `).name(` or `].name(`: a method of a value that the line computes, `?` as its object.
-    const owner = object ?? (before.endsWith('.') ? '?' : undefined);
-    if (KEYWORDS.has(name) || /\bfunction\s*\*?\s*$/.test(before) || seen.has(`${owner}.${name}`)) continue;
-    seen.add(`${owner}.${name}`);
-    const reason = `definition of \`${owner && owner !== '?' ? `${owner}.` : ''}${name}\`, which the PR calls`;
-    if (owner === undefined || owner === 'this') {
-      if (owner === undefined && imports.has(name)) continue;
-      const line = declarationLine(lines, name, owner === 'this');
-      if (line) sites.push({ path, line, reason });
-    } else if (imports.has(owner)) {
-      for (const file of moduleFiles(imports.get(owner)!, path, packages, files)) {
-        const line = declarationLine(fileAt(repo, head, file, cache), name, true);
-        if (line) {
-          sites.push({ path: file, line, reason });
-          break;
+  const inModule = (from: string, name: string, reason: string) => {
+    for (const file of moduleFiles(from, path, packages, files)) {
+      const line = declarationLine(fileAt(repo, head, file, cache), name, true);
+      if (line) return sites.push({ path: file, line, reason }) > 0;
+    }
+    return false;
+  };
+  for (const row of added) {
+    for (const m of row.text.matchAll(CALL)) {
+      const [, object, name] = m;
+      const before = row.text.slice(0, m.index).trimEnd();
+      // `).name(` or `].name(`: a method of a value that the line computes, `?` as its object.
+      const owner = object ?? (before.endsWith('.') ? '?' : undefined);
+      if (KEYWORDS.has(name!) || /\bfunction\s*\*?\s*$/.test(before) || seen.has(`${owner}.${name}`)) continue;
+      seen.add(`${owner}.${name}`);
+      const reason = `definition of \`${owner && owner !== '?' ? `${owner}.` : ''}${name}\`, which the PR calls`;
+      if (owner === undefined) {
+        if (imports.has(name!)) continue;
+        const line = declarationLine(lines, name!, false);
+        if (line) sites.push({ path, line, reason });
+      } else if (owner === 'this') {
+        const span = enclosingClass(lines, row.line);
+        if (!span) continue;
+        const line = declarationLine(lines.slice(span[0] - 1, span[1]), name!, true);
+        if (line) sites.push({ path, line: span[0] + line - 1, reason });
+      } else if (imports.has(owner)) {
+        inModule(imports.get(owner)!, name!, reason);
+      } else {
+        const given = owner === '?' ? null : declaredType(lines, owner);
+        const type = given && !['any', 'unknown', 'object', 'Object'].includes(given) ? given : null;
+        if (type && imports.has(type)) {
+          inModule(imports.get(type)!, name!, reason);
+          continue;
+        }
+        // A type of a package, or of the language (`Map`, `Promise`): its method is not in the repository.
+        if (type && (imported.has(type) || !declarationLine(lines, type, false))) continue;
+        if (COMMON_METHODS.has(name!) || name!.length <= 3 || greps.left <= 0) continue;
+        greps.left--;
+        const n = escapeRegExp(name!);
+        const pattern = `^[[:space:]]+((public|private|protected|static|async|override)[[:space:]]+)*${n}[[:space:]]*(<[^>]*>)?[[:space:]]*\\(|^[[:space:]]+${n}[[:space:]]*[:=][[:space:]]*(async[[:space:]]+)?(function|\\()|^[[:space:]]*export[[:space:]]+(async[[:space:]]+)?function[[:space:]]+${n}[^[:alnum:]_$]`;
+        const declared = grep(repo, head, ['-E', '-e', pattern]).filter((d) => declarationLine([d.text], name!, true) === 1 && /[{(]\s*$/.test(d.text));
+        // Only a declaration that opens a body: a member of a type (`href: (page: number) => string`)
+        // has the same shape on one line. A name that several files declare: a grep cannot tell which
+        // one the object is.
+        if (new Set(declared.map((d) => d.path)).size === 1) {
+          sites.push({ path: declared[0]!.path, line: declared[0]!.line, reason: `the one method \`${name}\` of the repository, which \`${owner === '?' ? '…' : owner}.${name}\` may call (its type is unknown)` });
         }
       }
-    } else if (!COMMON_METHODS.has(name) && name.length > 3) {
-      const n = escapeRegExp(name);
-      const pattern = `^[[:space:]]+((public|private|protected|static|async|override)[[:space:]]+)*${n}[[:space:]]*(<[^>]*>)?[[:space:]]*\\(|^[[:space:]]+${n}[[:space:]]*[:=][[:space:]]*(async[[:space:]]+)?(function|\\()|^[[:space:]]*export[[:space:]]+(async[[:space:]]+)?function[[:space:]]+${n}[^[:alnum:]_$]`;
-      const declared = grep(repo, head, ['-E', '-e', pattern]).filter((d) => declarationLine([d.text], name, true) === 1 && /[{(]\s*$/.test(d.text));
-      // Only a declaration that opens a body: a member of a type (`href: (page: number) => string`)
-      // has the same shape on one line. A name that several files declare: a grep cannot tell which
-      // one the object is.
-      if (new Set(declared.map((d) => d.path)).size === 1) sites.push({ path: declared[0].path, line: declared[0].line, reason });
+      // The diff can show some of them: the caller keeps the first MAX_CALLEES that it does not.
+      if (sites.length >= MAX_CALLEES * 3) return sites;
     }
-    // The diff can show some of them: the caller keeps the first MAX_CALLEES that it does not.
-    if (sites.length >= MAX_CALLEES * 3) break;
   }
   return sites;
 }
@@ -370,7 +481,35 @@ const TABLE_DECLARATION = `(const|let|var)[[:space:]]+[A-Za-z_$][[:alnum:]_$]*[[
  * The definition of each table that the added lines read or write: its declaration in a schema file
  * (Drizzle or Prisma), the migration that creates it, and the last migration that alters it.
  */
-function tableDefinitions(repo: string, head: string, added: string, cache: Map<string, string[]>): Site[] {
+/** The length of the common folder prefix of two paths: the nearer, the longer. */
+function nearness(a: string, b: string): number {
+  const x = a.split('/');
+  const y = b.split('/');
+  let n = 0;
+  while (n < x.length - 1 && n < y.length - 1 && x[n] === y[n]) n++;
+  return n;
+}
+
+/** The order of two migrations of one folder: by their number (`2_` before `10_`), then by name. */
+function migrationOrder(a: { path: string; line: number }, b: { path: string; line: number }): number {
+  const number = (p: string) => Number(/^(\d+)/.exec(p.split('/').pop()!)?.[1] ?? Number.MAX_SAFE_INTEGER);
+  return number(a.path) - number(b.path) || a.path.localeCompare(b.path) || a.line - b.line;
+}
+const folderOf = (path: string) => path.split('/').slice(0, -1).join('/');
+
+// A line that names a module or holds only a comment: `from "pkg"`, `update state` in a comment.
+const NOT_SQL_LINE = /^\s*(?:import\b|export\s.*\bfrom\s|\/\/|\/?\*|#|--)/;
+
+/**
+ * The definition of each table that the added lines read or write, the SQL files first: its
+ * declaration in a schema file (Drizzle or Prisma), the migration that creates it, the migrations
+ * between that alter a column that the added lines name, and the last migration that alters it. A name
+ * that several apps declare resolves to the declaration nearest to the file that uses it.
+ */
+function tableDefinitions(repo: string, head: string, added: ReadonlyMap<string, readonly { line: number; text: string }[]>, cache: Map<string, string[]>): Site[] {
+  const all = [...added.values()].flatMap((rows) => rows.map((r) => r.text)).join('\n');
+  // No word of a table in the added lines: no grep.
+  if (!/\b(?:from|join|into|update|table)\b|selectFrom|insertInto|updateTable|deleteFrom|\.(?:find|create|update|delete|upsert|count)\w*\s*\(/i.test(all)) return [];
   // The Drizzle tables of the repository, by the name of their variable and by their SQL name.
   const declared = grep(repo, head, ['-E', '-e', TABLE_DECLARATION]).map((d) => {
     const lines = fileAt(repo, head, d.path, cache);
@@ -379,54 +518,68 @@ function tableDefinitions(repo: string, head: string, added: string, cache: Map<
     const sql = /Table\s*\(\s*['"`]([^'"`]+)['"`]/.exec(text)?.[1] ?? '';
     return { ...d, variable, sql };
   });
-  const names = new Set<string>();
-  const keep = (name: string) => {
-    if (names.size < MAX_TABLE_CANDIDATES && /^[A-Za-z_]\w*$/.test(name) && !NOT_TABLES.has(name.toLowerCase())) names.add(name);
-  };
-  for (const [, name] of added.matchAll(SQL_TABLE)) keep(name);
-  for (const [, name] of added.matchAll(BUILDER_TABLE)) keep(name);
-  for (const [, name] of added.matchAll(ORM_TABLE)) {
-    const table = declared.find((d) => d.variable === name);
-    if (table?.sql) keep(table.sql);
+  // Each name, with the changed file that uses it first and the words of its added lines.
+  const names = new Map<string, { from: string; words: Set<string> }>();
+  const models = new Map<string, string>();
+  for (const [path, rows] of added) {
+    const text = rows.filter((r) => !NOT_SQL_LINE.test(r.text)).map((r) => r.text.replace(/\s\/\/.*$|\s--\s.*$/, '')).join('\n');
+    const words = new Set(text.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? []);
+    const keep = (name: string) => {
+      const lower = name.toLowerCase();
+      if (names.size < MAX_TABLE_CANDIDATES && /^[A-Za-z_]\w*$/.test(name) && !NOT_TABLES.has(lower) && !names.has(lower)) names.set(lower, { from: path, words });
+    };
+    for (const [, name] of text.matchAll(SQL_TABLE)) keep(name!);
+    for (const [, name] of text.matchAll(BUILDER_TABLE)) keep(name!);
+    for (const [, name] of text.matchAll(ORM_TABLE)) {
+      const table = declared.filter((d) => d.variable === name).sort((x, y) => nearness(y.path, path) - nearness(x.path, path))[0];
+      if (table?.sql) keep(table.sql);
+    }
+    for (const [, model] of text.matchAll(PRISMA_MODEL)) if (!models.has(model!)) models.set(model!, path);
   }
-  const models = new Set([...added.matchAll(PRISMA_MODEL)].map(([, model]) => model));
   if (!names.size && !models.size) return [];
 
   const sites: Site[] = [];
   const found = new Set<string>();
-  const list = [...names].map(escapeRegExp).join('|');
+  const list = [...names.keys()].map(escapeRegExp).join('|');
   const quoted = '["`]?';
   const qualified = `(${quoted}[[:alnum:]_]+${quoted}\\.)?`;
   const after = '([^[:alnum:]_]|$)';
   const migrations = (verb: string, table: RegExp) =>
     list
-      ? grep(repo, head, ['-i', '-E', '-e', `${verb}[[:space:]]+${qualified}${quoted}(${list})${quoted}${after}`], SQL_GLOBS)
-          .map((m) => ({ ...m, table: table.exec(m.text)?.[1]?.toLowerCase() ?? '' }))
-          .sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line)
+      ? grep(repo, head, ['-i', '-E', '-e', `${verb}[[:space:]]+${qualified}${quoted}(${list})${quoted}${after}`], SQL_GLOBS).map((m) => ({
+          ...m,
+          table: table.exec(m.text)?.[1]?.toLowerCase() ?? '',
+        }))
       : [];
   const creates = migrations('create[[:space:]]+table([[:space:]]+if[[:space:]]+not[[:space:]]+exists)?', /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:["`]?\w+["`]?\.)?["`]?(\w+)/i);
   const alters = migrations('alter[[:space:]]+table([[:space:]]+if[[:space:]]+exists)?([[:space:]]+only)?', /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:["`]?\w+["`]?\.)?["`]?(\w+)/i);
-  for (const name of names) {
-    const lower = name.toLowerCase();
-    const schema = declared.find((d) => d.sql.toLowerCase() === lower);
-    const create = creates.find((m) => m.table === lower);
-    const lastAlter = alters.filter((m) => m.table === lower).at(-1);
+  // Only the names that resolve count: a word after `from` that no table has is no candidate.
+  for (const [lower, { from, words }] of names) {
+    const nearest = <T extends { path: string }>(rows: T[]) => [...rows].sort((x, y) => nearness(y.path, from) - nearness(x.path, from))[0];
+    const schema = nearest(declared.filter((d) => d.sql.toLowerCase() === lower));
+    const create = nearest(creates.filter((m) => m.table === lower));
     if (!schema && !create) continue;
     found.add(lower);
-    if (schema) sites.push({ path: schema.path, line: schema.line, reason: `table \`${name}\`, which the PR reads or writes` });
-    if (create) sites.push({ path: create.path, line: create.line, reason: `migration that creates the table \`${name}\`` });
-    if (lastAlter && lastAlter.path !== create?.path) {
-      // The statements of that migration on the table, a few lines apart, make one snippet.
-      for (const m of alters.filter((a) => a.path === lastAlter.path && a.table === lower).slice(0, 8)) {
-        sites.push({ path: m.path, line: m.line, reason: `last migration that alters the table \`${name}\`` });
+    if (schema) sites.push({ path: schema.path, line: schema.line, reason: `table \`${lower}\`, which the PR reads or writes` });
+    if (create) {
+      sites.push({ path: create.path, line: create.line, reason: `migration that creates the table \`${lower}\`` });
+      // The migrations of the same folder, in the order of their numbers.
+      const later = alters.filter((m) => m.table === lower && folderOf(m.path) === folderOf(create.path) && migrationOrder(m, create) > 0).sort(migrationOrder);
+      const last = later.at(-1);
+      const middle = later.filter((m) => m.path !== last?.path && (m.text.toLowerCase().match(/[a-z_][a-z0-9_]*/g) ?? []).some((w) => words.has(w) && w !== lower && !/^(alter|table|add|column|drop|set|not|null|default|if|exists|only)$/.test(w)));
+      for (const m of middle.slice(0, 4)) sites.push({ path: m.path, line: m.line, reason: `migration that alters a column of \`${lower}\` that the PR uses` });
+      // The statements of the last migration on the table, a few lines apart, make one snippet.
+      if (last && last.path !== create.path) {
+        for (const m of later.filter((a) => a.path === last.path).slice(0, 8)) sites.push({ path: m.path, line: m.line, reason: `last migration that alters the table \`${lower}\`` });
       }
     }
     if (found.size >= MAX_TABLES) break;
   }
   if (models.size && found.size < MAX_TABLES) {
-    for (const model of models) {
-      const upper = model[0].toUpperCase() + model.slice(1);
-      const row = grep(repo, head, ['-E', '-e', `^model[[:space:]]+${escapeRegExp(upper)}[[:space:]]*\\{`], ['*.prisma'])[0];
+    for (const [model, from] of models) {
+      const upper = model[0]!.toUpperCase() + model.slice(1);
+      const rows = grep(repo, head, ['-E', '-e', `^model[[:space:]]+${escapeRegExp(upper)}[[:space:]]*\\{`], ['*.prisma']);
+      const row = rows.sort((x, y) => nearness(y.path, from) - nearness(x.path, from))[0];
       if (row) sites.push({ path: row.path, line: row.line, reason: `model \`${upper}\`, which the PR reads or writes`, maxLines: MAX_ROUTE_LINES });
     }
   }
@@ -490,35 +643,33 @@ export function buildContext(
   const isShown = (path: string, line: number) => (shown.get(path) ?? []).some(([start, end]) => line >= start && line <= end);
   const cache = new Map<string, string[]>();
   const packages = workspacePackages(repo, head);
-  const added = new Map([...sources, ...sqlFiles].map((p) => [p, addedLines(repo, base, head, p)]));
+  // The diff of `-U0` of each changed file, read once.
+  const diffs0 = new Map<string, string>();
+  const diffOf = (path: string) => {
+    if (!diffs0.has(path)) diffs0.set(path, git(repo, 'diff', '-U0', `${base}...${head}`, '--', path));
+    return diffs0.get(path)!;
+  };
+  const added = new Map([...sqlFiles, ...sources].map((p) => [p, addedRows(diffOf(p))]));
+  const greps = { left: MAX_CALLEE_GREPS };
   const snippets: Snippet[] = [];
+  // KNT-151. The diff can show the first lines of a declaration (three lines of context) and not its
+  // body: only a declaration that the diff shows whole is left out.
+  const shownWhole = (path: string, line: number, maxLines: number) => {
+    const end = declarationEnd(fileAt(repo, head, path, cache), line, maxLines);
+    for (let n = line; n <= end; n++) if (!isShown(path, n)) return false;
+    return true;
+  };
   const add = (path: string, line: number, reason: string, wholeDeclaration: boolean, maxLines = MAX_SNIPPET_LINES) => {
-    if (isShown(path, line)) return;
+    if (!wholeDeclaration && isShown(path, line)) return;
     if (snippets.some((s) => s.path === path && line >= s.start && line <= s.end)) return;
     const lines = fileAt(repo, head, path, cache);
     let start = Math.max(1, line - LINES_BEFORE_SITE);
     let end = Math.min(lines.length, line + LINES_AFTER_SITE);
     if (wholeDeclaration) {
       start = line;
-      end = line;
-      // A declaration ends at the line that closes it at its own indent, or at the next line that
-      // starts at column 0 and is not a closing bracket.
-      const first = lines[line - 1] ?? '';
-      const indent = /^\s*/.exec(first)![0].length;
-      // A member on one line (`name: (a) => a + 1,`) ends on that line.
-      const opens = indent === 0 || /[{([=>,]\s*$/.test(first);
-      while (opens && end < lines.length && end - start < maxLines) {
-        const next = lines[end];
-        if (indent === 0 && end > start && /^[^\s})\]]/.test(next)) break;
-        end++;
-        if (indent > 0 && /^\s*[})\]]/.test(next) && /^\s*/.exec(next)![0].length === indent) break;
-        if (indent > 0 && next.trim() && /^\s*/.exec(next)![0].length < indent) {
-          end--;
-          break;
-        }
-      }
+      end = declarationEnd(lines, line, maxLines);
+      if (shownWhole(path, line, maxLines)) return;
     }
-    while (wholeDeclaration && end > start && !lines[end - 1]!.trim()) end--;
     // Two sites a few lines apart in one file make one snippet, not two that repeat lines.
     const near = snippets.find((s) => s.path === path && start <= s.end + 3 && end >= s.start - 3);
     if (near && Math.max(end, near.end) - Math.min(start, near.start) < Math.max(maxLines, MAX_SNIPPET_LINES)) {
@@ -530,7 +681,7 @@ export function buildContext(
   };
   const absent: string[] = [];
 
-  for (const [name, writers] of addedSqlNames(repo, base, head, sources)) {
+  for (const [name, writers] of addedSqlNames(sources, diffOf)) {
     const sites = grep(repo, head, ['-F', '-w', '-e', name], SQL_GLOBS).filter((m) => !writers.has(m.path));
     // A migration says best what the name is: it comes before a mention in the code. A file of the
     // diff that holds the name (a migration of this pull request) is in the diff already.
@@ -540,15 +691,15 @@ export function buildContext(
     else if (!sites.length) absent.push(name);
   }
 
-  for (const site of tableDefinitions(repo, head, [...added.values()].join('\n'), cache)) {
+  for (const site of tableDefinitions(repo, head, added, cache)) {
     add(site.path, site.line, site.reason, true, site.maxLines);
   }
 
-  const calls = sources.flatMap((path) => callees(repo, head, path, added.get(path) ?? '', cache, packages, files));
-  for (const site of calls.filter((c) => !isShown(c.path, c.line)).slice(0, MAX_CALLEES)) add(site.path, site.line, site.reason, true, site.maxLines);
+  const calls = sources.flatMap((path) => callees(repo, head, path, added.get(path) ?? [], cache, packages, files, greps));
+  for (const site of calls.filter((c) => !shownWhole(c.path, c.line, c.maxLines ?? MAX_SNIPPET_LINES)).slice(0, MAX_CALLEES)) add(site.path, site.line, site.reason, true, site.maxLines);
 
   const definitions = (importers: string[]) => {
-    for (const { name, from, path } of usedImports(repo, base, head, importers, cache).slice(0, MAX_SYMBOLS)) {
+    for (const { name, from, path } of usedImports(repo, head, importers, cache, diffOf, packages).slice(0, MAX_SYMBOLS)) {
       const moduleName = from.split('/').pop()!;
       // `path` is the importing file, or the folder of a package of the repository (it ends with `/`).
       const root = path.endsWith('/') ? path : `${path.split('/').slice(0, 2).join('/')}/`;
@@ -576,7 +727,7 @@ export function buildContext(
     }
   }
 
-  for (const { name } of kind === 'full' ? changedExports(repo, base, head, sources).slice(0, MAX_SYMBOLS) : []) {
+  for (const { name } of kind === 'full' ? changedExports(sources, diffOf).slice(0, MAX_SYMBOLS) : []) {
     // A name that several files export (`loader`, `action`, `default`) has callers that a grep cannot tell apart.
     if (new Set(definitionsOf(repo, head, name).map((d) => d.path)).size > 1) continue;
     // A caller in a file of the diff is in the diff already.
@@ -698,14 +849,25 @@ export function buildPack(
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
   const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
+  // KNT-151. On a large pull request, the diff would fill the budget and leave the context no room:
+  // the context reads first, up to CONTEXT_RESERVE, and the diff fits in what is left.
+  const reserve =
+    size() > budget - CONTEXT_RESERVE ? buildContext(repo, base, head, [...hunks.keys()], CONTEXT_RESERVE, contextKind, hunks).length : 0;
+  const diffBudget = budget - reserve;
   // KNT-166. Over the budget, the files of least value go first, the largest first in each rank:
   // generated-like files and docs are dropped; then the source files lose the whole function around
   // each hunk and keep three lines of context, the core last; then the tests, the UI, the source and
   // the core are dropped, in this order.
+  // The rank of each file, once. When every changed file is a test or a fixture, the tests are the
+  // change: they take the rank of the source.
+  const rankOf = new Map([...hunks].map(([path, diff]) => [path, trimRank(path, diff)]));
+  const testOnly = changes.every(({ path }) => SKIP.test(path) || TEST_FILE.test(path) || E2E_FILE.test(path) || FIXTURE.test(path));
+  if (testOnly) for (const [path, r] of rankOf) if (r === TRIM_RANK.tests || FIXTURE.test(path)) rankOf.set(path, TRIM_RANK.source);
+  const rank = (path: string) => rankOf.get(path) ?? trimRank(path);
   const byRank = (ranks: number[]) =>
     [...hunks]
-      .filter(([path]) => ranks.includes(trimRank(path)))
-      .sort((a, b) => trimRank(a[0]) - trimRank(b[0]) || b[1].length - a[1].length)
+      .filter(([path]) => ranks.includes(rank(path)))
+      .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1].length - a[1].length)
       .map(([path]) => path);
   const cut: string[] = [];
   const narrowed: string[] = [];
@@ -716,11 +878,11 @@ export function buildPack(
     hunks.delete(path);
   };
   for (const path of byRank([TRIM_RANK.generated, TRIM_RANK.docs])) {
-    if (size() <= budget) break;
+    if (size() <= diffBudget) break;
     drop(path);
   }
   for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
-    if (size() <= budget) break;
+    if (size() <= diffBudget) break;
     if (WORKFLOW_FILE.test(path) || TEST_FILE.test(path)) continue;
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
     const smaller = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
@@ -731,13 +893,13 @@ export function buildPack(
     }
   }
   for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
-    if (size() <= budget) break;
+    if (size() <= diffBudget) break;
     drop(path);
   }
   // The drops can leave room: the core files get their whole functions back first, the smallest first.
-  for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => trimRank(b) - trimRank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
+  for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => rank(b) - rank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
     const wider = size() - hunks.get(path)!.length + whole.get(path)!.length;
-    if (wider <= budget) hunks.set(path, whole.get(path)!);
+    if (wider <= diffBudget) hunks.set(path, whole.get(path)!);
   }
   const narrowedNote = narrowed.filter((path) => hunks.has(path) && hunks.get(path) !== whole.get(path));
 
@@ -781,8 +943,10 @@ export function buildPack(
   // REV-113. A short hash of the rules, the imports and the context: the logs of the runner tell how
   // often a review of a pull request holds the same ones as the last review.
   const contextHash = createHash('sha256').update(rulesText + importsPart + contextPart).digest('hex').slice(0, 12);
-  // A file of more than MAX_FILE_CHANGED_LINES is logic that the review did not read, as a cut one.
-  const unread = [...cut, ...changes.map((c) => c.path).filter((path) => !SKIP.test(path) && !reviewed.includes(path))];
-  const coverage: Coverage = { files: changes.length, cut: unread, narrowed: narrowedNote };
+  // A file of more than MAX_FILE_CHANGED_LINES is not read either. A generated file or a doc that the
+  // pack did not read is no logic.
+  const large = changes.map((c) => c.path).filter((path) => !SKIP.test(path) && !reviewed.includes(path));
+  const logic = [...cut, ...large].filter((path) => rank(path) !== TRIM_RANK.generated && rank(path) !== TRIM_RANK.docs);
+  const coverage: Coverage = { files: changes.length, cut, large, narrowed: narrowedNote, logic, core: logic.filter((path) => rank(path) === TRIM_RANK.core) };
   return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage };
 }
