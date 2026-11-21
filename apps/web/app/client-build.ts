@@ -64,6 +64,19 @@ export function missingFiles(dir: string, manifest: ClientManifest): string[] {
   return manifest.files.flatMap((file) => ['', SUFFIXES.br, SUFFIXES.gzip].map((suffix) => file + suffix)).filter((file) => !existsSync(path.join(dir, file)))
 }
 
+/** What is wrong with the shape of a manifest (Kentō #1295f7), or null. */
+function manifestProblem(manifest: unknown): string | null {
+  let { entries, files } = (manifest ?? {}) as Partial<ClientManifest>
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return 'no entries'
+  if (!Array.isArray(files) || !files.every((file) => typeof file === 'string')) return 'no files'
+  for (let [source, entry] of Object.entries(entries)) {
+    let { file, imports } = (entry ?? {}) as Partial<ClientManifest['entries'][string]>
+    let listed = (name: unknown) => typeof name === 'string' && files.includes(name)
+    if (!listed(file) || !Array.isArray(imports) || !imports.every(listed)) return `a wrong entry: ${source}`
+  }
+  return null
+}
+
 /**
  * The build of `dir`, or null when it has no manifest (not built). A build that cannot serve is
  * refused, with the reason: a manifest that does not read (Kentō #9505b4, a truncated copy), or a
@@ -75,7 +88,8 @@ export function readClientBuild(dir = CLIENT_DIR): ClientBuild | { missing: stri
   let manifest: ClientManifest
   try {
     manifest = JSON.parse(readFileSync(file, 'utf8')) as ClientManifest
-    if (!manifest || typeof manifest.entries !== 'object' || !Array.isArray(manifest.files)) throw new Error('no entries or no files')
+    let problem = manifestProblem(manifest)
+    if (problem) throw new Error(problem)
   } catch (error) {
     return { invalid: errorMessage(error) }
   }

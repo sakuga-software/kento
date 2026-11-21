@@ -162,8 +162,18 @@ describe('the bundles of the browser modules (KNT-170)', () => {
         assert.ok('invalid' in (readClientBuild(partial.dir) as object))
         let broken = await stderrOf(() => assert.equal(loadClientBuild(true, partial.dir), null))
         assert.equal(JSON.parse(broken[0]!).event, 'startup.client_build_invalid')
-        writeFileSync(path.join(partial.dir, 'manifest.json'), '{"entries": {}}')
-        assert.deepEqual(readClientBuild(partial.dir), { invalid: 'no entries or no files' })
+        // Kentō #1295f7: parsed, but of the wrong shape.
+        let shapes: [unknown, string][] = [
+          [{ entries: {} }, 'no files'],
+          [{ entries: [], files: [] }, 'no entries'],
+          [{ entries: { 'app/a.ts': { file: 'a.js' } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
+          [{ entries: { 'app/a.ts': { file: 'a.js', imports: ['c.js'] } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
+          [{ entries: { 'app/a.ts': { file: 'b.js', imports: [] } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
+        ]
+        for (let [manifest, problem] of shapes) {
+          writeFileSync(path.join(partial.dir, 'manifest.json'), JSON.stringify(manifest))
+          assert.deepEqual(readClientBuild(partial.dir), { invalid: problem }, JSON.stringify(manifest))
+        }
         let whole = fakeBuild()
         try {
           assert.equal(loadClientBuild(true, whole.dir)?.files.size, 5)
