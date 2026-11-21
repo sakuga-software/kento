@@ -4,8 +4,20 @@ import postgres from 'postgres'
 
 import { seedFakeOrg } from './pull-seed.ts'
 
-/** Fails on any WCAG 2.2 A or AA violation that axe finds on the page. */
+/**
+ * Fails on any WCAG 2.2 A or AA violation that axe finds on the page. It waits first for the
+ * transitions in progress (KNT-186: a list or a menu fades in for 140 ms), so that axe reads the
+ * colours of the page at rest, not halfway through a fade.
+ */
 export async function expectNoAxeViolations(page: Page) {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  )
   let results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
   let summary = results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
   expect(summary, 'axe violations').toEqual([])
