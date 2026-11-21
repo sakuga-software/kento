@@ -26,6 +26,12 @@ Each entry says, when it applies:
   installation deletes the empty org, after a confirmation by its name that lists its members and
   invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
   an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
+  to it, as before.
 - **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
   row per change of the members). It only adds: the release before runs on it.
 - **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu

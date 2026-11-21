@@ -14,8 +14,8 @@ Deployment: [DEPLOY.md](DEPLOY.md). What each release changed: [CHANGELOG.md](CH
 
 ## Screens
 
-Server-rendered HTML in English (REV-114), with `remix/component`, and one small script
-(`public/assets/theme.js`).
+Server-rendered HTML in English (REV-114), with `remix/component`, small scripts in
+`public/assets/`, and a few components that hydrate in the browser (KNT-163).
 
 - `app/ui/shell.tsx`: the frame of every screen. Sidebar (wider than 760 px) or top bar and tab
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
@@ -26,7 +26,15 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   controls of every screen are in [CLAUDE.md](CLAUDE.md#ui-components).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
-  of GitHub, and no inline script or style.
+  of GitHub, no inline style, and one inline script: the import map, with the nonce of the response.
+- `app/assets.ts` (KNT-163): the asset server of Remix. It compiles the browser modules of
+  `app/**/public/` and the packages `remix` and `@remix-run/ui` when the browser asks for them, under
+  `/assets/app/…` and short names (`/assets/c/…`, `/assets/ui/…`); with `NODE_ENV=production`,
+  minified, with the hash of the content in each URL, cached a year. `public/boot.ts` is the module of
+  every page; it loads `public/runtime.ts` (the runtime of `remix/component`, `run()`) only on a page
+  with a component to hydrate: the menu "…" of the Repos screen (`public/row-menu.tsx`) and the
+  confirmations (`public/confirm.tsx`), on the menu and the popover of `@remix-run/ui`. Without
+  JavaScript, each one stays the `<details>` of the server.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
