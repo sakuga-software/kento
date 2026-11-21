@@ -1,13 +1,16 @@
 // KNT-163. The browser modules of the screens: the components that hydrate (`clientEntry`), the
-// runtime that hydrates them, and the boot module that loads it. The asset server of Remix compiles
-// each TypeScript file when the browser asks for it: there is still no build step.
+// runtime that hydrates them, and the boot module that loads it. In development and in the unit
+// tests, the asset server of Remix compiles each TypeScript file when the browser asks for it. In
+// production (KNT-170), the service serves the bundles that scripts/build-client.ts built ahead of
+// time (app/client-build.ts): a few files, compressed, instead of some 70 modules.
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createAssetServer } from 'remix/assets'
+import { createAssetServer, type ScriptEntry } from 'remix/assets'
 import type { Middleware } from 'remix/router'
 
+import { ALLOWED_FILES, ALLOWED_PACKAGES, BROWSER_TARGET, bundleOf, CLIENT_DIR, DENIED_FILES, readClientBuild, serveClientFile, type ClientBuild } from './client-build.ts'
 import { errorMessage, log } from './log.ts'
 
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -62,24 +65,15 @@ const MOUNTS = {
   ui: distOf('@remix-run/ui'),
 }
 
-/**
- * What the browser can download. This is a security boundary: anybody can ask for these files.
- * - `app/**\/public/**`: the browser modules, each one next to the screen that uses it.
- * - `routes.ts`, `controls.tsx` and `lucide.tsx`: the URLs of the screens, the controls and the
- *   icons, which a component that hydrates also makes. They import only `remix/routes` and
- *   `remix/component`.
- * - The packages `remix` (and its `@remix-run/component`, the runtime) and `@remix-run/ui`.
- * A browser module that imports any other file of the server gets an error, never the file.
- */
-export const ALLOWED_FILES = ['app/**/public/**', 'app/routes.ts', 'app/ui/controls.tsx', 'app/ui/lucide.tsx']
+export { ALLOWED_FILES }
 
 export const assets = createAssetServer({
   basePath: '/assets',
   rootDir: ROOT_DIR,
   mounts: MOUNTS,
   allowFiles: ALLOWED_FILES,
-  allowPackages: ['remix', '@remix-run/ui'],
-  denyFiles: ['app/**/*.test.*'],
+  allowPackages: ALLOWED_PACKAGES,
+  denyFiles: DENIED_FILES,
   // Production: minified, and each URL carries the hash of its content (cached for a year).
   // Elsewhere: stable URLs, checked again on each load.
   minify: !isDevelopment,
@@ -87,10 +81,35 @@ export const assets = createAssetServer({
   watch: isDevelopment,
   sourceMaps: isDevelopment ? 'external' : undefined,
   // The popover API (Baseline 2024) is the newest part of the platform that the components use.
-  target: { chrome: '114', firefox: '125', safari: '17' },
+  target: BROWSER_TARGET,
   scripts: { define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') } },
   onError: assetError,
 })
+
+/**
+ * The bundles of production, read once at startup. Missing in production (an image built without
+ * scripts/build-client.ts): an error in the logs, and the asset server serves the modules one by one,
+ * as in development, so that the screens still work.
+ */
+export function loadClientBuild(production = isProduction, dir = CLIENT_DIR): ClientBuild | null {
+  if (!production) return null
+  let build = readClientBuild(dir)
+  if (!build) {
+    log('error', 'startup.client_build_missing', { dir })
+    return null
+  }
+  if ('missing' in build) {
+    log('error', 'startup.client_build_incomplete', { dir, missing: build.missing })
+    return null
+  }
+  if ('invalid' in build) {
+    log('error', 'startup.client_build_invalid', { dir, error: build.invalid })
+    return null
+  }
+  return build
+}
+
+const CLIENT_BUILD = loadClientBuild()
 
 /** The module of every page (see its comment). */
 export const BOOT = 'app/ui/public/boot.ts'
@@ -98,16 +117,33 @@ export const BOOT = 'app/ui/public/boot.ts'
 export const RUNTIME = 'app/ui/public/runtime.ts'
 
 /**
- * What `render({ assets })` reads for each component that hydrates: its URL, and an import map
- * that also resolves the runtime (boot.ts imports it only on such a page, so that a page without
- * a component carries no import map). No module preload: with the hash in each URL, the browser
- * keeps the modules a year, and 40 preload links would cost 2 KB of HTML on each page.
+ * What `render({ assets })` reads for each component that hydrates.
+ * - With the bundles (production): the URL of its bundle, and a module preload for the runtime and
+ *   for every chunk that they import, a handful of links, so that the browser asks for all of them
+ *   at once. No import map: a bundle imports its chunks by their URL.
+ * - With the asset server: its URL, and an import map that also resolves the runtime (boot.ts
+ *   imports it only on such a page, so that a page without a component carries no import map). No
+ *   module preload: 40 preload links would cost 2 KB of HTML on each page.
  */
-export const clientEntries = {
-  async getScriptEntry(entry: string) {
-    let { href } = await assets.getScriptEntry(entry)
-    return { href, importMap: await assets.getImportMap([entry, RUNTIME]), preloads: [] }
-  },
+export function createClientEntries(build: ClientBuild | null) {
+  return {
+    async getScriptEntry(entry: string): Promise<ScriptEntry> {
+      if (build) {
+        let own = bundleOf(build, entry)
+        let runtime = bundleOf(build, RUNTIME)
+        return { href: own.href, importMap: { imports: {} }, preloads: [...new Set([runtime.href, ...runtime.preloads, ...own.preloads])] }
+      }
+      return moduleEntry(entry)
+    },
+  }
+}
+
+export const clientEntries = createClientEntries(CLIENT_BUILD)
+
+/** The entry of a component from the asset server. */
+async function moduleEntry(entry: string) {
+  let { href } = await assets.getScriptEntry(entry)
+  return { href, importMap: await assets.getImportMap([entry, RUNTIME]), preloads: [] }
 }
 
 /** The URLs of boot.ts and of the runtime that it loads. */
@@ -121,8 +157,9 @@ export interface BootScript {
  * missing from the image): the error is logged, and the pages go without their components, as
  * without JavaScript; the service still starts (Kentō #5d5d55).
  */
-export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>): Promise<BootScript | null> {
+export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>, build: ClientBuild | null = null): Promise<BootScript | null> {
   try {
+    if (build) return { href: bundleOf(build, BOOT).href, runtime: bundleOf(build, RUNTIME).href }
     return { href: await server.getHref(BOOT), runtime: await server.getHref(RUNTIME) }
   } catch (error) {
     log('error', 'startup.assets_unavailable', { error: errorMessage(error) })
@@ -135,17 +172,21 @@ export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>):
  * changes, and with one (production) the files do not change while the process runs (`watch` is
  * off). Every page, a 404 included, gets the same value, with no request needed first.
  */
-const BOOT_SCRIPT = await resolveBootScript(assets)
+const BOOT_SCRIPT = await resolveBootScript(assets, CLIENT_BUILD)
 
 /** The URLs of boot.ts and of the runtime, for `<Document>`. Null: no component hydrates. */
 export function bootScript(): BootScript | null {
   return BOOT_SCRIPT
 }
 
-/** Serves the browser modules under `/assets/`; anything else goes on. */
-export function clientAssets(): Middleware {
+/**
+ * Serves the browser modules under `/assets/`; anything else goes on. With the bundles, only them
+ * (/assets/js/): the asset server then compiles nothing on request.
+ */
+export function clientAssets(build: ClientBuild | null = CLIENT_BUILD): Middleware {
   return async (context, next) => {
     if (!context.url.pathname.startsWith('/assets/')) return next()
+    if (build) return (await serveClientFile(build, context.request, context.url.pathname)) ?? next()
     let response = await assets.fetch(context.request)
     if (!response) return next()
     // As every file of the app: the browser runs a module only as the type that the server says.

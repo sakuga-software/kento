@@ -81,11 +81,21 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
       (event) => !(event.target instanceof Node && box?.contains(event.target)) && trigger?.getAttribute('aria-expanded') === 'true',
       handle.signal,
     )
-    enhanced = true
     // The focus was in the `<details>` (a row that repo-toggle.js swapped focuses its "…"): it goes to the new button.
     let focused = details?.contains(document.activeElement) ?? false
+    // KNT-170: a menu, or its confirmation, that the person opened before the page hydrated stays open.
+    let wasOpen = details?.open ?? false
+    let wasConfirming = details?.querySelector('details[open]') != null
+    enhanced = true
     await handle.update()
-    if (focused) focusTrigger()
+    if (wasConfirming) {
+      confirming = true
+      await handle.update()
+    } else if (wasOpen) {
+      trigger?.click()
+    } else if (focused) {
+      focusTrigger()
+    }
   })
 
   let closeConfirm = async (focus: boolean) => {

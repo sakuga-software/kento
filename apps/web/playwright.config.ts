@@ -42,7 +42,8 @@ export default defineConfig({
       env: { FAKE_GITHUB_PORT: String(githubPort), KENTO_URL: `http://127.0.0.1:${port}` },
     },
     {
-      command: 'node --import remix/node-tsx server.ts',
+      // KNT-170: the server of production serves the bundles of the browser modules; build them first.
+      command: 'node --import remix/node-tsx scripts/build-client.ts && node --import remix/node-tsx server.ts',
       url: `http://127.0.0.1:${port}/healthz`,
       reuseExistingServer: false,
       timeout: 60_000,
