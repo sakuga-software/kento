@@ -496,6 +496,15 @@ describe('providers and their encrypted keys', () => {
       let [row] = await database.sql<{ failure_reason: string; state: string }[]>`select failure_reason, state from jobs where id = ${jobId}`
       assert.equal(row!.state, 'failed')
       assert.equal(row!.failure_reason, reason)
+
+      // A runner of an earlier release gives the plain answer of the provider: the limit is read in it too.
+      let older = await queueJob()
+      let next = await claim(token)
+      assert.equal(next.job!.id, older)
+      let plain = 'no model gave a usable answer: ProviderError: OpenRouter answered 403: {"error":{"message":"Key limit exceeded"}}'
+      assert.equal((await call(`/api/runner/jobs/${older}/result`, token, { outcome: 'failed', attempt: next.job!.attempt, reason: plain, providerStatus: 403 })).status, 204)
+      let [after] = await store.list(orgId)
+      assert.equal(after!.refusedAt, null, 'the key is still not shown as refused')
     })
 
     it('a runner-held key that its provider refuses: the provider shows the refusal, and the next review clears it (REV-31)', async () => {

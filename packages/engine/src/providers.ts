@@ -114,13 +114,20 @@ function resetOf(text: string, headers: Headers | undefined, now: number): strin
 }
 
 /**
- * KNT-161. The usage limit that the reason of a failed job names, from the text of UsageLimitError,
- * or null for another failure.
+ * KNT-161. The usage limit that the reason of a failed job names, or null for another failure: the
+ * text of UsageLimitError, or, from a runner of an earlier release, « <provider> answered <status>:
+ * <body> » with a body that is a usage limit (`usageLimitOf`).
  */
 export function usageLimitOfReason(reason: string | null): { resetAt: string | null } | null {
-  if (!reason?.includes(USAGE_LIMIT_TEXT)) return null;
-  const until = /until (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/.exec(reason);
-  return { resetAt: until ? until[1]! : null };
+  if (!reason) return null;
+  if (reason.includes(USAGE_LIMIT_TEXT)) {
+    const until = /until (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/.exec(reason);
+    return { resetAt: until ? until[1]! : null };
+  }
+  const answered = / answered (\d{3}): /.exec(reason);
+  if (!answered) return null;
+  // The body of the provider follows the status: the reset time is in it, if anywhere.
+  return usageLimitOf(Number(answered[1]), reason.slice(answered.index + answered[0].length), undefined);
 }
 
 export type Schema = { name: string; schema: object };
