@@ -126,6 +126,12 @@ export type LookupRole = (installation: InstallationAccount, person: { githubId:
  */
 export type LookupUser = (installation: InstallationAccount, login: string) => Promise<{ id: number; login: string } | null>
 
+/**
+ * KNT-150. Asks GitHub, with the JWT of the App, whether the account of an installation is a person
+ * (`User`) or an organization. Throws when GitHub fails or answers neither.
+ */
+export type LookupAccountType = (installation: InstallationAccount) => Promise<'User' | 'Organization'>
+
 /** A login of GitHub: what an invitation accepts. */
 export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
 
@@ -148,7 +154,7 @@ interface GitHubPeopleOptions {
 }
 
 /** The role of a person in an org (`lookupRole`) and the account of a login (`lookupUser`), with one cache of tokens. */
-export function createGitHubPeople(options: GitHubPeopleOptions): { lookupRole: LookupRole; lookupUser: LookupUser } {
+export function createGitHubPeople(options: GitHubPeopleOptions): { lookupRole: LookupRole; lookupUser: LookupUser; lookupAccountType: LookupAccountType } {
   let doFetch = options.fetch ?? globalThis.fetch
   let now = options.now ?? Date.now
   let apiUrl = options.apiUrl.replace(/\/+$/, '')
@@ -208,6 +214,18 @@ export function createGitHubPeople(options: GitHubPeopleOptions): { lookupRole: 
     return { id: body.id as number, login: body.login }
   }
 
-  return { lookupRole, lookupUser }
+  let lookupAccountType: LookupAccountType = async (installation) => {
+    let response = await doFetch(`${apiUrl}/app/installations/${installation.githubInstallationId}`, {
+      headers: { ...HEADERS, Authorization: `Bearer ${appJwt(options.appId, options.privateKey, now())}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!response.ok) throw new GitHubError(`GitHub answered ${response.status} for the installation ${installation.githubInstallationId}`)
+    let body = (await response.json()) as { account?: { type?: unknown } }
+    let type = body.account?.type
+    if (type !== 'User' && type !== 'Organization') throw new GitHubError(`GitHub answered no account type for the installation ${installation.githubInstallationId}`)
+    return type
+  }
+
+  return { lookupRole, lookupUser, lookupAccountType }
 }
 

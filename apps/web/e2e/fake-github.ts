@@ -217,7 +217,12 @@ let server = http.createServer(async (request, response) => {
       repository_selection: 'all',
       suspended_at: null,
       html_url: `https://github.com/organizations/${FAKE_ORG.login}/settings/installations/${FAKE_ORG.installationId}`,
+      account: { id: FAKE_ORG.accountId, login: FAKE_ORG.login, type: 'Organization' },
     })
+  }
+  // KNT-150: the type of the account of the second installation, for the move of an installation.
+  if (request.method === 'GET' && url.pathname === `/app/installations/${SECOND_ORG.installationId}`) {
+    return json(response, 200, { id: SECOND_ORG.installationId, suspended_at: null, account: { id: SECOND_ORG.accountId, login: SECOND_ORG.login, type: 'Organization' } })
   }
   if (request.method === 'GET' && url.pathname === '/app/hook/config') {
     return json(response, 200, { url: `${process.env.KENTO_URL ?? 'http://127.0.0.1:3488'}/webhooks/github`, content_type: 'json', insecure_ssl: '0' })
