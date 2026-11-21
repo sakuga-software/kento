@@ -4193,6 +4193,16 @@ a.finding-title:hover {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
   scroll-margin-top: var(--space-4);
 }
+/* KNT-177. A link of the sidebar glides to its section, on this page only. The viewport scrolls, so
+   the rule is on <html>. The bar at the top does not stay in view: the margin above keeps a heading
+   clear of the window edge. No motion when the person asks for less. Not under 900 px: there the
+   list is at the top of the page, and its mark follows the section chosen in it (KNT-168), which a
+   glide past the other sections would clear. */
+@media (prefers-reduced-motion: no-preference) and (min-width: 901px) {
+  html:has(.settings-content) {
+    scroll-behavior: smooth;
+  }
+}
 /* The two gauges side by side, the cost per provider under them. */
 .cap-facts {
   grid-template-columns: repeat(2, minmax(0, 1fr));

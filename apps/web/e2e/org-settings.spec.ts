@@ -18,6 +18,24 @@ function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
 }
 
+/** KNT-177: waits for the end of a smooth scroll, when the page stays still for a few frames. */
+async function scrollSettled(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let last = -1
+        let still = 0
+        let step = () => {
+          still = window.scrollY === last ? still + 1 : 0
+          last = window.scrollY
+          if (still >= 5) resolve()
+          else requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+      }),
+  )
+}
+
 /** orchard enabled with one review that cost 0,02 $ today; the org at the values of a new org. */
 async function reset(page: Page) {
   await page.goto('/repos')
@@ -203,6 +221,7 @@ test.describe('the settings of the org', () => {
       // The wheel over the sidebar scrolls the page: the sidebar does not hold it.
       let box = (await nav.boundingBox())!
       await page.mouse.move(box.x + 20, box.y + 20)
+      await scrollSettled(page)
       let before = await page.evaluate(() => window.scrollY)
       await page.mouse.wheel(0, 600)
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
@@ -236,6 +255,56 @@ test.describe('the settings of the org', () => {
     expect(overflow).toBeLessThanOrEqual(0)
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
+  })
+
+  test('a link of the sidebar glides to its section, on this page only, and jumps with reduced motion (KNT-177)', async ({ page }, info) => {
+    await signIn(page, 'octocat')
+    await page.goto('/settings')
+    let behavior = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)
+    // Under 900 px the list is at the top of the page and marks the section chosen in it (KNT-168): no glide there.
+    if (info.project.name === 'mobile') {
+      expect(await behavior()).toBe('auto')
+      return
+    }
+    expect(await behavior()).toBe('smooth')
+    // The scroll positions of the next frames, from the click on.
+    let positions = page.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          let seen: number[] = []
+          let step = () => {
+            seen.push(Math.round(window.scrollY))
+            if (seen.length < 120) requestAnimationFrame(step)
+            else resolve(seen)
+          }
+          requestAnimationFrame(step)
+        }),
+    )
+    await goToSettingsLink(page, 'Levels and models')
+    let seen = await positions
+    // Smooth: the page passes through positions between its start and its end.
+    expect(new Set(seen).size, `positions ${seen.join(',')}`).toBeGreaterThan(3)
+    await scrollSettled(page)
+    // The heading lands near the top of the window, clear of its edge; the sidebar marks it.
+    let top = await page.locator('#defaults').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(8)
+    expect(top).toBeLessThan(40)
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'Levels and models' })).toHaveAttribute('aria-current', 'location')
+
+    // Reduced motion: the same kind of link jumps at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(await behavior()).toBe('auto')
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await goToSettingsLink(page, 'Trusted bots')
+    top = await page.locator('#bots').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(8)
+    expect(top).toBeLessThan(40)
+
+    // Another page keeps the default scroll.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.goto('/repos')
+    expect(await behavior()).toBe('auto')
   })
 
   // KNT-164. On a phone the open list is part of the page, as a disclosure: it folds only on a link
