@@ -1423,6 +1423,14 @@ button.org-menu-item:hover {
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+/* KNT-176. Newer and Older (Feedback): one at each end, each at its own width, on a phone too. */
+.pager.pager-steps {
+  display: flex;
+  justify-content: space-between;
+}
+.pager.pager-steps > :last-child {
+  width: auto;
+}
 /* KNT-146. The numbered pager: the range on the left; Previous, the numbers and Next on the right. */
 .pager-numbered {
   display: flex;
