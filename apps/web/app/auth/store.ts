@@ -188,6 +188,10 @@ export function createAuthStore(sql: postgres.Sql, locked: string | null = null)
 
     async deleteMembership(userId, orgId) {
       await sql`delete from memberships where user_id = ${userId} and org_id = ${orgId}`
+      // KNT-150. The invitations that the person made there and nobody answered yet go with them.
+      await sql`
+        update invitations set status = 'canceled', responded_at = now()
+        where org_id = ${orgId} and inviter_id = ${userId} and status = 'pending'`
     },
   }
   return store

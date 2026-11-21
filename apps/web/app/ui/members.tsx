@@ -27,6 +27,10 @@ export const MEMBER_NOTICES = {
   last_owner: { tone: 'alert', text: 'The organization needs an owner: give the owner role to someone else first.' },
   github: { tone: 'alert', text: 'GitHub decides the role and the membership of this person. Change it on GitHub.' },
   same_role: { tone: 'info', text: 'The person already has this role.' },
+  github_admin: { tone: 'alert', text: 'GitHub counts this person as an admin of the account: an owner from an invitation does not demote them.' },
+  not_github_admin: { tone: 'alert', text: 'GitHub does not count you now as an admin of an account of this organization.' },
+  reclaimed: { tone: 'ok', text: 'You are an owner of the organization again.' },
+  too_many: { tone: 'alert', text: 'The organization has 50 pending invitations: cancel some before you invite again.' },
 } as const satisfies Record<string, { tone: 'ok' | 'info' | 'alert'; text: string }>
 
 export type MemberNotice = keyof typeof MEMBER_NOTICES
@@ -127,13 +131,27 @@ export function MembersPage(handle: Handle<MembersPageProps>) {
                   ) : null}
                   {canRemove ? (
                     <Confirm trigger="Remove…" action={memberRoutes.memberRemove.href({ id: member.membershipId })} csrf={csrf} submit={`Remove ${member.login}`}>
-                      <p>{member.login} loses the access to this organization at their next request. Their reviews and comments stay.</p>
+                      <p>
+                        {member.login} loses the access to this organization at their next request. Their reviews and comments
+                        stay. If GitHub counts them in an account of the organization, they come back from GitHub at their next
+                        sign-in.
+                      </p>
                     </Confirm>
                   ) : null}
                 </li>
               )
             })}
           </ul>
+          {self && self.source === 'github' && self.role === 'admin' ? (
+            <form class="member-leave" method="post" action={memberRoutes.memberReclaim.href()}>
+              <input type="hidden" name="_csrf" value={csrf} />
+              <p class="hint">
+                GitHub counts you as an admin of an account of this organization: you can take the owner role, whatever an
+                owner from an invitation did. Kentō asks GitHub again first.
+              </p>
+              <Button type="submit">Take the owner role</Button>
+            </form>
+          ) : null}
           {self && self.source === 'invitation' ? (
             <div class="member-leave">
               {self.role === 'owner' && otherOwners(self) === 0 ? (

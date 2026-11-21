@@ -11,6 +11,7 @@ import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
 import { createOrgsStore } from '../../app/organizations/store.ts'
+import { ROLE_TTL_MS } from '../../app/auth/access.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase, insertOrg } from './helpers.ts'
 
@@ -244,6 +245,24 @@ describe('the name and the installations of an org', () => {
     // The org stays, with its suspended installation, and nobody reaches it.
     assert.equal((await database.sql`select count(*)::int as n from orgs where id = ${acme}`)[0]!.n, 1)
     assert.match(await (await request('/', owner)).text(), /<span class="org-menu-name">globex<\/span>/)
+  })
+
+  it('a new org follows GitHub: its creator demoted on GitHub becomes a member, and the next GitHub admin of the account its owner', async () => {
+    roles.set('acme-labs/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    await post(owner, `/settings/organization/installations/${installationId}/move`, { to: 'new', name: 'Labs' })
+    let [labs] = await database.sql<{ id: string }[]>`select id from orgs where name = 'Labs'`
+    assert.equal((await membership('octocat', labs!.id))!.role, 'owner')
+    // GitHub demotes octocat in acme-labs: at the next check, octocat is a member of Labs.
+    roles.set('acme-labs/octocat', 'member')
+    clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', owner)).status, 200)
+    assert.equal((await membership('octocat', labs!.id))!.role, 'member')
+    // camille, an admin of acme-labs on GitHub, signs in: Labs has no active owner, she is its owner.
+    roles.set('acme-labs/camille', 'admin')
+    await signIn('camille')
+    assert.deepEqual({ ...(await membership('camille', labs!.id)), id: undefined }, { id: undefined, role: 'owner', source: 'github' })
   })
 
   it('the store refuses by itself: a rename by an admin, an installation of another org', async () => {

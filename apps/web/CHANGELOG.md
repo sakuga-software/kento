@@ -22,8 +22,8 @@ Each entry says, when it applies:
 - **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
   installation of the App, with its repositories, to another org of theirs or to a new org. Moving
   the last installation deletes the empty org, after a confirmation by its name. No migration.
-- **Migrations**: 33. `0032_invitations` (KNT-150) adds the table `invitations`. It only adds: the
-  release before runs on it.
+- **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
+  row per change of the members). It only adds: the release before runs on it.
 - **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu
   of the org and the settings) and `/invitations` (the invitations of the person). An owner or an
   admin invites a GitHub login; a person whom GitHub counts in no org of the App signs in with a

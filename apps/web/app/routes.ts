@@ -101,6 +101,8 @@ export const memberRoutes = route({
   memberRole: post('/settings/members/:id/role'),
   memberRemove: post('/settings/members/:id/remove'),
   memberLeave: post('/settings/members/leave'),
+  /** A person whom GitHub counts as an admin of an account of the org takes the owner role back. */
+  memberReclaim: post('/settings/members/reclaim'),
 })
 
 /**

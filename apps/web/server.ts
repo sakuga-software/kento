@@ -247,7 +247,7 @@ let router = createAppRouter({
   // REV-107. The answers about the reviews of the org.
   feedback: { store: createFeedbackStore(database.sql) },
   // KNT-150. The members and the invitations of an org.
-  members: { store: createMembersStore(database.sql), lookupUser: people?.lookupUser ?? null },
+  members: { store: createMembersStore(database.sql), lookupUser: people?.lookupUser ?? null, lookupRole },
   organization: { store: createOrgsStore(database.sql), lookupRole },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,

@@ -23,6 +23,10 @@ export type MemberRefusal =
   | 'github'
   /** The role asked is the role the person has. */
   | 'same_role'
+  /** A person whom GitHub counts as an admin of the account: an owner from an invitation does not demote them. */
+  | 'github_admin'
+  /** GitHub does not say, now, that the person is an admin of an account of the org. */
+  | 'not_github_admin'
 
 export type MemberChange = { kind: 'role'; role: OrgRole } | { kind: 'remove' } | { kind: 'leave' }
 
@@ -36,6 +40,9 @@ export type MemberChange = { kind: 'role'; role: OrgRole } | { kind: 'remove' } 
  *   removes it; the person leaves it.
  * - Only an owner gives `owner`, takes it, or removes an owner.
  * - No change leaves the org without an active owner.
+ * - Kentō never overrides the admin of GitHub: an owner from an invitation does not demote a
+ *   member whom GitHub counts as an admin of the account (a `github` row with `owner` or `admin`).
+ *   That person can always take the owner role back (`decideReclaim`).
  */
 export function decideMemberChange(actor: MemberFacts, target: MemberFacts, change: MemberChange, otherOwners: number): MemberRefusal | null {
   let self = actor.userId === target.userId
@@ -52,12 +59,27 @@ export function decideMemberChange(actor: MemberFacts, target: MemberFacts, chan
     return target.role === 'owner' && otherOwners === 0 ? 'last_owner' : null
   }
   if (change.role === target.role) return 'same_role'
+  let githubAdmin = target.source === 'github' && (target.role === 'owner' || target.role === 'admin')
+  if (githubAdmin && actor.source === 'invitation' && ROLE_RANK[change.role] < ROLE_RANK[target.role]) return 'github_admin'
   if (target.source === 'github') {
     // Between owner and admin only: GitHub says admin for an owner, and decides admin or member.
     let ownerStep = (target.role === 'admin' && change.role === 'owner') || (target.role === 'owner' && change.role === 'admin')
     if (!ownerStep) return 'github'
   }
   return target.role === 'owner' && otherOwners === 0 ? 'last_owner' : null
+}
+
+const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 }
+
+/**
+ * KNT-150. A person whom GitHub says, at that moment, is an admin of an account of an installation
+ * of the org takes the owner role, whatever an owner from an invitation did: GitHub stays the last
+ * authority over the org that its accounts installed.
+ */
+export function decideReclaim(actor: MemberFacts | null, githubAdmin: boolean): MemberRefusal | 'not_found' | null {
+  if (!actor) return 'not_found'
+  if (actor.source !== 'github' || !githubAdmin) return 'not_github_admin'
+  return actor.role === 'owner' ? 'same_role' : null
 }
 
 /** The roles that `actor` may set on `target` now, for the select of the screen. */
@@ -78,6 +100,9 @@ export function decideInvite(actor: { role: OrgRole }, role: string): InviteRefu
 export function isInvitationRole(value: unknown): value is InvitationRole {
   return value === 'admin' || value === 'member'
 }
+
+/** The pending invitations of one org at most: an admin cannot flood GitHub or other accounts. */
+export const MAX_PENDING_INVITATIONS = 50
 
 /** An invitation lasts this long. */
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000

@@ -66,6 +66,7 @@ describe('the members and the invitations of an org', () => {
       auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now, signInLimit: 1000 },
       members: {
         store,
+        lookupRole,
         async lookupUser(_installation, login) {
           let person = PEOPLE[login.toLowerCase()]
           return person ? { id: person.id, login: person.login } : null
@@ -142,7 +143,10 @@ describe('the members and the invitations of an org', () => {
     assert.equal(home.status, 303)
     assert.equal(home.headers.get('Location'), '/invitations')
     assert.equal((await request('/repos', cookie)).headers.get('Location'), '/invitations')
-    assert.equal((await post(cookie!, '/repos/check')).status, 403, 'no form of an org')
+    // With a real CSRF token (from the page of the invitations): the 403 comes from the role check.
+    assert.equal((await post(cookie!, '/repos/check', {}, '/invitations')).status, 403, 'no form of an org')
+    assert.equal((await post(cookie!, '/preferences/org', { orgId: acme, returnTo: '/' }, '/invitations')).status, 403)
+    assert.equal((await post(cookie!, '/settings/members/invite', { login: 'other', role: 'member' }, '/invitations')).status, 403)
     let page = await (await request('/invitations', cookie)).text()
     assert.match(page, /<span class="member-login">acme<\/span>/)
     assert.match(page, /action="\/logout"/, 'a person with no org can sign out')
@@ -231,7 +235,7 @@ describe('the members and the invitations of an org', () => {
     let [third] = await database.sql<{ id: string }[]>`select id from invitations where status = 'pending'`
     assert.doesNotMatch(await (await request('/settings/members', owner)).text(), /<span class="member-login">guest<\/span>/)
     assert.equal((await signIn('guest')).cookie, null)
-    assert.equal(await store.accept(third!.id, { id: 'x', githubId: 3 }, Date.now()), null)
+    assert.equal(await store.accept(third!.id, { id: 'x', githubId: 3 }), null)
     assert.equal((await post(owner, '/settings/members/invite', { login: 'guest', role: 'member' })).headers.get('Location'), '/settings/members?notice=invited')
   })
 
@@ -322,7 +326,7 @@ describe('the members and the invitations of an org', () => {
     let [invitation] = await database.sql<{ id: string }[]>`
       insert into invitations (org_id, github_id, github_login, role, inviter_id, expires_at)
       values (${acme}, 2, 'camille', 'member', ${inviter!.id}, now() + interval '7 days') returning id`
-    let accepted = await store.accept(invitation!.id, { id: (await database.sql<{ id: string }[]>`select id from users where login = 'camille'`)[0]!.id, githubId: 2 }, Date.now())
+    let accepted = await store.accept(invitation!.id, { id: (await database.sql<{ id: string }[]>`select id from users where login = 'camille'`)[0]!.id, githubId: 2 })
     assert.deepEqual(accepted, { orgId: acme, role: 'admin' })
     // Still from GitHub: GitHub still demotes or ends it.
     assert.deepEqual({ ...(await membership('camille', acme)), id: undefined }, { id: undefined, role: 'admin', source: 'github' })
@@ -358,6 +362,104 @@ describe('the members and the invitations of an org', () => {
     assert.equal(await membership('guest', acme), null)
     // A person who joins from GitHub (nothing read before) gets a membership.
     assert.equal(await saveGitHubRole(auth, user!.id, acme, null, 'member', Date.now()), 'member')
+  })
+
+  /** guest invited to acme with `role`, signed in, accepted; returns guest's cookie and membership. */
+  async function invitedGuest(owner: string, role: 'member' | 'admin', login: keyof typeof PEOPLE = 'guest') {
+    await post(owner, '/settings/members/invite', { login, role })
+    let cookie = (await signIn(login)).cookie!
+    let [invitation] = await database.sql<{ id: string }[]>`select i.id from invitations i where i.github_login = ${login} and i.status = 'pending' and i.org_id = ${acme}`
+    await post(cookie, `/invitations/${invitation!.id}/accept`)
+    return { cookie, membership: (await membership(login, acme))! }
+  }
+
+  it('an owner from an invitation never demotes a GitHub admin, and a GitHub admin always takes the owner role back', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'admin')
+    await post(owner, `/settings/members/${guest.membership.id}/role`, { role: 'owner' })
+    let octocat = (await membership('octocat', acme))!
+    // guest, owner from an invitation, tries to demote octocat, whom GitHub counts as an admin.
+    assert.equal((await post(guest.cookie, `/settings/members/${octocat.id}/role`, { role: 'admin' })).headers.get('Location'), '/settings/members?notice=github_admin')
+    assert.equal((await post(guest.cookie, `/settings/members/${octocat.id}/remove`)).headers.get('Location'), '/settings/members?notice=github')
+    assert.equal((await membership('octocat', acme))!.role, 'owner')
+    // An owner role lost another way (a release before this rule): octocat takes it back, after GitHub says admin.
+    await database.sql`update memberships set role = 'admin' where id = ${octocat.id}`
+    let page = await (await request('/settings/members', owner)).text()
+    assert.match(page, /action="\/settings\/members\/reclaim"/)
+    assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaimed')
+    assert.equal((await membership('octocat', acme))!.role, 'owner')
+    // Now an owner from GitHub, octocat removes guest.
+    assert.equal((await post(owner, `/settings/members/${guest.membership.id}/remove`)).headers.get('Location'), '/settings/members?notice=removed')
+    // A take-back needs GitHub to say admin now: camille, a member on GitHub, cannot.
+    let camille = (await signIn('camille')).cookie!
+    assert.doesNotMatch(await (await request('/settings/members', camille)).text(), /\/settings\/members\/reclaim/)
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+    // And octocat, demoted on GitHub in between, cannot either.
+    await database.sql`update memberships set role = 'admin' where id = ${octocat.id}`
+    roles.set('acme/octocat', 'member')
+    assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+  })
+
+  it('a person with roles in two orgs acts in the org of the session with the role they have there', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'member')
+    // other: owner of globex from GitHub, invited as a member of acme; the session is on acme after the acceptance.
+    await signIn('other')
+    let other = await invitedGuest(owner, 'member', 'other')
+    assert.match(await (await request('/', other.cookie)).text(), /<span class="org-menu-name">acme<\/span>/)
+    assert.equal((await post(other.cookie, `/settings/members/${guest.membership.id}/role`, { role: 'admin' })).status, 403)
+    assert.equal((await post(other.cookie, `/settings/members/${guest.membership.id}/remove`)).status, 403)
+    assert.equal((await membership('guest', acme))!.role, 'member')
+  })
+
+  it('a member cannot cancel an invitation, even by the store', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    await post(owner, '/settings/members/invite', { login: 'guest', role: 'member' })
+    let [invitation] = await database.sql<{ id: string }[]>`select id from invitations`
+    let member = (await signIn('camille')).cookie!
+    assert.equal((await post(member, `/settings/invitations/${invitation!.id}/cancel`)).status, 403)
+    let [camille] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
+    assert.equal(await store.cancel(acme, camille!.id, invitation!.id), 'not_admin')
+    assert.equal(await store.invite({ orgId: acme, githubId: 4, githubLogin: 'other', role: 'member', inviterId: camille!.id }), 'not_admin')
+    assert.equal((await database.sql`select status from invitations`)[0]!.status, 'pending')
+  })
+
+  it('writes who changed what in org_audit, and the target in the log', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'member')
+    let lines: string[] = []
+    let stdout = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stdout.write
+    try {
+      await post(owner, `/settings/members/${guest.membership.id}/remove`)
+    } finally {
+      process.stdout.write = stdout
+    }
+    let changed = lines.map((l) => JSON.parse(l)).find((l) => l.event === 'members.changed')
+    assert.equal(changed.target, 'guest')
+    let audit = await database.sql`select actor_login, action, target_login, role_before, role_after, org_name from org_audit order by created_at, action`
+    assert.deepEqual(audit.map((r) => ({ ...r })), [
+      { actor_login: 'octocat', action: 'invite', target_login: 'guest', role_before: null, role_after: 'member', org_name: 'acme' },
+      { actor_login: 'guest', action: 'accept', target_login: 'guest', role_before: null, role_after: 'member', org_name: 'acme' },
+      { actor_login: 'octocat', action: 'remove', target_login: 'guest', role_before: 'member', role_after: null, org_name: 'acme' },
+    ])
+  })
+
+  it('caps the pending invitations of an org, and cancels those of a person who leaves the org', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let admin = await invitedGuest(owner, 'admin')
+    await post(admin.cookie, '/settings/members/invite', { login: 'other', role: 'member' })
+    assert.equal((await database.sql`select status from invitations where github_login = 'other'`)[0]!.status, 'pending')
+    // guest, who invited other, is removed: the invitation goes with them.
+    await post(owner, `/settings/members/${admin.membership.id}/remove`)
+    assert.equal((await database.sql`select status from invitations where github_login = 'other'`)[0]!.status, 'canceled')
+    // 50 pending invitations: the 51st is refused.
+    let [octocat] = await database.sql<{ id: string }[]>`select id from users where login = 'octocat'`
+    for (let n = 0; n < 50; n++) {
+      await database.sql`insert into invitations (org_id, github_id, github_login, role, inviter_id, expires_at)
+        values (${acme}, ${1000 + n}, ${`person-${n}`}, 'member', ${octocat!.id}, now() + interval '1 day')`
+    }
+    assert.equal((await post(owner, '/settings/members/invite', { login: 'other', role: 'member' })).headers.get('Location'), '/settings/members?notice=too_many')
   })
 
   it('a member sees the members and the invitations, with no form', async () => {

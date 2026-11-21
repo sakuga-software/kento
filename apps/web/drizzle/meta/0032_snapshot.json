@@ -1,5 +1,5 @@
 {
-  "id": "286c89e0-932f-480b-8fe5-0f4e51dadaab",
+  "id": "9ac9d57c-7e09-4f85-ba8b-adf2c61f9d76",
   "prevId": "a3b20013-016d-49cb-8d97-8d990bcbfdde",
   "version": "7",
   "dialect": "postgresql",
@@ -1844,6 +1844,142 @@
           "value": "\"memberships\".\"source\" in ('github', 'invitation')"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.org_audit": {
+      "name": "org_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_name": {
+          "name": "org_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_login": {
+          "name": "actor_login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_login": {
+          "name": "target_login",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_github_id": {
+          "name": "target_github_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "invitation_id": {
+          "name": "invitation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role_before": {
+          "name": "role_before",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role_after": {
+          "name": "role_after",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "org_audit_org_idx": {
+          "name": "org_audit_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "org_audit_org_id_orgs_id_fk": {
+          "name": "org_audit_org_id_orgs_id_fk",
+          "tableFrom": "org_audit",
+          "tableTo": "orgs",
+          "columnsFrom": [
+            "org_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "org_audit_actor_id_users_id_fk": {
+          "name": "org_audit_actor_id_users_id_fk",
+          "tableFrom": "org_audit",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.orgs": {

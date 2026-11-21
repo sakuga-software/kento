@@ -626,6 +626,31 @@ export const invitations = pgTable(
 )
 
 /**
+ * KNT-150. What happened to the members and the invitations of an org: one row per change, written
+ * in the transaction of the change. The row stays when its org, its actor or its target goes: the
+ * names are copied.
+ */
+export const orgAudit = pgTable(
+  'org_audit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'set null' }),
+    orgName: text('org_name').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    actorLogin: text('actor_login').notNull(),
+    /** invite, cancel, role, remove, leave, accept, decline, reclaim. */
+    action: text('action').notNull(),
+    targetLogin: text('target_login'),
+    targetGithubId: bigint('target_github_id', { mode: 'number' }),
+    invitationId: uuid('invitation_id'),
+    roleBefore: text('role_before'),
+    roleAfter: text('role_after'),
+    createdAt: createdAt(),
+  },
+  (table) => [index('org_audit_org_idx').on(table.orgId, table.createdAt)],
+)
+
+/**
  * A browser session (KNT-150: the `session` of Better Auth). The cookie holds a random token, signed;
  * the table keeps only its SHA-256 (`token_hash`), so a copy of the table opens no session. A row
  * ends at `expires_at`, 7 days after the sign-in, at sign-out, or with its user.
