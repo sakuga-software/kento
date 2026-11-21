@@ -213,11 +213,11 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       let login = 'installations' in org ? org.installations[0]!.login : org.login
       roles.set(`${login}/${person.login}`, role)
     },
-    /** The account that the next sign-in comes back with. */
     /** The number of pending invitations of a GitHub account. */
     invite(person: GitHubProfile, count = 1) {
       pending.set(person.id, count)
     },
+    /** The account that the next sign-in comes back with. */
     as(next: GitHubProfile) {
       profile = next
     },
