@@ -94,9 +94,20 @@ test('the answer drops the findings that say no change, and moves the requests t
   assert.deepEqual(kept.findings, [real, hole], 'a critical finding stays, whatever its fix');
   assert.deepEqual(dropped, [none]);
   assert.deepEqual(asked, [ask]);
-  assert.deepEqual(kept.questions, [given, { path: 'app/routes/items.ts', question: 'Please confirm that every other caller still behaves.' }]);
+  // The question of a moved finding comes first: it stands for a candidate defect.
+  assert.deepEqual(kept.questions, [{ path: 'app/routes/items.ts', question: 'Please confirm that every other caller still behaves.' }, given]);
   const many = splitNonFindings(answer([], { questions: Array.from({ length: 9 }, (_, i) => ({ path: '', question: `Q${i}?` })) }));
   assert.equal(many.answer.questions?.length, MAX_QUESTIONS);
+});
+
+test('a request to confirm with no room left in the questions stays a finding', () => {
+  const asks = Array.from({ length: MAX_QUESTIONS + 2 }, (_, i) => finding(`Please confirm the caller ${i}.`, { title: `Caller ${i}` }));
+  const full = Array.from({ length: MAX_QUESTIONS }, (_, i) => ({ path: '', question: `Q${i}?` }));
+  const { answer: got, asked } = splitNonFindings(answer(asks, { questions: full }));
+  assert.equal(asked.length, MAX_QUESTIONS);
+  assert.equal(got.questions?.length, MAX_QUESTIONS);
+  assert.deepEqual(got.questions?.map((q) => q.question), asks.slice(0, MAX_QUESTIONS).map((f) => f.fix), 'the moved findings first, the questions of the model after');
+  assert.deepEqual(got.findings, asks.slice(MAX_QUESTIONS), 'the rest stay findings: no defect is lost');
 });
 
 test('askModel gives no finding for a fix of "No change needed", and logs it', async () => {

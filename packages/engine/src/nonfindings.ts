@@ -60,20 +60,32 @@ function questionOf(finding: Finding): Question {
 }
 
 /**
+ * The answer with `moved` findings turned into questions by `toQuestion`. The questions of moved
+ * findings come first: each stands for a candidate defect. The questions of the model fill the rest,
+ * up to MAX_QUESTIONS. A moved finding with no room left stays a finding, so that no defect is lost.
+ * `moved` holds the findings that became questions.
+ */
+export function moveToQuestions<A extends Answer>(answer: A, candidates: readonly Finding[], toQuestion: (finding: Finding) => Question): { answer: A; moved: Finding[] } {
+  if (!candidates.length) return { answer, moved: [] };
+  const moved = candidates.slice(0, MAX_QUESTIONS);
+  const given = (Array.isArray(answer.questions) ? answer.questions : []).filter((q) => q && typeof q.question === 'string' && q.question.trim());
+  const questions = [...moved.map(toQuestion), ...given].slice(0, MAX_QUESTIONS);
+  const findings = answer.findings.filter((f) => !moved.includes(f));
+  return { answer: { ...answer, findings, questions }, moved };
+}
+
+/**
  * The answer without its non-findings: a finding whose fix says no change goes, and a finding that
- * asks to confirm goes to `questions`, after the questions of the model. A finding of severity
- * `critical` stays: a hole that the model calls "accept the risk" is still a hole.
+ * asks to confirm becomes a question (moveToQuestions). A finding of severity `critical` stays: a
+ * hole that the model calls "accept the risk" is still a hole. `asked`: the findings that became
+ * questions.
  */
 export function splitNonFindings<A extends Answer>(answer: A): { answer: A; dropped: Finding[]; asked: Finding[] } {
-  const dropped: Finding[] = [];
-  const asked: Finding[] = [];
-  const findings = answer.findings.filter((f) => {
-    if (f.severity === 'critical') return true;
-    if (saysNoChange(f)) return dropped.push(f), false;
-    if (asksToConfirm(f)) return asked.push(f), false;
-    return true;
-  });
+  const dropped = answer.findings.filter((f) => f.severity !== 'critical' && saysNoChange(f));
+  const kept = { ...answer, findings: answer.findings.filter((f) => !dropped.includes(f)) };
+  const candidates = kept.findings.filter((f) => f.severity !== 'critical' && asksToConfirm(f));
   const given = (Array.isArray(answer.questions) ? answer.questions : []).filter((q) => q && typeof q.question === 'string' && q.question.trim());
-  const questions = [...given, ...asked.map(questionOf)].slice(0, MAX_QUESTIONS);
-  return { answer: { ...answer, findings, questions }, dropped, asked };
+  if (!candidates.length) return { answer: { ...kept, questions: given.slice(0, MAX_QUESTIONS) }, dropped, asked: [] };
+  const { answer: out, moved } = moveToQuestions(kept, candidates, questionOf);
+  return { answer: out, dropped, asked: moved };
 }

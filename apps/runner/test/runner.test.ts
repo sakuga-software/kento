@@ -964,8 +964,8 @@ test('the questions of a review go to the service, and a finding that only asks 
   assert.ok(result.outcome === 'done');
   assert.deepEqual(result.review.findings, []);
   assert.deepEqual(result.review.questions, [
-    { path: 'sum.ts', question: 'Is the subtraction a product choice?' },
     { path: 'sum.ts', question: 'Please confirm that every other caller of `sum` still passes two numbers.' },
+    { path: 'sum.ts', question: 'Is the subtraction a product choice?' },
   ]);
   assert.ok(parseResultRequest(JSON.parse(JSON.stringify(result))).ok, 'the result is the protocol');
 });
