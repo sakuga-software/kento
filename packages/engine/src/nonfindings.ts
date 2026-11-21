@@ -7,56 +7,61 @@ import type { Answer, Finding, Question } from './findings.ts';
 export const MAX_QUESTIONS = 5;
 
 /**
- * A fix that says that no change is needed. Each pattern must name the absence of a change: a fix
- * such as "accept a null id" or "leave the cache as is and add a check" is a change.
+ * A fix that says that no change is needed, as the whole text of the fix. "No change is needed in
+ * `parse`, but `save` must reject an empty name" asks for a change: no pattern matches a part.
  */
 export const NO_CHANGE: readonly RegExp[] = [
   /^\W*(none|n\/a|nothing|no fix|no changes?)\W*$/i,
-  /^\W*(none|nothing|no fix|no change)( is)? (needed|required|necessary)\b/i,
-  /\bno (code )?changes? (is |are )?(needed|required|necessary)\b/i,
-  /\bnothing (needs|has) to change\b/i,
-  /\bno (fix|action) (is )?(needed|required|necessary)\b/i,
+  /^\W*(none|nothing|no fix|no action|no (code )?changes?)( is| are)? (needed|required|necessary)( here)?\W*$/i,
+  /^\W*nothing (needs|has) to change( here)?\W*$/i,
   /^\W*(leave|keep) (it|this|the code|the current (code|behaviou?r))? ?as (it )?is\W*$/i,
-  /\b(cosmetic|harmless|intended)[^.]*\b(leave|keep) (it|this)? ?as (it )?is\b/i,
   /^\W*accept (the|this) (current )?(behaviou?r|risk|trade-?off|limitation)\W*$/i,
 ];
 
+// A second clause: a comma, a colon or a semicolon, or a word that brings a change of its own.
+const SECOND_CLAUSE = /[,:;]|\b(but|instead|only|otherwise|except|unless|if|then|and)\b/i;
+
 /**
- * A finding that asks the author to confirm, and names no wrong result. "Check that the user owns
- * the repo before the delete" is a fix, not a question: a fix that starts with "check", "verify" or
- * "make sure" does not count, only one that asks to confirm or says "please".
+ * A fix that asks the author to confirm, as the whole text of the fix. "Please make sure the
+ * handler returns 404" and "Confirm with a cap of 3 retries, then fail" name a change: no match.
  */
 export const ASKS: readonly RegExp[] = [
-  /\bplease (confirm|verify|check|double-check|make sure)\b/i,
-  /^\W*confirm (that|whether|with)\b/i,
-  /\b(is|was) (this|that)\b[^.?]*\b(intended|intentional|deliberate|on purpose)\?/i,
-  /\bconfirm (with|that) (the )?(product|ticket|author|team)\b/i,
+  /^\W*please confirm\b/i,
+  /^\W*confirm (that|whether)\b/i,
+  /^\W*confirm (with|that) (the )?(product|ticket|author|team)\b/i,
+  /^[^.?]*\b(is|was) (this|that)\b[^.?]*\b(intended|intentional|deliberate|on purpose)\?\W*$/i,
 ];
 
 /**
- * Whether the fix of a finding says that no change is needed. The fix must be one sentence: "No
- * change is needed here. Add a test of the caller." asks for a change.
+ * Whether the fix of a `minor` finding says that no change is needed, as its whole text and in one
+ * clause. A `major` or `critical` finding is never dropped: its fix can name a change in words that
+ * no pattern knows, and the cost of a lost defect is higher.
  */
-export function saysNoChange(finding: Pick<Finding, 'fix'>): boolean {
+export function saysNoChange(finding: Pick<Finding, 'fix' | 'severity'>): boolean {
+  if (finding.severity !== 'minor') return false;
   const fix = (finding.fix ?? '').trim();
-  const oneSentence = !/[.;!?]\s+\S/.test(fix);
-  return oneSentence && NO_CHANGE.some((pattern) => pattern.test(fix));
+  return !SECOND_CLAUSE.test(fix.replace(/\W+$/, '')) && NO_CHANGE.some((pattern) => pattern.test(fix));
 }
 
 /**
- * Whether a finding asks the author to confirm, in its title or its fix. Only a `minor` finding with
- * no suggestion and no patch counts: a `major` or `critical` finding that asks to confirm keeps its
- * thread and its block, since its fix can still be a real change.
+ * Whether a `minor` finding only asks the author to confirm: its fix (its title when the fix is
+ * empty) is a request to confirm in one clause, and it gives no suggestion and no patch. A finding
+ * whose fix names a change keeps its thread, whatever its title asks.
  */
 export function asksToConfirm(finding: Pick<Finding, 'title' | 'fix' | 'severity' | 'suggestion' | 'patch'>): boolean {
   if (finding.severity !== 'minor' || (finding.suggestion ?? '').trim() || (finding.patch ?? '').trim()) return false;
-  return [finding.title ?? '', (finding.fix ?? '').trim()].some((text) => ASKS.some((pattern) => pattern.test(text)));
+  const fix = (finding.fix ?? '').trim();
+  const text = fix || (finding.title ?? '').trim();
+  // One clause: "Confirm that `pages` rounds up: use Math.ceil" asks for a change after the colon.
+  const oneClause = !/[,:;]|\b(but|instead|then|otherwise)\b/i.test(text.replace(/\W+$/, ''));
+  return oneClause && ASKS.some((pattern) => pattern.test(text));
 }
 
-/** The text of a question that a finding asks: its fix when the fix asks, else its title. */
+/** The text of a question that a finding asks: its fix, or its title and its scenario when it has no fix. */
 function questionOf(finding: Finding): Question {
   const fix = (finding.fix ?? '').trim();
-  return { path: finding.path, question: ASKS.some((p) => p.test(fix)) ? fix : finding.title.trim() };
+  const question = fix || `${finding.title.trim()} ${(finding.scenario ?? '').trim()}`.trim();
+  return { path: finding.path, question };
 }
 
 /**
@@ -81,7 +86,7 @@ export function moveToQuestions<A extends Answer>(answer: A, candidates: readonl
  * questions.
  */
 export function splitNonFindings<A extends Answer>(answer: A): { answer: A; dropped: Finding[]; asked: Finding[] } {
-  const dropped = answer.findings.filter((f) => f.severity !== 'critical' && saysNoChange(f));
+  const dropped = answer.findings.filter((f) => saysNoChange(f));
   const kept = { ...answer, findings: answer.findings.filter((f) => !dropped.includes(f)) };
   const candidates = kept.findings.filter((f) => f.severity !== 'critical' && asksToConfirm(f));
   const given = (Array.isArray(answer.questions) ? answer.questions : []).filter((q) => q && typeof q.question === 'string' && q.question.trim());

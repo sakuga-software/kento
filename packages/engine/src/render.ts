@@ -333,7 +333,11 @@ export function descriptionBlock(
   const questions = (answer.questions ?? []).filter((q) => typeof q?.question === 'string' && q.question.trim());
   if (questions.length) {
     out.push('<h3>Questions</h3>', '', 'The review asks these questions. They name no defect, do not block the PR and do not change the score.', '');
-    questions.forEach((q, i) => out.push(`${i + 1}. ${q.path?.trim() ? `\`${q.path.trim()}\` ` : ''}${q.question.replace(/\s+/g, ' ').trim()}`));
+    // The path goes in one inline code span, and the text loses the markers of a comment: a model text
+    // must not close the span, a list item or the block of the description.
+    const path = (text: string) => text.replace(/`/g, "'").replace(/\s+/g, ' ').trim();
+    const plain = (text: string) => text.replace(/<!--|-->/g, '').replace(/\s+/g, ' ').trim();
+    questions.forEach((q, i) => out.push(`${i + 1}. ${q.path?.trim() ? `\`${path(q.path)}\` ` : ''}${plain(q.question)}`));
     out.push('');
   }
   out.push('<details><summary>Summary</summary>', '', answer.summary, '');
