@@ -104,6 +104,33 @@ describe('the source of the live card (KNT-189)', () => {
     assert.deepEqual(hub.orgs(), [])
   })
 
+  it('gives the payload to every listener when one throws, and does not count it as a failed read (Kentō #a2a122)', async () => {
+    let reads = 0
+    let version = 0
+    let hub = createLiveHub({ intervalMs: 10, failures: 2, read: async () => ((reads += 1), `card-${version}`) })
+    let got: string[] = []
+    let dropped = 0
+    let write = process.stderr.write
+    process.stderr.write = () => true
+    try {
+      hub.subscribe('org-1', () => {
+        throw new Error('a broken listener')
+      }, () => (dropped += 1))
+      hub.subscribe('org-1', (p) => got.push(p), () => (dropped += 1))
+      await wait(30)
+      version = 1
+      await wait(30)
+      version = 2
+      await wait(30)
+    } finally {
+      process.stderr.write = write
+    }
+    assert.deepEqual(got, ['card-0', 'card-1', 'card-2'])
+    assert.equal(dropped, 0, 'a throwing listener is not a failed read')
+    assert.deepEqual(hub.orgs(), ['org-1'])
+    hub.close()
+  })
+
   it('stops every source on close', async () => {
     let reads = 0
     let hub = createLiveHub({ intervalMs: 10, read: async () => String((reads += 1)) })

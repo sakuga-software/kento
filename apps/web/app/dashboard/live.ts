@@ -59,7 +59,7 @@ export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, failures = 
       source.failed = 0
       if (payload === source.last) return
       source.last = payload
-      for (let listener of source.listeners.keys()) listener(payload)
+      for (let listener of source.listeners.keys()) send(orgId, listener, payload)
     } catch (error) {
       source.failed += 1
       log('warn', 'dashboard.live_read_failed', { orgId, failed: source.failed, error: errorMessage(error) })
@@ -71,6 +71,15 @@ export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, failures = 
       }
     } finally {
       source.reading = false
+    }
+  }
+
+  /** One listener that throws never stops the others, nor counts as a failed read (Kentō #a2a122). */
+  function send(orgId: string, listener: LiveListener, payload: string) {
+    try {
+      listener(payload)
+    } catch (error) {
+      log('warn', 'dashboard.live_listener_failed', { orgId, error: errorMessage(error) })
     }
   }
 
@@ -91,7 +100,7 @@ export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, failures = 
         void tick(orgId, source)
       } else {
         source.listeners.set(listener, onFailure)
-        if (source.last !== null) listener(source.last)
+        if (source.last !== null) send(orgId, listener, source.last)
       }
       let owner = source
       return () => {

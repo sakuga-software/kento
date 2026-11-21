@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
@@ -46,6 +46,18 @@ async function seed(): Promise<{ failedJobId: string }> {
   } finally {
     await sql.end()
   }
+}
+
+/**
+ * KNT-189. The runners online with a job, from "N ready / M online": M - N. Other specs leave runners
+ * online in the shared database, and one of them may go late during a test: both counts then move,
+ * the difference does not.
+ */
+async function busyOf(queue: Locator): Promise<number> {
+  let text = (await queue.locator('.runner-ready').textContent())?.trim() ?? ''
+  let counts = /^(\d+) ready \/ (\d+) online$/.exec(text)
+  if (!counts) throw new Error(`unexpected ready count: ${text}`)
+  return Number(counts[2]) - Number(counts[1])
 }
 
 async function cleanUp() {
@@ -250,7 +262,8 @@ test.describe('the dashboard', () => {
     await hydrated(page)
     let queue = page.getByRole('region', { name: 'Queue and runners' })
     await expect(queue.getByRole('status')).toHaveText('Live')
-    await expect(queue.locator('.runner-ready')).toHaveText('1 ready / 1 online')
+    await expect(queue.locator('.runner-ready')).toHaveText(/^\d+ ready \/ \d+ online$/)
+    let busy = await busyOf(queue)
 
     // Faster than the read of the whole page every 10 s: the stream sends the card within a tick of 3 s.
     let pushed = await push(page, 'e'.repeat(40))
@@ -264,7 +277,7 @@ test.describe('the dashboard', () => {
         update jobs set state = 'running', started_at = now(), lease_expires_at = now() + interval '2 minutes',
           runner_id = (select id from runners where name = 'shared-01' and org_id is null)
         where id = ${pushed.jobId!}`
-      await expect(queue.locator('.runner-ready')).toHaveText('0 ready / 1 online', { timeout: 6_000 })
+      await expect.poll(() => busyOf(queue), { timeout: 6_000 }).toBe(busy + 1)
       await expect(queue.getByText(/^On shared-01 for/)).toBeVisible()
 
       // dashboard.js reads the whole page again (here at once, on visibilitychange): the live section stays, and so does its stream.
@@ -273,7 +286,7 @@ test.describe('the dashboard', () => {
       await expect(page.getByText(/Updated [0-2] s ago/)).toBeVisible()
       expect(await queue.evaluate((el) => (el as HTMLElement).dataset.marker)).toBe(marker)
       await sql`update jobs set state = 'done', finished_at = now(), lease_expires_at = null where id = ${pushed.jobId!}`
-      await expect(queue.locator('.runner-ready')).toHaveText('1 ready / 1 online', { timeout: 6_000 })
+      await expect.poll(() => busyOf(queue), { timeout: 6_000 }).toBe(busy)
       await expect(queue.getByRole('status')).toHaveText('Live')
     } finally {
       await sql.end()
@@ -355,7 +368,8 @@ test.describe('the dashboard without JavaScript (KNT-189)', () => {
     await seed()
     await page.goto('/')
     let queue = page.getByRole('region', { name: 'Queue and runners' })
-    await expect(queue.locator('.runner-ready')).toHaveText('1 ready / 1 online')
+    // shared-01 is online and idle, so one runner at least is ready (other specs may leave more).
+    await expect(queue.locator('.runner-ready')).toHaveText(/^[1-9]\d* ready \/ [1-9]\d* online$/)
     await expect(queue.getByText('shared-01')).toBeVisible()
     await expect(queue.locator('.live-state')).toBeHidden()
   })
