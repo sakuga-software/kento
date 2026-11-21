@@ -106,9 +106,11 @@ export interface ReposStore {
   setEnabled(orgId: string, repoId: string, enabled: boolean): Promise<{ fullName: string; cancelled: number } | null>
   /**
    * Writes what GitHub said about the repositories of an installation of an org. A new repository
-   * comes in disabled; an existing one keeps `enabled` and its level.
+   * comes in disabled; an existing one keeps `enabled` and its level. KNT-173: the repositories go
+   * to the org that holds the installation when they are written, which a move may have changed
+   * since the check began. An installation that is gone writes nothing.
    */
-  saveCheck(installation: { orgId: string; installationId: string }, repos: CheckedRepo[]): Promise<void>
+  saveCheck(installationId: string, repos: CheckedRepo[]): Promise<void>
 }
 
 // Postgres reads a uuid in any case: an id in upper case finds the row too.
@@ -314,30 +316,42 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
       })
     },
 
-    async saveCheck({ orgId, installationId }, checked) {
+    async saveCheck(installationId, checked) {
       if (checked.length === 0) return
       let unique = [...new Map(checked.map((repo) => [repo.githubRepoId, repo])).values()]
       let now = new Date().toISOString()
-      let rows = unique.map((repo) => ({
-        org_id: orgId,
-        installation_id: installationId,
-        github_repo_id: repo.githubRepoId,
-        full_name: repo.fullName,
-        private: repo.private,
-        default_branch: repo.defaultBranch,
-        workflow: repo.workflow.mode,
-        workflow_path: repo.workflow.path,
-        workflow_ref: repo.workflow.ref,
-        workflow_checked_at: now,
-      }))
-      await sql`
-        insert into repos ${sql(rows, 'org_id', 'installation_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
-        on conflict (github_repo_id) do update set
-          org_id = excluded.org_id, installation_id = excluded.installation_id, full_name = excluded.full_name, private = excluded.private,
-          default_branch = excluded.default_branch, workflow = excluded.workflow,
-          workflow_path = excluded.workflow_path, workflow_ref = excluded.workflow_ref,
-          workflow_checked_at = excluded.workflow_checked_at, updated_at = now()
-      `
+      await sql.begin(async (tx) => {
+        // KNT-173. The order of the locks of organizations/store.ts: the row of the installation,
+        // then the key of its org, then the repositories. A move that holds the installation makes
+        // this wait, then this reads the org where the move put it. The key of the org comes before
+        // the insert: the insert locks each repository row it writes, and only at the end of the
+        // statement takes the key of the org for a new one; a webhook that holds the org and then
+        // writes one of those repositories would wait on this, and this on it.
+        let [installation] = await tx<{ orgId: string }[]>`
+          select org_id as "orgId" from installations where id = ${installationId} for key share`
+        if (!installation) return
+        await tx`select 1 from orgs where id = ${installation.orgId} for key share`
+        let rows = unique.map((repo) => ({
+          org_id: installation.orgId,
+          installation_id: installationId,
+          github_repo_id: repo.githubRepoId,
+          full_name: repo.fullName,
+          private: repo.private,
+          default_branch: repo.defaultBranch,
+          workflow: repo.workflow.mode,
+          workflow_path: repo.workflow.path,
+          workflow_ref: repo.workflow.ref,
+          workflow_checked_at: now,
+        }))
+        await tx`
+          insert into repos ${tx(rows, 'org_id', 'installation_id', 'github_repo_id', 'full_name', 'private', 'default_branch', 'workflow', 'workflow_path', 'workflow_ref', 'workflow_checked_at')}
+          on conflict (github_repo_id) do update set
+            org_id = excluded.org_id, installation_id = excluded.installation_id, full_name = excluded.full_name, private = excluded.private,
+            default_branch = excluded.default_branch, workflow = excluded.workflow,
+            workflow_path = excluded.workflow_path, workflow_ref = excluded.workflow_ref,
+            workflow_checked_at = excluded.workflow_checked_at, updated_at = now()
+        `
+      })
     },
   }
 }

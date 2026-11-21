@@ -33,6 +33,7 @@ export const ORG_NOTICES = {
     text: 'Only an owner whom GitHub counts as an admin of another account of this organization detaches an installation.',
   },
   changed: { tone: 'alert', text: 'The installations changed while Kentō asked GitHub. Try again.' },
+  move_wait: { tone: 'info', text: 'You moved many installations in the last minute. Try again in a minute.' },
   github_failed: { tone: 'alert', text: 'GitHub did not answer. Try again in a minute.' },
   same_org: { tone: 'info', text: 'The installation is in this organization already.' },
   last_installation: { tone: 'alert', text: 'This is the last installation of the organization: confirm that the organization goes with the move.' },

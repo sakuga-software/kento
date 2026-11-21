@@ -68,6 +68,22 @@ const CAP_TEXT: Record<CapState, string> = {
   alert: 'Alert threshold reached',
   reached: 'Cap reached',
 }
+/** KNT-190. The section "Costs and cap" of the settings, where an admin sets the caps. */
+export const CAP_SETTINGS_HREF = `${routes.settings.href()}#cap`
+
+/** KNT-190. "No cap": a link to the caps for who can set them (as the settings decide), plain text for the others. */
+function NoCap(handle: Handle<{ admin: boolean; text: string }>) {
+  return () =>
+    handle.props.admin ? (
+      <a href={CAP_SETTINGS_HREF}>
+        {handle.props.text}
+        <span class="visually-hidden">: set a cap in the settings</span>
+      </a>
+    ) : (
+      handle.props.text
+    )
+}
+
 const CAP_STATUS: Record<CapState, string> = {
   none: 'status-stale',
   ok: 'status-online',
@@ -284,7 +300,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <TodoSection screen={screen} admin={admin} csrf={csrf} githubUrl={githubUrl} />
 
-          <Kpis screen={screen} precision={precision ?? null} />
+          <Kpis screen={screen} precision={precision ?? null} admin={admin} />
 
           <WeekSection week={screen.week} />
 
@@ -292,7 +308,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
             <RecentSection recent={screen.recent} now={screen.now} org={org} />
             <div class="dash-side">
               <QueueRunnersSection queue={screen.queue} runners={screen.runners} counts={screen.runnerCounts} now={screen.now} githubUrl={githubUrl} />
-              <CostSection costs={screen.costs} caps={screen.caps} />
+              <CostSection costs={screen.costs} caps={screen.caps} admin={admin} />
             </div>
           </div>
 
@@ -419,113 +435,111 @@ function TodoSection(handle: Handle<{ screen: DashboardScreen; admin: boolean; c
     let silentCount = screen.runnerCounts.late + screen.runnerCounts.offline
     let count =
       (screen.banner ? 1 : 0) + (screen.stall ? 1 : 0) + costs.length + (silentCount > 0 ? 1 : 0) + (screen.workflowRepos.length > 0 ? 1 : 0)
+    // KNT-193: nothing to do, no section. Its count shows nowhere else.
+    if (count === 0) return null
     return (
       <section class="dash-todo" aria-labelledby="todo-title">
         <h2 id="todo-title" class="section-title">
           To do <span class="count">{count}</span>
         </h2>
-        {count === 0 ? (
-          <p class="card todo-empty hint">Nothing to do. No failure is open, the queue moves and the runners answer.</p>
-        ) : (
-          <ul class="card todo-list">
-            {screen.stall ? <StallItem stall={screen.stall} online={screen.runnerCounts.online} now={now} /> : null}
-            {screen.banner ? <FailureItem banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} now={now} /> : null}
-            {costs.map((cost) => (
-              <li>
-                <section class="todo" aria-labelledby={`todo-cost-${cost.id}`}>
-                <span class="todo-kind">
-                  <span class="status status-cost">Cost</span>
-                </span>
-                <div class="todo-body">
-                  <h3 id={`todo-cost-${cost.id}`} class="todo-title">
-                    {cost.state === 'reached' ? `The ${cost.when} cap is reached` : `The ${cost.when} alert threshold is reached`}
-                  </h3>
-                  <p class="todo-meter">
-                    {/* A limit of 0 is reached at once (capState): no share of it, no bar. */}
-                    {cost.cap! > 0 ? <Bar parts={[{ pct: (cost.usd / cost.cap!) * 100, tone: 'kuchiba' }]} /> : null}
-                    <span class="mono">
-                      {usdPrecise(cost.usd)} of {usdPrecise(cost.cap!)}
-                      {cost.cap! > 0 ? ` · ${Math.round((cost.usd / cost.cap!) * 100)}%` : ''}
-                    </span>
-                  </p>
-                </div>
-                <div class="todo-actions">
-                  <a class={buttonClass()} href={`${routes.settings.href()}#cap`}>
-                    {admin ? 'Change the cap' : 'See the cap'}
-                  </a>
-                </div>
-                </section>
-              </li>
-            ))}
-            {silentCount > 0 ? (
-              <li>
-                <section class="todo" aria-labelledby="todo-runners">
-                <span class="todo-kind">
-                  <span class="status status-late">Runner</span>
-                </span>
-                <div class="todo-body">
-                  {silentCount === 1 && silent.length === 1 ? (
-                    <>
-                      <h3 id="todo-runners" class="todo-title">
-                        <code>{silent[0]!.name}</code>{' '}
-                        {silent[0]!.lastSeenAt ? `has given no signal for ${elapsed(silent[0]!.lastSeenAt, now)}` : 'never gave a signal'}
-                      </h3>
-                      <p class="hint">
-                        {silent[0]!.running === 0
-                          ? 'It has no job. It is online again at its next signal.'
-                          : `${silent[0]!.running} ${plural(silent[0]!.running, 'job')} in progress. Without a signal, ${silent[0]!.running === 1 ? 'it goes' : 'they go'} back to the queue.`}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <h3 id="todo-runners" class="todo-title">
-                        {silentCount === 1 ? '1 runner gives no signal' : `${silentCount} runners give no signal`}
-                      </h3>
-                      <p class="hint">
-                        {/* The store bounds the list of runners: the silent ones can be absent from it. */}
-                        {silent.length > 0
-                          ? `${silent
-                              .slice(0, 3)
-                              .map((runner) => runner.name)
-                              .join(', ')}${silentCount > Math.min(3, silent.length) ? ` and ${silentCount - Math.min(3, silent.length)} more` : ''}. `
-                          : ''}
-                        A runner is online again at its next signal.
-                      </p>
-                    </>
-                  )}
-                </div>
-                <div class="todo-actions">
-                  <a class={buttonClass()} href={routes.runners.href()}>
-                    See the runners
-                  </a>
-                </div>
-                </section>
-              </li>
-            ) : null}
-            {screen.workflowRepos.length > 0 ? (
-              <li>
-                <section class="todo dash-workflow" aria-labelledby="todo-workflow">
-                <span class="todo-kind">
-                  <span class="status status-switch">Switch</span>
-                </span>
-                <div class="todo-body">
-                  <h3 id="todo-workflow" class="todo-title">
-                    {screen.workflowRepos.length === 1 ? '1 repo is still on' : `${screen.workflowRepos.length} repos are still on`}{' '}
-                    <code>review.yml</code>
-                  </h3>
-                  <p class="hint">{screen.workflowRepos.join(', ')}. Kentō does not track their findings here.</p>
-                </div>
-                <div class="todo-actions">
-                  {/* KNT-179: the filter of the repos that still hold review.yml. */}
-                  <a class={buttonClass()} href={`${routes.repos.href()}?filter=switching`}>
-                    See the repos
-                  </a>
-                </div>
-                </section>
-              </li>
-            ) : null}
-          </ul>
-        )}
+        <ul class="card todo-list">
+          {screen.stall ? <StallItem stall={screen.stall} online={screen.runnerCounts.online} now={now} /> : null}
+          {screen.banner ? <FailureItem banner={screen.banner} admin={admin} csrf={csrf} githubUrl={githubUrl} now={now} /> : null}
+          {costs.map((cost) => (
+            <li>
+              <section class="todo" aria-labelledby={`todo-cost-${cost.id}`}>
+              <span class="todo-kind">
+                <span class="status status-cost">Cost</span>
+              </span>
+              <div class="todo-body">
+                <h3 id={`todo-cost-${cost.id}`} class="todo-title">
+                  {cost.state === 'reached' ? `The ${cost.when} cap is reached` : `The ${cost.when} alert threshold is reached`}
+                </h3>
+                <p class="todo-meter">
+                  {/* A limit of 0 is reached at once (capState): no share of it, no bar. */}
+                  {cost.cap! > 0 ? <Bar parts={[{ pct: (cost.usd / cost.cap!) * 100, tone: 'kuchiba' }]} /> : null}
+                  <span class="mono">
+                    {usdPrecise(cost.usd)} of {usdPrecise(cost.cap!)}
+                    {cost.cap! > 0 ? ` · ${Math.round((cost.usd / cost.cap!) * 100)}%` : ''}
+                  </span>
+                </p>
+              </div>
+              <div class="todo-actions">
+                <a class={buttonClass()} href={CAP_SETTINGS_HREF}>
+                  {admin ? 'Change the cap' : 'See the cap'}
+                </a>
+              </div>
+              </section>
+            </li>
+          ))}
+          {silentCount > 0 ? (
+            <li>
+              <section class="todo" aria-labelledby="todo-runners">
+              <span class="todo-kind">
+                <span class="status status-late">Runner</span>
+              </span>
+              <div class="todo-body">
+                {silentCount === 1 && silent.length === 1 ? (
+                  <>
+                    <h3 id="todo-runners" class="todo-title">
+                      <code>{silent[0]!.name}</code>{' '}
+                      {silent[0]!.lastSeenAt ? `has given no signal for ${elapsed(silent[0]!.lastSeenAt, now)}` : 'never gave a signal'}
+                    </h3>
+                    <p class="hint">
+                      {silent[0]!.running === 0
+                        ? 'It has no job. It is online again at its next signal.'
+                        : `${silent[0]!.running} ${plural(silent[0]!.running, 'job')} in progress. Without a signal, ${silent[0]!.running === 1 ? 'it goes' : 'they go'} back to the queue.`}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 id="todo-runners" class="todo-title">
+                      {silentCount === 1 ? '1 runner gives no signal' : `${silentCount} runners give no signal`}
+                    </h3>
+                    <p class="hint">
+                      {/* The store bounds the list of runners: the silent ones can be absent from it. */}
+                      {silent.length > 0
+                        ? `${silent
+                            .slice(0, 3)
+                            .map((runner) => runner.name)
+                            .join(', ')}${silentCount > Math.min(3, silent.length) ? ` and ${silentCount - Math.min(3, silent.length)} more` : ''}. `
+                        : ''}
+                      A runner is online again at its next signal.
+                    </p>
+                  </>
+                )}
+              </div>
+              <div class="todo-actions">
+                <a class={buttonClass()} href={routes.runners.href()}>
+                  See the runners
+                </a>
+              </div>
+              </section>
+            </li>
+          ) : null}
+          {screen.workflowRepos.length > 0 ? (
+            <li>
+              <section class="todo dash-workflow" aria-labelledby="todo-workflow">
+              <span class="todo-kind">
+                <span class="status status-switch">Switch</span>
+              </span>
+              <div class="todo-body">
+                <h3 id="todo-workflow" class="todo-title">
+                  {screen.workflowRepos.length === 1 ? '1 repo is still on' : `${screen.workflowRepos.length} repos are still on`}{' '}
+                  <code>review.yml</code>
+                </h3>
+                <p class="hint">{screen.workflowRepos.join(', ')}. Kentō does not track their findings here.</p>
+              </div>
+              <div class="todo-actions">
+                {/* KNT-179: the filter of the repos that still hold review.yml. */}
+                <a class={buttonClass()} href={`${routes.repos.href()}?filter=switching`}>
+                  See the repos
+                </a>
+              </div>
+              </section>
+            </li>
+          ) : null}
+        </ul>
       </section>
     )
   }
@@ -628,9 +642,9 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
 }
 
 /** REV-91. Five numbers in one band: the reviews and failures of the week, the cost of the month, the precision, the queue. */
-function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null }>) {
+function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null; admin: boolean }>) {
   return () => {
-    let { screen, precision } = handle.props
+    let { screen, precision, admin } = handle.props
     let today = screen.week.at(-1)
     let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
     let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
@@ -667,12 +681,14 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           {cap !== null && cap > 0 ? (
             <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />
           ) : null}
-          <span class={`kpi-sub ${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? 'kpi-alert' : ''}`}>
-            {cap === null
-              ? 'no cap'
-              : capState(month, cap, screen.caps.alertPct) === 'reached'
-                ? `cap reached · of ${usdPrecise(cap)}`
-                : `of ${usdPrecise(cap)} · alert at ${screen.caps.alertPct}%`}
+          <span class={`kpi-sub${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? ' kpi-alert' : ''}`}>
+            {cap === null ? (
+              <NoCap admin={admin} text="no cap" />
+            ) : capState(month, cap, screen.caps.alertPct) === 'reached' ? (
+              `cap reached · of ${usdPrecise(cap)}`
+            ) : (
+              `of ${usdPrecise(cap)} · alert at ${screen.caps.alertPct}%`
+            )}
           </span>
         </div>
         <div class="kpi">
@@ -729,9 +745,9 @@ function Bar(handle: Handle<{ parts: { pct: number; tone: 'ink' | 'matsu' | 'kuc
   }
 }
 
-function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: number | null; alertPct: number }>) {
+function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: number | null; alertPct: number; admin: boolean }>) {
   return () => {
-    let { id, label, usd, cap, alertPct } = handle.props
+    let { id, label, usd, cap, alertPct, admin } = handle.props
     let state = capState(usd, cap, alertPct)
     return (
       <div class="dash-cost">
@@ -739,7 +755,7 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
           <span class="dash-cost-label" id={`${id}-label`}>
             {label}
           </span>
-          <span class={`status ${CAP_STATUS[state]}`}>{CAP_TEXT[state]}</span>
+          <span class={`status ${CAP_STATUS[state]}`}>{state === 'none' ? <NoCap admin={admin} text={CAP_TEXT.none} /> : CAP_TEXT[state]}</span>
         </div>
         <p class="dash-cost-value">
           {usdPrecise(usd)}
@@ -765,21 +781,22 @@ function Meter(handle: Handle<{ id: string; label: string; usd: number; cap: num
   }
 }
 
-function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps }>) {
+function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps; admin: boolean }>) {
   return () => {
-    let { costs, caps } = handle.props
+    let { costs, caps, admin } = handle.props
     return (
       <section class="dash-section card" aria-labelledby="cost-title">
         <h2 id="cost-title" class="section-title">
           Cost
         </h2>
         <div class="dash-costs">
-          <Meter id="cost-day" label="Today (UTC)" usd={costs.dayUsd} cap={caps.dailyCapUsd} alertPct={caps.alertPct} />
-          <Meter id="cost-month" label="This month (UTC)" usd={costs.monthUsd} cap={caps.monthlyCapUsd} alertPct={caps.alertPct} />
+          <Meter id="cost-day" label="Today (UTC)" usd={costs.dayUsd} cap={caps.dailyCapUsd} alertPct={caps.alertPct} admin={admin} />
+          <Meter id="cost-month" label="This month (UTC)" usd={costs.monthUsd} cap={caps.monthlyCapUsd} alertPct={caps.alertPct} admin={admin} />
         </div>
-        {caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
+        {/* An admin already has "No cap" as a link to the caps (KNT-190): the hint is for a member. */}
+        {!admin && caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
           <p class="hint">
-            The organization has no cap. An admin sets it in <a href={routes.settings.href()}>Settings</a>.
+            The organization has no cap. An admin sets it in <a href={CAP_SETTINGS_HREF}>Settings</a>.
           </p>
         ) : null}
         {costs.monthByProvider.length > 0 ? (

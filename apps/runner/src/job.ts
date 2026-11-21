@@ -497,6 +497,8 @@ export function payload(
       ...(withSeen && f.seen ? { seen: true } : {}),
     })),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
+    // KNT-153. The claim of the feature `questions` passed: the service reads the key.
+    ...(answer.questions?.length ? { questions: answer.questions.slice(0, 20).map((q) => ({ path: cut(q.path ?? '', 1000), question: cut(q.question, 2000) })) } : {}),
     skipped: result.skipped.slice(0, 2000).map((item) => cut(item, 1000)),
     ...(withReuse ? { diffHash: result.diffHash, reuseKey: result.reuseKey, cachedTokens: usage.cache_read_tokens ?? null } : {}),
     // REV-96. The ids come from the threads of the job: at most MAX_RESOLVE_THREADS of them.
