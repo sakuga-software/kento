@@ -1,6 +1,5 @@
 import type { Handle } from 'remix/component'
 
-import { commandNames } from '../github/comment-command.ts'
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
@@ -8,18 +7,9 @@ import { RowMenu } from './public/row-menu.tsx'
 import { Button, Input, buttonClass } from './controls.tsx'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue } from './precision.tsx'
-import { agoOrDate, plural } from './format.ts'
+import { agoOrDate, plural, when } from './format.ts'
 import { AlertIcon, CheckIcon, ExternalIcon, GitHubIcon, LockIcon } from './icons.tsx'
-import {
-  BookMarkedIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleHelpIcon,
-  GlobeIcon,
-  PowerIcon,
-  RefreshCwIcon,
-  SearchIcon,
-} from './lucide.tsx'
+import { CircleHelpIcon, GlobeIcon, PowerIcon, RefreshCwIcon, SearchIcon } from './lucide.tsx'
 import { readPageNumber } from '../paging.ts'
 import { Pager } from './pager.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -104,35 +94,10 @@ function shortName(fullName: string, org: string): string {
 }
 
 /**
- * The Repos screen (REV-9): the repositories of the installation, their mode, their level, the
- * model of their last review, the switch counter and their last review. An admin enables and
- * disables a repository; a member reads.
+ * The Repos screen (REV-9): the repositories of the installation, their visibility, their level,
+ * the model of their last review, and their last review. An admin enables and disables a
+ * repository; a member reads.
  */
-/** The command of the Action of review.yml. When it is also a name of Kentō, both answer it. */
-const ACTION_COMMAND = 'sakuga-review'
-
-/** Which command gets two answers during the switch, with the names of the instance (KENTO_COMMAND_NAMES). */
-function SwitchCommands() {
-  return () => {
-    let names = commandNames()
-    let own = names.find((name) => name !== ACTION_COMMAND)
-    return (
-      <li>
-        {names.includes(ACTION_COMMAND) ? (
-          <>
-            A <code>@{ACTION_COMMAND}</code> command then gets two answers.{own ? ' ' : ''}
-          </>
-        ) : null}
-        {own ? (
-          <>
-            <code>@{own}</code> speaks to Kentō only.
-          </>
-        ) : null}
-      </li>
-    )
-  }
-}
-
 export function ReposPage(handle: Handle<ReposPageProps>) {
   return () => {
     let { frame, page, list, installations, githubUrl, checking, precisions, notice, now } = handle.props
@@ -226,10 +191,8 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                   <thead>
                     <tr>
                       <th scope="col">Repo</th>
-                      <th scope="col">Reviews by</th>
                       <th scope="col">Level</th>
                       <th scope="col">Model</th>
-                      <th scope="col">Switch</th>
                       <th scope="col">Last review</th>
                       <th scope="col">
                         Precision 30 d
@@ -267,62 +230,6 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
           </>
         )}
 
-        {all > 0 ? (
-          <p class="repos-legend">
-            Reviews by:
-            <span class="tag tag-ok">
-              <CircleCheckIcon />
-              Kentō
-            </span>{' '}
-            the App does the reviews
-            <span class="tag tag-warn">
-              <CircleCheckIcon />
-              Kentō + review.yml
-            </span>{' '}
-            switch in progress, two reviews per push
-            <span class="tag">
-              <CircleDashedIcon />
-              review.yml
-            </span>{' '}
-            the GitHub Action alone
-            <span class="tag">
-              <CircleDashedIcon />
-              none
-            </span>{' '}
-            installed, with no review
-          </p>
-        ) : null}
-        {/* REV-91: the notes of the switch are asked for, not shown at all times. */}
-        <details class="card repos-howto">
-          <summary>How the switch from review.yml to Kentō works</summary>
-            <div class="repos-notes">
-            <section class="card note" aria-labelledby="criterion-title">
-              <h2 id="criterion-title">Switch criterion</h2>
-              <ul>
-                <li>
-                  <strong>{SWITCH_TARGET} reviews published by Kentō</strong> in a row on the repo, with no failed job and no
-                  double publication.
-                </li>
-                <li>A failed job sets the counter back to zero. A double publication does too.</li>
-                <li>
-                  At {SWITCH_TARGET}/{SWITCH_TARGET}, "Remove review.yml" opens the deletion of the file on GitHub. The commit
-                  that removes it ends the switch.
-                </li>
-              </ul>
-            </section>
-            <section class="card note" aria-labelledby="fallback-title">
-              <h2 id="fallback-title">Fallback during the switch</h2>
-              <ul>
-                <li>
-                  While review.yml stays in the repo, the Action also reviews each push. The PR then gets two reviews, and the one of
-                  the Action is the fallback if Kentō fails.
-                </li>
-                <SwitchCommands />
-                <li>If you disable the repo, review.yml alone reviews from the next push. The published reviews stay.</li>
-              </ul>
-            </section>
-          </div>
-        </details>
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
         {/* KNT-147: "Enable" and "Disable" change the row in place, with no reload and no jump. */}
         {admin ? <script src={`/assets/repo-toggle.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
@@ -390,33 +297,32 @@ function RepoRow(handle: Handle<RepoRowProps>) {
     let suffix = back ? `?${back}` : ''
     let name = shortName(repo.fullName, org)
     let repoUrl = `${githubUrl}/${repo.fullName}`
+    let removeWorkflow = admin ? removeWorkflowHref(repo, githubUrl) : undefined
+    let workflowLeft = repo.workflow === 'reusable' || repo.workflow === 'copy'
     return (
       <tr id={`repo-${repo.id}`}>
         <th scope="row">
-          <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
-            <BookMarkedIcon />
+          {/* KNT-180: the visibility is the icon left of the name; its word is for a screen reader only. */}
+          {/* The title says the visibility to the pointer too, "unknown" for the "?". */}
+          <a class="repo-name" href={repoUrl} rel="noreferrer" title={`${repo.fullName} (${visibility(repo.private)})`}>
+            {repo.private === null ? <CircleHelpIcon /> : repo.private ? <LockIcon /> : <GlobeIcon />}
             <span>{name}</span>
           </a>
-          <span class="hint repo-visibility">
-            {repo.private === null ? <CircleHelpIcon /> : repo.private ? <LockIcon /> : <GlobeIcon />}
-            {repo.private === null ? 'unknown visibility' : repo.private ? 'private' : 'public'}
-          </span>
+          <span class="visually-hidden">, {visibility(repo.private)}</span>
         </th>
-        <td>
-          <Mode repo={repo} />
-        </td>
         <td class="mono">{LEVELS[repo.defaultLevel]}</td>
         <td>{repo.lastReview ? <ProviderModel model={repo.lastReview.model} /> : '–'}</td>
         <td>
-          <Switch repo={repo} admin={admin} githubUrl={githubUrl} />
-        </td>
-        <td>
           {repo.lastReview ? (
-            <span class="stack">
+            // KNT-182: one line. A narrow cell cuts it with an ellipsis; the title keeps the whole of it.
+            <span
+              class="repo-last-review"
+              title={`#${repo.lastReview.prNumber} · ${repo.lastReview.score}/5, published ${when(repo.lastReview.publishedAt)}`}
+            >
               <a href={pullRoutes.pull.href({ id: repo.id, number: String(repo.lastReview.prNumber) })} class="mono">
                 #{repo.lastReview.prNumber} · {repo.lastReview.score}/5
-              </a>
-              <span class="hint">{agoOrDate(repo.lastReview.publishedAt, now)}</span>
+              </a>{' '}
+              <span class="hint">· {agoOrDate(repo.lastReview.publishedAt, now)}</span>
             </span>
           ) : (
             '–'
@@ -442,8 +348,22 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               Enable<span class="visually-hidden"> {name}</span>
             </Button>
           ) : null}
-          {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…" (KNT-163: it hydrates). */}
-          <RowMenu id={repo.id} name={name} disable={admin && repo.enabled ? true : undefined} back={suffix || undefined} />
+          {removeWorkflow ? (
+            // KNT-179: the row whose "…" offers "Remove review.yml" says so, to an admin as the action.
+            <span class="tag tag-ok row-ready" title={`Kentō published ${SWITCH_TARGET} reviews in a row: "Remove review.yml" is in the menu "…"`}>
+              review.yml can go
+            </span>
+          ) : null}
+          {/* REV-91: the other actions of a row sit in "…": the config, the findings, "Remove review.yml" at the end of the
+              switch (KNT-179), and "Disable Kentō…" (KNT-163: it hydrates). */}
+          <RowMenu
+            id={repo.id}
+            name={name}
+            removeWorkflow={removeWorkflow}
+            workflow={admin && repo.enabled && workflowLeft ? true : undefined}
+            disable={admin && repo.enabled ? true : undefined}
+            back={suffix || undefined}
+          />
         </td>
       </tr>
     )
@@ -480,7 +400,11 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
         </form>
         <nav class="segmented-links" aria-label="Filter the repos">
           {REPO_FILTERS.map((filter) => (
-            <a href={reposHref({ filter, search: list.search })} aria-current={filter === list.filter ? 'page' : undefined}>
+            <a
+              href={reposHref({ filter, search: list.search })}
+              aria-current={filter === list.filter ? 'page' : undefined}
+              title={filter === 'switching' ? 'The repos that still hold review.yml' : undefined}
+            >
               {FILTER_LABELS[filter]}
               <span class="list-filter-count">{page.counts[filter]}</span>
             </a>
@@ -505,95 +429,18 @@ function ProviderModel(handle: Handle<{ model: string }>) {
   }
 }
 
-/** REV-91. Who reviews the repository, in the four words of the design, with the detail under it. */
-function Mode(handle: Handle<{ repo: RepoView }>) {
-  return () => {
-    let { repo } = handle.props
-    let workflowLeft = repo.workflow === 'reusable' || repo.workflow === 'copy'
-    let detail =
-      repo.workflow === 'reusable' ? (
-        <span class="hint mono">review.yml@{repo.workflowRef}</span>
-      ) : repo.workflow === 'copy' ? (
-        <span class="hint">copy of review.yml</span>
-      ) : repo.workflow === null ? (
-        <span class="hint">not checked yet</span>
-      ) : null
-    if (repo.enabled) {
-      return (
-        <span class="stack">
-          <span class={`tag ${workflowLeft ? 'tag-warn' : 'tag-ok'}`}>
-            <CircleCheckIcon />
-            {workflowLeft ? 'Kentō + review.yml' : 'Kentō'}
-          </span>
-          {workflowLeft ? detail : null}
-        </span>
-      )
-    }
-    return (
-      <span class="stack">
-        <span class="tag">
-          <CircleDashedIcon />
-          {workflowLeft ? 'review.yml' : 'none'}
-        </span>
-        {detail}
-      </span>
-    )
-  }
+/** What a screen reader hears after the name of a repository (KNT-180). */
+function visibility(isPrivate: boolean | null): string {
+  return isPrivate === null ? 'unknown visibility' : isPrivate ? 'private' : 'public'
 }
 
-function Switch(handle: Handle<{ repo: RepoView; admin: boolean; githubUrl: string }>) {
-  return () => {
-    let { repo, admin, githubUrl } = handle.props
-    if (!repo.enabled) return <>–</>
-    let count = Math.min(repo.streak, SWITCH_TARGET)
-    let done = count >= SWITCH_TARGET
-    let workflowLeft = (repo.workflow === 'reusable' || repo.workflow === 'copy') && repo.workflowPath !== null
-    let reset =
-      !done && repo.resetBy === 'failure'
-        ? 'set back to zero after a failure'
-        : !done && repo.resetBy === 'double'
-          ? 'set back to zero after a double publication'
-          : null
-    return (
-      <span class="stack">
-        <span class="switch">
-          <span class="switch-count">
-            {count}/{SWITCH_TARGET}
-          </span>
-          {/* The count says it in text: the bar is decorative. No inline style (CSP): a <progress>. */}
-          <progress class={done ? 'switch-bar switch-done' : 'switch-bar'} max={SWITCH_TARGET} value={count} aria-hidden="true"></progress>
-        </span>
-        {/* A note, not an alert: the counter starts again by itself at the next review. */}
-        {reset ? (
-          <span class="hint">
-            {reset}
-            {repo.resetPr !== null ? (
-              <>
-                {' '}
-                on{' '}
-                <a href={`${githubUrl}/${repo.fullName}/pull/${repo.resetPr}`} rel="noreferrer">
-                  #{repo.resetPr}
-                </a>
-              </>
-            ) : null}
-          </span>
-        ) : null}
-        {done && workflowLeft && admin && repo.defaultBranch ? (
-          <a
-            class={buttonClass('outline', 'sm')}
-            href={`${githubUrl}/${repo.fullName}/delete/${encodeURIComponent(repo.defaultBranch)}/${repo.workflowPath!.split('/').map(encodeURIComponent).join('/')}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Remove review.yml
-            <span class="visually-hidden"> from {repo.fullName} (GitHub, new tab)</span>
-          </a>
-        ) : done && workflowLeft ? (
-          <span class="hint">ready to remove review.yml</span>
-        ) : done ? (
-          <span class="hint hint-ok">switched</span>
-        ) : null}
-      </span>
-    )
-  }
+/**
+ * The page of GitHub that deletes review.yml, once Kentō published `SWITCH_TARGET` reviews in a row
+ * and the file is still in the repository; undefined before (KNT-179: it was in the column "Switch").
+ */
+export function removeWorkflowHref(repo: RepoView, githubUrl: string): string | undefined {
+  let workflowLeft = repo.workflow === 'reusable' || repo.workflow === 'copy'
+  if (!repo.enabled || repo.streak < SWITCH_TARGET || !workflowLeft || !repo.workflowPath || !repo.defaultBranch) return undefined
+  let path = repo.workflowPath.split('/').map(encodeURIComponent).join('/')
+  return `${githubUrl}/${repo.fullName}/delete/${encodeURIComponent(repo.defaultBranch)}/${path}`
 }
