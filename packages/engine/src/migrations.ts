@@ -112,17 +112,29 @@ export function migrationSection(repo: string, base: string, head: string, paths
       if (!after) continue;
       // A changed snapshot compares with its base version; a new one with the snapshot before it.
       const before = read<Snapshot>(repo, base, path) ?? previousSnapshot(repo, head, path, after);
-      const changes = snapshotChanges(before, after);
+      // With no snapshot before it, every table would read as added: say so instead (Kentō #efc0d6).
+      const changes = before ? snapshotChanges(before, after) : [`no earlier snapshot to compare with: the snapshot holds ${Object.keys(after.tables ?? {}).length} tables`];
       parts.push(`### ${path}\n\n${changes.length ? changes.map((c) => `- ${c}\n`).join('') : '- no table or column changes\n'}\n`);
       covered.push(path);
     }
   }
   if (!parts.length) return { section: '', covered: [] };
-  let body = parts.join('');
-  if (body.length > MAX_MIGRATION_BYTES) body = `${body.slice(0, MAX_MIGRATION_BYTES)}\n… (cut)\n\n`;
+  // Whole parts only: a cut inside a part could leave a code fence open (Kentō #d7b9c2). A part
+  // that does not fit goes, and its file goes back to « Not reviewed ».
+  const kept: string[] = [];
+  const keptPaths: string[] = [];
+  let size = 0;
+  parts.forEach((part, i) => {
+    if (size + part.length > MAX_MIGRATION_BYTES) return;
+    kept.push(part);
+    keptPaths.push(covered[i]!);
+    size += part.length;
+  });
+  if (!kept.length) return { section: '', covered: [] };
+  const body = kept.join('');
   const intro =
     '\n## Migrations: journal and snapshots\n\nThe journal of the migrations and a summary of each changed snapshot, which the diff ' +
     'does not show. A renamed or removed entry of the journal, or a snapshot that does not match the migrations of the ' +
     'diff, breaks the next generation or the replay of the migrations.\n\n';
-  return { section: intro + body, covered };
+  return { section: intro + body, covered: keptPaths };
 }
