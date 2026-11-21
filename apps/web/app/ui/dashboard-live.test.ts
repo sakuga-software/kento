@@ -22,7 +22,7 @@ function cardOf(orgId: string): QueueCardView {
   }
 }
 
-function setup(live: LiveOptions = {}) {
+function setup(live: LiveOptions = {}, failing = false) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, OCTOCAT, 'member')
   let cards: string[] = []
@@ -32,6 +32,7 @@ function setup(live: LiveOptions = {}) {
     },
     async queueCard(orgId) {
       cards.push(orgId)
+      if (failing) throw new Error('database gone')
       return cardOf(orgId)
     },
     async retryTarget() {
@@ -167,6 +168,20 @@ describe('the live card of the dashboard (KNT-189)', () => {
     let next = await request('/dashboard/live', cookie)
     assert.equal(next.status, 200)
     await next.body!.cancel()
+  })
+
+  it('ends the stream without "end" when the card cannot be read, so that the browser waits and retries (Kentō #4570e9)', async () => {
+    let { request, signIn } = setup({ heartbeatMs: 1000 }, true)
+    let cookie = await signIn(OCTOCAT)
+    let write = process.stderr.write
+    process.stderr.write = () => true
+    try {
+      let { text, done } = await textOf(await request('/dashboard/live', cookie), /(?!)/)
+      assert.equal(done, true)
+      assert.doesNotMatch(text, /event: (queue|end)/)
+    } finally {
+      process.stderr.write = write
+    }
   })
 
   it('ends every stream when the server shuts down', async () => {

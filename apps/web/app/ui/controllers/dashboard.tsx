@@ -127,7 +127,9 @@ export function dashboardActions(kit: UiKit) {
           }
           context.request.signal.addEventListener('abort', finish, { once: true })
           live.closing?.addEventListener('abort', finish, { once: true })
-          unsubscribe = source.subscribe(orgId, (payload) => send(`event: queue\ndata: ${payload}\n\n`))
+          // The source gives up when the database fails: the stream ends without `end`, so the browser
+          // says "Retrying…" and waits, and the page re-read shows the card again.
+          unsubscribe = source.subscribe(orgId, (payload) => send(`event: queue\ndata: ${payload}\n\n`), () => finish())
           if (context.request.signal.aborted) finish()
         },
         cancel() {

@@ -77,6 +77,33 @@ describe('the source of the live card (KNT-189)', () => {
     assert.deepEqual(got, ['card'])
   })
 
+  it('drops the listeners of an org after 3 failed reads in a row, and a good read starts the count again (Kentō #4570e9)', async () => {
+    let results: ('ok' | 'fail')[] = ['fail', 'fail', 'ok', 'fail', 'fail', 'fail']
+    let hub = createLiveHub({
+      intervalMs: 10,
+      read: async () => {
+        let next = results.shift() ?? 'ok'
+        if (next === 'fail') throw new Error('database gone')
+        return 'card'
+      },
+    })
+    let got: string[] = []
+    let dropped: string[] = []
+    let write = process.stderr.write
+    process.stderr.write = () => true
+    try {
+      hub.subscribe('org-1', (p) => got.push(p), () => dropped.push('a'))
+      hub.subscribe('org-1', () => {}, () => dropped.push('b'))
+      await wait(120)
+    } finally {
+      process.stderr.write = write
+    }
+    // Two failures, a good read ("card" sent), then three failures: the source gives up.
+    assert.deepEqual(got, ['card'])
+    assert.deepEqual(dropped.sort(), ['a', 'b'])
+    assert.deepEqual(hub.orgs(), [])
+  })
+
   it('stops every source on close', async () => {
     let reads = 0
     let hub = createLiveHub({ intervalMs: 10, read: async () => String((reads += 1)) })
