@@ -146,6 +146,9 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       return work(store)
     },
     async deleteMembership(userId, orgId) {
+      await store.forgetMembership(userId, orgId)
+    },
+    async forgetMembership(userId, orgId) {
       tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId))
     },
   }

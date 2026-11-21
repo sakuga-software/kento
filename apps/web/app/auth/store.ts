@@ -68,8 +68,17 @@ export interface AuthStore {
   invitedOrgs(githubId: number): Promise<OrgRow[]>
   /** KNT-150. The pending invitations of a GitHub account, not expired, in the active orgs. */
   pendingInvitations(githubId: number): Promise<number>
+  /** KNT-150. GitHub ended a membership: `forgetMembership` under the lock of the org. */
   deleteMembership(userId: string, orgId: string): Promise<void>
+  /**
+   * KNT-150. Deletes a membership that GitHub ended, cancels the pending invitations that the person
+   * made in the org, and writes the row of `org_audit`. Only in the store of a `withOrgLock` of the org.
+   */
+  forgetMembership(userId: string, orgId: string): Promise<void>
 }
+
+/** KNT-150. The actor of a row of `org_audit` that GitHub decided. Not a login: GitHub logins have no parentheses. */
+export const GITHUB_ACTOR = '(GitHub)'
 
 /** KNT-150. The key of the advisory lock of the owners of an org: every change of a role takes it. */
 export function orgLockKey(orgId: string): string {
@@ -187,11 +196,28 @@ export function createAuthStore(sql: postgres.Sql, locked: string | null = null)
     },
 
     async deleteMembership(userId, orgId) {
-      await sql`delete from memberships where user_id = ${userId} and org_id = ${orgId}`
-      // KNT-150. The invitations that the person made there and nobody answered yet go with them.
-      await sql`
+      // KNT-150. GitHub ended the membership. Under the lock of the org, in one transaction: the
+      // membership (from GitHub only: one from an invitation is Kentō's), the invitations that the person made there and nobody answered yet (they go with
+      // the person), and the row of `org_audit`, whose actor is GitHub.
+      await store.withOrgLock(orgId, async (inside) => inside.forgetMembership(userId, orgId))
+    },
+
+    async forgetMembership(userId, orgId) {
+      if (locked !== orgId) throw new Error('forgetMembership runs under the lock of its org')
+      let [gone] = await sql<{ role: OrgRole; login: string; githubId: number }[]>`
+        delete from memberships m using users u
+        where m.user_id = ${userId} and m.org_id = ${orgId} and u.id = m.user_id and m.source = 'github'
+        returning m.role, u.login, u.github_id::float8 as "githubId"`
+      if (!gone) return
+      let canceled = await sql<{ githubLogin: string }[]>`
         update invitations set status = 'canceled', responded_at = now()
-        where org_id = ${orgId} and inviter_id = ${userId} and status = 'pending'`
+        where org_id = ${orgId} and inviter_id = ${userId} and status = 'pending'
+        returning github_login as "githubLogin"`
+      let detail = canceled.length > 0 ? { canceledInvitations: canceled.map((r) => r.githubLogin).sort() } : null
+      await sql`
+        insert into org_audit (org_id, org_name, actor_id, actor_login, action, target_login, target_github_id, role_before, detail)
+        values (${orgId}, (select name from orgs where id = ${orgId}), null, ${GITHUB_ACTOR}, 'github_removed',
+          ${gone.login}, ${gone.githubId}, ${gone.role}, ${detail === null ? null : JSON.stringify(detail)}::jsonb)`
     },
   }
   return store

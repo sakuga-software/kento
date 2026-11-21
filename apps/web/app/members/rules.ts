@@ -74,13 +74,18 @@ const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 }
 /**
  * KNT-150. A person whom GitHub says, at that moment, is an admin of an account of an installation
  * of the org takes the owner role, whatever an owner from an invitation did: GitHub stays the last
- * authority over the org that its accounts installed.
+ * authority over the org that its accounts installed. The source of the membership does not count:
+ * a GitHub admin who joined from an invitation takes it too, and their membership becomes one from
+ * GitHub (an owner from an invitation then neither demotes nor removes them).
  */
 export function decideReclaim(actor: MemberFacts | null, githubAdmin: boolean): MemberRefusal | 'not_found' | null {
   if (!actor) return 'not_found'
-  if (actor.source !== 'github' || !githubAdmin) return 'not_github_admin'
-  return actor.role === 'owner' ? 'same_role' : null
+  if (!githubAdmin) return 'not_github_admin'
+  return actor.role === 'owner' && actor.source === 'github' ? 'same_role' : null
 }
+
+/** A person asks GitHub for the take-back of the owner role once in this time, per org. */
+export const RECLAIM_COOLDOWN_MS = 60 * 1000
 
 /** The roles that `actor` may set on `target` now, for the select of the screen. */
 export function rolesFor(actor: MemberFacts, target: MemberFacts, otherOwners: number): OrgRole[] {

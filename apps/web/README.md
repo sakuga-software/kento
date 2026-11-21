@@ -81,10 +81,12 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   under that lock (`app/members/rules.ts` decides, `app/members/store.ts` applies). Kentō never
   overrides the admin of GitHub: an owner from an invitation does not demote a person whom GitHub
   counts as an admin of an account of the org, and that person can always take the owner role
-  back ("Take the owner role", after Kentō asks GitHub again). Each change writes a row of
-  `org_audit` (actor, action, target, roles before and after), which stays when the org goes. At
-  most 50 pending invitations per org; the pending invitations of a person who leaves the org go
-  with them.
+  back ("Take the owner role", after Kentō asks GitHub again, at most once a minute per person and
+  org). A GitHub admin who joined from an invitation takes it too: their membership then becomes
+  one from GitHub. Each change writes a row of `org_audit` (actor, action, target, roles before and
+  after, and what else it did in `detail`), which stays when the org goes; so does an end of a
+  membership by GitHub (`github_removed`, actor `(GitHub)`). At most 50 pending invitations per
+  org; the pending invitations of a person who leaves the org, or whom GitHub removes, go with them.
 - Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
   sees them on `/invitations` (a banner of the frame leads there), and accepts (they become a member
   from an invitation; a person who is a member already keeps their membership as it is, its role
