@@ -20,6 +20,92 @@ Each entry says, when it applies:
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
 
+## 0.2.1
+
+### Patch Changes
+
+- [#39](https://github.com/sakuga-software/kento/pull/39) [`b3a6b8f`](https://github.com/sakuga-software/kento/commit/b3a6b8fed44bdeffe5ddf70d4ba1600858bd7444) - Add changesets for versions and changelogs (KNT-174). Each pull request carries a changeset, and a pull request "chore: version packages" sets the version and writes this changelog. Its merge tags `vX.Y.Z` and starts the release.
+
+- [#65](https://github.com/sakuga-software/kento/pull/65) [`ef5df54`](https://github.com/sakuga-software/kento/commit/ef5df543ed903a7b9f039b7d14205f240463d762) - **Screens**: `/costs` (KNT-188), for every member of the org: what the reviews and resolutions
+  cost over this month, last month, 30 or 90 days (`?period=`), against the period before, by UTC
+  day, repo, level and model, the most expensive runs, and for this month the projection and the
+  cap. "This month" is compared with the same days of the month before; once the day is past the end
+  of a shorter month, with the whole month before, and the label says so with its number of days
+  ("All of February, 28 days"). Charts with Chart.js 4.6.1 (MIT), served by the service itself like the other browser
+  modules; each chart has its table, and the page works without JavaScript. The tile "Cost of the
+  month" of the dashboard opens it. At startup the service checks that it can serve the charts; if
+  not, it logs `startup.assets_unavailable` and the screen shows its tables without charts. A request
+  for a file of a browser package that is no module (a UMD or CommonJS build, a `.d.ts`) answers 404
+  with a warning. No migration, no new variable.
+
+- [#40](https://github.com/sakuga-software/kento/pull/40) [`126e124`](https://github.com/sakuga-software/kento/commit/126e124ed2caa6802f2187226ba63565198a555d) - **Reviews** (KNT-154): a pull request that touches authentication, access control, CI, the supply
+  chain, secrets, webhooks, payments, a migration of data or the security of the web layer is a
+  critical change. Its review gets a checklist, its risk starts with "Critical change (…)", and it
+  scores 3/5 at most unless it names a file of the diff (or a route or a library of the change) and
+  a real role that it checked. A `lite` review of it scores 3 at most and advises a deeper one. The
+  runner computes it: no change of the protocol, and a service of the release before shows it as it
+  is.
+
+- [#60](https://github.com/sakuga-software/kento/pull/60) [`208034d`](https://github.com/sakuga-software/kento/commit/208034d0c8a8ae86209c161ac012502cd591e8e7) - **Screens**: `/feedback` (KNT-176) shows 25 answers a page, the newest first, with "Newer" and
+  "Older" links that keep the filters; it showed the 200 newest before, with a count. A link to a page
+  after the last one shows "No older feedback" and a link to the newest. KNT-195: a URL with an empty
+  filter, a value the screen cannot read or a broken cursor redirects (303) to the same screen with
+  only the values in use. The page reads the existing index `feedback_repo_created_at_idx`. No
+  migration.
+
+- [#57](https://github.com/sakuga-software/kento/pull/57) [`c5a8405`](https://github.com/sakuga-software/kento/commit/c5a84054ce9ed03769990b9c954953e89ec4903b) - The limits on the questions to GitHub of the forms hold for every process of the service, on the clock of Postgres (KNT-173). The take-back of the owner role asks GitHub once a minute per person and org; before, each process kept its own count. A person can try again 10 s after a failure of GitHub. A person moves or detaches at most 10 installations a minute, whatever the org. Two cases no longer answer 500 when they meet a move of an installation or a webhook of the same org: a check of the repositories, and a new installation of the account. They take the locks in the order of the move, and follow the installation to its new org.
+  
+  - **Migrations**: `0033_github_asks` adds the table `github_asks`, the counts of these questions. It only adds: the release before runs on it.
+
+- [#72](https://github.com/sakuga-software/kento/pull/72) [`ff54b66`](https://github.com/sakuga-software/kento/commit/ff54b6616195e7d4cc3a0fb9bef1f4538934a348) - A take-back of the owner role that is under way while a move deletes its org writes no count for the deleted org, and asks GitHub nothing (KNT-198). The person gets "not found".
+
+- [#74](https://github.com/sakuga-software/kento/pull/74) [`0ffa0d0`](https://github.com/sakuga-software/kento/commit/0ffa0d009f203ae245a647a95cf54c7e79cd36bf) - A take-back of the owner role by a person who is no longer a member of the org when it is counted is not counted, and asks GitHub nothing: the person gets "not found" (KNT-198).
+
+- [#67](https://github.com/sakuga-software/kento/pull/67) [`c2d9c34`](https://github.com/sakuga-software/kento/commit/c2d9c34e22f01e4f6981341236308e9a3214e6f2) - **Screens** (KNT-186): the lists of the selects, the menus "…", the confirmations and the menu of the
+  orgs open with a short fade (140 ms) and close faster (80 ms; the fade-out needs Chromium), and
+  nothing moves under "reduce motion". The menu of the orgs is now at least as wide as its box and ends
+  on its right edge; on a phone it hangs from the bar, the width of the screen, where it went past the
+  left edge before. A long name of org is cut with an ellipsis, in the box and in the menu, with its
+  full name as a tooltip, instead of pushing the page sideways.
+
+- [#56](https://github.com/sakuga-software/kento/pull/56) [`f1fd3a1`](https://github.com/sakuga-software/kento/commit/f1fd3a17a58d322029ff40b9650e76108656e09f) - **Dashboard** (KNT-190, KNT-193): "No cap", on the card Cost and in "At a glance", links to the
+  section "Costs and cap" of the settings for an owner or an admin (plain text for a member, who keeps
+  the hint "An admin sets it in Settings"). The section "To do" shows only when it has something in it.
+
+- [#45](https://github.com/sakuga-software/kento/pull/45) [`cbeac94`](https://github.com/sakuga-software/kento/commit/cbeac94162591f9d4948e081331bce3369c20dd7) - **Reviews** (KNT-152): a finding about a race, an order of events or a timeout gives the steps that
+  the runtime allows, each at a file and a line. Without two such steps, or without a number for a
+  claim that some work is too slow, it becomes a question.
+
+- [#33](https://github.com/sakuga-software/kento/pull/33) [`da56248`](https://github.com/sakuga-software/kento/commit/da5624893d9ac765a6833fe9ea4d72a57100f58f) - **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
+  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
+  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
+  the move joins; an installation on a personal account stays in an org of its own. Moving the last
+  installation deletes the empty org, after a confirmation by its name that lists its members and
+  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
+  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+
+- [#54](https://github.com/sakuga-software/kento/pull/54) [`68202ac`](https://github.com/sakuga-software/kento/commit/68202acfa33b4547068cd491c5686a3db3b838bb) - **Screens**: `/repos` (KNT-179, KNT-180, KNT-181, KNT-182, KNT-194): the table drops the columns
+  "Reviews by" and "Switch", their legend and the notes on the switch from review.yml. "Remove
+  review.yml" moves to the menu "…" of the row, for an admin at 20 reviews in a row with the file
+  still there, and the row says "review.yml can go". The dashboard item "still on review.yml" opens
+  the filter "To switch". The visibility of a repository is the icon left of its name (and in the
+  title of the name), and the last review fits on one line. No migration.
+
+- [#43](https://github.com/sakuga-software/kento/pull/43) [`70434d7`](https://github.com/sakuga-software/kento/commit/70434d780d6cf30d0411d45ccefa94357639d381) - **Reviews** (KNT-153): a `minor` finding whose whole fix says that no change is needed is dropped,
+  and a `minor` finding that only asks the author to confirm becomes a question. A `major` or
+  `critical` finding always stays. The block of the description lists the
+  questions under « Questions »: no thread, no block, no weight in the score.
+  **Order**: the service first, as always. The runner claims the feature `questions`, and the result
+  of a review can carry `questions`; a service of the release before refuses the claim of a runner of
+  this release.
+
+- [#42](https://github.com/sakuga-software/kento/pull/42) [`bc0bad4`](https://github.com/sakuga-software/kento/commit/bc0bad43b3b5501fa8ed2f36cf291ffb7d9ae743) - **Thread commands** (KNT-160): `reject #<id> <cause>` works in the thread of that finding (another
+  id is refused, and an unknown id gets « no finding has this id »); `resolve` in a thread gets an
+  answer at once that it goes in the conversation; a reject resolves the thread even when the ledger
+  does not know its id yet. A finding not found again is now `fixed` only when a push changed a line
+  within 10 lines of it (or its file, when GitHub gives no patch); a change elsewhere in the file
+  leaves it open. No migration.
+
 ## 0.2.0 (2026-11-21)
 
 The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
