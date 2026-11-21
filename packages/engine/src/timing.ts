@@ -64,7 +64,9 @@ export function splitUntracedTiming<A extends Answer>(answer: A, exists: (path: 
   const slow = new Set<Finding>();
   const candidates = answer.findings.filter((f) => {
     if (f.severity === 'critical') return false;
-    if (isRaceFinding(f)) return !isTraced(f.interleaving, exists);
+    // An answer with no `interleaving` field (a provider with no strict schema, an earlier release)
+    // says nothing of the steps: its race findings stay findings.
+    if (isRaceFinding(f)) return f.interleaving !== undefined && !isTraced(f.interleaving, exists);
     if (isUnmeasuredSlowClaim(f)) return slow.add(f), true;
     return false;
   });
