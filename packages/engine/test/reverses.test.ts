@@ -67,6 +67,12 @@ test('the net keeps `reverses` only for a fixed earlier finding, as its key', ()
   const openAnswer = answer(finding('Delete the old session only after a success', { reverses: 'E1', path: 'app/auth/other.ts' }));
   linkEarlier(openAnswer, [held('open')], () => 30);
   assert.equal(openAnswer.findings[0]!.reverses, undefined, 'an open finding has no fix to undo');
+  // The net links a finding to the same earlier finding that it reverses: it repeats that defect,
+  // and is no reversal (Kentō #66919e).
+  const both = answer(finding(earlierFinding.title, { reverses: 'E1' }));
+  linkEarlier(both, [held('fixed')], () => 30);
+  assert.equal(both.findings[0]!.follows, findingKey(earlierFinding));
+  assert.equal(both.findings[0]!.reverses, undefined);
   const stray = answer(finding('x', { reverses: 'E9', path: 'app/auth/other.ts' }));
   linkEarlier(stray, [held('fixed')], () => 30);
   assert.equal(stray.findings[0]!.reverses, undefined);

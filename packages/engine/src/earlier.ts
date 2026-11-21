@@ -179,7 +179,15 @@ export function linkEarlier<F extends Finding>(
     return e !== null && (e.status === 'dismissed' || e.status === 'wontfix') && e.changed === false;
   };
   const dropped = findings.filter(settledAway);
-  answer.findings = findings.filter((f) => !settledAway(f));
+  // KNT-167. A finding that follows an earlier finding repeats its defect: it does not reverse that
+  // finding's fix too, even when the net linked it after the link call (Kentō #66919e).
+  answer.findings = findings
+    .filter((f) => !settledAway(f))
+    .map((f) => {
+      if (!f.reverses || f.reverses !== f.follows) return f;
+      const { reverses: _same, ...rest } = f;
+      return rest as F;
+    });
   return { dropped, byModel, byNet };
 }
 
