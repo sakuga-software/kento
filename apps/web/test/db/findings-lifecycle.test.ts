@@ -455,6 +455,43 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
   })
 
+  it('KNT-192: an open finding that two reviews in a row no longer see, while pushes change its file far from its line, becomes stale with a note', async () => {
+    let long = [...SUM_V1, ...Array.from({ length: 50 }, (_, i) => `// line ${i + 4}`)]
+    await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+    let [thread] = fake.botThreads()
+    let far = (n: number) => ({ filename: 'src/sum.ts', patch: `@@ -${n},1 +${n},1 @@\n-// line ${n}\n+// line ${n}, edited` })
+
+    // One review without it: the model can miss a finding once. It stays open, with no note.
+    await push(HEADS[1]!, [], [far(40)], [far(40)])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+    assert.equal(fake.repliesTo(thread!.id).length, 0)
+
+    // The second review in a row without it: stale, and a note that resolve can confirm. The thread stays open.
+    await push(HEADS[2]!, [], [far(45)], [far(40)])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
+    let replies = fake.repliesTo(thread!.id)
+    assert.equal(replies.length, 1)
+    assert.match(replies[0]!.body, /^Kentō did not find this finding again in its last 2 reviews, up to commit `333333333`, and pushes changed its file since/)
+    assert.match(replies[0]!.body, /`@kento-review resolve` reads this thread against the code and can confirm it\./)
+    assert.ok(!fake.state.resolved.has(thread!.id), 'the thread stays open')
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'stale'])
+
+    // The next review posts no second note.
+    await push(HEADS[3]!, [], [far(46)], [far(40)])
+    assert.equal(fake.repliesTo(thread!.id).length, 1)
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
+  })
+
+  it('KNT-192: a finding whose file did not change stays open, however many reviews miss it', async () => {
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1), DIVIDES], ['src/sum.ts', 'src/div.ts'])
+    await push(HEADS[1]!, [DIVIDES], ['src/div.ts'], ['src/div.ts'])
+    await push(HEADS[2]!, [DIVIDES], ['src/div.ts'], ['src/div.ts'])
+    assert.deepEqual((await findingRows()).map((r) => [r.title, r.status]), [
+      ['Division by zero', 'open'],
+      ['The sum subtracts', 'open'],
+    ])
+  })
+
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {
     const twice = ['function a(x: number) {', '  return 1 / x;', '}', 'function b(y: number) {', '  return 2 / y;', '}']
     const moved = ['// Two divisions.', '', ...twice]

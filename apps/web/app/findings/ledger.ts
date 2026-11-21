@@ -51,7 +51,13 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
         select id, fingerprint, key, rule_id as "ruleId", path, line, title, severity, category, confidence, status,
           status as "loadedStatus",
           status_reason as "statusReason", last_seen_sha as "lastSeenSha", github_comment_id::float8 as "githubCommentId",
-          github_thread_id as "githubThreadId"
+          github_thread_id as "githubThreadId",
+          -- KNT-192. The reviews that read the code since the last one that found it.
+          (select count(*) from reviews r
+            where r.repo_id = findings.repo_id and r.pr_number = findings.pr_number and r.github_review_id is not null
+              and r.result -> 'reusedFrom' is null
+              and r.created_at > coalesce((select lr.created_at from reviews lr where lr.id = findings.last_review_id), findings.created_at)
+          )::int as "unseenReviews"
         from findings
         where repo_id = ${input.repoId} and pr_number = ${input.prNumber}
         order by created_at, id`

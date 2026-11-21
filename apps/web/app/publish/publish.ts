@@ -294,6 +294,10 @@ export async function publishReview(
   // only once the review is on GitHub, so that a review that fails to post closes nothing.
   let fixed: StoredFinding[] = []
   let toClose: BotThread[] = []
+  // KNT-192. Open findings that UNSEEN_REVIEWS reviews in a row did not find, while pushes changed
+  // their file away from their line: `stale`, and a note in their thread.
+  let unseen: StoredFinding[] = []
+  let toNote: BotThread[] = []
   let gone = 0
   // An error on one finding (the compare API) leaves it open and never stops the review.
   for (let s of unmatched) {
@@ -306,6 +310,9 @@ export async function publishReview(
       if (changed) {
         fixed.push(s)
         if (thread) toClose.push(thread)
+      } else if (changed === false && s.status === 'open' && (s.unseenReviews ?? 0) + 1 >= UNSEEN_REVIEWS && (await changedSince(s.lastSeenSha || undefined, s.path))) {
+        unseen.push(s)
+        if (thread) toNote.push(thread)
       }
     } catch (error) {
       warn('publish.thread_failed', { thread: thread?.id ?? null, finding: s.id, error: String(error) })
@@ -401,7 +408,7 @@ export async function publishReview(
       warn('publish.file_comment_refused', { path, error: String(error) })
     }
   }
-  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted))
+  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted, unseen))
 
   // The caller marks the review as posted. A failure there must not skip the description, the
   // label and the check of a review that is already on GitHub.
@@ -427,6 +434,12 @@ export async function publishReview(
       }
       resolved++
     })
+  }
+
+  // KNT-192. The note in the thread of a finding that the last reviews no longer see. The thread
+  // stays open: `resolve` reads it against the code and can confirm the fix.
+  for (let t of toNote) {
+    await step('unseen', () => github.rest('POST', `${repo}/pulls/${pr}/comments/${t.commentId}/replies`, { body: unseenReply(head) }))
   }
 
   // REV-99. A finding that follows an earlier one is answered in the thread of that one, opened again
@@ -781,6 +794,8 @@ export function ledgerEntries(
   head: string,
   /** The findings that a 👎 dismissed before this review, with the login of the person. */
   reacted: ReadonlyMap<StoredFinding, string> = new Map(),
+  /** KNT-192. The open findings that the last reviews no longer see: they become `stale`. */
+  unseen: readonly StoredFinding[] = [],
 ): LedgerEntry[] {
   let entries: LedgerEntry[] = []
   let opened: FindingEventDraft = { type: 'opened', actor: KENTO_ACTOR }
@@ -839,8 +854,14 @@ export function ledgerEntries(
       events: [...(id === null ? [opened] : []), { type: 'fixed', actor: KENTO_ACTOR }],
     })
   }
+  let unseenSet = new Set(unseen)
+  for (let s of unseen) {
+    if (fixedSet.has(s)) continue
+    let { id, ...values } = s
+    entries.push({ id, values: { ...values, status: 'stale' }, events: [...(id === null ? [opened] : []), { type: 'stale', actor: KENTO_ACTOR }] })
+  }
   for (let s of unmatched) {
-    if (fixedSet.has(s) || (s.id !== null && !reacted.has(s))) continue
+    if (fixedSet.has(s) || unseenSet.has(s) || (s.id !== null && !reacted.has(s))) continue
     let { id, ...values } = s
     entries.push({ id, values, events: [...(id === null ? [opened] : []), ...byReaction(s)] })
   }
@@ -875,6 +896,21 @@ function goneNote(gone: number, base: string, icons: Icons): string {
 
 // GitHub lists at most this many files in a comparison.
 const COMPARE_MAX_FILES = 300
+
+/**
+ * KNT-192. The reviews in a row that must miss an open finding, while pushes change its file away
+ * from its line, before Kentō says that it no longer sees it. One miss can be the model.
+ */
+export const UNSEEN_REVIEWS = 2
+
+/** KNT-192. The note in the thread of a finding that the last reviews no longer see. */
+export function unseenReply(head: string): string {
+  return (
+    `Kentō did not find this finding again in its last ${UNSEEN_REVIEWS} reviews, up to commit \`${head.slice(0, 9)}\`, ` +
+    'and pushes changed its file since, farther from its line than Kentō checks for a fix. It may be fixed elsewhere in the file. ' +
+    `\`${mention('resolve')}\` reads this thread against the code and can confirm it. The thread stays open until then.`
+  )
+}
 
 /**
  * KNT-160. A finding not found again is fixed only when the push changed a line this near to its

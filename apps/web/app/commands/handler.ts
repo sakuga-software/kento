@@ -388,7 +388,8 @@ function targetProblemText(target: Exclude<RejectTarget, { kind: 'found' }>, com
 export function closedText(key: string, status: string): string {
   // What the publisher checked: not found again, and a change of its file (near its line when GitHub
   // gave the patch). Not that the push fixed it.
-  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its file' : 'it no longer applies to this PR (stale)'
+  // `stale`: the pull request closed, or the last reviews no longer see it (KNT-192).
+  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its file' : 'Kentō no longer sees it on this PR (stale)'
   return `The finding \`#${key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`
 }
 
