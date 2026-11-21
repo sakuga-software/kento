@@ -1,3 +1,4 @@
+import { usageLimitOfReason } from '@kento-review/engine/providers'
 import type postgres from 'postgres'
 
 import {
@@ -604,7 +605,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         if (job.state !== 'running') return 'not_running' as const
 
         if (result.outcome === 'failed') {
-          let refused = result.providerStatus === 401 || result.providerStatus === 403
+          // KNT-161. A usage limit (a 403 "key limit" of a provider among them) is not a wrong key.
+          let refused = (result.providerStatus === 401 || result.providerStatus === 403) && !usageLimitOfReason(result.reason)
           let reason = result.reason
           if (refused && job.providerId) {
             // The provider refused its key: the state of the provider says it on the screen, with a

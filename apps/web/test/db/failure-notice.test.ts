@@ -9,6 +9,7 @@ import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createInstallationTokenMinter, readPrivateKey } from '../../app/github/installation-token.ts'
 import { headSha } from '../../app/github/test-helpers.ts'
+import { checkName } from '../../app/publish/publish.ts'
 import { createPublisher } from '../../app/publish/publisher.ts'
 import { BOT, createFakeGitHub, type FakeGitHub } from '../fake-github.ts'
 import { createTestDatabase, seedEnabledRepo } from './helpers.ts'
@@ -87,7 +88,40 @@ describe('comment of a failed job', () => {
     assert.ok(body.includes(`(https://review.test/repos/${repoId}/config)`), body)
     assert.ok(body.endsWith(`<!-- kento:failure ${id} -->`), body)
     assert.notEqual(await noticedAt(id), null)
-    assert.deepEqual(fake.state.tokens.at(-1)!.permissions, { pull_requests: 'write', issues: 'write' })
+    assert.ok(fake.state.tokens.some((t) => JSON.stringify(t.permissions) === JSON.stringify({ pull_requests: 'write', issues: 'write' })))
+    // KNT-161. The head had no check of Kentō: the failed review posts one, never `success`.
+    assert.deepEqual(
+      fake.state.checkRuns.map((c) => [c.head_sha, c.conclusion, c.output.title]),
+      [[HEAD, 'failure', 'The lite review failed']],
+    )
+  })
+
+  it('11. KNT-161: a review that failed on a usage limit says that it did not happen, with the reset time, and its check asks for an action', async () => {
+    let reason = 'no model gave a usable answer: Anthropic refused the call on a usage limit (400, until 2026-12-01T00:00:00Z): You have reached your specified API usage limits.'
+    fake.state.commentAuthors.set(9003, 'octocat')
+    await failedJob({ level: 'balanced', reason, commentId: 9003 })
+    await publisher().publishPending()
+    let body = failureComments()[0]!.body
+    assert.ok(body.startsWith(`**Kentō · review did not happen** at commit \`${HEAD.slice(0, 9)}\``), body)
+    assert.ok(body.includes('@octocat The `balanced` review of this commit did not happen: the model provider refused the call on its usage limit until 2026-12-01 00:00 UTC.'), body)
+    assert.ok(body.includes('To run it again after that time: `@kento-review balanced`.'), body)
+    assert.ok(!body.includes('review failed'), body)
+    let [check] = fake.state.checkRuns
+    assert.equal(fake.state.checkRuns.length, 1)
+    assert.equal(check!.head_sha, HEAD)
+    assert.equal(check!.conclusion, 'action_required')
+    assert.equal(check!.output.title, 'Usage limit of the provider: no review, retry after 2026-12-01 00:00 UTC')
+    assert.ok(check!.output.summary.includes('did not happen'), check!.output.summary)
+    assert.ok(!check!.output.summary.includes('@octocat'), 'the check mentions nobody')
+  })
+
+  it('12. KNT-161: a head that already has a check of Kentō keeps it, and a failed resolve posts no check', async () => {
+    fake.state.checkRuns.push({ name: checkName(), head_sha: HEAD, conclusion: 'success', output: { title: 'Confidence score: 5/5', summary: '' }, token: 't' })
+    await failedJob({ level: 'heavy' })
+    await failedJob({ kind: 'resolve', level: 'lite', reason: 'lease expired 2 times' })
+    await publisher().publishPending()
+    assert.equal(failureComments().length, 2)
+    assert.deepEqual(fake.state.checkRuns.map((c) => c.conclusion), ['success'])
   })
 
   it('2. a second pass of the publisher posts nothing more', async () => {

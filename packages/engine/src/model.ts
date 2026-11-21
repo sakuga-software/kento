@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ANSWER_SCHEMA, withPatch, type Answer, type Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
-import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type MessagePart, type Schema } from './providers.ts';
+import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, UsageLimitError, usageLimited, type MessagePart, type Schema } from './providers.ts';
 import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 
 export { OPENROUTER_BASE_URL, type MessagePart, type Schema } from './providers.ts';
@@ -92,11 +92,13 @@ export async function askJson<T>(
       start();
       lastError = error;
       (client.log ?? stderr)(`attempt ${attempt + 1} with ${model} failed: ${error}`);
-      // A refused key fails with every model: the next one would be refused too.
-      if (refusedKey(error)) break;
+      // A refused key fails with every model: the next one would be refused too. KNT-161: so does a
+      // usage limit of the provider.
+      if (refusedKey(error) || usageLimited(error)) break;
     }
   }
   const status = lastError instanceof ProviderError ? lastError.status : null;
+  if (usageLimited(lastError)) throw new UsageLimitError(`no model gave a usable answer: ${lastError.message}`, status, lastError.resetAt);
   throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
 }
 

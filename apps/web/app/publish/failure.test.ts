@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { failureComment, failureMarker, sanitizeReason, type FailedJob } from './failure.ts'
+import { failedCheck, failureComment, failureMarker, sanitizeReason, type FailedJob } from './failure.ts'
 
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
 const NOT_FOUND =
@@ -97,5 +97,36 @@ describe('failureComment', () => {
 
   it('ends with the marker of the job', () => {
     assert.ok(failureComment(job()).endsWith('<!-- kento:failure 00000000-0000-4000-8000-000000000001 -->'))
+  })
+})
+
+describe('a usage limit of the provider (KNT-161)', () => {
+  const LIMIT = 'no model gave a usable answer: OpenRouter refused the call on a usage limit (429, until 2026-11-21T10:02:00Z): Rate limit exceeded'
+
+  it('says that the review did not happen, when the limit ends, and how to run it again', () => {
+    let body = failureComment(job({ failureReason: LIMIT, level: 'heavy' }))
+    assert.ok(body.startsWith(`**Kentō · review did not happen** at commit \`${HEAD.slice(0, 9)}\``), body)
+    assert.ok(body.includes('the model provider refused the call on its usage limit until 2026-11-21 10:02 UTC.'), body)
+    assert.ok(body.includes('To run it again after that time: `@kento-review heavy`.'), body)
+    assert.ok(body.includes('set a fallback provider in the [config of the repo]'), body)
+  })
+
+  it('without a reset time, says no time, and the check asks for an action', () => {
+    let reason = 'no model gave a usable answer: Anthropic refused the call on a usage limit (402): Insufficient credits'
+    let body = failureComment(job({ failureReason: reason, kind: 'resolve' }))
+    assert.ok(body.includes('thread resolution did not happen'), body)
+    assert.ok(body.includes('usage limit. No model read the code'), body)
+    assert.ok(body.includes('To run it again: `@kento-review resolve lite`.'), body)
+    assert.deepEqual(
+      { ...failedCheck(job({ failureReason: reason })), summary: '' },
+      { conclusion: 'action_required', title: 'Usage limit of the provider: no review', summary: '' },
+    )
+  })
+
+  it('another failure gives a failed check, never a success', () => {
+    let check = failedCheck(job())
+    assert.equal(check.conclusion, 'failure')
+    assert.equal(check.title, 'The lite review failed')
+    assert.ok(!check.summary.includes('kento:failure'))
   })
 })

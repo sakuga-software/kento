@@ -11,7 +11,7 @@
  */
 export { fileChangedSince } from './history.ts';
 export { levelConfig, providerLevelConfig, type LevelConfig } from './levels.ts';
-export { ProviderError } from './providers.ts';
+export { ProviderError, UsageLimitError, usageLimited } from './providers.ts';
 export { findingKey, type Answer, type Finding, type Usage } from './findings.ts';
 export { askJson } from './model.ts';
 export { RESOLVE_SCHEMA, resolvePack, type OpenThread, type ThreadVerdict } from './resolve.ts';

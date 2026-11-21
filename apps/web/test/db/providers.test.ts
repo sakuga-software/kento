@@ -483,6 +483,21 @@ describe('providers and their encrypted keys', () => {
       assert.equal(provider.id, state!.id)
     })
 
+    it('KNT-161. a usage limit, even as a 403, does not mark the key refused, and the job keeps the reason of the engine', async () => {
+      await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Sakuga OpenRouter', baseUrl: null, apiKey: 'sk-or-v1-test-only-key', models: {} })
+      let jobId = await queueJob()
+      let token = await runner({ trusted: true })
+      let { job } = await claim(token)
+      let reason = 'no model gave a usable answer: OpenRouter refused the call on a usage limit (403, until 2026-12-01T00:00:00Z): Key limit exceeded'
+      let response = await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'failed', attempt: job!.attempt, reason, providerStatus: 403 })
+      assert.equal(response.status, 204)
+      let [state] = await store.list(orgId)
+      assert.equal(state!.refusedAt, null, 'the key is not shown as refused')
+      let [row] = await database.sql<{ failure_reason: string; state: string }[]>`select failure_reason, state from jobs where id = ${jobId}`
+      assert.equal(row!.state, 'failed')
+      assert.equal(row!.failure_reason, reason)
+    })
+
     it('a runner-held key that its provider refuses: the provider shows the refusal, and the next review clears it (REV-31)', async () => {
       let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Runner Anthropic', baseUrl: null, apiKey: null, models: {} })
       assert.equal(provider.keySetAt, null)
