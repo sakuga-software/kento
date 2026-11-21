@@ -316,7 +316,7 @@ export function diagram(answer: Answer): string | null {
  */
 export function suggestionRange(finding: Finding, hunks: HunkLines): [number, number] | null {
   // KNT-159. A placeholder would replace the lines of the PR with the word: no suggestion.
-  if (!finding.suggestion.trim() || isPlaceholder(finding.suggestion)) return null;
+  if (!finding.suggestion.trim() || isPlaceholder(finding.suggestion, true)) return null;
   const shown = hunks.get(finding.path.replace(/^\/+/, '')) ?? new Set<number>();
   const start = Math.min(finding.start_line || finding.line, finding.line);
   if (finding.line - start > 30) return null;
@@ -334,14 +334,21 @@ export const MAX_PATCH_LINES = 40;
  */
 const PLACEHOLDERS = new Set(['follows', 'none', 'null', 'n/a', 'nothing', 'no patch', 'no suggestion', 'no fix', 'not applicable', 'tbd', 'todo', '-', '...', '…']);
 
+/**
+ * The placeholders that are never a line of code. A suggestion replaces whole lines, and `null`,
+ * `none`, `-` or `...` can be such a line (`...` is a statement in Python): only these words drop it.
+ */
+const NEVER_CODE = new Set(['follows', 'n/a', 'no patch', 'no suggestion', 'no fix', 'not applicable']);
+
 /** The quotes around a placeholder, and the dot after it. */
 const QUOTES = `"'\``;
 
 /**
- * KNT-159. Whether a text is only a placeholder word, or empty after trim. No regular expression on
- * the ends: the text comes from the model, and a run of quotes would make one slow.
+ * KNT-159. Whether a text is only a placeholder word, or empty after trim. `code`: the text replaces
+ * lines of code (a suggestion), so only a word that is never code counts. No regular expression on the
+ * ends: the text comes from the model, and a run of quotes would make one slow.
  */
-export function isPlaceholder(text: string): boolean {
+export function isPlaceholder(text: string, code = false): boolean {
   const trimmed = text.trim();
   // The longest placeholder has 14 characters: a longer text is code or a sentence.
   if (trimmed.length > 40) return false;
@@ -350,7 +357,9 @@ export function isPlaceholder(text: string): boolean {
   while (start < end && QUOTES.includes(trimmed[start]!)) start++;
   while (end > start && (QUOTES.includes(trimmed[end - 1]!) || trimmed[end - 1] === '.')) end--;
   const word = trimmed.slice(start, end).trim().toLowerCase();
-  return word === '' || PLACEHOLDERS.has(word) || /^e\d+$/.test(word);
+  // Only quotes or dots: a placeholder, but a line of code (`...`) for a suggestion.
+  if (word === '') return !code || trimmed === '';
+  return (code ? NEVER_CODE : PLACEHOLDERS).has(word) || /^e\d+$/.test(word);
 }
 
 /** The lines of a git diff header, before the first hunk of a file. */

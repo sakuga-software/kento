@@ -97,8 +97,10 @@ test('a patch shows only when it reads as a unified diff (KNT-159)', () => {
 test('a placeholder in `suggestion` gives no applicable suggestion (KNT-159)', () => {
   const hunks: HunkLines = new Map([['src/a.ts', new Set([8, 9, 10])]]);
   const at = (suggestion: string) => suggestionRange(finding({ path: 'src/a.ts', start_line: 10, line: 10, suggestion }), hunks);
-  for (const text of ['follows', 'None', ' n/a ', '"follows"', 'E2', 'null.']) assert.equal(at(text), null, text);
+  for (const text of ['follows', ' n/a ', '"follows"', 'E2', 'Not applicable.']) assert.equal(at(text), null, text);
   assert.deepEqual(at('  return a + b;'), [10, 10]);
+  // A word that can be a line of code stays a suggestion: `...` is a statement in Python.
+  for (const text of ['    null', 'None', '  -', '    ...']) assert.deepEqual(at(text), [10, 10], text);
   assert.deepEqual(at('  none: true,'), [10, 10], 'code that holds the word stays');
   assert.equal(isPlaceholder('follows'), true);
   assert.equal(isPlaceholder('return null;'), false);
