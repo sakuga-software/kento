@@ -67,6 +67,11 @@ export interface DashboardDependencies {
   readPullRequest: ReadPullRequest | null
   /** KENTO_PROVIDER_API_KEY is set: the list "Getting started" counts it as a provider (REV-26). */
   serviceKey?: boolean
+  /**
+   * KNT-191. The asset server can serve the charts (`chartsAvailable()` of app/assets.ts, the
+   * default). False: the precision by repo shows its list only.
+   */
+  charts?: boolean
 }
 
 /** The section "Providers and keys" of the settings (REV-11). */

@@ -9,7 +9,9 @@ import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { RetryOutcome } from '../../dashboard/store.ts'
 import { errorMessage, log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
-import { DASHBOARD_NOTICES, DashboardPage, type DashboardNotice } from '../dashboard.tsx'
+import { chartsAvailable } from '../../assets.ts'
+import { PRECISION_DAYS } from '../../findings/precision.ts'
+import { DASHBOARD_NOTICES, DashboardPage, readPrecisionWindow, type DashboardNotice } from '../dashboard.tsx'
 import { forbidden, installationUrl, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
 
 export function dashboardActions(kit: UiKit) {
@@ -20,9 +22,18 @@ export function dashboardActions(kit: UiKit) {
       let page = kit.page(context)
       let dashboard = deps.dashboard
       if (!dashboard) return context.render(<PlaceholderPage frame={page} section="dashboard" />)
+      // KNT-191, KNT-195: the window of the precision, `?precision=7`; 30 days has no query, and any
+      // other value goes back to the URL without it.
+      let asked = context.url.searchParams.get('precision')
+      let precisionDays = readPrecisionWindow(asked)
+      if (asked !== null && precisionDays === PRECISION_DAYS) {
+        let url = new URL(context.url)
+        url.searchParams.delete('precision')
+        return redirect(`${url.pathname}${url.search}`)
+      }
       let [screen, precision] = await Promise.all([
         dashboard.store.screen(signed.membership.org.id),
-        deps.findings?.store.precision(signed.membership.org.id) ?? null,
+        deps.findings?.store.precision(signed.membership.org.id, precisionDays) ?? null,
       ])
       let notice = context.url.searchParams.get('notice')
       // The steps of "Getting started" open the first installation of the org.
@@ -36,6 +47,8 @@ export function dashboardActions(kit: UiKit) {
           serviceKey={dashboard.serviceKey ?? false}
           installationUrl={firstInstallation ? installationUrl(dashboard.githubUrl, firstInstallation) : null}
           precision={precision}
+          precisionDays={precisionDays}
+          charts={dashboard.charts ?? chartsAvailable()}
         />,
       )
     }),

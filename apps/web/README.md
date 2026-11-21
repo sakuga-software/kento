@@ -41,10 +41,14 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   reads it. What the reviews and resolutions of the org cost over a period (`?period=` this month,
   the default; `last-month`, `30d`, `90d`), against the period before: by UTC day, repo, level and
   model, the most expensive runs, and for this month the projection and the cap. Each breakdown is a
-  table of the server; in the browser `app/costs/public/cost-chart.tsx` draws its chart with
+  table of the server; in the browser `app/ui/public/chart.tsx` draws its chart with
   [Chart.js](https://www.chartjs.org) 4 (MIT; served by the asset server, from the pnpm store, with
   its `@kurkle/color`) and folds the table under "Show the data". The tile "Cost of the month" of the
   dashboard opens it.
+- The precision by repo of the dashboard (KNT-191): over 30 days or 7 (`?precision=7`), the same
+  chart component draws it above its list (`app/ui/public/chart.tsx`, from the `data-value` of each
+  row). `public/assets/dashboard.js` keeps a block with `data-keep` while that key of its numbers is
+  the same, so the chart survives the read of the page every 10 s.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
