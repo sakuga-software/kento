@@ -374,10 +374,14 @@ export function finishReview<F extends Finding>(
   const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
   for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
-  // REV-95. A finding near a rejected finding, on a file that did not change since the rejection. It
-  // goes before the score: a rejected defect does not lower it.
-  const rejectedAway = dropRejected(answer, rejected, (f) => anchor(f, lines));
-  for (const f of rejectedAway) log(`finding dropped, a person rejected it and its file did not change: ${f.path}: ${f.title}`);
+  // REV-95. A finding of a rejected defect, on a file that did not change since the rejection, or
+  // (KNT-197) that changed away from it. It goes before the score: a rejected defect does not lower it.
+  const rejectedDrops = dropRejected(answer, rejected, (f) => anchor(f, lines));
+  const rejectedAway = rejectedDrops.map((d) => d.finding);
+  for (const { finding: f, why } of rejectedDrops) {
+    const reason = why === 'unchanged' ? 'its file did not change' : 'its file did not change near it';
+    log(`finding dropped, a person rejected it and ${reason}: ${f.path}: ${f.title}`);
+  }
   // REV-99. A whole review (no incremental plan) whose findings all continue earlier findings keeps
   // at least the score of the last review at this level, when that head is in the history of this
   // one: the defect was counted then. A new defect, or a more severe one, lowers it as before.
