@@ -443,6 +443,8 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html.replace(/ d="[^"]*"/g, ''), /\bM[0-9]\b/, 'no milestone of the team on screen, the paths of the icons aside (REV-43)')
     assert.doesNotMatch(html, / — /, 'no em dash between two parts of a sentence (REV-43)')
     assert.match(html, /still on\s*<code>review.yml<\/code>/)
+    // KNT-179: its link opens the filter of the repos that still hold review.yml.
+    assert.match(html, /<a href="\/repos\?filter=switching" class="button">\s*See the repos/)
     assert.match(html, /src="\/assets\/dashboard.js\?v=1.2.3"/)
   })
 

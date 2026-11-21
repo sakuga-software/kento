@@ -393,3 +393,14 @@ test('a review may carry the answered threads that the model called refuted, wit
   assert.equal(parseResultRequest(done(Array.from({ length: 21 }, (_, i) => `PRRT_${i}`))).ok, false);
   assert.equal(parseResultRequest(done('PRRT_kwDO71')).ok, false);
 });
+
+test('a review may carry its questions, with the feature questions (KNT-153)', () => {
+  assert.ok(FEATURES.includes('questions'));
+  const done = (questions: unknown) => ({ outcome: 'done', attempt: 1, review: { ...review(), questions } });
+  assert.equal(parseResultRequest(done([{ path: 'a.ts', question: 'Does every caller still get a 200?' }])).ok, true);
+  assert.equal(parseResultRequest(done([])).ok, true);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: review() }).ok, true, 'no question: no key');
+  assert.equal(parseResultRequest(done([{ path: 'a.ts' }])).ok, false);
+  assert.equal(parseResultRequest(done([{ path: 'a.ts', question: 'x'.repeat(2001) }])).ok, false);
+  assert.equal(parseResultRequest(done(Array.from({ length: 21 }, () => ({ path: '', question: 'Q?' })))).ok, false);
+});

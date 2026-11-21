@@ -549,6 +549,10 @@ describe('publishReview', () => {
       score: 2,
     })
     let answer = answerOf(review)
+    // KNT-153. A review of an earlier runner has no question; one of this release carries them.
+    assert.deepEqual(answer.questions, [])
+    let question = { path: 'src/sum.ts', question: 'Is the order of the sum a product choice?' }
+    assert.deepEqual(answerOf({ ...review, questions: [question] }).questions, [question])
     let usage = usageOf(review)
     let action = reviewBody(answer, lines, 'lite', usage)
     let poster = { by: 'Kentō', handle: '@kento-review', icons: 'emoji' as const }
