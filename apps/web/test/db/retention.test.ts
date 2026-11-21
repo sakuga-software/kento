@@ -136,7 +136,7 @@ describe('purge of the old jobs (REV-38)', () => {
       )::int as n`
     assert.equal(orphans!.n, 0)
 
-    // The Repos screen reads the same streak, reset and last review as before.
+    // The Repos screen reads the same streak and last review as before.
     assert.deepEqual((await createReposStore(database.sql).list(orgId)).rows, screenBefore)
 
     // A second run finds nothing more.
