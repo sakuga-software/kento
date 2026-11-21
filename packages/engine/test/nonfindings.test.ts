@@ -59,10 +59,18 @@ test('a fix that asks for a change stays a fix', () => {
 test('a finding that asks the author to confirm', () => {
   assert.equal(asksToConfirm(finding('Please confirm that every other caller of the route still gets a 200.')), true);
   assert.equal(asksToConfirm(finding('Confirm that the product wants a sort by name.')), true);
-  assert.equal(asksToConfirm(finding('Verify that `list` is the only caller.')), true);
+  assert.equal(asksToConfirm(finding('Confirm with the product that a sort by name is wanted.')), true);
   assert.equal(asksToConfirm(finding('Sort by date.', { title: 'Is this sort intended?' })), true);
   assert.equal(asksToConfirm(finding('Check the id before the delete.')), false, 'a fix that names the change');
   assert.equal(asksToConfirm(finding('Add a test that confirms the order.')), false);
+  // A fix that starts with "check", "verify" or "make sure" is a change to make.
+  assert.equal(asksToConfirm(finding('Check that the user owns the repo before the delete.')), false);
+  assert.equal(asksToConfirm(finding('Verify that the id is not null before the query.')), false);
+  assert.equal(asksToConfirm(finding('Make sure that the lock is held.')), false);
+  // A major or critical finding, or one with a suggestion or a patch, keeps its thread.
+  assert.equal(asksToConfirm(finding('Please verify that the id is not null before the query.', { severity: 'major' })), false);
+  assert.equal(asksToConfirm(finding('Please confirm the order.', { suggestion: '  return sortByDate(items);\n' })), false);
+  assert.equal(asksToConfirm(finding('Please confirm the order.', { patch: '--- a/x\n+++ b/x' })), false);
 });
 
 const answer = (findings: Finding[], extra: Partial<Answer> = {}): Answer => ({

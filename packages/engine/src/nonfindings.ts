@@ -21,10 +21,14 @@ export const NO_CHANGE: readonly RegExp[] = [
   /^\W*accept (the|this) (current )?(behaviou?r|risk|trade-?off|limitation)\W*$/i,
 ];
 
-/** A finding that asks the author to check or to confirm, and names no wrong result. */
+/**
+ * A finding that asks the author to confirm, and names no wrong result. "Check that the user owns
+ * the repo before the delete" is a fix, not a question: a fix that starts with "check", "verify" or
+ * "make sure" does not count, only one that asks to confirm or says "please".
+ */
 export const ASKS: readonly RegExp[] = [
   /\bplease (confirm|verify|check|double-check|make sure)\b/i,
-  /^\W*(confirm|verify|double-check|make sure|check) (that|whether|if|with)\b/i,
+  /^\W*confirm (that|whether|with)\b/i,
   /\b(is|was) (this|that)\b[^.?]*\b(intended|intentional|deliberate|on purpose)\?/i,
   /\bconfirm (with|that) (the )?(product|ticket|author|team)\b/i,
 ];
@@ -39,8 +43,13 @@ export function saysNoChange(finding: Pick<Finding, 'fix'>): boolean {
   return oneSentence && NO_CHANGE.some((pattern) => pattern.test(fix));
 }
 
-/** Whether a finding asks the author to confirm or to check, in its title or its fix. */
-export function asksToConfirm(finding: Pick<Finding, 'title' | 'fix'>): boolean {
+/**
+ * Whether a finding asks the author to confirm, in its title or its fix. Only a `minor` finding with
+ * no suggestion and no patch counts: a `major` or `critical` finding that asks to confirm keeps its
+ * thread and its block, since its fix can still be a real change.
+ */
+export function asksToConfirm(finding: Pick<Finding, 'title' | 'fix' | 'severity' | 'suggestion' | 'patch'>): boolean {
+  if (finding.severity !== 'minor' || (finding.suggestion ?? '').trim() || (finding.patch ?? '').trim()) return false;
   return [finding.title ?? '', (finding.fix ?? '').trim()].some((text) => ASKS.some((pattern) => pattern.test(text)));
 }
 

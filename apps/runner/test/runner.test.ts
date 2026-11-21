@@ -953,7 +953,7 @@ test('the patch of a finding without a suggestion goes to the service (REV-104)'
 
 test('the questions of a review go to the service, and a finding that only asks to confirm becomes one (KNT-153)', async () => {
   const { api, results } = fakeApi();
-  const ask = { ...answer().findings[0]!, severity: 'minor', title: 'Other callers', fix: 'Please confirm that every other caller of `sum` still passes two numbers.' };
+  const ask = { ...answer().findings[0]!, severity: 'minor', suggestion: '', title: 'Other callers', fix: 'Please confirm that every other caller of `sum` still passes two numbers.' };
   const model = (async (_url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
     const content = { ...answer(), findings: [ask], questions: [{ path: 'sum.ts', question: 'Is the subtraction a product choice?' }] };
