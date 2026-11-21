@@ -507,6 +507,48 @@ describe('providers and their encrypted keys', () => {
       assert.equal(after!.refusedAt, null, 'the key is still not shown as refused')
     })
 
+    it('KNT-161. a short rate limit on every model queues the job again until its reset, then fails it with the reason', async () => {
+      await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Sakuga OpenRouter', baseUrl: null, apiKey: 'sk-or-v1-test-only-key', models: {} })
+      let jobId = await queueJob()
+      let token = await runner({ trusted: true })
+      let first = await claim(token)
+      assert.equal(first.job!.id, jobId)
+      let resetAt = new Date(Math.ceil((Date.now() + 90_000) / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z')
+      let reason =
+        `no model gave a usable answer: every model refused the call on a rate limit (429, until ${resetAt}): ` +
+        `OpenRouter refused the call on a rate limit (429, until ${resetAt}): Rate limit exceeded`
+      let failed = { outcome: 'failed', attempt: first.job!.attempt, reason, providerStatus: 429 }
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, token, failed)).status, 204)
+      let [queued] = await database.sql<{ state: string; failure_reason: string | null; wait: number }[]>`
+        select state, failure_reason, extract(epoch from not_before - now())::int as wait from jobs where id = ${jobId}`
+      assert.equal(queued!.state, 'queued', 'the job waits for the end of the rate limit')
+      assert.equal(queued!.failure_reason, null)
+      assert.ok(queued!.wait >= 80 && queued!.wait <= 91, `not_before is the reset, not the backoff of 30 s: ${queued!.wait}`)
+      assert.equal((await claim(token)).job, null, 'no claim before the reset')
+
+      await database.sql`update jobs set not_before = now() - interval '1 second' where id = ${jobId}`
+      let second = await claim(token)
+      assert.equal(second.job!.id, jobId)
+      assert.equal(second.job!.attempt, 2)
+      assert.equal((await call(`/api/runner/jobs/${jobId}/result`, token, { ...failed, attempt: 2 })).status, 204)
+      let [row] = await database.sql<{ state: string; failure_reason: string | null }[]>`select state, failure_reason from jobs where id = ${jobId}`
+      assert.equal(row!.state, 'failed', 'the retry failed too: the job fails, and the publisher says that the review did not happen')
+      assert.equal(row!.failure_reason, reason)
+      let [state] = await store.list(orgId)
+      assert.equal(state!.refusedAt, null, 'a rate limit is not a refused key')
+
+      // No reset time: the backoff of the store. A runner of an earlier release gives the plain 429.
+      let older = await queueJob()
+      let next = await claim(token)
+      assert.equal(next.job!.id, older)
+      let plain = { outcome: 'failed', attempt: next.job!.attempt, reason: 'no model gave a usable answer: ProviderError: OpenRouter answered 429: Rate limit exceeded', providerStatus: 429 }
+      assert.equal((await call(`/api/runner/jobs/${older}/result`, token, plain)).status, 204)
+      let [backoff] = await database.sql<{ state: string; wait: number }[]>`
+        select state, extract(epoch from not_before - now())::int as wait from jobs where id = ${older}`
+      assert.equal(backoff!.state, 'queued')
+      assert.ok(backoff!.wait >= 28 && backoff!.wait <= 30, `the backoff of 30 s: ${backoff!.wait}`)
+    })
+
     it('a runner-held key that its provider refuses: the provider shows the refusal, and the next review clears it (REV-31)', async () => {
       let provider = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Runner Anthropic', baseUrl: null, apiKey: null, models: {} })
       assert.equal(provider.keySetAt, null)

@@ -128,6 +128,38 @@ describe('a usage limit of the provider (KNT-161)', () => {
     assert.ok(body.startsWith('**Kentō · review did not happen**'), body)
   })
 
+  it('a time with seconds goes up to the next minute, never to a time before the reset', () => {
+    let reason = 'no model gave a usable answer: Anthropic refused the call on a usage limit (429, until 2026-11-21T10:02:30Z): quota'
+    assert.ok(failureComment(job({ failureReason: reason })).includes('usage limit until 2026-11-21 10:03 UTC.'))
+    assert.equal(failedCheck(job({ failureReason: reason })).title, 'Usage limit of the provider: no review, retry after 2026-11-21 10:03 UTC')
+  })
+
+  it('a rate limit at each attempt says that the review did not happen, with no time', () => {
+    let reason =
+      'no model gave a usable answer: every model refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): ' +
+      'OpenRouter refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): Rate limit exceeded'
+    let body = failureComment(job({ failureReason: reason }))
+    assert.ok(body.startsWith('**Kentō · review did not happen**'), body)
+    assert.ok(body.includes('the model provider refused the call on its rate limit, at each attempt. No model read the code'), body)
+    assert.ok(body.includes('To run it again: `@kento-review lite`.'), body)
+    assert.ok(!body.includes(' UTC'), body)
+    let check = failedCheck(job({ failureReason: reason }))
+    assert.deepEqual({ conclusion: check.conclusion, title: check.title }, { conclusion: 'action_required', title: 'Rate limit of the provider: no review' })
+  })
+
+  it('masks the account ids that a provider echoes, in the comment and in the check', () => {
+    let reason =
+      'no model gave a usable answer: OpenAI-compatible refused the call on a usage limit (429): Rate limit reached in organization ' +
+      'org-AbCdEfGhIjKlMnOpQrStUvWx on tokens per min. You exceeded your current quota, user_AbCdEfGhIjKlMnOpQr {"user_id":"u-42"}'
+    let comment = failureComment(job({ failureReason: reason }))
+    let check = failedCheck(job({ failureReason: reason }))
+    for (let text of [comment, check.summary, check.title]) {
+      assert.ok(!text.includes('AbCdEfGh'), text)
+      assert.ok(!text.includes('u-42'), text)
+    }
+    assert.ok(comment.includes('in organization *** on tokens per min'), comment)
+  })
+
   it('another failure gives a failed check, never a success', () => {
     let check = failedCheck(job())
     assert.equal(check.conclusion, 'failure')
