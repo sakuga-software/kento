@@ -190,6 +190,19 @@ export function packSchema(prepared: Pick<PreparedReview, 'threads'>): object {
   return answerSchema({ threads: prepared.threads.length > 0 });
 }
 
+/**
+ * KNT-166. The coverage of an incremental review: the files that its pack cut, and those of the pull
+ * request that the whole pack cuts and that it did not read again.
+ */
+export function deltaCoverage(whole: Coverage, incremental: Coverage, reread: readonly string[]): Coverage {
+  const readNow = new Set(reread.filter((p) => !incremental.cut.includes(p)));
+  return {
+    files: whole.files,
+    cut: [...new Set([...incremental.cut, ...whole.cut.filter((p) => !readNow.has(p))])],
+    narrowed: incremental.narrowed,
+  };
+}
+
 /** What a review reads before its model call: the merge base, the pack and the changed lines. */
 export type PreparedReview = {
   base: string;
@@ -238,10 +251,15 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
-  const { pack, parts, skipped, rules, contextHash, coverage } =
+  const packed =
     delta || earlier
       ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
+  const { pack, parts, skipped, rules, contextHash } = packed;
+  // KNT-166. An incremental pack reads only the files that changed since the last review. A file of
+  // the pull request that the whole pack cuts, and that this pack does not read, was most likely cut
+  // then too: it counts as not read.
+  const coverage = delta ? deltaCoverage(whole.coverage, packed.coverage, delta.files) : packed.coverage;
   return {
     base,
     pack,
@@ -341,7 +359,7 @@ export function finishReview<F extends Finding>(
   }
   // KNT-166. Last, after the floors: a review that did not read a file of logic says so, and its score
   // cannot pass what it read.
-  const said = answer.confidence_score;
+  const said = Number(answer.confidence_score) || 0;
   const cap = applyCoverage(answer, coverage);
   if (cap !== null && said > cap) log(`score capped at ${cap}: the model said ${said}, and the review did not read ${coverage!.cut.length} changed file${coverage!.cut.length === 1 ? '' : 's'}`);
   const findings = answer.findings.map(({ patch: given, ...f }) => {

@@ -177,3 +177,36 @@ test('a review whose pack cut the schema is not « safe to merge » at 5: the mo
   assert.match(result.answer.summary, /This review did not read 1 of the 3 changed files, to fit in its size: `app\/db\/[a-z-]+\.ts`\./);
   assert.match(logs.join('\n'), /score capped at 3: the model said 5, and the review did not read 1 changed file/);
 });
+
+test('an incremental review counts as not read a store that the whole pack cuts and that it does not read again', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'engine-coverage-'));
+  repos.push(repo);
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  const commit = (message: string, files: Record<string, string>) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(repo, path)), { recursive: true });
+      writeFileSync(join(repo, path), text);
+    }
+    git('add', '-A');
+    git('commit', '-q', '-m', message);
+    return git('rev-parse', 'HEAD');
+  };
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 'dev@example.com');
+  git('config', 'user.name', 'Dev');
+  const base = commit('base', { 'README.md': '# Acme\n' });
+  const reviewed = commit('add the columns', {
+    'app/db/schema.ts': schema,
+    'drizzle/0002_columns.sql': migration,
+    'app/db/invoice-store.ts': lines(90, (i) => `export const read${i} = (id: string) => db.select().from(invoices).where(eq(invoices.id, id)); // ${i}`),
+  });
+  const head = commit('fix the label', { 'app/lib/label.ts': 'export const label = (n: number) => `${n} invoices`;\n' });
+  const fetch = (async (_url: string, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ model: request.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(answer()) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.001 } }));
+  }) as typeof globalThis.fetch;
+  const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {}, delta: { since: reviewed, score: 3, findings: [], settled: [] } });
+  assert.deepEqual(result.delta?.files, ['app/lib/label.ts'], 'an incremental review');
+  assert.deepEqual(result.coverage, { files: 4, cut: ['app/db/invoice-store.ts'], narrowed: [] });
+  assert.equal(result.score, 3);
+});
