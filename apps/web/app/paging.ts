@@ -27,7 +27,8 @@ export const PER_PAGE_MAX = 100
  */
 export function readPageSize(query: URLSearchParams): number | null {
   let value = query.get('per') ?? ''
-  if (!/^[1-9][0-9]{0,5}$/.test(value)) return null
+  if (!/^[1-9][0-9]*$/.test(value)) return null
+  // A number of any length: `Number` of 400 digits is Infinity, which reads as PER_PAGE_MAX.
   return Math.min(PER_PAGE_MAX, Math.max(PER_PAGE_MIN, Number(value)))
 }
 

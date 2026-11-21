@@ -73,6 +73,13 @@ export interface FindingsPageProps {
   notice?: FindingsNotice | null
 }
 
+/**
+ * The parameters of the notice after "Mark dismissed" or "Mark wontfix" (`readFindingsNotice`). The
+ * URL of the list holds them after its own (controllers/findings.tsx), and findings.js reads them from
+ * `data-after` of the table, to put `per` before them.
+ */
+export const NOTICE_PARAMS = ['done', 'n', 'same', 'fixed', 'missing', 'failed', 'replied', 'unreplied', 'error']
+
 /** The answer of a change of status: how many changed, and how many replies GitHub got. */
 export type FindingsNotice =
   | { kind: 'done'; status: BulkStatus; changed: number; unchanged: number; fixed: number; missing: number; failed: number; replied: number; unreplied: number }
@@ -150,11 +157,13 @@ export function readFindingList(query: URLSearchParams): FindingList {
     severity: isOneOf(SEVERITIES, severity) ? severity : null,
     ruleId: rule && UUID.test(rule) ? rule : null,
     reason: reasonText(query.get('reason') ?? '') || null,
-    search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX),
+    // Trimmed again after the cut: a space at the cut would need a second redirect.
+    search: (query.get('q') ?? '').trim().slice(0, SEARCH_MAX).trim(),
     author: author && LOGIN.test(author) ? author : null,
     days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
     considered: query.get('type') === CONSIDERED,
-    page: readPageNumber(query),
+    // The tab "Precision" has no page: its URL has none (KNT-195).
+    page: query.get('view') === 'precision' ? 1 : readPageNumber(query),
     per: readPageSize(query),
     tab: query.get('view') === 'precision' ? 'precision' : 'list',
   }
@@ -276,7 +285,7 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
             ) : (
               <div class="table-wrap findings-wrap">
                 {/* KNT-178: findings.js reads the first row of the page, to keep it on screen when it sets `per`. */}
-                <table class="table findings-table" data-offset={String(page.offset)}>
+                <table class="table findings-table" data-offset={String(page.offset)} data-after={['view', ...NOTICE_PARAMS].join(' ')}>
                   <caption class="visually-hidden">
                     {VIEW_LABELS[list.view]} findings of {org}, from the most recent to the oldest
                   </caption>

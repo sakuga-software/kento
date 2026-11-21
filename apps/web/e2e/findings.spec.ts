@@ -362,7 +362,7 @@ test.describe('the Findings screen without JavaScript (KNT-165)', () => {
   test('a filter is the native select, and "Filter" posts it', async ({ page }) => {
     await signIn(page, 'octocat')
     await seed()
-    await page.goto('/findings?per=25')
+    await page.goto('/findings')
     let select = page.getByLabel('Priority')
     await expect(select).toHaveJSProperty('tagName', 'SELECT')
     await select.selectOption({ label: 'P0 · critical' })
@@ -414,6 +414,77 @@ test.describe('the size of the pages of the Findings screen (KNT-178)', () => {
       new RegExp(`\\?per=${per}${previous}$`),
     )
     expect(errors).toEqual([])
+  })
+
+  test('the first document takes no input while it leaves for the fitted size', async ({ page }) => {
+    await signIn(page, 'camille')
+    await seed()
+    // While a navigation is pending, page.evaluate and the locators wait for the next document: the
+    // first one reports to the test itself, when it turns inert and on each input.
+    let reports: { inert?: boolean; busy?: string | null; box?: { x: number; y: number }; typed?: string }[] = []
+    await page.exposeBinding('e2eReport', (_source, report) => {
+      reports.push(report)
+    })
+    await page.addInitScript(() => {
+      // Read at each call: the binding may come after this script.
+      let report = (value: unknown) => (window as unknown as { e2eReport: (value: unknown) => void }).e2eReport(value)
+      // findings.js marks the page just before it replaces the URL; the replace stops the parser, so the
+      // first document never fires DOMContentLoaded.
+      let reported = false
+      new MutationObserver(() => {
+        let busy = document.querySelector('.findings-wrap')?.getAttribute('aria-busy') ?? null
+        if (reported || (!document.body?.inert && busy === null)) return
+        reported = true
+        let rect = document.querySelector('#findings-q')!.getBoundingClientRect()
+        report({
+          inert: document.body.inert,
+          busy: document.querySelector('.findings-wrap')?.getAttribute('aria-busy') ?? null,
+          box: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+        })
+      }).observe(document, { attributes: true, attributeFilter: ['inert', 'aria-busy'], subtree: true })
+      document.addEventListener('input', (event) => report({ typed: (event.target as HTMLInputElement).value }), true)
+    })
+    // The answer of the URL with `per` waits: the first document stays on screen meanwhile.
+    let release = () => {}
+    let held = new Promise<void>((resolve) => (release = resolve))
+    await page.route(/\/findings\?per=\d+/, async (route) => {
+      await held
+      await route.continue()
+    })
+    await page.goto('/findings', { waitUntil: 'commit' })
+    await expect.poll(() => reports.length).toBeGreaterThan(0)
+    let first = reports[0]!
+    // A person clicks the search and types: the first document takes nothing that the next one would drop.
+    await page.mouse.click(first.box!.x, first.box!.y)
+    await page.keyboard.type('cache')
+    await page.waitForTimeout(300)
+    release()
+    await expect(page).toHaveURL(/\/findings\?per=\d+$/)
+    expect(reports.filter((report) => 'typed' in report)).toEqual([])
+    expect(first.inert).toBe(true)
+    expect(first.busy).toBe('true')
+    await expect(page.locator('body')).not.toHaveAttribute('inert', '')
+  })
+
+  test('the links to the list carry the size of the session: from the bar, one load and no replace', async ({ page }) => {
+    await signIn(page, 'camille')
+    await seed()
+    await page.goto('/findings')
+    await expect(page).toHaveURL(/\/findings\?per=\d+$/)
+    let per = new URL(page.url()).searchParams.get('per')!
+    await page.goto('/repos')
+    let loads: string[] = []
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) loads.push(frame.url())
+    })
+    let menu = page.locator('[data-bar-menu]')
+    if (await menu.isVisible()) await menu.click()
+    let link = page.locator('[data-bar]').getByRole('link', { name: 'Findings', exact: true })
+    await expect(link).toHaveAttribute('href', `/findings?per=${per}`)
+    await link.click()
+    await expect(page).toHaveURL(new RegExp(`/findings\\?per=${per}$`))
+    await page.waitForTimeout(1000)
+    expect(loads.length, loads.join(' ')).toBe(1)
   })
 
   test('a `per` in the URL stays, 25 included, and a size out of bounds goes to the nearest bound', async ({ page }) => {

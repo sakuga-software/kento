@@ -275,13 +275,24 @@ test.describe('the Repos screen', () => {
     await expect(dialog).toBeHidden()
 
     // Enter on "See the findings": the menu closes, then the page changes. Back, the menu is closed.
-    await trigger.focus()
-    await page.keyboard.press('ArrowDown')
-    await page.keyboard.press('ArrowDown')
-    await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
-    await page.keyboard.press('Enter')
-    // KNT-178: findings.js may add the size of the page that fits the window.
-    await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+(&per=\d+)?$/)
+    // KNT-178: orchard has a finding, so findings.js fits the size of the page to the window, with one
+    // replace of the URL that adds no entry to the history: Back still leads to the repos.
+    let sql = database()
+    try {
+      await sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        select id, 1, 'knt-178-repos', 'knt-178-repos', 'a.ts', 1, 'A finding for KNT-178', 'minor', 'bug', 80, 'open', ${'a'.repeat(40)}, ${'a'.repeat(40)}
+        from repos where github_repo_id = 7001 on conflict do nothing`
+      await trigger.focus()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('ArrowDown')
+      await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+&per=\d+$/)
+    } finally {
+      await sql`delete from findings where fingerprint = 'knt-178-repos'`
+      await sql.end()
+    }
     await page.goBack()
     await hydrated(page)
     await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'false')

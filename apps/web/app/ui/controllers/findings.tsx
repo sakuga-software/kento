@@ -6,11 +6,8 @@ import { readStatusForm } from '../../findings/dismiss.ts'
 import type { FindingFacets, FindingScreenPage } from '../../findings/screen.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
-import { findingListQuery, FindingsPage, readFindingList, readFindingsNotice, type FindingList } from '../findings.tsx'
+import { findingListQuery, FindingsPage, NOTICE_PARAMS, readFindingList, readFindingsNotice, type FindingList } from '../findings.tsx'
 import { forbidden, isAdmin, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
-
-/** The parameters of the notice after "Mark dismissed" or "Mark wontfix" (`readFindingsNotice`). */
-const NOTICE_PARAMS = ['done', 'n', 'same', 'fixed', 'missing', 'failed', 'replied', 'unreplied', 'error']
 
 /**
  * KNT-195. The query of the URL of the list, when the URL is not it: the list, as `findingListQuery`
@@ -56,6 +53,11 @@ export function findingsActions(kit: UiKit) {
         precisionTab ? NO_FACETS : findings.store.facets(orgId),
         findings.store.precision(orgId),
       ])
+      // A page after the last one shows the last one (KNT-148): its URL says so, the notice kept.
+      if (!precisionTab && result.page !== list.page) {
+        let last = canonicalQuery(context.url.searchParams, { ...list, page: result.page })!
+        return redirect(last ? `${pageRoutes.findings.href()}?${last}` : pageRoutes.findings.href())
+      }
       return context.render(
         <FindingsPage
           frame={page}

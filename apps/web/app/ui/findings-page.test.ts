@@ -173,7 +173,8 @@ describe('the Findings screen, its selection and its actions', () => {
 
   it('shows the numbered pager with the filters and the search, 1,234 written with its comma (KNT-148)', async () => {
     let { request, signIn } = setup(undefined, false, { offset: 1225, matching: 1234, page: 50, pages: 50 })
-    let { cookie, html } = await signIn()
+    let { cookie } = await signIn()
+    let html = await (await request('/findings?status=all&priority=major&page=50', { cookie })).text()
     assert.match(html, /<nav aria-label="Pages of the list" class="pager pager-numbered">/)
     assert.match(html, /1,226 to 1,228 of 1,234 findings/)
     assert.match(html, /href="\/findings\?status=all&amp;priority=major&amp;page=49" rel="prev"/)
@@ -198,9 +199,17 @@ describe('the Findings screen, its selection and its actions', () => {
     // The tabs, the statuses and the `back` of the actions are built from the list: no cursor in them.
     assert.doesNotMatch(html, /href="[^"]*(?:after|before|page)=/)
     assert.match(html, /<input type="hidden" name="back" value="status=all" \/>/)
-    html = await (await request('/findings?status=all&page=3', { cookie })).text()
-    assert.equal(lists.at(-1)!.page, 3)
+    // The store shows page 3 of 3.
+    let third = setup(undefined, false, { offset: 50, matching: 60, page: 3, pages: 3 })
+    let signed = await third.signIn()
+    html = await (await third.request('/findings?status=all&page=3', { cookie: signed.cookie })).text()
+    assert.equal(third.lists.at(-1)!.page, 3)
     assert.match(html, /<input type="hidden" name="back" value="status=all&amp;page=3" \/>/)
+    // KNT-195: a page after the last one goes to the URL of the page on screen, the notice kept.
+    let past = await third.request('/findings?status=all&page=9&done=dismissed&n=2', { cookie: signed.cookie })
+    assert.equal(past.status, 303)
+    assert.equal(past.headers.get('Location'), '/findings?status=all&page=3&done=dismissed&n=2')
+    assert.equal(third.lists.at(-1)!.page, 9, 'the store read the page asked for, and gave the last one')
   })
 
   it('reads ?per=n from 10 to 100, keeps it in every link of the list and the form, and passes it to the store (KNT-178)', async () => {
@@ -216,9 +225,9 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /<a href="\/findings\?status=all&amp;per=10" class="button button-ghost">Clear the filters/, 'a size is not a filter')
     assert.match(html, /<input type="hidden" name="per" value="10" \/>/)
     assert.match(html, /<input type="hidden" name="back" value="status=all&amp;priority=major&amp;per=10&amp;page=5" \/>/)
-    assert.match(html, /<table data-offset="40" class="table findings-table">/)
+    assert.match(html, /<table data-offset="40" data-after="view done n same fixed missing failed replied unreplied error" class="table findings-table">/)
     // Without `per`, the store takes its own size, 25, and no link writes it.
-    html = await (await request('/findings?status=all&priority=major', { cookie })).text()
+    html = await (await request('/findings?status=all&priority=major&page=5', { cookie })).text()
     assert.equal(lists.at(-1)!.limit, undefined)
     assert.doesNotMatch(html, /per=|name="per"/)
   })
@@ -232,11 +241,16 @@ describe('the Findings screen, its selection and its actions', () => {
       ['/findings?status=all&q=+cache+&repo=&priority=major', '/findings?status=all&priority=major&q=cache'],
       ['/findings?per=5', '/findings?per=10'],
       ['/findings?per=500&page=2', '/findings?per=100&page=2'],
+      ['/findings?per=100&page=2&page=3', '/findings?per=100&page=2'],
       ['/findings?per=abc&page=1', '/findings'],
       ['/findings?page=2&per=50', '/findings?per=50&page=2'],
       ['/findings?status=open', '/findings'],
       ['/findings?repo=not-an-id&other=1', '/findings'],
       ['/findings?q=&done=dismissed&n=2', '/findings?done=dismissed&n=2'],
+      // The tab "Precision" has no page; a search cut at its length is trimmed once.
+      ['/findings?view=precision&page=3', '/findings?view=precision'],
+      [`/findings?q=${'x'.repeat(99)}+b`, `/findings?q=${'x'.repeat(99)}`],
+      ['/findings?per=1000000', '/findings?per=100'],
     ]
     for (let [from, to] of cases) {
       let response = await request(from, { cookie })
@@ -244,7 +258,7 @@ describe('the Findings screen, its selection and its actions', () => {
       assert.equal(response.headers.get('Location'), to, from)
     }
     assert.equal(lists.length, before, 'no list read before the redirect')
-    for (let url of ['/findings', '/findings?per=25', '/findings?status=all&priority=major&q=cache&per=50&page=2&view=precision', '/findings?done=dismissed&n=2']) {
+    for (let url of ['/findings', '/findings?per=25', '/findings?status=all&priority=major&q=cache&per=50&view=precision', '/findings?done=dismissed&n=2']) {
       assert.equal((await request(url, { cookie })).status, 200, url)
     }
   })
