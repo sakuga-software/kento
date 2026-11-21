@@ -30,6 +30,8 @@ const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const BASE = 'a'.repeat(40)
 const HEADS = ['1', '2', '3', '4', '5'].map((c) => c.repeat(40))
 const PR = 28
+/** A file of the compare API: its name, or its name and its patch. */
+type CompareFile = string | { filename: string; patch?: string }
 const GONE = '<!-- sakuga-review:gone -->'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
@@ -129,13 +131,13 @@ describe('findings from push to push (REV-16)', () => {
   }
 
   /** A push: GitHub moves the head, a runner reviews it, and the publisher posts the review. */
-  async function push(head: string, findings: ReviewFinding[], changed: string[]) {
+  async function push(head: string, findings: ReviewFinding[], changed: CompareFile[], older: CompareFile[] = ['src/sum.ts', 'src/div.ts', 'src/mean.ts']) {
     let previous = fake.state.pr.head
     fake.state.pr.head = head
     fake.state.commits[head] = `push ${head.slice(0, 1)}`
     // Every earlier head is an ancestor of this one; `changed` lists the files of the last push.
     for (let earlier of HEADS.slice(0, HEADS.indexOf(head))) {
-      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : ['src/sum.ts', 'src/div.ts', 'src/mean.ts'] })
+      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : older })
     }
     await database.sql`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref)
@@ -405,6 +407,22 @@ describe('findings from push to push (REV-16)', () => {
       ['Division by zero', 'open'],
       ['The sum subtracts', 'open'],
     ])
+  })
+
+  it('keeps open a finding not found again when a push changed another function of its file, and fixes it when its line changes (KNT-160)', async () => {
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    let [thread] = fake.botThreads()
+    // The push changes lines 40 to 42 of src/sum.ts: far from the line 2 of the finding.
+    let elsewhere = { filename: 'src/sum.ts', patch: '@@ -40,3 +40,4 @@ export function other() {\n   let a = 1;\n-  let b = 2;\n+  let b = 3;\n+  let c = 4;\n   return a + b;' }
+    await push(HEADS[1]!, [], [elsewhere])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+    assert.equal(fake.repliesTo(thread!.id).length, 0, 'no reply that the finding does not show anymore')
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
+
+    // A push that changes its line: the finding is fixed.
+    let onLine = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[2]!, [], [onLine], [onLine])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['fixed'])
   })
 
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {

@@ -234,6 +234,7 @@ export async function publishReview(
   }
   let { matches, unmatched } = matchFindings(review.findings, stored, threads)
   let changedSince = filesChangedSince(github, repo, head)
+  let linesChanged = changedSince.near
   // REV-99. A follower of a finding that a person dismissed or kept comes back only when the file of
   // that finding changed since its last review, as the runner checked: GitHub says it again, so that
   // a `follows` alone never opens a decision of a person again. A failure keeps the decision.
@@ -285,8 +286,9 @@ export async function publishReview(
     comments.push(comment)
   }
 
-  // An open finding that this review did not find again is fixed only when its file changed since
+  // An open finding that this review did not find again is fixed only when its lines changed since
   // the review that last found it: the same code can be read twice, and a model can miss a finding.
+  // KNT-160: a change elsewhere in its file is not enough, and the finding stays open.
   // A finding whose commit a force-push removed stays open: nothing tells what changed since.
   // The threads to close are found before the review, for its note on a force-push; they are closed
   // only once the review is on GitHub, so that a review that fails to post closes nothing.
@@ -299,7 +301,7 @@ export async function publishReview(
     if (s.status !== 'open' && s.status !== 'stale') continue
     let thread = liveThread(s, threads)
     try {
-      let changed = await changedSince(s.lastSeenSha || undefined, s.path)
+      let changed = await linesChanged(s.lastSeenSha || undefined, s.path, s.line)
       if (changed === null && thread) gone++
       if (changed) {
         fixed.push(s)
@@ -871,6 +873,38 @@ function goneNote(gone: number, base: string, icons: Icons): string {
 const COMPARE_MAX_FILES = 300
 
 /**
+ * KNT-160. A finding not found again is fixed only when the push changed a line this near to its
+ * line, before or after it. A change in another function of the file leaves it open.
+ */
+export const FIXED_NEAR_LINES = 10
+
+/**
+ * KNT-160. The lines of the old version of a file that a patch of the compare API removes, and the
+ * lines around each place where it adds lines. Null when the text has no hunk.
+ */
+export function touchedLines(patch: string): Set<number> | null {
+  let touched = new Set<number>()
+  let old = 0
+  let hunks = 0
+  for (let row of patch.split('\n')) {
+    let hunk = /^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@/.exec(row)
+    if (hunk) {
+      old = Number(hunk[1])
+      hunks++
+      continue
+    }
+    if (hunks === 0) continue
+    if (row.startsWith('-')) touched.add(old++)
+    else if (row.startsWith('+')) {
+      // An added line goes between the lines `old - 1` and `old`.
+      touched.add(old - 1)
+      touched.add(old)
+    } else if (!row.startsWith('\\')) old++
+  }
+  return hunks > 0 ? touched : null
+}
+
+/**
  * Whether a file changed between the commit of a thread and the head, from the compare API: the
  * same answer as `fileChangedSince` of the engine on a checkout.
  *
@@ -880,22 +914,26 @@ const COMPARE_MAX_FILES = 300
  *   when the answer is not sure.
  */
 function filesChangedSince(github: GitHub, repo: string, head: string) {
-  let cache = new Map<string, Promise<{ ancestor: boolean; files: Set<string> } | null>>()
+  // Each changed file, with its patch: null when GitHub gives none (a binary or a very large diff).
+  let cache = new Map<string, Promise<{ ancestor: boolean; files: Map<string, string | null> } | null>>()
   let compare = (commit: string) => {
     let hit = cache.get(commit)
     if (hit) return hit
     let promise = (async () => {
       try {
-        let out: { status: string; files?: { filename: string; previous_filename?: string }[] } = await github.rest(
+        let out: { status: string; files?: { filename: string; previous_filename?: string; patch?: string }[] } = await github.rest(
           'GET',
           `${repo}/compare/${commit}...${head}?per_page=${COMPARE_MAX_FILES}`,
         )
-        let files = out.files ?? []
+        let files = new Map<string, string | null>()
+        for (let f of out.files ?? []) {
+          for (let name of [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])]) files.set(name, typeof f.patch === 'string' ? f.patch : null)
+        }
         return {
           // `ahead` or `identical`: the commit is an ancestor of the head. `diverged` or `behind`: not.
           ancestor: out.status === 'ahead' || out.status === 'identical',
           // GitHub lists at most COMPARE_MAX_FILES files: a file past the list reads as unchanged.
-          files: new Set(files.flatMap((f) => [f.filename, ...(f.previous_filename ? [f.previous_filename] : [])])),
+          files,
         }
       } catch (error) {
         // GitHub answers 404 for a commit that it does not have.
@@ -906,12 +944,28 @@ function filesChangedSince(github: GitHub, repo: string, head: string) {
     cache.set(commit, promise)
     return promise
   }
-  return async (commit: string | undefined, path: string): Promise<boolean | null> => {
+  let changed = async (commit: string | undefined, path: string): Promise<boolean | null> => {
     if (!commit) return false
     let out = await compare(commit)
     if (!out || !out.ancestor) return null
     return out.files.has(path)
   }
+  /**
+   * KNT-160. Whether the file changed within FIXED_NEAR_LINES of `line` (a line of the file at
+   * `commit`). Without a patch from GitHub, a change of the file counts, as before.
+   */
+  let near = async (commit: string | undefined, path: string, line: number): Promise<boolean | null> => {
+    if (!commit) return false
+    let out = await compare(commit)
+    if (!out || !out.ancestor) return null
+    if (!out.files.has(path)) return false
+    let patch = out.files.get(path)
+    let touched = patch ? touchedLines(patch) : null
+    if (!touched) return true
+    for (let n of touched) if (Math.abs(n - line) <= FIXED_NEAR_LINES) return true
+    return false
+  }
+  return Object.assign(changed, { near })
 }
 
 type ListedReview = { id: number; state: string; body: string | null; user: { login: string } | null }

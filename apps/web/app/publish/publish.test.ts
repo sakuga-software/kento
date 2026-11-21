@@ -7,7 +7,7 @@ import { describe, it } from 'remix/test'
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
 import { withInstance } from '../../test/instance.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, checkName, LABEL_DESCRIPTION, publishReview, publishUnchanged, usageOf } from './publish.ts'
+import { anchorOf, answerOf, checkName, FIXED_NEAR_LINES, LABEL_DESCRIPTION, publishReview, publishUnchanged, touchedLines, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -227,6 +227,26 @@ describe('publishReview', () => {
     // The next review does not answer the same thread again.
     await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
     assert.equal(fake.repliesTo(thread!.id).length, 1)
+  })
+
+  it('leaves open the thread of a finding not found again when the push changed only another part of its file (KNT-160)', async () => {
+    let { fake, publish } = setup()
+    await publish(payload())
+    let [thread] = fake.botThreads()
+    fake.state.pr.head = HEAD3
+    let far = 2 + FIXED_NEAR_LINES + 1
+    let patch = `@@ -${far},2 +${far},2 @@\n-  let x = 1;\n+  let x = 2;\n   return x;`
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: [{ filename: 'src/sum.ts', patch }] })
+    let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+    assert.equal(outcome.resolved, 0)
+    assert.equal(fake.repliesTo(thread!.id).length, 0)
+  })
+
+  it('reads the lines that a patch removes, and the lines around the place where it adds (KNT-160)', () => {
+    assert.deepEqual([...touchedLines('@@ -10,3 +10,3 @@ fn\n a\n-b\n+c\n d')!].sort((x, y) => x - y), [11, 12])
+    assert.deepEqual([...touchedLines('@@ -5 +5,2 @@\n e\n+f')!].sort((x, y) => x - y), [5, 6])
+    assert.deepEqual([...touchedLines('@@ -1,2 +1,1 @@\n-a\n b\n\\ No newline at end of file\n@@ -40,1 +39,1 @@\n-x\n+y')!].sort((x, y) => x - y), [1, 40, 41])
+    assert.equal(touchedLines('Binary files differ'), null)
   })
 
   it('opens a new thread for a finding that comes back after its thread was answered as gone', async () => {
