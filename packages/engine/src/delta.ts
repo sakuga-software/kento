@@ -72,7 +72,14 @@ export function broughtByMerges(repo: string, since: string, head: string): Set<
  * or when a merge since then brought changes to a file of the pull request: the review reads the
  * whole pull request.
  */
-export function planDelta(repo: string, base: string, head: string, since: string): DeltaPlan | null {
+export function planDelta(
+  repo: string,
+  base: string,
+  head: string,
+  since: string,
+  /** The result of `broughtByMerges(repo, since, head)`, when the caller has it already. */
+  brought: Set<string> | null = broughtByMerges(repo, since, head),
+): DeltaPlan | null {
   if (since === head || !isAncestor(repo, since, head)) return null;
   const now = changedPaths(repo, `${base}...${head}`);
   const then = changedPaths(repo, `${base}...${since}`);
@@ -80,7 +87,6 @@ export function planDelta(repo: string, base: string, head: string, since: strin
   // KNT-158. A merge since then that brought changes to a file of the pull request (a merge of the
   // base branch that touched it): the diff since that head holds the lines of the base too, and the
   // review judged them. Only the diff from the merge base holds the change of the pull request alone.
-  const brought = broughtByMerges(repo, since, head);
   if (brought === null || files.some((p) => brought.has(p))) return null;
   return { since, files, pullFiles: [...now].sort() };
 }
