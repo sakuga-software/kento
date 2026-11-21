@@ -63,6 +63,7 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     try {
       assert.deepEqual(bundleOf(build, 'app/ui/public/a.tsx#A'), { href: '/assets/js/a.@AAA.js', preloads: ['/assets/js/chunk.@C.js'] })
       assert.throws(() => bundleOf(build, 'app/ui/public/missing.tsx'), /No bundle for app\/ui\/public\/missing\.tsx/)
+      for (let key of ['constructor', '__proto__', 'toString']) assert.throws(() => bundleOf(build, key), /No bundle for/, key)
     } finally {
       build.cleanup()
     }

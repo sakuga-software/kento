@@ -114,7 +114,8 @@ export function sourceOf(entryId: string): string {
 /** The URL of the bundle of an entry, and the URLs of the chunks that it imports. */
 export function bundleOf(build: ClientBuild, entryId: string): { href: string; preloads: string[] } {
   let source = sourceOf(entryId)
-  let entry = build.manifest.entries[source]
+  // Kentō #d8ff35: its own key only, never a property of Object (`constructor`, `__proto__`).
+  let entry = Object.hasOwn(build.manifest.entries, source) ? build.manifest.entries[source] : undefined
   if (!entry) throw new Error(`No bundle for ${source}: run scripts/build-client.ts again`)
   return { href: CLIENT_BASE + entry.file, preloads: entry.imports.map((file) => CLIENT_BASE + file) }
 }
