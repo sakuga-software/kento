@@ -916,6 +916,8 @@ describe('commands in the comments of a pull request', () => {
       await seedFinding('eeeeee000001', { status: 'stale' })
       let stale = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
+      // KNT-192. A stale finding is one that Kentō no longer sees: the reply says so, and nothing more.
+      assert.match(fake.state.issueComments.at(-1)!.body, /`#eeeeee` is no longer open: Kentō no longer sees it on this PR \(stale\)\./)
       // A finding set aside before can be named again: the second reject changes nothing.
       await seedFinding('ffffff000001', { status: 'dismissed' })
       assert.equal((await say('@kento-review reject #ffffff ok')).body.outcome, 'unchanged')
