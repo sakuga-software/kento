@@ -3,7 +3,7 @@
 import { createController } from 'remix/router'
 
 import { feedbackRoutes } from '../routes.ts'
-import { FeedbackPage, readFeedbackQuery } from '../ui/feedback.tsx'
+import { FeedbackPage, feedbackHref, readFeedbackQuery } from '../ui/feedback.tsx'
 import type { ScreenKit } from '../ui/pages.tsx'
 import type { FeedbackStore } from './store.ts'
 
@@ -22,6 +22,10 @@ export function createFeedbackControllers(kit: ScreenKit, deps: FeedbackDependen
         let signed = kit.signed(context)
         if (!deps) return kit.errorPage(context, 404, 'page')
         let query = readFeedbackQuery(context.url.searchParams)
+        // KNT-195. One URL for one screen: the form of the filters sends its empty fields, and a value
+        // the screen cannot read gives the default. Both go to the URL with only the values in use.
+        let canonical = feedbackHref(query)
+        if (`${context.url.pathname}${context.url.search}` !== canonical) return kit.redirect(canonical)
         let screen = await deps.store.list(signed.orgId, query)
         return context.render(
           <FeedbackPage frame={kit.frame(context)} screen={screen} query={query} now={new Date(now())} />,

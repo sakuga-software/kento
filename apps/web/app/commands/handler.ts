@@ -16,7 +16,8 @@
 // <cause>` in the conversation, names a finding of the pull request. REV-94 sets it aside at once
 // (reject.ts): 👀 on receipt, 🚀 after the effect, 😕 when a step on GitHub failed. A command in a review thread
 // (`pull_request_review_comment`) gets its reactions and its reply on the routes of the review
-// comments. In a thread, only `reject` is read: the other commands go in the conversation.
+// comments. In a thread, `reject` and `feedback` are read. KNT-160: the other commands get an answer at
+// once that says where to write them; from the conversation, `resolve` reads the open threads, that one among them.
 import { SHA } from '@kento-review/protocol'
 import { and, eq, sql } from 'drizzle-orm'
 
@@ -174,8 +175,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       let finding = target.finding
       // The status of the finding first: it costs no call to GitHub.
       if (REJECT_REFUSED.has(finding.status)) {
-        let why = finding.status === 'fixed' ? 'a push already fixed it' : 'it no longer applies to this PR (stale)'
-        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} The finding \`#${finding.key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`)
+        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} ${closedText(finding.key, finding.status)}`)
       }
       // As for the other commands: a pull request closed since the comment gets nothing.
       let open: { state?: string } = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
@@ -208,8 +208,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         throw error
       })
       if (result.refusedStatus) {
-        let why = result.refusedStatus === 'fixed' ? 'a push already fixed it' : 'it no longer applies to this PR (stale)'
-        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} The finding \`#${finding.key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`)
+        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} ${closedText(finding.key, result.refusedStatus)}`)
       }
       // A redelivery or a second reject reacts again: GitHub keeps one reaction.
       if (result.failed.length) {
@@ -225,12 +224,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       log('info', 'command.rejected', { ...fields, findingId: finding.id, reasonLength: command.reason.length, ...result })
       return { outcome: result.changed ? 'dismissed' : 'unchanged', findingId: finding.id, dismissedReview: result.dismissedReview }
     }
-    if (place.kind === 'thread') {
-      return refuse(
-        'only reject is read in a review thread',
-        `@${message.commenter.login} In the thread of a finding, Kentō reads only \`${mention('reject <cause>')}\`. The other commands go in the conversation of the PR.`,
-      )
-    }
+    if (place.kind === 'thread') return refuse('only reject is read in a review thread', `@${message.commenter.login} ${threadCommandText(command)}`)
     let pr: PullRequest = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
     if (pr.state !== 'open') return { outcome: 'skipped', reason: 'pull request is closed' }
     // The code of a fork is not the code of the repository. GitHub sends `head.repo: null` when the
@@ -304,6 +298,8 @@ type RejectTarget =
   | { kind: 'unknown_id' }
   /** Several findings of the pull request have a key that starts with the id. */
   | { kind: 'ambiguous_id'; ids: string[] }
+  /** KNT-160. In a thread, the id names another finding than the one of the thread (`key`). */
+  | { kind: 'other_finding'; key: string }
 
 /**
  * The finding that a `reject` names, in the pull request of the command: the finding of the thread,
@@ -337,7 +333,25 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
     )
     .orderBy(findings.key)
     .limit(5)
-  if (rows.length === 1) return { kind: 'found', finding: rows[0]! }
+  if (rows.length === 1) {
+    let finding = rows[0]!
+    // KNT-160. In a thread, an id is optional; when it is there, it must be the id of the finding of
+    // the thread. An id of no finding of the pull request gets the reply of an unknown id.
+    if (message.place.kind === 'thread' && command.id) {
+      // The findings of the pull request that the id names, as in the conversation: an id of several
+      // is ambiguous even when one of them is the finding of the thread.
+      let named = await db
+        .select({ key: findings.key })
+        .from(findings)
+        .innerJoin(repos, eq(repos.id, findings.repoId))
+        .where(and(eq(repos.githubRepoId, message.repository.githubRepoId), eq(findings.prNumber, message.prNumber), sql`starts_with(${findings.key}, ${command.id})`))
+        .orderBy(findings.key)
+        .limit(5)
+      if (named.length > 1) return { kind: 'ambiguous_id', ids: named.map((row) => row.key) }
+      if (!finding.key.startsWith(command.id)) return named.length ? { kind: 'other_finding', key: finding.key } : { kind: 'unknown_id' }
+    }
+    return { kind: 'found', finding }
+  }
   if (message.place.kind === 'thread') {
     // One thread has one finding: two rows would be a bug of the ledger. The thread is refused.
     return { kind: 'not_a_finding_thread' }
@@ -357,7 +371,40 @@ function targetProblemText(target: Exclude<RejectTarget, { kind: 'found' }>, com
         `The id \`#${command.id}\` matches several findings of this PR: ` +
         `${target.ids.map((key) => `\`#${key}\``).join(', ')}. Give more characters of the id.`
       )
+    case 'other_finding':
+      return (
+        `This thread holds the finding \`#${target.key.slice(0, 6)}\`, not \`#${command.id}\`. ` +
+        `To dismiss \`#${target.key.slice(0, 6)}\`, write \`${mention('reject <cause>')}\` here. ` +
+        `To dismiss \`#${command.id}\`, reply in its thread, or write \`${mention(`reject #${command.id} <cause>`)}\` in the conversation of the PR.`
+      )
   }
+}
+
+/**
+ * KNT-160. The reply to a `reject` of a finding that is no longer open. `fixed`: a later review did
+ * not find it again after a push changed its file, near its line when GitHub gave the patch (publish.ts). Kentō does not know that the push
+ * fixed it, so the reply does not say so.
+ */
+export function closedText(key: string, status: string): string {
+  // What the publisher checked: not found again, and a change of its file (near its line when GitHub
+  // gave the patch). Not that the push fixed it.
+  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its file' : 'it no longer applies to this PR (stale)'
+  return `The finding \`#${key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`
+}
+
+/**
+ * KNT-160. The reply to a command other than `reject` and `feedback` in a review thread: Kentō does not
+ * run it there, and says at once where it goes.
+ */
+export function threadCommandText(command: Exclude<CommentCommand, { verb: 'reject' | 'feedback' | 'unknown' }>): string {
+  let read = `In a thread, Kentō reads \`${mention('reject <cause>')}\` and \`${mention('feedback <opinion>')}\`.`
+  if (command.verb === 'resolve') {
+    return (
+      `\`${mention('resolve')}\` goes in the conversation of the PR, not in a thread. From there, Kentō reads the open threads of the PR, ` +
+      `this one among them, within the limits of the command. ${read}`
+    )
+  }
+  return `${read} A review command goes in the conversation of the PR.`
 }
 
 type PullRequest = {
