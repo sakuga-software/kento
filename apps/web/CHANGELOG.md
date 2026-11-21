@@ -161,6 +161,9 @@ Each entry says, when it applies:
 - **Reviews** (KNT-152): a finding about a race, an order of events or a timeout gives the steps
   that the runtime allows, each at a file and a line. Without two such steps, or without a number
   for a claim that some work is too slow, it becomes a question.
+- **Reviews** (KNT-156): a changed test shows its whole test in the pack (three lines of context
+  when its tests pass 40 kB), and the review asks which change of the code makes each assertion
+  fail. After a fix of an earlier finding, the review checks the cases next to the fix.
 
 ## 0.1.0
 

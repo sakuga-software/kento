@@ -64,6 +64,15 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     size += row.length;
   }
   if (!held.length) return { section: '', held };
+  // KNT-156. A fix of an earlier finding can break the case next to it: the fix of a name declared
+  // twice took the last declaration, and a value with a type of the same name was no longer read.
+  // The note counts in MAX_EARLIER_BYTES: the last rows go to make room for it.
+  let probe = probeNote(held);
+  while (probe && held.length > 1 && size + probe.length > MAX_EARLIER_BYTES) {
+    size -= rows.pop()!.length;
+    held.pop();
+    probe = probeNote(held);
+  }
   const intro =
     '## Earlier findings\n\n' +
     'The findings that earlier reviews of this pull request reported, with their status: `open` (still in the code at ' +
@@ -74,7 +83,23 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     '`fixed` finding that the code no longer has, nor a `dismissed` or `wontfix` finding whose file did not change since. ' +
     'A finding that follows an earlier one, no more severe, does not lower `confidence_score` again: that defect was already ' +
     'counted. A more severe one is a new fact, and lowers it.\n\n';
-  return { section: `${intro}${rows.join('')}\n`, held };
+  return { section: `${intro}${rows.join('')}${probe}\n`, held };
+}
+
+/** KNT-156. The most references of fixed findings that the note of the neighbour cases names. */
+const MAX_PROBE_REFS = 10;
+
+/** KNT-156. The note that asks to check the cases next to each fix, or '' with no fixed finding whose file changed. */
+function probeNote(held: readonly HeldEarlier[]): string {
+  const fixed = held.filter((e) => e.status === 'fixed' && e.changed !== false).map((e) => e.ref);
+  if (!fixed.length) return '';
+  const refs = fixed.length > MAX_PROBE_REFS ? `${fixed.slice(0, MAX_PROBE_REFS).join(', ')} and ${fixed.length - MAX_PROBE_REFS} more` : fixed.join(', ');
+  return (
+    `\n${refs} ${fixed.length === 1 ? 'was' : 'were'} fixed by a later commit. Read each fix in the diff, and check the ` +
+    'cases next to it that the fix can break: a type and a value of the same name, an import and a local name, the first ' +
+    'and the last definition, an empty value and a missing one, the other branch of the condition that it changed. A ' +
+    'fix that breaks one of them is a new finding, at the line of the fix.\n'
+  );
 }
 
 /**
