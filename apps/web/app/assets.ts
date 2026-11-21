@@ -29,6 +29,25 @@ function distOf(name: string, from = require): string {
  * of the import map of a page, twice (its URL and the URL with its hash), and the Findings screen
  * keeps a budget of 80 KB of HTML.
  */
+/** What the asset server says about a path that anybody can ask for: none of them is a fault of the service. */
+const NOT_SERVED = new Set(['FILE_NOT_FOUND', 'FILE_NOT_ALLOWED', 'FILE_NOT_SUPPORTED', 'FILE_OUTSIDE_MOUNTS', 'URL_NOT_SUPPORTED', 'URL_NOT_ALLOWED', 'URL_OUTSIDE_MOUNTS'])
+
+/**
+ * The answer to a module that the asset server cannot serve. A path that does not exist, is not
+ * allowed or is outside the mounts: 404, a warning (anybody can ask for any path). Any other
+ * failure (a module that does not compile, an import outside the mounts): 500, an error, so that a
+ * broken release shows in the logs.
+ */
+export function assetError(error: unknown): Response {
+  let code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : null
+  if (code && NOT_SERVED.has(code)) {
+    log('warn', 'assets.not_served', { code, error: errorMessage(error) })
+    return new Response('Not Found', { status: 404 })
+  }
+  log('error', 'assets.compile_failed', { code, error: errorMessage(error) })
+  return new Response('Internal Server Error', { status: 500 })
+}
+
 const fromRemix = createRequire(require.resolve('remix/package.json'))
 /**
  * Only the packages that the browser loads: no mount of `node_modules`, so that a request cannot
@@ -70,12 +89,7 @@ export const assets = createAssetServer({
   // The popover API (Baseline 2024) is the newest part of the platform that the components use.
   target: { chrome: '114', firefox: '125', safari: '17' },
   scripts: { define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') } },
-  // A file that does not compile, or that an allowed module imports from outside the mounts: a 404,
-  // logged as a warning. Anybody can ask for any path: it is not an error of the service.
-  onError(error) {
-    log('warn', 'assets.not_served', { error: errorMessage(error) })
-    return new Response('Not Found', { status: 404 })
-  },
+  onError: assetError,
 })
 
 /** The module of every page (see its comment). */
