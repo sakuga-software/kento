@@ -854,6 +854,36 @@ describe('the assets', () => {
   })
 })
 
+describe('KNT-150: a pending invitation', () => {
+  it('lets a person whom GitHub counts nowhere sign in, to the page of the invitations only', async () => {
+    let { request, signIn, auth } = setup()
+    assert.equal((await signIn(STRANGER)).cookie, null, 'no invitation: refused')
+    auth.invite(STRANGER)
+    let { callback, cookie } = await signIn(STRANGER)
+    assert.ok(cookie)
+    assert.equal(callback.headers.get('Location'), '/')
+    assert.equal(auth.tables.sessions!.at(-1)!.activeOrganizationId, null, 'a session with no org')
+    for (let path of ['/', '/repos', '/settings', '/runners']) {
+      let screen = await request(path, { cookie })
+      assert.equal(screen.headers.get('Location'), '/invitations', path)
+    }
+    assert.equal((await request('/repos/check', { cookie, form: {} })).status, 403)
+    // The invitation goes (declined, canceled, expired): the next request ends the session.
+    auth.invite(STRANGER, 0)
+    assert.equal((await request('/', { cookie })).headers.get('Location'), '/login?notice=expired')
+  })
+
+  it('a member with a pending invitation of another org sees a banner that leads to it', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    assert.doesNotMatch(await (await request('/', { cookie })).text(), /See the invitations/)
+    auth.invite(OCTOCAT, 2)
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<strong class="banner-title">2 invitations<\/strong> Organizations invite you to Kentō\. <a href="\/invitations">See the invitations<\/a>/)
+    assert.match(html, /<a href="\/settings\/members" class="org-menu-link">Members<\/a>/)
+  })
+})
+
 describe('KNT-150: the roles owner, admin and member, and the menu of the orgs', () => {
   it('makes the first admin on GitHub of an org the owner; the next admins are admins, the members members', async () => {
     let { request, signIn, auth } = setup()
