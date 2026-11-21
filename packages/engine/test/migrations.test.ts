@@ -244,6 +244,14 @@ test('the journal shows an entry whose `when` goes back, and an entry whose `whe
   } finally {
     r.done();
   }
+  // A pair out of order that the base already holds is not a change of the pull request.
+  const old = entries([{ tag: '0000_a', when: 30 }, { tag: '0001_b', when: 20 }]);
+  const kept = twoCommits({ 'drizzle/meta/_journal.json': old }, { 'drizzle/meta/_journal.json': entries([{ tag: '0000_a', when: 30 }, { tag: '0001_b', when: 20 }, { tag: '0002_c', when: 40 }]) });
+  try {
+    assert.doesNotMatch(migrationSection(kept.dir, kept.from, kept.to, ['drizzle/meta/_journal.json']).section, /earlier than the entry before it/);
+  } finally {
+    kept.done();
+  }
 });
 
 test('a name of the repository cannot write markup into the pack', () => {

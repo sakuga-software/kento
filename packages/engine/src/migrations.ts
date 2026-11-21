@@ -155,9 +155,12 @@ function journalChanges(before: Journal | null, after: Journal, lineOf: (tag: st
       named.add(e.tag!);
     }
   }
+  // Only an entry that the pull request adds or whose `when` it changes: an older pair of the base
+  // is not a change of this pull request (Kentō #b7ee4d).
   now.forEach((e, i) => {
     const prev = now[i - 1];
-    if (prev && typeof e.when === 'number' && typeof prev.when === 'number' && e.when < prev.when) {
+    const touched = wasByTag.get(e.tag!)?.when !== e.when;
+    if (touched && prev && typeof e.when === 'number' && typeof prev.when === 'number' && e.when < prev.when) {
       changes.push(`entry ${code(e.tag)}: \`when\` earlier than the entry before it, ${code(prev.tag)}${at(lineOf(e.tag!))}`);
       named.add(e.tag!);
     }
