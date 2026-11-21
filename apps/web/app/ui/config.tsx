@@ -285,7 +285,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
               <Hidden ctx={ctx} field={field} />
               <FormErrors errors={errors} />
               <div class="field">
-                <label class="label" for={providerId}>
+                <label class="field-label" for={providerId}>
                   Provider
                 </label>
                 <Select
@@ -309,7 +309,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 <FieldMessage id={providerId} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint ?? 'This provider is no longer in the organization.'} />
               </div>
               <div class="field">
-                <label class="label" for={modelId}>
+                <label class="field-label" for={modelId}>
                   Model
                 </label>
                 <Input
@@ -328,7 +328,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 <FieldMessage id={modelId} error={errors.model} />
               </div>
               <div class="field">
-                <label class="label" for={fallbackId}>
+                <label class="field-label" for={fallbackId}>
                   Fallback if the call fails
                 </label>
                 <Input
@@ -534,7 +534,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <Hidden ctx={ctx} field="paths" />
                 <FormErrors errors={pathsForm?.errors ?? {}} />
                 <div class="field">
-                  <label class="label" for="config-paths">
+                  <label class="field-label" for="config-paths">
                     An automatic review only if the PR changes one of these paths
                   </label>
                   <Textarea
@@ -595,7 +595,7 @@ function TriggerTab(handle: Handle<TriggerTabProps>) {
                 <Hidden ctx={ctx} field="monthlyCapUsd" />
                 <FormErrors errors={capForm?.errors ?? {}} />
                 <div class="field">
-                  <label class="label" for="config-cap">
+                  <label class="field-label" for="config-cap">
                     Cap of the automatic reviews, in dollars per month
                   </label>
                   <Input

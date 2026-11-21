@@ -88,7 +88,26 @@ const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'Daily', month: 'Monthly' 
  * the repositories inherit, the trusted bots, and the state of the GitHub App. An admin edits; a
  * member reads everything.
  */
-export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: boolean; csrf: string }>) {
+/**
+ * KNT-168. At the end of a section on a phone: back to the bar "Sections" at the top of the page,
+ * which opens the list (settings.js). Hidden where the sidebar stays in view. Without JavaScript the
+ * link leads to the list, which is part of the page.
+ */
+export function SectionsLink(handle: Handle<{ section: string; label: string }>) {
+  // The name says where the link leads and where from: six of them on the page, and the button of
+  // the bar, all show "Sections".
+  return () => (
+    <p class="settings-back">
+      <a href="#settings-nav" data-settings-back={handle.props.section}>
+        <span class="visually-hidden">Back to the </span>Sections<span class="visually-hidden"> from {handle.props.label}</span>
+      </a>
+    </p>
+  )
+}
+
+export function OrgSettingsSections(
+  handle: Handle<OrgSectionProps & { admin: boolean; csrf: string; back: Record<string, string> | null }>,
+) {
   return () => {
     let props = handle.props
     let { view, now, notice, admin } = props
@@ -121,9 +140,13 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
         {notice ? <Notice notice={notice} /> : null}
         <div class="org-settings">
           <CapSection {...props} />
+          {props.back ? <SectionsLink section="cap" label={props.back['cap'] ?? ''} /> : null}
           <DefaultsSection {...props} />
+          {props.back ? <SectionsLink section="defaults" label={props.back['defaults'] ?? ''} /> : null}
           <BotsSection {...props} />
+          {props.back ? <SectionsLink section="bots" label={props.back['bots'] ?? ''} /> : null}
           <AppSection {...props} />
+          {props.back ? <SectionsLink section="app" label={props.back['app'] ?? ''} /> : null}
         </div>
       </>
     )
@@ -226,7 +249,7 @@ function CapSection(handle: Handle<SectionProps>) {
             {/* REV-91: the three limits on one line, each with a short hint. */}
             <div class="cap-fields">
               <div class="field">
-                <label class="label" for="cap-day">
+                <label class="field-label" for="cap-day">
                   Daily cap ($)
                 </label>
                 <Input
@@ -243,7 +266,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-day" error={errors.dailyCapUsd} hint="Set back to zero at midnight UTC." />
               </div>
               <div class="field">
-                <label class="label" for="cap-month">
+                <label class="field-label" for="cap-month">
                   Monthly cap ($)
                 </label>
                 <Input
@@ -260,7 +283,7 @@ function CapSection(handle: Handle<SectionProps>) {
                 <FieldMessage id="cap-month" error={errors.monthlyCapUsd} hint="Calendar month, in UTC." />
               </div>
               <div class="field">
-                <label class="label" for="cap-alert">
+                <label class="field-label" for="cap-alert">
                   Alert threshold (%)
                 </label>
                 <Input
@@ -418,7 +441,7 @@ function LevelDefault(
               <FormErrors errors={errors} />
               <div class="org-default-fields">
                 <div class="field">
-                  <label class="label" for={`${id}-provider`}>
+                  <label class="field-label" for={`${id}-provider`}>
                     Provider
                   </label>
                   <Select
@@ -442,7 +465,7 @@ function LevelDefault(
                   <FieldMessage id={`${id}-provider`} error={errors.provider} hint={providers.find((p) => p.id === selected)?.hint} />
                 </div>
                 <div class="field">
-                  <label class="label" for={`${id}-model`}>
+                  <label class="field-label" for={`${id}-model`}>
                     Model
                   </label>
                   <Input
@@ -460,7 +483,7 @@ function LevelDefault(
                   <FieldMessage id={`${id}-model`} error={errors.model} />
                 </div>
                 <div class="field">
-                  <label class="label" for={`${id}-fallback`}>
+                  <label class="field-label" for={`${id}-fallback`}>
                     Fallback
                   </label>
                   <Input
@@ -525,7 +548,7 @@ function BotsSection(handle: Handle<SectionProps>) {
             <VersionFields csrf={csrf} version={view.version} field="trustedBots" />
             <FormErrors errors={mine?.errors ?? {}} />
             <div class="field">
-              <label class="label" for="trusted-bots">
+              <label class="field-label" for="trusted-bots">
                 One login per line
               </label>
               <Textarea

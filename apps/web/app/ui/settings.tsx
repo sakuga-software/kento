@@ -11,7 +11,7 @@ import { Confirm } from './confirm.tsx'
 import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
 import { agoShort, clock, hourOrDate } from './format.ts'
-import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, type OrgSectionProps } from './org-settings.tsx'
+import { OrgSettingsSections, orgEffectiveLevels, orgVersionLine, SectionsLink, type OrgSectionProps } from './org-settings.tsx'
 import { canAddRule, RulesList, type RuleFormState, type RuleNotice } from './rules.tsx'
 import type { RuleView } from '../rules/store.ts'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -85,6 +85,9 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     let sections = settingsSections({ org: org ?? null, rules: rules ? { count: rules.list.length } : null, providers, admin })
+    // KNT-168. With a sidebar, each section ends with a link back to the bar "Sections" of a phone,
+    // named after its section.
+    let back = sections.length >= 2 ? Object.fromEntries(sections.map((section) => [section.id, section.label])) : null
     return (
       <Shell
         frame={frame}
@@ -133,10 +136,10 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
 
         {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px.
             The alerts of a refused key stay above it, in reach of the keyboard. */}
-        <div class={sections.length >= 2 ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
+        <div class={back ? 'settings-layout settings-layout-nav' : 'settings-layout'}>
           <SettingsNav sections={sections} />
           <div class="settings-content">
-        {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} /> : null}
+        {org ? <OrgSettingsSections {...org} admin={admin} csrf={csrf} back={back} /> : null}
 
         {rules ? (
           <section class="card config-card" id="org-rules" aria-labelledby="org-rules-title" tabIndex={-1}>
@@ -159,6 +162,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
             />
           </section>
         ) : null}
+        {rules && back ? <SectionsLink section="org-rules" label={back['org-rules'] ?? ''} /> : null}
 
         {providers ? (
           <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
@@ -205,6 +209,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
+        {providers && back ? <SectionsLink section="providers" label={back['providers'] ?? ''} /> : null}
           </div>
         </div>
         <script src={`/assets/settings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -279,22 +284,20 @@ export function settingsSections(input: {
 
 /**
  * KNT-149. The sidebar of the settings, in place of the tabs of REV-91: one link per section, and
- * the parts of each section under it. It stays in view while the page scrolls. Under 900 px it is
- * a bar at the top of the page, "Section …", that opens the list under it (settings.js). Without
- * JavaScript the list is part of the page. settings.js marks the section and the part on screen
- * with aria-current.
+ * the parts of each section under it. It stays in view while the page scrolls, and settings.js
+ * marks the section and the part on screen with aria-current. Under 900 px it is a bar at the top of
+ * the page, "Sections", that opens the list under it (settings.js). There, the marks show the section
+ * that the person chose or came back from (KNT-168). Without JavaScript the list is part of the page.
  */
 function SettingsNav(handle: Handle<{ sections: SettingsNavSection[] }>) {
   return () => {
     let { sections } = handle.props
     if (sections.length < 2) return null
     return (
-      <nav class="settings-nav" aria-label="Sections of the settings" data-settings-nav="">
+      <nav class="settings-nav" id="settings-nav" aria-label="Sections of the settings" data-settings-nav="" tabIndex={-1}>
+        {/* KNT-168: the bar names no section. At the top of the page, it would only ever name the first one. */}
         <button class="settings-nav-toggle" type="button" aria-expanded="false" aria-controls="settings-nav-list" data-settings-nav-toggle="">
-          <span class="settings-nav-toggle-label">Section</span>
-          <span class="settings-nav-toggle-current" data-settings-nav-current="">
-            {sections[0]!.label}
-          </span>
+          <span class="settings-nav-toggle-label">Sections</span>
         </button>
         <ul class="settings-nav-list" id="settings-nav-list">
           {sections.map((section) => (
@@ -491,7 +494,7 @@ function ProviderItem(
                   <input type="hidden" name="_csrf" value={csrf} />
                   {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
-                    <label class="label" for={`key-${id}`}>
+                    <label class="field-label" for={`key-${id}`}>
                       New {KIND_LABELS[provider.kind]} key
                     </label>
                     <Input
@@ -511,7 +514,7 @@ function ProviderItem(
                         {keyError}
                       </p>
                     ) : (
-                      <p class="description" id={`key-${id}-hint`}>
+                      <p class="field-hint" id={`key-${id}-hint`}>
                         Kentō deletes the old key. The jobs already in progress keep the key that they got.
                       </p>
                     )}
@@ -564,7 +567,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           {errors[name]}
         </p>
       ) : (
-        <p class="description" id={`provider-${name}-hint`}>
+        <p class="field-hint" id={`provider-${name}-hint`}>
           {hint}
         </p>
       )
@@ -581,7 +584,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           <input type="hidden" name="_csrf" value={csrf} />
           <FormErrors errors={errors} />
           <div class="field">
-            <label class="label" for="provider-kind">
+            <label class="field-label" for="provider-kind">
               Type
             </label>
             <Select
@@ -601,7 +604,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
                 {errors.kind}
               </p>
             ) : null}
-            <ul class="description kind-hints" id="provider-kind-hint">
+            <ul class="field-hint kind-hints" id="provider-kind-hint">
               {KINDS.map((kind) => (
                 <li>
                   <strong>{KIND_LABELS[kind]}</strong>: {KIND_HINTS[kind]}
@@ -610,21 +613,21 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             </ul>
           </div>
           <div class="field">
-            <label class="label" for="provider-label">
+            <label class="field-label" for="provider-label">
               Name
             </label>
             <Input id="provider-label" name="label" value={values.label} maxLength={60} required {...field('label')} />
             {message('label', 'What the screen shows, for example "Anthropic of Sakuga".')}
           </div>
           <div class="field">
-            <label class="label" for="provider-baseUrl">
+            <label class="field-label" for="provider-baseUrl">
               Server URL
             </label>
             <Input class="mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
             {message('baseUrl', 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
           </div>
           <div class="field">
-            <label class="label" for="provider-apiKey">
+            <label class="field-label" for="provider-apiKey">
               Key
             </label>
             <Input
@@ -652,10 +655,10 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
             }
           />
           <fieldset class="field" aria-describedby={errors.models ? 'provider-models-error' : 'provider-models-hint'}>
-            <legend class="label">Models per level</legend>
+            <legend class="field-label">Models per level</legend>
             {LEVELS.map((level) => (
               <div class="model-field">
-                <label class="description" for={`provider-models-${level}`}>
+                <label class="field-hint" for={`provider-models-${level}`}>
                   {level}
                 </label>
                 <Input

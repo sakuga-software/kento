@@ -356,7 +356,7 @@ kbd,
 }
 
 /* The form controls (KNT-143, below) draw their own focus ring, in their own shape. */
-:focus-visible:where(:not(.button, .input, .textarea, .select__trigger, .check)) {
+:focus-visible:where(:not(.button, .input, .textarea, .select-input, .check)) {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
@@ -418,24 +418,25 @@ kbd,
 /*
  * KNT-143. The form controls: app/ui/controls.tsx writes them, these rules draw them. Native
  * elements only (button, input, select, textarea), no framework: the tokens of the two themes above.
- * Three levels of button: `button--primary` in ink (one per screen), `button--outline`, `button--ghost`;
- * a destructive action is `button--danger-soft` to open its confirmation, `button--danger` to act.
+ * Three levels of button: `button-primary` in ink (one per screen), the outlined `button`, `button-ghost`;
+ * a destructive action is `button-danger` to open its confirmation, `button-danger-solid` to act.
  * Pill buttons, 12 px fields, one focus ring (2 px of the page, then 2 px of --focus).
  */
 .button,
 .input,
 .textarea,
-.select__trigger,
+.select-input,
 .check {
   margin: 0;
   font: inherit;
   letter-spacing: inherit;
 }
 .button {
+  /* The default button is outlined. */
   --button-bg: transparent;
-  --button-bg-hover: var(--button-bg);
+  --button-bg-hover: var(--paper-sunken);
   --button-fg: var(--ink);
-  --button-border: transparent;
+  --button-border: var(--line-strong);
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -492,33 +493,32 @@ summary.button::-webkit-details-marker {
   height: 16px;
   pointer-events: none;
 }
-.button--primary {
+.button-primary {
+  --button-border: transparent;
   --button-bg: var(--action);
   --button-bg-hover: color-mix(in oklab, var(--action) 86%, var(--paper));
   --button-fg: var(--on-action);
 }
-.button--outline {
-  --button-border: var(--line-strong);
-  --button-bg-hover: var(--paper-sunken);
+.button-ghost {
+  --button-border: transparent;
 }
-.button--ghost {
-  --button-bg-hover: var(--paper-sunken);
-}
-.button--danger {
+.button-danger-solid {
+  --button-border: transparent;
   --button-bg: var(--shu);
   --button-bg-hover: color-mix(in oklab, var(--shu) 86%, var(--paper));
   --button-fg: var(--on-shu);
 }
-.button--danger-soft {
+.button-danger {
+  --button-border: transparent;
   --button-bg: var(--shu-wash);
   --button-bg-hover: color-mix(in oklab, var(--shu-wash) 88%, var(--shu));
   --button-fg: var(--shu-strong);
 }
-.button--sm {
+.button-small {
   height: 32px;
   padding: 0 var(--space-3);
 }
-.button--lg {
+.button-large {
   height: var(--control-h-touch);
   padding: 0 var(--space-5);
   font-size: var(--text-base);
@@ -527,7 +527,7 @@ summary.button::-webkit-details-marker {
 /* Fields: the sheet, a rule strong enough for WCAG 1.4.11, the indigo when focused. */
 .input,
 .textarea,
-.select__trigger {
+.select-input {
   width: 100%;
   max-width: 420px;
   border: 1px solid var(--line-strong);
@@ -542,7 +542,7 @@ summary.button::-webkit-details-marker {
     box-shadow 150ms var(--ease);
 }
 .input,
-.select__trigger {
+.select-input {
   min-height: var(--control-h);
   padding: 0 var(--space-3);
 }
@@ -556,47 +556,47 @@ summary.button::-webkit-details-marker {
 }
 .input:hover,
 .textarea:hover,
-.select__trigger:hover {
+.select-input:hover {
   border-color: var(--ink-muted);
 }
 .input:focus,
 .textarea:focus,
-.select__trigger:focus {
+.select-input:focus {
   outline: none;
   border-color: var(--focus);
   box-shadow: 0 0 0 1px var(--focus);
 }
 .input:focus-visible,
 .textarea:focus-visible,
-.select__trigger:focus-visible {
+.select-input:focus-visible {
   box-shadow: var(--focus-ring);
 }
 .input[aria-invalid='true'],
 .textarea[aria-invalid='true'],
-.select__trigger[aria-invalid='true'] {
+.select-input[aria-invalid='true'] {
   border-color: var(--shu);
 }
 .input:disabled,
 .textarea:disabled,
-.select__trigger:disabled {
+.select-input:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
 /* A native <select>, its chevron drawn after it in the colour of its text. */
-.select--native {
+.select-box {
   position: relative;
   display: inline-flex;
   width: 100%;
   max-width: 420px;
 }
-.select--native > .select__trigger {
+.select-box > .select-input {
   appearance: none;
   max-width: none;
   padding-right: var(--space-8);
   cursor: pointer;
 }
-.select--native::after {
+.select-box::after {
   content: '';
   position: absolute;
   top: 0;
@@ -682,15 +682,15 @@ summary.button::-webkit-details-marker {
 
 /*
  * A field: its label, its control, then its hint or its error. The label keeps the line height of
- * the old `.field-label`, so that a form keeps its vertical rhythm.
+ * 16 px that labels had before KNT-143, so that a form keeps its vertical rhythm.
  */
-.label {
+.field-label {
   color: var(--ink);
   font-size: var(--text-sm);
   font-weight: 500;
   line-height: var(--leading-xs);
 }
-.description {
+.field-hint {
   color: var(--ink-muted);
   font-size: var(--text-xs);
   line-height: var(--leading-xs);
@@ -700,7 +700,7 @@ summary.button::-webkit-details-marker {
   .button,
   .input,
   .textarea,
-  .select__trigger,
+  .select-input,
   .check,
   .check::before {
     transition: none;
@@ -723,14 +723,14 @@ summary.button::-webkit-details-marker {
     display: none;
   }
   /* The chevron of a select is a background: keep it, in the colour of the text of a field. */
-  .select--native::after {
+  .select-box::after {
     forced-color-adjust: none;
     background-color: FieldText;
   }
   .button:focus-visible,
   .input:focus,
   .textarea:focus,
-  .select__trigger:focus,
+  .select-input:focus,
   .check:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
@@ -1216,7 +1216,7 @@ button.org-menu-item:hover {
 .who-role {
   color: var(--ink-muted);
 }
-.who .button--ghost {
+.who .button-ghost {
   min-height: 36px;
   padding: 0 var(--space-2);
   color: var(--ink-muted);
@@ -1900,7 +1900,7 @@ html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)
   gap: 6px;
   min-width: 0;
 }
-.findings-filter :is(.input, .select--native) {
+.findings-filter :is(.input, .select-box) {
   max-width: none;
 }
 .findings-filter-actions {
@@ -2073,7 +2073,7 @@ a.finding-title:hover {
 }
 
 @media (max-width: 760px) {
-  .findings-filter :is(.input, .select__trigger),
+  .findings-filter :is(.input, .select-input),
   .findings-filter-actions .button {
     min-height: var(--control-h-touch);
   }
@@ -2946,7 +2946,7 @@ a.finding-title:hover {
 .config-card .field {
   width: 100%;
 }
-.config-card :is(.input, .textarea, .select--native) {
+.config-card :is(.input, .textarea, .select-box) {
   max-width: none;
 }
 .config-paths {
@@ -3066,7 +3066,7 @@ a.finding-title:hover {
   gap: var(--space-2);
 }
 .replace-key[open] summary,
-.replace-key[open] summary.button--primary {
+.replace-key[open] summary.button-primary {
   background: var(--paper-sunken);
   border-color: var(--line-strong);
   color: var(--ink);
@@ -3292,7 +3292,7 @@ a.finding-title:hover {
 .org-default .field {
   margin-bottom: 0;
 }
-.org-default :is(.input, .select--native) {
+.org-default :is(.input, .select-box) {
   max-width: none;
 }
 .app-status .config-facts dd {
@@ -3986,9 +3986,41 @@ a.finding-title:hover {
 .settings-nav-sub .settings-nav-link[aria-current] {
   font-weight: 500;
 }
-/* "Section …" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
+/* KNT-169. Forced colors draw the transparent border of every link in the colour of the text: only
+   the current link keeps a border, in Highlight. The others keep its width as padding. */
+@media (forced-colors: active) {
+  .settings-nav-link {
+    border-left-style: none;
+    padding-left: calc(var(--space-3) + 2px);
+  }
+  .settings-nav-link[aria-current] {
+    border-left: 2px solid Highlight;
+    padding-left: var(--space-3);
+  }
+}
+/* "Sections" folds the list under 900 px, once settings.js handles it (.settings-nav-ready). */
 .settings-nav-toggle {
   display: none;
+}
+/* KNT-168. The links back to the bar of a phone: no use where the sidebar stays in view. */
+.settings-back {
+  display: none;
+}
+.settings-back a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-touch);
+  font-weight: 500;
+}
+.settings-back a::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-top: 1.75px solid currentColor;
+  border-left: 1.75px solid currentColor;
+  transform: rotate(45deg);
 }
 .settings-content [id] {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
@@ -4034,7 +4066,7 @@ a.finding-title:hover {
   margin-top: var(--space-3);
 }
 
-/* Under 900 px the sidebar is a bar at the top of the page, "Section …", that opens the list under
+/* Under 900 px the sidebar is a bar at the top of the page, "Sections", that opens the list under
    it. KNT-164: the bar does not stay in view. A sticky bar that holds a button always covers part of
    some field at some scroll position (a form sent back with its errors scrolls to its field).
    settings.js sets .settings-nav-ready once it handles the bar: until then, or without it, the list
@@ -4048,6 +4080,8 @@ a.finding-title:hover {
     position: static;
     max-height: none;
     overflow: visible;
+    /* KNT-168: a link "Sections" leads here. */
+    scroll-margin-top: var(--space-4);
   }
   .settings-nav-ready .settings-nav-toggle {
     display: flex;
@@ -4072,15 +4106,12 @@ a.finding-title:hover {
     box-shadow: var(--focus-ring);
   }
   .settings-nav-toggle-label {
-    color: var(--ink-muted);
-    font-weight: 500;
-  }
-  .settings-nav-toggle-current {
     flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+  /* KNT-168. "Sections" at the end of each section, back to the bar at the top of the page. */
+  .settings-back {
+    display: block;
+    margin: calc(-1 * var(--space-2)) 0 0;
   }
   /* The chevron: down when folded, up when open. */
   .settings-nav-toggle::after {
@@ -4278,7 +4309,7 @@ a.finding-title:hover {
 .rule-form .field {
   width: 100%;
 }
-.rule-form :is(.input, .textarea, .select--native) {
+.rule-form :is(.input, .textarea, .select-box) {
   max-width: none;
 }
 .rule-body-input {
@@ -4289,7 +4320,7 @@ a.finding-title:hover {
 .rule-paths-input {
   min-height: 72px;
 }
-.rule-form .select--native.rule-floor-input {
+.rule-form .select-box.rule-floor-input {
   max-width: 240px;
 }
 .rule-body {
@@ -4396,7 +4427,7 @@ a.finding-title:hover {
     min-height: var(--control-h-touch);
     justify-content: center;
   }
-  .rule-form .select--native.rule-floor-input {
+  .rule-form .select-box.rule-floor-input {
     max-width: none;
   }
 }

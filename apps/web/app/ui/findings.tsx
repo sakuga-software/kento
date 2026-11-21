@@ -329,7 +329,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
         {list.author ? <input type="hidden" name="author" value={list.author} /> : null}
         {list.days ? <input type="hidden" name="days" value={String(list.days)} /> : null}
         <div class="findings-filter findings-filter-search">
-          <label class="label" for="findings-q">
+          <label class="field-label" for="findings-q">
             Search
           </label>
           <Input
@@ -343,7 +343,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           />
         </div>
         <div class="findings-filter">
-          <label class="label" for="findings-repo">
+          <label class="field-label" for="findings-repo">
             Repo
           </label>
           <Select id="findings-repo" name="repo">
@@ -358,7 +358,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </Select>
         </div>
         <div class="findings-filter">
-          <label class="label" for="findings-priority">
+          <label class="field-label" for="findings-priority">
             Priority
           </label>
           <Select id="findings-priority" name="priority">
@@ -373,7 +373,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </Select>
         </div>
         <div class="findings-filter">
-          <label class="label" for="findings-rule">
+          <label class="field-label" for="findings-rule">
             Source
           </label>
           {/* With no rule, "Review and rules" is the only choice: the list says so and stays still. */}
@@ -391,7 +391,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
           </Select>
         </div>
         <div class="findings-filter">
-          <label class="label" for="findings-type">
+          <label class="field-label" for="findings-type">
             Type
           </label>
           {/* REV-102: the findings that the last review lists under "To consider (code already reviewed)". */}
