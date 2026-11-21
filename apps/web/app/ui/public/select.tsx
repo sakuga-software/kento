@@ -120,7 +120,7 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
   let hidden: HTMLInputElement | null = null
   let button: HTMLButtonElement | null = null
   // True from a Tab in the open list until the list has closed, or opens again (Kentō #11e704: a
-  // close with no `toggle` event must not leave it set). When the list closes, the popover of
+  // close with no `toggle` event must not leave it set), or the next input. When the list closes, the popover of
   // @remix-run/ui gives the focus back to the button; after a Tab, the focus is already on the next
   // field, and stays there.
   let tabbedOut = false
@@ -128,6 +128,12 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
     if (!button) return
     HTMLElement.prototype.focus.call(button, { preventScroll: true })
     tabbedOut = true
+    // Kentō #052647: the next key or pointer press of the person also resets it, so that it never
+    // outlives the Tab. The focus that the library gives back comes before, with no input.
+    let reset = () => (tabbedOut = false)
+    let once = { capture: true, once: true, signal: handle.signal }
+    document.addEventListener('keydown', reset, once)
+    document.addEventListener('pointerdown', reset, once)
   }
   let keepButton = (node: HTMLButtonElement) => {
     button = node
