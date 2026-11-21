@@ -141,8 +141,8 @@ describe('the bar of a navigation (KNT-144)', () => {
     assert.equal(page.bars(), 1)
     page.fire('keydown', { target: null, defaultPrevented: false, key: 'Enter' } as FakeEvent)
     assert.equal(page.bars(), 1)
-    // confirm.js or row-menu.js used this Escape to close something of their own, before or after
-    // progress.js saw it (row-menu.js loads after it).
+    // confirm.js or a component used this Escape to close something of their own, before or after
+    // progress.js saw it (a component hydrates after it).
     page.fire('keydown', { target: null, defaultPrevented: true, key: 'Escape' } as FakeEvent)
     page.run(0)
     assert.equal(page.bars(), 1)
