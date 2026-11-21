@@ -1423,6 +1423,14 @@ button.org-menu-item:hover {
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+/* KNT-176. Newer and Older (Feedback): one at each end, each at its own width, on a phone too. */
+.pager.pager-steps {
+  display: flex;
+  justify-content: space-between;
+}
+.pager.pager-steps > :last-child {
+  width: auto;
+}
 /* KNT-146. The numbered pager: the range on the left; Previous, the numbers and Next on the right. */
 .pager-numbered {
   display: flex;
@@ -3623,9 +3631,6 @@ a.finding-title:hover {
   margin-right: var(--space-2);
   color: var(--ink-muted);
   font-size: var(--text-xs);
-}
-.todo-empty {
-  padding: var(--space-5) var(--space-6);
 }
 /* The marks of "To do": a triangle for a cost, a ring in two halves for the switch of review.yml. */
 .status-cost {
