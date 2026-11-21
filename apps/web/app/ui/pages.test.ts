@@ -1,16 +1,19 @@
+import { createHash } from 'node:crypto'
+
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
-import { SESSION_TTL_MS } from '../auth/session-storage.ts'
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from '../auth/test-helpers.ts'
+import { githubEmail, SESSION_TTL_MS } from '../auth/better-auth.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
+import { rememberClientAddress } from '../auth/rate-limit.ts'
 import { createAppRouter } from '../router.ts'
 import { ICON_FILES, ICON_VERSION } from '@kento-review/engine/render'
 import { appInstallUrl, localPath } from './pages.tsx'
 import { readTheme } from './theme.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 
 const INSTALL_URL = 'https://github.com/apps/kento-review/installations/new'
 
@@ -26,27 +29,31 @@ function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
     auth: { ...auth.deps, installUrl: INSTALL_URL },
   })
 
-  function request(path: string, init: { method?: string; cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string> } = {}) {
+  function request(
+    path: string,
+    init: { method?: string; cookie?: string | null; headers?: Record<string, string>; form?: Record<string, string>; ip?: string } = {},
+  ) {
     let headers = new Headers(init.headers)
     if (init.cookie) headers.set('Cookie', init.cookie)
-    return router.fetch(
-      new Request(new URL(path, 'http://localhost'), {
-        method: init.method ?? (init.form ? 'POST' : 'GET'),
-        headers,
-        body: init.form ? new URLSearchParams(init.form) : undefined,
-      }),
-    )
+    let req = new Request(new URL(path, 'http://localhost'), {
+      method: init.method ?? (init.form ? 'POST' : 'GET'),
+      headers,
+      body: init.form ? new URLSearchParams(init.form) : undefined,
+    })
+    // As server.ts does: the address of the socket of the request.
+    if (init.ip) rememberClientAddress(req, init.ip)
+    return router.fetch(req)
   }
 
   /** Signs in through the GitHub flow; returns the session cookie, or the refusal. */
-  async function signIn(profile = OCTOCAT, returnTo?: string) {
+  async function signIn(profile = OCTOCAT, returnTo?: string, ip?: string) {
     auth.as(profile)
-    let start = await request(`/login/github${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`)
-    assert.equal(start.status, 302)
+    let start = await request(`/login/github${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`, { ip })
+    assert.equal(start.status, 303)
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let pending = cookieOf(start, COOKIE)
-    assert.ok(pending, 'the start of the sign-in sets a session cookie')
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: pending })
+    let pending = cookiesOf(start)
+    assert.ok(pending, 'the start of the sign-in sets the cookie of its state')
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: pending, ip })
     return { callback, pending, cookie: cookieOf(callback, COOKIE) }
   }
 
@@ -56,6 +63,15 @@ function setup(options: Parameters<typeof fakeAuth>[0] = {}) {
   }
 
   return { auth, request, signIn, csrfOf }
+}
+
+/** A full sign-in with the router of `setup`, as `signIn` does. */
+async function setupSignIn(request: ReturnType<typeof setup>['request'], auth: ReturnType<typeof setup>['auth']) {
+  let start = await request('/login/github')
+  let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+  let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
+  assert.ok(auth)
+  return { callback, cookie: cookieOf(callback, COOKIE) }
 }
 
 describe('without the sign-in configured', () => {
@@ -105,7 +121,7 @@ describe('the GitHub sign-in', () => {
     assert.match(html, /<span class="bar-org-box">sakuga-software<\/span>/)
     assert.doesNotMatch(html, /Read only/)
     assert.match(html, /action="\/logout"/)
-    assert.equal(auth.memberships.get('user-1/org-1')?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'admin')
   })
 
   it('shows "Read only" to a member', async () => {
@@ -122,9 +138,9 @@ describe('the GitHub sign-in', () => {
     let { callback, cookie } = await signIn(STRANGER)
 
     assert.equal(callback.headers.get('Location'), '/login?notice=not_member')
-    // The pending sign-in is dropped: the cookie is cleared, and there is no user.
-    assert.equal(cookie, `${COOKIE}=`)
-    assert.equal(auth.users.size, 0)
+    // No session and no user: the person never gets a session cookie.
+    assert.equal(cookie, null)
+    assert.equal(auth.users.length, 0)
     assert.equal((await request('/', { cookie })).status, 303)
     assert.match(await (await request('/login?notice=not_member')).text(), /Access refused\./)
   })
@@ -182,7 +198,7 @@ describe('the GitHub sign-in', () => {
   it('a new sign-in empties the cookie of an earlier refusal (REV-32)', async () => {
     let { request } = setup()
     let start = await request('/login/github?switch=1', { cookie: '__Host-kento_refused=leftover' })
-    assert.equal(start.status, 302)
+    assert.equal(start.status, 303)
     assert.match(start.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_refused='))!, /Max-Age=0/)
     assert.equal((await request('/login/github')).headers.getSetCookie().some((c) => c.startsWith('__Host-kento_refused=')), false)
   })
@@ -211,26 +227,51 @@ describe('the GitHub sign-in', () => {
     let { callback } = await signIn(OCTOCAT)
 
     assert.equal(callback.headers.get('Location'), '/login?notice=failed')
-    assert.equal(auth.users.size, 0)
+    assert.equal(auth.users.length, 0)
   })
 
   it('refuses a callback with a wrong state or a refused code', async () => {
     let { request, auth } = setup()
     auth.as(OCTOCAT)
     let start = await request('/login/github')
-    let pending = cookieOf(start, COOKIE)!
-    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let pending = cookiesOf(start)
+    assert.match(pending, /__Host-kento_state=/)
 
+    // The cookie of the state is there, the state of the URL is not the one of the start: GitHub is
+    // never asked for a token.
     let wrongState = await request('/auth/github/callback?code=good&state=forged', { cookie: pending })
     assert.equal(wrongState.headers.get('Location'), '/login?notice=failed')
+    assert.equal(auth.exchanges.length, 0)
 
+    // The right state and its cookie, and a code that GitHub refuses: one exchange, then nothing.
     let again = await request('/login/github')
-    let badCode = await request(`/auth/github/callback?code=bad&state=${new URL(again.headers.get('Location')!).searchParams.get('state')}`, {
-      cookie: cookieOf(again, COOKIE),
-    })
+    let state = new URL(again.headers.get('Location')!).searchParams.get('state')!
+    let badCode = await request(`/auth/github/callback?code=bad&state=${state}`, { cookie: cookiesOf(again) })
     assert.equal(badCode.headers.get('Location'), '/login?notice=failed')
-    assert.equal(auth.users.size, 0)
-    assert.ok(state)
+    assert.equal(auth.exchanges.length, 1)
+    assert.equal(auth.exchanges[0]!.code, 'bad')
+    assert.equal(auth.users.length, 0)
+    assert.equal(auth.tables.sessions!.length, 0)
+    assert.equal(auth.tables.verifications!.length, 1, 'only the state of the first start is left, unused')
+  })
+
+  it('KNT-150: a callback without the cookie of its state signs nobody in (no login CSRF)', async () => {
+    let { request, auth } = setup()
+    auth.as(OCTOCAT)
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    // Another browser follows the link of the callback, with the code and the state of this start.
+    let foreign = await request(`/auth/github/callback?code=good&state=${state}`)
+    assert.equal(foreign.headers.get('Location'), '/login?notice=failed')
+    assert.equal(cookieOf(foreign, COOKIE), null)
+    assert.equal(auth.tables.sessions!.length, 0)
+    assert.equal(auth.exchanges.length, 0, 'GitHub is never asked for a token')
+    // The state is single use: even a refused try uses it up.
+    let late = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
+    assert.equal(late.headers.get('Location'), '/login?notice=failed')
+    // A new start in the browser of the person signs in.
+    let { cookie } = await setupSignIn(request, auth)
+    assert.ok(cookie)
   })
 
   it('a sign-in from a signed-in session keeps nothing of the previous one', async () => {
@@ -241,7 +282,7 @@ describe('the GitHub sign-in', () => {
     auth.as(CAMILLE)
     let start = await request('/login/github', { cookie: first.cookie })
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let pending = cookieOf(start, COOKIE) ?? first.cookie
+    let pending = [first.cookie, cookiesOf(start)].filter(Boolean).join('; ')
     let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: pending })
     let cookie = cookieOf(callback, COOKIE)!
 
@@ -252,23 +293,212 @@ describe('the GitHub sign-in', () => {
     assert.equal((await request('/', { cookie: first.cookie })).status, 303)
   })
 
-  it('gives a new session id at the sign-in', async () => {
-    let { signIn } = setup()
-    let { pending, cookie } = await signIn(OCTOCAT)
-    assert.notEqual(cookie, pending)
-  })
-
-  it('sets a hardened session cookie', async () => {
+  it('KNT-150: trades the code with the redirect_uri and the PKCE verifier of the authorization', async () => {
     let { auth, request } = setup()
     auth.as(OCTOCAT)
     let start = await request('/login/github')
-    let header = start.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
-    assert.match(header, /; Path=\//)
-    assert.match(header, /; HttpOnly/)
-    assert.match(header, /; Secure/)
-    assert.match(header, /; SameSite=Lax/)
-    assert.match(header, /; Max-Age=604800/)
-    assert.doesNotMatch(header, /Domain=/)
+    let authorize = new URL(start.headers.get('Location')!)
+    assert.equal(authorize.origin + authorize.pathname, 'https://github.test/login/oauth/authorize')
+    assert.equal(authorize.searchParams.get('code_challenge_method'), 'S256')
+    assert.equal(authorize.searchParams.get('allow_signup'), 'false')
+    let callback = await request(`/auth/github/callback?code=good&state=${authorize.searchParams.get('state')}`, { cookie: cookiesOf(start) })
+    assert.equal(callback.status, 303)
+    let [exchange] = auth.exchanges
+    assert.equal(exchange!.redirectUri, authorize.searchParams.get('redirect_uri'))
+    assert.equal(exchange!.redirectUri, 'https://review.test/auth/github/callback')
+    assert.equal(createHash('sha256').update(exchange!.codeVerifier!).digest('base64url'), authorize.searchParams.get('code_challenge'))
+    assert.ok(!authorize.href.includes(exchange!.codeVerifier!), 'the verifier never goes to the browser')
+  })
+
+  it('KNT-150: a refused or failed sign-in from a signed-in session keeps that session', async () => {
+    let { request, signIn, auth } = setup()
+    let first = await signIn(OCTOCAT)
+    auth.as(STRANGER)
+    let start = await request('/login/github', { cookie: first.cookie })
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let refused = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: [first.cookie, cookiesOf(start)].join('; ') })
+    assert.equal(refused.headers.get('Location'), '/login?notice=not_member')
+    assert.equal((await request('/', { cookie: first.cookie })).status, 200, 'octocat is still signed in after a refusal')
+    // A fresh start, and a code that GitHub refuses.
+    auth.as(OCTOCAT)
+    let again = await request('/login/github', { cookie: first.cookie })
+    let fresh = new URL(again.headers.get('Location')!).searchParams.get('state')!
+    let exchanges = auth.exchanges.length
+    let failed = await request(`/auth/github/callback?code=bad&state=${fresh}`, { cookie: [first.cookie, cookiesOf(again)].join('; ') })
+    assert.equal(failed.headers.get('Location'), '/login?notice=failed')
+    assert.equal(auth.exchanges.length, exchanges + 1, 'the code reached GitHub')
+    assert.equal(cookieOf(failed, COOKIE), null, 'no session cookie, set or cleared')
+    assert.equal((await request('/', { cookie: first.cookie })).status, 200, 'octocat is still signed in after a failure')
+    assert.equal(auth.tables.sessions!.length, 1)
+  })
+
+  it('gives a new session token at the sign-in, never one that the browser brought (no fixation)', async () => {
+    let { request, signIn, auth } = setup()
+    auth.as(OCTOCAT)
+    let fixed = `${COOKIE}=attacker.fixed`
+    let start = await request('/login/github', { cookie: fixed })
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: `${fixed}; ${cookiesOf(start)}` })
+    let first = cookieOf(callback, COOKIE)!
+    assert.ok(first)
+    assert.notEqual(first, fixed)
+    assert.notEqual(first.split('=')[1]!.split('.')[0], 'attacker')
+    // Two sign-ins, two tokens, and the first one opens nothing once the second replaced it.
+    let second = await request(`/login/github`, { cookie: first })
+    let again = await request(`/auth/github/callback?code=good&state=${new URL(second.headers.get('Location')!).searchParams.get('state')}`, {
+      cookie: `${first}; ${cookiesOf(second)}`,
+    })
+    let next = cookieOf(again, COOKIE)!
+    assert.notEqual(next.split('.')[0], first.split('.')[0])
+    assert.equal((await request('/', { cookie: first })).status, 303)
+    assert.equal((await request('/', { cookie: next })).status, 200)
+    assert.ok(signIn)
+  })
+
+  it('sets hardened __Host- cookies for the state of a sign-in and for the session', async () => {
+    let { request, auth } = setup()
+    auth.as(OCTOCAT)
+    let start = await request('/login/github')
+    let state = start.headers.getSetCookie().find((c) => c.startsWith('__Host-kento_state=')) ?? ''
+    let callback = await request(`/auth/github/callback?code=good&state=${new URL(start.headers.get('Location')!).searchParams.get('state')}`, {
+      cookie: cookiesOf(start),
+    })
+    let session = callback.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
+    assert.match(COOKIE, /^__Host-/)
+    for (let [header, maxAge] of [
+      [state, 600],
+      [session, 604800],
+    ] as const) {
+      assert.match(header, /^__Host-/)
+      assert.match(header, /; Path=\/(;|$)/)
+      assert.match(header, /; HttpOnly/)
+      assert.match(header, /; Secure/)
+      assert.match(header, /; SameSite=Lax/)
+      assert.match(header, new RegExp(`; Max-Age=${maxAge}`))
+      assert.doesNotMatch(header, /Domain=/i)
+    }
+    // No other cookie of Better Auth: no `__Secure-` one, no cache of the session.
+    let names = [...start.headers.getSetCookie(), ...callback.headers.getSetCookie()].map((c) => c.split('=')[0]!)
+    assert.deepEqual(names.filter((n) => n.startsWith('__Secure-') || n.includes('session_data')), [])
+  })
+
+  it('KNT-150: a session is not extended by its use: it ends 7 days after the sign-in', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    // As if the sign-in was 2 days ago: Better Auth would extend a session older than a day.
+    let row = auth.tables.sessions![0]!
+    let end = new Date(Date.now() + SESSION_TTL_MS - 2 * 24 * 60 * 60 * 1000)
+    row.expiresAt = end
+    assert.equal((await request('/', { cookie })).status, 200)
+    assert.equal((await request('/repos', { cookie })).status, 200)
+    assert.equal(new Date(auth.tables.sessions![0]!.expiresAt as Date).getTime(), end.getTime())
+  })
+
+  it('KNT-150: never links a GitHub account to a user found by e-mail', async () => {
+    let { signIn, auth } = setup()
+    // A user with the e-mail of octocat, and no account row.
+    auth.tables.users!.push({
+      id: 'user-orphan', githubId: OCTOCAT.id, login: 'octocat', email: githubEmail(OCTOCAT.id), emailVerified: false,
+      createdAt: new Date(), updatedAt: new Date(),
+    })
+    let { callback, cookie } = await signIn(OCTOCAT)
+    assert.equal(callback.headers.get('Location'), '/login?notice=failed')
+    assert.equal(cookie, null)
+    assert.equal(auth.tables.accounts!.length, 0)
+  })
+
+  it('KNT-150: a returnTo that holds "error=" still ends in a sign-in, once', async () => {
+    let { signIn, auth } = setup()
+    let { callback, cookie } = await signIn(OCTOCAT, '/findings?error=1')
+    assert.equal(callback.headers.get('Location'), '/findings?error=1')
+    assert.ok(cookie)
+    assert.equal(auth.tables.sessions!.length, 1)
+  })
+
+  it('KNT-150: a failed write of the sign-in reaches no log with the parameters of its query', async () => {
+    let { request, auth } = setup()
+    auth.as(OCTOCAT)
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let written: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    let stdout = process.stdout.write.bind(process.stdout)
+    let consoleError = console.error
+    process.stderr.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stderr.write
+    process.stdout.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stdout.write
+    console.error = (...args: unknown[]) => void written.push(args.map((a) => (a instanceof Error ? `${a.message}` : String(a))).join(' '))
+    let callback: Response
+    try {
+      auth.failSessions(true)
+      callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
+    } finally {
+      auth.failSessions(false)
+      process.stderr.write = stderr
+      process.stdout.write = stdout
+      console.error = consoleError
+    }
+    assert.equal(callback.headers.get('Location'), '/login?notice=failed')
+    let all = written.join('')
+    assert.match(all, /auth\.sign_in_failed/)
+    assert.doesNotMatch(all, /params:|the-token-hash-param|SERVER_ERROR/)
+  })
+
+  it('KNT-150: no path of the API of Better Auth is served', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    for (let path of [
+      '/api/auth/get-session', '/api/auth/list-sessions', '/api/auth/sign-out', '/api/auth/revoke-session',
+      '/api/auth/revoke-sessions', '/api/auth/revoke-other-sessions', '/api/auth/callback/github', '/api/auth/ok',
+      '/api/auth/error', '/api/auth/sign-in/social', '/api/auth/oauth2/callback/github', '/api/auth/organization/list',
+      '/api/auth/multi-session/list-device-sessions', '/api/auth/admin/list-user-sessions',
+    ]) {
+      for (let method of ['GET', 'POST']) {
+        let response = await request(path, { method, cookie, headers: { Origin: 'https://review.test', 'Content-Type': 'application/json' } })
+        assert.equal(response.status, 404, `${method} ${path}`)
+      }
+    }
+  })
+
+  it('KNT-150: limits the sign-ins of one client, and not the others', async () => {
+    let { request, signIn, auth } = setup()
+    auth.as(OCTOCAT)
+    let codes: number[] = []
+    for (let n = 0; n < 12; n++) codes.push((await request('/login/github', { ip: '203.0.113.7' })).status)
+    assert.deepEqual(codes, [...Array(10).fill(303), 429, 429])
+    let refused = await request('/login/github', { ip: '203.0.113.7' })
+    assert.equal(refused.headers.get('Retry-After'), '60')
+    assert.match(await refused.text(), /Too many sign-ins\./)
+    assert.equal(auth.tables.verifications!.length, 10, 'no row past the limit')
+    // A flood of callbacks from one client stops at its limit; another client still signs in.
+    for (let n = 0; n < 25; n++) await request('/auth/github/callback?code=x&state=y', { ip: '203.0.113.8' })
+    assert.equal((await request('/auth/github/callback?code=x&state=y', { ip: '203.0.113.8' })).status, 429)
+    let other = await signIn(OCTOCAT, undefined, '198.51.100.20')
+    assert.ok(other.cookie)
+    // A forged X-Forwarded-For changes nothing: without trusted proxies, the socket is the client.
+    let forged = await request('/login/github', { ip: '203.0.113.7', headers: { 'X-Forwarded-For': '192.0.2.99' } })
+    assert.equal(forged.status, 429)
+    // After a minute, the client signs in again.
+    auth.clock.now += 60_000
+    assert.equal((await request('/login/github', { ip: '203.0.113.7' })).status, 303)
+  })
+
+  it('KNT-150: a request with no known address is limited too, never let through', async () => {
+    let { request } = setup()
+    let codes: number[] = []
+    for (let n = 0; n < 11; n++) codes.push((await request('/login/github')).status)
+    assert.deepEqual(codes, [...Array(10).fill(303), 429])
+  })
+
+  it('KNT-150: callbacks from many clients never lock the others out (no shared bucket)', async () => {
+    let { request, signIn } = setup()
+    // 150 callbacks with a wrong state, each one from a client of its own, each under its limit.
+    for (let n = 0; n < 150; n++) {
+      let response = await request('/auth/github/callback?code=x&state=y', { ip: `10.0.${n >> 8}.${n & 255}` })
+      assert.equal(response.headers.get('Location'), '/login?notice=failed')
+    }
+    // The next person signs in, from another client or with no address at all.
+    assert.ok((await signIn(OCTOCAT, undefined, '198.51.100.30')).cookie)
+    assert.ok((await signIn(CAMILLE)).cookie)
   })
 
   it('sends a signed-in person from the sign-in page to the screens', async () => {
@@ -365,8 +595,20 @@ describe('the role, from GitHub', () => {
 
     // She comes back to orchard: the session stays on the org it moved to.
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
-    await auth.deps.store.saveMembership('user-2', 'org-2', 'admin')
+    await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-2', 'admin')
     assert.match(await (await request('/', { cookie })).text(), /<option value="org-1" selected>sakuga-software<\/option>/)
+  })
+
+  it('answers 503 and keeps the cookie while the sessions cannot be read, then works again', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    auth.failSessions(true)
+    let down = await request('/repos', { cookie })
+    assert.equal(down.status, 503)
+    assert.equal(down.headers.get('Retry-After'), '60')
+    assert.equal(down.headers.getSetCookie().some((c) => c.startsWith(`${COOKIE}=`)), false, 'the cookie stays')
+    auth.failSessions(false)
+    assert.equal((await request('/repos', { cookie })).status, 200)
   })
 
   it('ends the session seven days after the sign-in', async () => {
@@ -383,18 +625,18 @@ describe('the role, from GitHub', () => {
     let { signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
     let { cookie } = await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2')?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin')
 
     // GitHub fails for orchard at the next sign-in, and answers for sakuga-software.
     auth.clock.now += 60_000
     auth.setRole(OTHER_ORG, CAMILLE, 'error')
     await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2')?.role, 'admin', 'GitHub never said that camille left orchard')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin', 'GitHub never said that camille left orchard')
 
     // A "not a member" from GitHub does forget it.
     auth.setRole(OTHER_ORG, CAMILLE, null)
     await signIn(CAMILLE)
-    assert.equal(auth.memberships.get('user-2/org-2'), undefined)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`), undefined)
     assert.ok(cookie)
   })
 
@@ -451,6 +693,12 @@ describe('the forms of the frame', () => {
     let response = await request('/logout', { cookie, form: { _csrf: await csrfOf(cookie!) } })
     assert.equal(response.status, 303)
     assert.equal(response.headers.get('Location'), '/login?notice=signed_out')
+    // The browser drops the cookie: no Domain, the same Path, Max-Age=0.
+    let cleared = response.headers.getSetCookie().find((c) => c.startsWith(`${COOKIE}=`)) ?? ''
+    assert.match(cleared, new RegExp(`^${COOKIE}=;`))
+    assert.match(cleared, /; Max-Age=0/)
+    assert.match(cleared, /; Path=\//)
+    assert.match(cleared, /; Secure/)
     assert.equal((await request('/', { cookie })).status, 303)
   })
 

@@ -466,18 +466,80 @@ export const resolutions = pgTable(
 /** The role of a person in an org, as GitHub gives it: an admin edits, a member reads. */
 export const orgRole = pgEnum('org_role', ['admin', 'member'])
 
-/** A person who signed in with GitHub. Kentō keeps no GitHub token of theirs. */
+/**
+ * A person who signed in with GitHub. Kentō keeps no GitHub token of theirs. KNT-150: the `user` of
+ * Better Auth (app/auth/better-auth.ts maps its fields onto these columns).
+ */
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   /** The id of the GitHub account: it never changes, unlike the login. */
   githubId: bigint('github_id', { mode: 'number' }).notNull().unique(),
   login: text('login').notNull(),
+  /** The name on GitHub, when the account has one. */
   name: text('name'),
   avatarUrl: text('avatar_url'),
+  /**
+   * KNT-150. Better Auth needs an e-mail, and the App reads none: `<github id>@users.github.invalid`
+   * (RFC 2606, never routed). Never shown, never mailed.
+   */
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('email_verified').notNull().default(false),
   lastSignInAt: timestamp('last_sign_in_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 })
+
+/**
+ * KNT-150. The GitHub account of a user, as Better Auth links it (`account`). One per user. It never
+ * holds a token: app/auth/better-auth.ts drops them before the write, and the check refuses them.
+ */
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `github`. */
+    providerId: text('provider_id').notNull(),
+    /** The id of the GitHub account, as text. */
+    accountId: text('account_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex('accounts_provider_account_idx').on(table.providerId, table.accountId),
+    index('accounts_user_id_idx').on(table.userId),
+    check(
+      'accounts_no_secret',
+      sql`${table.accessToken} is null and ${table.refreshToken} is null and ${table.idToken} is null and ${table.password} is null`,
+    ),
+  ],
+)
+
+/**
+ * KNT-150. What Better Auth keeps between the start of a sign-in and the callback of GitHub
+ * (`verification`): the `state`, and the PKCE verifier. 10 minutes.
+ */
+export const verifications = pgTable(
+  'verifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index('verifications_identifier_idx').on(table.identifier), index('verifications_expires_at_idx').on(table.expiresAt)],
+)
 
 /**
  * The role of a user in an org, read from GitHub at sign-in and again when `checked_at` is older
@@ -500,17 +562,23 @@ export const memberships = pgTable(
 )
 
 /**
- * A browser session. The cookie holds a random id, signed; the table keeps only its SHA-256, so a
- * copy of the table opens no session. A row ends at `expires_at`, at sign-out, or with its user.
+ * A browser session (KNT-150: the `session` of Better Auth). The cookie holds a random token, signed;
+ * the table keeps only its SHA-256 (`token_hash`), so a copy of the table opens no session. A row
+ * ends at `expires_at`, 7 days after the sign-in, at sign-out, or with its user.
  */
 export const sessions = pgTable(
   'sessions',
   {
-    idHash: text('id_hash').primaryKey(),
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
-    /** The data of `remix/session`: the signed-in user, the CSRF token, the org on screen. */
-    data: jsonb('data').notNull(),
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenHash: text('token_hash').notNull().unique(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The org on screen. Null: the first org of the person. */
+    activeOrganizationId: uuid('active_organization_id').references(() => orgs.id, { onDelete: 'set null' }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

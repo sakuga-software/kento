@@ -2,7 +2,7 @@ import type { Level } from '@kento-review/protocol'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import type { PullRequestNow, ReadPullRequest } from '../dashboard/github.ts'
 import type { DashboardScreen, DashboardStore, FailureBanner, RetryOutcome } from '../dashboard/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
@@ -13,7 +13,7 @@ import { createAppRouter } from '../router.ts'
 import { capState, failureText, setupSteps, stallText, weekMeanDuration } from './dashboard.tsx'
 import { runnerState } from './runners.tsx'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const NOW = new Date('2026-10-29T10:00:00Z')
 const JOB_ID = '11111111-1111-4111-8111-111111111111'
 const REPO_ID = '22222222-2222-4222-8222-222222222222'
@@ -189,7 +189,7 @@ function setup(
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request('/', { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''

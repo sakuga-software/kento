@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { serviceProviders } from '../repo-config/providers.ts'
 import type { RepoConfigStore, RepoConfigView } from '../repo-config/store.ts'
@@ -9,7 +9,7 @@ import type { RuleValues } from '../rules/model.ts'
 import { MAX_RULES, type RuleOutcome, type RulesStore, type RuleView } from '../rules/store.ts'
 import { createAppRouter } from '../router.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const ORCHARD = '00000000-0000-4000-8000-000000000001'
 const ELSEWHERE = '00000000-0000-4000-8000-000000000009'
 
@@ -117,7 +117,7 @@ function setup(options: { config?: boolean } = {}) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request(options.config === false ? '/settings' : `/repos/${ORCHARD}/config?tab=rules`, { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''

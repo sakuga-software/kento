@@ -2,6 +2,7 @@ import type { KeyObject } from 'node:crypto'
 
 import packageJson from '../package.json' with { type: 'json' }
 
+import { SIGN_IN_STARTS_PER_MINUTE } from './auth/rate-limit.ts'
 import { GITHUB_API_URL, readPrivateKey } from './github/installation-token.ts'
 import { CAP_CHECK_NAME, DEFAULT_INSTANCE, type Instance } from './instance.ts'
 import { MAX_TRUSTED_BOTS, parseBotLogins } from './org-settings/bot-logins.ts'
@@ -82,6 +83,13 @@ export interface SignInConfig {
   oauthUrl: string
   /** The GitHub API, the one of GITHUB_API_URL. */
   apiUrl: string
+  /**
+   * KNT-150. KENTO_TRUSTED_PROXY_HOPS: the proxies in front of the service, whose
+   * `X-Forwarded-For` gives the address of the client. 0: none, the socket is the client.
+   */
+  trustedProxyHops: number
+  /** KNT-150. KENTO_SIGN_IN_LIMIT: the starts of a sign-in per minute and per client; twice as many callbacks. */
+  signInLimit: number
 }
 
 /** The shortest session secret that `loadConfig` accepts. */
@@ -334,7 +342,22 @@ function readSignIn(
     sessionSecrets,
     oauthUrl,
     apiUrl: githubApp.apiUrl.replace(/\/+$/, ''),
+    trustedProxyHops: readProxyHops(env, publicUrl, problems),
+    signInLimit: readInteger(env, 'KENTO_SIGN_IN_LIMIT', SIGN_IN_STARTS_PER_MINUTE, 1, 10_000, problems),
   }
+}
+
+/**
+ * KNT-150. KENTO_TRUSTED_PROXY_HOPS. The service speaks only HTTP: an https KENTO_PUBLIC_URL means a
+ * proxy in front, and with 0 hops every client would have its address and share one sign-in limit.
+ * So it must be written then (an explicit 0 stays allowed); on the machine itself it defaults to 0.
+ */
+function readProxyHops(env: Record<string, string | undefined>, publicUrl: URL, problems: string[]): number {
+  if (publicUrl.protocol === 'https:' && !env.KENTO_TRUSTED_PROXY_HOPS?.trim()) {
+    problems.push('KENTO_TRUSTED_PROXY_HOPS must be set when KENTO_PUBLIC_URL is https: 1 behind Traefik alone, 0 when nothing is in front')
+    return 0
+  }
+  return readInteger(env, 'KENTO_TRUSTED_PROXY_HOPS', 0, 0, 10, problems)
 }
 
 function isLoopback(hostname: string): boolean {

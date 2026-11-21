@@ -1,14 +1,14 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { AppStatus, ReadAppStatus } from '../org-settings/app-status.ts'
 import type { OrgSettingsStore, OrgSettingsValues, OrgSettingsView } from '../org-settings/store.ts'
 import { serviceOption, serviceProviders, type ProviderCatalog } from '../repo-config/providers.ts'
 import { createAppRouter } from '../router.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const NOW = new Date('2026-10-29T10:00:00Z')
 
 function view(orgId: string, overrides: Partial<OrgSettingsView> = {}): OrgSettingsView {
@@ -107,7 +107,7 @@ function setup(app: Awaited<ReturnType<ReadAppStatus>> | null = { ok: true, stat
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request('/settings', { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''

@@ -36,7 +36,7 @@ describe('the store of the rules (REV-19)', () => {
     repoId = repo!.id
     otherRepoId = otherRepo!.id
     let [user] = await database.sql<{ id: string }[]>`
-      insert into users (github_id, login) values (1, 'octocat') returning id`
+      insert into users (github_id, login, email) values (1, 'octocat', '1@users.github.invalid') returning id`
     userId = user!.id
   })
 

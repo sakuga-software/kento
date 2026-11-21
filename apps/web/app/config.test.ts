@@ -114,6 +114,7 @@ describe('loadConfig', () => {
       GITHUB_APP_CLIENT_ID: 'Iv23liesB1xzywavcnv2',
       GITHUB_APP_CLIENT_SECRET: 'client-secret-value-never-printed',
       KENTO_SESSION_SECRET: `${'s'.repeat(32)}, ${'t'.repeat(40)}`,
+      KENTO_TRUSTED_PROXY_HOPS: '1',
     }
 
     it('reads its four variables, with the App', () => {
@@ -123,6 +124,23 @@ describe('loadConfig', () => {
       assert.deepEqual(config.signIn?.sessionSecrets, ['s'.repeat(32), 't'.repeat(40)])
       assert.equal(config.signIn?.oauthUrl, 'https://github.com')
       assert.equal(config.signIn?.apiUrl, 'https://api.github.com')
+    })
+
+    it('KNT-150: reads the trusted proxies and the sign-in limit, with safe defaults', () => {
+      let plain = loadConfig({ ...app, ...signIn })
+      assert.equal(plain.signIn?.trustedProxyHops, 1)
+      assert.equal(plain.signIn?.signInLimit, 10)
+      // Behind https there is a proxy: the hops must be written. An explicit 0 stays allowed.
+      let { KENTO_TRUSTED_PROXY_HOPS: _hops, ...unset } = signIn
+      assert.throws(() => loadConfig({ ...app, ...unset }), /KENTO_TRUSTED_PROXY_HOPS must be set when KENTO_PUBLIC_URL is https/)
+      assert.equal(loadConfig({ ...app, ...unset, KENTO_TRUSTED_PROXY_HOPS: '0' }).signIn?.trustedProxyHops, 0)
+      // On the machine itself, over http: no proxy, 0 by default.
+      assert.equal(loadConfig({ ...app, ...unset, KENTO_PUBLIC_URL: 'http://127.0.0.1:3000' }).signIn?.trustedProxyHops, 0)
+      let set = loadConfig({ ...app, ...signIn, KENTO_TRUSTED_PROXY_HOPS: '1', KENTO_SIGN_IN_LIMIT: '30' })
+      assert.equal(set.signIn?.trustedProxyHops, 1)
+      assert.equal(set.signIn?.signInLimit, 30)
+      assert.throws(() => loadConfig({ ...app, ...signIn, KENTO_TRUSTED_PROXY_HOPS: '-1' }), /KENTO_TRUSTED_PROXY_HOPS must be an integer from 0 to 10/)
+      assert.throws(() => loadConfig({ ...app, ...signIn, KENTO_SIGN_IN_LIMIT: '0' }), /KENTO_SIGN_IN_LIMIT must be an integer from 1 to 10000/)
     })
 
     it('names the missing variables, and needs the App, never printing a value', () => {

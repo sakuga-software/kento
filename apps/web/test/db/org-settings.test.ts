@@ -110,7 +110,7 @@ describe('the settings of an org against Postgres (REV-13)', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, runners, jobs, reviews, resolutions, users, webhook_deliveries cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (1, 'octocat', '1@users.github.invalid') returning id`
     userId = user!.id
     fake = createFakeGitHub({ head: HEAD, pr: 28, repoId: REPO.id })
     fake.state.permissions.set('octocat', 'admin')

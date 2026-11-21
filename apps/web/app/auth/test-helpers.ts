@@ -1,10 +1,8 @@
-import { createOAuthProvider } from 'remix/auth'
-import type { SessionStorage } from 'remix/session'
-import { createMemorySessionStorage } from 'remix/session-storage/memory'
+import { memoryAdapter } from 'better-auth/adapters/memory'
 
 import type { AuthDependencies } from '../ui/pages.tsx'
-import type { GitHubProfile, InstallationAccount, LookupRole, OrgRole } from './github.ts'
-import { readSessionAuth } from './session-storage.ts'
+import { createKentoAuth, type AuthDatabase } from './better-auth.ts'
+import type { GitHubOAuth, GitHubProfile, InstallationAccount, LookupRole, OrgRole } from './github.ts'
 import type { AuthStore, MembershipRow, OrgRow, UserRow } from './store.ts'
 
 export const ORG: OrgRow = {
@@ -22,29 +20,67 @@ export const OCTOCAT: GitHubProfile = { id: 1, login: 'octocat', name: 'Octocat'
 export const CAMILLE: GitHubProfile = { id: 2, login: 'camille', name: null, avatarUrl: null }
 export const STRANGER: GitHubProfile = { id: 3, login: 'stranger', name: null, avatarUrl: null }
 
+/** The name of the session cookie of Better Auth on the https service of the tests. */
+export const SESSION_COOKIE = '__Host-kento_session'
+
 /**
- * The sign-in with a fake GitHub, a store in memory and a clock that the test moves. `roles` is
- * what GitHub answers, by the login of the account of an installation then person login: a role, null
- * (not a member), or 'error'.
+ * The sign-in with a fake GitHub, Better Auth on a store in memory, and a clock that the test moves.
+ * `roles` is what GitHub answers, by the login of the account of an installation then person login:
+ * a role, null (not a member), or 'error'.
  */
 export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) {
   let orgs = options.orgs ?? [ORG]
-  let clock = { now: Date.parse('2026-10-28T12:00:00Z') }
+  // The clock starts now: Better Auth checks the end of a session and of a sign-in on the real
+  // clock, and Kentō on this one.
+  let clock = { now: Date.now() }
   let roles = new Map<string, OrgRole | null | 'error'>()
-  let users = new Map<string, UserRow>()
   let memberships = new Map<string, { role: OrgRole; checkedAt: Date }>()
   let lookups: string[] = []
+  /** The code exchanges that the fake GitHub received, as GitHub checks them. */
+  let exchanges: { code: string; codeVerifier: string | null; redirectUri: string }[] = []
   let profile: GitHubProfile = OCTOCAT
+  // The tables of Better Auth, in memory, under the model names of Kentō.
+  let tables: Record<string, Record<string, unknown>[]> = { users: [], accounts: [], sessions: [], verifications: [] }
+  // `failing`: the table of the sessions throws, as a database that does not answer.
+  let failing = false
+  let sessionRows = tables.sessions!
+  Object.defineProperty(tables, 'sessions', {
+    get() {
+      // As a failed query of Drizzle: its message ends with the parameters of the query.
+      if (failing) throw new Error('Failed query: select from "sessions"\nparams: the-token-hash-param,203.0.113.5')
+      return sessionRows
+    },
+    set(rows: Record<string, unknown>[]) {
+      sessionRows = rows
+    },
+  })
+  let database: AuthDatabase = memoryAdapter(tables) as unknown as AuthDatabase
+
+  function userRow(row: Record<string, unknown>): UserRow {
+    return {
+      id: String(row.id),
+      githubId: Number(row.githubId),
+      login: String(row.login),
+      name: (row.name as string | null | undefined) ?? null,
+      avatarUrl: (row.avatarUrl as string | null | undefined) ?? null,
+    }
+  }
 
   let store: AuthStore = {
-    async upsertUser(p) {
-      let existing = [...users.values()].find((u) => u.githubId === p.id)
-      let user: UserRow = { id: existing?.id ?? `user-${p.id}`, githubId: p.id, login: p.login, name: p.name, avatarUrl: p.avatarUrl }
-      users.set(user.id, user)
-      return user
-    },
     async findUser(id) {
-      return users.get(id) ?? null
+      let row = tables.users!.find((u) => u.id === id)
+      return row ? userRow(row) : null
+    },
+    async touchSignIn() {},
+    async setActiveOrg(sessionId, orgId) {
+      let row = tables.sessions!.find((s) => s.id === sessionId)
+      if (row) row.activeOrganizationId = orgId
+    },
+    async deleteSession(sessionId) {
+      tables.sessions = tables.sessions!.filter((s) => s.id !== sessionId)
+    },
+    async sweep() {
+      return 0
     },
     async activeOrgs() {
       return orgs
@@ -72,26 +108,28 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     return role
   }
 
-  let provider = createOAuthProvider<GitHubProfile, 'github'>('github', {
-    async createAuthorizationURL(transaction) {
-      return new URL(`https://github.test/login/oauth/authorize?state=${transaction.state}`)
+  let github: GitHubOAuth = {
+    clientId: 'Iv1.test',
+    clientSecret: 'client-secret-for-the-tests',
+    authorizationUrl: 'https://github.test/login/oauth/authorize',
+    tokenUrl: 'https://github.test/login/oauth/access_token',
+    redirectUri: new URL('/auth/github/callback', options.publicUrl ?? 'https://review.test'),
+    async exchangeCode(exchange) {
+      exchanges.push(exchange)
+      if (exchange.code !== 'good') throw new Error('GitHub refused the code: 400 bad_verification_code')
+      return { accessToken: 'gho_user_token' }
     },
-    async handleCallback(context) {
-      if (context.url.searchParams.get('code') !== 'good') throw new Error('GitHub refused the code: 400 bad_verification_code')
-      return {
-        provider: 'github',
-        account: { provider: 'github', providerAccountId: String(profile.id) },
-        profile,
-        tokens: { accessToken: 'gho_user_token' },
-      }
+    async readProfile() {
+      return profile
     },
-  })
+  }
 
+  let publicUrl = new URL(options.publicUrl ?? 'https://review.test')
+  let sessionSecrets = ['a-session-secret-for-the-tests-0123456789']
   let deps: AuthDependencies = {
-    publicUrl: new URL(options.publicUrl ?? 'https://review.test'),
-    sessionSecrets: ['a-session-secret-for-the-tests-0123456789'],
-    sessionStorage: signInSessionsOnly(createMemorySessionStorage()),
-    provider,
+    publicUrl,
+    sessionSecrets,
+    auth: createKentoAuth({ database, publicUrl, secret: sessionSecrets[0]!, github, store, lookupRole, now: () => clock.now }),
     store,
     lookupRole,
     now: () => clock.now,
@@ -100,9 +138,24 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   return {
     deps,
     clock,
-    users,
+    tables,
     memberships,
     lookups,
+    exchanges,
+    /** The users that Better Auth wrote. */
+    get users() {
+      return tables.users!
+    },
+    /** The sessions cannot be read or written from now on, until `failSessions(false)`. */
+    failSessions(on: boolean) {
+      failing = on
+    },
+    /** The id of the user of a GitHub account, once it signed in. */
+    userIdOf(person: GitHubProfile): string {
+      let row = tables.users!.find((u) => Number(u.githubId) === person.id)
+      if (!row) throw new Error(`${person.login} never signed in`)
+      return String(row.id)
+    },
     /** What GitHub answers for the role of `person` in the account of an installation (the first of `org`). */
     setRole(org: OrgRow | InstallationAccount, person: GitHubProfile, role: OrgRole | null | 'error') {
       let login = 'installations' in org ? org.installations[0]!.login : org.login
@@ -115,6 +168,15 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   }
 }
 
+/** Every `name=value` that a response sets and does not clear, as one Cookie header. */
+export function cookiesOf(response: Response): string {
+  return response.headers
+    .getSetCookie()
+    .filter((header) => !/;\s*max-age=0\b/i.test(header))
+    .map((header) => header.split(';')[0]!)
+    .join('; ')
+}
+
 /** The `name=value` of the first Set-Cookie of a response, for the Cookie header of the next request. */
 export function cookieOf(response: Response, name: string): string | null {
   for (let header of response.headers.getSetCookie()) {
@@ -122,20 +184,4 @@ export function cookieOf(response: Response, name: string): string | null {
     if (pair.startsWith(`${name}=`)) return pair
   }
   return null
-}
-
-/**
- * A storage in memory with the rule of the Postgres one: only a signed-in session or a sign-in on
- * its way is kept, so a visit sets no cookie. The tests against Postgres prove the real one.
- */
-function signInSessionsOnly(inner: SessionStorage): SessionStorage {
-  return {
-    read: (cookie) => inner.read(cookie),
-    async save(session) {
-      if (!session.destroyed && !readSessionAuth(session) && !session.has('__auth') && !session.deleteId) {
-        return null
-      }
-      return inner.save(session)
-    },
-  }
 }
