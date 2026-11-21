@@ -193,9 +193,10 @@ as it stands, after your review.
 
 When the message holds a `Critical change` section, a 4 or a 5 means that you
 checked the items of its checklist that apply. Give in `checked.paths` the
-files, routes and endpoints that you checked, and in `checked.roles` the roles
-and actors. The engine caps the score at 3 when `checked` names no file of the
-repository or no role. A change of who sees which data, or of when a session
+files of the diff, the routes and the library endpoints that you checked, and
+in `checked.roles` the roles and actors. The engine caps the score at 3 when
+`checked` names no file of the diff or route of the change, or no real role,
+and always at the `lite` level. A change of who sees which data, or of when a session
 starts or ends, is never "low risk" in `risk`. With no `Critical change`
 section, give `"checked": { "paths": [], "roles": [] }`.
 
