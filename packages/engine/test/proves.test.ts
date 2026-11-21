@@ -126,3 +126,33 @@ test('the note of the neighbour cases fits in the size of the section', () => {
   assert.match(section, /E1, E2, E3, E4, E5, E6, E7, E8, E9, E10 and \d+ more were fixed by a later commit/);
   assert.ok(held.length > 10);
 });
+
+test('over the budget, whole tests go back to three lines of context before a test file is dropped', () => {
+  // Five test files of about 35 kB of whole tests each, the largest files, and four sources of about
+  // 20 kB of diff: 255 kB pass the budget of the pack.
+  const big = mkdtempSync(join(tmpdir(), 'engine-proves-budget-'));
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: big, encoding: 'utf8' }).trim();
+  g('init', '-q', '-b', 'main');
+  g('config', 'user.email', 'test@example.com');
+  g('config', 'user.name', 'Test');
+  const tests = (marker: string) => ["test('a table', () => {", ...Array.from({ length: 1100 }, (_, i) => `  expect(row(${i})).toEqual([${i}]);`), `  expect(${marker}).toBe(true);`, '});', ''].join('\n');
+  const source = (n: number) => Array.from({ length: 450 }, (_, i) => `export const v${i} = ${n + i};`).join('\n');
+  mkdirSync(join(big, 'test'));
+  for (let i = 0; i < 5; i++) writeFileSync(join(big, `test/t${i}.test.ts`), tests('before'));
+  for (let i = 0; i < 4; i++) writeFileSync(join(big, `s${i}.ts`), source(0));
+  g('add', '.');
+  g('commit', '-q', '-m', 'base');
+  const from = g('rev-parse', 'HEAD');
+  for (let i = 0; i < 5; i++) writeFileSync(join(big, `test/t${i}.test.ts`), tests('after'));
+  for (let i = 0; i < 4; i++) writeFileSync(join(big, `s${i}.ts`), source(1));
+  g('commit', '-q', '-am', 'change');
+  const to = g('rev-parse', 'HEAD');
+  try {
+    const { pack, skipped } = buildPack(big, from, to, 'definitions');
+    assert.deepEqual(skipped.filter((s) => s.startsWith('test/')), [], 'no test file is dropped');
+    for (let i = 0; i < 5; i++) assert.match(pack, new RegExp(`test/t${i}\\.test\\.ts`));
+    assert.match(pack, /\+ {2}expect\(after\)\.toBe\(true\);/);
+  } finally {
+    rmSync(big, { recursive: true, force: true });
+  }
+});

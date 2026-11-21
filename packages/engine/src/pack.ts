@@ -339,6 +339,15 @@ export function buildPack(
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
   const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - migrations.section.length - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
+  // KNT-156. Over the budget, a test file that shows its whole tests goes back to three lines of
+  // context before any file goes: the largest first.
+  for (const [path, hunk] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
+    if (size() <= budget) break;
+    if (!TEST_FILE.test(path)) continue;
+    const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+    const narrow = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
+    if (narrow.length < hunk.length) hunks.set(path, narrow);
+  }
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
