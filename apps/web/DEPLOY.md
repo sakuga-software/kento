@@ -294,15 +294,20 @@ Migration 0030 (KNT-150) needs 0029 before it, and nothing else of the state tha
 changes only `users`, `accounts`, `sessions` and `verifications`. Both can run in the same deploy (the service applies every
 pending migration in one start), or 0030 in a later one.
 
-1. Behind a proxy, set `KENTO_TRUSTED_PROXY_HOPS` first (`1` behind Traefik alone): the limits of
-   the sign-in are by client, and with the default 0 every client has the address of the proxy.
-2. Take a backup of the database (`pg_dump`). There is no down migration.
+1. Take a backup of the database (`pg_dump`). There is no down migration.
+2. Set `KENTO_TRUSTED_PROXY_HOPS=1` behind Traefik alone (`2` behind a CDN then Traefik). The new
+   release refuses to start without it when `KENTO_PUBLIC_URL` is https: the limits of the sign-in
+   are by client, and with 0 hops every client would have the address of the proxy.
 3. Stop the container of the previous release: it reads the old table of the sessions, and fails
-   on every screen once 0030 commits. The webhook and the runners do not read sessions.
-4. Start the new release. Each person signs in again once, with one click on GitHub, and keeps
-   their rights (`memberships` do not change). The cookie of the previous release gives "Session
-   ended." once, and is cleared.
-5. To roll back: stop the new release, restore the backup, start the previous release. Everyone
+   on every screen once 0030 commits.
+4. Deploy the new release: it migrates at startup (`/healthz` gives the new number of migrations).
+   Each person signs in again once, with one click on GitHub, and keeps their rights
+   (`memberships` do not change). The cookie of the previous release gives "Session ended." once,
+   and is cleared.
+5. If the old container served webhooks after a migration committed (a rolling deploy, or 0029 in
+   the same deploy), open **Advanced** in the settings of the GitHub App and **Redeliver** the
+   deliveries of that window that failed.
+6. To roll back: stop the new release, restore the backup, start the previous release. Everyone
    signs in again once more.
 
 **Roll back**: run the image of the previous release again. It does not undo a migration, and the
