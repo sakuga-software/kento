@@ -133,9 +133,12 @@ const answer = (score: number, findings: Finding[]): Answer => ({
   findings,
   not_reviewed: [],
   deeper_review: { recommended: false, reason: '' },
+  // KNT-154. A change of billing is critical: the review names what it checked, so the floor and
+  // not the cap of an unchecked critical change decides the score.
+  checked: { paths: [BILLING], roles: ['customer'] },
 });
 
-const input = (fetch: typeof globalThis.fetch, extra: Partial<Parameters<typeof reviewPullRequest>[0]> = {}) => ({
+const input =(fetch: typeof globalThis.fetch, extra: Partial<Parameters<typeof reviewPullRequest>[0]> = {}) => ({
   repoDir: repo,
   base: main1,
   head: pushed,

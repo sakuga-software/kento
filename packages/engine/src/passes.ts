@@ -132,6 +132,11 @@ export async function reviewInPasses(
     confidence_score: passesScore(answers, checked.kept),
     not_reviewed: [...new Set(answers.flatMap((a) => a.answer.not_reviewed ?? []))],
     deeper_review: answers.map((a) => a.answer.deeper_review).find((d) => d?.recommended) ?? lead.answer.deeper_review,
+    // KNT-154. What every pass checked: the security pass checks the paths and roles of a critical change.
+    checked: {
+      paths: [...new Set(answers.flatMap((a) => a.answer.checked?.paths ?? []))],
+      roles: [...new Set(answers.flatMap((a) => a.answer.checked?.roles ?? []))],
+    },
     findings: linked.findings,
     // REV-71. The verdicts of every pass, with their pass: only the pass of a finding can uphold its
     // thread against a refutation (answered.ts).

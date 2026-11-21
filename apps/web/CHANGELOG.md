@@ -147,6 +147,11 @@ Each entry says, when it applies:
 - The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
   judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
   are refused.
+- **Reviews** (KNT-154): a pull request that touches authentication, access control, CI, secrets,
+  webhooks, payments or a migration of data is a critical change. Its review gets a checklist, its
+  risk starts with "Critical change (…)", and it scores 3/5 at most unless it names a file and a
+  role that it checked. A `lite` review of it always advises a deeper one. The runner computes it:
+  no change of the protocol, and a service of the release before shows it as it is.
 
 ## 0.1.0
 

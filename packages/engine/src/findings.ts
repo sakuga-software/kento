@@ -1,5 +1,7 @@
 // The findings of a review: the answer schema, the lines that a finding anchors on, the score and the verdict.
 import { createHash } from 'node:crypto';
+import type { Checked, Criticality } from './critical.ts';
+import { areasText } from './critical.ts';
 import { git } from './git.ts';
 import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
 
@@ -56,7 +58,23 @@ export type Answer = {
   deeper_review: { recommended: boolean; reason: string };
   /** REV-71. The verdict of the model on each answered thread of the pack (answered.ts). */
   threads?: ThreadVerdict[] | null;
+  /**
+   * KNT-154. The paths and the roles that the review checked, for a critical change. The model gives
+   * it; an answer of an earlier release has none.
+   */
+  checked?: Checked;
+  /**
+   * KNT-154. The change is critical (critical.ts), and `checked` says whether the answer named the
+   * paths and the roles that it checked. The engine sets it; the model never gives it.
+   */
+  critical?: CriticalReview | null;
 };
+
+/** KNT-154. A critical change, and whether its review named what it checked. */
+export type CriticalReview = Criticality & { checked: boolean };
+
+/** KNT-154. The highest score of a critical change whose review did not name what it checked. */
+export const CRITICAL_UNCHECKED_SCORE = 3;
 
 /** REV-71. Whether a reply in a thread refutes its finding (answered.ts). */
 export const THREAD_VERDICTS = ['refuted', 'upheld'] as const;
@@ -179,8 +197,15 @@ export const ANSWER_SCHEMA = {
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
+    // KNT-154. Empty lists when the pack holds no Critical change section.
+    checked: {
+      type: 'object',
+      properties: { paths: { type: 'array', items: { type: 'string' } }, roles: { type: 'array', items: { type: 'string' } } },
+      required: ['paths', 'roles'],
+      additionalProperties: false,
+    },
   },
-  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review'],
+  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'checked'],
   additionalProperties: false,
 };
 
@@ -291,10 +316,12 @@ export function withoutSettled<F extends Finding>(
 
 /**
  * The score that the reader sees. A blocking finding caps it at 2: a review that asks for changes
- * and calls the pull request safe would contradict itself.
+ * and calls the pull request safe would contradict itself. KNT-154: a critical change caps it at 3
+ * when the review did not name the paths and the roles that it checked.
  */
 export function score(answer: Answer, lines: Anchors): number {
-  const raw = Math.min(5, Math.max(1, Math.round(answer.confidence_score || 3)));
+  let raw = Math.min(5, Math.max(1, Math.round(answer.confidence_score || 3)));
+  if (answer.critical && !answer.critical.checked) raw = Math.min(raw, CRITICAL_UNCHECKED_SCORE);
   return answer.findings.some((f) => isBlocking(f, lines)) ? Math.min(raw, 2) : raw;
 }
 
@@ -339,11 +366,16 @@ export function shownPatch(finding: Finding): string | null {
 // The score from which a review with no blocking finding approves the pull request.
 const APPROVE_SCORE = 4;
 
-/** The reason to ask for a stronger level, or null. Only a lite review recommends one. */
+/**
+ * The reason to ask for a stronger level, or null. Only a lite review recommends one. KNT-154: a
+ * lite review of a critical change always recommends one.
+ */
 export function deeperReview(answer: Answer, level: Level): string | null {
   const deeper = answer.deeper_review;
-  if (level !== 'lite' || !deeper?.recommended) return null;
-  return deeper.reason?.trim() || 'the model gave no reason.';
+  if (level !== 'lite') return null;
+  if (deeper?.recommended) return deeper.reason?.trim() || 'the model gave no reason.';
+  if (answer.critical) return `this pull request changes ${areasText(answer.critical.areas)}, and a lite review does not check every route, role and permission.`;
+  return null;
 }
 
 /**

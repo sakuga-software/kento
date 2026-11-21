@@ -1,7 +1,8 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
+import { criticalSection, diffCriticality, namesChecks, areasText, type Criticality } from './critical.ts';
+import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type CriticalReview, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
@@ -135,6 +136,8 @@ export type ReviewResult = {
   contextHash: string;
   /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
   link: LinkReport;
+  /** KNT-154. The change is critical, and whether the review named what it checked; null otherwise. */
+  critical: CriticalReview | null;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -205,6 +208,8 @@ export type PreparedReview = {
   delta: DeltaPlan | null;
   /** REV-100. What changed since the last reviewed commit, or null. */
   seen: SeenCode | null;
+  /** KNT-154. Why the whole pull request is a critical change, or null. */
+  critical: Criticality | null;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
@@ -232,10 +237,18 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
-  const { pack, parts, skipped, rules, contextHash } =
+  const built =
     delta || earlier
       ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
+  const { skipped, rules, contextHash } = built;
+  // KNT-154. The whole pull request decides whether the change is critical, an incremental review
+  // too. Its checklist ends the pack: the system prompt stays the same for every review (REV-113).
+  // The diff decides it, so the reuse key of the diff covers it.
+  const critical = diffCriticality(input.repoDir, base, input.head);
+  const checklist = critical ? criticalSection(critical, input.prompts) : '';
+  const pack = built.pack + checklist;
+  const parts = checklist ? [...built.parts, { text: checklist }] : built.parts;
   return {
     base,
     pack,
@@ -252,6 +265,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     reuseKey: key,
     delta,
     seen,
+    critical,
   };
 }
 
@@ -268,6 +282,12 @@ export function finishReview<F extends Finding>(
   link: LinkReport = NO_LINK,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
   const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
+  const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
+  const fileAt = headFiles(input.repoDir, input.head, log);
+  // KNT-154. A critical change, and whether the answer named a file of the head and a role that it
+  // checked. The score, the verdict and the deeper review read it.
+  const critical: CriticalReview | null = prepared.critical ? { ...prepared.critical, checked: namesChecks(answer.checked, (p) => fileAt(p) !== null) } : null;
+  answer = critical ? withCriticalText({ ...answer, critical }, critical) : { ...answer, critical: null };
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -276,8 +296,6 @@ export function finishReview<F extends Finding>(
     const { rule_id: _cited, ...rest } = f;
     return { ...rest, ...applyRule(f, rules) } as F;
   });
-  const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
-  const fileAt = headFiles(input.repoDir, input.head, log);
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
@@ -375,7 +393,22 @@ export function finishReview<F extends Finding>(
     seenSince: seen?.since ?? null,
     contextHash,
     link,
+    critical,
   };
+}
+
+/**
+ * KNT-154. The risk and the summary of a critical change, as the reader sees them: the risk names
+ * the areas, and the summary the paths and the roles that the review checked, or says that it named
+ * none and that the score stays at 3 at most.
+ */
+export function withCriticalText<A extends Answer>(answer: A, critical: CriticalReview): A {
+  const areas = `Critical change (${areasText(critical.areas)}).`;
+  const list = (items: readonly string[]) => items.map((i) => i.trim()).filter(Boolean).map((i) => `\`${i.replace(/`/g, '')}\``).join(', ');
+  const checks = critical.checked
+    ? `Paths checked: ${list(answer.checked?.paths ?? [])}. Roles checked: ${list(answer.checked?.roles ?? [])}.`
+    : 'The review named no file and no role that it checked, so the score of this critical change is 3 at most.';
+  return { ...answer, risk: `${areas} ${answer.risk}`.trim(), summary: `${answer.summary}\n\n${checks}`.trim() };
 }
 
 /**
