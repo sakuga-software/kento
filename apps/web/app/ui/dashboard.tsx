@@ -679,7 +679,7 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           {cap !== null && cap > 0 ? (
             <Bar parts={[{ pct: (month / cap) * 100, tone: 'ink' }]} />
           ) : null}
-          <span class={`kpi-sub ${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? 'kpi-alert' : ''}`}>
+          <span class={`kpi-sub${cap !== null && capState(month, cap, screen.caps.alertPct) === 'reached' ? ' kpi-alert' : ''}`}>
             {cap === null ? (
               <NoCap admin={admin} text="no cap" />
             ) : capState(month, cap, screen.caps.alertPct) === 'reached' ? (
@@ -791,7 +791,8 @@ function CostSection(handle: Handle<{ costs: OrgCostsDetail; caps: OrgCaps; admi
           <Meter id="cost-day" label="Today (UTC)" usd={costs.dayUsd} cap={caps.dailyCapUsd} alertPct={caps.alertPct} admin={admin} />
           <Meter id="cost-month" label="This month (UTC)" usd={costs.monthUsd} cap={caps.monthlyCapUsd} alertPct={caps.alertPct} admin={admin} />
         </div>
-        {caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
+        {/* An admin already has "No cap" as a link to the caps (KNT-190): the hint is for a member. */}
+        {!admin && caps.dailyCapUsd === null && caps.monthlyCapUsd === null ? (
           <p class="hint">
             The organization has no cap. An admin sets it in <a href={CAP_SETTINGS_HREF}>Settings</a>.
           </p>

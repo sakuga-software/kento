@@ -402,7 +402,10 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     let member = (await setup(noCap).signIn(CAMILLE)).html
     assert.doesNotMatch(member, /<a href="\/settings#cap">(No|no) cap/)
     assert.match(member, /<span class="status status-stale">No cap<\/span>/)
-    assert.match(member, /<span class="kpi-sub ">no cap<\/span>/)
+    assert.match(member, /<span class="kpi-sub\s*">no cap<\/span>/)
+    // The hint of a member leads to the same section of the settings; an admin has the links instead.
+    assert.match(member, /An admin sets it in <a href="\/settings#cap">Settings<\/a>\./)
+    assert.doesNotMatch(admin, /An admin sets it in/)
 
     // A cap that is set: no link on its state.
     let capped = (await setup(screen({ caps: { dailyCapUsd: 5, monthlyCapUsd: 100, alertPct: 80 } })).signIn(OCTOCAT)).html
@@ -592,7 +595,9 @@ describe('the dashboard', () => {
     assert.doesNotMatch(html, /<\/span> failed/)
     assert.match(html, /No review yet/)
     assert.match(html, /No failure to handle over 7 days/)
-    assert.match(html, /The organization has no cap/)
+    // An admin: "No cap" leads to the caps (KNT-190); the hint for a member is in the test of KNT-190.
+    assert.match(html, /No cap<span class="visually-hidden">: set a cap in the settings<\/span>/)
+    assert.doesNotMatch(html, /The organization has no cap/)
     assert.match(html, /No runner/)
     assert.doesNotMatch(html, /review.yml/)
   })
