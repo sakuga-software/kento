@@ -93,7 +93,9 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
     },
 
     async previousHead() {
-      // The base of the delta of a push review (`lastReviewOnGitHub` of runner/store.ts): copies count.
+      // The base of the delta of a push review: the head that `reusableReview` of runner/store.ts gives
+      // the runner (`lastReviewOnGitHub`). A published copy (REV-89) counts with its own head: the
+      // runner reads again the files changed since that head.
       let [row] = await sql<{ headSha: string }[]>`
         select head_sha as "headSha" from reviews
         where repo_id = ${input.repoId} and pr_number = ${input.prNumber} and github_review_id is not null

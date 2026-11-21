@@ -17,6 +17,7 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
+import { createFindingsLedger } from '../../app/findings/ledger.ts'
 import { setFindingStatus } from '../../app/findings/store.ts'
 import { createInstallationTokenMinter, readPrivateKey } from '../../app/github/installation-token.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
@@ -518,6 +519,29 @@ describe('findings from push to push (REV-16)', () => {
       await push(HEADS[3]!, [], [far(45)], [far(40)])
       assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
       assert.equal(fake.repliesTo(thread!.id).length, 1)
+    })
+
+    it('the previous head is the base of the delta that the runner gets: a published copy counts with its own head (REV-89)', async () => {
+      const KEY = 'a'.repeat(64)
+      let review = async (head: string, result: Record<string, unknown>, publishedAgo: string | null) => {
+        let [job] = await database.sql<{ id: string }[]>`
+          insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', ${PR}, ${head}, 'main') returning id`
+        let [row] = await database.sql<{ id: string }[]>`
+          insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, result, github_review_id, published_at)
+          values (${job!.id}, ${repoId}, ${PR}, ${head}, 4, 'm', ${JSON.stringify({ level: 'lite', reuseKey: KEY, findings: [], ...result })}::jsonb,
+            ${publishedAgo === null ? null : 1}, ${publishedAgo === null ? null : database.sql`now() - ${publishedAgo}::interval`})
+          returning id`
+        return { jobId: job!.id, reviewId: row!.id }
+      }
+      await review(HEADS[0]!, {}, '2 minutes')
+      // The push of HEADS[1] changed nothing that the review reads: a copy of the review of HEADS[0].
+      await review(HEADS[1]!, { reusedFrom: { reviewId: '00000000-0000-0000-0000-000000000000', head: HEADS[0], githubReviewId: 1 } }, '1 minute')
+      let current = await review(HEADS[2]!, {}, null)
+
+      let ledger = createFindingsLedger(database.sql, { repoId, prNumber: PR, reviewId: current.reviewId, head: HEADS[2]! })
+      let reuse = await createRunnerStore(database.sql).reusableReview(current.jobId)
+      assert.equal(reuse?.head, HEADS[1], 'the runner reads again the files changed since the head of the copy')
+      assert.equal(await ledger.previousHead!(), HEADS[1])
     })
 
     it('a person who dismisses the finding while the review is posted gets no note in its thread', async () => {
