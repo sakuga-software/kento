@@ -2,7 +2,7 @@ name: Runner
 
 # The image of the Kentō runner (apps/runner): it must build, and start far enough to check its
 # configuration. Its unit tests run in the Test workflow with the other packages. Nothing here
-# pushes the image: publishing to ghcr.io is a manual step (apps/runner/DEPLOY.md).
+# pushes the image: a tag vX.Y.Z publishes it to ghcr.io (release.yml).
 
 on:
   pull_request:
