@@ -2,6 +2,8 @@
 "@kento-review/web": patch
 ---
 
+pr: #53
+
 **Live card of the dashboard** (KNT-189): the card "Queue and runners" follows a stream of
 server-sent events, `GET /dashboard/live`, for a signed-in member, for the org of the session. A
 proxy in front of the service must not buffer `text/event-stream` answers (Traefik does not by

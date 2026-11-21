@@ -105,9 +105,8 @@ describe('the source of the live card (KNT-189)', () => {
   })
 
   it('gives the payload to every listener when one throws, and does not count it as a failed read (Kentō #a2a122)', async () => {
-    let reads = 0
     let version = 0
-    let hub = createLiveHub({ intervalMs: 10, failures: 2, read: async () => ((reads += 1), `card-${version}`) })
+    let hub = createLiveHub({ intervalMs: 10, failures: 2, read: async () => `card-${version}` })
     let got: string[] = []
     let dropped = 0
     let write = process.stderr.write
