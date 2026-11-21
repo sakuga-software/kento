@@ -45,10 +45,15 @@ export function limitKey(address: string): string {
   let mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)
   if (mapped) return mapped[1]!
   if (isIP(address) !== 6) return address
-  let [head = '', tail = ''] = address.toLowerCase().split('::')
+  // A dotted IPv4 tail (`64:ff9b::1.2.3.4`) is two groups, not one.
+  let hex = address.toLowerCase().replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_all, a: string, b: string, c: string, d: string) => {
+    let [x, y, z, w] = [a, b, c, d].map(Number) as [number, number, number, number]
+    return `${((x << 8) | y).toString(16)}:${((z << 8) | w).toString(16)}`
+  })
+  let [head = '', tail = ''] = hex.split('::')
   let left = head ? head.split(':') : []
   let right = tail ? tail.split(':') : []
-  let groups = address.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left
+  let groups = hex.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left
   return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, '')).join(':')}::/64`
 }
 
