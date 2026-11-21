@@ -358,6 +358,11 @@ test('a title keeps its sentence, without the stale label (Kentō on #55)', () =
   const reply: Answer = answer(4, [finding(BILLING, 394, 'E1 comes back on the refusal', 'major')]);
   publicLabels(reply, held);
   assert.equal(reply.findings[0]!.title, 'an earlier finding comes back on the refusal');
+  // Kentō on #55 (#ba6cbd): a scenario or a fix made of one stale sentence keeps its words.
+  const only: Answer = answer(4, [finding(BILLING, 394, 'Refused change', 'major', { scenario: 'E1 comes back.', fix: 'Fix E1 again.' })]);
+  publicLabels(only, held);
+  assert.equal(only.findings[0]!.scenario, 'an earlier finding comes back.');
+  assert.equal(only.findings[0]!.fix, 'Fix an earlier finding again.');
 });
 
 test('a sentence that cites an open finding and a stale one keeps its note on the open one (Kentō on #55)', () => {

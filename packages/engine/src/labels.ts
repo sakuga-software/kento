@@ -82,6 +82,8 @@ export function publicLabels(answer: Answer, held: readonly HeldEarlier[]): numb
     if (out !== text) changed++;
     return out;
   };
-  answer.findings = answer.findings.map((f) => ({ ...f, title: title(f.title), scenario: fix(f.scenario), fix: fix(f.fix) }));
+  // A scenario or a fix that only cited stale labels keeps its words too, as a title does.
+  const text = (value: string) => fix(value) || title(value);
+  answer.findings = answer.findings.map((f) => ({ ...f, title: title(f.title), scenario: text(f.scenario), fix: text(f.fix) }));
   return changed;
 }
