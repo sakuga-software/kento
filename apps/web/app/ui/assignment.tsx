@@ -85,7 +85,7 @@ function Message(handle: Handle<{ id: string; error?: string; hint?: string }>) 
       )
     }
     return hint ? (
-      <p class="description" id={`${id}-hint`}>
+      <p class="field-hint" id={`${id}-hint`}>
         {hint}
       </p>
     ) : null
@@ -175,10 +175,10 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
           <Hidden csrf={csrf} />
           <FormErrors errors={errors} />
           <fieldset class="assignment-condition">
-            <legend class="label">If</legend>
-            <p class="description">Fill in at least one line. Each filled line must match. In one line, one value is enough.</p>
+            <legend class="field-label">If</legend>
+            <p class="field-hint">Fill in at least one line. Each filled line must match. In one line, one value is enough.</p>
             <div class="field">
-              <label class="label" for={id('authors')}>
+              <label class="field-label" for={id('authors')}>
                 The author of the PR is
               </label>
               <Input
@@ -195,7 +195,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               <Message id={id('authors')} error={errors.authors} hint={`GitHub logins separated by commas, ${MAX_CONDITION_VALUES} at most: sakuga-agent[bot], camille.`} />
             </div>
             <div class="field">
-              <label class="label" for={id('paths')}>
+              <label class="field-label" for={id('paths')}>
                 The PR changes one of these paths
               </label>
               <Textarea
@@ -216,7 +216,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
               />
             </div>
             <div class="field">
-              <label class="label" for={id('labels')}>
+              <label class="field-label" for={id('labels')}>
                 The PR has one of these labels
               </label>
               <Input
@@ -232,7 +232,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             </div>
           </fieldset>
           <div class="field">
-            <label class="label" for={id('outcome')}>
+            <label class="field-label" for={id('outcome')}>
               Then
             </label>
             <Select
@@ -255,7 +255,7 @@ function NewRule(handle: Handle<{ props: AssignmentTabProps }>) {
             />
           </div>
           <div class="field">
-            <label class="label" for={id('mention')}>
+            <label class="field-label" for={id('mention')}>
               Mention in the review (optional)
             </label>
             <Input

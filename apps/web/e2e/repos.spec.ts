@@ -114,13 +114,13 @@ test.describe('the Repos screen', () => {
       await expectNoAxeViolations(page)
       // The destructive buttons have their own colour; no button of a row has the primary style (REV-36).
       let colors = await page.evaluate(() => {
-        let primary = document.querySelector('.button--primary')
-        let danger = document.querySelector('.confirm-popover .button--danger')
+        let primary = document.querySelector('.button-primary')
+        let danger = document.querySelector('.confirm-popover .button-danger-solid')
         return [primary && getComputedStyle(primary).backgroundColor, danger && getComputedStyle(danger).backgroundColor]
       })
       expect(colors[1]).not.toBeNull()
       expect(colors[0]).not.toEqual(colors[1])
-      await expect(page.locator('.row-action .button--primary')).toHaveCount(0)
+      await expect(page.locator('.row-action .button-primary')).toHaveCount(0)
       await page.keyboard.press('Shift+Tab')
       await expect(act).toBeFocused()
       await page.keyboard.press('Escape')
