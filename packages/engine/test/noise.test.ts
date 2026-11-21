@@ -90,6 +90,8 @@ test('« Not reviewed » merges only the lines of one path with the same reason,
         'src/b.ts: Two requests race on the row. To check: The definition of lock is not in the pack.',
         'src/b.ts: The tenant filter is missing. To check: The schema of invoices is not provided.',
         'src/a.ts: The total is wrong. To check: The callers of total are not in the pack.',
+        // Kentō on #48 (#6679ec): a reason of the model that starts another one is not the same.
+        'src/a.ts: The total',
       ],
     ),
     [
@@ -99,6 +101,7 @@ test('« Not reviewed » merges only the lines of one path with the same reason,
       'src/b.ts: Two requests race on the row. To check: The definition of lock is not in the pack.',
       'src/b.ts: The tenant filter is missing. To check: The schema of invoices is not provided.',
       'src/a.ts: The total is wrong. To check: The callers of total are not in the pack.',
+      'src/a.ts: The total',
     ],
   );
   const block = descriptionBlock(answer({ not_reviewed: ['a.json (generated)'] }), [], ['a.json: generated or binary file'], 0, usage, () => 12, context);

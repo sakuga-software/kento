@@ -397,6 +397,9 @@ function pathAndReason(text: string): { path: string; reason: string } | null {
  * or binary file` and `a.json (generated)`: two findings moved to « Not reviewed » on one file, or a
  * file cut by the pack that also has a moved finding, keep a line each. Empty lines go.
  */
+// The reasons that the pack writes (pack.ts, rules.ts), as `words` gives them.
+const PACK_REASONS = new Set(['generated or binary file', 'more than 1000 changed lines', 'removed to fit in the maximum size of the review']);
+
 export function notReviewedLines(skipped: readonly string[], model: readonly string[]): string[] {
   const kept: { path: string; reason: string; text: string }[] = [];
   const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -406,7 +409,10 @@ export function notReviewedLines(skipped: readonly string[], model: readonly str
     const split = pathAndReason(text);
     const path = split && /[./]/.test(split.path) ? split.path.replace(/^\/+/, '') : '';
     const reason = words(path ? split!.reason : text);
-    const same = kept.find((k) => k.path === path && (k.reason === reason || (reason && k.reason.startsWith(reason)) || (k.reason && reason.startsWith(k.reason))));
+    // A reason of the pack and the short form that the model gives of it merge; two reasons of the
+    // model merge only when they are the same (« The total » and « The total is wrong » stay apart).
+    const variant = (a: string, b: string) => PACK_REASONS.has(a) && b !== '' && a.startsWith(b);
+    const same = kept.find((k) => k.path === path && (k.reason === reason || variant(k.reason, reason) || variant(reason, k.reason)));
     if (same) continue;
     kept.push({ path, reason, text });
   }
