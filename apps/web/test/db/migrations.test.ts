@@ -60,7 +60,7 @@ describe('migrations', () => {
       where table_schema = 'public' order by table_name`
     assert.deepEqual(
       tables.map((t) => t.table_name),
-      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'installations', 'jobs', 'memberships', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
+      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'installations', 'invitations', 'jobs', 'memberships', 'org_audit', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
     )
   })
 
@@ -88,7 +88,7 @@ describe('migrations', () => {
   it('applied a second time, changes nothing and keeps every row', async () => {
     await seed(database)
     let before = await counts(database)
-    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 31 })
+    assert.deepEqual(before, { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 33 })
 
     await runMigrations(test.url)
 
@@ -119,7 +119,7 @@ describe('migrations', () => {
       await runMigrations(test.url, next)
       await runMigrations(test.url, next)
 
-      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 32 })
+      assert.deepEqual(await counts(database), { orgs: 1, repos: 1, jobs: 1, reviews: 1, applied: 34 })
       let [repo] = await database.sql<{ full_name: string; note: string }[]>`select full_name, note from repos`
       assert.deepEqual({ ...repo }, { full_name: 'sakuga-software/sakuga-review', note: 'kept' })
     } finally {
@@ -133,7 +133,7 @@ describe('migrations', () => {
     try {
       await Promise.all([runMigrations(other.url), runMigrations(other.url)])
       let [row] = await a.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-      assert.equal(row!.applied, 31)
+      assert.equal(row!.applied, 33)
     } finally {
       await a.close()
       await other.drop()
@@ -308,8 +308,96 @@ describe('migrations', () => {
         { userId: users[1]!.id, providerId: 'github', accountId: '8' },
       ])
       let memberships = await sql`select role from memberships order by role`
-      assert.deepEqual(memberships.map((m) => m.role), ['admin', 'member'], 'the rights stay')
+      assert.deepEqual(memberships.map((m) => m.role), ['member', 'owner'], 'the rights stay (0031 makes the admin an owner)')
       assert.equal((await sql`select 1 from sessions`).length, 0, 'each person signs in again once')
+    } finally {
+      await check.close()
+      await rm(earlier, { recursive: true, force: true })
+      await other.drop()
+    }
+  })
+
+  it('0031 makes each admin an owner and every membership of today one from GitHub (KNT-150)', async () => {
+    let other = await createTestDatabase()
+    let earlier = await mkdtemp(path.join(tmpdir(), 'kento-migrations-'))
+    let check = createDatabase(other.url, { max: 1 })
+    try {
+      // The release before the roles: every migration up to 0030.
+      await cp(migrationsFolder, earlier, { recursive: true })
+      let journalPath = path.join(earlier, 'meta', '_journal.json')
+      let journal = JSON.parse(await readFile(journalPath, 'utf8'))
+      journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0031')
+      await writeFile(journalPath, JSON.stringify(journal))
+      await runMigrations(other.url, earlier)
+      let sql = check.sql
+      let acme = await insertOrg(sql, 'acme', 11)
+      let globex = await insertOrg(sql, 'globex', 12)
+      let users = await sql<{ id: string }[]>`
+        insert into users (github_id, login, email) values (7, 'octocat', '7@users.github.invalid'), (8, 'camille', '8@users.github.invalid') returning id`
+      await sql`insert into memberships (user_id, org_id, role) values
+        (${users[0]!.id}, ${acme}, 'admin'), (${users[1]!.id}, ${acme}, 'member'), (${users[1]!.id}, ${globex}, 'admin')`
+
+      await runMigrations(other.url)
+
+      let rows = await sql<{ login: string; org: string; role: string; source: string; id: string | null }[]>`
+        select users.login, orgs.name as org, memberships.role, memberships.source, memberships.id
+        from memberships join users on users.id = memberships.user_id join orgs on orgs.id = memberships.org_id
+        order by users.login, orgs.name`
+      assert.deepEqual(rows.map(({ id, ...r }) => ({ ...r, hasId: id !== null })), [
+        { login: 'camille', org: 'acme', role: 'member', source: 'github', hasId: true },
+        { login: 'camille', org: 'globex', role: 'owner', source: 'github', hasId: true },
+        { login: 'octocat', org: 'acme', role: 'owner', source: 'github', hasId: true },
+      ])
+      await assert.rejects(sql`insert into memberships (user_id, org_id, role) values (${users[0]!.id}, ${globex}, 'superadmin')`, /memberships_role/)
+      await assert.rejects(sql`insert into memberships (user_id, org_id, role) values (${users[0]!.id}, ${acme}, 'member')`, /memberships_user_org_idx/)
+      let [type] = await sql`select count(*)::int as n from pg_type where typname = 'org_role'`
+      assert.equal(type!.n, 0)
+    } finally {
+      await check.close()
+      await rm(earlier, { recursive: true, force: true })
+      await other.drop()
+    }
+  })
+
+  it('0032 adds the invitations and keeps every row of the release before (KNT-150)', async () => {
+    let other = await createTestDatabase()
+    let earlier = await mkdtemp(path.join(tmpdir(), 'kento-migrations-'))
+    let check = createDatabase(other.url, { max: 1 })
+    try {
+      // The release before the invitations: every migration up to 0031.
+      await cp(migrationsFolder, earlier, { recursive: true })
+      let journalPath = path.join(earlier, 'meta', '_journal.json')
+      let journal = JSON.parse(await readFile(journalPath, 'utf8'))
+      journal.entries = journal.entries.filter((entry: { tag: string }) => entry.tag < '0032')
+      await writeFile(journalPath, JSON.stringify(journal))
+      await runMigrations(other.url, earlier)
+      let sql = check.sql
+      let acme = await insertOrg(sql, 'acme', 11)
+      let [user] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (7, 'octocat', '7@users.github.invalid') returning id`
+      await sql`insert into memberships (user_id, org_id, role) values (${user!.id}, ${acme}, 'owner')`
+      let before = await sql`select count(*)::int as n from memberships`
+
+      await runMigrations(other.url)
+
+      assert.deepEqual(await sql`select count(*)::int as n from memberships`, before)
+      let invite = (githubId: number, status = 'pending') =>
+        sql`insert into invitations (org_id, github_id, github_login, role, status, inviter_id, expires_at)
+            values (${acme}, ${githubId}, 'guest', 'member', ${status}, ${user!.id}, now() + interval '7 days')`
+      await invite(42)
+      // One pending invitation per account and org; an answered one does not count.
+      await assert.rejects(invite(42), /invitations_pending_idx/)
+      await invite(42, 'declined')
+      await assert.rejects(sql`insert into invitations (org_id, github_id, github_login, role, expires_at) values (${acme}, 43, 'x', 'owner', now())`, /invitations_role/)
+      await assert.rejects(sql`insert into invitations (org_id, github_id, github_login, role, status, expires_at) values (${acme}, 43, 'x', 'member', 'lost', now())`, /invitations_status/)
+      // The inviter goes: the invitation stays, without its inviter. The org goes: its invitations go.
+      await sql`delete from users where id = ${user!.id}`
+      assert.deepEqual((await sql`select inviter_id from invitations`).map((r) => r.inviter_id), [null, null])
+      // The audit of the org stays when the org goes, with its name.
+      await sql`insert into org_audit (org_id, org_name, actor_login, action) values (${acme}, 'acme', 'octocat', 'invite')`
+      await sql`delete from installations where org_id = ${acme}`
+      await sql`delete from orgs where id = ${acme}`
+      assert.equal((await sql`select count(*)::int as n from invitations`)[0]!.n, 0)
+      assert.deepEqual((await sql`select org_id, org_name from org_audit`).map((r) => ({ ...r })), [{ org_id: null, org_name: 'acme' }])
     } finally {
       await check.close()
       await rm(earlier, { recursive: true, force: true })
@@ -332,7 +420,7 @@ describe('migrations', () => {
       let check = createDatabase(other.url, { max: 1 })
       try {
         let [row] = await check.sql<{ applied: number }[]>`select count(*)::int as applied from drizzle.__drizzle_migrations`
-        assert.equal(row!.applied, 31)
+        assert.equal(row!.applied, 33)
       } finally {
         await check.close()
       }
@@ -373,7 +461,7 @@ describe('GET /healthz against Postgres', () => {
     assert.equal(body.status, 'ok')
     assert.equal(body.version, '0.1.0')
     assert.equal(body.database.status, 'ok')
-    assert.equal(body.database.migrations, 31)
+    assert.equal(body.database.migrations, 33)
   })
 
   it('returns 503 when the database was never migrated', async () => {

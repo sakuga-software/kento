@@ -2,6 +2,8 @@
 // defaults, the trusted bots and the providers with their keys.
 import { createAction } from 'remix/router'
 
+import { canEdit } from '../../auth/access.ts'
+
 import { UUID, type Level } from '@kento-review/protocol'
 
 import { log } from '../../log.ts'
@@ -161,7 +163,7 @@ export function settingsActions(kit: UiKit) {
   /** The providers and the signed-in admin of a form of the section, or the 403 to send. */
   function providerAdmin(context: ScreenContext, action: string): { signed: SignedIn; providers: ProvidersDependencies } | Response {
     let signed = signedOf(context)
-    if (!deps.providers || signed.membership.role !== 'admin') {
+    if (!deps.providers || !canEdit(signed.membership.role)) {
       log('warn', 'providers.change_refused', { login: signed.user.login, org: signed.membership.org.name, action, reason: 'not an admin' })
       return forbidden()
     }

@@ -138,7 +138,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
     let { frame, page, list, installations, githubUrl, checking, precisions, notice, now } = handle.props
     let repos = page.rows
     let viewer = frame.viewer!
-    let admin = viewer.role === 'admin'
+    let admin = viewer.canEdit
     let org = viewer.org.name
     let { all, enabled } = page.counts
     let checkedAt = page.checkedAt

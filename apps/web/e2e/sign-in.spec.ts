@@ -4,7 +4,7 @@ import { expectNoAxeViolations, expectReadableButtons, signIn, watchConsole } fr
 
 // The end-to-end test of REV-8: an admin, a member, a person outside of the org, and the way out.
 
-test('an admin of the org gets the full frame, with no "Read only"', async ({ page }) => {
+test('an admin of the org on GitHub gets the full frame as its owner, with no "Read only"', async ({ page }) => {
   let errors = watchConsole(page)
   await signIn(page, 'octocat')
 
@@ -12,9 +12,10 @@ test('an admin of the org gets the full frame, with no "Read only"', async ({ pa
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   let who = page.locator('.who').locator('visible=true')
   await expect(who).toContainText('octocat')
-  await expect(who).toContainText('Admin')
+  // KNT-150: the first admin on GitHub of the org is its owner.
+  await expect(who).toContainText('Owner')
   await expect(page.getByText('Read only', { exact: true })).toHaveCount(0)
-  await expect(page.locator('.bar-org-box')).toHaveText('sakuga-software')
+  await expect(page.locator('.org-menu-name')).toHaveText('sakuga-software')
   await expectNoAxeViolations(page)
   expect(errors).toEqual([])
 })

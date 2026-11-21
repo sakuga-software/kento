@@ -1,6 +1,7 @@
 import type postgres from 'postgres'
 
-import type { InstallationAccount, OrgRole } from './github.ts'
+import type { MembershipSource, OrgRole } from '../db/schema.ts'
+import type { InstallationAccount } from './github.ts'
 
 export interface UserRow {
   id: string
@@ -28,6 +29,8 @@ export interface OrgInstallation extends InstallationAccount {
 export interface MembershipRow {
   org: OrgRow
   role: OrgRole
+  source: MembershipSource
+  /** When GitHub last confirmed a membership of `source = github`. */
   checkedAt: Date
 }
 
@@ -46,13 +49,45 @@ export interface AuthStore {
   activeOrgs(): Promise<OrgRow[]>
   /** The memberships of a user, in the orgs that are still active, by org name. */
   memberships(userId: string): Promise<MembershipRow[]>
-  /** Writes the role of a user in an org, checked now. */
-  saveMembership(userId: string, orgId: string, role: OrgRole): Promise<void>
+  /**
+   * Writes the role of a user in an org, checked now. An invitation turns a membership from GitHub
+   * into one from an invitation; a write from GitHub never changes the role nor the source of a
+   * membership from an invitation. Gives the role that the row holds after the write.
+   */
+  saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<OrgRole>
+  /**
+   * KNT-150. The org has an active owner other than `exceptUserId`: one whose membership was
+   * checked, or who signed in, at `since` or after.
+   */
+  hasOwner(orgId: string, since: Date, exceptUserId?: string): Promise<boolean>
+  /** KNT-150. The role and the source of a membership, as stored. */
+  membershipOf(userId: string, orgId: string): Promise<{ role: OrgRole; source: MembershipSource } | null>
+  /** KNT-150. Runs `work` in one transaction that holds the lock of the owners of the org. */
+  withOrgLock<T>(orgId: string, work: (store: AuthStore) => Promise<T>): Promise<T>
+  /** KNT-150. The active orgs where the user of a GitHub account is a member from an invitation. */
+  invitedOrgs(githubId: number): Promise<OrgRow[]>
+  /** KNT-150. The pending invitations of a GitHub account, not expired, in the active orgs. */
+  pendingInvitations(githubId: number): Promise<number>
+  /** KNT-150. GitHub ended a membership: `forgetMembership` under the lock of the org. */
   deleteMembership(userId: string, orgId: string): Promise<void>
+  /**
+   * KNT-150. Deletes a membership that GitHub ended, cancels the pending invitations that the person
+   * made in the org, and writes the row of `org_audit`. Only in the store of a `withOrgLock` of the org.
+   */
+  forgetMembership(userId: string, orgId: string): Promise<void>
 }
 
-export function createAuthStore(sql: postgres.Sql): AuthStore {
-  return {
+/** KNT-150. The actor of a row of `org_audit` that GitHub decided. Not a login: GitHub logins have no parentheses. */
+export const GITHUB_ACTOR = '(GitHub)'
+
+/** KNT-150. The key of the advisory lock of the owners of an org: every change of a role takes it. */
+export function orgLockKey(orgId: string): string {
+  return `kento.org_owners:${orgId}`
+}
+
+/** `locked`: the org of the `withOrgLock` whose transaction this store runs in. */
+export function createAuthStore(sql: postgres.Sql, locked: string | null = null): AuthStore {
+  let store: AuthStore = {
     async findUser(userId) {
       let [row] = await sql<UserRow[]>`
         select id, github_id::float8 as "githubId", login, name, avatar_url as "avatarUrl"
@@ -84,31 +119,108 @@ export function createAuthStore(sql: postgres.Sql): AuthStore {
     },
 
     async memberships(userId) {
-      let rows = await sql<{ orgId: string; role: OrgRole; checkedAt: Date }[]>`
-        select org_id as "orgId", role, checked_at as "checkedAt" from memberships where user_id = ${userId}
+      let rows = await sql<{ orgId: string; role: OrgRole; source: MembershipSource; checkedAt: Date }[]>`
+        select org_id as "orgId", role, source, checked_at as "checkedAt" from memberships where user_id = ${userId}
       `
       let orgs = new Map((await readOrgs(sql, rows.map((r) => r.orgId))).map((org) => [org.id, org]))
       // drizzle shares this client and turns off its date conversion: a timestamp comes back as text.
       return rows
-        .flatMap(({ orgId, role, checkedAt }) => {
+        .flatMap(({ orgId, role, source, checkedAt }) => {
           let org = orgs.get(orgId)
-          return org ? [{ org, role, checkedAt: new Date(checkedAt) }] : []
+          return org ? [{ org, role, source, checkedAt: new Date(checkedAt) }] : []
         })
         .sort((a, b) => a.org.name.localeCompare(b.org.name))
     },
 
-    async saveMembership(userId, orgId, role) {
-      await sql`
-        insert into memberships (user_id, org_id, role, checked_at)
-        values (${userId}, ${orgId}, ${role}, now())
-        on conflict (user_id, org_id) do update set role = excluded.role, checked_at = now()
+    async saveMembership(userId, orgId, role, source = 'github') {
+      let [row] = await sql<{ role: OrgRole }[]>`
+        insert into memberships (user_id, org_id, role, source, checked_at)
+        values (${userId}, ${orgId}, ${role}, ${source}, now())
+        on conflict (user_id, org_id) do update set
+          role = case when memberships.source = 'invitation' and excluded.source = 'github' then memberships.role else excluded.role end,
+          source = case when excluded.source = 'invitation' then 'invitation' else memberships.source end,
+          checked_at = now()
+        returning role
       `
+      return row!.role
+    },
+
+    async invitedOrgs(githubId) {
+      let rows = await sql<{ orgId: string }[]>`
+        select m.org_id as "orgId" from memberships m join users u on u.id = m.user_id
+        where u.github_id = ${githubId} and m.source = 'invitation'
+      `
+      return readOrgs(sql, rows.map((r) => r.orgId))
+    },
+
+    async membershipOf(userId, orgId) {
+      let [row] = await sql<{ role: OrgRole; source: MembershipSource }[]>`
+        select role, source from memberships where user_id = ${userId} and org_id = ${orgId}
+      `
+      return row ?? null
+    },
+
+    async pendingInvitations(githubId) {
+      let [row] = await sql<{ n: number }[]>`
+        select count(*)::int as n from invitations i
+        where i.github_id = ${githubId} and i.status = 'pending' and i.expires_at > now()
+          and exists (select 1 from installations s where s.org_id = i.org_id and s.suspended_at is null)
+      `
+      return row!.n
+    },
+
+    async hasOwner(orgId, since, exceptUserId) {
+      // drizzle shares this client and turns off its date conversion: the time goes as text.
+      let [row] = await sql`
+        select 1 from memberships m join users u on u.id = m.user_id
+        where m.org_id = ${orgId} and m.role = 'owner' ${exceptUserId ? sql`and m.user_id <> ${exceptUserId}` : sql``}
+          and (m.checked_at >= ${since.toISOString()}::timestamptz or u.last_sign_in_at >= ${since.toISOString()}::timestamptz)
+        limit 1
+      `
+      return row !== undefined
+    },
+
+    async withOrgLock(orgId, work) {
+      // The store of a `withOrgLock` is in its transaction already: it takes the lock of this org
+      // there too (the lock of the same org again is a no-op), and runs.
+      if (locked !== null) {
+        // One org per transaction: a second lock could be taken in another order by another
+        // request, and the two would wait on each other.
+        if (orgId !== locked) throw new Error(`withOrgLock: the lock of ${locked} is held, not the one of ${orgId}`)
+        return work(store)
+      }
+      return (await sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(orgId)}, 0))`
+        return work(createAuthStore(tx as unknown as postgres.Sql, orgId))
+      })) as Awaited<ReturnType<typeof work>>
     },
 
     async deleteMembership(userId, orgId) {
-      await sql`delete from memberships where user_id = ${userId} and org_id = ${orgId}`
+      // KNT-150. GitHub ended the membership. Under the lock of the org, in one transaction: the
+      // membership (from GitHub only: one from an invitation is Kentō's), the invitations that the person made there and nobody answered yet (they go with
+      // the person), and the row of `org_audit`, whose actor is GitHub.
+      await store.withOrgLock(orgId, async (inside) => inside.forgetMembership(userId, orgId))
+    },
+
+    async forgetMembership(userId, orgId) {
+      if (locked !== orgId) throw new Error('forgetMembership runs under the lock of its org')
+      let [gone] = await sql<{ role: OrgRole; login: string; githubId: number }[]>`
+        delete from memberships m using users u
+        where m.user_id = ${userId} and m.org_id = ${orgId} and u.id = m.user_id and m.source = 'github'
+        returning m.role, u.login, u.github_id::float8 as "githubId"`
+      if (!gone) return
+      let canceled = await sql<{ githubLogin: string }[]>`
+        update invitations set status = 'canceled', responded_at = now()
+        where org_id = ${orgId} and inviter_id = ${userId} and status = 'pending'
+        returning github_login as "githubLogin"`
+      let detail = canceled.length > 0 ? { canceledInvitations: canceled.map((r) => r.githubLogin).sort() } : null
+      await sql`
+        insert into org_audit (org_id, org_name, actor_id, actor_login, action, target_login, target_github_id, role_before, detail)
+        values (${orgId}, (select name from orgs where id = ${orgId}), null, ${GITHUB_ACTOR}, 'github_removed',
+          ${gone.login}, ${gone.githubId}, ${gone.role}, ${detail === null ? null : JSON.stringify(detail)}::jsonb)`
     },
   }
+  return store
 }
 
 /**

@@ -7,6 +7,12 @@ import * as http from 'node:http'
 
 export const FAKE_ORG = { installationId: 4242, accountId: 9000, login: 'sakuga-software' }
 
+/**
+ * KNT-150. A second account with the App, where GitHub counts nobody: its members come from an
+ * invitation in Kentō (e2e/orgs.spec.ts).
+ */
+export const SECOND_ORG = { installationId: 9150, accountId: 9151, login: 'globex' }
+
 /** The webhook secret of the server of the tests: e2e/config.spec.ts signs its events with it. */
 export const E2E_WEBHOOK_SECRET = 'e2e-webhook-secret-0123456789abcdef'
 
@@ -15,6 +21,8 @@ export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' 
   octocat: { id: 101, name: 'Alex Martin', role: 'admin' },
   camille: { id: 102, name: 'Camille', role: 'member' },
   stranger: { id: 103, name: 'Someone Else', role: null },
+  // KNT-150: counted nowhere on GitHub, and invited in Kentō by the tests of the members.
+  visitor: { id: 104, name: 'Visitor', role: null },
 }
 
 /** A repository name of 80 characters (REV-25). */
@@ -121,6 +129,14 @@ let server = http.createServer(async (request, response) => {
     return json(response, 200, { access_token: `ghu_${entry.login}`, token_type: 'bearer' })
   }
 
+  // KNT-150: the account of a login, for an invitation.
+  let user = /^\/users\/([^/]+)$/.exec(url.pathname)
+  if (request.method === 'GET' && user) {
+    let login = decodeURIComponent(user[1]!).toLowerCase()
+    let account = ACCOUNTS[login]
+    return account ? json(response, 200, { id: account.id, login, type: 'User' }) : json(response, 404, { message: 'Not Found' })
+  }
+
   if (request.method === 'GET' && url.pathname === '/user') {
     let login = (request.headers.authorization ?? '').replace('Bearer ghu_', '')
     let account = ACCOUNTS[login]
@@ -130,6 +146,9 @@ let server = http.createServer(async (request, response) => {
 
   if (request.method === 'POST' && url.pathname === `/app/installations/${FAKE_ORG.installationId}/access_tokens`) {
     return json(response, 201, { token: 'ghs_members', expires_at: new Date(Date.now() + 3600_000).toISOString() })
+  }
+  if (request.method === 'POST' && url.pathname === `/app/installations/${SECOND_ORG.installationId}/access_tokens`) {
+    return json(response, 201, { token: 'ghs_second', expires_at: new Date(Date.now() + 3600_000).toISOString() })
   }
 
   if (request.method === 'GET' && url.pathname === '/installation/repositories') {
@@ -222,6 +241,9 @@ let server = http.createServer(async (request, response) => {
 
   let membership = /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'GET' && membership) {
+    if (request.headers.authorization === 'Bearer ghs_second' && membership[1] === SECOND_ORG.login) {
+      return json(response, 404, { message: 'Not Found' })
+    }
     if (request.headers.authorization !== 'Bearer ghs_members' || membership[1] !== FAKE_ORG.login) {
       return json(response, 403, { message: 'Forbidden' })
     }

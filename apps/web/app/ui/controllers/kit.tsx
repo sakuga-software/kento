@@ -7,6 +7,7 @@ import { createContextKey } from 'remix/router'
 
 import { UUID } from '@kento-review/protocol'
 
+import { canEdit } from '../../auth/access.ts'
 import type { MembershipRow, UserRow } from '../../auth/store.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
@@ -22,10 +23,22 @@ export interface SignedIn {
   user: UserRow
   membership: MembershipRow
   memberships: MembershipRow[]
+  /** KNT-150. The pending invitations of the person, in any org. */
+  invitations?: number
 }
 
 /** The signed-in person on the screen, set by `requireViewer`. */
 export const Signed = createContextKey<SignedIn>()
+
+/** KNT-150. A signed-in person, with an org (`signed`) or with only invitations to answer. */
+export interface SignedPerson {
+  sessionId: string
+  user: UserRow
+  signed: SignedIn | null
+}
+
+/** Set by `requireViewer` and `requirePerson`. */
+export const Person = createContextKey<SignedPerson>()
 
 /** What `context.render` takes: a node of `remix/component`. */
 export type PageNode = Parameters<typeof renderToString>[0]
@@ -61,11 +74,11 @@ export function redirect(location: string) {
 }
 
 /**
- * True for an admin of the org on screen. For a member, logs `event` (when given) with the reason,
+ * True for an owner or an admin of the org on screen. For a member, logs `event` (when given) with the reason,
  * and the caller answers `forbidden()`.
  */
 export function isAdmin(signed: SignedIn, event?: string, fields: Record<string, unknown> = {}): boolean {
-  if (signed.membership.role === 'admin') return true
+  if (canEdit(signed.membership.role)) return true
   if (event) log('warn', event, { login: signed.user.login, org: signed.membership.org.name, ...fields, reason: 'not an admin' })
   return false
 }
@@ -140,8 +153,10 @@ export function createKit(deps: UiDependencies): UiKit {
         name: signed.user.name,
         avatarUrl: signed.user.avatarUrl,
         role: signed.membership.role,
+        canEdit: canEdit(signed.membership.role),
         org: { id: signed.membership.org.id, name: signed.membership.org.name },
-        orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name })),
+        orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name, role: m.role })),
+        invitations: signed.invitations ?? 0,
       }
       return {
         theme: readTheme(context.headers.get('Cookie')),

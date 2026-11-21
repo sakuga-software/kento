@@ -6,7 +6,7 @@ import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
 import type { ProviderView } from '../providers/store.ts'
-import { pageRoutes as routes } from '../routes.ts'
+import { memberRoutes, pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
 import { Button, Choice, Input, Select, buttonClass } from './controls.tsx'
 import { FormErrors, firstInvalid, focusIf } from './form-errors.tsx'
@@ -78,7 +78,7 @@ export interface SettingsPageProps {
 export function SettingsPage(handle: Handle<SettingsPageProps>) {
   return () => {
     let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError, rules } = handle.props
-    let admin = frame.viewer?.role === 'admin'
+    let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
     // REV-27. Which levels of the org run on each provider: the same rule as Default values.
@@ -133,6 +133,10 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
             </p>
           </div>
         ) : null}
+
+        <p class="settings-members">
+          <a href={memberRoutes.members.href()}>Members and invitations</a>
+        </p>
 
         {/* KNT-149: the sidebar only with two sections or more; without it, the page keeps one column of 760 px.
             The alerts of a refused key stay above it, in reach of the keyboard. */}

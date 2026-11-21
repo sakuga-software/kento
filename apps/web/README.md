@@ -60,12 +60,51 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   URL of the App, as before): the user authorization of the GitHub App, authorization code with
   PKCE and `state` (in `verifications`, 10 minutes). The user token reads `GET /user` once and is
   dropped: `accounts` holds no token, and a check of the table refuses one.
-- The role comes from GitHub, never from Kentō: `GET /orgs/{org}/memberships/{login}` with an
-  installation token limited to `members: read`. `admin` edits, `member` reads (the "Read only"
-  banner), `pending` or absent gets nothing. The owner of a personal account is its admin. In an org
-  of several installations, the role is the highest that their accounts give. Someone in none of
-  the orgs of the App is refused, and nothing is written. The role is read again after 10
-  minutes; while GitHub fails, the last one holds 1 hour, then the access ends.
+- KNT-150: the roles of an org are `owner`, `admin` and `member` (the `organization` plugin of Better
+  Auth, on `orgs` and `memberships`). An owner does what an admin does; an admin edits; a member
+  reads (the "Read only" banner). A membership has a source:
+  - `github`: GitHub counts the person in the account of an installation of the org (`GET
+    /orgs/{org}/memberships/{login}` with an installation token limited to `members: read`; the owner
+    of a personal account is its admin). GitHub decides between `admin` and `member`, read again after
+    10 minutes; while GitHub fails, the last one holds 1 hour, then the access ends. When GitHub says
+    the person left, the membership goes. `owner` holds only while GitHub says `admin`: an
+    owner whom GitHub demotes to `member` becomes a member at the next check. A GitHub admin of an
+    org that has no active owner becomes its owner at each check, under a lock of the org, so two
+    admins at the same time make one owner. An owner is active while their membership was checked,
+    or they signed in, within 30 days (`OWNER_ACTIVE_MS`): an owner who left and never came back
+    does not stop the next admin. In an org of
+    several installations, the role is the highest that their accounts give.
+  - `invitation`: an admin of Kentō invited the person. GitHub is never asked about it, even when
+    GitHub also counts the person in the account: the invitation wins, and only Kentō changes or ends it.
+- At the sign-in, someone whom GitHub counts in none of the orgs of the App, who has no
+  membership from an invitation and no pending invitation, is refused, and nothing is written. A
+  person with only a pending invitation gets a session with no org, and reaches only
+  `/invitations` (and the sign-out).
+- Members and invitations (`app/members/`, `/settings/members`, KNT-150). Every member reads the
+  members and the pending invitations; an owner or an admin invites a GitHub login as a member or an
+  admin (Kentō reads its id on GitHub with an installation token; it sends no mail), cancels an
+  invitation, sets member or admin on a person invited, and removes them. Only an owner gives the
+  owner role (to a GitHub admin, or to a person invited), takes it back, or removes an owner. GitHub
+  decides a membership from GitHub: Kentō neither removes it nor moves it between admin and member.
+  No change leaves the org without an active owner: every change, removal, departure and acceptance
+  runs in one transaction under the advisory lock of the owners of the org, with the rows read
+  under that lock (`app/members/rules.ts` decides, `app/members/store.ts` applies). Kentō never
+  overrides the admin of GitHub: an owner from an invitation does not demote a person whom GitHub
+  counts as an admin of an account of the org, and that person can always take the owner role
+  back ("Take the owner role", after Kentō asks GitHub again, at most once a minute per person and
+  org). A GitHub admin who joined from an invitation takes it too: their membership then becomes
+  one from GitHub. Each change writes a row of `org_audit` (actor, action, target, roles before and
+  after, and what else it did in `detail`), which stays when the org goes; so does an end of a
+  membership by GitHub (`github_removed`, actor `(GitHub)`). At most 50 pending invitations per
+  org; the pending invitations of a person who leaves the org, or whom GitHub removes, go with them.
+- Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
+  sees them on `/invitations` (a banner of the frame leads there), and accepts (they become a member
+  from an invitation; a person who is a member already keeps their membership as it is, its role
+  and its source) or declines. A person invited stays a member
+  when they leave the account on GitHub.
+- The header shows the org on screen; its menu lists every org of the person with their role, and
+  switches the org (`POST /preferences/org`, Better Auth's `setActiveOrganization`, only to an org
+  of the person). The org on screen is `sessions.active_organization_id`.
 - Sessions in Postgres (`sessions`): a random token in a signed cookie (`__Host-kento_session`,
   HttpOnly, Secure, SameSite=Lax, Path=/, no Domain, 7 days from the sign-in, never longer), only
   its SHA-256 in the table (`token_hash`). A session row that Better Auth reads other than by its

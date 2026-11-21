@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
+import { OWNER_ACTIVE_MS, ROLE_GRACE_MS, ROLE_TTL_MS } from '../auth/access.ts'
 import { githubEmail, SESSION_TTL_MS } from '../auth/better-auth.ts'
 import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE, STRANGER } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
@@ -117,11 +117,12 @@ describe('the GitHub sign-in', () => {
 
     let html = await (await request('/', { cookie })).text()
     assert.match(html, /<a href="\/users\/octocat" title="octocat" class="bar-avatar"><span aria-hidden="true">OC<\/span>/)
-    assert.match(html, /<span class="who-role">Admin<\/span>/)
-    assert.match(html, /<span class="bar-org-box">sakuga-software<\/span>/)
+    // KNT-150: the first admin on GitHub of an org that has no owner becomes its owner.
+    assert.match(html, /<span class="who-role">Owner<\/span>/)
+    assert.match(html, /<span class="org-menu-name">sakuga-software<\/span>/)
     assert.doesNotMatch(html, /Read only/)
     assert.match(html, /action="\/logout"/)
-    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'owner')
   })
 
   it('shows "Read only" to a member', async () => {
@@ -528,6 +529,8 @@ describe('the role, from GitHub', () => {
 
   it('follows a change of role on GitHub', async () => {
     let { request, signIn, auth } = setup()
+    // octocat, the first admin, is the owner: camille becomes an admin, not the owner.
+    await signIn(OCTOCAT)
     let { cookie } = await signIn(CAMILLE)
     auth.setRole(ORG, CAMILLE, 'admin')
     auth.clock.now += ROLE_TTL_MS + 1000
@@ -584,19 +587,19 @@ describe('the role, from GitHub', () => {
     let { request, signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
     let { cookie } = await signIn(CAMILLE)
-    assert.match(await (await request('/', { cookie })).text(), /<option value="org-2" selected>orchard<\/option>/)
+    assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">orchard<\/span>/)
 
     // Camille leaves orchard on GitHub: the screens move to sakuga-software, where she reads.
     auth.setRole(OTHER_ORG, CAMILLE, null)
     auth.clock.now += ROLE_TTL_MS + 1000
     let alone = await (await request('/', { cookie })).text()
-    assert.match(alone, /<span class="bar-org-box">sakuga-software<\/span>/)
+    assert.match(alone, /<span class="org-menu-name">sakuga-software<\/span>/)
     assert.match(alone, /Read only/)
 
     // She comes back to orchard: the session stays on the org it moved to.
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
     await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-2', 'admin')
-    assert.match(await (await request('/', { cookie })).text(), /<option value="org-1" selected>sakuga-software<\/option>/)
+    assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">sakuga-software<\/span>/)
   })
 
   it('answers 503 and keeps the cookie while the sessions cannot be read, then works again', async () => {
@@ -625,13 +628,13 @@ describe('the role, from GitHub', () => {
     let { signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
     auth.setRole(OTHER_ORG, CAMILLE, 'admin')
     let { cookie } = await signIn(CAMILLE)
-    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'owner')
 
     // GitHub fails for orchard at the next sign-in, and answers for sakuga-software.
     auth.clock.now += 60_000
     auth.setRole(OTHER_ORG, CAMILLE, 'error')
     await signIn(CAMILLE)
-    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'admin', 'GitHub never said that camille left orchard')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.role, 'owner', 'GitHub never said that camille left orchard')
 
     // A "not a member" from GitHub does forget it.
     auth.setRole(OTHER_ORG, CAMILLE, null)
@@ -647,18 +650,38 @@ describe('the role, from GitHub', () => {
 
     // The admin org comes first.
     let html = await (await request('/', { cookie })).text()
-    assert.match(html, /<option value="org-2" selected>orchard<\/option>/)
+    assert.match(html, /<span class="org-menu-name">orchard<\/span>/)
     assert.doesNotMatch(html, /Read only/)
 
     let token = await csrfOf(cookie!)
     let switched = await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-1', returnTo: '/repos' } })
     assert.equal(switched.headers.get('Location'), '/repos')
     let member = await (await request('/repos', { cookie })).text()
-    assert.match(member, /<option value="org-1" selected>sakuga-software<\/option>/)
+    assert.match(member, /<span class="org-menu-name">sakuga-software<\/span>/)
     assert.match(member, /Read only/)
 
     await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-9' } })
-    assert.match(await (await request('/', { cookie })).text(), /<option value="org-1" selected>/)
+    assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">sakuga-software<\/span>/)
+  })
+
+  it('KNT-150: a switch that Better Auth refuses (the membership went in between) goes back to the page, not to a 500', async () => {
+    let { request, signIn, auth, csrfOf } = setup({ orgs: [ORG, OTHER_ORG] })
+    auth.setRole(OTHER_ORG, CAMILLE, 'admin')
+    let { cookie } = await signIn(CAMILLE)
+    let token = await csrfOf(cookie!)
+    let api = auth.deps.auth.api as { setActiveOrganization: (...args: unknown[]) => Promise<unknown> }
+    let original = api.setActiveOrganization
+    api.setActiveOrganization = async () => {
+      throw new Error('You are not a member of this organization')
+    }
+    try {
+      let switched = await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-1', returnTo: '/repos' } })
+      assert.equal(switched.status, 303)
+      assert.equal(switched.headers.get('Location'), '/repos')
+    } finally {
+      api.setActiveOrganization = original
+    }
+    assert.match(await (await request('/', { cookie })).text(), /<span class="org-menu-name">orchard<\/span>/)
   })
 })
 
@@ -828,5 +851,195 @@ describe('the assets', () => {
   it('serves nothing outside of /assets/', async () => {
     let { request } = setup()
     assert.equal((await request('/fonts/LICENSE-Archivo.txt')).status, 404)
+  })
+})
+
+describe('KNT-150: a pending invitation', () => {
+  it('lets a person whom GitHub counts nowhere sign in, to the page of the invitations only', async () => {
+    let { request, signIn, auth } = setup()
+    assert.equal((await signIn(STRANGER)).cookie, null, 'no invitation: refused')
+    auth.invite(STRANGER)
+    let { callback, cookie } = await signIn(STRANGER)
+    assert.ok(cookie)
+    assert.equal(callback.headers.get('Location'), '/')
+    assert.equal(auth.tables.sessions!.at(-1)!.activeOrganizationId, null, 'a session with no org')
+    for (let path of ['/', '/repos', '/settings', '/runners']) {
+      let screen = await request(path, { cookie })
+      assert.equal(screen.headers.get('Location'), '/invitations', path)
+    }
+    assert.equal((await request('/repos/check', { cookie, form: {} })).status, 403)
+    // The invitation goes (declined, canceled, expired): the next request ends the session.
+    auth.invite(STRANGER, 0)
+    assert.equal((await request('/', { cookie })).headers.get('Location'), '/login?notice=expired')
+  })
+
+  it('a member with a pending invitation of another org sees a banner that leads to it', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    assert.doesNotMatch(await (await request('/', { cookie })).text(), /See the invitations/)
+    auth.invite(OCTOCAT, 2)
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<strong class="banner-title">2 invitations<\/strong> Organizations invite you to Kentō\. <a href="\/invitations">See the invitations<\/a>/)
+    assert.match(html, /<a href="\/settings\/members" class="org-menu-link">Members<\/a>/)
+  })
+})
+
+describe('KNT-150: the roles owner, admin and member, and the menu of the orgs', () => {
+  it('makes the first admin on GitHub of an org the owner; the next admins are admins, the members members', async () => {
+    let { request, signIn, auth } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    let owner = await signIn(OCTOCAT)
+    await signIn(STRANGER)
+    await signIn(CAMILLE)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'owner')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'admin')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-1`)?.role, 'member')
+    // An owner edits, as an admin does: the frame has no "Read only".
+    assert.doesNotMatch(await (await request('/settings', { cookie: owner.cookie })).text(), /Read only/)
+  })
+
+  it('keeps an owner an owner while GitHub says admin, makes them a member when GitHub demotes them, and removes them when they left', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.match(await (await request('/', { cookie })).text(), /<span class="who-role">Owner<\/span>/)
+    // GitHub demotes octocat to member: owner holds only while GitHub says admin.
+    auth.setRole(ORG, OCTOCAT, 'member')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<span class="who-role">Member<\/span>/)
+    assert.match(html, /Read only/)
+    // A new sign-in changes nothing.
+    let again = await signIn(OCTOCAT)
+    assert.match(await (await request('/', { cookie: again.cookie })).text(), /<span class="who-role">Member<\/span>/)
+    auth.setRole(ORG, OCTOCAT, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', { cookie: again.cookie })).status, 303)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`), undefined)
+  })
+
+  it('makes an admin the owner at its next check when the org has no owner any more', async () => {
+    let { request, signIn, auth } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    let owner = await signIn(OCTOCAT)
+    let admin = await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'admin')
+    // The owner leaves the org on GitHub; their next request ends the membership.
+    auth.setRole(ORG, OCTOCAT, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', { cookie: owner.cookie })).status, 303)
+    // The admin, at its next check, becomes the owner, without a new sign-in.
+    assert.match(await (await request('/', { cookie: admin.cookie })).text(), /<span class="who-role">Owner<\/span>/)
+  })
+
+  it('gives the org back an owner after a release that wrote admin over owner', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(OCTOCAT)
+    // The release before, during the deploy, read GitHub again and wrote `admin`.
+    await auth.deps.store.saveMembership(auth.userIdOf(OCTOCAT), ORG.id, 'admin', 'github')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.match(await (await request('/', { cookie })).text(), /<span class="who-role">Owner<\/span>/)
+  })
+
+  it('an owner who has not been seen for 30 days does not stop the next GitHub admin from becoming the owner', async () => {
+    let { signIn, auth } = setup()
+    auth.setRole(ORG, STRANGER, 'admin')
+    await signIn(OCTOCAT)
+    auth.clock.now += OWNER_ACTIVE_MS - 60_000
+    await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'admin', 'the owner was seen within 30 days')
+    auth.clock.now += 2 * 60_000
+    auth.clock.now += ROLE_TTL_MS
+    await signIn(STRANGER)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'owner')
+    // The old owner keeps their row; when they come back as an admin of GitHub, they stay an owner.
+    assert.equal(auth.memberships.get(`${auth.userIdOf(OCTOCAT)}/org-1`)?.role, 'owner')
+  })
+
+  it('follows GitHub between admin and member for a membership from GitHub', async () => {
+    let { request, signIn, auth } = setup()
+    await signIn(OCTOCAT)
+    auth.setRole(ORG, STRANGER, 'admin')
+    let { cookie } = await signIn(STRANGER)
+    assert.doesNotMatch(await (await request('/', { cookie })).text(), /Read only/)
+    auth.setRole(ORG, STRANGER, 'member')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.match(await (await request('/', { cookie })).text(), /Read only/)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(STRANGER)}/org-1`)?.role, 'member')
+  })
+
+  it('never asks GitHub about a membership from an invitation, and keeps it when GitHub does not count the person', async () => {
+    let { request, signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
+    let { cookie } = await signIn(CAMILLE)
+    await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-2', 'admin', 'invitation')
+    auth.setRole(OTHER_ORG, CAMILLE, null)
+    auth.clock.now += ROLE_GRACE_MS + 1000
+    let before = auth.lookups.length
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<span class="org-menu-item-name">orchard<\/span><span class="tag tag-quiet">Admin<\/span>/)
+    assert.deepEqual(auth.lookups.slice(before), ['sakuga-software/camille'], 'only the membership from GitHub is read again')
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-2`)?.source, 'invitation')
+  })
+
+  it('lists every org of the person in the menu with their role, and the current one is not a form', async () => {
+    let { request, signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
+    auth.setRole(OTHER_ORG, CAMILLE, 'admin')
+    let { cookie } = await signIn(CAMILLE)
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<details class="bar-org org-menu"><summary class="bar-org-box"><span class="visually-hidden">Organization: <\/span><span class="org-menu-name">orchard<\/span>/)
+    assert.match(html, /<span aria-current="true" class="org-menu-item"><span class="org-menu-item-name">orchard<\/span><span class="tag tag-quiet">Owner<\/span>/)
+    assert.match(html, /<input type="hidden" name="orgId" value="org-1" \/><button type="submit" class="org-menu-item"><span class="org-menu-item-name">sakuga-software<\/span><span class="tag tag-quiet">Member<\/span>/)
+    assert.doesNotMatch(html, /name="orgId" value="org-2"/)
+    assert.match(html, /<a href="\/settings" class="org-menu-link">Organization settings<\/a>/)
+  })
+
+  it('a member of one org cannot move a session to another org: the form changes nothing', async () => {
+    let { request, signIn, auth, csrfOf } = setup({ orgs: [ORG, OTHER_ORG] })
+    auth.setRole(OTHER_ORG, OCTOCAT, null)
+    let { cookie } = await signIn(OCTOCAT)
+    let token = await csrfOf(cookie!)
+    let response = await request('/preferences/org', { cookie, form: { _csrf: token, orgId: 'org-2', returnTo: '/settings' } })
+    assert.equal(response.status, 303)
+    let html = await (await request('/settings', { cookie })).text()
+    assert.match(html, /<span class="org-menu-name">sakuga-software<\/span>/)
+    assert.doesNotMatch(html, /orchard/)
+  })
+})
+
+describe('KNT-150: a member from an invitation', () => {
+  it('signs in to the org of the invitation when GitHub counts them nowhere, and reads it', async () => {
+    let { request, signIn, auth } = setup({ orgs: [ORG, OTHER_ORG] })
+    // Refused before: GitHub counts the stranger in no org.
+    assert.equal((await signIn(STRANGER)).callback.headers.get('Location'), '/login?notice=not_member')
+    // An admin of orchard invited them (the invitation flow comes later): a user and a membership.
+    auth.tables.users!.push({ id: 'user-stranger', githubId: STRANGER.id, login: STRANGER.login, email: `${STRANGER.id}@users.github.invalid`, emailVerified: false, createdAt: new Date(), updatedAt: new Date() })
+    auth.tables.accounts!.push({ id: 'account-stranger', userId: 'user-stranger', providerId: 'github', accountId: String(STRANGER.id), createdAt: new Date(), updatedAt: new Date() })
+    await auth.deps.store.saveMembership('user-stranger', 'org-2', 'member', 'invitation')
+    let { callback, cookie } = await signIn(STRANGER)
+    assert.equal(callback.headers.get('Location'), '/')
+    let html = await (await request('/', { cookie })).text()
+    assert.match(html, /<span class="org-menu-name">orchard<\/span>/)
+    assert.match(html, /Read only/)
+    assert.equal(auth.memberships.get('user-stranger/org-2')?.source, 'invitation')
+  })
+})
+
+describe('KNT-150: an invitation and GitHub on the same org', () => {
+  it('the invitation wins: GitHub neither changes the role nor ends the membership', async () => {
+    let { request, signIn, auth } = setup()
+    let { cookie } = await signIn(CAMILLE)
+    // An admin of Kentō made camille an admin by invitation; GitHub counts her as a member.
+    await auth.deps.store.deleteMembership(auth.userIdOf(CAMILLE), 'org-1')
+    await auth.deps.store.saveMembership(auth.userIdOf(CAMILLE), 'org-1', 'admin', 'invitation')
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.doesNotMatch(await (await request('/', { cookie })).text(), /Read only/)
+    // A new sign-in where GitHub counts her as a member keeps the invitation and its role.
+    await signIn(CAMILLE)
+    assert.deepEqual({ ...auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-1`) }.role, 'admin')
+    // GitHub says she left: the membership from the invitation stays.
+    auth.setRole(ORG, CAMILLE, null)
+    auth.clock.now += ROLE_TTL_MS + 1000
+    assert.equal((await request('/', { cookie })).status, 200)
+    assert.equal(auth.memberships.get(`${auth.userIdOf(CAMILLE)}/org-1`)?.source, 'invitation')
   })
 })

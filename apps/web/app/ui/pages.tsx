@@ -3,6 +3,7 @@
 import { getCsrfToken } from 'remix/middleware/csrf'
 import { createController, type Middleware } from 'remix/router'
 
+import type { OrgRole } from '../db/schema.ts'
 import { docsRoutes, fallbackRoutes, pageRoutes } from '../routes.ts'
 import { assignmentActions } from './controllers/assignment.tsx'
 import { createAuth } from './controllers/auth.tsx'
@@ -10,7 +11,7 @@ import { configActions } from './controllers/config.tsx'
 import { dashboardActions } from './controllers/dashboard.tsx'
 import type { UiDependencies } from './controllers/deps.ts'
 import { findingsActions } from './controllers/findings.tsx'
-import { createKit, forbidden, redirect, Signed, signedOf } from './controllers/kit.tsx'
+import { createKit, forbidden, Person, redirect, Signed, signedOf, type SignedIn, type SignedPerson } from './controllers/kit.tsx'
 import { CommandsPage } from './docs-commands.tsx'
 import { reposActions } from './controllers/repos.tsx'
 import { rulesActions } from './controllers/rules.tsx'
@@ -41,7 +42,7 @@ export function appInstallUrl(githubUrl: string, slug: string): string {
 /** The controllers of the screens (`pageRoutes`) and of the sign-in (`authRoutes`). */
 export function createUiControllers(deps: UiDependencies) {
   let kit = createKit(deps)
-  let { sessionLayer, requireViewer, optionalViewer, signIn, frameActions } = createAuth(kit)
+  let { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions } = createAuth(kit)
 
   let pages = createController(pageRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
@@ -110,6 +111,29 @@ export function createUiControllers(deps: UiDependencies) {
       return { login: signed.user.login, orgId: signed.membership.org.id, orgName: signed.membership.org.name, role: signed.membership.role }
     },
     frame: (context) => kit.page(context),
+    signedIn: (context) => signedOf(context),
+    personMiddleware: [securityHeaders(), ...sessionLayer, requirePerson],
+    person: (context) => {
+      let person = context.get(Person)
+      if (!person) throw new Error('requirePerson did not run')
+      return person
+    },
+    personFrame: (context) => {
+      let person = context.get(Person) as SignedPerson | undefined
+      if (person?.signed) return kit.frame(person.signed, context, getCsrfToken(context))
+      return {
+        theme: readTheme(context.headers.get('Cookie')),
+        version: deps.version,
+        assetVersion: kit.assetVersion,
+        viewer: null,
+        csrfToken: getCsrfToken(context),
+        path: `${context.url.pathname}${context.url.search}`,
+      }
+    },
+    now: kit.now,
+    setActiveOrg: async (sessionId, orgId) => {
+      await deps.auth?.store.setActiveOrg(sessionId, orgId)
+    },
     errorPage: kit.errorPage,
     redirect,
     forbidden,
@@ -123,7 +147,7 @@ export interface ScreenViewer {
   login: string
   orgId: string
   orgName: string
-  role: 'admin' | 'member'
+  role: OrgRole
 }
 
 /** REV-17. The frame of the screens, for a controller in a file of its own. */
@@ -131,6 +155,16 @@ export interface ScreenKit {
   middleware: Middleware<any>[]
   signed(context: any): ScreenViewer
   frame(context: any): PageFrame
+  /** KNT-150. The signed-in member of the request, with their org and its installations. */
+  signedIn(context: any): SignedIn
+  /** KNT-150. The middleware of a page that a person with only invitations reaches too. */
+  personMiddleware: Middleware<any>[]
+  person(context: any): SignedPerson
+  /** The frame of such a page: the full frame for a member of an org, a bare one otherwise. */
+  personFrame(context: any): PageFrame
+  now: () => number
+  /** KNT-150. Moves a session to an org (the person is a member of it now). */
+  setActiveOrg(sessionId: string, orgId: string): Promise<void>
   errorPage(context: any, status: 400 | 404, kind: ErrorKind, section?: Section, exit?: ErrorExit): Response
   redirect(location: string): Response
   forbidden(): Response

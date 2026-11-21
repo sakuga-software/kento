@@ -50,6 +50,9 @@ export const orgs = pgTable('orgs', {
   name: text('name').notNull(),
   /** Unique, lowercase. At its creation by the webhook: the login, then `-<installation id>` if it is taken. */
   slug: text('slug').notNull().unique(),
+  /** KNT-150. Fields of the `organization` of Better Auth that Kentō does not use yet. */
+  logo: text('logo'),
+  metadata: text('metadata'),
   /**
    * The config of the org: what its repositories inherit (`ConfigOverrides` of app/repo-config). A
    * key that it does not hold takes the value of Kentō. The settings of the org (REV-13) write it.
@@ -463,8 +466,19 @@ export const resolutions = pgTable(
   ],
 )
 
-/** The role of a person in an org, as GitHub gives it: an admin edits, a member reads. */
-export const orgRole = pgEnum('org_role', ['admin', 'member'])
+/**
+ * KNT-150. The roles of a person in an org: an owner does what an admin does, and manages the owners
+ * and the org itself; an admin edits; a member reads.
+ */
+export const ORG_ROLES = ['owner', 'admin', 'member'] as const
+export type OrgRole = (typeof ORG_ROLES)[number]
+
+/**
+ * KNT-150. Where a membership comes from: GitHub counts the person in the account of an installation
+ * of the org (`github`: GitHub keeps deciding), or an admin of Kentō invited them (`invitation`).
+ */
+export const MEMBERSHIP_SOURCES = ['github', 'invitation'] as const
+export type MembershipSource = (typeof MEMBERSHIP_SOURCES)[number]
 
 /**
  * A person who signed in with GitHub. Kentō keeps no GitHub token of theirs. KNT-150: the `user` of
@@ -542,23 +556,103 @@ export const verifications = pgTable(
 )
 
 /**
- * The role of a user in an org, read from GitHub at sign-in and again when `checked_at` is older
- * than a few minutes. GitHub is the source: a row is a cache, deleted when GitHub says the person
- * left the org.
+ * KNT-150. A person in an org: the `member` of the organization plugin of Better Auth.
+ *
+ * - `source = github`: GitHub counts the person in the account of an installation of the org. GitHub
+ *   gives `admin` or `member`, read again when `checked_at` is older than a few minutes; the row goes
+ *   when GitHub says the person left. `owner` is given in Kentō, and stays while GitHub counts them.
+ * - `source = invitation`: an admin of Kentō invited them. Only Kentō changes the row.
  */
 export const memberships = pgTable(
   'memberships',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     orgId: uuid('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
-    role: orgRole('role').notNull(),
+    role: text('role').$type<OrgRole>().notNull(),
+    source: text('source').$type<MembershipSource>().notNull().default('github'),
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.orgId] }), index('memberships_org_id_idx').on(table.orgId)],
+  (table) => [
+    uniqueIndex('memberships_user_org_idx').on(table.userId, table.orgId),
+    index('memberships_org_id_idx').on(table.orgId),
+    check('memberships_role', sql`${table.role} in ('owner', 'admin', 'member')`),
+    check('memberships_source', sql`${table.source} in ('github', 'invitation')`),
+  ],
+)
+
+/** KNT-150. What becomes of an invitation. Only a `pending` one can be accepted, declined or canceled. */
+export const INVITATION_STATUSES = ['pending', 'accepted', 'declined', 'canceled'] as const
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+
+/** KNT-150. The roles that an invitation gives: an owner gives `owner` to a member afterwards. */
+export const INVITATION_ROLES = ['admin', 'member'] as const
+export type InvitationRole = (typeof INVITATION_ROLES)[number]
+
+/**
+ * KNT-150. An invitation of a GitHub account to an org of Kentō, by an owner or an admin. Kentō
+ * sends no mail: the person sees it after a sign-in with that GitHub account (by its id, not its
+ * login, which can change), and accepts or declines it. It ends at `expires_at` (7 days). One
+ * pending invitation at most per account and org.
+ */
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    githubId: bigint('github_id', { mode: 'number' }).notNull(),
+    /** The login at the time of the invitation, for the screens. */
+    githubLogin: text('github_login').notNull(),
+    role: text('role').$type<InvitationRole>().notNull(),
+    status: text('status').$type<InvitationStatus>().notNull().default('pending'),
+    inviterId: uuid('inviter_id').references(() => users.id, { onDelete: 'set null' }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    respondedAt: timestamp('responded_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    uniqueIndex('invitations_pending_idx').on(table.orgId, table.githubId).where(sql`${table.status} = 'pending'`),
+    index('invitations_github_id_idx').on(table.githubId),
+    check('invitations_role', sql`${table.role} in ('admin', 'member')`),
+    check('invitations_status', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled')`),
+  ],
+)
+
+/**
+ * KNT-150. What happened to the members and the invitations of an org: one row per change, written
+ * in the transaction of the change. The row stays when its org, its actor or its target goes: the
+ * names are copied.
+ */
+export const orgAudit = pgTable(
+  'org_audit',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').references(() => orgs.id, { onDelete: 'set null' }),
+    orgName: text('org_name').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    actorLogin: text('actor_login').notNull(),
+    /**
+     * invite, cancel, role, remove, leave, accept, decline, reclaim, github_removed (GitHub ended a
+     * membership: the actor is `(GitHub)`, no user).
+     */
+    action: text('action').notNull(),
+    targetLogin: text('target_login'),
+    targetGithubId: bigint('target_github_id', { mode: 'number' }),
+    invitationId: uuid('invitation_id'),
+    roleBefore: text('role_before'),
+    roleAfter: text('role_after'),
+    /** What else the change did, for a person who reads the table: for example the invitations it canceled. */
+    detail: jsonb('detail').$type<Record<string, unknown>>(),
+    createdAt: createdAt(),
+  },
+  (table) => [index('org_audit_org_idx').on(table.orgId, table.createdAt)],
 )
 
 /**

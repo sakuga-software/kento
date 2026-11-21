@@ -3,7 +3,7 @@ import { generateKeyPairSync } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { createGitHubOAuth, createRoleLookup, type InstallationAccount } from './github.ts'
+import { createGitHubOAuth, createGitHubPeople, createRoleLookup, type InstallationAccount } from './github.ts'
 
 let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 
@@ -129,5 +129,44 @@ describe('createRoleLookup', () => {
     await assert.rejects(() => failing.lookupRole(org, { githubId: 2, login: 'camille' }), /GitHub answered 502/)
     let noToken = lookup(() => Response.json({}), 401)
     await assert.rejects(() => noToken.lookupRole(org, { githubId: 2, login: 'camille' }), /GitHub answered 401/)
+  })
+})
+
+describe('KNT-150: the account of a login', () => {
+  let org: InstallationAccount = { githubInstallationId: 77, githubAccountId: 900, login: 'sakuga-software' }
+
+  function people(user: (login: string) => Response) {
+    let { calls, fetch } = fakeFetch((url) =>
+      url.endsWith('/access_tokens')
+        ? Response.json({ token: 'ghs_members', expires_at: '2026-10-28T13:00:00Z' }, { status: 201 })
+        : user(decodeURIComponent(url.split('/').pop()!)),
+    )
+    let now = Date.parse('2026-10-28T12:00:00Z')
+    return { calls, ...createGitHubPeople({ appId: '12345', privateKey, apiUrl: 'https://api.github.com', fetch, now: () => now }) }
+  }
+
+  it('reads a person with the token of the installation, and nothing for an org, a bot or an unknown login', async () => {
+    let { calls, lookupUser } = people((login) =>
+      login === 'camille'
+        ? Response.json({ id: 2, login: 'Camille', type: 'User' })
+        : login === 'acme'
+          ? Response.json({ id: 9, login: 'acme', type: 'Organization' })
+          : Response.json({ message: 'Not Found' }, { status: 404 }),
+    )
+    assert.deepEqual(await lookupUser(org, 'camille'), { id: 2, login: 'Camille' })
+    assert.equal(await lookupUser(org, 'acme'), null)
+    assert.equal(await lookupUser(org, 'nobody'), null)
+    let user = calls.find((c) => c.url === 'https://api.github.com/users/camille')!
+    assert.equal(new Headers(user.init.headers).get('Authorization'), 'Bearer ghs_members')
+    // A login that GitHub cannot have never leaves Kentō.
+    let before = calls.length
+    assert.equal(await lookupUser(org, '../app'), null)
+    assert.equal(await lookupUser(org, 'a--b'), null)
+    assert.equal(calls.length, before)
+  })
+
+  it('throws when GitHub fails, so the screen says so', async () => {
+    let { lookupUser } = people(() => Response.json({ message: 'boom' }, { status: 502 }))
+    await assert.rejects(lookupUser(org, 'camille'), /502/)
   })
 })
