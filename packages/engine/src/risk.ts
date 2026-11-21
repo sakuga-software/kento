@@ -45,3 +45,12 @@ export function withPartialPrefix(risk: string, partial: string): string {
   if (end < 0) return `${text} ${prefix}`;
   return `${text.slice(0, end + 2)} ${prefix} ${text.slice(end + 3)}`.trim();
 }
+
+/**
+ * KNT-158. The risk as the review shows it. With a blocking finding, the sentences of the model that
+ * advise a merge go: the head line already says how many issues block.
+ */
+export function shownRisk(risk: string, blocking: number): string {
+  if (!blocking) return risk;
+  return withoutMergeAdvice(risk) || 'Fix the blocking issues before a merge.';
+}
