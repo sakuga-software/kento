@@ -9,7 +9,7 @@ import { after, before, test } from 'node:test';
 import { applyCoverage } from '../src/coverage.ts';
 import type { Answer } from '../src/findings.ts';
 import { reviewPullRequest } from '../src/index.ts';
-import { buildPack, trimRank, TRIM_RANK } from '../src/pack.ts';
+import { buildPack, trimRank, TRIM_RANK, type Coverage } from '../src/pack.ts';
 
 const repos: string[] = [];
 after(() => repos.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
@@ -34,8 +34,7 @@ function pullRequest(files: Record<string, string>, changes: Record<string, stri
   const base = git('rev-parse', 'HEAD');
   write(changes);
   git('add', '-A');
-  // A message that names none of the files: KNT-158 keeps a file that the commits name.
-  git('commit', '-q', '-m', 'add the columns');
+  git('commit', '-q', '-m', 'add the invoices');
   return { repo, base, head: git('rev-parse', 'HEAD') };
 }
 
@@ -55,6 +54,16 @@ const guide = lines(30, (i) => `The column ${i} of an invoice holds one value th
 test('the trim ranks the files: generated-like, docs, tests, UI, source, then schema, migrations and stores', () => {
   const rank = (path: string) => trimRank(path);
   assert.equal(rank('public/assets/app.min.css'), TRIM_RANK.generated);
+  assert.equal(rank('apps/web/public/assets/index-BpX3k9aF.js'), TRIM_RANK.generated);
+  assert.equal(trimRank('apps/web/public/assets/app.js', `+${'x'.repeat(1200)}\n`), TRIM_RANK.generated, 'very long lines');
+  assert.equal(rank('apps/web/public/assets/kento.css'), TRIM_RANK.ui, 'hand-written');
+  assert.equal(rank('apps/web/public/assets/frame.js'), TRIM_RANK.source, 'hand-written');
+  assert.equal(rank('apps/web/drizzle/meta/0029_snapshot.json'), TRIM_RANK.generated);
+  assert.equal(rank('apps/web/drizzle/meta/_journal.json'), TRIM_RANK.generated);
+  assert.equal(rank('apps/docs/src/server.ts'), TRIM_RANK.source, 'code under docs/');
+  assert.equal(rank('requirements.txt'), TRIM_RANK.source);
+  assert.equal(rank('CMakeLists.txt'), TRIM_RANK.source);
+  assert.equal(rank('docs/notes.txt'), TRIM_RANK.docs);
   assert.equal(rank('test/fixtures/invoice.json'), TRIM_RANK.generated);
   assert.equal(rank('docs/guide.md'), TRIM_RANK.docs);
   assert.equal(rank('apps/web/test/db/migrations.test.ts'), TRIM_RANK.tests);
@@ -73,7 +82,7 @@ test('over the budget, the pack drops the docs and the tests before the schema a
   );
   const { pack, skipped, coverage } = buildPack(repo, base, head, 'full');
   assert.deepEqual(skipped, ['docs/guide.md: removed to fit in the maximum size of the review', 'test/invoices.test.ts: removed to fit in the maximum size of the review']);
-  assert.deepEqual(coverage, { files: 5, cut: ['docs/guide.md', 'test/invoices.test.ts'], narrowed: [] });
+  assert.deepEqual(coverage, { files: 5, cut: ['docs/guide.md', 'test/invoices.test.ts'], large: [], narrowed: [], logic: ['test/invoices.test.ts'], core: [] });
   assert.match(pack, /\+\+\+ b\/app\/db\/schema\.ts/);
   assert.match(pack, /\+\+\+ b\/drizzle\/0002_columns\.sql/);
   assert.match(pack, /\+\+\+ b\/app\/ui\/invoices\.tsx/);
@@ -91,7 +100,7 @@ test('a large function keeps its hunks with three lines of context before its fi
   );
   const { pack, skipped, coverage } = buildPack(repo, base, head, 'full');
   assert.deepEqual(skipped, []);
-  assert.deepEqual(coverage, { files: 3, cut: [], narrowed: ['app/lib/report.ts'] });
+  assert.deepEqual(coverage, { files: 3, cut: [], large: [], narrowed: ['app/lib/report.ts'], logic: [], core: [] });
   assert.match(pack, /\n-  rows\.push\('total'\);\n\+  rows\.push\('total with tax'\);\n/);
   assert.doesNotMatch(pack, /\n export function report\(rows: string\[\]\) \{\n/, 'the whole function is not in the pack');
   assert.match(pack, /these files show three lines of context only: `app\/lib\/report\.ts`\./);
@@ -109,7 +118,7 @@ test('when a drop leaves room, a store gets its whole function back', () => {
     },
   );
   const { pack, coverage } = buildPack(repo, base, head, 'full');
-  assert.deepEqual(coverage, { files: 4, cut: ['test/pay.test.ts'], narrowed: [] });
+  assert.deepEqual(coverage, { files: 4, cut: ['test/pay.test.ts'], large: [], narrowed: [], logic: ['test/pay.test.ts'], core: [] });
   assert.match(pack, /\n export function readInvoices\(rows: string\[\]\) \{\n/, 'the whole function is back');
   assert.doesNotMatch(pack, /three lines of context only/);
 });
@@ -125,37 +134,46 @@ const answer = (over: Partial<Answer> = {}): Answer => ({
   ...over,
 });
 
+const coverage = (over: Partial<Coverage>): Coverage => ({ files: 6, cut: [], large: [], narrowed: [], logic: [], core: [], ...over });
+
 test('a review that did not read a schema says so in its risk and its summary, and gives 3 at most', () => {
-  const reply = answer();
-  const cap = applyCoverage(reply, { files: 6, cut: ['app/db/schema.ts', 'test/invoices.test.ts'], narrowed: ['app/lib/report.ts'] });
+  const reply = answer({ risk: 'The invoices get new columns. Low risk, safe to merge.' });
+  const cap = applyCoverage(reply, coverage({ cut: ['app/db/schema.ts', 'test/invoices.test.ts'], large: ['app/lib/big.ts'], narrowed: ['app/lib/report.ts'], logic: ['app/db/schema.ts', 'test/invoices.test.ts', 'app/lib/big.ts'], core: ['app/db/schema.ts'] }));
   assert.equal(cap, 3);
   assert.equal(reply.confidence_score, 3);
-  // KNT-158: the sentence « Low risk » of the model goes.
-  assert.equal(reply.risk, 'Partial review: 1 file of logic not read, a schema, a migration or a store among them (see Not reviewed).');
+  assert.equal(reply.risk, 'Partial review: 3 files of logic not read, a schema, a migration or a store among them (see Not reviewed). The invoices get new columns.');
   assert.equal(
     reply.summary,
-    'Adds the columns of the invoices.\n\nThis review did not read 2 of the 6 changed files, to fit in its size: `app/db/schema.ts`, `test/invoices.test.ts`.\n\nIt read this file with three lines of context only: `app/lib/report.ts`.',
+    'Adds the columns of the invoices.\n\nThis review did not read 3 of the 6 changed files: 2 to fit in its size (`app/db/schema.ts`, `test/invoices.test.ts`); 1 with more than 1000 changed lines (`app/lib/big.ts`).\n\nIt read this file with three lines of context only: `app/lib/report.ts`.',
   );
 });
 
-test('a source file not read gives 4 at most; a lower score of the model stays', () => {
-  const high = answer();
-  assert.equal(applyCoverage(high, { files: 3, cut: ['app/lib/pay.ts'], narrowed: [] }), 4);
-  assert.equal(high.confidence_score, 4);
+test('a file of logic not read gives 4 at most, a UI file and a test too; a lower score of the model stays', () => {
+  for (const path of ['app/lib/pay.ts', 'app/ui/pay.tsx', 'test/pay.test.ts']) {
+    const high = answer();
+    assert.equal(applyCoverage(high, coverage({ cut: [path], logic: [path] })), 4, path);
+    assert.equal(high.confidence_score, 4);
+  }
   const low = answer({ confidence_score: 2 });
-  applyCoverage(low, { files: 3, cut: ['app/lib/pay.ts'], narrowed: [] });
+  applyCoverage(low, coverage({ cut: ['app/lib/pay.ts'], logic: ['app/lib/pay.ts'] }));
   assert.equal(low.confidence_score, 2);
 });
 
-test('docs and tests not read: the summary says it, the risk and the score stay', () => {
+test('docs and generated files not read: the summary says it, the risk and the score stay', () => {
   const reply = answer();
-  assert.equal(applyCoverage(reply, { files: 4, cut: ['docs/guide.md', 'test/invoices.test.ts'], narrowed: [] }), null);
+  assert.equal(applyCoverage(reply, coverage({ files: 4, cut: ['docs/guide.md'], large: ['apps/web/drizzle/meta/0029_snapshot.json'] })), null);
   assert.equal(reply.confidence_score, 5);
   assert.equal(reply.risk, 'Low risk: the invoices get new columns.');
-  assert.match(reply.summary, /did not read 2 of the 4 changed files/);
+  assert.match(reply.summary, /did not read 2 of the 4 changed files: 1 to fit in its size \(`docs\/guide\.md`\); 1 with more than 1000 changed lines/);
   const whole = answer();
-  assert.equal(applyCoverage(whole, { files: 4, cut: [], narrowed: [] }), null);
+  assert.equal(applyCoverage(whole, coverage({})), null);
   assert.deepEqual(whole, answer());
+});
+
+test('a warning of the model stays in the risk of a partial review; only an advice to merge goes', () => {
+  const reply = answer({ risk: 'It is not safe to merge until the store is checked. Low risk otherwise, e.g. for the labels. Safe to merge.' });
+  applyCoverage(reply, coverage({ cut: ['app/lib/pay.ts'], logic: ['app/lib/pay.ts'] }));
+  assert.equal(reply.risk, 'Partial review: 1 file of logic not read (see Not reviewed). It is not safe to merge until the store is checked.');
 });
 
 test('a review whose pack cut the schema is not « safe to merge » at 5: the model says 5, the review gives 3', async () => {
@@ -174,7 +192,7 @@ test('a review whose pack cut the schema is not « safe to merge » at 5: the mo
   assert.equal(result.score, 3);
   assert.notEqual(result.verdict, 'APPROVE');
   assert.match(result.answer.risk, /^Partial review: 1 file of logic not read, a schema, a migration or a store among them/);
-  assert.match(result.answer.summary, /This review did not read 1 of the 3 changed files, to fit in its size: `app\/db\/[a-z-]+\.ts`\./);
+  assert.match(result.answer.summary, /This review did not read 1 of the 3 changed files: 1 to fit in its size \(`app\/db\/[a-z-]+\.ts`\)\./);
   assert.match(logs.join('\n'), /score capped at 3: the model said 5, and the review did not read 1 changed file/);
 });
 
@@ -207,6 +225,33 @@ test('an incremental review counts as not read a store that the whole pack cuts 
   }) as typeof globalThis.fetch;
   const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: () => {}, delta: { since: reviewed, score: 3, findings: [], settled: [] } });
   assert.deepEqual(result.delta?.files, ['app/lib/label.ts'], 'an incremental review');
-  assert.deepEqual(result.coverage, { files: 4, cut: ['app/db/invoice-store.ts'], narrowed: [] });
+  assert.deepEqual(result.coverage, { files: 4, cut: ['app/db/invoice-store.ts'], large: [], narrowed: [], logic: ['app/db/invoice-store.ts'], core: ['app/db/invoice-store.ts'] });
+  // « Not reviewed » lists it too, as the summary does.
+  assert.ok(result.skipped.includes('app/db/invoice-store.ts: removed to fit in the maximum size of the review'), result.skipped.join('\n'));
   assert.equal(result.score, 3);
+});
+
+test('a migration PR with a Drizzle snapshot of 3 900 lines is not capped: the snapshot is generated', () => {
+  const snapshot = `${JSON.stringify({ tables: Object.fromEntries(Array.from({ length: 1300 }, (_, i) => [`t${i}`, { name: `t${i}`, columns: {} }])) }, null, 2)}\n`;
+  assert.ok(snapshot.split('\n').length > 3000);
+  const { repo, base, head } = pullRequest({}, { 'apps/web/drizzle/0031_roles.sql': 'ALTER TABLE "memberships" ADD COLUMN "role" text;\n', 'apps/web/drizzle/meta/0031_snapshot.json': snapshot, 'apps/web/drizzle/meta/_journal.json': '{"entries":[]}\n' });
+  const { coverage: c } = buildPack(repo, base, head, 'full');
+  assert.deepEqual(c.logic, []);
+  const reply = answer();
+  assert.equal(applyCoverage(reply, c), null, 'no cap');
+  assert.equal(reply.confidence_score, 5);
+});
+
+test('a test-only pull request over the budget: the tests are the change, the fixture is not dropped first, and a cut test counts as logic', () => {
+  const { repo, base, head } = pullRequest(
+    {},
+    {
+      'test/a.test.ts': lines(100, (i) => `test('case ${i} of the invoices', () => assert.equal(pay(${i}), ${i})); // the case ${i} of the payment of an invoice`),
+      'test/b.test.ts': lines(95, (i) => `test('case ${i} of the refunds', () => assert.equal(refund(${i}), ${i})); // the case ${i} of the refund of an invoice`),
+      'test/fixtures/rows.json': lines(60, (i) => `{"id": "row_${i}", "total": ${i}, "label": "the row ${i} of the fixture of the invoices"},`),
+    },
+  );
+  const { coverage: c } = buildPack(repo, base, head, 'full');
+  assert.deepEqual(c.cut, ['test/a.test.ts'], 'the larger test goes; the fixture, ranked as the tests, is smaller');
+  assert.deepEqual(c.logic, ['test/a.test.ts']);
 });

@@ -7,27 +7,34 @@
 import type { Answer, Finding } from './findings.ts';
 
 /** A finding this sure says that the code shows the defect: a hedge in its text is not its premise. */
-const SURE = 80;
+export const SURE = 80;
 
-// The words of a premise on code that the review did not see. Each one names the review or its
-// message as what lacks the code. « Not in the diff » is not one: a migration missing from the diff is
-// a defect. Neither is « not verified » alone: « an email not verified can sign in » is a defect too.
-const READER = '(?:message|pack|context|review|code shown)';
+// The phrases of a reviewer about what it read. `context` and `message` are words of the code too (the
+// context of a request, the message of an error): « orgId is not available in the context » is a
+// defect, so neither counts alone. Neither does « not in the diff » (a migration missing from the
+// diff is a defect), nor « not verified » or « not provided » alone (« an email not verified can sign
+// in », « the token is not provided » are defects).
+const SHOWN = '(?:pack|files shown|code shown|diff shown|review pack)';
+const CODE = '(?:definitions?|implementations?|code of|source of|callees?|callers?|schema|migrations?|service code|route file|body of)';
 const UNREAD = [
-  new RegExp(`\\b(?:is|are)n?(?:'t| not) (?:shown |visible |included |present |provided |available )?in (?:the|this) ${READER}\\b`, 'i'),
-  new RegExp(`\\b(?:the|this) ${READER} (?:does not|doesn't|did not|didn't) (?:show|include|hold|contain|give)\\b`, 'i'),
+  new RegExp(`\\bnot (?:in|part of) (?:the|this) ${SHOWN}\\b`, 'i'),
+  new RegExp(`\\b(?:is|are)n?(?:'t| not) (?:shown|visible|included) in (?:the|this) (?:diff|pack)\\b`, 'i'),
+  new RegExp(`\\b(?:the|this) (?:pack|diff) (?:does not|doesn't|did not|didn't) (?:show|include|hold|contain)\\b[^.;]{0,40}?\\b${CODE}`, 'i'),
   // « I could not see a lock here » states a defect: the hedge must name the code that it could not read.
-  /\b(?:I|we|the review|this review) (?:could|can)(?:not|n't| not) (?:confirm|verify|see|check|read)\b[^.;]{0,80}?\b(?:definitions?|implementation|code of|callees?|callers?|schema|migration|service code|route file)\b/i,
-  new RegExp(`\\b(?:cannot|can't|could not|couldn't) be (?:confirmed|verified|checked) (?:from|in|with) (?:the|this) ${READER}\\b`, 'i'),
-  new RegExp(`\\bnot confirmed (?:in|by|from) (?:the|this) ${READER}\\b`, 'i'),
-  /\bunseen (?:callers?|code|callees?|definitions?)\b/i,
-  /\bwithout (?:seeing|reading) (?:the|its) (?:code|callers?|callees?|definition|schema|migration|route|implementation)\b/i,
+  new RegExp(`\\b(?:I|we|the review|this review) (?:could|can)(?:not|n't| not) (?:confirm|verify|see|check|read)\\b[^.;]{0,80}?\\b${CODE}`, 'i'),
+  new RegExp(`\\b${CODE}[^.;]{0,60}?\\b(?:is|are)n?(?:'t| not) provided\\b`, 'i'),
+  /\b(?:cannot|can't|could not|couldn't) (?:be )?(?:verif(?:y|ied)|confirm(?:ed)?|check(?:ed)?)\b[^.;]{0,60}?\b(?:from|in|with) (?:the|this) (?:diff|pack)\b/i,
+  /\bunseen (?:callers?|callees?|definitions?)\b/i,
+  /\bwithout (?:seeing|reading) (?:the|its) (?:callers?|callees?|definition|schema|migration|route file|implementation)\b/i,
 ];
+// A sentence that concedes the hedge (« the callers are not shown, but the route passes params.id ») does
+// not hold the premise of the finding.
+const CONCESSION = /\b(?:but|however|still|yet|although|though|even so|regardless)\b/i;
 
-/** The sentence of a text that holds the hedge, or null. */
+/** The sentence of a text that holds the hedge as the premise, or null. */
 function hedge(text: string): string | null {
   for (const sentence of text.split(/(?<=[.;!?])\s+/)) {
-    if (UNREAD.some((pattern) => pattern.test(sentence))) return sentence.trim().replace(/[.;]$/, '');
+    if (!CONCESSION.test(sentence) && UNREAD.some((pattern) => pattern.test(sentence))) return sentence.trim().replace(/[.;]$/, '');
   }
   return null;
 }

@@ -52,6 +52,19 @@ function changedPaths(repo: string, range: string): Set<string> {
 }
 
 /**
+ * KNT-158. The files that the merges since `since` brought from their other parents (a merge of the
+ * base branch). Null when git cannot read that history (a shallow clone without the first parent).
+ */
+export function broughtByMerges(repo: string, since: string, head: string): Set<string> | null {
+  try {
+    const merges = git(repo, 'rev-list', '--merges', `${since}..${head}`).split('\n').filter(Boolean);
+    return new Set(merges.flatMap((m) => [...changedPaths(repo, `${m}^1..${m}`)]));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The files to read again: the files that changed since the last reviewed head and that are files of
  * the pull request, at the head (`base...head`) or at that head (`base...since`: a change that the
  * pull request reverted since). A merge of the base branch brings changes to other files: those stay
@@ -67,15 +80,8 @@ export function planDelta(repo: string, base: string, head: string, since: strin
   // KNT-158. A merge since then that brought changes to a file of the pull request (a merge of the
   // base branch that touched it): the diff since that head holds the lines of the base too, and the
   // review judged them. Only the diff from the merge base holds the change of the pull request alone.
-  // A history that git cannot read here (a shallow clone without the first parent) gives the whole
-  // review too: it is never wrong, only larger.
-  try {
-    const merges = git(repo, 'rev-list', '--merges', `${since}..${head}`).split('\n').filter(Boolean);
-    const brought = new Set(merges.flatMap((m) => [...changedPaths(repo, `${m}^1..${m}`)]));
-    if (files.some((p) => brought.has(p))) return null;
-  } catch {
-    return null;
-  }
+  const brought = broughtByMerges(repo, since, head);
+  if (brought === null || files.some((p) => brought.has(p))) return null;
   return { since, files, pullFiles: [...now].sort() };
 }
 

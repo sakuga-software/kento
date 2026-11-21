@@ -12,7 +12,9 @@ import { applyCoverage } from '../src/coverage.ts';
 import { earlierFindingsSection } from '../src/earlier.ts';
 import type { Answer, Finding, Usage } from '../src/findings.ts';
 import { reviewPullRequest } from '../src/index.ts';
-import { buildPack, namedFiles } from '../src/pack.ts';
+import { buildPack, namedFiles, onlyIndent } from '../src/pack.ts';
+import { changedZonesSection, seenCode } from '../src/seen.ts';
+import { withoutMergeAdvice } from '../src/risk.ts';
 import { descriptionBlock, notReviewedLines, reviewBody } from '../src/render.ts';
 
 const repos: string[] = [];
@@ -75,13 +77,30 @@ const finding = (over: Partial<Finding> = {}): Finding => ({
 const usage: Usage = { model: 'anthropic/claude-haiku-5.5', cost: 0.01, cost_source: 'table' };
 const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
 
-test('« Not reviewed » holds one line per path, with the first reason, and no empty line', () => {
-  assert.deepEqual(notReviewedLines(['a.json: generated or binary file', 'src/big.ts: removed to fit in the maximum size of the review'], ['a.json (generated)', '`src/big.ts`: not read', '', 'rule "No raw SQL": removed to fit in the maximum size of the review', 'src/other.ts: the caller is not shown']), [
-    'a.json: generated or binary file',
-    'src/big.ts: removed to fit in the maximum size of the review',
-    'rule "No raw SQL": removed to fit in the maximum size of the review',
-    'src/other.ts: the caller is not shown',
-  ]);
+test('« Not reviewed » merges only the lines of one path with the same reason, and drops empty lines', () => {
+  assert.deepEqual(
+    notReviewedLines(
+      ['a.json: generated or binary file', 'src/a.ts: removed to fit in the maximum size of the review'],
+      [
+        'a.json (generated)',
+        '',
+        'rule "No raw SQL": removed to fit in the maximum size of the review',
+        // The reproduction of the critique of #48: two findings moved on one file, and a moved finding
+        // on a file that the pack cut.
+        'src/b.ts: Two requests race on the row. To check: The definition of lock is not in the pack.',
+        'src/b.ts: The tenant filter is missing. To check: The schema of invoices is not provided.',
+        'src/a.ts: The total is wrong. To check: The callers of total are not in the pack.',
+      ],
+    ),
+    [
+      'a.json: generated or binary file',
+      'src/a.ts: removed to fit in the maximum size of the review',
+      'rule "No raw SQL": removed to fit in the maximum size of the review',
+      'src/b.ts: Two requests race on the row. To check: The definition of lock is not in the pack.',
+      'src/b.ts: The tenant filter is missing. To check: The schema of invoices is not provided.',
+      'src/a.ts: The total is wrong. To check: The callers of total are not in the pack.',
+    ],
+  );
   const block = descriptionBlock(answer({ not_reviewed: ['a.json (generated)'] }), [], ['a.json: generated or binary file'], 0, usage, () => 12, context);
   assert.equal(block.split('\n').filter((l) => l.startsWith('- a.json')).length, 1);
   const empty = descriptionBlock(answer({ not_reviewed: ['', '  '] }), [], [], 0, usage, () => 12, context);
@@ -104,7 +123,7 @@ test('a blocking finding with a model score of 4: the head and the block say it,
 
 test('a partial review keeps no advice to merge in its risk', () => {
   const reply = answer({ confidence_score: 5, risk: 'Low risk. Safe to merge. The store gets a column.' });
-  applyCoverage(reply, { files: 2, cut: ['app/db/invoice-store.ts'], narrowed: [] });
+  applyCoverage(reply, { files: 2, cut: ['app/db/invoice-store.ts'], large: [], narrowed: [], logic: ['app/db/invoice-store.ts'], core: ['app/db/invoice-store.ts'] });
   assert.equal(reply.risk, 'Partial review: 1 file of logic not read, a schema, a migration or a store among them (see Not reviewed). The store gets a column.');
 });
 
@@ -154,10 +173,15 @@ test('two earlier findings of one kind on the same code ask for the root cause a
     reason: null,
     commit: head,
   });
-  const { section } = earlierFindingsSection(repo, head, [earlier(12, 'fixed', 'A quoted name passes'), earlier(20, 'open', 'A comment hides a name'), earlier(90, 'open', 'Far away')]);
-  assert.match(section, /### Defects found more than once on the same code\n\n- E1, E2 · `src\/scan\.ts:12` · security\n/);
-  assert.match(section, /name the root cause that lets every form through/);
-  const lone = earlierFindingsSection(repo, head, [earlier(12, 'fixed', 'A quoted name passes'), earlier(14, 'dismissed', 'Not a defect'), earlier(16, 'open', 'A test is missing', 'test')]).section;
+  // The second form: one earlier finding is enough for the section to ask for the root cause.
+  const one = earlierFindingsSection(repo, head, [earlier(12, 'fixed', 'The scanner lets a quoted name through')]).section;
+  assert.match(one, /another form of an earlier one \(another input that the same code lets through\), name in the scenario the root cause/);
+  assert.doesNotMatch(one, /more than once/);
+  // Two of one kind on one file, by the words of their titles, whatever their lines at older heads.
+  const { section } = earlierFindingsSection(repo, head, [earlier(12, 'fixed', 'The scanner lets a quoted name through'), earlier(80, 'open', 'The scanner lets a commented name through'), earlier(14, 'open', 'Off-by-one in the cursor')]);
+  assert.match(section, /### Defects found more than once on the same code\n\n- E1, E2 · `src\/scan\.ts` · "The scanner lets a quoted name through"\n/);
+  // Two different defects near each other, or one that a person set aside, make no class.
+  const lone = earlierFindingsSection(repo, head, [earlier(12, 'fixed', 'The scanner lets a quoted name through'), earlier(13, 'open', 'Null dereference of the cursor'), earlier(14, 'dismissed', 'The scanner lets a quoted name pass')]).section;
   assert.doesNotMatch(lone, /more than once/);
 });
 
@@ -183,4 +207,57 @@ test('a push that merges the base into a file of the pull request reads the whol
   assert.match(packs[0]!, /^\+ {2}return a \+ b \+ 1;$/m);
   assert.doesNotMatch(packs[0]!, /^\+export const fromMain/m, 'the line that the base brought is no change of the pull request');
   void base;
+});
+
+test('the commits name a file by a stem that is no plain word; trailers and words such as `github` do not count', () => {
+  const paths = ['app/auth/github.test.ts', 'app/repos/repos.test.ts', 'app/db/webhook-store.ts', 'CLAUDE.md', 'src/rules/no-raw-sql.ts'];
+  const message = 'feat(web): split GitHub installations from the repos and the webhook\n\nno-raw-sql keeps its rule.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nSigned-off-by: Dev <dev@example.com>';
+  assert.deepEqual([...namedFiles(message, paths)], ['src/rules/no-raw-sql.ts']);
+});
+
+test('a named file never ranks above the core: over the budget, a named test goes before a store', () => {
+  const { repo, commit } = repository();
+  const base = commit('base', { 'README.md': '# Acme\n' });
+  const head = commit('fix(billing): the invoice-store keeps the totals, invoice-store.test checks it', {
+    'app/db/invoice-store.ts': source('store', 120),
+    'test/invoice-store.test.ts': lines(130, (i) => `test('total ${i} of the store', () => assert.equal(read(${i}), ${i})); // the total ${i} of the invoice store, with its tax and its date`),
+  });
+  assert.deepEqual(buildPack(repo, base, head, 'full').skipped, ['test/invoice-store.test.ts: removed to fit in the maximum size of the review']);
+});
+
+test('only an indent change of a language where the indent means nothing counts as formatting', () => {
+  const moved = '@@ -1,2 +1,2 @@\n-if (a) {\n-return 1;\n+  if (a) {\n+    return 1;\n';
+  assert.equal(onlyIndent('src/a.ts', moved), true);
+  assert.equal(onlyIndent('src/a.py', moved), false, 'Python');
+  assert.equal(onlyIndent('ci.yml', moved), false, 'YAML');
+  assert.equal(onlyIndent('Makefile', moved), false);
+  assert.equal(onlyIndent('src/a.ts', '@@ -1 +1 @@\n-const s = "a b";\n+const s = "a  b";\n'), false, 'a space inside a string');
+});
+
+test('only a positive advice to merge leaves the risk; a warning, a condition and « e.g. » stay', () => {
+  assert.equal(
+    withoutMergeAdvice('It is not safe to merge until the store is read. This is not low risk: the migration drops a column. Do not merge it now. It can be merged only after the guard. Safe to merge, e.g. after a look at the labels.'),
+    'It is not safe to merge until the store is read. This is not low risk: the migration drops a column. Do not merge it now. It can be merged only after the guard.',
+  );
+  assert.equal(withoutMergeAdvice('The lock is wrong, e.g. on a retry. Low risk.'), 'The lock is wrong, e.g. on a retry.');
+});
+
+test('after a merge of the base, the zones changed since the last review are those of the pull request only', () => {
+  const { repo, git, commit } = repository();
+  const fn = (body: string, extra = '') => `export function total(a: number, b: number) {\n  return ${body};\n}\n${extra}`;
+  commit('base', { 'a.ts': fn('a + b') });
+  git('checkout', '-q', '-b', 'pr');
+  const reviewed = commit('change the total', { 'a.ts': fn('a + b + 1') });
+  git('checkout', '-q', 'main');
+  const main2 = commit('main moves on', { 'a.ts': fn('a + b', '\n\n\n\n\n\n\n\n\n\nexport const fromMain = 1;\n') });
+  git('checkout', '-q', 'pr');
+  git('merge', '-q', '--no-edit', main2);
+  commit('change the total again', { 'a.ts': fn('a + b + 2', '\n\n\n\n\n\n\n\n\n\nexport const fromMain = 1;\n') });
+  const head = git('rev-parse', 'HEAD');
+  const own = new Map([['a.ts', new Set([2])]]);
+  const zones = changedZonesSection(seenCode(repo, reviewed, head, own), ['a.ts']);
+  assert.match(zones, /- `a\.ts`: lines 2\n/);
+  // Without the lines of the pull request, the line of the base counts as changed.
+  assert.match(changedZonesSection(seenCode(repo, reviewed, head), ["a.ts"]), /- `a\.ts`: lines 2, 4–14\n/);
+  void main2;
 });

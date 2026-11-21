@@ -1,25 +1,40 @@
-// KNT-158. The risk text of the model says the state that the score of the review gives.
-//
-// The model writes its risk for its own score. When the engine caps that score (a blocking finding,
-// or a partial pack: coverage.ts), the words stay: one review said « 1 blocking issue », 2/5, and in
-// the same line « safe to merge after a look at one minor point ».
+// The risk text of a review: the prefixes that the engine adds to the words of the model, in one
+// order, and the advice to merge that a capped review must not keep.
 
-// A sentence that says that the pull request can be merged.
-const MERGE_ADVICE =
-  /\b(?:safe|ready|fine|ok|okay|good) to (?:merge|ship|land)\b|\bcan (?:be )?merged?\b|\bmergeable\b|\bmerge (?:it )?(?:after|once|as is|now)\b|\bnothing blocking\b|\bno blocking\b|\blow risk\b/i;
+// A positive advice to merge. A sentence that holds a negation or a condition (« not safe to merge
+// until… », « do not merge it now ») is a warning, and stays.
+const MERGE_ADVICE = /\b(?:safe|ready|fine|ok|okay|good) to (?:merge|ship|land)\b|\bcan (?:be )?merged?\b|\bmergeable\b|\blow[- ]risk\b|\bnothing blocking\b/i;
+const NEGATION = /\b(?:not|never|no|nor|until|unless|before|without|cannot|only|if)\b|n't\b/i;
+// Abbreviations that end with a dot inside a sentence.
+const ABBREVIATIONS = /\b(e\.g|i\.e|etc|vs|cf)\./gi;
 
-/** The text without its sentences that say that the pull request can be merged. */
-export function withoutMergeAdvice(text: string): string {
+/** The sentences of a text, « e.g. » and « i.e. » inside them. */
+function sentences(text: string): string[] {
   return text
+    .replace(ABBREVIATIONS, (m) => m.replace(/\./g, '\u0000'))
     .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => !MERGE_ADVICE.test(sentence))
+    .map((s) => s.replace(/\u0000/g, '.'));
+}
+
+/** The text without its sentences of positive advice to merge. */
+export function withoutMergeAdvice(text: string): string {
+  return sentences(text)
+    .filter((sentence) => !(MERGE_ADVICE.test(sentence) && !NEGATION.test(sentence)))
     .join(' ')
     .trim();
 }
 
 /**
- * The risk as the review shows it. With a blocking finding, the sentences of the model that advise a
- * merge go: the head line already says how many issues block.
+ * The risk with the prefixes of the engine, in this order: « Critical change (…). » (KNT-154), then
+ * « Partial review: … » (KNT-166). A prefix is one sentence, without its final dot.
+ */
+export function riskWithPrefixes(risk: string, prefixes: { critical?: string; partial?: string }): string {
+  return [prefixes.critical ? `Critical change (${prefixes.critical}).` : '', prefixes.partial ? `Partial review: ${prefixes.partial}.` : '', risk.trim()].filter(Boolean).join(' ');
+}
+
+/**
+ * KNT-158. The risk as the review shows it. With a blocking finding, the sentences of the model that
+ * advise a merge go: the head line already says how many issues block.
  */
 export function shownRisk(risk: string, blocking: number): string {
   if (!blocking) return risk;

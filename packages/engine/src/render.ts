@@ -373,23 +373,25 @@ export function descriptionBlock(
 }
 
 /**
- * KNT-158. The « Not reviewed » lines: those of the pack, then those of the model, one per path, with
- * the first reason. `a.json: generated or binary file` and `a.json (generated)` are one line. A line
- * that names no path (a rule) keys on its text. Empty lines go.
+ * KNT-158. The « Not reviewed » lines: those of the pack, then those of the model, keyed on the path
+ * and the reason. Two lines merge only when one reason starts with the other, as `a.json: generated
+ * or binary file` and `a.json (generated)`: two findings moved to « Not reviewed » on one file, or a
+ * file cut by the pack that also has a moved finding, keep a line each. Empty lines go.
  */
 export function notReviewedLines(skipped: readonly string[], model: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
+  const kept: { path: string; reason: string; text: string }[] = [];
+  const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   for (const line of [...skipped, ...model]) {
     const text = String(line ?? '').trim();
     if (!text) continue;
-    const path = /^`?([^\s:`()]+)`?(?=\s*(?::|\(|$|\s[-–—]\s))/.exec(text)?.[1];
-    const key = path && /[./]/.test(path) ? path.replace(/^\/+/, '') : text.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(text);
+    const match = /^`?([^\s:`()]+)`?\s*(?::|\(|\s[-–—]\s)\s*(.*)$/.exec(text);
+    const path = match && /[./]/.test(match[1]!) ? match[1]!.replace(/^\/+/, '') : '';
+    const reason = words(path ? match![2]! : text);
+    const same = kept.find((k) => k.path === path && (k.reason === reason || (reason && k.reason.startsWith(reason)) || (k.reason && reason.startsWith(k.reason))));
+    if (same) continue;
+    kept.push({ path, reason, text });
   }
-  return out;
+  return kept.map((k) => k.text);
 }
 
 /** The body of the pull request with the block of the review at its end, in place of the earlier one. */

@@ -20,9 +20,6 @@ import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
 import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
 
-/** KNT-158. Two earlier findings of one category this many lines apart, or less, are on the same code. */
-const SAME_CODE_LINES = 20;
-
 /** The pack holds at most this many bytes of earlier findings. */
 export const MAX_EARLIER_BYTES = 16_000;
 
@@ -47,10 +44,12 @@ const MAX_CLASS_REFS = 4;
 
 /** The note on the defects that earlier reviews found more than once on the same code, or ''. */
 function classesNote(held: readonly HeldEarlier[]): string {
-  // A finding that a person set aside is no defect. A group holds the findings near its first one.
+  // A finding that a person set aside is no defect. A group holds the findings of one file whose titles
+  // share NET_SHARED_WORDS words of their subject with its first one: the same kind of defect. Their
+  // lines are those of older heads, so they do not count.
   const groups: HeldEarlier[][] = [];
   for (const e of held.filter((h) => h.status !== 'dismissed' && h.status !== 'wontfix')) {
-    const group = groups.find((g) => g[0]!.path === e.path && g[0]!.category === e.category && Math.abs(g[0]!.line - e.line) <= SAME_CODE_LINES);
+    const group = groups.find((g) => g[0]!.path === e.path && sharedWords(g[0]!.title, e.title) >= NET_SHARED_WORDS);
     if (group) group.push(e);
     else groups.push([e]);
   }
@@ -59,7 +58,7 @@ function classesNote(held: readonly HeldEarlier[]): string {
   const refs = (g: HeldEarlier[]) => g.slice(0, MAX_CLASS_REFS).map((e) => e.ref).join(', ') + (g.length > MAX_CLASS_REFS ? ` and ${g.length - MAX_CLASS_REFS} more` : '');
   return (
     '\n### Defects found more than once on the same code\n\n' +
-    repeated.map((g) => `- ${refs(g)} · \`${oneLine(g[0]!.path, 120)}:${Math.min(...g.map((e) => e.line))}\` · ${g[0]!.category}\n`).join('') +
+    repeated.map((g) => `- ${refs(g)} · \`${oneLine(g[0]!.path, 120)}\` · "${oneLine(g[0]!.title, 120)}"\n`).join('') +
     '\nEach line is a defect that earlier reviews found again in another form on the same code. A finding of yours that ' +
     'follows one of them is not one more case: name the root cause that lets every form through, and give in `fix` the fix ' +
     'of the whole class (for example a parser in place of one more pattern), not of this form only.\n'
@@ -110,6 +109,9 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     'Each defect counts once. When a finding of yours is one of them again (the same defect in other words, at its line ' +
     'or near it, or the part of it that a fix left), say in the scenario what the code still does wrong since. Do not report again a ' +
     '`fixed` finding that the code no longer has, nor a `dismissed` or `wontfix` finding whose file did not change since. ' +
+    'When a finding of yours is another form of an earlier one (another input that the same code lets through), name in ' +
+    'the scenario the root cause that lets every form through, and give in `fix` the fix of the whole class, not of this ' +
+    'form only. ' +
     'A finding that follows an earlier one, no more severe, does not lower `confidence_score` again: that defect was already ' +
     'counted. A more severe one is a new fact, and lowers it.\n\n';
   return { section: `${intro}${rows.join('')}${classes}\n`, held };
