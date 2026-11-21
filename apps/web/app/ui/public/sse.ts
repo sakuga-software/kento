@@ -51,3 +51,18 @@ export function backoffMs(attempt: number, random: () => number = Math.random): 
   let ceiling = Math.min(BACKOFF_MAX_MS, 1000 * 2 ** Math.max(0, attempt))
   return Math.round(ceiling / 2 + (random() * ceiling) / 2)
 }
+
+/** The longest wait that a `Retry-After` can ask for: a later answer does not stop the card for good. */
+export const RETRY_AFTER_MAX_MS = 5 * 60_000
+
+/**
+ * KNT-189 (Fable P2-1, P3-2 of #53). The wait that a `Retry-After` asks for, in seconds or as an HTTP
+ * date, at most RETRY_AFTER_MAX_MS. Null without one, or with a value that is neither.
+ */
+export function retryAfterMs(value: string | null, now: number = Date.now()): number | null {
+  if (value === null || value.trim() === '') return null
+  let text = value.trim()
+  let ms = /^\d+$/.test(text) ? Number(text) * 1000 : Date.parse(text) - now
+  if (Number.isNaN(ms)) return null
+  return Math.min(RETRY_AFTER_MAX_MS, Math.max(0, ms))
+}

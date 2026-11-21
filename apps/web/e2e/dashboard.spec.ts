@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
@@ -46,18 +46,6 @@ async function seed(): Promise<{ failedJobId: string }> {
   } finally {
     await sql.end()
   }
-}
-
-/**
- * KNT-189. The runners online with a job, from "N ready / M online": M - N. Other specs leave runners
- * online in the shared database, and one of them may go late during a test: both counts then move,
- * the difference does not.
- */
-async function busyOf(queue: Locator): Promise<number> {
-  let text = (await queue.locator('.runner-ready').textContent())?.trim() ?? ''
-  let counts = /^(\d+) ready \/ (\d+) online$/.exec(text)
-  if (!counts) throw new Error(`unexpected ready count: ${text}`)
-  return Number(counts[2]) - Number(counts[1])
 }
 
 async function cleanUp() {
@@ -263,7 +251,10 @@ test.describe('the dashboard', () => {
     let queue = page.getByRole('region', { name: 'Queue and runners' })
     await expect(queue.getByRole('status')).toHaveText('Live')
     await expect(queue.locator('.runner-ready')).toHaveText(/^\d+ ready \/ \d+ online$/)
-    let busy = await busyOf(queue)
+    // The row of shared-01, the runner of this spec: other specs may leave runners in the database,
+    // online, late or busy, so the counts of all the runners prove nothing here (Fable P3-4).
+    let shared = queue.locator('li.dash-job').filter({ has: page.locator('.dash-job-head .mono', { hasText: /^shared-01$/ }) })
+    await expect(shared).toContainText('No job in progress')
 
     // Faster than the read of the whole page every 10 s: the stream sends the card within a tick of 3 s.
     let pushed = await push(page, 'e'.repeat(40))
@@ -277,7 +268,7 @@ test.describe('the dashboard', () => {
         update jobs set state = 'running', started_at = now(), lease_expires_at = now() + interval '2 minutes',
           runner_id = (select id from runners where name = 'shared-01' and org_id is null)
         where id = ${pushed.jobId!}`
-      await expect.poll(() => busyOf(queue), { timeout: 6_000 }).toBe(busy + 1)
+      await expect(shared).toContainText('1 job in progress', { timeout: 6_000 })
       await expect(queue.getByText(/^On shared-01 for/)).toBeVisible()
 
       // dashboard.js reads the whole page again (here at once, on visibilitychange): the live section stays, and so does its stream.
@@ -286,7 +277,7 @@ test.describe('the dashboard', () => {
       await expect(page.getByText(/Updated [0-2] s ago/)).toBeVisible()
       expect(await queue.evaluate((el) => (el as HTMLElement).dataset.marker)).toBe(marker)
       await sql`update jobs set state = 'done', finished_at = now(), lease_expires_at = null where id = ${pushed.jobId!}`
-      await expect.poll(() => busyOf(queue), { timeout: 6_000 }).toBe(busy)
+      await expect(shared).toContainText('No job in progress', { timeout: 6_000 })
       await expect(queue.getByRole('status')).toHaveText('Live')
     } finally {
       await sql.end()
@@ -304,6 +295,23 @@ test.describe('the dashboard', () => {
     await page.unroute('**/dashboard/live')
     // The waits grow from 1 s: the third try at the latest comes within 8 s.
     await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 10_000 })
+  })
+
+  test('the live card waits out a server that restarts (503 and Retry-After), then is "Live" again (Fable P2-1)', async ({ page }) => {
+    await seed()
+    let answered = 0
+    await page.route('**/dashboard/live', async (route) => {
+      answered += 1
+      if (answered === 1) return route.fulfill({ status: 503, headers: { 'Retry-After': '1', 'Content-Type': 'text/plain' }, body: 'Service Unavailable' })
+      return route.continue()
+    })
+    await page.goto('/')
+    await hydrated(page)
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    await expect(queue.getByRole('status')).toHaveText('Retrying…')
+    // A 503 is a wait, never the end: the next try comes after the second that it asked for.
+    await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 6_000 })
+    expect(answered).toBeGreaterThanOrEqual(2)
   })
 
   test('a changed ready count gets a short wash, and none with reduced motion (KNT-189)', async ({ page }) => {

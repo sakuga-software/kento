@@ -7,7 +7,7 @@
 import { clientEntry, ref, type Handle } from 'remix/component'
 
 import { pageRoutes } from '../../routes.ts'
-import { backoffMs, sseParser } from './sse.ts'
+import { backoffMs, retryAfterMs, sseParser } from './sse.ts'
 
 /** The id of the card, on the page and in each card of the stream. */
 export const QUEUE_CARD_ID = 'dash-queue-card'
@@ -28,8 +28,20 @@ export type LiveState = 'off' | 'connecting' | 'live' | 'reconnecting'
 
 /** What the stream sends in each event `queue`. */
 interface QueuePayload {
+  /** The org of the card: a page of another org reloads itself (the person switched in another tab). */
+  org: string
   html: string
 }
+
+/**
+ * How a connection ended:
+ * - `ended`: the server closed it at its time, the next one opens at once;
+ * - `failed`: the network or the server failed, the next one waits a growing time;
+ * - `wait`: the server asked for a wait (503 while it restarts, 429 with too many tabs);
+ * - `refused`: the session ended (a redirect to the sign-in, 401, 403): trying again cannot help;
+ * - `reload`: the card is of another org than the page.
+ */
+type Outcome = { kind: 'ended' | 'failed' | 'refused' | 'reload' } | { kind: 'wait'; ms: number | null }
 
 export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle: Handle<Record<string, never>>) {
   let state: LiveState = 'off'
@@ -88,7 +100,7 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
     })
 
   /** One connection. `ended`: the server closed it at the end of its time, so the next one opens at once. */
-  let connect = async (): Promise<'ended' | 'failed' | 'refused'> => {
+  let connect = async (): Promise<Outcome> => {
     let controller = new AbortController()
     current = controller
     let silence: ReturnType<typeof setTimeout> | undefined
@@ -97,6 +109,8 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
       silence = setTimeout(() => controller.abort(), SILENCE_MS)
     }
     let ended = false
+    /** The card that came is of another org than the page. */
+    let otherOrg = false
     try {
       listen()
       let response = await fetch(pageRoutes.dashboardLive.href(), {
@@ -107,13 +121,21 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
         redirect: 'manual',
         signal: controller.signal,
       })
-      if (response.type === 'opaqueredirect' || response.status === 401 || response.status === 403 || response.status === 404) return 'refused'
-      if (!response.ok || !response.body) return 'failed'
+      // Only an ended session stops the card for good (Fable P2-1 of #53): a server that restarts
+      // answers 503, and a fifth tab 429, each with the wait that it asks for.
+      if (response.type === 'opaqueredirect' || response.status === 401 || response.status === 403) return { kind: 'refused' }
+      if (response.status === 503 || response.status === 429) return { kind: 'wait', ms: retryAfterMs(response.headers.get('Retry-After')) }
+      if (!response.ok || !response.body) return { kind: 'failed' }
       let reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
       let feed = sseParser((event) => {
         if (event.type === 'end') ended = true
         if (event.type !== 'queue') return
         let payload = JSON.parse(event.data) as QueuePayload
+        if (payload.org !== section()?.dataset.org) {
+          otherOrg = true
+          controller.abort()
+          return
+        }
         apply(payload.html)
         setState('live')
       })
@@ -123,9 +145,9 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
         listen()
         if (value) feed(value)
       }
-      return ended ? 'ended' : 'failed'
+      return { kind: ended ? 'ended' : 'failed' }
     } catch {
-      return 'failed'
+      return { kind: otherOrg ? 'reload' : 'failed' }
     } finally {
       clearTimeout(silence)
       if (current === controller) current = null
@@ -143,15 +165,18 @@ export const LiveQueue = clientEntry(import.meta.url, function LiveQueue(handle:
       if (state !== 'reconnecting') setState('connecting')
       let outcome = await connect()
       if (handle.signal.aborted) return
-      if (outcome === 'refused') return setState('off')
+      if (outcome.kind === 'refused') return setState('off')
+      // The person switched to another org in another tab: the whole page follows it.
+      if (outcome.kind === 'reload') return location.reload()
       // The tab hid during the stream: the loop waits for it without a "Retrying…".
       if (document.visibilityState !== 'visible') continue
-      if (outcome === 'ended') {
+      if (outcome.kind === 'ended') {
         attempt = 0
         continue
       }
       setState('reconnecting')
-      await sleep(backoffMs(attempt))
+      let backoff = backoffMs(attempt)
+      await sleep(outcome.kind === 'wait' && outcome.ms !== null ? Math.max(outcome.ms, backoff) : backoff)
       attempt += 1
     }
   }

@@ -81,6 +81,14 @@ export interface LiveOptions {
   maxMs?: number
   /** The streams that one session may hold at once (its tabs). Default 4. */
   perSession?: number
+  /** The streams of the whole service. Beyond, 503. Default 200. */
+  total?: number
+  /** How often a stream checks again that its session and its org are still valid. Default 20 s. */
+  recheckMs?: number
+  /** A stream whose client reads nothing for this long is cut. Default 5 s. */
+  stallMs?: number
+  /** The bytes that a stream holds for a client that reads slowly, before it counts as stalled. Default 64 KB. */
+  highWaterMark?: number
   /** Aborts when the server shuts down: every stream ends. */
   closing?: AbortSignal
 }

@@ -9,6 +9,7 @@ import { UUID } from '@kento-review/protocol'
 
 import { canEdit } from '../../auth/access.ts'
 import type { MembershipRow, UserRow } from '../../auth/store.ts'
+import { createLiveRegistry, type LiveRegistry } from '../../dashboard/streams.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
 import { ErrorPage, type ErrorExit, type ErrorKind } from '../not-found.tsx'
@@ -137,13 +138,20 @@ export interface UiKit {
   page(context: ScreenContext): PageFrame
   /** REV-40. A 404 or a 400 of a screen, in the frame, with a link out. */
   errorPage(context: ScreenContext, status: 400 | 404, kind: ErrorKind, section?: Section, exit?: ErrorExit): Response
+  /**
+   * KNT-189. The open streams of the live card, by session: the sign-out, the switch of org and the
+   * end of a session end the streams of that session (app/dashboard/streams.ts).
+   */
+  streams: LiveRegistry
 }
 
 export function createKit(deps: UiDependencies): UiKit {
   let assetVersion = deps.commit ?? deps.version
   let auth = deps.auth
+  let live = deps.dashboard?.live
   let kit: UiKit = {
     deps,
+    streams: createLiveRegistry({ perSession: live?.perSession, total: live?.total }),
     assetVersion,
     now: auth?.now ?? Date.now,
     secure: auth?.publicUrl.protocol === 'https:',

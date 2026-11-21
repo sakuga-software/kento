@@ -291,7 +291,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
           <div class="dash-main">
             <RecentSection recent={screen.recent} now={screen.now} org={org} />
             <div class="dash-side">
-              <QueueRunnersSection card={screen} githubUrl={githubUrl} />
+              <QueueRunnersSection card={screen} githubUrl={githubUrl} orgId={frame.viewer?.org.id ?? ''} />
               <CostSection costs={screen.costs} caps={screen.caps} />
             </div>
           </div>
@@ -1015,11 +1015,12 @@ export function readyText(counts: Pick<RunnerCounts, 'ready' | 'online'>): strin
  * KNT-189: `LiveQueue` keeps the card up to date in the browser (`data-live-queue`, and
  * public/assets/dashboard.js keeps this section when it reads the page again).
  */
-function QueueRunnersSection(handle: Handle<{ card: QueueCardView; githubUrl: string }>) {
+function QueueRunnersSection(handle: Handle<{ card: QueueCardView; githubUrl: string; orgId: string }>) {
   return () => {
-    let { card, githubUrl } = handle.props
+    let { card, githubUrl, orgId } = handle.props
     return (
-      <section class="dash-section" aria-labelledby="queue-title" data-live-queue="">
+      // data-org: a card of the stream for another org reloads the page (live-queue.tsx).
+      <section class="dash-section" aria-labelledby="queue-title" data-live-queue="" data-org={orgId}>
         <div class="dash-section-head">
           <h2 id="queue-title" class="section-title">
             Queue and runners

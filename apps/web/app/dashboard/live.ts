@@ -1,11 +1,15 @@
 // KNT-189. The live card "Queue and runners" of the dashboard. The jobs and the runners send no
 // notification (no LISTEN/NOTIFY), so the card is read again on a timer: one timer per org, shared
 // by every open stream of that org, that runs only while one stream at least is open. Each stream
-// gets the same payload, and only when it changed.
+// gets the same payload, when its key changed (the numbers, not the ages that the card writes,
+// Fable P3-6), or at least every `refreshMs`, so that the ages on screen stay close to true. Every
+// payload is a whole card: a new stream needs no event id to catch up.
 import { errorMessage, log } from '../log.ts'
 
 /** The card is read again this often, while one person at least has the dashboard open. */
 export const LIVE_INTERVAL_MS = 3_000
+/** A card whose numbers did not change is sent again after this, for the ages that it writes ("16 s ago"). */
+export const LIVE_REFRESH_MS = 15_000
 
 /**
  * After this many failed reads in a row (9 s at the default interval), the source drops its
@@ -28,10 +32,19 @@ export interface LiveHub {
   close(): void
 }
 
+/** What a read of an org gives: the payload, and the key of its numbers. */
+export interface LiveRead {
+  /** Equal for two cards with the same numbers, whatever the clock. */
+  key: string
+  payload: string
+}
+
 export interface LiveHubOptions {
-  /** Reads the payload of one org. The payload is the same for every member of the org. */
-  read(orgId: string): Promise<string>
+  /** Reads the card of one org. It is the same for every member of the org. */
+  read(orgId: string): Promise<LiveRead>
   intervalMs?: number
+  /** Default LIVE_REFRESH_MS. */
+  refreshMs?: number
   /** Default LIVE_FAILURES. */
   failures?: number
 }
@@ -39,6 +52,9 @@ export interface LiveHubOptions {
 interface Source {
   listeners: Map<LiveListener, LiveFailure | undefined>
   last: string | null
+  /** The key of `last`, and when it was sent. */
+  lastKey: string | null
+  sentAt: number
   timer: ReturnType<typeof setInterval>
   /** A read is running: the next tick skips, so that a slow database never gets two reads of one org. */
   reading: boolean
@@ -46,19 +62,21 @@ interface Source {
   failed: number
 }
 
-export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, failures = LIVE_FAILURES }: LiveHubOptions): LiveHub {
+export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, refreshMs = LIVE_REFRESH_MS, failures = LIVE_FAILURES }: LiveHubOptions): LiveHub {
   let sources = new Map<string, Source>()
 
   async function tick(orgId: string, source: Source) {
     if (source.reading) return
     source.reading = true
     try {
-      let payload = await read(orgId)
+      let { key, payload } = await read(orgId)
       // The last listener left during the read: the source is gone.
       if (sources.get(orgId) !== source) return
       source.failed = 0
-      if (payload === source.last) return
+      if (key === source.lastKey && Date.now() - source.sentAt < refreshMs) return
       source.last = payload
+      source.lastKey = key
+      source.sentAt = Date.now()
       for (let listener of source.listeners.keys()) send(orgId, listener, payload)
     } catch (error) {
       source.failed += 1
@@ -92,7 +110,15 @@ export function createLiveHub({ read, intervalMs = LIVE_INTERVAL_MS, failures = 
     subscribe(orgId, listener, onFailure) {
       let source = sources.get(orgId)
       if (!source) {
-        let created: Source = { listeners: new Map(), last: null, reading: false, failed: 0, timer: setInterval(() => void tick(orgId, created), intervalMs) }
+        let created: Source = {
+          listeners: new Map(),
+          last: null,
+          lastKey: null,
+          sentAt: 0,
+          reading: false,
+          failed: 0,
+          timer: setInterval(() => void tick(orgId, created), intervalMs),
+        }
         created.timer.unref?.()
         source = created
         sources.set(orgId, source)
