@@ -51,8 +51,10 @@ function ranges(root: Element) {
 /**
  * Takes the components of `root` out, before a script removes it from the page (repo-toggle.js
  * swaps a row): their listeners on `document` go with them (Fable critique P3-3). A root of
- * `hydrateIn` is in `roots`; one that `run()` hydrated at load is on its start comment, as `$rmx`
- * (the runtime of remix/component 1.2 keeps it there).
+ * `hydrateIn` is in `roots`; one that `run()` hydrated at load is on its start comment, as `$rmx`.
+ * `$rmx` is a private field of remix/component 1.2, not an API (Fable re-check N-3): check it at
+ * each upgrade of `remix`. If it goes, nothing breaks but the listeners of a swapped row stay, and
+ * the e2e "a row swapped 4 times in place leaves no listener behind" fails.
  */
 function disposeIn(root: Element) {
   for (let { start } of ranges(root)) {

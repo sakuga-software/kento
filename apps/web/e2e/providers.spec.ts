@@ -223,10 +223,10 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
   }
 })
 
-// KNT-164. On a phone the bar "Section" is at the top of the page and does not follow the scroll: a
+// KNT-164. On a phone the bar "Sections" is at the top of the page and does not follow the scroll: a
 // form sent back with its errors scrolls to its field, and no bar covers that field or the fields
 // around it. Also with labels of 18 px, which moved a field under the sticky bar of KNT-149.
-test('on a phone, a provider form sent back with its errors has no field under the bar "Section"', async ({ page }, testInfo) => {
+test('on a phone, a provider form sent back with its errors has no field under the bar "Sections"', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile', 'the bar exists under 900 px only')
   await withLabelLineHeight(page, '18px')
   await signIn(page, 'octocat')

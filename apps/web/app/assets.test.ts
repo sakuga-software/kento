@@ -1,12 +1,15 @@
 // KNT-163. What the browser can download from the asset server, and the policy that lets the page
 // run it: modules from 'self', and one inline script, the import map, with the nonce of the request.
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 
+import { createAssetServer } from 'remix/assets'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { assets, BOOT, resolveBootScript, RUNTIME } from './assets.ts'
+import { assetError, assets, BOOT, resolveBootScript, RUNTIME } from './assets.ts'
 import { fakeAuth } from './auth/test-helpers.ts'
 import { spyStore, webhookDeps } from './github/test-helpers.ts'
 import { createAppRouter } from './router.ts'
@@ -69,6 +72,51 @@ describe('the browser modules (KNT-163)', () => {
     let response = await fetch('/no-such-screen')
     assert.equal(response.status, 404)
     assert.match(await response.text(), /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
+  })
+})
+
+/** Runs `body` with the lines that the service writes on stderr (warn, error), and returns them. */
+async function stderrOf(body: () => Promise<void>): Promise<{ level: string; event: string; code: string | null }[]> {
+  let lines: string[] = []
+  let write = process.stderr.write.bind(process.stderr)
+  process.stderr.write = ((chunk: string) => (lines.push(String(chunk)), true)) as typeof process.stderr.write
+  try {
+    await body()
+  } finally {
+    process.stderr.write = write
+  }
+  return lines.map((line) => JSON.parse(line) as { level: string; event: string; code: string | null })
+}
+
+describe('a module that the asset server cannot serve (Fable re-check N-1)', () => {
+  it('answers 500 with an error in the log when an allowed module does not compile, and 404 with a warning for a path that nobody may read', async () => {
+    let root = mkdtempSync(path.join(tmpdir(), 'kento-assets-'))
+    try {
+      mkdirSync(path.join(root, 'app', 'public'), { recursive: true })
+      writeFileSync(path.join(root, 'app', 'public', 'broken.ts'), 'export let x = {\n')
+      writeFileSync(path.join(root, 'app', 'public', 'outside.ts'), "import { y } from '../../server.ts'\nexport let x = y\n")
+      writeFileSync(path.join(root, 'server.ts'), 'export let y = 1\n')
+      writeFileSync(path.join(root, 'app', 'secret.ts'), 'export let z = 1\n')
+      let server = createAssetServer({ basePath: '/assets', rootDir: root, mounts: { app: 'app' }, allowFiles: ['app/**/public/**'], watch: false, onError: assetError })
+      try {
+        let responses: Record<string, number> = {}
+        let lines = await stderrOf(async () => {
+          for (let file of ['public/broken.ts', 'public/outside.ts', 'secret.ts', 'public/missing.ts']) {
+            let response = await server.fetch(new Request(`https://review.sakuga.dev/assets/app/${file}`))
+            responses[file] = response?.status ?? 404
+          }
+        })
+        assert.deepEqual(responses, { 'public/broken.ts': 500, 'public/outside.ts': 500, 'secret.ts': 404, 'public/missing.ts': 404 })
+        assert.deepEqual(
+          lines.map((line) => `${line.level} ${line.event}`),
+          ['error assets.compile_failed', 'error assets.compile_failed', ...lines.slice(2).map(() => 'warn assets.not_served')],
+        )
+      } finally {
+        await server.close()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

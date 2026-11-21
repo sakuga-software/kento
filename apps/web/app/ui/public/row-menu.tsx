@@ -9,6 +9,7 @@ import * as popover from '@remix-run/ui/popover'
 import { pageRoutes } from '../../routes.ts'
 import { ListChecksIcon, PowerOffIcon, SlidersIcon } from '../lucide.tsx'
 import { ConfirmDetails, ConfirmDialog } from './confirm.tsx'
+import { focusGuard, type FocusGuard } from './focus-guard.ts'
 
 /**
  * The props of a row: the page writes them once more for the browser (25 rows, a budget of 110 KB
@@ -71,22 +72,15 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
    * menu closes on `click`, not on `pointerdown`: a long press must not outlast it), and the next
    * action of the person disarms it: a later Escape or choice gives the focus back as before.
    */
-  let dropFocus = false
+  let guard: FocusGuard | null = null
   let focusTrigger = () => trigger && HTMLElement.prototype.focus.call(trigger, { preventScroll: true })
   handle.queueTask(async () => {
-    let options = { capture: true, signal: handle.signal }
     // Registered before the menu renders, so before its own `click` listener on the document.
-    document.addEventListener(
-      'click',
-      (event) => {
-        let inside = event.target instanceof Node && !!box?.contains(event.target)
-        dropFocus = !inside && trigger?.getAttribute('aria-expanded') === 'true'
-      },
-      options,
+    guard = focusGuard(
+      document,
+      (event) => !(event.target instanceof Node && box?.contains(event.target)) && trigger?.getAttribute('aria-expanded') === 'true',
+      handle.signal,
     )
-    let disarm = () => (dropFocus = false)
-    document.addEventListener('pointerdown', disarm, options)
-    document.addEventListener('keydown', disarm, options)
     enhanced = true
     // The focus was in the `<details>` (a row that repo-toggle.js swapped focuses its "…"): it goes to the new button.
     let focused = details?.contains(document.activeElement) ?? false
@@ -148,8 +142,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
                   trigger = node
                   let focus = node.focus.bind(node)
                   node.focus = (options?: FocusOptions) => {
-                    if (dropFocus) dropFocus = false
-                    else focus(options)
+                    if (!guard?.take()) focus(options)
                   }
                 }),
                 menu.trigger({ placement: 'bottom-end', offset: 4 }),
