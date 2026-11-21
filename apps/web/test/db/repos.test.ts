@@ -111,20 +111,14 @@ describe('the Repos screen against Postgres', () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     for (let n = 1; n <= 3; n++) await publish((await push(n, n)).jobId!, 60 - n)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [3, null, null])
+    assert.equal((await orchard()).streak, 3)
 
     let failed = await push(10, 10)
     await sql`update jobs set state = 'failed', failure_reason = 'lease expired 2 times', finished_at = now() - interval '30 minutes' where id = ${failed.jobId!}`
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'failure', 10])
-
-    // Two failed jobs at the same instant: the link names the same PR at every load (the greater id).
-    let twin = await push(12, 12)
-    await sql`update jobs set state = 'failed', finished_at = (select finished_at from jobs where id = ${failed.jobId!}) where id = ${twin.jobId!}`
-    let [last] = await sql<{ pr_number: number }[]>`select pr_number from jobs where id in (${failed.jobId!}, ${twin.jobId!}) order by id desc limit 1`
-    for (let n = 0; n < 3; n++) assert.equal((await orchard()).resetPr, last!.pr_number)
+    assert.equal((await orchard()).streak, 0)
 
     await publish((await push(11, 11)).jobId!, 10)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [1, 'failure'])
+    assert.equal((await orchard()).streak, 1)
   })
 
   it('a review that was skipped, not published, does not count', async () => {
@@ -145,17 +139,17 @@ describe('the Repos screen against Postgres', () => {
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref, github_delivery_id)
       select repo_id, level, pr_number, head_sha, base_ref, 'twin' from jobs where id = ${first.jobId!} returning id`
     await publish(twin!.id, 10)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'double', 7])
+    assert.equal((await orchard()).streak, 0)
 
     await sql`delete from jobs where id = ${twin!.id}`
     let [forced] = await sql<{ id: string }[]>`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref, github_comment_id)
       select repo_id, level, pr_number, head_sha, base_ref, 777 from jobs where id = ${first.jobId!} returning id`
     await publish(forced!.id, 10)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy], [2, null])
+    assert.equal((await orchard()).streak, 2)
   })
 
-  it('a failed job after a double publication sets the counter back to the failure; a double after it, to the double (REV-36)', async () => {
+  it('a failed job after a double publication sets the counter back, and a double after it does too (REV-36)', async () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     let first = await push(1)
@@ -170,23 +164,24 @@ describe('the Repos screen against Postgres', () => {
     let failed = await push(10, 10)
     await sql`update jobs set state = 'failed', finished_at = now() - interval '30 minutes' where id = ${failed.jobId!}`
     await publish((await push(11, 11)).jobId!, 20)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [1, 'failure', 10])
+    // The review after the failure counts; the double publication before it no longer does.
+    assert.equal((await orchard()).streak, 1)
 
     await twin(10)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [0, 'double', 7])
+    assert.equal((await orchard()).streak, 0)
   })
 
-  it('counts the streak up to its target: a reset before the last 20 reviews is no longer named (REV-36)', async () => {
+  it('counts the streak up to its target: a failure before the last 20 reviews no longer counts (REV-36)', async () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     let failed = await push(100, 100)
     await sql`update jobs set state = 'failed', finished_at = now() - interval '200 minutes' where id = ${failed.jobId!}`
     for (let n = 1; n <= 19; n++) await publish((await push(n, n)).jobId!, 120 - n)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [19, 'failure', 100])
+    assert.equal((await orchard()).streak, 19)
     await publish((await push(20, 20)).jobId!, 50)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).resetPr], [20, null, null])
+    assert.equal((await orchard()).streak, 20)
     await publish((await push(21, 21)).jobId!, 40)
-    assert.deepEqual([(await orchard()).streak, (await orchard()).resetBy, (await orchard()).lastReview?.prNumber], [20, null, 21])
+    assert.deepEqual([(await orchard()).streak, (await orchard()).lastReview?.prNumber], [20, 21])
   })
 
   it('pages the list by 25 with ?page=n, the enabled repositories first, and counts the whole org (REV-36, KNT-146)', async () => {

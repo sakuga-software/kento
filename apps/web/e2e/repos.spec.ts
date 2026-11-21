@@ -5,8 +5,8 @@ import { LONG_REPO_NAME } from './fake-github.ts'
 import { expectNoAxeViolations, hydrated, signIn, watchConsole } from './helpers.ts'
 
 // The Repos screen (REV-9) in a browser, against the server, Postgres and the fake GitHub: the check
-// of the installation, enable, disable with its confirmation, the switch counter, and the member who
-// reads only.
+// of the installation, enable, disable with its confirmation, "Remove review.yml" at the end of the
+// switch, and the member who reads only.
 
 function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
@@ -65,13 +65,12 @@ test.describe('the Repos screen', () => {
       await checkNow(page)
 
       let orchard = rowOf(page, 'orchard')
-      await expect(orchard.getByText('review.yml@stable')).toBeVisible()
-      await expect(rowOf(page, 'fruitback').getByText('copy of review.yml')).toBeVisible()
-      await expect(rowOf(page, 'garden').getByText('none', { exact: true })).toBeVisible()
-      // REV-91: the notes on the switch are folded under the table.
-      await page.getByText('How the switch from review.yml to Kentō works').click()
-      await expect(page.getByRole('heading', { name: 'Switch criterion' })).toBeVisible()
-      await expect(page.getByRole('heading', { name: 'Fallback during the switch' })).toBeVisible()
+      // KNT-179, KNT-181: no column "Reviews by" nor "Switch". KNT-194: no notes on the switch.
+      await expect(page.getByRole('columnheader')).toHaveText(['Repo', 'Level', 'Model', 'Last review', 'Precision 30 d', 'Actions'])
+      await expect(page.getByText('How the switch from review.yml to Kentō works')).toHaveCount(0)
+      // KNT-180: the visibility is the icon left of the name; a screen reader hears its word.
+      await expect(orchard.getByRole('rowheader')).toHaveAccessibleName(/^orchard\s*, (private|public)$/)
+      await expect(orchard.getByRole('rowheader').getByText(/^(private|public)$/)).toHaveCount(0)
       await expect(page.getByRole('link', { name: /Manage the installation/ })).toHaveAttribute(
         'href',
         /\/organizations\/sakuga-software\/settings\/installations\/4242$/,
@@ -80,9 +79,7 @@ test.describe('the Repos screen', () => {
 
       await orchard.getByRole('button', { name: 'Enable orchard' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
+      await expect(rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' })).toHaveCount(0)
       await expectNoAxeViolations(page)
 
       // REV-33, REV-91, KNT-163: "Disable Kentō…" sits in the menu "…" of the row, a menu of
@@ -106,7 +103,7 @@ test.describe('the Repos screen', () => {
       await page.keyboard.press('Enter')
       let dialog = page.getByRole('dialog', { name: 'Disable orchard Kentō…' })
       let act = dialog.getByRole('button', { name: 'Disable orchard' })
-      await expect(dialog).toContainText('The published reviews and the counter stay')
+      await expect(dialog).toContainText('The published reviews stay')
       await expect(menu).toBeHidden()
       await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
       // The popover is in the top layer: no table clips it, and it stays in the window.
@@ -140,7 +137,7 @@ test.describe('the Repos screen', () => {
       await disable.click()
       await act.click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard is disabled.' })).toBeVisible()
-      await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
+      await expect(rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' })).toBeVisible()
 
       let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
       expect(overflow).toBeLessThanOrEqual(0)
@@ -148,7 +145,7 @@ test.describe('the Repos screen', () => {
     })
   }
 
-  test('the counter: 20 published reviews offer "Remove review.yml"; a failed job brings it back to 0/20', async ({ page }) => {
+  test('20 published reviews in a row offer "Remove review.yml" in the menu "…"; a failed job takes it away (KNT-179)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
@@ -165,24 +162,88 @@ test.describe('the Repos screen', () => {
       }
       await page.goto('/repos')
       let orchard = rowOf(page, 'orchard')
-      await expect(orchard.getByText('20/20')).toBeVisible()
-      await expect(orchard.getByRole('link', { name: /Remove review\.yml/ })).toHaveAttribute(
-        'href',
-        /\/sakuga-software\/orchard\/delete\/main\/\.github\/workflows\/sakuga-review\.yml$/,
-      )
       await expect(orchard.getByRole('link', { name: '#20 · 4/5' })).toBeVisible()
+      await hydrated(page)
+      let { trigger, menu } = menuOf(page, 'orchard')
+      await trigger.click()
+      let remove = menu.getByRole('menuitem', { name: 'Remove review.yml from orchard (GitHub, new tab)' })
+      await expect(remove).toHaveAttribute('href', /\/sakuga-software\/orchard\/delete\/main\/\.github\/workflows\/sakuga-review\.yml$/)
+      // Between "See the findings" and "Disable Kentō…".
+      await expect(menu.getByRole('menuitem')).toHaveText(['Open the config', 'See the findings', /^Remove review\.yml/, /^Disable/])
       await expectNoAxeViolations(page)
+      // It opens GitHub in a new tab, and the menu closes. GitHub is out of reach in the tests: a page stands in for it.
+      await page.context().route(/\/delete\/main\//, (route) => route.fulfill({ contentType: 'text/html', body: '<title>GitHub</title>' }))
+      let popup = page.waitForEvent('popup')
+      await remove.click()
+      await expect(await popup).toHaveURL(/\/sakuga-software\/orchard\/delete\/main\/\.github\/workflows\/sakuga-review\.yml$/)
+      await expect(menu).toBeHidden()
+      await expect(page).toHaveURL(/\/repos$/)
+      await (await popup).close()
 
       await sql`
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, failure_reason, finished_at)
         values (${repo!.id}, 'lite', 'failed', 21, ${'f'.repeat(40)}, 'main', 'lease expired 2 times', now())`
       await page.reload()
-      await expect(orchard.getByText('0/20')).toBeVisible()
-      await expect(orchard.getByText('set back to zero after a failure on')).toBeVisible()
-      await expect(orchard.getByRole('link', { name: '#21', exact: true })).toHaveAttribute('href', /\/sakuga-software\/orchard\/pull\/21$/)
-      await expect(orchard.getByRole('link', { name: /Remove review\.yml/ })).toHaveCount(0)
+      await hydrated(page)
+      await trigger.click()
+      await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeVisible()
+      await expect(menu.getByRole('menuitem', { name: /Remove review\.yml/ })).toHaveCount(0)
     } finally {
       await sql.end()
+    }
+  })
+
+  test('the last review stays on one line at 1280 px and on a phone, cut with an ellipsis and whole in its title (KNT-182)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let sql = database()
+    try {
+      let [repo] = await sql<{ id: string }[]>`update repos set enabled = true where full_name = 'sakuga-software/garden' returning id`
+      // A long PR number and a date over a day old: the longest text the cell can hold.
+      let [job] = await sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref, finished_at)
+        values (${repo!.id}, 'lite', 'done', 123456, ${'a'.repeat(40)}, 'main', now() - interval '3 days') returning id`
+      await sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, result, github_review_id, published_at)
+        values (${job!.id}, ${repo!.id}, 123456, ${'a'.repeat(40)}, 5, 'anthropic/claude-haiku-5.5', '{}'::jsonb, 123456, now() - interval '3 days')`
+    } finally {
+      await sql.end()
+    }
+    let width = page.viewportSize()!.width
+    for (let viewport of width > 760 ? [1280] : [width, 320]) {
+      await page.setViewportSize({ width: viewport, height: 900 })
+      await page.goto('/repos')
+      let cell = rowOf(page, 'garden').locator('.repo-last-review')
+      await expect(cell).toHaveAttribute('title', /^#123456 · 5\/5, published on \d+ \w+ at \d\d:\d\d$/)
+      let box = await cell.evaluate((el, narrow) => {
+        // The longest value fits at 320 px: a cell made narrower shows the cut.
+        if (narrow) (el as HTMLElement).style.maxWidth = '120px'
+        let style = getComputedStyle(el)
+        let line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5
+        let content = el.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+        let link = el.querySelector('a')!.getBoundingClientRect()
+        let hint = el.querySelector('.hint')!.getBoundingClientRect()
+        let row = el.closest('tr')!.getBoundingClientRect()
+        return {
+          lines: content / line,
+          sameLine: Math.abs(link.top - hint.top) < 4,
+          overflow: style.textOverflow,
+          cut: el.scrollWidth > el.clientWidth,
+          inside: el.getBoundingClientRect().right <= row.right + 0.5,
+        }
+      }, viewport < 390)
+      expect(box.lines, `lines at ${viewport} px`).toBeLessThan(1.5)
+      expect(box.sameLine, `link and date on one line at ${viewport} px`).toBe(true)
+      expect(box.overflow).toBe('ellipsis')
+      expect(box.inside, `the cell stays in its row at ${viewport} px`).toBe(true)
+      if (viewport >= 390) {
+        // Whole at 1280 px and on a phone of 390 px; cut, not wrapped, in a narrower cell.
+        expect(box.cut, `cut at ${viewport} px`).toBe(false)
+        let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+        expect(overflow, `page at ${viewport} px`).toBeLessThanOrEqual(0)
+      } else {
+        expect(box.cut, `cut at ${viewport} px`).toBe(true)
+      }
     }
   })
 
@@ -268,7 +329,7 @@ test.describe('the Repos screen', () => {
     await trigger.click()
     await menu.getByRole('menuitem', { name: 'Disable orchard Kentō…' }).click()
     let dialog = page.getByRole('dialog', { name: 'Disable orchard Kentō…' })
-    await dialog.getByText('The published reviews and the counter stay').click()
+    await dialog.getByText('The published reviews stay').click()
     await expect(dialog).toBeVisible()
     // A click outside closes it, and leaves the focus where it went.
     await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
@@ -458,7 +519,8 @@ test.describe('the Repos screen', () => {
       await row.getByRole('button', { name: 'Enable zz-18' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
       row = rowOf(page, 'zz-18')
-      await expect(row.locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      // KNT-181: no tag "Kentō" any more; an enabled repository has no "Kentō not enabled" under its precision.
+      await expect(row.locator('td').nth(3)).toHaveText('–')
       await expect(row.getByRole('button', { name: 'Enable zz-18' })).toHaveCount(0)
       expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
       // The row keeps its place until the next load, marked; the page does not scroll.
@@ -474,7 +536,7 @@ test.describe('the Repos screen', () => {
       await page.goto('/repos?filter=disabled&q=zz-')
       await rowOf(page, 'zz-05').getByRole('button', { name: 'Enable zz-05' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-05 is enabled.' })).toBeAttached()
-      await expect(rowOf(page, 'zz-05').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(rowOf(page, 'zz-05').locator('td').nth(3)).toHaveText('–')
       await expect(menuOf(page, 'zz-05').trigger).toBeFocused()
 
       // Saved, but its row cannot be read (the network goes after the change): no message of a
@@ -613,7 +675,7 @@ test.describe('the Repos screen', () => {
       await expect(page.locator('.notice-slot')).toContainText('pc-51 is enabled.')
       await expect(page.locator('.pager')).toHaveCount(0)
       await expect(page.getByText('The list changed.')).toBeVisible()
-      await expect(rowOf(page, 'pc-51').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
+      await expect(rowOf(page, 'pc-51').locator('td').nth(3)).toHaveText('–')
     } finally {
       await sql`delete from repos where github_repo_id between 893001 and 893051`
       await sql.end()
@@ -674,8 +736,8 @@ test.describe('the Repos screen', () => {
     // Under 760 px each other cell keeps its label, "Precision 30 d" included for a repo without Kentō.
     if (page.viewportSize()!.width <= 760) {
       let gh = rowOf(page, 'garden')
-      expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
-      await expect(gh.locator('td').nth(5)).toContainText('Kentō not enabled')
+      expect(await gh.locator('td').nth(3).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
+      await expect(gh.locator('td').nth(3)).toContainText('Kentō not enabled')
     }
     let { trigger, menu } = menuOf(page, 'orchard')
     await trigger.click()
@@ -702,7 +764,7 @@ test.describe('the Repos screen without JavaScript', () => {
     await rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' }).click()
     await expect(page).toHaveURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-[0-9a-f-]+$/)
     await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
-    await expect(rowOf(page, 'orchard').getByText('Kentō + review.yml')).toBeVisible()
+    await expect(rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' })).toHaveCount(0)
   })
 
   test('the menu "…" of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {
@@ -744,7 +806,7 @@ test.describe('the Repos screen without JavaScript', () => {
     await expect(row.getByRole('link', { name: 'Open the config' })).toBeVisible()
     await expect(row.getByRole('link', { name: 'See the findings' })).toHaveAttribute('href', /\/findings\?repo=[0-9a-f-]+$/)
     await row.locator('.row-menu .confirm > summary').click()
-    await expect(row).toContainText('The published reviews and the counter stay')
+    await expect(row).toContainText('The published reviews stay')
     await row.getByRole('button', { name: 'Disable orchard' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'orchard is disabled.' })).toBeVisible()
   })

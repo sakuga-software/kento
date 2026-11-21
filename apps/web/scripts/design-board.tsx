@@ -150,7 +150,6 @@ function repo(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Re
     workflowRef: null,
     workflowCheckedAt: minutesAgo(4),
     streak: 0,
-    resetBy: null, resetPr: null,
     lastReview: null,
     ...fields,
   }
@@ -169,7 +168,7 @@ const REPOS: RepoView[] = [
   }),
   repo({
     id: 'r-orchard', fullName: 'sakuga-software/orchard', enabled: true, workflow: 'reusable', workflowRef: 'stable',
-    workflowPath: '.github/workflows/sakuga-review.yml', streak: 0, resetBy: 'failure', resetPr: 12,
+    workflowPath: '.github/workflows/sakuga-review.yml', streak: 0,
     lastReview: { prNumber: 12, score: 3, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(190) },
   }),
   repo({ id: 'r-pantry', fullName: 'sakuga-software/pantry', workflow: 'reusable', workflowRef: 'stable', workflowPath: '.github/workflows/sakuga-review.yml' }),

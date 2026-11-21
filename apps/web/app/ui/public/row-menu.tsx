@@ -7,7 +7,7 @@ import * as menu from '@remix-run/ui/menu'
 import * as popover from '@remix-run/ui/popover'
 
 import { pageRoutes } from '../../routes.ts'
-import { ListChecksIcon, PowerOffIcon, SlidersIcon } from '../lucide.tsx'
+import { ExternalLinkIcon, ListChecksIcon, PowerOffIcon, SlidersIcon } from '../lucide.tsx'
 import { ConfirmDetails, ConfirmDialog } from './confirm.tsx'
 import { focusGuard, type FocusGuard } from './focus-guard.ts'
 
@@ -20,6 +20,11 @@ export interface RowMenuProps {
   id: string
   /** Its full name. */
   name: string
+  /**
+   * KNT-179. "Remove review.yml": the page of GitHub that deletes the file, for an admin at the end
+   * of the switch. Only those few rows carry this URL.
+   */
+  removeWorkflow?: string
   /** "Disable Kentō…": an admin, on an enabled repository. */
   disable?: boolean
   /** The query of the list, that the disable comes back to (`?page=2`). */
@@ -29,6 +34,18 @@ export interface RowMenuProps {
 /** The findings of the repository: `findingsHref({ repoId })` of ../findings.tsx. */
 export function repoFindingsHref(id: string): string {
   return `${pageRoutes.findings.href()}?${new URLSearchParams({ repo: id })}`
+}
+
+/**
+ * KNT-179: GitHub in a new tab, as the link of the menu says, with no opener and no referrer. A
+ * link and not `window.open`: with "noopener", `window.open` returns null even when it opened.
+ */
+function openInNewTab(url: string) {
+  let link = document.createElement('a')
+  link.href = url
+  link.target = '_blank'
+  link.rel = 'noreferrer'
+  link.click()
 }
 
 /** The form of the Repos screen that carries the CSRF token of every action of its rows (REV-36). */
@@ -48,7 +65,7 @@ function DisableLabel(handle: Handle<{ name: string; icon?: boolean }>) {
 }
 
 function DisableText() {
-  return () => <p>No new job starts, and the queued jobs are cancelled. The published reviews and the counter stay.</p>
+  return () => <p>No new job starts, and the queued jobs are cancelled. The published reviews stay.</p>
 }
 
 export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Handle<RowMenuProps>) {
@@ -102,7 +119,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
   })
 
   return () => {
-    let { id: repoId, name, back } = handle.props
+    let { id: repoId, name, back, removeWorkflow } = handle.props
     let config = pageRoutes.repoConfig.href({ id: repoId })
     let findings = repoFindingsHref(repoId)
     let disable = handle.props.disable ? pageRoutes.repoDisable.href({ id: repoId }) + (back ?? '') : null
@@ -118,6 +135,11 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
           <div>
             <a href={config}>Open the config</a>
             <a href={findings}>See the findings</a>
+            {removeWorkflow ? (
+              <a href={removeWorkflow} rel="noreferrer" target="_blank">
+                Remove review.yml<span class="visually-hidden"> from {name} (GitHub, new tab)</span>
+              </a>
+            ) : null}
             {disable ? (
               <ConfirmDetails trigger={<DisableLabel name={name} />} action={disable} csrf={null} form={FORM} submit={`Disable ${name}`}>
                 <DisableText />
@@ -168,7 +190,9 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
                             confirming = true
                             void handle.update()
                           }
-                        : () => value && window.location.assign(value)
+                        : item === 'remove-workflow'
+                          ? () => value && openInNewTab(value)
+                          : () => value && window.location.assign(value)
                   }),
                 ]}
               >
@@ -180,6 +204,19 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
                   <ListChecksIcon />
                   See the findings
                 </a>
+                {removeWorkflow ? (
+                  <a
+                    href={removeWorkflow}
+                    rel="noreferrer"
+                    target="_blank"
+                    mix={[link, menu.item({ name: 'remove-workflow', value: removeWorkflow, label: 'Remove review.yml' })]}
+                  >
+                    <ExternalLinkIcon />
+                    <span>
+                      Remove review.yml<span class="visually-hidden"> from {name} (GitHub, new tab)</span>
+                    </span>
+                  </a>
+                ) : null}
                 {disable ? (
                   <div id={`${handle.id}-disable`} class="row-menu-danger" mix={menu.item({ name: 'disable', label: 'Disable Kentō…' })}>
                     <DisableLabel name={name} icon />
