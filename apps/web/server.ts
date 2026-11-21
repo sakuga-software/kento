@@ -17,7 +17,8 @@ import { setInstance } from './app/instance.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
 import { createKentoAuth, postgresAuthDatabase } from './app/auth/better-auth.ts'
-import { createGitHubOAuth, createRoleLookup } from './app/auth/github.ts'
+import { createGitHubOAuth, createGitHubPeople } from './app/auth/github.ts'
+import { createMembersStore } from './app/members/store.ts'
 import { rememberClientAddress } from './app/auth/rate-limit.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
@@ -102,7 +103,8 @@ let publisher =
 // The GitHub sign-in of the screens (REV-8). Without its variables, every screen says that the
 // sign-in is not configured, and nobody gets in.
 let authStore = createAuthStore(database.sql)
-let lookupRole = config.githubApp ? createRoleLookup(config.githubApp) : null
+let people = config.githubApp ? createGitHubPeople(config.githubApp) : null
+let lookupRole = people?.lookupRole ?? null
 let auth =
   config.signIn && lookupRole
     ? {
@@ -243,6 +245,8 @@ let router = createAppRouter({
   users: { store: createUsersStore(database.sql) },
   // REV-107. The answers about the reviews of the org.
   feedback: { store: createFeedbackStore(database.sql) },
+  // KNT-150. The members and the invitations of an org.
+  members: { store: createMembersStore(database.sql), lookupUser: people?.lookupUser ?? null, lookupRole },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,
