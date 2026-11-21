@@ -96,8 +96,9 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
         run: pnpm test:db
 
-  # The screens in Chromium against the real server and Postgres, with axe on each screen. The job
-  # container reaches Postgres by its name, as in test-db.
+  # The screens in Chromium against the real server and Postgres, with axe on each screen, and the
+  # content security policy of every screen under WebKit too (KNT-171). The job container reaches
+  # Postgres by its name, as in test-db.
   e2e:
     name: Screens in a browser (Playwright, axe)
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-linux", "docker"]') || 'ubuntu-latest' }}
