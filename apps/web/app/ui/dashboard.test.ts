@@ -790,8 +790,9 @@ describe('the precision of the dashboard by window (KNT-191)', () => {
     assert.match(block, /<div(?=[^>]*\sdata-kind="bars")(?=[^>]*\shidden[\s>])(?=[^>]*\sclass="chart-box")[^>]*>/)
     assert.match(block, /<ul[^>]*id="precision-list"[^>]*>/)
     // A share with enough closed findings has its value; one under the minimum has none (no bar).
-    assert.match(block, /<li[^>]*data-label="orchard"[^>]*data-value="85.7"|<li[^>]*data-value="85.7"[^>]*data-label="orchard"/)
-    assert.match(block, /<li[^>]*data-label="dojo"[^>]*data-value=""|<li[^>]*data-value=""[^>]*data-label="dojo"/)
+    // The attributes in any order (Kentō #13de56).
+    assert.match(block, /<li(?=[^>]*\sdata-label="orchard")(?=[^>]*\sdata-value="85\.7")[^>]*>/)
+    assert.match(block, /<li(?=[^>]*\sdata-label="dojo")(?=[^>]*\sdata-value="")[^>]*>/)
     assert.match(block, /and 1 more repo with fewer closed findings/)
   })
 
