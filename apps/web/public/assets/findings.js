@@ -39,6 +39,7 @@
 
   const filters = document.querySelector('form.findings-filters')
   filters?.addEventListener('change', (event) => {
-    if (event.target instanceof HTMLSelectElement) filters.requestSubmit()
+    // KNT-165: a select of the filters is a component in the browser; its hidden input sends `change`.
+    if (event.target instanceof Element && event.target.matches('select, input[data-select]')) filters.requestSubmit()
   })
 }

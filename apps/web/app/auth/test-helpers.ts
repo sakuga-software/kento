@@ -36,6 +36,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let clock = { now: Date.now() }
   let roles = new Map<string, GitHubRole | null | 'error'>()
   let lookups: string[] = []
+  /** The pending invitations of each GitHub account, by its id. */
+  let pending = new Map<number, number>()
   /** The code exchanges that the fake GitHub received, as GitHub checks them. */
   let exchanges: { code: string; codeVerifier: string | null; redirectUri: string }[] = []
   let profile: GitHubProfile = OCTOCAT
@@ -133,10 +135,20 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
         (m) => m.orgId === orgId && m.userId !== exceptUserId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime(),
       )
     },
+    async membershipOf(userId, orgId) {
+      let m = memberships.get(`${userId}/${orgId}`)
+      return m ? { role: m.role, source: m.source } : null
+    },
+    async pendingInvitations(githubId) {
+      return pending.get(githubId) ?? 0
+    },
     async withOrgLock(_orgId, work) {
       return work(store)
     },
     async deleteMembership(userId, orgId) {
+      await store.forgetMembership(userId, orgId)
+    },
+    async forgetMembership(userId, orgId) {
       tables.memberships = rows().filter((m) => !(m.userId === userId && m.orgId === orgId))
     },
   }
@@ -200,6 +212,10 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
     setRole(org: OrgRow | InstallationAccount, person: GitHubProfile, role: GitHubRole | null | 'error') {
       let login = 'installations' in org ? org.installations[0]!.login : org.login
       roles.set(`${login}/${person.login}`, role)
+    },
+    /** The number of pending invitations of a GitHub account. */
+    invite(person: GitHubProfile, count = 1) {
+      pending.set(person.id, count)
     },
     /** The account that the next sign-in comes back with. */
     as(next: GitHubProfile) {

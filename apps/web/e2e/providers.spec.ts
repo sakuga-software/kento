@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, goToSettingsLink, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, goToSettingsLink, hydrated, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
@@ -48,10 +48,11 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expectNoAxeViolations(page)
     // REV-29: the form is folded; the table of contents opens it.
     let form = page.locator('#new-provider')
-    await expect(form.getByLabel('Type')).toBeHidden()
+    // KNT-165: the field "Type" is a custom select: its button (the list is labelled "Type" too).
+    await expect(form.getByRole('button', { name: /^Type / })).toBeHidden()
     // REV-91: the button of the section opens it.
     await form.getByText('Add a provider', { exact: true }).click()
-    await form.getByLabel('Type').selectOption('anthropic')
+    await chooseOption(form, 'Type', 'anthropic')
     await form.getByLabel('Name').fill(label)
     await form.getByLabel('Key', { exact: true }).fill(key)
     await form.getByRole('button', { name: 'Add the provider' }).click()
@@ -124,7 +125,7 @@ test('an admin adds a provider; a trusted runner gets its key; a refused key sho
     await expect(nav.getByRole('link', { name: 'Providers and keys', includeHidden: true })).toHaveAttribute('aria-current', 'location')
     await expect(nav.getByRole('link', { name: label, exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'true')
     await goToSettingsLink(page, 'Add a provider')
-    await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
+    await expect(page.locator('#new-provider').getByRole('button', { name: /^Type / })).toBeVisible()
 
     // 6. A member reads the section and has no form.
     await page.context().clearCookies()
@@ -152,13 +153,13 @@ test('a provider form with an error opens on its first field in error, in view a
   await page.evaluate(() => {
     location.hash = 'new-provider'
   })
-  await expect(page.locator('#new-provider').getByLabel('Type')).toBeVisible()
+  await expect(page.locator('#new-provider').getByRole('button', { name: /^Type / })).toBeVisible()
   expect(errors.filter((e) => /URI/i.test(e))).toEqual([])
 
   // A link to the anchor opens the folded form (the home screen has one).
   await page.goto('/settings#new-provider')
   let form = page.locator('#new-provider')
-  await form.getByLabel('Type').selectOption('openai_compatible')
+  await chooseOption(form, 'Type', 'openai_compatible')
   await form.getByLabel('Name').fill('vLLM')
   await form.getByLabel('Server URL').fill('http://llm.example.com/v1')
   await form.getByRole('button', { name: 'Add the provider' }).click()
@@ -179,6 +180,45 @@ test('a provider form with an error opens on its first field in error, in view a
   expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
 })
 
+// KNT-165: "Type" is a select that hydrates. Its error stays on the button that takes the place of
+// the native select: the focus (the server gave it to the native one), aria-invalid, and the error
+// first in its description.
+test('an error on the select "Type" stays on its button after hydration: focus, aria-invalid, the error read', async ({ page }, testInfo) => {
+  let errors = watchConsole(page)
+  await signIn(page, 'octocat')
+  await page.goto('/settings#new-provider')
+  await hydrated(page)
+  let form = page.locator('#new-provider')
+  // A type that the server refuses, through the hidden input of the select: no option offers it.
+  await form.locator('input[data-select][name="kind"]').evaluate((el) => ((el as HTMLInputElement).value = 'not-a-kind'))
+  await form.getByLabel('Name').fill('vLLM')
+  await form.getByRole('button', { name: 'Add the provider' }).click()
+  await expect(form.getByRole('alert')).toContainText('Nothing is saved')
+  await hydrated(page)
+  let type = form.getByRole('button', { name: /^Type / })
+  await expect(type).toBeFocused()
+  await expect(type).toHaveAttribute('aria-invalid', 'true')
+  await expect(type).toHaveAttribute('aria-describedby', 'provider-kind-error provider-kind-hint')
+  await expect(type).toHaveAccessibleDescription(/^Choose the type of provider\. /)
+  await expect(form.locator('select#provider-kind-native')).toBeHidden()
+  await expectNoAxeViolations(page)
+  if (testInfo.project.name === 'mobile') {
+    // Under 900 px: Escape in the list closes the list only, not the open "Sections" (settings.js).
+    let toggle = page.getByRole('navigation', { name: 'Sections of the settings' }).locator('[data-settings-nav-toggle]')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await type.focus()
+    await page.keyboard.press('ArrowDown')
+    let list = page.getByRole('listbox', { name: 'Type' })
+    await expect(list).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(list).toBeHidden()
+    await expect(type).toBeFocused()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  }
+  expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
+})
+
 test('the form refuses a model id of the wrong form for its kind, and keeps what was typed (REV-66)', async ({ page }, testInfo) => {
   let errors = watchConsole(page)
   let project = testInfo.project.name
@@ -195,7 +235,7 @@ test('the form refuses a model id of the wrong form for its kind, and keeps what
 
     await page.goto('/settings#new-provider')
     let form = page.locator('#new-provider')
-    await form.getByLabel('Type').selectOption('anthropic')
+    await chooseOption(form, 'Type', 'anthropic')
     await form.getByLabel('Name').fill(label)
     await form.getByLabel('Key', { exact: true }).fill(key)
     await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')
@@ -231,7 +271,7 @@ test('on a phone, a provider form sent back with its errors has no field under t
   await signIn(page, 'octocat')
   await page.goto('/settings#new-provider')
   let form = page.locator('#new-provider')
-  await form.getByLabel('Type').selectOption('anthropic')
+  await chooseOption(form, 'Type', 'anthropic')
   await form.getByLabel('Name').fill('Phone form')
   await form.getByLabel('Key', { exact: true }).fill('sk-ant-e2e-phone-0123456789-WXYZ')
   await form.getByLabel('heavy').fill('anthropic/claude-opus-5.5')

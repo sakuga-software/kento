@@ -151,8 +151,8 @@ test('a member dismisses a finding as "False positive": status, reply in the Git
   await expect(history.last()).toContainText('@camille')
 
   // "Mark wontfix" shares the form of the page with "Mark dismissed": its button posts to /wontfix.
-  await page.getByText('Mark wontfix…').click()
-  await page.getByRole('button', { name: 'Mark wontfix', exact: true }).click()
+  await page.getByRole('button', { name: 'Mark wontfix…' }).click()
+  await page.getByRole('dialog', { name: 'Mark wontfix…' }).getByRole('button', { name: 'Mark wontfix', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Finding marked wontfix.' })).toBeVisible()
   await expect(page.locator('.finding-tags')).toContainText('wontfix')
   await page.getByRole('button', { name: 'Reopen' }).click()

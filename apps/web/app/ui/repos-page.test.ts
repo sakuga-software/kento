@@ -223,14 +223,17 @@ describe('the Repos screen', () => {
     let { cookie, csrf, html: page } = await signIn()
     // REV-33: the confirmation is in the row of the repository, closed, with the destructive style and "Cancel".
     let row = page.slice(page.indexOf(`id="repo-${FRUITBACK}"`), page.indexOf('</tr>', page.indexOf(`id="repo-${FRUITBACK}"`)))
-    // REV-91: "Disable Kentō…" sits in the menu "…" of its row.
-    assert.match(row, /<details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
-    // Remix 3.2 renders a boolean data-* attribute as "true". confirm.js selects it by presence.
-    assert.match(row, /<details data-confirm="true" class="confirm"><summary class="button button-danger"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
+    // REV-91: "Disable Kentō…" sits in the menu "…" of its row. KNT-163: without JavaScript, a
+    // `<details>`; the menu hydrates it (RowMenu), and draws a menu button and a popover in its place.
+    assert.match(row, /<!-- rmx:h:\w+ --><details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
+    // No icon in it: the menu draws them once it hydrates (25 rows, the budget of the page).
+    assert.doesNotMatch(row.slice(row.indexOf('<details class="row-menu">')), /<svg/)
+    assert.match(row, /<details class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
     assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Disable fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
-    assert.match(row, /<button type="button" data-confirm-cancel="true" hidden class="button">Cancel<\/button>/)
+    // "Cancel" is a part of the popover only: without JavaScript, the trigger closes the confirmation.
+    assert.doesNotMatch(row, /Cancel/)
     assert.match(row, /The published reviews and the counter stay/)
     // No destructive button has the style of the main action.
     assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
@@ -282,10 +285,26 @@ describe('the Repos screen', () => {
     let { cookie, html } = await signIn()
     assert.doesNotMatch(html, /data-recheck/)
     assert.doesNotMatch(html, /assets\/repos.js/)
-    // REV-91: the menus "…" close on Escape and on a click outside, on every read of the screen.
-    assert.equal(html.match(/src="\/assets\/row-menu\.js\?v=1\.2\.3"/g)?.length, 1)
-    // Both deferred: confirm.js, in the head, registers its listeners first.
-    assert.ok(html.indexOf('/assets/confirm.js') < html.indexOf('/assets/row-menu.js'))
+    // KNT-163: the menus "…" hydrate, with the props of each row in the data of the page.
+    let data = JSON.parse(html.match(/<script type="application\/json" id="rmx-data">(.*?)<\/script>/)![1]!) as {
+      h: Record<string, { exportName: string; moduleUrl: string; props: Record<string, unknown> }>
+    }
+    let menus = Object.values(data.h).filter((entry) => entry.exportName === 'RowMenu')
+    assert.equal(menus.length, (html.match(/<details class="row-menu">/g) ?? []).length)
+    assert.match(menus[0]!.moduleUrl, /^\/assets\/app\/ui\/public\/row-menu\.tsx$/)
+    // A few props a row: its id and name, and `disable` only where it applies.
+    assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name'])
+    assert.match(html, /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
+    // The one inline script that runs, the import map, carries the nonce of the policy of the response.
+    let response = await request('/repos', { cookie })
+    let nonce = response.headers.get('Content-Security-Policy')?.match(/'nonce-([^']+)'/)?.[1]
+    let page = await response.text()
+    // The import map comes before the module of the page (Fable critique P3-4).
+    assert.ok(page.indexOf('type="importmap"') < page.indexOf('<script type="module"'))
+    let inline = [...page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)].map((match) => match[1]!)
+    assert.deepEqual(inline.map((attrs) => attrs.match(/type="([^"]+)"/)?.[1]).sort(), ['application/json', 'importmap'])
+    assert.ok(nonce)
+    assert.ok(inline.find((attrs) => attrs.includes('importmap'))!.includes(`nonce="${nonce}"`))
     assert.match(html, /<button type="submit" class="button list-search-submit">Search<\/button>/)
     checking.now = true
     html = await (await request('/repos', { cookie })).text()

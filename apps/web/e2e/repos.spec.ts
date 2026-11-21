@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { LONG_REPO_NAME } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, hydrated, signIn, watchConsole } from './helpers.ts'
 
 // The Repos screen (REV-9) in a browser, against the server, Postgres and the fake GitHub: the check
 // of the installation, enable, disable with its confirmation, the switch counter, and the member who
@@ -32,6 +32,24 @@ async function checkNow(page: Page) {
 
 function rowOf(page: Page, name: string) {
   return page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: new RegExp(`^${name}`) }) })
+}
+
+/**
+ * KNT-163: "…", then "Disable <name> Kentō…": the confirmation opens. Returns its button that acts.
+ */
+async function chooseDisable(page: Page, name: string) {
+  let { trigger, menu } = menuOf(page, name)
+  await trigger.click()
+  await menu.getByRole('menuitem', { name: `Disable ${name} Kentō…` }).click()
+  return page.getByRole('dialog', { name: `Disable ${name} Kentō…` }).getByRole('button', { name: `Disable ${name}` })
+}
+
+/** KNT-163: the button "…" of a row, once its menu hydrated, and the menu it opens. */
+function menuOf(page: Page, name: string) {
+  return {
+    trigger: page.getByRole('button', { name: `Actions of ${name}`, exact: true }),
+    menu: page.getByRole('menu', { name: `Actions of ${name}` }),
+  }
 }
 
 test.describe('the Repos screen', () => {
@@ -67,52 +85,59 @@ test.describe('the Repos screen', () => {
       await expect(rowOf(page, 'orchard').getByText('0/20')).toBeVisible()
       await expectNoAxeViolations(page)
 
-      // REV-33: the confirmation opens in the row, at the keyboard; Escape and "Cancel" close it and
-      // give the focus back to its trigger.
-      let row = rowOf(page, 'orchard')
-      // REV-91: "Disable Kentō…" sits in the menu "…" of the row.
-      await row.locator('.row-menu > summary').click()
-      let trigger = row.locator('summary', { hasText: 'Disable' })
-      let act = row.getByRole('button', { name: 'Disable orchard' })
+      // REV-33, REV-91, KNT-163: "Disable Kentō…" sits in the menu "…" of the row, a menu of
+      // @remix-run/ui: the arrows, Home and End move in it, Enter chooses. The confirmation opens in
+      // a popover with "Cancel" in focus; Escape and "Cancel" close it and give the focus back to "…".
+      await hydrated(page)
+      let { trigger, menu } = menuOf(page, 'orchard')
       await trigger.focus()
+      await page.keyboard.press('ArrowDown')
+      await expect(menu).toBeVisible()
+      await expect(menu.getByRole('menuitem', { name: 'Open the config' })).toBeFocused()
+      await page.keyboard.press('End')
+      let disable = menu.getByRole('menuitem', { name: 'Disable orchard Kentō…' })
+      await expect(disable).toBeFocused()
+      await page.keyboard.press('Home')
+      await expect(menu.getByRole('menuitem', { name: 'Open the config' })).toBeFocused()
+      // Typeahead: "s" goes to "See the findings".
+      await page.keyboard.press('s')
+      await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
+      await page.keyboard.press('End')
       await page.keyboard.press('Enter')
-      await expect(row).toContainText('The published reviews and the counter stay')
-      await expect(act).toBeVisible()
-      // The table clips what goes past its bottom: it makes room for the open menu and its confirmation.
-      let inside = () =>
-        act.evaluate((button) => {
-          let wrap = button.closest('.table-wrap')!.getBoundingClientRect()
-          let box = button.getBoundingClientRect()
-          return box.top >= wrap.top && box.bottom <= wrap.bottom
-        })
-      expect(await inside()).toBe(true)
+      let dialog = page.getByRole('dialog', { name: 'Disable orchard Kentō…' })
+      let act = dialog.getByRole('button', { name: 'Disable orchard' })
+      await expect(dialog).toContainText('The published reviews and the counter stay')
+      await expect(menu).toBeHidden()
+      await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+      // The popover is in the top layer: no table clips it, and it stays in the window.
+      await expect(act).toBeInViewport({ ratio: 1 })
       await expectNoAxeViolations(page)
-      await page.keyboard.press('Tab')
-      await expect(act).toBeFocused()
-      await page.keyboard.press('Escape')
-      await expect(act).toBeHidden()
-      await expect(trigger).toBeFocused()
-
-      await page.keyboard.press('Enter')
-      await row.getByRole('button', { name: 'Cancel' }).click()
-      await expect(act).toBeHidden()
-      // REV-91: "Cancel" also closes the menu "…", and gives the focus back to it.
-      await expect(row.locator('.row-menu')).not.toHaveAttribute('open', '')
-      await expect(row.locator('.row-menu > summary')).toBeFocused()
-      // The room under the table goes with the menu.
-      expect(await page.locator('.table-wrap').evaluate((wrap) => wrap.style.paddingBottom)).toBe('')
-      await row.locator('.row-menu > summary').click()
-
       // The destructive buttons have their own colour; no button of a row has the primary style (REV-36).
       let colors = await page.evaluate(() => {
         let primary = document.querySelector('.button-primary')
-        let danger = document.querySelector('.button-danger')
-        return [primary && getComputedStyle(primary).backgroundColor, danger && getComputedStyle(danger).color]
+        let danger = document.querySelector('.confirm-popover .button-danger-solid')
+        return [primary && getComputedStyle(primary).backgroundColor, danger && getComputedStyle(danger).backgroundColor]
       })
+      expect(colors[1]).not.toBeNull()
       expect(colors[0]).not.toEqual(colors[1])
       await expect(page.locator('.row-action .button-primary')).toHaveCount(0)
+      await page.keyboard.press('Shift+Tab')
+      await expect(act).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(trigger).toBeFocused()
+
+      // With the pointer: "…", "Disable Kentō…", then "Cancel".
+      await trigger.click()
+      await disable.click()
+      await expect(dialog).toBeVisible()
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toBeHidden()
+      await expect(menu).toBeHidden()
+      await expect(trigger).toBeFocused()
 
       await trigger.click()
+      await disable.click()
       await act.click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard is disabled.' })).toBeVisible()
       await expect(rowOf(page, 'orchard').getByText('review.yml@stable')).toBeVisible()
@@ -190,7 +215,7 @@ test.describe('the Repos screen', () => {
         let wrap = document.querySelector('.table-wrap')!
         let box = wrap.getBoundingClientRect()
         // REV-91: a row shows "Enable" and the menu "…"; "Disable Kentō…" is in the menu.
-        let actions = [...document.querySelectorAll('.row-action > .button, .row-action > .row-menu > summary')].map((button) => {
+        let actions = [...document.querySelectorAll('.row-action > .button, .row-action > .row-menu-box > .row-menu-trigger')].map((button) => {
           let r = button.getBoundingClientRect()
           return r.left >= box.left - 0.5 && r.right <= Math.min(box.right, window.innerWidth) + 0.5
         })
@@ -216,19 +241,20 @@ test.describe('the Repos screen', () => {
       expect(layout.actions, `actions at ${viewport} px`).not.toContain(false)
       expect(layout.broken, `tags and model ids at ${viewport} px`).toEqual([])
 
-      await row.locator('.row-menu > summary').click()
-      let disable = row.locator('summary', { hasText: 'Disable' })
-      await disable.scrollIntoViewIfNeeded()
+      let { trigger, menu } = menuOf(page, LONG_REPO_NAME)
+      await trigger.click()
+      let disable = menu.getByRole('menuitem', { name: /^Disable/ })
       await expect(disable).toBeInViewport({ ratio: 1 })
       let right = await disable.evaluate((el) => el.getBoundingClientRect().right - window.innerWidth)
       expect(right, `"Disable" at ${viewport} px`).toBeLessThanOrEqual(0)
       // The open menu covers the row under it: closed again for axe.
-      await row.locator('.row-menu > summary').click()
+      await page.keyboard.press('Escape')
+      await expect(menu).toBeHidden()
     }
     await expectNoAxeViolations(page)
   })
 
-  test('a click inside the inner confirmation does not close the menu, and "Cancel" gives the focus back to the summary (Kentō #d30d83)', async ({ page }) => {
+  test('a click inside the confirmation keeps it open; a link of the menu goes to its page at the keyboard (Kentō #d30d83, KNT-163)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
     let row = rowOf(page, 'orchard')
@@ -236,56 +262,84 @@ test.describe('the Repos screen', () => {
     if (await enable.count()) {
       await enable.click()
       await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
-      row = rowOf(page, 'orchard')
     }
-    let menu = row.locator('.row-menu')
-    let summary = menu.locator('> summary')
-    let confirm = menu.locator('details[data-confirm]')
-    await summary.click()
-    // The trigger of the confirmation, then its text: both are clicks inside the menu.
-    await confirm.locator('> summary').click()
-    await expect(confirm).toHaveAttribute('open', '')
-    await confirm.getByText('The published reviews and the counter stay').click()
-    await expect(menu).toHaveAttribute('open', '')
-    await expect(confirm).toHaveAttribute('open', '')
-    // "Cancel": confirm.js closes the confirmation, then row-menu.js the menu, focus on its summary.
-    await confirm.getByRole('button', { name: 'Cancel' }).click()
-    await expect(confirm).not.toHaveAttribute('open', '')
-    await expect(menu).not.toHaveAttribute('open', '')
-    await expect(summary).toBeFocused()
+    await hydrated(page)
+    let { trigger, menu } = menuOf(page, 'orchard')
+    await trigger.click()
+    await menu.getByRole('menuitem', { name: 'Disable orchard Kentō…' }).click()
+    let dialog = page.getByRole('dialog', { name: 'Disable orchard Kentō…' })
+    await dialog.getByText('The published reviews and the counter stay').click()
+    await expect(dialog).toBeVisible()
+    // A click outside closes it, and leaves the focus where it went.
+    await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
+    await expect(dialog).toBeHidden()
 
-    // Back from the next page (bfcache), the page comes back as it was left: the menu closes.
-    await summary.click()
-    await expect(menu).toHaveAttribute('open', '')
-    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
-    await expect(menu).not.toHaveAttribute('open', '')
-    await expect(row.locator('.row-action')).not.toHaveClass(/row-action-open/)
+    // Enter on "See the findings": the menu closes, then the page changes. Back, the menu is closed.
+    await trigger.focus()
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+$/)
+    await page.goBack()
+    await hydrated(page)
+    await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect(menuOf(page, 'orchard').menu).toBeHidden()
   })
 
   test('a menu "…" closes on Escape and on a click outside, one open at a time; "Search" shows at the keyboard (REV-91)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
-    let orchard = rowOf(page, 'orchard').locator('.row-menu')
-    let fruitback = rowOf(page, 'fruitback').locator('.row-menu')
-    await orchard.locator('summary').first().click()
-    await expect(orchard).toHaveAttribute('open', '')
+    await hydrated(page)
+    let orchard = menuOf(page, 'orchard')
+    let fruitback = menuOf(page, 'fruitback')
+    await orchard.trigger.click()
+    await expect(orchard.menu).toBeVisible()
+    await expect(orchard.trigger).toHaveAttribute('aria-expanded', 'true')
     // An admin's card has no label on its actions either, under 760 px as above.
     expect(await rowOf(page, 'orchard').locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
-    // The open cell is marked by row-menu.js, not only by :has(): it sits above the rows under it.
-    await expect(rowOf(page, 'orchard').locator('.row-action')).toHaveClass(/row-action-open/)
-    await fruitback.locator('summary').first().click()
-    await expect(fruitback).toHaveAttribute('open', '')
-    await expect(orchard).not.toHaveAttribute('open', '')
-    await expect(rowOf(page, 'orchard').locator('.row-action')).not.toHaveClass(/row-action-open/)
-    await expect(rowOf(page, 'fruitback').locator('.row-action')).toHaveClass(/row-action-open/)
+    // A click on another "…" closes the open menu and opens its own: one menu open at a time.
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    await expect(orchard.menu).toBeHidden()
     await page.keyboard.press('Escape')
-    await expect(fruitback).not.toHaveAttribute('open', '')
-    await expect(fruitback.locator('summary').first()).toBeFocused()
-    await fruitback.locator('summary').first().click()
+    await expect(fruitback.menu).toBeHidden()
+    await expect(fruitback.trigger).toBeFocused()
+    await fruitback.trigger.click()
     await page.getByRole('heading', { level: 1, name: 'Repos' }).click()
-    await expect(fruitback).not.toHaveAttribute('open', '')
-
+    await expect(fruitback.menu).toBeHidden()
+    // A click outside gives the focus to what it clicked, not back to "…": a field keeps it.
     let search = page.getByRole('searchbox', { name: 'Search a repo by its name' })
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    await search.click()
+    await expect(fruitback.menu).toBeHidden()
+    // The menu would give the focus back to "…" a frame or two later: it does not.
+    await page.waitForTimeout(300)
+    await expect(search).toBeFocused()
+    // A slow click (700 ms between press and release) too, on the row beside the menu: the menu
+    // closes on the release, and "…" does not take the focus back then (Fable critique P2-2).
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    let cell = (await rowOf(page, 'fruitback').getByRole('rowheader').boundingBox())!
+    await page.mouse.move(cell.x + 4, cell.y + cell.height - 4)
+    await page.mouse.down()
+    await page.waitForTimeout(700)
+    await page.mouse.up()
+    await expect(fruitback.menu).toBeHidden()
+    await page.waitForTimeout(300)
+    await expect(fruitback.trigger).not.toBeFocused()
+    // A click on the "…" of another row: the focus goes to its open menu.
+    await orchard.trigger.click()
+    await fruitback.trigger.click()
+    await expect(fruitback.menu).toBeVisible()
+    await page.waitForTimeout(300)
+    await expect(fruitback.menu).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(fruitback.menu).toBeHidden()
+    // Escape gives the focus back to "…", once the menu has closed.
+    await expect(fruitback.trigger).toBeFocused()
+
     let submit = page.getByRole('button', { name: 'Search', exact: true })
     expect((await submit.boundingBox())?.width ?? 0).toBeLessThanOrEqual(1)
     await search.focus()
@@ -306,15 +360,16 @@ test.describe('the Repos screen', () => {
       row = rowOf(page, 'orchard')
     }
     await page.setViewportSize({ width: 280, height: 800 })
-    await row.locator('.row-menu > summary').click()
-    await row.locator('summary', { hasText: 'Disable' }).click()
-    let panel = row.locator('.row-menu > div')
-    let edges = await panel.evaluate((el) => {
+    await hydrated(page)
+    let { trigger, menu } = menuOf(page, 'orchard')
+    await trigger.click()
+    let inside = (el: Element) => {
       let box = el.getBoundingClientRect()
-      return { left: box.left, right: box.right, width: window.innerWidth }
-    })
-    expect(edges.left).toBeGreaterThanOrEqual(0)
-    expect(edges.right).toBeLessThanOrEqual(edges.width)
+      return box.left >= 0 && box.right <= window.innerWidth
+    }
+    expect(await page.locator('.row-menu-popover:popover-open').evaluate(inside)).toBe(true)
+    await menu.getByRole('menuitem', { name: 'Disable orchard Kentō…' }).click()
+    expect(await page.getByRole('dialog', { name: 'Disable orchard Kentō…' }).evaluate(inside)).toBe(true)
   })
 
   test('a long list: 25 rows a page, numbered pages, the enabled ones first, a search and the filters (REV-36, KNT-146)', async ({ page }) => {
@@ -409,7 +464,8 @@ test.describe('the Repos screen', () => {
       // The row keeps its place until the next load, marked; the page does not scroll.
       await expect(row).toBeInViewport()
       await expect(row).toHaveClass(/\brow-changed\b/)
-      await expect(row.locator('.row-menu > summary')).toBeFocused()
+      // KNT-163: the menu "…" of the new row hydrates, and keeps the focus.
+      await expect(menuOf(page, 'zz-18').trigger).toBeFocused()
       expect(Math.abs((await top()) - before)).toBeLessThan(4)
       // The counts of the screen follow.
       await expect(page.getByRole('link', { name: /^Enabled/ }).locator('.list-filter-count')).toHaveText('1')
@@ -419,7 +475,7 @@ test.describe('the Repos screen', () => {
       await rowOf(page, 'zz-05').getByRole('button', { name: 'Enable zz-05' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-05 is enabled.' })).toBeAttached()
       await expect(rowOf(page, 'zz-05').locator('.tag', { hasText: /^Kentō$/ })).toBeVisible()
-      await expect(rowOf(page, 'zz-05').locator('.row-menu > summary')).toBeFocused()
+      await expect(menuOf(page, 'zz-05').trigger).toBeFocused()
 
       // Saved, but its row cannot be read (the network goes after the change): no message of a
       // failure; the browser goes to the screen of the redirect (Kentō #e074d4).
@@ -438,19 +494,18 @@ test.describe('the Repos screen', () => {
       let still = Math.round((await first.boundingBox())!.y)
       await first.getByRole('button', { name: 'Enable zz-02' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-02 is enabled.' })).toBeAttached()
-      await expect(rowOf(page, 'zz-02').locator('.row-menu > summary')).toBeFocused()
+      await expect(menuOf(page, 'zz-02').trigger).toBeFocused()
       expect(Math.abs(Math.round((await rowOf(page, 'zz-02').boundingBox())!.y) - still)).toBeLessThan(4)
       row = rowOf(page, 'zz-18')
 
-      // Disable, in place too: the row goes back to "none", with its "Enable" focused.
-      await row.locator('.row-menu > summary').click()
-      await row.locator('summary', { hasText: 'Disable' }).click()
-      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      // Disable, in place too, from the menu of the row that was swapped: the row goes back to
+      // "none", with its "Enable" focused. The popover closed before the row went: the page scrolls.
+      await (await chooseDisable(page, 'zz-18')).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-18 is disabled.' })).toBeAttached()
       row = rowOf(page, 'zz-18')
       await expect(row.getByRole('button', { name: 'Enable zz-18' })).toBeFocused()
-      // The room that the open menu took under the table is given back.
-      expect(await page.locator('.table-wrap').evaluate((wrap) => (wrap as HTMLElement).style.paddingBottom)).toBe('')
+      await expect(page.locator(':popover-open')).toHaveCount(0)
+      expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).not.toBe('hidden')
       expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
 
       // The server refuses: the row says so, and stays as it was; a second try works.
@@ -468,13 +523,12 @@ test.describe('the Repos screen', () => {
       // A redirect to another screen that fails is a refusal, not a saved change (Kentō #7cf7a5):
       // the row says so, and the page stays.
       row = rowOf(page, 'zz-18')
-      await row.locator('.row-menu > summary').click()
-      await row.locator('summary', { hasText: 'Disable' }).click()
+      let act = await chooseDisable(page, 'zz-18')
       await page.route('**/repos/*/disable*', (route) =>
         route.fulfill({ status: 303, headers: { Location: '/no-such-screen?done=disabled' } }),
       )
       let here = page.url()
-      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await act.click()
       await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
       expect(page.url()).toBe(here)
       await page.unroute('**/repos/*/disable*')
@@ -483,20 +537,18 @@ test.describe('the Repos screen', () => {
       // A redirect back to this screen, but not the one of a saved change (no `done=`): a refusal
       // too (Kentō #807f15).
       row = rowOf(page, 'zz-18')
-      await row.locator('.row-menu > summary').click()
-      await row.locator('summary', { hasText: 'Disable' }).click()
+      act = await chooseDisable(page, 'zz-18')
       await page.route('**/repos/*/disable*', (route) => route.fulfill({ status: 303, headers: { Location: '/repos?q=zz-' } }))
-      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await act.click()
       await expect(row.getByRole('alert')).toHaveText('Kentō did not save this change. Reload the page, then try again.')
       await page.unroute('**/repos/*/disable*')
       await page.goto('/repos?q=zz-')
 
       // The network is gone: the row says so.
       row = rowOf(page, 'zz-18')
-      await row.locator('.row-menu > summary').click()
-      await row.locator('summary', { hasText: 'Disable' }).click()
+      act = await chooseDisable(page, 'zz-18')
       await page.route('**/repos/*/disable*', (route) => route.abort())
-      await row.getByRole('button', { name: 'Disable zz-18' }).click()
+      await act.click()
       await expect(row.getByRole('alert')).toHaveText('Kentō could not be reached. Check the connection, then try again.')
       await page.unroute('**/repos/*/disable*')
       await expectNoAxeViolations(page)
@@ -568,6 +620,31 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('a row swapped 4 times in place leaves no listener behind on the document (Fable critique P3-3)', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'the listeners are counted through the Chrome DevTools Protocol')
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    await page.goto('/repos')
+    await hydrated(page)
+    let cdp = await page.context().newCDPSession(page)
+    let listeners = async () => {
+      let { result } = await cdp.send('Runtime.evaluate', { expression: 'document' })
+      let { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! })
+      return listeners.length
+    }
+    let before = await listeners()
+    for (let round = 0; round < 2; round++) {
+      await rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' }).click()
+      await expect(page.getByRole('status').filter({ hasText: 'garden is enabled.' })).toBeAttached()
+      await expect(menuOf(page, 'garden').trigger).toBeFocused()
+      await (await chooseDisable(page, 'garden')).click()
+      await expect(page.getByRole('status').filter({ hasText: 'garden is disabled.' })).toBeAttached()
+      await expect(rowOf(page, 'garden').getByRole('button', { name: 'Enable garden' })).toBeFocused()
+      await expect(menuOf(page, 'garden').trigger).toBeVisible()
+    }
+    expect(await listeners()).toBe(before)
+  })
+
   test('a server that does not answer: the row says so after the timeout (KNT-147)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
@@ -589,6 +666,8 @@ test.describe('the Repos screen', () => {
     await expect(page.getByRole('button', { name: /^Enable/ })).toHaveCount(0)
     await expect(page.locator('summary', { hasText: 'Disable' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Read GitHub again' })).toHaveCount(0)
+    await hydrated(page)
+    await expect(page.getByRole('menuitem', { name: /^Disable/, includeHidden: true })).toHaveCount(0)
     // REV-91: a member keeps the menu "…" with the config and the findings; its cell has no label.
     let row = rowOf(page, 'orchard')
     expect(await row.locator('.row-action').evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('none')
@@ -598,10 +677,10 @@ test.describe('the Repos screen', () => {
       expect(await gh.locator('td').nth(5).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
       await expect(gh.locator('td').nth(5)).toContainText('Kentō not enabled')
     }
-    await row.locator('.row-menu > summary').click()
+    let { trigger, menu } = menuOf(page, 'orchard')
+    await trigger.click()
     for (let name of ['Open the config', 'See the findings']) {
-      await row.getByRole('link', { name }).scrollIntoViewIfNeeded()
-      await expect(row.getByRole('link', { name })).toBeInViewport({ ratio: 1 })
+      await expect(menu.getByRole('menuitem', { name })).toBeInViewport({ ratio: 1 })
     }
     await expectNoAxeViolations(page)
   })
@@ -647,5 +726,26 @@ test.describe('the Repos screen without JavaScript', () => {
       return getComputedStyle(wrap).overflowX === 'visible' || (box.top >= frame.top && box.bottom <= frame.bottom)
     })
     expect(fits).toBe(true)
+  })
+
+  test('KNT-163: the menu "…" and its confirmation work as a <details>: enable, then disable orchard', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await page.goto('/repos')
+    // No runtime: the page keeps the HTML of the server.
+    await expect(page.locator('html')).not.toHaveAttribute('data-hydrated', '')
+    let row = rowOf(page, 'orchard')
+    let enable = row.getByRole('button', { name: 'Enable orchard' })
+    if (await enable.count()) {
+      await enable.click()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
+      row = rowOf(page, 'orchard')
+    }
+    await row.locator('.row-menu > summary').click()
+    await expect(row.getByRole('link', { name: 'Open the config' })).toBeVisible()
+    await expect(row.getByRole('link', { name: 'See the findings' })).toHaveAttribute('href', /\/findings\?repo=[0-9a-f-]+$/)
+    await row.locator('.row-menu .confirm > summary').click()
+    await expect(row).toContainText('The published reviews and the counter stay')
+    await row.getByRole('button', { name: 'Disable orchard' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'orchard is disabled.' })).toBeVisible()
   })
 })
