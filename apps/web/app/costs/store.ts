@@ -108,7 +108,8 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           from costs join repos on repos.id = costs.repo_id
           where costs.created_at >= ${start}::timestamptz
           group by repos.id, repos.full_name
-          order by sum(costs.cost_usd) desc nulls last, repos.full_name`,
+          -- A repo whose costs are all unknown counts $0, as its row says: it sorts with the $0 ones (Kentō #b5e005).
+          order by coalesce(sum(costs.cost_usd), 0) desc, repos.full_name`,
         sql<{ key: Level; usd: string; count: string }[]>`
           with costs as (${costs})
           select jobs.level as key, coalesce(sum(costs.cost_usd), 0)::text as usd, count(*)::text as count
@@ -120,7 +121,7 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           select model as key, coalesce(sum(cost_usd), 0)::text as usd, count(*)::text as count
           from costs where created_at >= ${start}::timestamptz
           group by model
-          order by sum(cost_usd) desc nulls last, model`,
+          order by coalesce(sum(cost_usd), 0) desc, model nulls last`,
         sql<{ id: string; kind: JobKind; repoId: string; repo: string; prNumber: number; level: Level; model: string | null; usd: string; createdAt: Date | string }[]>`
           with costs as (${costs})
           select costs.id, jobs.kind, costs.repo_id as "repoId", repos.full_name as repo, costs.pr_number as "prNumber",

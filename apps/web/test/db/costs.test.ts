@@ -162,4 +162,25 @@ describe('the costs of an org by period (KNT-188)', () => {
     let report = await store.report(org, 'last-month')
     assert.deepEqual(report.caps, { dailyCapUsd: null, monthlyCapUsd: 25, alertPct: 70 })
   })
+
+  it('ranks a repo whose costs are all unknown as $0, with the $0 repos by name (Kentō #b5e005)', async () => {
+    let sql = database.sql
+    let add = async (name: string, id: number) => {
+      let [row] = await sql<{ id: string }[]>`
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+        values (${otherOrg}, (select id from installations where org_id = ${otherOrg} limit 1), ${id}, ${name}, true) returning id`
+      return row!.id
+    }
+    await run({ repo: await add('orchard/zero', 6002), level: 'lite', usd: 0, model: 'model-small', daysAgo: 1 })
+    await run({ repo: await add('orchard/a-unknown', 6003), level: 'lite', usd: null, model: 'model-small', daysAgo: 1 })
+    let report = await store.report(otherOrg, '30d')
+    assert.deepEqual(
+      report.byRepo.map((row) => [row.label, row.usd]),
+      [
+        ['orchard/app', 100],
+        ['orchard/a-unknown', 0],
+        ['orchard/zero', 0],
+      ],
+    )
+  })
 })
