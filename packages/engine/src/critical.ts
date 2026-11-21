@@ -23,7 +23,7 @@ export type ChangedFile = { path: string; from?: string; added: string[]; remove
 // A test, a story, a document or a translation never makes a change critical by itself.
 const TEST_FILE =
   /\.(test|spec|cy|e2e|stories)\.[a-z]+$|_(test|spec)\.(go|py|rb|ts|js|ex|exs)$|(^|\/)test_[^/]*\.py$|(^|\/)(tests?|tests?_\w+|__tests__|__mocks__|mocks?|spec|specs|e2e|fixtures?|cypress|playwright|testing|stories)\//;
-const DOC_FILE = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(docs?|locales?|i18n|translations?)\//;
+const DOC_FILE = /\.(md|mdx|txt|rst|adoc)$|(^|\/)(docs?|locales?|i18n|translations?)\/|(^|\/)(messages|lang|langs)\/[^/]+\.json$/;
 // Code, and the templates that hold code (a role check in a Svelte or a Vue file).
 const SOURCE_FILE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|svelte|vue|astro|erb|py|rb|go|rs|java|kt|php|cs|ex|exs|prisma)$/;
 // A file of config that can hold rules of access.
@@ -45,17 +45,19 @@ const MIGRATION_FILE = /(^|\/)(migrations?|migrate)\/|(^|\/)alembic\/versions\/|
 const SECRET_FILE =
   /(^|\/)\.env(\.(?!example$|sample$|template$|dist$|defaults$)[\w-]+)?$|(^|\/)(secrets?|credentials?)(\.[\w.-]+)?$|\.(pem|key|p12|pfx|jks|keystore)$|(^|\/)id_(rsa|ecdsa|ed25519)$/;
 // A folder whose files gate a request or hold the rules of access: any change there is critical.
-const AUTH_FOLDER = /(^|\/)(auth|authn|authentication|sessions?|security|middlewares?)\//;
+// A folder of middlewares counts only with a signal of auth, session or role in its changed lines.
+const AUTH_FOLDER = /(^|\/)(auth|authn|authentication|sessions?|security)\//;
 const ACCESS_FOLDER = /(^|\/)(authz|authorization|permissions?|policies|rbac|acl)\//;
-// The gate of every request of a framework: Next.js `middleware.ts`, SvelteKit `hooks.server.ts`.
-// A hook of the client that follows the user of the session: `useCurrentUser.ts`, `useSession.ts`.
-const GATE_FILE = /(^|\/)(middleware|hooks\.server)\.[jt]s$|(^|\/)use(CurrentUser|Session|Auth|Viewer|Me)\.[jt]sx?$/;
+// The gate of every request of SvelteKit, `hooks.server.ts`, and a hook of the client that follows
+// the user of the session: `useCurrentUser.ts`, `useSession.ts`. A `middleware.ts` (Next.js, but
+// also Redux) counts only with a signal of auth, session or role in its changed lines.
+const GATE_FILE = /(^|\/)hooks\.server\.[jt]s$|(^|\/)use(CurrentUser|Session|Auth|Viewer|Me)\.[jt]sx?$/;
 // A file of rules of access: `permissions.yml`, `roles.json`, `firestore.rules`, a Rego policy.
 const RULES_FILE = /(^|\/)(permissions?|roles|policies|policy|acl)\.(ya?ml|json|toml)$|\.rules(\.json)?$|\.rego$/;
 // A map of the routes to their permissions or domains: `route-domains.ts`, `routePermissions.ts`.
 const ROUTE_MAP_FILE = /(^|\/)routes?[-_]?(domains?|permissions?|scopes?|access|polic(y|ies)|guards?)\.[a-z]+$/i;
 const WEBHOOK_FOLDER = /(^|\/)webhooks?\//;
-const PAYMENT_FOLDER = /(^|\/)(billing|payments?|stripe|checkout)\//;
+const PAYMENT_FOLDER = /(^|\/)(billing|payments?|stripe)\//;
 
 // The words of a name, split on separators and on camelCase: `orgMembers.ts` gives `org members ts`.
 const words = (name: string): string[] =>
@@ -77,18 +79,25 @@ const STRONG_WORDS: [CriticalArea, ReadonlySet<string>][] = [
 const WEAK_WORDS: [CriticalArea, ReadonlySet<string>][] = [
   ['auth', new Set(['login', 'logout', 'signin', 'signup', 'oauth', 'oidc', 'saml', 'sso', 'session', 'sessions', 'password', 'passwords', 'jwt', 'csrf', 'impersonate', 'impersonation'])],
   ['access', new Set(['role', 'roles', 'member', 'members', 'membership', 'memberships', 'invitation', 'invitations', 'invite', 'invites', 'admin', 'admins', 'owner', 'owners'])],
-  ['payments', new Set(['invoice', 'invoices', 'refund', 'refunds', 'payout', 'payouts', 'checkout'])],
+  ['payments', new Set(['invoice', 'invoices', 'refund', 'refunds', 'payout', 'payouts'])],
   ['secrets', new Set(['secret', 'secrets', 'credential', 'credentials', 'vault', 'kms'])],
 ];
 // A changed line that does something: a condition, a return, a call that writes. A line of markup
-// text or of a class name is none.
-const LOGIC = /\bawait\b|\bif\s*\(|\breturn\b|=>|\bfunction\b|\bwhere\b|\bthrow\b|&&|\|\||\.(delete|update|insert|remove|create|upsert|set|save|destroy)\w*\s*\(/;
+// text, of a class name, or of a list that the screen maps (`members.map((m) => <li>…)`) is none.
+const LOGIC = /\bawait\b|\bif\s*\(|\breturn\b|\bfunction\b|\bwhere\b|\bthrow\b|\.(delete|update|insert|remove|create|upsert|set|save|destroy)\w*\s*\(/;
 
 // The roles of ARIA, which a check of `node.role` compares: no role of a user.
 const ARIA_ROLE = /role\s*(===|!==|==|!=)\s*['"`](button|link|menu|menuitem|dialog|alertdialog|tab|tabpanel|checkbox|radio|listbox|option|presentation|none|img|heading|navigation|main|textbox|grid|row|cell|switch|slider|tooltip|status|alert|region|banner|list|listitem|group|separator|combobox|searchbox|form|article)['"`]/;
 
-/** A rule of the changed lines: its area, its pattern, and whether it reads only the removed lines. */
-type ContentRule = { area: CriticalArea; pattern: RegExp; removedOnly?: boolean; unless?: RegExp };
+// The names of a filter of ownership.
+const OWNER = 'orgId|organizationId|organisationId|tenantId|ownerId|workspaceId|teamId|accountId|org_id|organization_id|tenant_id|owner_id|workspace_id|team_id|account_id';
+
+/**
+ * A rule of the changed lines: its area, its pattern, whether it reads only the removed lines, a
+ * pattern of a line that it skips, and (`gone`) whether the name that it matched must be absent from
+ * the added lines of the file.
+ */
+type ContentRule = { area: CriticalArea; pattern: RegExp; removedOnly?: boolean; unless?: RegExp; gone?: boolean };
 
 // Changed code that checks who may act, or that handles a session, a credential or a signature.
 // Identifiers only: the text of a screen ("Sign in") is copy.
@@ -105,11 +114,20 @@ const CODE_RULES: ContentRule[] = [
   },
   { area: 'access', pattern: /\brole\s*(===|!==|==|!=)\s*['"`]|\brole\s+in\b/, unless: ARIA_ROLE },
   { area: 'access', pattern: /\b(roles|permissions|scopes|grants)\??\.(includes|has|some|every|indexOf)\s*\(/ },
-  { area: 'access', pattern: /\b\w*[a-z]Permissions?\b|\bpermissions?\s*[:=[(]/ },
+  // `requestPermission` and `navigator.permissions` are the permissions of the browser.
+  { area: 'access', pattern: /\b\w*[a-z]Permissions?\b|\bpermissions?\s*[:=[(]/, unless: /\b(request|query)Permission\b|navigator\.permissions|Notification\.permission/ },
   // A check against a list of protected values: a reserved name, a blocked domain.
-  { area: 'access', pattern: /\b(PROTECTED|RESERVED|BLOCKED|BANNED|FORBIDDEN|DENIED)_?\w*\.(has|includes)\s*\(|\b(isReserved|isProtected|reservedNames|protectedNames|blockedNames)\b/i },
-  // A filter of ownership that goes from a query: the rows of another org can then be read.
-  { area: 'access', pattern: /\b(orgId|organizationId|organisationId|tenantId|ownerId|workspaceId|teamId|accountId|org_id|organization_id|tenant_id|owner_id|workspace_id|team_id|account_id)\b\s*[:=,)]/, removedOnly: true },
+  { area: 'access', pattern: /\b(PROTECTED|RESERVED|BLOCKED|BANNED|FORBIDDEN|DENIED)_?\w*\.(has|includes)\s*\(|\b(isReserved|isProtected|reservedNames|protectedNames|blockedNames)\b/ },
+  // A filter of ownership that goes from a query: the rows of another org can then be read. It counts
+  // only when the name is gone from the added lines of the file: a moved argument keeps the filter.
+  // The line must read as a filter: a key of a `where` object, a comparison, or an argument of `eq`,
+  // `and` or `where`. An argument of a plain call (`list(sql, orgId, page)`) is none.
+  {
+    area: 'access',
+    pattern: new RegExp(`(?:\\b(${OWNER})\\s*:|\\b(?:eq|and|where|filter|whereEq)\\s*\\(.*?\\b(${OWNER})\\b|\\b(${OWNER})\\s*(?:=|===|==|!=|IN\\b)|\\.(${OWNER})\\s*(?:===|==|!==|!=))`),
+    removedOnly: true,
+    gone: true,
+  },
   // The guards of a framework.
   {
     area: 'auth',
@@ -118,21 +136,32 @@ const CODE_RULES: ContentRule[] = [
   {
     area: 'auth',
     pattern:
-      /\b(getSession|getServerSession|requireAuth|requireUser|requireSession|validateSession|verifySession|invalidateSession|createSession|destroySession|verifyToken|verifyJwt|verifyPassword|hashPassword|comparePassword|timingSafeEqual|bcrypt|argon2|scrypt|signIn|signOut|setCookie|useCurrentUser|currentUser)\b|\b(httpOnly|sameSite|secure)\s*[:=]|\bjwt\.(sign|verify|decode)\b|\bcookies\(\)\.(get|set|delete)\b|\.cookies\.(get|set|delete)\b|\buseSession\s*\(|\bsession\??\.(user|userId|destroy|regenerate)\b|\b(req|request|ctx\.state|locals|event\.locals)\.user\b|\bqueryClient\.(clear|resetQueries|removeQueries)\s*\(/,
+      /\b(getSession|getServerSession|requireAuth|requireUser|requireSession|validateSession|verifySession|invalidateSession|createSession|destroySession|verifyToken|verifyJwt|verifyPassword|hashPassword|comparePassword|timingSafeEqual|bcrypt|argon2|scrypt|setCookie|useCurrentUser)\b|\b(httpOnly|sameSite)\s*[:=]|\bjwt\.(sign|verify|decode)\b|\bcookies\(\)\.(get|set|delete)\b|\.cookies\.(get|set|delete)\b|\buseSession\s*\(|\bsession\??\.(user|userId|destroy|regenerate)\b|\b(req|request|ctx\.state|locals|event\.locals)\.user\b|\bqueryClient\.(clear|resetQueries|removeQueries)\s*\(/,
   },
   { area: 'webhooks', pattern: /x-hub-signature|stripe-signature|x-signature|\bcreateHmac\b|\bverifySignature\b|\bconstructEvent\b|\bverifyWebhook\w*/i },
-  { area: 'secrets', pattern: /(process\.env|import\.meta\.env|Deno\.env\.get\(|os\.environ(\.get)?|os\.getenv|\bENV)\W{0,3}[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|API_KEY|_KEY|CREDENTIAL)/ },
+  // A variable that the bundler gives to the browser (`NEXT_PUBLIC_`, `VITE_`, `EXPO_PUBLIC_`) is public.
+  { area: 'secrets', pattern: /(process\.env|import\.meta\.env|Deno\.env\.get\(|os\.environ(\.get)?|os\.getenv|\bENV)\W{0,3}(?!(NEXT_|EXPO_|VITE_)?PUBLIC_|VITE_)[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE|API_KEY|_KEY|CREDENTIAL)/ },
   {
     area: 'web',
-    pattern: /Content-Security-Policy|contentSecurityPolicy|\bhelmet\s*\(|Access-Control-Allow-(Origin|Credentials)|\bcors\s*\(|origin:\s*['"`]\*['"`]|\brate_?[lL]imit\w*|\bRateLimit\w*|\bthrottle\w*\s*\(|X-Frame-Options|Strict-Transport-Security/,
+    pattern: /Content-Security-Policy|contentSecurityPolicy|\bhelmet\s*\(|Access-Control-Allow-(Origin|Credentials)|\bcors\s*\(|origin:\s*['"`]\*['"`]|X-Frame-Options|Strict-Transport-Security/,
   },
+  // A limiter of requests that goes, or whose limit changes. The rate limit of an API that the code
+  // calls (`x-ratelimit-remaining`) and a `throttle` of the screen are none.
+  { area: 'web', pattern: /\b(rateLimit|rateLimiter|RateLimiter|slowDown|ThrottlerGuard|ThrottlerModule)\s*[(.]|@Throttle\s*\(/, removedOnly: true },
+  { area: 'web', pattern: /\b(rateLimit|rateLimiter|RateLimiter|slowDown|ThrottlerModule\.forRoot)\s*\(.*\b(max|limit|points|windowMs|ttl|duration)\s*:/ },
 ];
 // A config file that holds rules of access: a key of permissions or roles, or a rule of Firebase.
-const CONFIG_RULES: ContentRule[] = [{ area: 'access', pattern: /^\s*["']?(permissions|roles|scopes|policies|acl|allow|deny)["']?\s*:|\ballow\s+(read|write|create|update|delete|list|get)\b/i }];
+const CONFIG_RULES: ContentRule[] = [{ area: 'access', pattern: /^\s*["']?(permissions|roles|scopes|policies|acl)["']?\s*:/i }];
 // A script of the package manager that runs on install, a registry, or a dependency from git.
-const PACKAGE_RULES: ContentRule[] = [{ area: 'supply', pattern: /"(pre|post)?install"|"prepare"|"prepublish(Only)?"|"(pre|post)pack"|"publishConfig"|"registry"|"(git\+|github:|https?:\/\/)/ }];
+// The URLs of `homepage`, `repository`, `bugs` and `funding` are none.
+const PACKAGE_RULES: ContentRule[] = [
+  { area: 'supply', pattern: /"(pre|post)?install"\s*:|"prepare"\s*:|"prepublish(Only)?"\s*:|"(pre|post)pack"\s*:|"publishConfig"\s*:|"registry"\s*:|"[^"]+"\s*:\s*"(git\+|github:|git:\/\/|https?:\/\/)/, unless: /"(homepage|repository|bugs|funding|url|author|email|\$schema)"\s*:/ },
+];
 // A lock file whose source of a package is not the public registry: more than a change of version.
-const LOCK_RULES: ContentRule[] = [{ area: 'supply', pattern: /(git\+|github:|codeload\.github|https?:\/\/(?!registry\.npmjs\.org|registry\.yarnpkg\.com)[\w.-]+\/)/ }];
+// Only the source of a package counts (`resolved`, `resolution`, `tarball`): a `funding` URL is none.
+const LOCK_RULES: ContentRule[] = [
+  { area: 'supply', pattern: /\b(resolved|resolution|tarball)\b["']?\s*[:=\s]\s*\{?\s*(tarball:\s*)?["']?(git\+|github:|codeload\.github|https?:\/\/(?!registry\.(npmjs\.org|yarnpkg\.com)\/))/ },
+];
 // A change of the schema or of the rights in a SQL file: a plain query is none.
 const SQL_RULES: ContentRule[] = [
   { area: 'migrations', pattern: /\b(create|alter|drop|truncate|rename)\s+(table|index|column|type|schema|view|policy|role|function|trigger|extension|sequence)\b|\b(grant|revoke)\b/i },
@@ -172,9 +201,16 @@ function weakPathArea(file: ChangedFile): CriticalArea | null {
 }
 
 function matchRules(rules: readonly ContentRule[], file: ChangedFile): CriticalArea | null {
-  for (const { area, pattern, removedOnly, unless } of rules) {
+  for (const { area, pattern, removedOnly, unless, gone } of rules) {
     const lines = removedOnly ? file.removed : [...file.added, ...file.removed];
-    if (lines.some((line) => pattern.test(line) && !(unless && unless.test(line)))) return area;
+    const hit = (line: string) => {
+      const match = pattern.exec(line);
+      if (!match || (unless && unless.test(line))) return false;
+      if (!gone) return true;
+      const name = new RegExp(`\\b${match.slice(1).find(Boolean)}\\b`);
+      return !file.added.some((added) => name.test(added));
+    };
+    if (lines.some(hit)) return area;
   }
   return null;
 }
@@ -277,28 +313,64 @@ export type CheckContext = { files: ReadonlySet<string>; texts: readonly string[
 export type CheckResult = { checked: boolean; paths: string[]; others: string[]; roles: string[]; missing: ('paths' | 'roles')[] };
 
 // A role that names no role.
-const PLACEHOLDER_ROLES = new Set(['', 'none', 'n/a', 'na', 'n.a', '-', '--', '—', '–', 'all', 'any', 'anyone', 'everyone', 'all roles', 'every role', 'any role', 'all users', 'nothing', 'unknown', 'tbd', '?', 'null', 'undefined', 'no role', 'no roles', 'not applicable']);
+const PLACEHOLDER_ROLES = new Set(['', 'none', 'n/a', 'na', 'n.a', '-', '--', '—', '–', 'all', 'any', 'anyone', 'everyone', 'nobody', 'all roles', 'every role', 'any role', 'all users', 'nothing', 'unknown', 'tbd', '?', 'null', 'undefined', 'no role', 'no roles', 'not applicable']);
 
-const normalRole = (role: string) => role.toLowerCase().replace(/[`'"*_]/g, '').replace(/\s+/g, ' ').trim().replace(/^[.,;:]+|[.,;:]+$/g, '');
+// The roles that a review can name with no word of the change: the roles of most apps, the visitor
+// with no session, and the actors of CI.
+const ROLE_WORDS =
+  /\b(owners?|admins?|administrators?|members?|viewers?|guests?|anonymous|signed[- ]out|logged[- ]out|not (signed|logged) in|no account|bots?|apps?|forks?|maintainers?|collaborators?)\b/;
 
-/** Whether a role is a real role, and no placeholder ("none", "n/a", "-", "all", empty). */
-export function isRealRole(role: unknown): boolean {
+const normalRole = (role: string) => role.toLowerCase().replace(/[`'"*]/g, '').replace(/\s+/g, ' ').trim().replace(/^[.,;:]+|[.,;:]+$/g, '');
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Whether a role is a real role: no placeholder ("none", "n/a", "-", "all", "nobody"), and either a
+ * role of the small vocabulary of ROLE_WORDS ("admin of another org", "not signed in", "pull request
+ * from a fork"), or a name that the changed lines or the critical files hold as a whole word
+ * (`billing_manager`). With no texts, the vocabulary only.
+ */
+export function isRealRole(role: unknown, texts: readonly string[] = []): boolean {
   if (typeof role !== 'string') return false;
   const text = normalRole(role);
-  return !PLACEHOLDER_ROLES.has(text) && !/^(no|not|none)\b/.test(text);
+  if (PLACEHOLDER_ROLES.has(text)) return false;
+  if (ROLE_WORDS.test(text)) return true;
+  // A name of the code: one token, which the texts hold as a whole word.
+  if (!/^[a-z][\w-]{2,40}$/.test(text)) return false;
+  const name = new RegExp(`(^|[^\\w-])${escapeRegExp(text)}($|[^\\w-])`, 'i');
+  return texts.some((t) => name.test(t));
 }
 
-// A token of a path, without its anchor: `a.ts#L12-L14`, `a.ts:12:3`, `a.ts:12-14`, `./a.ts`.
+// A token of a path, without its anchor and the prefixes of a diff: `b/a.ts`, `./a.ts`, `a.ts#L12-L14`,
+// `a.ts:L12`, `a.ts:12:3`, `a.ts:12-14`.
 const pathToken = (token: string) =>
   token
+    .replace(/^[ab]\//, '')
     .replace(/^[./]*\//, '')
     .replace(/^\/+/, '')
     .replace(/#L\d+(-L?\d+)?$/, '')
+    .replace(/:L\d+(-L?\d+)?$/, '')
     .replace(/(:\d+){1,2}(-\d+)?$/, '')
     .replace(/[.,:;]+$/, '');
 
 const ROUTE = /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/[\w\-./:{}$[\]*]*)/;
 const LIBRARY = /^\s*lib(?:rary)?\s+([@\w./-]+)\s*:\s*\S/i;
+
+/**
+ * The route of a file of file-based routing, with no parameter: `app/routes/api.members.ts` (Remix),
+ * `src/routes/api/members/+server.ts` (SvelteKit), `pages/api/members.ts` and
+ * `app/api/members/route.ts` (Next.js) all give `api/members`. Null: no folder of routes.
+ */
+export function fileRoute(path: string): string | null {
+  // The last folder of routes: `app/routes/api.members.ts` gives `api.members`.
+  const match = /^(?:.*\/)?(?:routes|pages|app)\/(.+)\.[a-z]+$/.exec(path);
+  if (!match) return null;
+  const segments = match[1]!
+    .replace(/\./g, '/')
+    .split('/')
+    .filter((s) => s && !/^(route|index|_index|\+server|\+page\.server|\+page|page)$/.test(s) && !/^[$:[(]/.test(s) && !s.startsWith('_'));
+  return segments.length ? segments.join('/') : null;
+}
 
 /** Whether one entry of `checked.paths` names a file of the diff, a route or a library that the context holds. */
 function verifiedPath(entry: unknown, context: CheckContext): boolean {
@@ -307,25 +379,32 @@ function verifiedPath(entry: unknown, context: CheckContext): boolean {
   if (tokens.some((t) => context.files.has(t))) return true;
   const route = ROUTE.exec(entry)?.[2];
   if (route) {
-    // A route up to its first parameter: `/api/members/:id` gives `/api/members`.
+    // A route up to its first parameter: `/api/members/:id` gives `/api/members`. It must be a whole
+    // path in the texts (`/a` is no part of `/api`), or the route of a file of the diff.
     const literal = route.split(/[:{$[*]/)[0]!.replace(/\/+$/, '');
-    if (literal.length > 1 && context.texts.some((text) => text.includes(literal))) return true;
+    const whole = new RegExp(`(^|[^\\w./-])${escapeRegExp(literal)}(?=$|[/'"\`?#\\s)])`);
+    if (literal.length > 1 && context.texts.some((text) => whole.test(text))) return true;
+    const bare = literal.replace(/^\/+/, '');
+    if (bare && [...context.files].some((file) => fileRoute(file) === bare)) return true;
   }
+  // A library: the module of an import or a require of the texts (`better-auth` for
+  // `from 'better-auth/plugins'`), not any word.
   const library = LIBRARY.exec(entry)?.[1];
-  return Boolean(library && library.length > 1 && context.texts.some((text) => text.includes(library)));
+  if (!library || library.length < 2) return false;
+  const imported = new RegExp(`(from|import|require\\()\\s*['"\`]${escapeRegExp(library)}(['"\`/])`);
+  return context.texts.some((text) => imported.test(text));
 }
 
 /**
  * Whether a review named what it checked: one path that is a file of the diff or a critical file
  * (with or without an anchor, alone or inside a sentence), a route or a library endpoint that the
- * changed lines or the critical files hold (`POST /api/members`, `lib better-auth: removeMember`),
- * and one role that is no placeholder.
+ * change holds (`POST /api/members`, `lib better-auth: removeMember`), and one real role.
  */
 export function namesChecks(checked: Checked | undefined | null, context: CheckContext): CheckResult {
   const entries = (checked?.paths ?? []).filter((p): p is string => typeof p === 'string' && Boolean(p.trim()));
   const paths = entries.filter((p) => verifiedPath(p, context));
   const others = entries.filter((p) => !paths.includes(p));
-  const roles = (checked?.roles ?? []).filter(isRealRole);
+  const roles = (checked?.roles ?? []).filter((r) => isRealRole(r, context.texts));
   const missing = [...(paths.length ? [] : (['paths'] as const)), ...(roles.length ? [] : (['roles'] as const))];
   return { checked: missing.length === 0, paths, others, roles, missing };
 }
