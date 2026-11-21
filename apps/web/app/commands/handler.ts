@@ -337,14 +337,18 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
     let finding = rows[0]!
     // KNT-160. In a thread, an id is optional; when it is there, it must be the id of the finding of
     // the thread. An id of no finding of the pull request gets the reply of an unknown id.
-    if (message.place.kind === 'thread' && command.id && !finding.key.startsWith(command.id)) {
-      let [named] = await db
-        .select({ id: findings.id })
+    if (message.place.kind === 'thread' && command.id) {
+      // The findings of the pull request that the id names, as in the conversation: an id of several
+      // is ambiguous even when one of them is the finding of the thread.
+      let named = await db
+        .select({ key: findings.key })
         .from(findings)
         .innerJoin(repos, eq(repos.id, findings.repoId))
         .where(and(eq(repos.githubRepoId, message.repository.githubRepoId), eq(findings.prNumber, message.prNumber), sql`starts_with(${findings.key}, ${command.id})`))
-        .limit(1)
-      return named ? { kind: 'other_finding', key: finding.key } : { kind: 'unknown_id' }
+        .orderBy(findings.key)
+        .limit(5)
+      if (named.length > 1) return { kind: 'ambiguous_id', ids: named.map((row) => row.key) }
+      if (!finding.key.startsWith(command.id)) return named.length ? { kind: 'other_finding', key: finding.key } : { kind: 'unknown_id' }
     }
     return { kind: 'found', finding }
   }

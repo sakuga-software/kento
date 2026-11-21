@@ -1370,6 +1370,12 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(own.body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
       assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'false positive, the schema validates it' })
       assert.deepEqual(threadReactionsOf(own.payload.comment.id), ['eyes', 'rocket'])
+      // An id that names the finding of the thread and another finding is ambiguous, as in the conversation.
+      let twin = await seedFinding('3cf454bb0044', { title: 'Twin' })
+      let ambiguous = await reply('@kento-review reject #3cf454 not a bug', finding.commentId!)
+      assert.deepEqual(ambiguous.body, { outcome: 'refused', reason: 'reject: ambiguous_id' })
+      assert.match(fake.repliesTo(finding.commentId!).at(-1)!.body, /`#3cf454` matches several findings of this PR/)
+      assert.equal((await statusOf(twin.id)).status, 'open')
       // A longer prefix of the key of the thread works too.
       let longer = await seedFinding('5d6e7f880033', { thread: true, title: 'Third' })
       assert.equal((await reply('@kento-review reject #5d6e7f88 not a bug', longer.commentId!)).body.outcome, 'dismissed')
