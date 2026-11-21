@@ -172,8 +172,12 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
     },
 
     async withOrgLock(orgId, work) {
-      // The store of a `withOrgLock` already holds a lock, in its transaction: one org at a time.
-      if (locked) return work(store)
+      // The store of a `withOrgLock` is in its transaction already: it takes the lock of this org
+      // there too (the lock of the same org again is a no-op), and runs.
+      if (locked) {
+        await sql`select pg_advisory_xact_lock(hashtextextended(${`kento.org_owners:${orgId}`}, 0))`
+        return work(store)
+      }
       return (await sql.begin(async (tx) => {
         await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(orgId)}, 0))`
         return work(createAuthStore(tx as unknown as postgres.Sql, true))

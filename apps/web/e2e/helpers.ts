@@ -75,13 +75,13 @@ export async function openRepoConfig(page: Page, repo: string) {
 export async function withLabelLineHeight(page: Page, lineHeight: string) {
   await page.route('**/assets/kento.css*', async (route) => {
     let response = await route.fetch()
-    await route.fulfill({ response, body: `${await response.text()}\n.label { line-height: ${lineHeight}; }\n` })
+    await route.fulfill({ response, body: `${await response.text()}\n.field-label { line-height: ${lineHeight}; }\n` })
   })
 }
 
 /**
  * KNT-149: follows a link of the sidebar of the settings. Under 900 px the list is folded under
- * "Section …": the helper opens it first, and the link folds it again.
+ * "Sections": the helper opens it first, and the link folds it again.
  */
 export async function goToSettingsLink(page: Page, name: string) {
   let nav = page.getByRole('navigation', { name: 'Sections of the settings' })

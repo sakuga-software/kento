@@ -32,18 +32,18 @@ export function Confirm(handle: Handle<ConfirmProps>) {
     let { trigger, children, action, csrf, submit, form } = handle.props
     return (
       <details class="confirm" data-confirm>
-        <summary class={buttonClass('danger-soft')}>{trigger}</summary>
+        <summary class={buttonClass('danger')}>{trigger}</summary>
         <div class="confirm-body">
           {children}
           <div class="confirm-actions">
             {form ? (
-              <Button variant="danger" type="submit" form={form} formaction={action}>
+              <Button variant="danger-solid" type="submit" form={form} formaction={action}>
                 {submit}
               </Button>
             ) : (
               <form method="post" action={action}>
                 {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
-                <Button variant="danger" type="submit">
+                <Button variant="danger-solid" type="submit">
                   {submit}
                 </Button>
               </form>

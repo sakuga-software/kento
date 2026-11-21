@@ -326,7 +326,7 @@ function CreatedToken(handle: Handle<{ created: CreatedRegistration; kentoUrl: s
           {created.trusted ? null : ' Put your OpenRouter key in place of <your OpenRouter key>.'}
         </p>
         <div class="copy-block">
-          <label class="label" for="docker-command">
+          <label class="field-label" for="docker-command">
             docker run command
           </label>
           <textarea id="docker-command" class="mono command" readOnly rows={command.split('\n').length} spellCheck={false} value={command}></textarea>
@@ -629,7 +629,7 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
         <form method="post" action={routes.runnerNew.href()} noValidate>
           <input type="hidden" name="_csrf" value={csrf} />
           <div class="field">
-            <label class="label" for="runner-name">
+            <label class="field-label" for="runner-name">
               Name
             </label>
             <Input
@@ -649,13 +649,13 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
                 {errors.name}
               </p>
             ) : (
-              <p class="description" id="runner-name-hint">
+              <p class="field-hint" id="runner-name-hint">
                 For example runner-1.
               </p>
             )}
           </div>
           <div class="field">
-            <label class="label" for="runner-labels">
+            <label class="field-label" for="runner-labels">
               Labels
             </label>
             <Input
@@ -673,13 +673,13 @@ function NewRunnerForm(handle: Handle<{ csrf: string; form: RunnersPageProps['fo
                 {errors.labels}
               </p>
             ) : (
-              <p class="description" id="runner-labels-hint">
+              <p class="field-hint" id="runner-labels-hint">
                 Separated by commas. They show on the card of the runner.
               </p>
             )}
           </div>
           <fieldset class="field" aria-describedby={errors.keyMode ? 'runner-key-error' : undefined}>
-            <legend class="label">Model key</legend>
+            <legend class="field-label">Model key</legend>
             <Choice
               type="radio"
               name="keyMode"
