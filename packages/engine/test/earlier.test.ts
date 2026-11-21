@@ -357,6 +357,13 @@ test('a title keeps its sentence, without the stale label (Kentō on #55)', () =
   assert.equal(reply.findings[0]!.title, 'an earlier finding comes back on the refusal');
 });
 
+test('a sentence that cites an open finding and a stale one keeps its note on the open one (Kentō on #55)', () => {
+  const open = finding(BILLING, 386, 'The start date comes from a new schedule');
+  const settled = finding(ACCOUNT, 237, 'The message is not translated');
+  const held = earlierFindingsSection(repo, pushed, [earlier(open, 'open'), earlier(settled, 'fixed')]).held;
+  assert.equal(withPublicLabels('E1 still stands, unlike E2.', held), `#${findingKey(open).slice(0, 6)} ("The start date comes from a new schedule") still stands, unlike an earlier finding.`);
+});
+
 test('the review publishes no label of the pack: a « still stands » on a dismissed finding is gone', async () => {
   const settled = finding(ACCOUNT, 237, 'The message is not translated');
   const model = fakeModel(() => ({ ...answer(4, []), summary: 'The change is small. The open earlier finding E1 still stands.', not_reviewed: [`${ACCOUNT}: not in the changed zone, so E1 was not rechecked`] }));

@@ -38,9 +38,10 @@ export function withPublicLabels(text: string, held: readonly HeldEarlier[], kee
       kept.push(sentence);
       continue;
     }
-    const stale = [...cited].some((ref) => byRef.get(ref)?.status !== 'open');
-    // A title cannot lose its sentence: a label of a finding that is not open becomes « an earlier finding ».
-    if (stale && !keepSentences) continue;
+    const open = (ref: string) => byRef.get(ref)?.status === 'open';
+    // A sentence on stale labels only goes. One that cites an open finding too keeps its note, and a
+    // title its sentence: a label of a finding that is not open becomes « an earlier finding ».
+    if (!keepSentences && ![...cited].some(open)) continue;
     kept.push(
       sentence.replace(LABEL, (ref) => {
         if (!cited.has(ref)) return ref;
