@@ -93,7 +93,8 @@ function commands(): Command[] {
           Kentō reads up to {MAX_RESOLVE_THREADS} open threads, within {MAX_RESOLVE_PACK_BYTES / 1000} KB, with the code of the last commit.
           It answers in each thread, and resolves those that the code fixes. The other threads wait: the summary says so, and a new command
           reads them. Written as a reply in a thread, the command does not run: Kentō reacts 😕 and replies at once that it goes in the
-          conversation, where it reads every open thread, that one too.
+          conversation, where it reads the open threads, that one among them, within the limits above. In a thread, Kentō reads only{' '}
+          <code>reject</code> and <code>feedback</code>.
         </>
       ),
       next: <>A thread that <code>resolve</code> already answered on this commit waits for a new push before Kentō reads it again.</>,

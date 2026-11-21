@@ -17,7 +17,7 @@
 // (reject.ts): 👀 on receipt, 🚀 after the effect, 😕 when a step on GitHub failed. A command in a review thread
 // (`pull_request_review_comment`) gets its reactions and its reply on the routes of the review
 // comments. In a thread, `reject` and `feedback` are read. KNT-160: the other commands get an answer at
-// once that says where to write them; `resolve` there reads every open thread, this one too.
+// once that says where to write them; from the conversation, `resolve` reads the open threads, that one among them.
 import { SHA } from '@kento-review/protocol'
 import { and, eq, sql } from 'drizzle-orm'
 
@@ -335,8 +335,17 @@ export async function findRejectTarget(db: Db, message: CommentCommandMessage, c
     .limit(5)
   if (rows.length === 1) {
     let finding = rows[0]!
-    // KNT-160. In a thread, an id is optional; when it is there, it must be the id of the finding of the thread.
-    if (message.place.kind === 'thread' && command.id && !finding.key.startsWith(command.id)) return { kind: 'other_finding', key: finding.key }
+    // KNT-160. In a thread, an id is optional; when it is there, it must be the id of the finding of
+    // the thread. An id of no finding of the pull request gets the reply of an unknown id.
+    if (message.place.kind === 'thread' && command.id && !finding.key.startsWith(command.id)) {
+      let [named] = await db
+        .select({ id: findings.id })
+        .from(findings)
+        .innerJoin(repos, eq(repos.id, findings.repoId))
+        .where(and(eq(repos.githubRepoId, message.repository.githubRepoId), eq(findings.prNumber, message.prNumber), sql`starts_with(${findings.key}, ${command.id})`))
+        .limit(1)
+      return named ? { kind: 'other_finding', key: finding.key } : { kind: 'unknown_id' }
+    }
     return { kind: 'found', finding }
   }
   if (message.place.kind === 'thread') {
@@ -369,11 +378,13 @@ function targetProblemText(target: Exclude<RejectTarget, { kind: 'found' }>, com
 
 /**
  * KNT-160. The reply to a `reject` of a finding that is no longer open. `fixed`: a later review did
- * not find it again after a push changed its lines (publish.ts). Kentō does not know that the push
+ * not find it again after a push changed its file, near its line when GitHub gave the patch (publish.ts). Kentō does not know that the push
  * fixed it, so the reply does not say so.
  */
 export function closedText(key: string, status: string): string {
-  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its lines' : 'it no longer applies to this PR (stale)'
+  // What the publisher checked: not found again, and a change of its file (near its line when GitHub
+  // gave the patch). Not that the push fixed it.
+  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its file' : 'it no longer applies to this PR (stale)'
   return `The finding \`#${key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`
 }
 
@@ -382,13 +393,14 @@ export function closedText(key: string, status: string): string {
  * run it there, and says at once where it goes.
  */
 export function threadCommandText(command: Exclude<CommentCommand, { verb: 'reject' | 'feedback' | 'unknown' }>): string {
+  let read = `In a thread, Kentō reads \`${mention('reject <cause>')}\` and \`${mention('feedback <opinion>')}\`.`
   if (command.verb === 'resolve') {
     return (
-      `\`${mention('resolve')}\` goes in the conversation of the PR, not in a thread: it reads every open thread of the PR, this one too. ` +
-      `In this thread, Kentō reads only \`${mention('reject <cause>')}\`.`
+      `\`${mention('resolve')}\` goes in the conversation of the PR, not in a thread. From there, Kentō reads the open threads of the PR, ` +
+      `this one among them, within the limits of the command. ${read}`
     )
   }
-  return `In the thread of a finding, Kentō reads only \`${mention('reject <cause>')}\`. A review command goes in the conversation of the PR.`
+  return `${read} A review command goes in the conversation of the PR.`
 }
 
 type PullRequest = {

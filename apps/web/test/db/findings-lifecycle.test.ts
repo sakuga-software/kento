@@ -425,6 +425,36 @@ describe('findings from push to push (REV-16)', () => {
     assert.deepEqual((await findingRows()).map((r) => r.status), ['fixed'])
   })
 
+  it('KNT-160: a dismissed finding that a follower moved, then reopened, is not fixed by a push far from its new line', async () => {
+    let long = [...SUM_V1, ...Array.from({ length: 50 }, (_, i) => `// line ${i + 4}`)]
+    await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+    await database.sql`update findings set status = 'dismissed', status_reason = 'not a bug' where repo_id = ${repoId}`
+    let [stored] = await database.sql<{ key: string }[]>`select key from findings where repo_id = ${repoId}`
+    let key = stored!.key
+    // REV-99. The same defect at line 40, on a head that did not change src/sum.ts: the dismissal holds,
+    // and the row moves its line with its head.
+    let follower = { ...finding({ path: 'src/sum.ts', line: 40, title: 'The sum still subtracts', file: long }), follows: key }
+    await push(HEADS[1]!, [follower], ['src/div.ts'])
+    let [moved] = await database.sql<{ status: string; line: number; sha: string }[]>`
+      select status::text as status, line, last_seen_sha as sha from findings where repo_id = ${repoId}`
+    assert.deepEqual({ ...moved }, { status: 'dismissed', line: 40, sha: HEADS[1] })
+
+    // A person opens it again; a push changes lines 1 to 3, far from line 40: it stays open.
+    await database.sql`update findings set status = 'open', status_reason = null where repo_id = ${repoId}`
+    let nearOld = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[2]!, [], [nearOld], [nearOld])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+  })
+
+  it('KNT-160: the fixed check reads only open findings: a dismissed one stays dismissed when a push changes its line', async () => {
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    await database.sql`update findings set status = 'dismissed', status_reason = 'not a bug' where repo_id = ${repoId}`
+    let onLine = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[1]!, [], [onLine], [onLine])
+    assert.deepEqual((await findingRows()).map((r) => [r.status, r.statusReason]), [['dismissed', 'not a bug']])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
+  })
+
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {
     const twice = ['function a(x: number) {', '  return 1 / x;', '}', 'function b(y: number) {', '  return 2 / y;', '}']
     const moved = ['// Two divisions.', '', ...twice]

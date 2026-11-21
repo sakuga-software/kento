@@ -911,7 +911,7 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a later review did not find it again after a push changed its lines\./)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a later review did not find it again after a push changed its file\./)
       assert.doesNotMatch(fake.repliesTo(fixed.commentId!)[0]!.body, /fixed it/)
       await seedFinding('eeeeee000001', { status: 'stale' })
       let stale = await say('@kento-review reject #eeeeee ok')
@@ -1283,7 +1283,7 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a later review did not find it again after a push changed its lines/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a later review did not find it again after a push changed its file/)
       let stale = await seedFinding('eeeeee000001', { status: 'stale' })
       let staleRefused = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(staleRefused.body, { outcome: 'refused', reason: 'reject: finding is stale' })
@@ -1359,6 +1359,11 @@ describe('commands in the comments of a pull request', () => {
       assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /^@octocat This thread holds the finding `#3cf454`, not `#9ab123`\. /)
       assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /`@kento-review reject #9ab123 <cause>` in the conversation/)
       assert.equal((await statusOf(other.id)).status, 'open', 'the other finding is not touched')
+      // An id of no finding of the pull request: the reply says so, and names no thread.
+      let unknown = await reply('@kento-review reject #ffffff false positive', finding.commentId!)
+      assert.deepEqual(unknown.body, { outcome: 'refused', reason: 'reject: unknown_id' })
+      assert.match(fake.repliesTo(finding.commentId!).at(-1)!.body, /No finding of this PR has the id `#ffffff`\./)
+      assert.doesNotMatch(fake.repliesTo(finding.commentId!).at(-1)!.body, /reply in its thread/)
       assert.equal((await statusOf(finding.id)).status, 'open')
 
       let own = await reply('@kento-review reject #3cf454 false positive, the schema validates it', finding.commentId!)
@@ -1417,14 +1422,14 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(threadReactionsOf(reader.payload.comment.id), [])
       let heavy = await reply('@kento-review heavy', finding.commentId!)
       assert.deepEqual(heavy.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
-      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /reads only `@kento-review reject <cause>`/)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /In a thread, Kentō reads `@kento-review reject <cause>` and `@kento-review feedback <opinion>`\. A review command goes in the conversation of the PR\./)
       // KNT-160. `resolve` in a thread gets an answer at once that says where it goes.
       let resolve = await reply('@kento-review resolve', finding.commentId!)
       assert.deepEqual(resolve.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
       assert.deepEqual(threadReactionsOf(resolve.payload.comment.id), ['confused'])
       assert.match(
         fake.repliesTo(finding.commentId!)[1]!.body,
-        /^@octocat `@kento-review resolve` goes in the conversation of the PR, not in a thread: it reads every open thread of the PR, this one too\./,
+        /^@octocat `@kento-review resolve` goes in the conversation of the PR, not in a thread\. From there, Kentō reads the open threads of the PR, this one among them, within the limits of the command\. In a thread, Kentō reads `@kento-review reject <cause>` and `@kento-review feedback <opinion>`\./,
       )
       assert.equal((await jobs()).length, 0)
     })
