@@ -326,12 +326,26 @@ export function suggestionRange(finding: Finding, hunks: HunkLines): [number, nu
 /** REV-104. The longest patch that a reader sees: a reader does not check a longer one. */
 export const MAX_PATCH_LINES = 40;
 
-/** REV-104. The patch of a finding as a reader sees it, or null when it has none or it is too long. */
+/**
+ * KNT-159. True when `patch` reads as a unified diff: each line starts with `+`, `-`, a space, `@@`
+ * or `\` ("No newline at end of file"), or is empty, and at least one line adds or removes code.
+ * A word such as `follows` or `none`, or a sentence, is not a diff.
+ */
+function readsAsDiff(patch: string): boolean {
+  const rows = patch.split('\n');
+  if (!rows.every((row) => row === '' || /^([+\- \\]|@@)/.test(row))) return false;
+  return rows.some((row) => /^[+-]/.test(row) && !/^(\+\+\+|---)( |$)/.test(row));
+}
+
+/**
+ * REV-104. The patch of a finding as a reader sees it, or null when it has none, it is too long,
+ * or it is not a diff (KNT-159).
+ */
 export function shownPatch(finding: Finding): string | null {
   const patch = (finding.patch ?? '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
   // A fence in the patch would close the code block of the comment.
   if (!patch.trim() || patch.includes('```') || patch.split('\n').length > MAX_PATCH_LINES) return null;
-  return patch;
+  return readsAsDiff(patch) ? patch : null;
 }
 
 

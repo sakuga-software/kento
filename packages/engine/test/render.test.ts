@@ -163,6 +163,15 @@ test('a finding without a thread shows its patch in the description, in a detail
   assert.doesNotMatch(threaded, /```diff/);
 });
 
+test('a finding whose patch is not a diff shows no Fix block, in the description or in its thread (KNT-159)', () => {
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
+  const placeholder = { ...finding, patch: 'follows' };
+  const block = descriptionBlock({ ...answer, findings: [placeholder] }, [{ finding: placeholder, url: null }], [], 0, usage, () => null, context);
+  assert.match(block, /\*\*Fix:\*\* Compare exp with Date\.now\(\)\./, 'the fix text stays');
+  assert.doesNotMatch(block, /<summary>Fix<\/summary>|```diff|follows/);
+  assert.doesNotMatch(inlineBody(placeholder, false), /```diff|follows/);
+});
+
 // REV-106. Every text that a review posts, for each priority and each mark.
 function everyText(icons: Icons): string[] {
   const findings: Finding[] = [

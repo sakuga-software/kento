@@ -71,6 +71,15 @@ test('a patch shows up to its limit of lines, without its fence, and never with 
   assert.equal(shownPatch(finding()), null);
 });
 
+test('a patch shows only when it reads as a unified diff (KNT-159)', () => {
+  for (const text of ['follows', 'none', 'E1', 'The fix is in the next function.', '@@', '--- a/a.ts\n+++ b/a.ts', ' context only']) {
+    assert.equal(shownPatch(finding({ patch: text })), null, text);
+  }
+  assert.equal(shownPatch(finding({ patch: '-  return true;\n+  return exp > now;' })), '-  return true;\n+  return exp > now;');
+  const blank = '@@ -3,3 +3,3 @@\n a();\n\n-b();\n+c();\n\\ No newline at end of file';
+  assert.equal(shownPatch(finding({ patch: blank })), blank, 'an empty context line and the no-newline mark stay');
+});
+
 test('the review keeps a patch only for a finding without an applicable suggestion (REV-104)', async () => {
   const patch = '--- a/a.ts\n+++ b/a.ts\n@@ -18 +18 @@\n-  const v18 = 180;\n+  const v18 = 18;';
   const answer: Answer = {
