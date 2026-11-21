@@ -4,6 +4,7 @@ import { fingerprint } from './fingerprint.ts';
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
+import { moveUnreadPremises } from './premise.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
 import { inHistory } from './history.ts';
@@ -308,6 +309,8 @@ export function finishReview<F extends Finding>(
   // REV-70. A finding that says a name is not imported or not defined is checked against its file.
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
+  // KNT-151. A finding whose premise is code that the review did not read goes to « Not reviewed ».
+  for (const f of moveUnreadPremises(answer)) log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
   // REV-71. A finding that a reply refuted in its thread, on a file that did not change since.
   const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
