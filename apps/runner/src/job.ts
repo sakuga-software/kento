@@ -292,16 +292,23 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
       try {
         return await run({ ...fallback, fellBack: { from, resetAt: error.resetAt } });
       } catch (second) {
-        // The service reads `providerStatus` as a state of the provider of the job: a failure of the
-        // fallback provider must not mark it. A plain error carries no status; its text keeps the
-        // text of a usage limit, when the fallback refused on its own.
-        if (!(second instanceof ProviderError)) throw second;
-        throw new Error(`the fallback provider ${to} failed after a usage limit of the provider ${from}: ${second.message}`);
+        if (signal.aborted) throw second;
+        throw fallbackFailure(second, from, to);
       }
     }
   } finally {
     await checkout.remove();
   }
+}
+
+/**
+ * KNT-161. The error of a run on the fallback provider that failed, whatever the error. The service
+ * reads `providerStatus` as a state of the provider of the job: a failure of the fallback provider
+ * must not mark it, so a plain error carries no status. Its text names both providers, and keeps the
+ * text of a limit when the fallback refused on its own.
+ */
+export function fallbackFailure(error: unknown, from: string, to: string): Error {
+  return new Error(`the fallback provider ${to} failed after a usage limit of the provider ${from}: ${errorMessage(error)}`);
 }
 
 /**

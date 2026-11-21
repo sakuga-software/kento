@@ -7,7 +7,8 @@ pr: #50
 **Fallback provider** (KNT-161): each level of Config and Settings gets an optional fallback
 provider and its model, next to the fallback model. When the provider of the level refuses the call
 on its usage limit, the runner calls the fallback provider once, and the review says which provider
-answered. Its key goes to a runner under the rules of the provider of the job: only a provider of the
+answered. A short rate limit does not switch provider: the job waits for its reset and runs again
+on the same provider. A failure of the fallback names both providers. Its key goes to a runner under the rules of the provider of the job: only a provider of the
 org of the job, its key only to a trusted runner, and never a key held on the runners of the org
 unless the runner holds that kind. Otherwise the job goes without it, and the log says why
 (`job.fallback_provider_not_sent`). No migration.

@@ -5,13 +5,13 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { after, afterEach, before, beforeEach, test } from 'node:test';
-import { findingKey, type Answer } from '@kento-review/engine';
+import { findingKey, ProviderError, type Answer } from '@kento-review/engine';
 import { parseJob, parseResultRequest, type Job, type ResultRequest } from '@kento-review/protocol';
 import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment, isTransientGitError } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
-import { usageLimitOfReason } from '@kento-review/engine/providers';
-import { chooseModel, runJob } from '../src/job.ts';
+import { limitOfReason } from '@kento-review/engine/providers';
+import { chooseModel, fallbackFailure, runJob } from '../src/job.ts';
 import { output, redact } from '../src/log.ts';
 import { runLoop, runnerToken } from '../src/runner.ts';
 
@@ -1100,6 +1100,11 @@ test('a service that sends the last reviewed commit gets `seen` on a finding who
 // --- fallback provider (KNT-161) ---------------------------------------------------------------
 
 const FALLBACK_ID = '2b3c4d5e-6f70-4a1b-8c2d-3e4f5a6b7c8d';
+/** A day ten days from now: the engine drops a reset time in the past. */
+const RESET_DAY = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+/** The answer of Anthropic at its usage limit. */
+const anthropicUsageLimit = () =>
+  new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: `You have reached your specified API usage limits. You will regain access on ${RESET_DAY} at 00:00 UTC.` } }), { status: 400 });
 const OPENROUTER_KEY = 'sk-or-v1-key-of-the-test-0123456789abcdef';
 
 /** Anthropic refuses on its usage limit; OpenRouter answers. Records the URL and the model of each call. */
@@ -1108,10 +1113,7 @@ function stubLimitThenOpenRouter() {
   const stub = (async (url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
     calls.push({ url: String(url), model: body.model });
-    if (String(url).includes('anthropic')) {
-      const message = 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.';
-      return new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }), { status: 400 });
-    }
+    if (String(url).includes('anthropic')) return anthropicUsageLimit();
     return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(answer()) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
   }) as typeof globalThis.fetch;
   return { fetch: stub, calls };
@@ -1133,7 +1135,7 @@ test('KNT-161. a usage limit of the provider of the job: the fallback provider a
   const result = results[0]!;
   assert.equal(result.outcome, 'done');
   if (result.outcome !== 'done') return;
-  assert.deepEqual(result.review.fellBack, { from: PROVIDER_ID, resetAt: '2026-12-01T00:00:00Z' });
+  assert.deepEqual(result.review.fellBack, { from: PROVIDER_ID, resetAt: `${RESET_DAY}T00:00:00Z` });
   assert.equal(result.review.model, 'anthropic/claude-sonnet-5.5');
   assert.ok(logs.some((l) => l.includes('job.provider_usage_limit')));
   assert.ok(!logs.join('\n').includes(OPENROUTER_KEY));
@@ -1150,7 +1152,7 @@ test('KNT-161. without a fallback provider the runner can call, a usage limit fa
   assert.equal(model.calls.length, 1);
   const result = results[0]!;
   if (result.outcome !== 'failed') return assert.fail('the job fails');
-  assert.match(result.reason, /refused the call on a usage limit \(400, until 2026-12-01T00:00:00Z\)/);
+  assert.ok(result.reason.includes(`refused the call on a usage limit (400, until ${RESET_DAY}T00:00:00Z)`), result.reason);
   assert.equal(result.providerStatus, 400);
   assert.ok(logs.some((l) => l.includes('job.fallback_provider_unusable')));
 });
@@ -1159,7 +1161,7 @@ test('KNT-161. a failure of the fallback provider is not given as a status of th
   const { api, results } = fakeApi();
   const stub = (async (url: string, init: RequestInit): Promise<Response> => {
     JSON.parse(String(init.body));
-    if (String(url).includes('anthropic')) return new Response('{"type":"error","error":{"type":"rate_limit_error","message":"Number of requests has exceeded your rate limit"}}', { status: 429 });
+    if (String(url).includes('anthropic')) return anthropicUsageLimit();
     return new Response('{"error":{"message":"No auth credentials found"}}', { status: 401 });
   }) as typeof globalThis.fetch;
   const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
@@ -1175,8 +1177,8 @@ test('KNT-161. a failure of the fallback provider is not given as a status of th
 test('KNT-161. when the fallback provider refuses on its usage limit too, the reason keeps that limit and its reset time', async () => {
   const { api, results } = fakeApi();
   const stub = (async (url: string): Promise<Response> => {
-    if (String(url).includes('anthropic')) return new Response('{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}', { status: 429 });
-    return new Response('{"error":{"message":"Key limit exceeded until 2026-12-24T08:30:00Z"}}', { status: 403 });
+    if (String(url).includes('anthropic')) return anthropicUsageLimit();
+    return new Response(`{"error":{"message":"Key limit exceeded until ${RESET_DAY}T08:30:00Z"}}`, { status: 403 });
   }) as typeof globalThis.fetch;
   const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
   const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
@@ -1185,5 +1187,32 @@ test('KNT-161. when the fallback provider refuses on its usage limit too, the re
   if (result.outcome !== 'failed') return assert.fail('the job fails');
   assert.equal(result.providerStatus, null);
   // The service reads the limit of the fallback, and its reset time, in the reason.
-  assert.deepEqual(usageLimitOfReason(result.reason), { resetAt: '2026-12-24T08:30:00Z' });
+  assert.deepEqual(limitOfReason(result.reason), { kind: 'usage', resetAt: `${RESET_DAY}T08:30:00Z` });
+});
+
+test('KNT-161. any failure of the fallback provider names both providers, a plain error too, and carries no status (#8a2a10)', () => {
+  const plain = fallbackFailure(new TypeError('Cannot read properties of undefined'), PROVIDER_ID, FALLBACK_ID);
+  assert.ok(!(plain instanceof ProviderError));
+  assert.equal(plain.message, `the fallback provider ${FALLBACK_ID} failed after a usage limit of the provider ${PROVIDER_ID}: Cannot read properties of undefined`);
+  const limited = fallbackFailure(new ProviderError(`OpenRouter refused the call on a usage limit (403, until ${RESET_DAY}T08:30:00Z): Key limit exceeded`, 403), PROVIDER_ID, FALLBACK_ID);
+  assert.ok(!(limited instanceof ProviderError), 'no status: the provider of the job is not marked');
+  assert.deepEqual(limitOfReason(limited.message), { kind: 'usage', resetAt: `${RESET_DAY}T08:30:00Z` });
+  assert.equal(fallbackFailure('boom', PROVIDER_ID, FALLBACK_ID).message.endsWith(': boom'), true);
+});
+
+test('KNT-161. a short rate limit of the provider of the job does not switch provider: the job fails with it, and the service queues it again', async () => {
+  const { api, results } = fakeApi();
+  const calls: string[] = [];
+  const stub = (async (url: string): Promise<Response> => {
+    calls.push(new URL(String(url)).host);
+    return new Response('{"type":"error","error":{"type":"rate_limit_error","message":"Number of requests has exceeded your rate limit"}}', { status: 429, headers: { 'retry-after': '20' } });
+  }) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
+  assert.equal(outcome, 'failed');
+  assert.deepEqual(calls, ['api.anthropic.com'], 'the fallback provider is not called');
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.equal(result.providerStatus, 429);
+  assert.equal(limitOfReason(result.reason)?.kind, 'rate');
 });
