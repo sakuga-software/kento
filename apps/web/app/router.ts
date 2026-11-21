@@ -13,7 +13,8 @@ import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, invitationRoutes, memberRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { createMemberControllers, type MembersDependencies } from './members/controller.tsx'
 import { createFeedbackControllers, type FeedbackDependencies } from './feedback/controller.tsx'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
@@ -67,6 +68,8 @@ export interface AppDependencies {
   users?: UsersDependencies | null
   /** The answers about the reviews (REV-107). Without them, the screen answers 404. */
   feedback?: FeedbackDependencies | null
+  /** KNT-150. The members and the invitations. Without them, their screens answer 404. */
+  members?: MembersDependencies | null
 }
 
 /**
@@ -126,6 +129,9 @@ export function createAppRouter(deps: AppDependencies) {
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))
   router.map(userRoutes, createUserControllers(ui.screens, deps.users ?? null))
   router.map(feedbackRoutes, createFeedbackControllers(ui.screens, deps.feedback ?? null))
+  let members = createMemberControllers(ui.screens, deps.members ?? null)
+  router.map(memberRoutes, members.members)
+  router.map(invitationRoutes, members.invitations)
   router.map(authRoutes, ui.signIn)
   router.map(docsRoutes, ui.docs)
   fallback.map(fallbackRoutes, ui.notFound)

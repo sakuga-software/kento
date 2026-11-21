@@ -90,6 +90,28 @@ export const userRoutes = route({
   userPrefRemove: post('/users/:login/prefs/:repoId/remove'),
 })
 
+/**
+ * KNT-150. The members of the org on screen and its invitations: every member reads them; an owner
+ * or an admin invites and changes them (app/members/rules.ts).
+ */
+export const memberRoutes = route({
+  members: get('/settings/members'),
+  memberInvite: post('/settings/members/invite'),
+  invitationCancel: post('/settings/invitations/:id/cancel'),
+  memberRole: post('/settings/members/:id/role'),
+  memberRemove: post('/settings/members/:id/remove'),
+  memberLeave: post('/settings/members/leave'),
+  /** A person whom GitHub counts as an admin of an account of the org takes the owner role back. */
+  memberReclaim: post('/settings/members/reclaim'),
+})
+
+/** KNT-150. The invitations of the signed-in person, in any org: also for a person with no org yet. */
+export const invitationRoutes = route({
+  invitations: get('/invitations'),
+  invitationAccept: post('/invitations/:id/accept'),
+  invitationDecline: post('/invitations/:id/decline'),
+})
+
 /** REV-107. The answers about the reviews of Kentō. Every member of the org reads them. */
 export const feedbackRoutes = route({
   feedback: get('/feedback'),

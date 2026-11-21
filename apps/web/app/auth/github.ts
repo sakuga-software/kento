@@ -120,18 +120,35 @@ export interface InstallationAccount {
 export type LookupRole = (installation: InstallationAccount, person: { githubId: number; login: string }) => Promise<GitHubRole | null>
 
 /**
+ * KNT-150. Asks GitHub for the account of a login, with an installation token of the org that
+ * invites. Null: GitHub has no such account, or it is not a person (an organization, a bot). Throws
+ * when GitHub fails.
+ */
+export type LookupUser = (installation: InstallationAccount, login: string) => Promise<{ id: number; login: string } | null>
+
+/** A login of GitHub: what an invitation accepts. */
+export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
+
+/**
  * Reads the role with an installation token of the App that has only `members: read`:
  * `GET /orgs/{org}/memberships/{login}`. `admin` is an owner of the org, `member` anyone else
  * active; `pending` (invited, not joined) and 404 give no access. On an installation of a personal
  * account, its owner is the admin, and nobody else gets in.
  */
-export function createRoleLookup(options: {
+export function createRoleLookup(options: GitHubPeopleOptions): LookupRole {
+  return createGitHubPeople(options).lookupRole
+}
+
+interface GitHubPeopleOptions {
   appId: string
   privateKey: KeyObject
   apiUrl: string
   fetch?: typeof globalThis.fetch
   now?: () => number
-}): LookupRole {
+}
+
+/** The role of a person in an org (`lookupRole`) and the account of a login (`lookupUser`), with one cache of tokens. */
+export function createGitHubPeople(options: GitHubPeopleOptions): { lookupRole: LookupRole; lookupUser: LookupUser } {
   let doFetch = options.fetch ?? globalThis.fetch
   let now = options.now ?? Date.now
   let apiUrl = options.apiUrl.replace(/\/+$/, '')
@@ -163,7 +180,7 @@ export function createRoleLookup(options: {
     return body.token
   }
 
-  return async (installation, person) => {
+  let lookupRole: LookupRole = async (installation, person) => {
     if (installation.githubAccountId === person.githubId) return 'admin'
     let token = await installationToken(installation.githubInstallationId)
     if (token === null) return null
@@ -177,4 +194,20 @@ export function createRoleLookup(options: {
     if (body.state !== 'active') return null
     return body.role === 'admin' ? 'admin' : body.role === 'member' ? 'member' : null
   }
+
+  let lookupUser: LookupUser = async (installation, login) => {
+    if (!GITHUB_LOGIN.test(login)) return null
+    let token = await installationToken(installation.githubInstallationId)
+    let headers: Record<string, string> = token === null ? { ...HEADERS } : { ...HEADERS, Authorization: `Bearer ${token}` }
+    let response = await doFetch(`${apiUrl}/users/${encodeURIComponent(login)}`, { headers, signal: AbortSignal.timeout(10_000) })
+    if (response.status === 404) return null
+    if (!response.ok) throw new GitHubError(`GitHub answered ${response.status} for the account ${login}`)
+    let body = (await response.json()) as { id?: unknown; login?: unknown; type?: unknown }
+    if (!Number.isSafeInteger(body.id) || typeof body.login !== 'string') throw new GitHubError('GitHub answered an account without an id or a login')
+    if (body.type !== 'User') return null
+    return { id: body.id as number, login: body.login }
+  }
+
+  return { lookupRole, lookupUser }
 }
+
