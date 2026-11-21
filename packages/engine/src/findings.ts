@@ -1,6 +1,6 @@
 // The findings of a review: the answer schema, the lines that a finding anchors on, the score and the verdict.
 import { createHash } from 'node:crypto';
-import type { Checked, Criticality } from './critical.ts';
+import type { CheckResult, Checked, Criticality } from './critical.ts';
 import { areasText } from './critical.ts';
 import { git } from './git.ts';
 import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
@@ -64,8 +64,13 @@ export type Answer = {
    */
   checked?: Checked;
   /**
-   * KNT-154. The change is critical (critical.ts), and `checked` says whether the answer named the
-   * paths and the roles that it checked. The engine sets it; the model never gives it.
+   * KNT-154. A review in passes: the `checked` of each pass. One pass must name a path and a role:
+   * a path of one pass and a role of another do not lift the cap.
+   */
+  checkedByPass?: Checked[];
+  /**
+   * KNT-154. The change is critical (critical.ts), what the engine verified of `checked`, and whether
+   * the score is capped. The engine sets it; the model never gives it.
    */
   critical?: CriticalReview | null;
   /**
@@ -78,10 +83,14 @@ export type Answer = {
 /** KNT-153. A question of a review: the file it is about, and the question. */
 export type Question = { path: string; question: string };
 
-/** KNT-154. A critical change, and whether its review named what it checked. */
-export type CriticalReview = Criticality & { checked: boolean };
+/**
+ * KNT-154. A critical change and its review: `checked`, whether the review named a verified path and
+ * a real role (`checks` says which); `lite`, a lite review; `capped`, the score is 3 at most, because
+ * the review did not name its checks or because it is a lite review.
+ */
+export type CriticalReview = Criticality & { checked: boolean; checks: CheckResult; lite: boolean; capped: boolean };
 
-/** KNT-154. The highest score of a critical change whose review did not name what it checked. */
+/** KNT-154. The highest score of a critical change whose review is capped (CriticalReview). */
 export const CRITICAL_UNCHECKED_SCORE = 3;
 
 /** REV-71. Whether a reply in a thread refutes its finding (answered.ts). */
@@ -335,11 +344,11 @@ export function withoutSettled<F extends Finding>(
 /**
  * The score that the reader sees. A blocking finding caps it at 2: a review that asks for changes
  * and calls the pull request safe would contradict itself. KNT-154: a critical change caps it at 3
- * when the review did not name the paths and the roles that it checked.
+ * when the review did not name the paths and the roles that it checked, or is a lite review.
  */
 export function score(answer: Answer, lines: Anchors): number {
   let raw = Math.min(5, Math.max(1, Math.round(answer.confidence_score || 3)));
-  if (answer.critical && !answer.critical.checked) raw = Math.min(raw, CRITICAL_UNCHECKED_SCORE);
+  if (answer.critical?.capped) raw = Math.min(raw, CRITICAL_UNCHECKED_SCORE);
   return answer.findings.some((f) => isBlocking(f, lines)) ? Math.min(raw, 2) : raw;
 }
 
