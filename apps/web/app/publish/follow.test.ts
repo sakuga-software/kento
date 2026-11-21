@@ -88,6 +88,7 @@ function memoryLedger() {
         } else Object.assign(row, e.values)
         for (let ev of e.events) events.push({ id: row.id!, type: ev.type })
       }
+      return new Set(entries.flatMap((e) => (e.id ? [e.id] : [])))
     },
   }
   return { ledger, rows, events }

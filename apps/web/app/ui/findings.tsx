@@ -34,6 +34,11 @@ export const CONSIDERED = 'to-consider'
 export const CONSIDERED_LABEL = 'To consider'
 export const CONSIDERED_HINT = 'An earlier review already read this code. This finding does not block the pull request.'
 
+/** KNT-192. What the screen says of a stale finding that the last reviews no longer see. */
+export const UNSEEN_LABEL = 'Not seen in the last reviews'
+export const UNSEEN_HINT =
+  'The last reviews no longer find it, and pushes changed its file. Its thread stays open: the resolve command can confirm the fix.'
+
 /** The filters, the search and the page of the list, as the query of the screen gives them. */
 export interface FindingList extends FindingQuery {
   view: FindingView
@@ -510,6 +515,11 @@ function FindingTableRow(handle: Handle<{ row: FindingRow; org: string; githubUr
         <td data-label="Status">
           <span class="stack">
             <span class={`status status-mono ${statusClass(row.status)}`}>{row.status}</span>
+            {row.unseen ? (
+              <span class="tag tag-warn" title={UNSEEN_HINT}>
+                {UNSEEN_LABEL}
+              </span>
+            ) : null}
             {row.statusReason ? <span class="hint">{row.statusReason}</span> : null}
           </span>
         </td>
