@@ -11,10 +11,28 @@ import { Shell, type PageFrame } from './shell.tsx'
 export const ORG_NOTICES = {
   renamed: { tone: 'ok', text: 'Name saved.' },
   moved: { tone: 'ok', text: 'Installation moved, with its repositories. Their reviews, findings and rules went with them.' },
-  bad_name: { tone: 'alert', text: 'A name has 1 to 60 characters, on one line.' },
+  detached: {
+    tone: 'ok',
+    text: 'Installation detached into a new organization with no member. The next admin of its account on GitHub who signs in becomes its owner.',
+  },
+  bad_name: { tone: 'alert', text: 'A name has 1 to 60 characters, on one line, with no invisible character.' },
   not_owner: { tone: 'alert', text: 'Only an owner of the organization renames it or moves its installations.' },
   target_not_owner: { tone: 'alert', text: 'You are not an owner of that organization.' },
   not_github_admin: { tone: 'alert', text: 'GitHub does not count you as an admin of the account of this installation.' },
+  not_target_admin: {
+    tone: 'alert',
+    text: 'GitHub does not count you as an admin of an account of that organization. An installation joins an organization only from a person who is an admin of both accounts.',
+  },
+  target_inactive: { tone: 'alert', text: 'That organization has no active installation: nobody reaches it.' },
+  personal_account: {
+    tone: 'alert',
+    text: 'An installation on a personal account stays in an organization of its own: it joins no organization of other accounts, and no other account joins it.',
+  },
+  not_remaining_admin: {
+    tone: 'alert',
+    text: 'Only an owner whom GitHub counts as an admin of another account of this organization detaches an installation.',
+  },
+  changed: { tone: 'alert', text: 'The installations changed while Kentō asked GitHub. Try again.' },
   github_failed: { tone: 'alert', text: 'GitHub did not answer. Try again in a minute.' },
   same_org: { tone: 'info', text: 'The installation is in this organization already.' },
   last_installation: { tone: 'alert', text: 'This is the last installation of the organization: confirm that the organization goes with the move.' },
@@ -45,6 +63,8 @@ export function OrganizationPage(handle: Handle<OrganizationPageProps>) {
     let active = org.installations.filter((i) => !i.suspended).length
     let last = active === 1
     let suspendedLeft = org.installations.length > active
+    let invited = org.members.filter((m) => m.source === 'invitation').map((m) => m.login)
+    let fromGitHub = org.members.filter((m) => m.source === 'github').map((m) => m.login)
     return (
       <Shell frame={frame} section="settings" title="Organization" lead={`The name of ${org.name} and the GitHub accounts where Kentō is installed for it.`}>
         <p class="members-back">
@@ -110,22 +130,50 @@ export function OrganizationPage(handle: Handle<OrganizationPageProps>) {
                             <option value={target.id}>{target.name}</option>
                           ))}
                           <option value="new">A new organization</option>
+                          {active > 1 ? <option value="detach">A new organization with no member (detach)</option> : null}
                         </Select>
                       </Field>
                       <Field id={`move-name-${installation.id}`} label="Name of the new organization">
                         <Input id={`move-name-${installation.id}`} name="name" maxLength={ORG_NAME_MAX} value={installation.login} />
                       </Field>
+                      {active > 1 ? (
+                        <p class="hint">
+                          A detach needs no right on {installation.login}: an owner whom GitHub counts as an admin of another
+                          account of {org.name} takes it out. The people who reach {org.name} only through {installation.login} lose
+                          their access at their next check of GitHub.
+                        </p>
+                      ) : null}
                       {last ? (
-                        <Field
-                          id={`move-confirm-${installation.id}`}
-                          label={
-                            suspendedLeft
-                              ? `It is the last active installation: nobody reaches ${org.name} after the move. It keeps its suspended installations, and is deleted with the last of them. Type its name to confirm.`
-                              : `It is the last installation: ${org.name} goes with the move, with its settings, providers, runners and rules. Type its name to confirm.`
-                          }
-                        >
-                          <Input id={`move-confirm-${installation.id}`} name="confirm" autocomplete="off" />
-                        </Field>
+                        <div class="installation-confirm">
+                          {suspendedLeft ? (
+                            <p class="hint">
+                              It is the last active installation: after the move nobody reaches {org.name}. Kentō keeps it, with its
+                              members, settings and suspended installations: it comes back when one of these accounts installs the App again, or GitHub lifts the suspension.
+                            </p>
+                          ) : (
+                            <>
+                              <p class="hint">
+                                It is the last installation: {org.name} is deleted with the move, with its settings, providers, runners
+                                and rules.
+                              </p>
+                              {invited.length > 0 ? (
+                                <p class="hint">Its members from an invitation lose their access: {invited.join(', ')}.</p>
+                              ) : null}
+                              {fromGitHub.length > 0 ? (
+                                <p class="hint">
+                                  Its members from GitHub leave it: {fromGitHub.join(', ')}. They keep the organizations of their other
+                                  accounts.
+                                </p>
+                              ) : null}
+                              {org.invitations.length > 0 ? (
+                                <p class="hint">Its pending invitations are canceled: {org.invitations.join(', ')}.</p>
+                              ) : null}
+                            </>
+                          )}
+                          <Field id={`move-confirm-${installation.id}`} label={`Type ${org.name} to confirm.`}>
+                            <Input id={`move-confirm-${installation.id}`} name="confirm" autocomplete="off" />
+                          </Field>
+                        </div>
                       ) : null}
                       <Button type="submit" variant={last ? 'danger-solid' : 'primary'}>
                         Move {installation.login}

@@ -170,3 +170,27 @@ describe('KNT-150: the account of a login', () => {
     await assert.rejects(lookupUser(org, 'camille'), /502/)
   })
 })
+
+describe('KNT-150: the type of the account of an installation', () => {
+  let installation: InstallationAccount = { githubInstallationId: 77, githubAccountId: 900, login: 'camille' }
+
+  function people(answer: () => Response) {
+    let { calls, fetch } = fakeFetch(() => answer())
+    let now = Date.parse('2026-10-28T12:00:00Z')
+    return { calls, ...createGitHubPeople({ appId: '12345', privateKey, apiUrl: 'https://api.github.com', fetch, now: () => now }) }
+  }
+
+  it('reads it with the JWT of the App', async () => {
+    let { calls, lookupAccountType } = people(() => Response.json({ id: 77, account: { id: 900, login: 'camille', type: 'User' } }))
+    assert.equal(await lookupAccountType(installation), 'User')
+    assert.equal(calls[0]!.url, 'https://api.github.com/app/installations/77')
+    assert.match(new Headers(calls[0]!.init.headers).get('Authorization')!, /^Bearer [\w-]+\.[\w-]+\.[\w-]+$/)
+    let org = people(() => Response.json({ account: { type: 'Organization' } }))
+    assert.equal(await org.lookupAccountType(installation), 'Organization')
+  })
+
+  it('throws when GitHub fails or answers no type, never a guess', async () => {
+    await assert.rejects(people(() => Response.json({ message: 'Not Found' }, { status: 404 })).lookupAccountType(installation), /404/)
+    await assert.rejects(people(() => Response.json({ account: { type: 'Bot' } })).lookupAccountType(installation), /no account type/)
+  })
+})

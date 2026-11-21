@@ -4,19 +4,25 @@ import { createController } from 'remix/router'
 
 import { UUID } from '@kento-review/protocol'
 
-import type { LookupRole } from '../auth/github.ts'
+import type { InstallationAccount, LookupAccountType, LookupRole } from '../auth/github.ts'
 import { errorMessage, log } from '../log.ts'
 import { organizationRoutes, pageRoutes } from '../routes.ts'
 import { isOrgNotice, OrganizationPage, type OrgNotice } from '../ui/organization.tsx'
 import type { ScreenKit } from '../ui/pages.tsx'
 import { readOrgName } from './rules.ts'
-import type { OrgsStore } from './store.ts'
+import type { OrgInstallationView, OrgsStore } from './store.ts'
 
 /** The organization screen. Null: it answers 404. */
 export interface OrganizationDependencies {
   store: OrgsStore
   /** Asks GitHub for the role of a person in the account of an installation. Null: no move. */
   lookupRole: LookupRole | null
+  /** Asks GitHub whether the account of an installation is a person. Null: no move. */
+  lookupAccountType: LookupAccountType | null
+}
+
+function accountOf(installation: OrgInstallationView): InstallationAccount {
+  return { githubInstallationId: installation.githubInstallationId, githubAccountId: installation.githubAccountId, login: installation.login }
 }
 
 const EXIT = { href: pageRoutes.settings.href(), label: 'Back to the settings' }
@@ -55,7 +61,7 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
         if (!name) return toOrganization('bad_name')
         let outcome = await deps.store.rename(signed.membership.org.id, signed.user.id, name)
         if (!outcome.ok) return outcome.reason === 'not_owner' ? kit.forbidden() : toOrganization(outcome.reason)
-        log('info', 'organizations.renamed', { login: signed.user.login, org: signed.membership.org.id })
+        log('info', 'organizations.renamed', { login: signed.user.login, org: signed.membership.org.id, name })
         return toOrganization('renamed')
       },
 
@@ -69,25 +75,53 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
         let org = await deps.store.view(signed.membership.org.id)
         let installation = UUID.test(id) ? org?.installations.find((i) => i.id === id && !i.suspended) : undefined
         if (!org || !installation) return toOrganization('not_found')
-        let to: { orgId: string } | { name: string }
+        let to: { orgId: string } | { name: string } | { detach: true }
         if (toValue === 'new') {
           let name = readOrgName(form?.get('name'))
           if (!name) return toOrganization('bad_name')
           to = { name }
+        } else if (toValue === 'detach') {
+          to = { detach: true }
         } else if (UUID.test(toValue)) {
           to = { orgId: toValue }
         } else {
           return kit.errorPage(context, 400, 'form', 'settings', EXIT)
         }
-        // GitHub, now: the person is an admin of the account of the installation.
-        if (!deps.lookupRole) return toOrganization('github_failed')
-        let githubAdmin: boolean
+        if (!deps.lookupRole || !deps.lookupAccountType) return toOrganization('github_failed')
+        let { lookupRole, lookupAccountType } = deps
+        let person = { githubId: signed.user.githubId, login: signed.user.login }
+        // GitHub, now, before the locks: the store decides with these answers, and refuses when the
+        // installations changed in between.
+        let checked = new Set<string>()
+        let adminOf = new Set<string>()
+        let personal = new Set<string>()
+        let ask = async (asked: OrgInstallationView, type: boolean) => {
+          if ((await lookupRole(accountOf(asked), person)) === 'admin') adminOf.add(asked.id)
+          if (type && (await lookupAccountType(accountOf(asked))) === 'User') personal.add(asked.id)
+          checked.add(asked.id)
+        }
         try {
-          githubAdmin =
-            (await deps.lookupRole(
-              { githubInstallationId: installation.githubInstallationId, githubAccountId: installation.githubAccountId, login: installation.login },
-              { githubId: signed.user.githubId, login: signed.user.login },
-            )) === 'admin'
+          if ('detach' in to) {
+            // An admin on GitHub of another active account of the org: one answer is enough.
+            let remaining = org.installations.filter((i) => !i.suspended && i.id !== installation.id)
+            let failure: unknown = null
+            for (let other of remaining) {
+              try {
+                await ask(other, false)
+              } catch (error) {
+                failure ??= error
+              }
+              if (adminOf.has(other.id)) break
+            }
+            if (adminOf.size === 0 && failure !== null) throw failure
+          } else if ('orgId' in to) {
+            let targetId = to.orgId
+            if (!(await deps.store.ownedOrgs(signed.user.id, org.id)).some((target) => target.id === targetId)) return toOrganization('target_not_owner')
+            let targets = await deps.store.activeInstallations(targetId)
+            await Promise.all([ask(installation, true), ...targets.map((target) => ask(target, true))])
+          } else {
+            await ask(installation, false)
+          }
         } catch (error) {
           log('warn', 'organizations.role_check_failed', { org: org.id, error: errorMessage(error) })
           return toOrganization('github_failed')
@@ -97,7 +131,7 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
           installationId: installation.id,
           to,
           actorUserId: signed.user.id,
-          githubAdmin,
+          checks: { checked, adminOf, personal },
           deleteEmpty: String(form?.get('confirm') ?? '').trim() === org.name,
         })
         let fields = { login: signed.user.login, org: org.id, installation: installation.githubInstallationId }
@@ -105,8 +139,9 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
           log('warn', 'organizations.move_refused', { ...fields, reason: outcome.reason })
           return toOrganization(outcome.reason === 'bad_name' ? 'bad_name' : outcome.reason)
         }
-        log('info', 'organizations.installation_moved', { ...fields, to: outcome.orgId, deleted: outcome.deleted })
-        // The session follows the installation to its new org.
+        log('info', 'organizations.installation_moved', { ...fields, to: outcome.orgId, detached: 'detach' in to, deleted: outcome.deleted })
+        // A detach leaves the person where they are. A move: the session follows the installation.
+        if ('detach' in to) return toOrganization('detached')
         await kit.setActiveOrg(signed.sessionId, outcome.orgId)
         return toOrganization('moved')
       },

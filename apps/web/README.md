@@ -88,15 +88,32 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   membership by GitHub (`github_removed`, actor `(GitHub)`). At most 50 pending invitations per
   org; the pending invitations of a person who leaves the org, or whom GitHub removes, go with them.
 - The org (`app/organizations/`, `/settings/organization`, KNT-150). Every member reads its name and
-  its installations of the App. An owner renames it, and moves an installation to another org where
-  they are an owner, or to a new org of which they become the owner. A move needs GitHub to say, at
-  that moment, that the person is an admin of the account of the installation. The repositories of
-  the installation go with it, with their reviews, findings, rules and assignment rules; the
-  settings, providers, runners and org rules stay. Moving the last active installation of an org
-  asks for its name: the org, now empty, is deleted with its settings, providers, runners and org
-  rules; one that still holds a suspended installation stays, and nobody reaches it. A move takes the locks of the owners of both orgs, in the order of their ids. A provider of
-  another org never matches a job (`runner/store.ts`): a repository whose config names a provider of
-  the org it left gets the key of the service until its Config names a provider of its new org.
+  its installations of the App. An owner renames it (one line, 1 to 60 characters, no control or
+  invisible character), and moves an installation; Kentō asks GitHub first, and the store decides
+  with those answers under the locks (`app/organizations/rules.ts`). The rights that GitHub gives in
+  an org never come from an account that is not the org's:
+  - into an org that exists, and has an active installation: the person is an owner of it, and
+    GitHub says that they are an admin of both the account that moves and an account already
+    there (an owner from an invitation brings no account of their own);
+  - an installation on a personal account stays in an org of its own: it joins no org of other
+    accounts, and no other account joins its org;
+  - into a new org: GitHub says that the person is an admin of the account; they become its owner;
+  - a detach (a new org with no member): an owner whom GitHub counts as an admin of another
+    account of the org takes any installation out, with no right on it. The next GitHub admin of
+    that account who signs in becomes the owner of the new org; the memberships that only that
+    account gave end at their next check.
+
+  The repositories of the installation go with it, with their reviews, findings, rules and
+  assignment rules; the settings, providers, runners and org rules stay. Moving the last active
+  installation of an org asks for its name, and the form lists what goes: the org, now empty, is
+  deleted with its members, pending invitations, settings, providers, runners and org rules; one
+  that still holds a suspended installation stays, and nobody reaches it until one of its accounts
+  comes back. A rename, a move and a deletion write their rows of `org_audit` (`rename`, `move_out`,
+  `move_in`, `delete` with what it took). The order of the locks is written once, at the top of
+  `app/organizations/store.ts`: the webhook, the saves of rules and the moves take them in that
+  order. A provider of another org never matches a job (`runner/store.ts`): a repository whose
+  config names a provider of the org it left gets the key of the service until its Config names a
+  provider of its new org.
 - Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
   sees them on `/invitations` (a banner of the frame leads there), and accepts (they become a member
   from an invitation; a person who is a member already keeps their membership as it is, its role

@@ -30,8 +30,10 @@ test.describe('the name and the installations of the org (KNT-150)', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Organization' })).toBeVisible()
     let installation = page.locator('.installation', { hasText: FAKE_ORG.login })
     await installation.getByText('Move…').click()
-    // The last installation of the org: the move asks for its name.
-    await expect(installation.getByLabel(/It is the last installation/)).toBeVisible()
+    // The last installation of the org: the move says what goes with the org, and asks for its name.
+    await expect(installation.getByText(`It is the last installation: ${FAKE_ORG.login} is deleted with the move`, { exact: false })).toBeVisible()
+    await expect(installation.getByText('Its members from GitHub leave it:', { exact: false })).toBeVisible()
+    await expect(installation.getByLabel(`Type ${FAKE_ORG.login} to confirm.`)).toBeVisible()
     await expectNoAxeViolations(page)
     await expectReadableButtons(page)
 

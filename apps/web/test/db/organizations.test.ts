@@ -3,6 +3,9 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import { createKentoAuth, postgresAuthDatabase } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
+import { createAssignmentStore } from '../../app/assignment/store.ts'
+import { createWebhookStore } from '../../app/db/webhook-store.ts'
+import { createRulesStore } from '../../app/rules/store.ts'
 import type { OrgRole } from '../../app/db/schema.ts'
 import { createAuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
@@ -10,7 +13,7 @@ import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
-import { createOrgsStore } from '../../app/organizations/store.ts'
+import { createOrgsStore, type MoveChecks } from '../../app/organizations/store.ts'
 import { ROLE_TTL_MS } from '../../app/auth/access.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase, insertOrg } from './helpers.ts'
@@ -34,11 +37,14 @@ describe('the name and the installations of an org', () => {
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let clock: { now: number }
+  /** The accounts that GitHub says are a person (`User`), by login; GitHub failing for roles or types. */
+  let people: Set<string>
+  let gitHub = { calls: 0, failRoles: false, failTypes: false }
 
   before(async () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
-    database = createDatabase(test.url, { max: 3 })
+    database = createDatabase(test.url, { max: 10 })
     store = createMembersStore(database.sql)
     let authStore = createAuthStore(database.sql)
     let github: GitHubOAuth = {
@@ -54,7 +60,16 @@ describe('the name and the installations of an org', () => {
         return profile
       },
     }
-    let lookupRole = async (installation: { login: string }, person: { login: string }) => roles.get(`${installation.login}/${person.login}`) ?? null
+    let lookupRole = async (installation: { login: string }, person: { login: string }) => {
+      gitHub.calls++
+      if (gitHub.failRoles) throw new Error('GitHub answered 502')
+      return roles.get(`${installation.login}/${person.login}`) ?? null
+    }
+    let lookupAccountType = async (installation: { login: string }) => {
+      gitHub.calls++
+      if (gitHub.failTypes) throw new Error('GitHub answered 502')
+      return people.has(installation.login) ? ('User' as const) : ('Organization' as const)
+    }
     let secret = 'a-session-secret-for-the-tests-0123456789'
     clock = { now: Date.now() }
     let auth = createKentoAuth({ database: postgresAuthDatabase(database.db), publicUrl: PUBLIC_URL, secret, github, store: authStore, lookupRole, now: () => clock.now })
@@ -65,9 +80,10 @@ describe('the name and the installations of an org', () => {
       webhook: disabledWebhook,
       // Every request of these tests comes with no socket, so they share one limit: a high one.
       auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now, signInLimit: 1000 },
-      organization: { store: createOrgsStore(database.sql), lookupRole },
+      organization: { store: createOrgsStore(database.sql), lookupRole, lookupAccountType },
       members: {
         store,
+        lookupRole,
         async lookupUser(_installation, login) {
           let person = PEOPLE[login.toLowerCase()]
           return person ? { id: person.id, login: person.login } : null
@@ -94,7 +110,27 @@ describe('the name and the installations of an org', () => {
       ['globex/other', 'admin'],
     ])
     clock.now = Date.now()
+    people = new Set()
+    gitHub = { calls: 0, failRoles: false, failTypes: false }
   })
+
+  /** The answers of a GitHub that counts the person as an admin of every account there is now, and no account as a person. */
+  async function allAdmin(): Promise<MoveChecks> {
+    let ids = new Set((await database.sql<{ id: string }[]>`select id from installations`).map((r) => r.id))
+    return { checked: ids, adminOf: ids, personal: new Set() }
+  }
+
+  async function userId(login: string) {
+    return (await database.sql<{ id: string }[]>`select id from users where login = ${login}`)[0]!.id
+  }
+
+  /** octocat, signed in, owner of acme from GitHub and of globex too: the moves between them pass. */
+  async function ownerOfBoth() {
+    await signIn('octocat')
+    let actor = await userId('octocat')
+    await database.sql`insert into memberships (user_id, org_id, role, source) values (${actor}, ${globex}, 'owner', 'github')`
+    return actor
+  }
 
   function request(path: string, cookie?: string | null, form?: Record<string, string>) {
     let headers = new Headers(cookie ? { Cookie: cookie } : {})
@@ -252,7 +288,8 @@ describe('the name and the installations of an org', () => {
       insert into installations (org_id, github_installation_id, github_account_id, account_login, suspended_at)
       values (${acme}, 15, 1015, 'acme-old', now())`
     let page = await (await request('/settings/organization', owner)).text()
-    assert.match(page, /It is the last active installation: nobody reaches acme after the move/)
+    assert.match(page, /It is the last active installation: after the move nobody reaches acme\. Kentō keeps it, with its members, settings and suspended installations/)
+    assert.doesNotMatch(page, /deleted with the last of them/)
     assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=last_installation')
     assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'acme' })).headers.get('Location'), '/settings/organization?notice=moved')
     assert.deepEqual(await orgOf('installations', `id = '${only!.id}'`), [globex])
@@ -291,7 +328,7 @@ describe('the name and the installations of an org', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
     let outcome = await createOrgsStore(database.sql).moveInstallation({
-      fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: user!.id, githubAdmin: true, deleteEmpty: true,
+      fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: user!.id, checks: await allAdmin(), deleteEmpty: true,
     })
     await webhook
     assert.deepEqual(outcome, { ok: true, orgId: globex, deleted: false })
@@ -320,7 +357,7 @@ describe('the name and the installations of an org', () => {
     assert.deepEqual(await orgs.rename(acme, camille!.id, 'Taken'), { ok: false, reason: 'not_owner' })
     let [globexInstallation] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${globex}`
     assert.deepEqual(
-      await orgs.moveInstallation({ fromOrgId: acme, installationId: globexInstallation!.id, to: { name: 'Mine' }, actorUserId: octocat!.id, githubAdmin: true, deleteEmpty: true }),
+      await orgs.moveInstallation({ fromOrgId: acme, installationId: globexInstallation!.id, to: { name: 'Mine' }, actorUserId: octocat!.id, checks: await allAdmin(), deleteEmpty: true }),
       { ok: false, reason: 'not_found' },
     )
     assert.deepEqual(await orgOf('installations', `id = '${globexInstallation!.id}'`), [globex])
@@ -337,12 +374,346 @@ describe('the name and the installations of an org', () => {
       values (${globex}, 14, 1014, 'globex-labs') returning id`
     let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'octocat'`
     let orgs = createOrgsStore(database.sql)
+    let checks = await allAdmin()
     let outcomes = await Promise.all([
-      orgs.moveInstallation({ fromOrgId: acme, installationId: fromAcme, to: { orgId: globex }, actorUserId: user!.id, githubAdmin: true, deleteEmpty: false }),
-      orgs.moveInstallation({ fromOrgId: globex, installationId: fromGlobex!.id, to: { orgId: acme }, actorUserId: user!.id, githubAdmin: true, deleteEmpty: false }),
+      orgs.moveInstallation({ fromOrgId: acme, installationId: fromAcme, to: { orgId: globex }, actorUserId: user!.id, checks, deleteEmpty: false }),
+      orgs.moveInstallation({ fromOrgId: globex, installationId: fromGlobex!.id, to: { orgId: acme }, actorUserId: user!.id, checks, deleteEmpty: false }),
     ])
     assert.deepEqual(outcomes.map((o) => o.ok), [true, true])
     assert.deepEqual(await orgOf('installations', `id = '${fromAcme}'`), [globex])
     assert.deepEqual(await orgOf('installations', `id = '${fromGlobex!.id}'`), [acme])
   })
+
+  /** An org of its own for an account, as the webhook makes it, with the person as its owner from GitHub. */
+  async function ownOrg(login: string, installation: number, account: number, owner: keyof typeof PEOPLE) {
+    let orgId = await insertOrg(database.sql, login, installation, account)
+    roles.set(`${login}/${owner}`, 'admin')
+    await database.sql`insert into memberships (user_id, org_id, role, source, checked_at) values (${await userId(owner)}, ${orgId}, 'owner', 'github', now())`
+    let [row] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${orgId}`
+    return { orgId, installationId: row!.id }
+  }
+
+  async function invite(owner: string, login: keyof typeof PEOPLE, role: 'admin' | 'member') {
+    await request('/settings/members/invite', owner, { _csrf: await csrfOf(owner), login, role })
+    let cookie = (await signIn(login)).cookie!
+    let [invitation] = await database.sql<{ id: string }[]>`select id from invitations where github_login = ${login} and status = 'pending' and org_id = ${acme}`
+    await post(cookie, `/invitations/${invitation!.id}/accept`, {}, '/invitations')
+    return cookie
+  }
+
+  async function switchTo(cookie: string, orgId: string) {
+    await post(cookie, '/preferences/org', { orgId, returnTo: '/' })
+  }
+
+  it('a person who leaves the company keeps no right through a personal account: it never joins the org', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    // octocat installed the App on his personal account too: an org of its own.
+    let mine = await ownOrg('octocat', 21, PEOPLE.octocat!.id, 'octocat')
+    people.add('octocat')
+    await switchTo(owner, mine.orgId)
+    let moved = await post(owner, `/settings/organization/installations/${mine.installationId}/move`, { to: acme, confirm: 'octocat' })
+    assert.equal(moved.headers.get('Location'), '/settings/organization?notice=personal_account')
+    assert.deepEqual(await orgOf('installations', `id = '${mine.installationId}'`), [mine.orgId])
+    // GitHub removes octocat from acme: at the next check he is out of acme, whatever his own account.
+    roles.delete('acme/octocat')
+    roles.set('acme/camille', 'admin')
+    clock.now += ROLE_TTL_MS + 1000
+    await request('/', owner)
+    assert.equal(await membership('octocat', acme), null)
+    // And no other account joins the org of a personal account.
+    let [globexInstallation] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${globex}`
+    roles.set('globex/octocat', 'admin')
+    await database.sql`insert into memberships (user_id, org_id, role, source, checked_at) values (${await userId('octocat')}, ${globex}, 'owner', 'github', now())`
+    await database.sql`insert into installations (org_id, github_installation_id, github_account_id, account_login) values (${globex}, 24, 1024, 'globex-two')`
+    roles.set('globex-two/octocat', 'admin')
+    await switchTo(owner, globex)
+    assert.equal(
+      (await post(owner, `/settings/organization/installations/${globexInstallation!.id}/move`, { to: mine.orgId })).headers.get('Location'),
+      '/settings/organization?notice=personal_account',
+    )
+  })
+
+  it('an account of a person who leaves, moved into the org before, is detached by an owner who is an admin of the org on GitHub', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    // octocat is an admin of acme and of another account, octo-labs, on GitHub; he moves octo-labs into acme.
+    let labs = await ownOrg('octo-labs', 22, 1022, 'octocat')
+    await switchTo(owner, labs.orgId)
+    assert.equal((await post(owner, `/settings/organization/installations/${labs.installationId}/move`, { to: acme, confirm: 'octo-labs' })).headers.get('Location'), '/settings/organization?notice=moved')
+    // He leaves the company: GitHub removes him from acme, camille is its admin now. octo-labs keeps him an admin of acme.
+    roles.delete('acme/octocat')
+    roles.set('acme/camille', 'admin')
+    let camille = (await signIn('camille')).cookie!
+    assert.equal((await membership('camille', acme))!.role, 'admin')
+    // camille has no right on octo-labs: she cannot move it to an org of hers, but she detaches it.
+    assert.equal((await post(camille, `/settings/members/reclaim`)).headers.get('Location'), '/settings/members?notice=reclaimed')
+    assert.equal((await post(camille, `/settings/organization/installations/${labs.installationId}/move`, { to: 'new', name: 'Mine' })).headers.get('Location'), '/settings/organization?notice=not_github_admin')
+    let page = await (await request('/settings/organization', camille)).text()
+    assert.match(page, /<option value="detach">A new organization with no member \(detach\)<\/option>/)
+    assert.equal((await post(camille, `/settings/organization/installations/${labs.installationId}/move`, { to: 'detach' })).headers.get('Location'), '/settings/organization?notice=detached')
+    let [detached] = await database.sql<{ orgId: string }[]>`select org_id as "orgId" from installations where id = ${labs.installationId}`
+    assert.notEqual(detached!.orgId, acme)
+    assert.equal((await database.sql`select count(*)::int as n from memberships where org_id = ${detached!.orgId}`)[0]!.n, 0)
+    // camille stays on acme; octocat's membership of acme ends at its next check.
+    assert.match(await (await request('/', camille)).text(), /<span class="org-menu-name">acme<\/span>/)
+    clock.now += ROLE_TTL_MS + 1000
+    await request('/', owner)
+    assert.equal(await membership('octocat', acme), null)
+    // The next GitHub admin of octo-labs who signs in becomes the owner of its new org.
+    await signIn('octocat')
+    assert.deepEqual({ ...(await membership('octocat', detached!.orgId)), id: undefined }, { id: undefined, role: 'owner', source: 'github' })
+  })
+
+  it('an owner from an invitation brings no account of their own into the org', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invite(owner, 'guest', 'admin')
+    await post(owner, `/settings/members/${(await membership('guest', acme))!.id}/role`, { role: 'owner' })
+    // guest owns a personal account and an org account with the App, each in an org of its own.
+    let personal = await ownOrg('guest', 23, PEOPLE.guest!.id, 'guest')
+    people.add('guest')
+    let evil = await ownOrg('evilcorp', 25, 1025, 'guest')
+    await switchTo(guest, personal.orgId)
+    assert.equal((await post(guest, `/settings/organization/installations/${personal.installationId}/move`, { to: acme, confirm: 'guest' })).headers.get('Location'), '/settings/organization?notice=personal_account')
+    await switchTo(guest, evil.orgId)
+    assert.equal((await post(guest, `/settings/organization/installations/${evil.installationId}/move`, { to: acme, confirm: 'evilcorp' })).headers.get('Location'), '/settings/organization?notice=not_target_admin')
+    assert.deepEqual(await database.sql`select account_login from installations where org_id = ${acme}`.then((r) => r.map((x) => x.account_login)), ['acme'])
+    // guest leaves acme and signs in again: no account of guest gives a role in acme.
+    await switchTo(guest, acme)
+    await post(guest, '/settings/members/leave')
+    await signIn('guest')
+    assert.equal(await membership('guest', acme), null)
+  })
+
+  it('refuses a move when GitHub fails, for the role or the type of an account; nothing moves', async () => {
+    roles.set('globex/octocat', 'admin')
+    roles.set('acme-labs/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    gitHub.failRoles = true
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=github_failed')
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: 'new', name: 'Labs' })).headers.get('Location'), '/settings/organization?notice=github_failed')
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: 'detach' })).headers.get('Location'), '/settings/organization?notice=github_failed')
+    gitHub.failRoles = false
+    gitHub.failTypes = true
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=github_failed')
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [acme])
+    assert.equal((await database.sql`select count(*)::int as n from orgs`)[0]!.n, 2)
+  })
+
+  it('the store refuses a suspended installation, a target with no active installation, and answers about other installations', async () => {
+    roles.set('acme-labs/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    let orgs = createOrgsStore(database.sql)
+    let octocat = await userId('octocat')
+    await database.sql`insert into memberships (user_id, org_id, role, source) values (${octocat}, ${globex}, 'owner', 'invitation')`
+    // A suspended installation does not move, by the screen or by the store.
+    await database.sql`update installations set suspended_at = now() where id = ${installationId}`
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: 'new', name: 'Labs' })).headers.get('Location'), '/settings/organization?notice=not_found')
+    assert.deepEqual(await orgs.moveInstallation({ fromOrgId: acme, installationId, to: { name: 'Labs' }, actorUserId: octocat, checks: await allAdmin(), deleteEmpty: true }), { ok: false, reason: 'not_found' })
+    await database.sql`update installations set suspended_at = null where id = ${installationId}`
+    // globex has no active installation: nobody would reach what moves there.
+    await database.sql`update installations set suspended_at = now() where org_id = ${globex}`
+    assert.deepEqual(await orgs.moveInstallation({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: octocat, checks: await allAdmin(), deleteEmpty: false }), { ok: false, reason: 'target_inactive' })
+    await database.sql`update installations set suspended_at = null where org_id = ${globex}`
+    // An installation joined globex after GitHub was asked: no answer about it, no move.
+    let checks = await allAdmin()
+    await database.sql`insert into installations (org_id, github_installation_id, github_account_id, account_login) values (${globex}, 26, 1026, 'globex-new')`
+    assert.deepEqual(await orgs.moveInstallation({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: octocat, checks, deleteEmpty: false }), { ok: false, reason: 'changed' })
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [acme])
+  })
+
+  it('writes the rename, the move and the deletion in org_audit; the deletion keeps its row and lists what it took', async () => {
+    roles.set('globex/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    await invite(owner, 'guest', 'member')
+    await request('/settings/members/invite', owner, { _csrf: await csrfOf(owner), login: 'other', role: 'admin' })
+    await signIn('camille')
+    await database.sql`insert into rules (org_id, title, body) values (${acme}, 'Org rule', 'Goes')`
+    assert.equal((await post(owner, '/settings/organization/name', { name: 'Acme 2' })).headers.get('Location'), '/settings/organization?notice=renamed')
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    let page = await (await request('/settings/organization', owner)).text()
+    assert.match(page, /It is the last installation: Acme 2 is deleted with the move/)
+    assert.match(page, /Its members from an invitation lose their access: guest\./)
+    assert.match(page, /Its members from GitHub leave it: camille, octocat\./)
+    assert.match(page, /Its pending invitations are canceled: other\./)
+    assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'Acme 2' })).headers.get('Location'), '/settings/organization?notice=moved')
+    let rows = await database.sql`
+      select action, org_id, org_name, actor_login, target_login, detail from org_audit
+      where action in ('rename', 'move_out', 'move_in', 'delete') order by created_at, action`
+    let byAction = Object.fromEntries(rows.map((r) => [r.action, { ...r }]))
+    assert.deepEqual(byAction.rename, { action: 'rename', org_id: null, org_name: 'Acme 2', actor_login: 'octocat', target_login: null, detail: { before: 'acme', after: 'Acme 2' } })
+    assert.deepEqual(byAction.move_out, {
+      action: 'move_out', org_id: null, org_name: 'Acme 2', actor_login: 'octocat', target_login: 'acme',
+      detail: { installation: 11, repositories: 0, kind: 'org', to: { id: globex, name: 'globex' } },
+    })
+    assert.equal(byAction.move_in.org_id, globex)
+    assert.deepEqual(byAction.move_in.detail.from, { id: acme, name: 'Acme 2' })
+    assert.deepEqual(byAction.delete, {
+      action: 'delete', org_id: null, org_name: 'Acme 2', actor_login: 'octocat', target_login: null,
+      detail: {
+        members: [
+          { login: 'camille', role: 'member', source: 'github' },
+          { login: 'guest', role: 'member', source: 'invitation' },
+          { login: 'octocat', role: 'owner', source: 'github' },
+        ],
+        invitations: ['other'],
+        providers: 0,
+        runners: 0,
+        rules: 1,
+      },
+    })
+  })
+
+  it('refuses a name with an invisible character, and gives two new orgs of the same name at once two slugs', async () => {
+    roles.set('acme-labs/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    assert.equal((await post(owner, '/settings/organization/name', { name: 'a\u200bcme' })).headers.get('Location'), '/settings/organization?notice=bad_name')
+    assert.equal((await post(owner, '/settings/organization/name', { name: '\u202egloBex' })).headers.get('Location'), '/settings/organization?notice=bad_name')
+    let { installationId } = await secondInstallation()
+    let [other] = await database.sql<{ id: string }[]>`
+      insert into installations (org_id, github_installation_id, github_account_id, account_login) values (${globex}, 14, 1014, 'globex-labs') returning id`
+    await signIn('other')
+    let orgs = createOrgsStore(database.sql)
+    let checks = await allAdmin()
+    let both = await Promise.all([
+      orgs.moveInstallation({ fromOrgId: acme, installationId, to: { name: 'Labs' }, actorUserId: await userId('octocat'), checks, deleteEmpty: false }),
+      orgs.moveInstallation({ fromOrgId: globex, installationId: other!.id, to: { name: 'Labs' }, actorUserId: await userId('other'), checks, deleteEmpty: false }),
+    ])
+    assert.deepEqual(both.map((o) => o.ok), [true, true])
+    assert.deepEqual((await database.sql`select slug from orgs where name = 'Labs' order by slug`).map((r) => r.slug), ['labs', 'labs-2'])
+  })
+
+  it('a move and the webhook of the moved installation, at the same time, never wait on each other', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    let orgs = createOrgsStore(database.sql)
+    let apply = createWebhookStore(database.db)
+    let installation = { githubInstallationId: 13, githubAccountId: 1013, login: 'acme-labs' }
+    let checks = await allAdmin()
+    let from = acme
+    let errors: string[] = []
+    let moves = 0
+    for (let round = 0; round < 300; round++) {
+      let to = from === acme ? globex : acme
+      let results = await Promise.allSettled([
+        apply({ type: 'add_repositories', installation, repositories: [{ githubRepoId: 9000 + (round % 4), fullName: `acme-labs/r${round % 4}` }] }, `delivery-${round}`),
+        orgs.moveInstallation({ fromOrgId: from, installationId, to: { orgId: to }, actorUserId: actor, checks, deleteEmpty: false }),
+      ])
+      for (let result of results) if (result.status === 'rejected') errors.push(String((result.reason as { code?: string }).code ?? result.reason))
+      let moved = results[1]!
+      if (moved.status === 'fulfilled' && moved.value.ok) {
+        from = to
+        moves++
+      }
+    }
+    assert.deepEqual(errors, [])
+    assert.equal(moves, 300)
+    let split = await database.sql`select count(*)::int as n from repos r join installations i on i.id = r.installation_id where r.org_id <> i.org_id`
+    assert.equal(split[0]!.n, 0)
+  })
+
+  it('a move and a rule saved on a repository of the installation, at the same time, never wait on each other', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId, repoId } = await secondInstallation()
+    let orgs = createOrgsStore(database.sql)
+    let rules = createRulesStore(database.sql)
+    let assignment = createAssignmentStore(database.sql)
+    let checks = await allAdmin()
+    let from = acme
+    let errors: string[] = []
+    let moves = 0
+    for (let round = 0; round < 60; round++) {
+      let to = from === acme ? globex : acme
+      let results = await Promise.allSettled([
+        rules.create(from, repoId, actor, { title: `Rule ${round}`, body: 'Check it', paths: [], severityFloor: null }),
+        assignment.create(from, repoId, actor, { authors: [`a${round}`], paths: [], labels: [], action: 'review', level: 'lite', mention: null }),
+        orgs.moveInstallation({ fromOrgId: from, installationId, to: { orgId: to }, actorUserId: actor, checks, deleteEmpty: false }),
+      ])
+      for (let result of results) if (result.status === 'rejected') errors.push(String((result.reason as { code?: string }).code ?? result.reason))
+      let moved = results[2]!
+      if (moved.status === 'fulfilled' && moved.value.ok) {
+        from = to
+        moves++
+      }
+    }
+    assert.deepEqual(errors, [])
+    assert.equal(moves, 60)
+    let stray = await database.sql`select count(*)::int as n from rules r join repos p on p.id = r.repo_id where r.org_id <> p.org_id`
+    assert.equal(stray[0]!.n, 0)
+  })
+
+  it('a rename and a move of the same owner, at the same time, never wait on each other', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    let orgs = createOrgsStore(database.sql)
+    let checks = await allAdmin()
+    let from = acme
+    let errors: string[] = []
+    let moves = 0
+    for (let round = 0; round < 60; round++) {
+      let to = from === acme ? globex : acme
+      let results = await Promise.allSettled([
+        orgs.rename(acme, actor, `acme ${round}`),
+        orgs.rename(globex, actor, `globex ${round}`),
+        orgs.moveInstallation({ fromOrgId: from, installationId, to: { orgId: to }, actorUserId: actor, checks, deleteEmpty: false }),
+      ])
+      for (let result of results) if (result.status === 'rejected') errors.push(String((result.reason as { code?: string }).code ?? result.reason))
+      let moved = results[2]!
+      if (moved.status === 'fulfilled' && moved.value.ok) {
+        from = to
+        moves++
+      }
+    }
+    assert.deepEqual(errors, [])
+    assert.equal(moves, 60)
+  })
+
+  it('a move waits for a webhook that holds the installation, then its org, as upsertInstallation does', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    // The order of the webhook: the row of the installation, then the row of its org, a moment later.
+    let webhook = database.sql.begin(async (tx) => {
+      await tx`update installations set updated_at = now() where github_installation_id = 13`
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      await tx`select id from orgs where id = ${acme} for update`
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    let outcome = await createOrgsStore(database.sql).moveInstallation({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: false })
+    await webhook
+    assert.deepEqual(outcome, { ok: true, orgId: globex, deleted: false })
+  })
+
+  for (let table of ['rules', 'assignment_rules'] as const) {
+    it(`a move waits for a save of ${table} that holds the repository, and the save ends`, async () => {
+      let actor = await ownerOfBoth()
+      let { installationId, repoId } = await secondInstallation()
+      // A lock of the table holds the insert of the save after its lock of the repository.
+      let release!: () => void
+      let held = new Promise<void>((resolve) => (release = resolve))
+      let blocked = new Promise<void>((resolve) => {
+        void database.sql.begin(async (tx) => {
+          await tx.unsafe(`lock table ${table} in share mode`)
+          resolve()
+          await held
+        })
+      })
+      await blocked
+      let save =
+        table === 'rules'
+          ? createRulesStore(database.sql).create(acme, repoId, actor, { title: 'During the move', body: 'Check it', paths: [], severityFloor: null })
+          : createAssignmentStore(database.sql).create(acme, repoId, actor, { authors: ['someone'], paths: [], labels: [], action: 'review', level: 'lite', mention: null })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      let move = createOrgsStore(database.sql).moveInstallation({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: false })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      release()
+      let [saved, moved] = await Promise.allSettled([save, move])
+      assert.equal(saved.status, 'fulfilled', String((saved as PromiseRejectedResult).reason))
+      assert.equal(moved.status, 'fulfilled', String((moved as PromiseRejectedResult).reason))
+      assert.deepEqual((moved as PromiseFulfilledResult<unknown>).value, { ok: true, orgId: globex, deleted: false })
+      // The save came first: what it wrote moved with the repository.
+      let stray = await database.sql.unsafe(`select count(*)::int as n from ${table} r join repos p on p.id = r.repo_id where r.org_id <> p.org_id`)
+      assert.equal(stray[0]!.n, 0)
+      assert.deepEqual(await orgOf(table, `repo_id = '${repoId}'`).then((ids) => [...new Set(ids)]), [globex])
+    })
+  }
 })
