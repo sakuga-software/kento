@@ -345,6 +345,16 @@ test('a label of an open earlier finding is written as its public id and title; 
 test('a label that the pack did not hold goes with its sentence; a code such as E11000 or E2E stays', () => {
   const held = earlierFindingsSection(repo, pushed, [earlier(finding(BILLING, 386, 'The start date comes from a new schedule'), 'open')]).held;
   assert.equal(withPublicLabels('The earlier finding E7 still stands. Mongo answers E11000 on a duplicate, and the E2E tests pass.', held), 'Mongo answers E11000 on a duplicate, and the E2E tests pass.');
+  // Kentō on #55 (#1bf345): an error code next to the word « finding » is no label.
+  assert.equal(withPublicLabels('Error code E42 is a finding of the new review.', held), 'Error code E42 is a finding of the new review.');
+});
+
+test('a title keeps its sentence, without the stale label (Kentō on #55)', () => {
+  const settled = finding(ACCOUNT, 237, 'The message is not translated');
+  const held = earlierFindingsSection(repo, pushed, [earlier(settled, 'dismissed', 'Translated by the layout')]).held;
+  const reply: Answer = answer(4, [finding(BILLING, 394, 'E1 comes back on the refusal', 'major')]);
+  publicLabels(reply, held);
+  assert.equal(reply.findings[0]!.title, 'an earlier finding comes back on the refusal');
 });
 
 test('the review publishes no label of the pack: a « still stands » on a dismissed finding is gone', async () => {

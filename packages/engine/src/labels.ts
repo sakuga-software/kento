@@ -11,8 +11,9 @@ import { SHORT_ID_LENGTH } from './render.ts';
 
 // A label of the pack: `E1`, never part of a longer word (`E2E`, `E11000` stays: see `cited`).
 const LABEL = /\bE(\d{1,3})\b/g;
-// A label that the pack did not hold still reads as one next to these words.
-const ABOUT_A_FINDING = /\b(?:earlier|finding|findings|follows|still stands|rechecked|re-checked)\b/i;
+// A label that the pack did not hold reads as one only in « earlier finding E7 »: « error code E42 is a
+// finding » names no label.
+const NAMED_LABEL = (ref: string) => new RegExp(`\\b(?:earlier|previous|prior|open)\\s+findings?\\s+${ref}\\b`, 'i');
 
 /** The sentences of a text, « e.g. » and « i.e. » inside them. */
 function sentences(text: string): string[] {
@@ -26,22 +27,27 @@ function sentences(text: string): string[] {
  * The text with each label of an open earlier finding written as its public id and title, and without
  * the sentences that cite a finding that is not open or a label that the pack did not hold.
  */
-export function withPublicLabels(text: string, held: readonly HeldEarlier[]): string {
+export function withPublicLabels(text: string, held: readonly HeldEarlier[], keepSentences = false): string {
   if (!text || !/\bE\d/.test(text)) return text;
   const byRef = new Map(held.map((e) => [e.ref, e]));
   const kept: string[] = [];
   for (const sentence of sentences(text)) {
     const refs = [...sentence.matchAll(LABEL)].map((m) => m[0]);
-    const cited = refs.filter((ref) => byRef.has(ref) || ABOUT_A_FINDING.test(sentence));
-    if (!cited.length) {
+    const cited = new Set(refs.filter((ref) => byRef.has(ref) || NAMED_LABEL(ref).test(sentence)));
+    if (!cited.size) {
       kept.push(sentence);
       continue;
     }
-    if (cited.some((ref) => byRef.get(ref)?.status !== 'open')) continue;
-    kept.push(sentence.replace(LABEL, (ref) => {
-      const e = byRef.get(ref);
-      return e ? `#${e.key.slice(0, SHORT_ID_LENGTH)} ("${e.title.replace(/"/g, "'")}")` : ref;
-    }));
+    const stale = [...cited].some((ref) => byRef.get(ref)?.status !== 'open');
+    // A title cannot lose its sentence: a label of a finding that is not open becomes « an earlier finding ».
+    if (stale && !keepSentences) continue;
+    kept.push(
+      sentence.replace(LABEL, (ref) => {
+        if (!cited.has(ref)) return ref;
+        const e = byRef.get(ref);
+        return e && e.status === 'open' ? `#${e.key.slice(0, SHORT_ID_LENGTH)} ("${e.title.replace(/"/g, "'")}")` : 'an earlier finding';
+      }),
+    );
   }
   return kept.join(' ').trim();
 }
@@ -63,12 +69,18 @@ export function publicLabels(answer: Answer, held: readonly HeldEarlier[]): numb
   if (answer.deeper_review?.reason) answer.deeper_review = { ...answer.deeper_review, reason: fix(answer.deeper_review.reason) };
   answer.not_reviewed = (answer.not_reviewed ?? []).map((line) => {
     // The path of the line stays out of the sentences: `path: reason`.
-    const match = /^(\S+?:\s)(.*)$/.exec(line);
-    if (!match) return fix(line);
-    const reason = fix(match[2]!);
-    return reason ? `${match[1]}${reason}` : '';
+    // A loop, not a pattern: the line is text of the model (CodeQL on #48).
+    const colon = line.indexOf(': ');
+    if (colon <= 0 || /\s/.test(line.slice(0, colon))) return fix(line);
+    const reason = fix(line.slice(colon + 2));
+    return reason ? `${line.slice(0, colon + 2)}${reason}` : '';
   }).filter(Boolean);
-  // A title keeps its words when its one sentence would go: a finding needs a title.
-  answer.findings = answer.findings.map((f) => ({ ...f, title: fix(f.title) || f.title, scenario: fix(f.scenario), fix: fix(f.fix) }));
+  // A title keeps its sentence: a finding needs a title. Its stale label goes.
+  const title = (text: string) => {
+    const out = withPublicLabels(text, held, true);
+    if (out !== text) changed++;
+    return out;
+  };
+  answer.findings = answer.findings.map((f) => ({ ...f, title: title(f.title), scenario: fix(f.scenario), fix: fix(f.fix) }));
   return changed;
 }
