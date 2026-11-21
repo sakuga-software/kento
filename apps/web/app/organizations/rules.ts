@@ -28,8 +28,8 @@ export type OrgRefusal =
   | 'not_found'
 
 /**
- * KNT-173. A person moves or detaches at most this many installations of an org in a minute: each
- * move asks GitHub once or twice per installation it touches.
+ * KNT-173. A person moves or detaches at most this many installations in a minute, whatever the
+ * org: each move asks GitHub once or twice per installation it touches.
  */
 export const MOVES_PER_MINUTE = 10
 

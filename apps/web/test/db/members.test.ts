@@ -34,6 +34,13 @@ describe('the members and the invitations of an org', () => {
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let clock: { now: number }
+  /**
+   * The offset of the clock of the test from the real one: the limits of `auth/asks.ts` follow it, on
+   * the clock of Postgres, read a few milliseconds after the offset. A step past the end of a window
+   * goes `PAST_THE_WINDOW_MS` further, so those milliseconds never decide.
+   */
+  let testClock = { offsetMs: () => clock.now - Date.now() }
+  const PAST_THE_WINDOW_MS = 1000
   /** The questions to GitHub of `lookupRole`, and a GitHub that fails. */
   let gitHub = { calls: 0, fail: false }
 
@@ -41,7 +48,8 @@ describe('the members and the invitations of an org', () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 3 })
-    store = createMembersStore(database.sql)
+    // The limits of the questions to GitHub run on the clock of Postgres, moved as the clock of the test.
+    store = createMembersStore(database.sql, testClock)
     let authStore = createAuthStore(database.sql)
     let github: GitHubOAuth = {
       clientId: 'Iv1.test',
@@ -409,13 +417,13 @@ describe('the members and the invitations of an org', () => {
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
     // GitHub fails: no answer is no admin. The role stays as it is.
     await database.sql`update memberships set role = 'admin' where id = ${octocat.id}`
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     gitHub.fail = true
     assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
     gitHub.fail = false
     assert.equal((await membership('octocat', acme))!.role, 'admin')
     // And octocat, demoted on GitHub in between, cannot either.
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     roles.set('acme/octocat', 'member')
     assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
     assert.equal((await membership('octocat', acme))!.role, 'admin')
@@ -443,7 +451,7 @@ describe('the members and the invitations of an org', () => {
     assert.equal(gitHub.calls, 1)
     assert.match(await (await request('/settings/members?notice=reclaim_wait', camille)).text(), /Kentō asked GitHub less than a minute ago/)
     // A minute later, GitHub is asked again.
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     await request('/settings/members/reclaim', camille, { _csrf: csrf })
     assert.equal(gitHub.calls, 2)
   })
@@ -453,17 +461,17 @@ describe('the members and the invitations of an org', () => {
     let camille = (await signIn('camille')).cookie!
     let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
     // Another process of the service counted a question of camille a moment ago: this one asks nothing.
-    assert.equal(await createMembersStore(database.sql).askReclaim(acme, user!.id, clock.now), true)
+    assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, user!.id), 'allowed')
     gitHub.calls = 0
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
     assert.equal(gitHub.calls, 0)
     // A minute later GitHub fails: camille asks again after RECLAIM_RETRY_MS, not after a minute.
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     gitHub.fail = true
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
     gitHub.fail = false
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
-    clock.now += RECLAIM_RETRY_MS
+    clock.now += RECLAIM_RETRY_MS + PAST_THE_WINDOW_MS
     gitHub.calls = 0
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
     assert.equal(gitHub.calls, 1)

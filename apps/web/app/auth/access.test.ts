@@ -71,4 +71,25 @@ describe('KNT-173: the fake store of the unit tests ends a membership as the sto
     await store.deleteMembership('user-github', 'org-1')
     assert.equal(await store.membershipOf('user-github', 'org-1'), null)
   })
+
+  it('holds the lock for the whole work: a nested lock of the same org keeps it, one of another org is refused', async () => {
+    let store = fakeAuth().deps.store
+    await store.saveMembership('user-a', 'org-1', 'admin', 'github')
+    await store.saveMembership('user-b', 'org-1', 'admin', 'github')
+    await store.withOrgLock('org-1', async (locked) => {
+      await locked.withOrgLock('org-1', async () => {})
+      // The nested lock ended; the outer one still holds.
+      await locked.forgetMembership('user-a', 'org-1')
+      await assert.rejects(locked.withOrgLock('org-2', async () => {}), /the lock of org-1 is held/)
+    })
+    // Two locks of the same org at the same time each hold their own.
+    let release!: () => void
+    let held = new Promise<void>((resolve) => (release = resolve))
+    let first = store.withOrgLock('org-1', async () => held)
+    await store.withOrgLock('org-1', async (locked) => locked.forgetMembership('user-b', 'org-1'))
+    release()
+    await first
+    assert.equal(await store.membershipOf('user-a', 'org-1'), null)
+    assert.equal(await store.membershipOf('user-b', 'org-1'), null)
+  })
 })

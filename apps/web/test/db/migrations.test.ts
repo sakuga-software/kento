@@ -426,13 +426,14 @@ describe('migrations', () => {
       await runMigrations(other.url)
 
       assert.deepEqual(await sql`select count(*)::int as n from memberships`, before)
-      let ask = (action: string) =>
-        sql`insert into github_asks (org_id, user_id, action, window_start, count) values (${acme}, ${user!.id}, ${action}, now(), 1)`
-      await ask('reclaim')
-      await ask('move')
-      // One row per person, org and kind of question.
-      await assert.rejects(ask('move'), /github_asks_org_id_user_id_action_pk/)
-      // The counts go with their person, and with their org.
+      let ask = (scope: string, action: string) =>
+        sql`insert into github_asks (user_id, scope, action, window_start, count) values (${user!.id}, ${scope}, ${action}, now(), 1)`
+      await ask(acme, 'reclaim')
+      await ask('moves', 'move')
+      // One row per person, scope and kind of question.
+      await assert.rejects(ask('moves', 'move'), /github_asks_user_id_scope_action_pk/)
+      // The counts go with their person. Those of an org go with the move that deletes it
+      // (organizations/store.ts, tested in organizations.test.ts): the table has no key to the org.
       await sql`delete from users where id = ${user!.id}`
       assert.equal((await sql`select count(*)::int as n from github_asks`)[0]!.n, 0)
     } finally {

@@ -1,5 +1,5 @@
 {
-  "id": "dc353551-3bfc-45c7-8e4c-fc744b92974d",
+  "id": "7ece68c3-7d30-4180-982c-e1b1e2a6b487",
   "prevId": "9ac9d57c-7e09-4f85-ba8b-adf2c61f9d76",
   "version": "7",
   "dialect": "postgresql",
@@ -1054,15 +1054,15 @@
       "name": "github_asks",
       "schema": "",
       "columns": {
-        "org_id": {
-          "name": "org_id",
+        "user_id": {
+          "name": "user_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
         },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
+        "scope": {
+          "name": "scope",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -1087,19 +1087,6 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "github_asks_org_id_orgs_id_fk": {
-          "name": "github_asks_org_id_orgs_id_fk",
-          "tableFrom": "github_asks",
-          "tableTo": "orgs",
-          "columnsFrom": [
-            "org_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "github_asks_user_id_users_id_fk": {
           "name": "github_asks_user_id_users_id_fk",
           "tableFrom": "github_asks",
@@ -1115,11 +1102,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "github_asks_org_id_user_id_action_pk": {
-          "name": "github_asks_org_id_user_id_action_pk",
+        "github_asks_user_id_scope_action_pk": {
+          "name": "github_asks_user_id_scope_action_pk",
           "columns": [
-            "org_id",
             "user_id",
+            "scope",
             "action"
           ]
         }

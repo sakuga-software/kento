@@ -66,11 +66,12 @@ export interface MembersStore {
   reclaim(orgId: string, userId: string, githubAdmin: boolean): Promise<ChangeOutcome>
   /**
    * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
-   * and org, for every process of the service. False: the person asked within it.
+   * and org, for every process of the service, on the clock of Postgres. `over`: the person asked
+   * within it; `gone`: the person is gone.
    */
-  askReclaim(orgId: string, userId: string, now: number): Promise<boolean>
+  askReclaim(orgId: string, userId: string): Promise<'allowed' | 'over' | 'gone'>
   /** KNT-173. GitHub failed for the take-back: the person asks again after `RECLAIM_RETRY_MS`. */
-  reclaimFailed(orgId: string, userId: string, now: number): Promise<void>
+  reclaimFailed(orgId: string, userId: string): Promise<void>
   /** A change of a membership of the org by a member of it, decided by `decideMemberChange`. */
   change(input: { orgId: string; actorUserId: string; membershipId: string | null; change: MemberChange; now: number }): Promise<ChangeOutcome>
   /** The pending invitations of a GitHub account, in the active orgs, not expired. */
@@ -97,7 +98,8 @@ async function cancelInvitationsOf(tx: postgres.Sql, orgId: string, inviterId: s
   return rows.map((r) => r.githubLogin).sort()
 }
 
-export function createMembersStore(sql: postgres.Sql): MembersStore {
+/** `clock`: the offset of the clock of the limits (`auth/asks.ts`); the tests move it. */
+export function createMembersStore(sql: postgres.Sql, clock: { offsetMs(): number } = { offsetMs: () => 0 }): MembersStore {
   /** Runs `work` in one transaction that holds the lock of the owners of the org. */
   async function locked<T>(orgId: string, work: (tx: postgres.Sql) => Promise<T>): Promise<T> {
     return (await sql.begin(async (tx) => {
@@ -250,12 +252,12 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
       })
     },
 
-    async askReclaim(orgId, userId, now) {
-      return takeGitHubAsk(sql, { orgId, userId, action: 'reclaim', now, limit: 1, windowMs: RECLAIM_COOLDOWN_MS })
+    async askReclaim(orgId, userId) {
+      return takeGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
     },
 
-    async reclaimFailed(orgId, userId, now) {
-      await shortenGitHubAsk(sql, { orgId, userId, action: 'reclaim', now, windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS })
+    async reclaimFailed(orgId, userId) {
+      await shortenGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS, offsetMs: clock.offsetMs() })
     },
 
     async own(githubId) {

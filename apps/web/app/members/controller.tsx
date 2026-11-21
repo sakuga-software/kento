@@ -124,17 +124,21 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
         // One question to GitHub per person and org a minute, counted in Postgres for every process:
         // a member cannot spend the quota of the installation, the one of the reviews, by posting
         // the form again and again.
-        if (!(await deps.store.askReclaim(org.id, signed.user.id, kit.now()))) {
-          log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id })
-          return toMembers('reclaim_wait')
+        let asked = await deps.store.askReclaim(org.id, signed.user.id)
+        if (asked !== 'allowed') {
+          log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id, outcome: asked })
+          return toMembers(asked === 'gone' ? 'not_found' : 'reclaim_wait')
         }
         let githubAdmin: boolean
         try {
           githubAdmin = (await orgRole(deps.lookupRole, org, { githubId: signed.user.githubId, login: signed.user.login })) === 'admin'
         } catch (error) {
           log('warn', 'members.lookup_failed', { org: org.name, error: errorMessage(error) })
-          // A failure of GitHub does not cost the person the whole minute.
-          await deps.store.reclaimFailed(org.id, signed.user.id, kit.now())
+          // A failure of GitHub does not cost the person the whole minute. A failure to write that
+          // changes nothing of the answer: GitHub failed.
+          await deps.store.reclaimFailed(org.id, signed.user.id).catch((failure: unknown) =>
+            log('warn', 'members.reclaim_retry_not_saved', { org: org.id, error: errorMessage(failure) }),
+          )
           return toMembers('github_failed')
         }
         let outcome = await deps.store.reclaim(org.id, signed.user.id, githubAdmin)

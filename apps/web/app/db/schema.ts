@@ -656,25 +656,25 @@ export const orgAudit = pgTable(
 )
 
 /**
- * KNT-173. The questions to GitHub that a person asks through a form of an org (the take-back of the
- * owner role, the moves of installations), counted in a window: the limit holds for every process
- * of the service. One row per person, org and kind of question.
+ * KNT-173. The questions to GitHub that a person asks through a form (the take-back of the owner role
+ * of an org, the moves of installations), counted in a window: the limit holds for every process of
+ * the service. One row per person, scope and kind of question. `scope`: the id of the org for the
+ * take-back, `moves` for the moves (one count per person, whatever the org: an org that a move
+ * deletes does not take the count with it). A move that deletes an org deletes the rows of its id.
  */
 export const githubAsks = pgTable(
   'github_asks',
   {
-    orgId: uuid('org_id')
-      .notNull()
-      .references(() => orgs.id, { onDelete: 'cascade' }),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
     /** reclaim, move. */
     action: text('action').notNull(),
     windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
     count: integer('count').notNull(),
   },
-  (table) => [primaryKey({ columns: [table.orgId, table.userId, table.action] })],
+  (table) => [primaryKey({ columns: [table.userId, table.scope, table.action] })],
 )
 
 /**
