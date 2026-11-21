@@ -280,7 +280,8 @@ test.describe('the Repos screen', () => {
     await page.keyboard.press('ArrowDown')
     await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+$/)
+    // KNT-178: findings.js may add the size of the page that fits the window.
+    await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+(&per=\d+)?$/)
     await page.goBack()
     await hydrated(page)
     await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'false')

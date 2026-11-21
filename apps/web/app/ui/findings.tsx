@@ -22,7 +22,7 @@ import { agoOrDate, count, plural } from './format.ts'
 import { DismissDialog } from './dismiss-dialog.tsx'
 import { AlertIcon, CheckIcon } from './icons.tsx'
 import { statusClass } from './pull.tsx'
-import { readPageNumber } from '../paging.ts'
+import { readPageNumber, readPageSize } from '../paging.ts'
 import { Pager } from './pager.tsx'
 import { PrecisionSection, shortName } from './precision.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -49,6 +49,11 @@ export interface FindingList extends FindingQuery {
   considered: boolean
   /** KNT-148: `?page=n`, from 1. */
   page: number
+  /**
+   * KNT-178: `?per=n`, the rows of a page, 10 to 100. Null when the URL has none: the page has
+   * FINDINGS_PAGE_SIZE rows, and findings.js may choose a size from the height of the window.
+   */
+  per: number | null
   /** REV-91. The tab of the screen: the list, or the precision (`?view=precision`). */
   tab: 'list' | 'precision'
 }
@@ -150,6 +155,7 @@ export function readFindingList(query: URLSearchParams): FindingList {
     days: days !== null && /^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= DAYS_MAX ? Number(days) : null,
     considered: query.get('type') === CONSIDERED,
     page: readPageNumber(query),
+    per: readPageSize(query),
     tab: query.get('view') === 'precision' ? 'precision' : 'list',
   }
 }
@@ -166,6 +172,7 @@ export function findingListQuery(list: Partial<FindingList>): URLSearchParams {
   if (list.author) query.set('author', list.author)
   if (list.days) query.set('days', String(list.days))
   if (list.considered) query.set('type', CONSIDERED)
+  if (list.per) query.set('per', String(list.per))
   if (list.page && list.page > 1) query.set('page', String(list.page))
   if (list.tab === 'precision') query.set('view', 'precision')
   return query
@@ -177,9 +184,13 @@ export function findingsHref(list: Partial<FindingList>): string {
   return query ? `${routes.findings.href()}?${query}` : routes.findings.href()
 }
 
-/** The filters of a list without its page: a new filter or tab starts at the first page. */
+/**
+ * The filters of a list without its page: a new filter or tab starts at the first page. The size of
+ * the page (KNT-178) stays: it is a choice of the screen, not a filter.
+ */
 function filtersOf(list: FindingList): Partial<FindingList> {
   return {
+    per: list.per,
     view: list.view,
     repoId: list.repoId,
     severity: list.severity,
@@ -264,7 +275,8 @@ export function FindingsPage(handle: Handle<FindingsPageProps>) {
               <Empty page={page} list={list} />
             ) : (
               <div class="table-wrap findings-wrap">
-                <table class="table findings-table">
+                {/* KNT-178: findings.js reads the first row of the page, to keep it on screen when it sets `per`. */}
+                <table class="table findings-table" data-offset={String(page.offset)}>
                   <caption class="visually-hidden">
                     {VIEW_LABELS[list.view]} findings of {org}, from the most recent to the oldest
                   </caption>
@@ -328,6 +340,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
         {list.reason ? <input type="hidden" name="reason" value={list.reason} /> : null}
         {list.author ? <input type="hidden" name="author" value={list.author} /> : null}
         {list.days ? <input type="hidden" name="days" value={String(list.days)} /> : null}
+        {list.per ? <input type="hidden" name="per" value={String(list.per)} /> : null}
         <div class="findings-filter findings-filter-search">
           <label class="field-label" for="findings-q">
             Search
@@ -410,7 +423,7 @@ function FilterForm(handle: Handle<{ list: FindingList; facets: FindingFacets; o
             Filter
           </Button>
           {hasFilters(list) ? (
-            <a class={buttonClass('ghost')} href={findingsHref({ view: list.view })}>
+            <a class={buttonClass('ghost')} href={findingsHref({ view: list.view, per: list.per })}>
               Clear the filters
             </a>
           ) : null}
@@ -452,7 +465,7 @@ function Empty(handle: Handle<{ page: FindingScreenPage; list: FindingList }>) {
               {filtered ? ' · ' : null}
             </>
           ) : null}
-          {filtered ? <a href={findingsHref({ view: list.view })}>Clear the filters</a> : null}
+          {filtered ? <a href={findingsHref({ view: list.view, per: list.per })}>Clear the filters</a> : null}
         </p>
       </section>
     )

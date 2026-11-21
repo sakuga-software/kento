@@ -37,6 +37,39 @@
   for (const box of boxes) box.addEventListener('change', update)
   update()
 
+  // KNT-178. A page of as many rows as the window holds: on the first load without `per`, the size
+  // that fits the height of the window, 10 to 100, and the page that keeps the first row on screen.
+  // One replace of the URL: the next load has `per` and changes nothing. Without JavaScript, 25.
+  const table = document.querySelector('table.findings-table[data-offset]')
+  const url = new URL(location.href)
+  const rows = table ? [...table.tBodies[0].rows] : []
+  if (table && rows.length > 0 && !url.searchParams.has('per')) {
+    // From one row to the next: on a phone a row is a card, with its gap.
+    const step = rows.length > 1 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : rows[0].offsetHeight
+    const per = step > 0 ? Math.min(100, Math.max(10, Math.floor(window.innerHeight / step))) : 25
+    if (per !== 25) {
+      const page = Math.floor((Number(table.dataset.offset) || 0) / per) + 1
+      // In the order of findingListQuery (app/ui/findings.tsx), so that the server does not redirect
+      // again: `per` and `page` come before `view` and the notice of a change (controllers/findings.tsx).
+      const after = ['view', 'done', 'n', 'same', 'fixed', 'missing', 'failed', 'replied', 'unreplied', 'error']
+      const next = new URLSearchParams()
+      let placed = false
+      const place = () => {
+        next.set('per', String(per))
+        if (page > 1) next.set('page', String(page))
+        placed = true
+      }
+      for (const [name, value] of url.searchParams) {
+        if (name === 'page') continue
+        if (!placed && after.includes(name)) place()
+        next.append(name, value)
+      }
+      if (!placed) place()
+      url.search = next.toString()
+      location.replace(url.href)
+    }
+  }
+
   const filters = document.querySelector('form.findings-filters')
   filters?.addEventListener('change', (event) => {
     // KNT-165: a select of the filters is a component in the browser; its hidden input sends `change`.

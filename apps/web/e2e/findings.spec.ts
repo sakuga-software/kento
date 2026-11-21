@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
@@ -54,7 +54,7 @@ test.describe('the Findings screen', () => {
       await signIn(page, 'camille')
       await seed()
 
-      await page.goto('/findings')
+      await page.goto('/findings?per=25')
       await expect(page.getByRole('heading', { level: 1, name: 'Findings' })).toBeVisible()
       let tabs = page.getByRole('navigation', { name: 'Status of the findings' })
       await expect(tabs.getByRole('link', { name: /open\s*60/ })).toHaveAttribute('aria-current', 'page')
@@ -97,7 +97,7 @@ test.describe('the Findings screen', () => {
 
       // REV-18: 3 dismissed and no fixed finding in 30 days: under 10, no share yet; the reason leads to its findings.
       // REV-91: the precision has its own tab.
-      await page.goto('/findings')
+      await page.goto('/findings?per=25')
       await page.getByRole('navigation', { name: 'Views of the findings' }).getByRole('link', { name: 'Precision' }).click()
       await expect(page).toHaveURL(/view=precision/)
       let precision = page.getByRole('region', { name: 'Precision · last 30 days' })
@@ -115,7 +115,7 @@ test.describe('the Findings screen', () => {
     await signIn(page, 'octocat')
     await seed()
     await page.route('**/assets/findings.js*', (route) => route.abort())
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     // KNT-143: without findings.js, "Select all" stays hidden (`.check` keeps `hidden` working).
     await expect(page.locator('#findings-all')).toBeHidden()
     let bar = page.getByRole('group', { name: 'Actions on the checked findings' })
@@ -139,7 +139,7 @@ test.describe('the Findings screen', () => {
       let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
       await sql`delete from rules`
       await sql.end()
-      await page.goto('/findings')
+      await page.goto('/findings?per=25')
       await hydrated(page)
       // The native select is still in the page, hidden and disabled: the form posts the hidden input only.
       await expect(page.locator('select#findings-priority-native')).toBeHidden()
@@ -235,7 +235,7 @@ test.describe('the Findings screen', () => {
     await signIn(page, 'octocat')
     await seed()
     await page.emulateMedia({ forcedColors: 'active' })
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     await hydrated(page)
     await page.getByRole('button', { name: 'Priority All' }).focus()
     expect(await page.getByRole('button', { name: 'Priority All' }).evaluate((el) => getComputedStyle(el).outlineStyle)).toBe('solid')
@@ -260,7 +260,7 @@ test.describe('the Findings screen', () => {
       await seed()
       await context.addCookies([{ name: 'kento_theme', value: theme, url: baseURL! }])
       await page.emulateMedia({ reducedMotion: 'reduce' })
-      await page.goto('/findings')
+      await page.goto('/findings?per=25')
       await page.getByRole('checkbox', { name: /Finding 01/ }).check()
       await page.getByText('Mark dismissed…').click()
       let drawing = (name: string) =>
@@ -286,7 +286,7 @@ test.describe('the Findings screen', () => {
     await signIn(page, 'octocat')
     await seed()
     await page.emulateMedia({ forcedColors: 'active' })
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     let row = page.getByRole('checkbox', { name: /Finding 01/ })
     await row.check()
     expect(await row.evaluate((el) => getComputedStyle(el).appearance)).toBe('auto')
@@ -324,7 +324,7 @@ test.describe('the Findings screen', () => {
     let reasons = page.getByRole('region', { name: 'Precision · last 30 days' })
     await page.goto('/findings?view=precision')
     await expect(reasons.getByRole('link', { name: 'Off topic' }).locator('xpath=..')).toContainText('3')
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     // KNT-143: findings.js shows "Select all".
     await expect(page.locator('#findings-all')).toBeVisible()
     // REV-91: the bar of the actions shows once a finding is checked, and "Deselect" empties it.
@@ -362,12 +362,96 @@ test.describe('the Findings screen without JavaScript (KNT-165)', () => {
   test('a filter is the native select, and "Filter" posts it', async ({ page }) => {
     await signIn(page, 'octocat')
     await seed()
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     let select = page.getByLabel('Priority')
     await expect(select).toHaveJSProperty('tagName', 'SELECT')
     await select.selectOption({ label: 'P0 · critical' })
     await page.getByRole('button', { name: 'Filter' }).click()
     await expect(page).toHaveURL(/priority=critical/)
     await expect(page.getByRole('rowheader')).toHaveCount(20)
+  })
+})
+
+// KNT-178. The size of a page: `?per=n` from 10 to 100, and with JavaScript, on a load without it, the
+// size that fits the height of the window, with the page that keeps the first row on screen.
+test.describe('the size of the pages of the Findings screen (KNT-178)', () => {
+  /** The rows that the window holds, as findings.js counts them: from one row to the next. */
+  async function fits(page: Page): Promise<number> {
+    return page.evaluate(() => {
+      let rows = [...document.querySelectorAll('table.findings-table tbody tr')]
+      let step = rows[1]!.getBoundingClientRect().top - rows[0]!.getBoundingClientRect().top
+      return Math.min(100, Math.max(10, Math.floor(window.innerHeight / step)))
+    })
+  }
+
+  test('a first load without `per` takes the size that fits the window, once, and keeps the first row of the page', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'camille')
+    await seed()
+    // Page 3 of 25 starts at "Finding 51".
+    let loads: string[] = []
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) loads.push(frame.url())
+    })
+    await page.goto('/findings?page=3')
+    await expect(page).toHaveURL(/\/findings\?per=\d+(&page=\d+)?$/)
+    await page.waitForLoadState('load')
+    let per = Number(new URL(page.url()).searchParams.get('per'))
+    expect(per).toBe(await fits(page))
+    expect(per).not.toBe(25)
+    let pageNumber = Math.floor(50 / per) + 1
+    expect(new URL(page.url()).searchParams.get('page') ?? '1').toBe(String(pageNumber))
+    await expect(page.getByRole('rowheader', { name: /Finding 51:/ })).toBeVisible()
+    await expect(page.getByRole('rowheader')).toHaveCount(Math.min(per, 60 - (pageNumber - 1) * per))
+    await expect(page.getByText(`${(pageNumber - 1) * per + 1} to ${Math.min(pageNumber * per, 60)} of 60 findings`)).toBeVisible()
+    // One replace, no loop: the load of the URL with `per` changes nothing.
+    await page.waitForTimeout(1000)
+    expect(loads.length).toBe(2)
+    // The links of the list keep the size: "Previous" (this page is often the last one).
+    let previous = pageNumber - 1 > 1 ? `&page=${pageNumber - 1}` : ''
+    await expect(page.getByRole('navigation', { name: 'Pages of the list' }).getByRole('link', { name: 'Previous' })).toHaveAttribute(
+      'href',
+      new RegExp(`\\?per=${per}${previous}$`),
+    )
+    expect(errors).toEqual([])
+  })
+
+  test('a `per` in the URL stays, 25 included, and a size out of bounds goes to the nearest bound', async ({ page }) => {
+    await signIn(page, 'camille')
+    await seed()
+    await page.goto('/findings?per=25')
+    await page.waitForTimeout(1000)
+    await expect(page).toHaveURL(/\/findings\?per=25$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(25)
+    await page.goto('/findings?per=500')
+    await expect(page).toHaveURL(/\/findings\?per=100$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(60)
+    await page.goto('/findings?per=3&page=2')
+    await expect(page).toHaveURL(/\/findings\?per=10&page=2$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(10)
+    await expect(page.getByRole('rowheader').first()).toHaveAccessibleName(/Finding 11:/)
+    // A filter of the form keeps the size (its hidden field), from page 1.
+    await hydrated(page)
+    await chooseOption(page, 'Priority', { label: 'P0 · critical' })
+    await expect(page).toHaveURL(/\/findings\?priority=critical&per=10$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(10)
+  })
+})
+
+test.describe('the size of the pages without JavaScript (KNT-178)', () => {
+  test.use({ javaScriptEnabled: false })
+
+  test('a load without `per` keeps 25 rows and its URL; `per` and the empty fields of the form go to a clean URL', async ({ page }) => {
+    await signIn(page, 'camille')
+    await seed()
+    await page.goto('/findings')
+    await expect(page).toHaveURL(/\/findings$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(25)
+    await page.goto('/findings?per=10')
+    await page.getByLabel('Priority').selectOption({ label: 'P0 · critical' })
+    await page.getByRole('button', { name: 'Filter' }).click()
+    // The form sends `q=&repo=…`: the server keeps only the values in use.
+    await expect(page).toHaveURL(/\/findings\?priority=critical&per=10$/)
+    await expect(page.getByRole('rowheader')).toHaveCount(10)
   })
 })
