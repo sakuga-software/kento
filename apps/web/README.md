@@ -34,7 +34,9 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   every page; it loads `public/runtime.ts` (the runtime of `remix/component`, `run()`) only on a page
   with a component to hydrate: the menu "…" of the Repos screen (`public/row-menu.tsx`) and the
   confirmations (`public/confirm.tsx`), on the menu and the popover of `@remix-run/ui`. Without
-  JavaScript, each one stays the `<details>` of the server.
+  JavaScript, each one stays the `<details>` of the server. Every select of the screens (KNT-165,
+  `public/select.tsx`) is the select of `@remix-run/ui` in the browser, and the native `<select>`
+  without JavaScript.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the

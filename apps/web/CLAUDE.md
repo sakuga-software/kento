@@ -10,6 +10,18 @@ screen must follow.
   a button, `Input`, `Textarea`, `Select`, `Choice`, `Check` for a checkbox repeated on every row,
   `Field`). `public/assets/kento.css` draws them with the tokens of Paper and Sumi; a screen adds only
   its layout.
+- **A select is `Select`, with an `id`** (KNT-165). The server renders the native `<select>`; in the
+  browser `CustomSelect` (`app/ui/public/select.tsx`, the select of `@remix-run/ui`) takes its place:
+  it reads the options and the value from the native one, moves its `id` to its button (the
+  `<label for>` names it), hides and disables the native one, and posts the same `name` from a hidden
+  input (`input[data-select]`), which sends `change`. A script that reacts to a select listens to
+  `change` on `select, input[data-select]`. In e2e, `chooseOption()` and `selectValue()` of
+  `e2e/helpers.ts` replace `selectOption()`, which stays for a test without JavaScript.
+  Where it differs from the native one: a click on the `<label>` opens the list; an open list locks
+  the scroll of the page; a click outside only closes the list (the link or button under it does not
+  act); Tab and Shift+Tab close the list without a choice and go on to the next or previous field
+  (`select.tsx` does it: `@remix-run/ui` 0.13.1 keeps the focus in the list). A script that handles
+  Escape on the page returns when `event.defaultPrevented`: the list handles its own Escape first.
 - **No React, and no third-party component or CSS framework.** The screens are `remix/component`
   JSX rendered on the server, and the styles are plain CSS in `kento.css`.
 - **Interactive widgets** (menu, popover, select, tabs; a toast from 0.14 on) use the headless primitives of
