@@ -583,6 +583,48 @@ describe('commands in the comments of a pull request', () => {
         assert.deepEqual([...hintsOf(botAnswered), ...hintsOf(personAnswered)], [])
       })
 
+      it('18k. KNT-192: a fix that the resolve confirms makes its finding `fixed`, from open or stale; a dismissed one stays', async () => {
+        let dismissedThread = fake.addThread({ path: 'src/d.ts', line: 3, body: '**Dismissed before**', commit: OLD })
+        let openThread = fake.addThread({ path: 'src/e.ts', line: 7, body: '**Still open**', commit: OLD })
+        let insert = async (key: string, path: string, line: number, title: string, status: string, reason: string | null, commentId: number) => {
+          let [row] = await database.sql<{ id: string }[]>`
+            insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status,
+              status_reason, first_seen_sha, last_seen_sha, github_comment_id, github_thread_id)
+            select id, ${PR}, ${`fp-${key}`}, ${key}, ${path}, ${line}, ${title}, 'major', 'bug', 90, ${status}::finding_status,
+              ${reason}, ${OLD}, ${OLD}, ${commentId}, ${`PRRT_${commentId}`}
+            from repos where github_repo_id = ${REPO.id}
+            returning id`
+          return row!.id
+        }
+        let stale = await insert('abc000000001', 'src/sum.ts', 2, 'The sum subtracts', 'stale', null, botFixed)
+        let dismissed = await insert('def000000001', 'src/d.ts', 3, 'Dismissed before', 'dismissed', 'not a bug', dismissedThread)
+        let open = await insert('fed000000001', 'src/e.ts', 7, 'Still open', 'open', null, openThread)
+
+        await say('@kento-review resolve')
+        let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
+        assert.ok(job)
+        let result = resolved()
+        result.threads = [
+          ...result.threads,
+          { id: `PRRT_${dismissedThread}`, verdict: 'fixed' as const, reply: 'Fixed.', changed: true },
+          // The model says fixed, but the file did not change since the thread: not a fix.
+          { id: `PRRT_${openThread}`, verdict: 'fixed' as const, reply: 'Fixed.', changed: false },
+        ]
+        await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: result })
+        await publisher().publishPending()
+
+        let rows = await database.sql<{ id: string; status: string; reason: string | null }[]>`
+          select id, status::text as status, status_reason as reason from findings where id in ${database.sql([stale, dismissed, open])}`
+        let byId = new Map(rows.map((r) => [r.id, [r.status, r.reason]]))
+        assert.deepEqual(byId.get(stale), ['fixed', null])
+        assert.deepEqual(byId.get(dismissed), ['dismissed', 'not a bug'])
+        assert.deepEqual(byId.get(open), ['open', null])
+        let events = await database.sql<{ findingId: string; type: string; actor: string; source: string | null; reviewed: boolean }[]>`
+          select finding_id as "findingId", type::text as type, actor, source, review_id is not null as reviewed from finding_events
+          where finding_id in ${database.sql([stale, dismissed, open])}`
+        assert.deepEqual(events.map((e) => ({ ...e })), [{ findingId: stale, type: 'fixed', actor: 'kento', source: 'resolve', reviewed: false }])
+      })
+
       it('18d. REV-71: a review job carries the threads of a finding of the bot that someone answered, cleaned', async () => {
         let refuted = fake.addThread({ path: 'src/sum.ts', line: 4, body: '**`sum` not imported** <!-- sakuga-review:finding 0123456789ab -->', commit: HEAD })
         fake.state.comments.push({
@@ -906,18 +948,22 @@ describe('commands in the comments of a pull request', () => {
       assert.equal((await jobs()).length, 0)
     })
 
-    it('R13. a finding fixed by a push, or stale, refuses the reject with 😕 and a reason', async () => {
+    it('R13. a fixed finding refuses the reject with 😕 and a reason; a stale one is dismissed (KNT-192)', async () => {
       let fixed = await seedFinding('dddddd000001', { thread: true, status: 'fixed' })
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a later review did not find it again after a push changed its file\./)
+      assert.match(
+        fake.repliesTo(fixed.commentId!)[0]!.body,
+        /`#dddddd` is no longer open: it is fixed\. A later review did not find it again after a push changed its file, or `@kento-review resolve` read its thread against the code\./,
+      )
       assert.doesNotMatch(fake.repliesTo(fixed.commentId!)[0]!.body, /fixed it/)
-      await seedFinding('eeeeee000001', { status: 'stale' })
-      let stale = await say('@kento-review reject #eeeeee ok')
-      assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
-      // KNT-192. A stale finding is one that Kentō no longer sees: the reply says so, and nothing more.
-      assert.match(fake.state.issueComments.at(-1)!.body, /`#eeeeee` is no longer open: Kentō no longer sees it on this PR \(stale\)\./)
+      // KNT-192. The reviews no longer see a stale finding, and it can still be a false positive.
+      let stale = await seedFinding('eeeeee000001', { status: 'stale' })
+      let dismissed = await say('@kento-review reject #eeeeee not a defect')
+      assert.equal(dismissed.body.outcome, 'dismissed')
+      assert.deepEqual(await statusOf(stale.id), { status: 'dismissed', reason: 'not a defect' })
+      assert.deepEqual((await eventsOf(stale.id)).map((e) => [e.type, e.actor, e.source]), [['dismissed', 'octocat', 'command']])
       // A finding set aside before can be named again: the second reject changes nothing.
       await seedFinding('ffffff000001', { status: 'dismissed' })
       assert.equal((await say('@kento-review reject #ffffff ok')).body.outcome, 'unchanged')
@@ -1274,7 +1320,7 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual((await eventsOf(finding.id)).map((e) => [e.type, e.actor]), [['wontfix', 'camille'], ['dismissed', 'octocat']])
     })
 
-    it('R10. a redelivery posts nothing more; a finding fixed or stale is refused with 😕', async () => {
+    it('R10. a redelivery posts nothing more; a fixed finding is refused with 😕, a stale one is dismissed', async () => {
       let finding = await seedFinding('3cf454aa0011', { thread: true })
       let first = await reply('@kento-review reject the schema validates it', finding.commentId!)
       await replayReply(first.payload, first.deliveryId)
@@ -1285,11 +1331,14 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a later review did not find it again after a push changed its file/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: it is fixed\. A later review did not find it again after a push changed its file/)
+      // KNT-192. A stale finding: the reject dismisses it, and a redelivery changes nothing more.
       let stale = await seedFinding('eeeeee000001', { status: 'stale' })
-      let staleRefused = await say('@kento-review reject #eeeeee ok')
-      assert.deepEqual(staleRefused.body, { outcome: 'refused', reason: 'reject: finding is stale' })
-      assert.deepEqual(await statusOf(stale.id), { status: 'stale', reason: null })
+      let staleRejected = await say('@kento-review reject #eeeeee ok')
+      assert.equal(staleRejected.body.outcome, 'dismissed')
+      assert.deepEqual(await statusOf(stale.id), { status: 'dismissed', reason: 'ok' })
+      assert.equal((await say('@kento-review reject #eeeeee ok')).body.outcome, 'unchanged')
+      assert.equal((await eventsOf(stale.id)).length, 1)
     })
 
     it('R11. without `contents: write`, the reply says that a person can resolve the thread, and the reject still succeeds', async () => {
