@@ -169,6 +169,10 @@ describe('the bundles of the browser modules (KNT-170)', () => {
           [{ entries: { 'app/a.ts': { file: 'a.js' } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
           [{ entries: { 'app/a.ts': { file: 'a.js', imports: ['c.js'] } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
           [{ entries: { 'app/a.ts': { file: 'b.js', imports: [] } }, files: ['a.js'] }, 'a wrong entry: app/a.ts'],
+          [{ entries: {}, files: ['../secret.js'] }, 'a wrong file name: ../secret.js'],
+          [{ entries: {}, files: ['sub/a.js'] }, 'a wrong file name: sub/a.js'],
+          [{ entries: {}, files: ['manifest.json'] }, 'a wrong file name: manifest.json'],
+          [{ entries: {}, files: ['..js'] }, 'a wrong file name: ..js'],
         ]
         for (let [manifest, problem] of shapes) {
           writeFileSync(path.join(partial.dir, 'manifest.json'), JSON.stringify(manifest))

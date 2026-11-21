@@ -69,6 +69,9 @@ function manifestProblem(manifest: unknown): string | null {
   let { entries, files } = (manifest ?? {}) as Partial<ClientManifest>
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return 'no entries'
   if (!Array.isArray(files) || !files.every((file) => typeof file === 'string')) return 'no files'
+  // Kentō #cb6ad2: a plain name of a script of the folder, never a path, never the manifest.
+  let wrong = files.find((file) => !/^[\w.@-]+\.js$/.test(file) || file.startsWith('.'))
+  if (wrong !== undefined) return `a wrong file name: ${wrong}`
   for (let [source, entry] of Object.entries(entries)) {
     let { file, imports } = (entry ?? {}) as Partial<ClientManifest['entries'][string]>
     let listed = (name: unknown) => typeof name === 'string' && files.includes(name)
