@@ -843,14 +843,17 @@ describe('commands in the comments of a pull request', () => {
 
   describe('reject (REV-93)', () => {
     /** A finding of the pull request PR (or of `pr`), with its thread on the fake when `thread` is set. */
-    async function seedFinding(key: string, options: { thread?: boolean; pr?: number; status?: string; severity?: string; confidence?: number; lastSeen?: string; title?: string } = {}) {
+    async function seedFinding(
+      key: string,
+      options: { thread?: boolean; threadIdKnown?: boolean; pr?: number; status?: string; severity?: string; confidence?: number; lastSeen?: string; title?: string } = {},
+    ) {
       let title = options.title ?? 'Bug'
       let commentId = options.thread ? fake.addThread({ path: 'src/a.ts', line: 3, body: `**${title}** \`#${key.slice(0, 6)}\``, commit: HEAD }) : null
       let [row] = await database.sql<{ id: string }[]>`
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status,
           first_seen_sha, last_seen_sha, github_comment_id, github_thread_id)
         select id, ${options.pr ?? PR}, ${`fp-${key}`}, ${key}, 'src/a.ts', 3, ${title}, ${options.severity ?? 'major'}, 'bug', ${options.confidence ?? 90},
-          ${options.status ?? 'open'}, ${HEAD}, ${options.lastSeen ?? HEAD}, ${commentId}, ${commentId === null ? null : `PRRT_${commentId}`}
+          ${options.status ?? 'open'}, ${HEAD}, ${options.lastSeen ?? HEAD}, ${commentId}, ${commentId === null || options.threadIdKnown === false ? null : `PRRT_${commentId}`}
         from repos where github_repo_id = ${REPO.id}
         returning id`
       return { id: row!.id, commentId }
@@ -908,7 +911,8 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a push already fixed it/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /`#dddddd` is no longer open: a later review did not find it again after a push changed its file\./)
+      assert.doesNotMatch(fake.repliesTo(fixed.commentId!)[0]!.body, /fixed it/)
       await seedFinding('eeeeee000001', { status: 'stale' })
       let stale = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(stale.body, { outcome: 'refused', reason: 'reject: finding is stale' })
@@ -1279,7 +1283,7 @@ describe('commands in the comments of a pull request', () => {
       let refused = await reply('@kento-review reject ok', fixed.commentId!)
       assert.deepEqual(refused.body, { outcome: 'refused', reason: 'reject: finding is fixed' })
       assert.deepEqual(threadReactionsOf(refused.payload.comment.id), ['confused'])
-      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a push already fixed it/)
+      assert.match(fake.repliesTo(fixed.commentId!)[0]!.body, /is no longer open: a later review did not find it again after a push changed its file/)
       let stale = await seedFinding('eeeeee000001', { status: 'stale' })
       let staleRefused = await say('@kento-review reject #eeeeee ok')
       assert.deepEqual(staleRefused.body, { outcome: 'refused', reason: 'reject: finding is stale' })
@@ -1337,15 +1341,56 @@ describe('commands in the comments of a pull request', () => {
       assert.equal(fake.repliesTo(finding.commentId!).length, 1)
     })
 
-    it('R4. a reason too long, or an id in a thread, gets 😕 and a short reply', async () => {
+    it('R4. a reason too long gets 😕 and a short reply', async () => {
       let finding = await seedFinding('3cf454aa0011', { thread: true })
       let long = await reply(`@kento-review reject ${'x'.repeat(501)}`, finding.commentId!)
       assert.deepEqual(long.body, { outcome: 'refused', reason: 'reject: reason_long' })
-      let withId = await reply('@kento-review reject #3cf454 false positive', finding.commentId!)
-      assert.deepEqual(withId.body, { outcome: 'refused', reason: 'reject: id_in_thread' })
       let replies = fake.repliesTo(finding.commentId!).map((c) => c.body)
       assert.match(replies[0]!, /at most 500 characters/)
-      assert.match(replies[1]!, /applies to that finding/)
+    })
+
+    it('R4b. in a thread, the id of its own finding works, and the id of another finding is refused with the id of the thread (KNT-160)', async () => {
+      fake.state.canResolve = true
+      let finding = await seedFinding('3cf454aa0011', { thread: true })
+      let other = await seedFinding('9ab123cc0022', { thread: true, title: 'Other' })
+      let wrong = await reply('@kento-review reject #9ab123 false positive', finding.commentId!)
+      assert.deepEqual(wrong.body, { outcome: 'refused', reason: 'reject: other_finding' })
+      assert.deepEqual(threadReactionsOf(wrong.payload.comment.id), ['confused'])
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /^@octocat This thread holds the finding `#3cf454`, not `#9ab123`\. /)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /`@kento-review reject #9ab123 <cause>` in the conversation/)
+      assert.equal((await statusOf(other.id)).status, 'open', 'the other finding is not touched')
+      // An id of no finding of the pull request: the reply says so, and names no thread.
+      let unknown = await reply('@kento-review reject #ffffff false positive', finding.commentId!)
+      assert.deepEqual(unknown.body, { outcome: 'refused', reason: 'reject: unknown_id' })
+      assert.match(fake.repliesTo(finding.commentId!).at(-1)!.body, /No finding of this PR has the id `#ffffff`\./)
+      assert.doesNotMatch(fake.repliesTo(finding.commentId!).at(-1)!.body, /reply in its thread/)
+      assert.equal((await statusOf(finding.id)).status, 'open')
+
+      let own = await reply('@kento-review reject #3cf454 false positive, the schema validates it', finding.commentId!)
+      assert.deepEqual(own.body, { outcome: 'dismissed', findingId: finding.id, dismissedReview: null })
+      assert.deepEqual(await statusOf(finding.id), { status: 'dismissed', reason: 'false positive, the schema validates it' })
+      assert.deepEqual(threadReactionsOf(own.payload.comment.id), ['eyes', 'rocket'])
+      // An id that names the finding of the thread and another finding is ambiguous, as in the conversation.
+      let twin = await seedFinding('3cf454bb0044', { title: 'Twin' })
+      let ambiguous = await reply('@kento-review reject #3cf454 not a bug', finding.commentId!)
+      assert.deepEqual(ambiguous.body, { outcome: 'refused', reason: 'reject: ambiguous_id' })
+      assert.match(fake.repliesTo(finding.commentId!).at(-1)!.body, /`#3cf454` matches several findings of this PR/)
+      assert.equal((await statusOf(twin.id)).status, 'open')
+      // A longer prefix of the key of the thread works too.
+      let longer = await seedFinding('5d6e7f880033', { thread: true, title: 'Third' })
+      assert.equal((await reply('@kento-review reject #5d6e7f88 not a bug', longer.commentId!)).body.outcome, 'dismissed')
+    })
+
+    it('R4c. a reject in the thread of a finding whose thread id the ledger does not know yet resolves the thread (KNT-160)', async () => {
+      fake.state.canResolve = true
+      fake.state.resolveNeedsWrite = true
+      let finding = await seedFinding('3cf454aa0011', { thread: true, threadIdKnown: false })
+      let { body } = await reply('@kento-review reject the schema validates it', finding.commentId!)
+      assert.equal(body.outcome, 'dismissed')
+      assert.ok(fake.state.resolved.has(finding.commentId!), 'the thread is resolved')
+      assert.doesNotMatch(fake.repliesTo(finding.commentId!)[0]!.body, /could not resolve/)
+      let [row] = await database.sql<{ thread: string | null }[]>`select github_thread_id as thread from findings where id = ${finding.id}`
+      assert.equal(row!.thread, `PRRT_${finding.commentId}`, 'the ledger keeps the thread id')
     })
 
     it('R5. in the conversation: no id, an unknown id, an ambiguous id, a finding of another pull request', async () => {
@@ -1383,7 +1428,15 @@ describe('commands in the comments of a pull request', () => {
       assert.deepEqual(threadReactionsOf(reader.payload.comment.id), [])
       let heavy = await reply('@kento-review heavy', finding.commentId!)
       assert.deepEqual(heavy.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
-      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /reads only `@kento-review reject <cause>`/)
+      assert.match(fake.repliesTo(finding.commentId!)[0]!.body, /In a thread, Kentō reads `@kento-review reject <cause>` and `@kento-review feedback <opinion>`\. A review command goes in the conversation of the PR\./)
+      // KNT-160. `resolve` in a thread gets an answer at once that says where it goes.
+      let resolve = await reply('@kento-review resolve', finding.commentId!)
+      assert.deepEqual(resolve.body, { outcome: 'refused', reason: 'only reject is read in a review thread' })
+      assert.deepEqual(threadReactionsOf(resolve.payload.comment.id), ['confused'])
+      assert.match(
+        fake.repliesTo(finding.commentId!)[1]!.body,
+        /^@octocat `@kento-review resolve` goes in the conversation of the PR, not in a thread\. From there, Kentō reads the open threads of the PR, this one among them, within the limits of the command\. In a thread, Kentō reads `@kento-review reject <cause>` and `@kento-review feedback <opinion>`\./,
+      )
       assert.equal((await jobs()).length, 0)
     })
 
