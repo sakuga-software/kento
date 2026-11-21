@@ -380,4 +380,7 @@ test('KNT-161. the reason of a runner of an earlier release is read too: a 429, 
   assert.equal(usageLimitOfReason('no model gave a usable answer: ProviderError: Anthropic answered 401: invalid x-api-key'), null);
   assert.equal(usageLimitOfReason('OpenRouter answered 500: rate limit of the upstream'), null);
   assert.equal(usageLimitOfReason('clone failed: exit 128'), null);
+  // A 401 stays a refused key, even when its body names a limit.
+  assert.equal(usageLimitOfReason('OpenRouter answered 401: {"error":{"message":"invalid key, see the rate limit page"}}'), null);
+  assert.equal(usageLimitOf(401, 'quota of the key', undefined), null);
 });

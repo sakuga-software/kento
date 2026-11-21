@@ -80,7 +80,8 @@ export const USAGE_LIMIT_TEXT = 'refused the call on a usage limit';
  * (no credits), or a 4xx whose body names a limit. Null when it is another error.
  */
 export function usageLimitOf(status: number, text: string, headers?: Headers, now: number = Date.now()): { resetAt: string | null } | null {
-  if (status < 400 || status > 499) return null;
+  // A 401 is a key that the provider does not know, whatever its words: an admin must replace it.
+  if (status < 400 || status > 499 || status === 401) return null;
   if (status !== 429 && status !== 402 && !LIMIT_WORDS.test(text)) return null;
   return { resetAt: resetOf(text, headers, now) };
 }
