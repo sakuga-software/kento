@@ -269,12 +269,10 @@ test.describe('the settings of the org', () => {
     await signIn(page, 'octocat')
     await page.goto('/settings')
     let behavior = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)
+    // At rest the page scrolls at once: only a click of the sidebar glides (critique of #61, P1).
+    expect(await behavior()).toBe('auto')
     // Under 900 px the list is at the top of the page and marks the section chosen in it (KNT-168): no glide there.
-    if (info.project.name === 'mobile') {
-      expect(await behavior()).toBe('auto')
-      return
-    }
-    expect(await behavior()).toBe('smooth')
+    if (info.project.name === 'mobile') return
     // The positions of the page at each scroll event, from the click to the end of the scroll: a
     // jump gives one, a glide many. No count of frames: a slow runner can click late.
     let record = () =>
@@ -300,7 +298,6 @@ test.describe('the settings of the org', () => {
 
     // Reduced motion: the same kind of link jumps at once.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    expect(await behavior()).toBe('auto')
     await page.evaluate(() => window.scrollTo(0, 0))
     await scrollSettled(page)
     await record()
@@ -317,6 +314,48 @@ test.describe('the settings of the org', () => {
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.goto('/repos')
     expect(await behavior()).toBe('auto')
+  })
+
+  test('a load of /settings#section, a reload and Tab land at once: only the sidebar glides (KNT-177)', async ({ page }) => {
+    // The positions of each document at each scroll event, from its start.
+    await page.addInitScript(() => {
+      let seen: number[] = []
+      ;(window as unknown as { glide: number[] }).glide = seen
+      addEventListener('scroll', () => seen.push(Math.round(scrollY)), { passive: true })
+    })
+    let positions = () => page.evaluate(() => [...new Set((window as unknown as { glide: number[] }).glide)])
+    await signIn(page, 'octocat')
+    // A link from another page to a section far down, as the "No cap" link of the dashboard.
+    await page.goto('/repos')
+    await page.evaluate(() => {
+      let link = document.createElement('a')
+      link.href = '/settings#bots'
+      link.textContent = 'To the trusted bots'
+      document.querySelector('main')!.prepend(link)
+    })
+    await page.getByRole('link', { name: 'To the trusted bots' }).click()
+    await expect(page).toHaveURL(/\/settings#bots$/)
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump to #bots').toHaveLength(1)
+    let top = await page.locator('#bots').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(top).toBeLessThan(40)
+
+    // A reload comes back to the same place at once.
+    await page.reload()
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump at the reload').toHaveLength(1)
+
+    // Tab to a field far from the screen: the page follows the focus at once.
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await scrollSettled(page)
+    await page.evaluate(() => ((window as unknown as { glide: number[] }).glide.length = 0))
+    await page.locator('#bots textarea').focus()
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump to the focused field').toHaveLength(1)
   })
 
   // KNT-164. On a phone the open list is part of the page, as a disclosure: it folds only on a link
