@@ -139,6 +139,37 @@ test('a copy change, a document, a test, a story or a style is not critical', ()
   for (const [label, changed] of none) assert.deepEqual(areaOf(changed), [], label);
 });
 
+test('ordinary code that only looks like access, sessions, limits or the supply chain is not critical', () => {
+  const none: [string, ChangedFile][] = [
+    ['a throttle of the screen', file('src/ui/List.tsx', ['  const onScroll = throttle(() => setY(window.scrollY), 100);'])],
+    ['the rate limit of an API that the code calls', file('src/github/client.ts', ["  const left = Number(res.headers.get('x-ratelimit-remaining'));", '  if (rateLimited) await wait(60_000);'])],
+    ['an avatar of the current user', file('src/components/Header.tsx', ['  <Avatar src={currentUser.avatarUrl} />'])],
+    ['a class of a sign-in link', file('src/ui/nav.tsx', ['<a class="btn" href={routes.signIn.href()}>'])],
+    ['the permission of the browser', file('src/push.ts', ['  const p = await Notification.requestPermission();'])],
+    ['a mailer over TLS', file('src/mail.ts', ['  secure: true,'])],
+    ['a list of blocked dates', file('src/cal.ts', ['  if (blockedDates.includes(day)) return;'])],
+    ['an orgId that a refactor moves', file('src/repos.ts', ['  return list(sql, { orgId, page })'], ['  return list(sql, orgId, page)'])],
+    ['a filter that a rewrite of the pagination keeps', file('src/store.ts', ['    where org_id = ${orgId} and id > ${cursor}'], ['    where org_id = ${orgId}', '    offset ${page * size}'])],
+    ['a Redux middleware', file('src/store/middleware.ts', ['  return next(action);'])],
+    ['a logging middleware', file('src/middlewares/logger.ts', ['  console.log(req.url)'])],
+    ['the messages of a translation', file('messages/en.json', ['  "roles": "Roles",'])],
+    ['an option of eslint', file('.eslintrc.json', ['        "allow": ["warn", "error"]'])],
+    ['a funding URL of a lock file', file('package-lock.json', ['        "url": "https://github.com/sponsors/acme"'])],
+    ['a bump of a lock file by Dependabot', file('package-lock.json', ['      "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.22.tgz",', '      "integrity": "sha512-abc",'], ['      "resolved": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",'])],
+    ['the homepage of a package', file('package.json', ['  "homepage": "https://example.com",'])],
+    ['the repository of a package', file('package.json', ['    "url": "git+https://github.com/acme/app.git"'])],
+    ['a public key of the browser', file('src/analytics.ts', ['  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!)'])],
+    ['a list of members on a screen', file('src/components/MembersList.tsx', ['  {members.map((m) => <li>{m.name}</li>)}'])],
+    ['a git checkout in a tool', file('src/checkout.ts', ['  return git("checkout", ref);'])],
+    ['a description that says allow', file('config/app.yml', ['description: "allow read of the docs"'])],
+  ];
+  for (const [label, changed] of none) assert.deepEqual(areaOf(changed), [], label);
+  // The same files with a real signal stay critical.
+  assert.deepEqual(areaOf(file('src/middlewares/auth.ts', ['  if (!req.user) return res.status(401).end();'])), ['auth'], 'a middleware that reads the user');
+  assert.deepEqual(areaOf(file('src/store/middleware.ts', ['  if (!session?.user) return redirect("/login");'])), ['auth']);
+  assert.deepEqual(areaOf(file('src/server.ts', ['  app.use(rateLimit({ windowMs: 60_000, max: 500 }));'], ['  app.use(rateLimit({ windowMs: 60_000, max: 5 }));'])), ['web'], 'a loosened limit');
+});
+
 test('the reasons list each area once, with at most five files each', () => {
   const found = criticality([...Array.from({ length: 8 }, (_, i) => file(`.github/workflows/w${i}.yml`)), file('src/auth/login.ts')]);
   assert.deepEqual(found?.areas, ['auth', 'ci']);
@@ -164,6 +195,22 @@ test('a review names what it checked: a file of the diff, a route or a library o
   assert.equal(checks(['lib better-auth: organization.removeMember'], ['owner']).checked, true, 'an endpoint of a library of the change');
 });
 
+test('honest forms of a path and of a role count', () => {
+  assert.equal(checks(['b/app/routes/members.ts'], ['admin']).checked, true, 'the prefix of a diff');
+  assert.equal(checks(['app/routes/members.ts:L12'], ['admin']).checked, true);
+  assert.equal(checks(['app/routes/members.ts'], ['not signed in']).checked, true);
+  assert.equal(checks(['app/routes/members.ts'], ['no account (anonymous)']).checked, true);
+  assert.equal(checks(['app/routes/members.ts'], ['another org\'s member']).checked, true);
+  // A route of file-based routing names its file.
+  const remix: CheckContext = { files: new Set(['app/routes/api.members.ts']), texts: ['export async function action() {}'] };
+  assert.equal(namesChecks({ paths: ['POST /api/members'], roles: ['admin'] }, remix).checked, true);
+  const svelte: CheckContext = { files: new Set(['src/routes/api/members/[id]/+server.ts']), texts: [''] };
+  assert.equal(namesChecks({ paths: ['DELETE /api/members/:id'], roles: ['owner'] }, svelte).checked, true);
+  // A role that the change names.
+  const named: CheckContext = { files: new Set(['app/routes/members.ts']), texts: ["if (member.role === 'billing_manager') return;"] };
+  assert.equal(namesChecks({ paths: ['app/routes/members.ts'], roles: ['billing_manager'] }, named).checked, true);
+});
+
 test('a review cannot lift the cap with a file out of the diff, a sentence, or a placeholder role', () => {
   const capped: [string[], string[], string][] = [
     [['README.md'], ['none'], 'README.md and none'],
@@ -174,6 +221,15 @@ test('a review cannot lift the cap with a file out of the diff, a sentence, or a
     [['POST /api/billing'], ['admin'], 'a route that the change does not hold'],
     [['lib left-pad: pad'], ['admin'], 'a library that the change does not use'],
     [['every route'], ['member'], 'no file'],
+    [['app/routes/members.ts'], ['nobody'], 'nobody'],
+    [['app/routes/members.ts'], ['I checked nothing'], 'a sentence as a role'],
+    [['app/routes/members.ts'], ['N / A'], 'N / A'],
+    [['app/routes/members.ts'], ['customer'], 'a role that the change does not name and that is out of the vocabulary'],
+    [['GET /a'], ['admin'], 'a route that is only a part of a route of the change'],
+    [['GET /api/mem'], ['admin'], 'a route cut in a segment'],
+    [['lib if: x'], ['admin'], 'a word as a library'],
+    [['lib better: x'], ['admin'], 'a part of the name of a library'],
+    [['app/routes/'], ['admin'], 'a folder'],
     [[], [], 'nothing'],
   ];
   for (const [paths, roles, label] of capped) assert.equal(checks(paths, roles).checked, false, label);
@@ -233,6 +289,8 @@ test('the text of a capped critical change: no "low risk", what is missing, and 
   const both = withCriticalText(answer({ risk: 'Low risk. The role route has no lock.' }), review([], []));
   assert.equal(both.risk, 'Critical change (access control). The role route has no lock.');
   assert.match(both.summary, /The review named no file of the diff and no role that it checked, so the score of this critical change is 3 at most\./);
+  const warning = withCriticalText(answer({ risk: 'Low risk. Not safe to merge without a check of the role route.' }), review([], []));
+  assert.equal(warning.risk, 'Critical change (access control). Not safe to merge without a check of the role route.', 'a warning stays');
   const safe = withCriticalText(answer({ risk: 'Safe to merge.' }), review([], []));
   assert.equal(safe.risk, 'Critical change (access control). It needs a review that names the paths and the roles that it checked.');
   const paths = withCriticalText(answer(), review(['README.md'], ['admin']));
@@ -401,4 +459,9 @@ test('a review in passes names what any pass checked: the security pass can name
 
 test('the reuse key reads the checklist: a new checklist gives a new key', () => {
   assert.ok(PROMPT_FILES.includes('critical.md'));
+});
+
+test('an ownership name that a plain call loses is no removed filter', () => {
+  assert.deepEqual(areaOf(file('src/findings/screen.ts', ['  return sql.begin(async (tx) => page(tx, query))'], ['    return listFindingScreen(sql, orgId, { ...query, after: null })'])), []);
+  assert.deepEqual(areaOf(file('src/db.ts', ['  select * from repos'], ['  select * from repos where org_id = ${orgId}'])), ['access'], 'a SQL filter that goes');
 });

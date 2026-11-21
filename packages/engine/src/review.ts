@@ -5,6 +5,7 @@ import { changedFiles, criticality, criticalSection, namesChecks, areasText, typ
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type CriticalReview, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
+import { withoutMergeAdvice } from './risk.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
 import { inHistory } from './history.ts';
@@ -438,9 +439,6 @@ export function criticalReview(critical: Criticality, context: CheckContext, ans
   return { ...critical, checked: best.checked, checks: best, lite, capped: lite || !best.checked };
 }
 
-// A sentence of the risk that calls the change safe: it contradicts a capped score.
-const SAFE = /\b(low[- ]risk|safe to merge|(is|looks|seems) safe|can be merged|ready to merge|mergeable|no risk|minimal risk)\b/i;
-
 /**
  * KNT-154. The risk and the summary of a critical change, as the reader sees them. The risk names the
  * areas; when the score is capped, it drops each sentence of the model that calls the change safe.
@@ -450,9 +448,9 @@ const SAFE = /\b(low[- ]risk|safe to merge|(is|looks|seems) safe|can be merged|r
 export function withCriticalText<A extends Answer>(answer: A, critical: CriticalReview): A {
   const areas = `Critical change (${areasText(critical.areas)}).`;
   const quote = (item: string) => `\`${item.replace(/`/g, "'").replace(/\s+/g, ' ').trim()}\``;
-  const sentences = (answer.risk ?? '').split(/(?<=[.!?])\s+/).filter((t) => t.trim());
-  const kept = critical.capped ? sentences.filter((t) => !SAFE.test(t)) : sentences;
-  const risk = kept.length ? `${areas} ${kept.join(' ')}` : `${areas} It needs a review that names the paths and the roles that it checked.`;
+  // A capped score drops the sentences of the model that advise a merge (risk.ts); a warning stays.
+  const kept = critical.capped ? withoutMergeAdvice(answer.risk ?? '') : (answer.risk ?? '').trim();
+  const risk = kept ? `${areas} ${kept}` : `${areas} It needs a review that names the paths and the roles that it checked.`;
   const { paths, others, roles, missing } = critical.checks;
   const lines: string[] = [];
   if (paths.length || others.length) lines.push(`Paths checked: ${[...paths.map(quote), ...others.map((p) => `${quote(p)} (not in the diff)`)].join(', ')}.`);
