@@ -80,7 +80,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
   beforeEach(async () => {
     await sql`truncate orgs, repos, jobs, reviews, users cascade`
     ;({ orgId, repoId } = await seedEnabledRepo(sql))
-    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login) values (1, 'octocat') returning id`
+    let [user] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (1, 'octocat', '1@users.github.invalid') returning id`
     userId = user!.id
     changedFiles = null
     listed = 0
@@ -225,7 +225,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
     })
 
     it('puts a matching rule before the preferences of the author, and the preferences before the level of the repository (REV-22)', async () => {
-      let [camille] = await sql<{ id: string }[]>`insert into users (github_id, login) values (2, 'camille') returning id`
+      let [camille] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (2, 'camille', '2@users.github.invalid') returning id`
       // Camille turned the automatic review off, and set lite for this repository.
       await sql`insert into user_prefs (user_id, repo_id, auto_review, level) values (${camille!.id}, ${repoId}, false, 'lite')`
       changedFiles = ['db/migrations/0003.sql']
@@ -303,7 +303,7 @@ describe('the assignment rules against Postgres (REV-21)', () => {
       assert.deepEqual(await origin(plain.jobId!), { source: 'repo', rule: null, screen: { source: 'repo', level: 'lite' } })
 
       // A push that no rule matched, by an author with a level of their own.
-      let [camille] = await sql<{ id: string }[]>`insert into users (github_id, login) values (2, 'camille') returning id`
+      let [camille] = await sql<{ id: string }[]>`insert into users (github_id, login, email) values (2, 'camille', '2@users.github.invalid') returning id`
       await sql`insert into user_prefs (user_id, repo_id, auto_review, level) values (${camille!.id}, null, true, 'balanced')`
       let preferred = await push({ author: CAMILLE, number: 172 })
       assert.deepEqual(await origin(preferred.jobId!), { source: 'preference', rule: null, screen: { source: 'preference', level: 'balanced' } })

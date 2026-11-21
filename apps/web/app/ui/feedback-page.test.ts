@@ -2,13 +2,13 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import type { FeedbackQuery, FeedbackStore } from '../feedback/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import { readFeedbackQuery } from './feedback.tsx'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const NOW = new Date('2026-11-12T10:00:00Z')
 const REPO = '44444444-4444-4444-8444-444444444444'
 
@@ -68,7 +68,7 @@ function setup() {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookieOf(start, COOKIE))
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookiesOf(start))
     return cookieOf(callback, COOKIE)!
   }
   return { request, signIn, asked }

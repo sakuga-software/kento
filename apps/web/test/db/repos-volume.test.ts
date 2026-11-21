@@ -5,7 +5,7 @@ import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
-import { cookieOf, fakeAuth, OCTOCAT, ORG } from '../../app/auth/test-helpers.ts'
+import { cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
@@ -13,7 +13,7 @@ import { createReposStore } from '../../app/repos/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase } from './helpers.ts'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 /**
  * The budget of the server, and of the HTML of one page. 50 enabled rows with their actions weigh
  * about 1.75 KB each, and a row with no action 1 KB: 60 KB, the first aim of the ticket, would hold
@@ -77,7 +77,7 @@ describe('the Repos screen with 300 repositories and 50 000 jobs', () => {
     let start = await router.fetch(new Request('http://localhost/login/github'))
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
     let callback = await router.fetch(
-      new Request(`http://localhost/auth/github/callback?code=good&state=${state}`, { headers: { Cookie: cookieOf(start, COOKIE)! } }),
+      new Request(`http://localhost/auth/github/callback?code=good&state=${state}`, { headers: { Cookie: cookiesOf(start) } }),
     )
     cookie = cookieOf(callback, COOKIE)!
   })

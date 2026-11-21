@@ -211,6 +211,13 @@
       "when": 1795204159546,
       "tag": "0029_installations",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1795205065574,
+      "tag": "0030_better_auth",
+      "breakpoints": true
     }
   ]
 }

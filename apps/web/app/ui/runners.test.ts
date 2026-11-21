@@ -1,14 +1,14 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
 import type { RunnersAdminStore, RunnersScreen, RunnerView } from '../runner/admin.ts'
 import { hashToken } from '../runner/tokens.ts'
 import { byState, dockerCommand, newerVersion, readRegistrationForm, runnerState, runnerStateLabel } from './runners.tsx'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const RUNNER_ID = '11111111-1111-4111-8111-111111111111'
 const REGISTRATION_ID = '22222222-2222-4222-8222-222222222222'
 const NOW = new Date('2026-10-29T10:00:00Z')
@@ -98,7 +98,7 @@ function setup(screen: Partial<RunnersScreen> = {}, orgs = [ORG]) {
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request('/runners', { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''
@@ -307,7 +307,7 @@ describe('the Runners screen', () => {
 
 describe('the writes of the Runners screen', () => {
   it('makes a registration token, shows it once and stores only its hash', async () => {
-    let { request, signIn, registrations } = setup()
+    let { request, signIn, registrations, auth } = setup()
     let { cookie, csrf } = await signIn(OCTOCAT)
     let response = await request('/runners/new', { cookie, form: { _csrf: csrf, name: 'runner-1', labels: 'macos,arm64', keyMode: 'app' } })
     assert.equal(response.status, 201)
@@ -317,7 +317,7 @@ describe('the writes of the Runners screen', () => {
     assert.ok(token, 'the page shows the token in the command')
     assert.match(html, /The screen does not show it again/)
     assert.equal(registrations.length, 1)
-    assert.deepEqual(registrations[0], { orgId: ORG.id, userId: 'user-1', name: 'runner-1', labels: ['macos', 'arm64'], trusted: true, tokenHash: hashToken(token) })
+    assert.deepEqual(registrations[0], { orgId: ORG.id, userId: auth.userIdOf(OCTOCAT), name: 'runner-1', labels: ['macos', 'arm64'], trusted: true, tokenHash: hashToken(token) })
     // The next page does not show it again.
     assert.doesNotMatch(await (await request('/runners', { cookie })).text(), new RegExp(token))
   })

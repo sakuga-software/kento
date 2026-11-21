@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, OTHER_ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { Probe, ProbeResult } from '../providers/probe.ts'
 import { createSecretBox, providerAad } from '../providers/secrets.ts'
@@ -13,7 +13,7 @@ import { createAppRouter } from '../router.ts'
 import { hour } from './format.ts'
 import { providerState, settingsSections } from './settings.tsx'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const ID = '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
 const NOW = new Date('2026-10-29T10:00:00Z')
 const KEY = 'sk-ant-api03-the-key-of-the-screen-test-abcd'
@@ -126,7 +126,7 @@ function setup(initial: ProviderView[] = [], options: { probe?: ProbeResult; sec
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookieOf(start, COOKIE) })
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, { cookie: cookiesOf(start) })
     let cookie = cookieOf(callback, COOKIE)!
     let html = await (await request('/settings', { cookie })).text()
     let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(html)?.[1] ?? ''

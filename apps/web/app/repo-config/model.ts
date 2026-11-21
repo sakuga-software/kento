@@ -313,3 +313,13 @@ export function jobModels(json: unknown): LevelModels | null {
   let value = parsed(json)
   return isObject(value) ? readLevelModels(value.models) : null
 }
+
+/**
+ * Whether the config of the repository or of the org chose the models of the job. False for the
+ * values of Kentō: then the default provider of the org runs its own models, and that is the normal
+ * path. A job without `source` was queued before it existed, and counts as chosen.
+ */
+export function jobModelsChosen(json: unknown): boolean {
+  let value = parsed(json)
+  return !(isObject(value) && value.source === 'kento')
+}

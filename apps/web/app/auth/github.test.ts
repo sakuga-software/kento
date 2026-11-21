@@ -1,11 +1,9 @@
-import { createHash, generateKeyPairSync } from 'node:crypto'
+import { generateKeyPairSync } from 'node:crypto'
 
 import * as assert from 'remix/assert'
-import { finishExternalAuth, startExternalAuth } from 'remix/auth'
-import { createSession, Session } from 'remix/session'
 import { describe, it } from 'remix/test'
 
-import { createGitHubSignIn, createRoleLookup, type InstallationAccount } from './github.ts'
+import { createGitHubOAuth, createRoleLookup, type InstallationAccount } from './github.ts'
 
 let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
 
@@ -20,77 +18,60 @@ function fakeFetch(answer: (url: string, init: RequestInit) => Response) {
   return { calls, fetch }
 }
 
-describe('createGitHubSignIn', () => {
-  let transaction = { provider: 'github', state: 'the-state', codeVerifier: 'the-verifier-of-pkce-0123456789' }
-
-  function provider(fetch: typeof globalThis.fetch) {
-    return createGitHubSignIn({
+describe('createGitHubOAuth', () => {
+  function oauth(fetch: typeof globalThis.fetch) {
+    return createGitHubOAuth({
       clientId: 'Iv23li',
       clientSecret: 'the-client-secret',
-      redirectUri: new URL('https://review.sakuga.dev/auth/github/callback'),
-      oauthUrl: 'https://github.com',
-      apiUrl: 'https://api.github.com',
+      redirectUri: new URL('https://kento.example.com/auth/github/callback'),
+      oauthUrl: 'https://github.com/',
+      apiUrl: 'https://api.github.com/',
       fetch,
     })
   }
 
-  it('sends the browser to GitHub with the state and a S256 challenge, never the verifier', async () => {
+  it('gives Better Auth the addresses of the GitHub of the configuration', () => {
     let { fetch } = fakeFetch(() => new Response(null, { status: 500 }))
-    let session = createSession()
-    let context = { get: (key: unknown) => (key === Session ? session : undefined) }
-    let response = await startExternalAuth(provider(fetch), context as never)
-    let url = new URL(response.headers.get('Location')!)
-    let stored = session.get('__auth') as { state: string; codeVerifier: string }
-
-    assert.equal(url.origin + url.pathname, 'https://github.com/login/oauth/authorize')
-    assert.equal(url.searchParams.get('client_id'), 'Iv23li')
-    assert.equal(url.searchParams.get('redirect_uri'), 'https://review.sakuga.dev/auth/github/callback')
-    assert.equal(url.searchParams.get('state'), stored.state)
-    assert.equal(url.searchParams.get('code_challenge_method'), 'S256')
-    assert.equal(url.searchParams.get('code_challenge'), createHash('sha256').update(stored.codeVerifier).digest('base64url'))
-    assert.ok(!url.href.includes(stored.codeVerifier))
+    let github = oauth(fetch)
+    assert.equal(github.authorizationUrl, 'https://github.com/login/oauth/authorize')
+    assert.equal(github.tokenUrl, 'https://github.com/login/oauth/access_token')
+    assert.equal(github.redirectUri.href, 'https://kento.example.com/auth/github/callback')
   })
 
-  it('trades the code with the verifier, reads /user, and keeps no token', async () => {
+  it('trades the code with the verifier, then reads /user with the token', async () => {
     let { calls, fetch } = fakeFetch((url) =>
       url.endsWith('/access_token')
         ? Response.json({ access_token: 'ghu_user_token', token_type: 'bearer' })
         : Response.json({ id: 42, login: 'octocat', name: 'Octocat', avatar_url: 'https://avatars.githubusercontent.com/u/42' }),
     )
-    let session = createSession()
-    session.set('__auth', transaction)
-    let context = {
-      get: (key: unknown) => (key === Session ? session : undefined),
-      url: new URL('https://review.sakuga.dev/auth/github/callback?code=the-code&state=the-state'),
-    }
-
-    let { result } = await finishExternalAuth(provider(fetch), context as never)
-
-    assert.deepEqual(result.profile, { id: 42, login: 'octocat', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/42' })
+    let github = oauth(fetch)
+    let tokens = await github.exchangeCode({ code: 'the-code', codeVerifier: 'the-verifier', redirectUri: 'https://kento.example.com/auth/github/callback' })
+    assert.deepEqual(tokens, { accessToken: 'ghu_user_token' })
     assert.equal(calls[0]!.url, 'https://github.com/login/oauth/access_token')
     assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), {
       client_id: 'Iv23li',
       client_secret: 'the-client-secret',
       code: 'the-code',
-      redirect_uri: 'https://review.sakuga.dev/auth/github/callback',
-      code_verifier: transaction.codeVerifier,
+      redirect_uri: 'https://kento.example.com/auth/github/callback',
+      code_verifier: 'the-verifier',
     })
+
+    let profile = await github.readProfile(tokens.accessToken)
+    assert.deepEqual(profile, { id: 42, login: 'octocat', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/42' })
     assert.equal(calls[1]!.url, 'https://api.github.com/user')
     assert.equal((calls[1]!.init.headers as Record<string, string>).Authorization, 'Bearer ghu_user_token')
-    // The transaction is gone from the session; the token never goes there.
-    assert.equal(session.get('__auth'), undefined)
-    assert.ok(!JSON.stringify(session.data).includes('ghu_user_token'))
   })
 
-  it('fails when GitHub refuses the code', async () => {
-    let { fetch } = fakeFetch(() => Response.json({ error: 'bad_verification_code' }))
-    let session = createSession()
-    session.set('__auth', transaction)
-    let context = {
-      get: (key: unknown) => (key === Session ? session : undefined),
-      url: new URL('https://review.sakuga.dev/auth/github/callback?code=x&state=the-state'),
-    }
-    await assert.rejects(() => finishExternalAuth(provider(fetch), context as never), /bad_verification_code/)
+  it('fails when GitHub refuses the code, or answers /user without an id', async () => {
+    let refused = oauth(fakeFetch(() => Response.json({ error: 'bad_verification_code' })).fetch)
+    await assert.rejects(() => refused.exchangeCode({ code: 'x', codeVerifier: null, redirectUri: 'https://kento.example.com/auth/github/callback' }), /bad_verification_code/)
+    let broken = oauth(fakeFetch(() => Response.json({ login: 'octocat' })).fetch)
+    await assert.rejects(() => broken.readProfile('ghu_user_token'), /without an id/)
+  })
+
+  it('keeps only an https avatar', async () => {
+    let github = oauth(fakeFetch(() => Response.json({ id: 1, login: 'octocat', name: null, avatar_url: 'http://example.com/a.png' })).fetch)
+    assert.equal((await github.readProfile('t')).avatarUrl, null)
   })
 })
 
