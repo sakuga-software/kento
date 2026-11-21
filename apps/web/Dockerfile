@@ -5,8 +5,10 @@
 #
 #   docker build -f apps/web/Dockerfile --build-arg APP_COMMIT=$(git rev-parse HEAD) -t kento-web .
 #
-# The service runs its TypeScript source with `remix/node-tsx`, as Remix 3 recommends: there is no
-# build step. It applies the pending migrations at startup (MIGRATE_ON_START, on by default).
+# The service runs its TypeScript source with `remix/node-tsx`, as Remix 3 recommends. The one build
+# step is for the browser (KNT-170): the `client` stage bundles the modules of the components that
+# hydrate (scripts/build-client.ts). It applies the pending migrations at startup (MIGRATE_ON_START,
+# on by default).
 
 ARG NODE_IMAGE=node:26-bookworm-slim
 
@@ -29,6 +31,19 @@ COPY packages/engine/package.json packages/engine/
 RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @kento-review/web...
 
+# KNT-170. The bundles of the browser modules, minified, named by their hash, with their brotli and
+# gzip copies. esbuild is a dev dependency: this stage installs all the dependencies of apps/web
+# (pnpm replaces the production-only node_modules of `deps`, with no prompt), and the image keeps
+# only its output, build/client.
+FROM deps AS client
+ARG PNPM_CACHE_ID=pnpm-store
+RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --config.confirm-modules-purge=false --filter @kento-review/web...
+COPY apps/web/tsconfig.json ./apps/web/
+COPY apps/web/app ./apps/web/app
+COPY apps/web/scripts/build-client.ts ./apps/web/scripts/
+RUN cd apps/web && node --import remix/node-tsx scripts/build-client.ts
+
 FROM ${NODE_IMAGE}
 # The service runs with node alone. The npm of the base image only adds the vulnerabilities of its
 # own dependencies: remove npm, npx and corepack.
@@ -45,6 +60,8 @@ COPY apps/web/app ./apps/web/app
 COPY apps/web/drizzle ./apps/web/drizzle
 # The stylesheet, the fonts and the script of the screens, served under /assets/.
 COPY apps/web/public ./apps/web/public
+# KNT-170: the bundles of the browser modules, served under /assets/js/.
+COPY --from=client /repo/apps/web/build/client ./apps/web/build/client
 # The messages of the runner API, shared with apps/runner. Node runs its TypeScript as is.
 COPY packages/protocol/package.json ./packages/protocol/
 COPY packages/protocol/src ./packages/protocol/src

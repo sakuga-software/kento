@@ -131,6 +131,10 @@ jobs:
       # Chromium of the Playwright version in package.json, and the system libraries it needs.
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
+      # KNT-170: the bundles of the browser modules, as the image builds them. The server of the e2e
+      # runs in production and serves them (playwright.config.ts builds them again before it starts).
+      - name: Build the browser modules
+        run: pnpm build:client
       - name: Screens in a browser
         env:
           CI: 'true'
@@ -164,6 +168,12 @@ jobs:
           # (apps/*/Dockerfile). One cache for all of them: it does not grow with each pull request.
           PNPM_CACHE_ID: ${{ github.event_name == 'pull_request' && 'pnpm-store-pr' || 'pnpm-store' }}
         run: docker build -f apps/web/Dockerfile --build-arg APP_COMMIT="$APP_COMMIT" --build-arg PNPM_CACHE_ID="$PNPM_CACHE_ID" -t "$IMAGE" .
+      # KNT-170: the image holds the bundles of the browser modules: without them, the service logs
+      # startup.client_build_missing and serves its modules one by one.
+      - name: Check the bundles of the image
+        env:
+          IMAGE: kento-web:ci-${{ github.run_id }}
+        run: docker run --rm --entrypoint node "$IMAGE" -e "const m = JSON.parse(require('fs').readFileSync('build/client/manifest.json', 'utf8')); for (const f of m.files) for (const s of ['', '.br', '.gz']) require('fs').accessSync('build/client/' + f + s); console.log(m.files.length + ' bundles')"
       - name: Remove the image
         if: always()
         env:

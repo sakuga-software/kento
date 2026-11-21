@@ -19,6 +19,12 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Browser modules** (KNT-170): the image bundles them at build time (a `client` stage, esbuild):
+  six files under `/assets/js/`, compressed with brotli and gzip, named by their hash, cached a year,
+  instead of some 70 modules compiled on request under `/assets/app/`, `/assets/c/`… Nothing to
+  change in the proxy (`/assets/` still goes to the service). An install that runs the source without
+  the image runs `pnpm build:client` before `pnpm start`; without it, the service logs
+  `startup.client_build_missing` and serves the modules one by one, as before.
 - **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
   The one inline script is the import map of the components that hydrate. A proxy in front of the
   service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this

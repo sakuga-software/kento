@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 import postgres from 'postgres'
 
 import { LONG_REPO_NAME } from './fake-github.ts'
@@ -285,6 +285,37 @@ test.describe('the Repos screen', () => {
     await hydrated(page)
     await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'false')
     await expect(menuOf(page, 'orchard').menu).toBeHidden()
+  })
+
+  // KNT-170: the runtime is held back, so the page shows its <details> menus while it loads. One
+  // that the person opens then stays open once the page hydrates, and so does its confirmation.
+  test('a menu "…", or its confirmation, opened before the page hydrates stays open (KNT-170)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await checkNow(page)
+    let enable = rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' })
+    if (await enable.count()) {
+      await enable.click()
+      await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
+    }
+    for (let step of ['menu', 'confirmation'] as const) {
+      let held: Route[] = []
+      await page.route(/\/assets\/js\/runtime\./, (route) => void held.push(route))
+      await page.goto('/repos')
+      let row = rowOf(page, 'orchard')
+      await row.locator('.row-menu > summary').click()
+      if (step === 'confirmation') await row.locator('.row-menu .confirm > summary').click()
+      await expect.poll(() => held.length).toBeGreaterThan(0)
+      await expect(page.locator('html')).not.toHaveAttribute('data-hydrated', '')
+      for (let route of held) await route.continue()
+      await page.unroute(/\/assets\/js\/runtime\./)
+      await hydrated(page)
+      if (step === 'menu') {
+        await expect(menuOf(page, 'orchard').menu).toBeVisible()
+        await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'true')
+      } else {
+        await expect(page.getByRole('dialog', { name: 'Disable orchard Kentō…' })).toBeVisible()
+      }
+    }
   })
 
   test('a menu "…" closes on Escape and on a click outside, one open at a time; "Search" shows at the keyboard (REV-91)', async ({ page }) => {
