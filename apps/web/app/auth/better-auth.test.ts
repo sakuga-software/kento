@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, fakeAuth, OCTOCAT, ORG, OTHER_ORG } from './test-helpers.ts'
+import { CAMILLE, fakeAuth, OCTOCAT, ORG, OTHER_ORG, STRANGER } from './test-helpers.ts'
 import { beforeSessionCreate, checkSignIn, githubEmail, SESSION_TTL_MS, type SignInScope } from './better-auth.ts'
 
 // KNT-150. The hook that decides whether Better Auth writes a session, and what goes in it.
@@ -75,5 +75,20 @@ describe('the gate of the sign-in', () => {
 
     assert.equal(await checkSignIn(auth.deps.store, auth.deps.lookupRole, scope, { email: githubEmail(OCTOCAT.id) }), undefined)
     assert.equal((scope.decision as SignInScope['decision'])?.kind, 'allowed')
+  })
+})
+
+describe('KNT-150: a session with no org, for an invitation', () => {
+  it('is written only while the invitation is still pending', async () => {
+    let auth = fakeAuth()
+    auth.tables.users!.push({ id: 'user-3', githubId: STRANGER.id, login: STRANGER.login })
+    let scope: SignInScope = { profile: STRANGER, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [], pending: 1 } }
+    auth.invite(STRANGER, 1)
+    let written = await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now())
+    assert.ok(written)
+    assert.equal(written.data.activeOrganizationId, null)
+    // The invitation ended between the decision and the session: no session.
+    auth.invite(STRANGER, 0)
+    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now()), false)
   })
 })

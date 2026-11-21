@@ -23,10 +23,22 @@ export interface SignedIn {
   user: UserRow
   membership: MembershipRow
   memberships: MembershipRow[]
+  /** KNT-150. The pending invitations of the person, in any org. */
+  invitations?: number
 }
 
 /** The signed-in person on the screen, set by `requireViewer`. */
 export const Signed = createContextKey<SignedIn>()
+
+/** KNT-150. A signed-in person, with an org (`signed`) or with only invitations to answer. */
+export interface SignedPerson {
+  sessionId: string
+  user: UserRow
+  signed: SignedIn | null
+}
+
+/** Set by `requireViewer` and `requirePerson`. */
+export const Person = createContextKey<SignedPerson>()
 
 /** What `context.render` takes: a node of `remix/component`. */
 export type PageNode = Parameters<typeof renderToString>[0]
@@ -144,6 +156,7 @@ export function createKit(deps: UiDependencies): UiKit {
         canEdit: canEdit(signed.membership.role),
         org: { id: signed.membership.org.id, name: signed.membership.org.name },
         orgs: signed.memberships.map((m) => ({ id: m.org.id, name: m.org.name, role: m.role })),
+        invitations: signed.invitations ?? 0,
       }
       return {
         theme: readTheme(context.headers.get('Cookie')),

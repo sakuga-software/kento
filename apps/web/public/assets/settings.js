@@ -59,6 +59,8 @@
   // Folding it when the focus leaves it, or on a tap outside, moved the field under it off the
   // screen at the tap, and the tap missed the field.
   document.addEventListener('keydown', (event) => {
+    // An open list (a select, a menu) handles its own Escape first, and marks it handled.
+    if (event.defaultPrevented) return
     if (event.key !== 'Escape' || toggle?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
     toggle.focus()
