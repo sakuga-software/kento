@@ -5,6 +5,7 @@ import type { Answer, Finding, Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import { linkFindings, withLinkUsage } from './link.ts';
 import { askJson, askModel } from './model.ts';
+import { MAX_QUESTIONS } from './nonfindings.ts';
 import { finishReview, packSchema, prepareReview, reviewTools, type ReviewedFinding, type ReviewInput, type ReviewResult } from './review.ts';
 
 /** The angle of a pass: its id, and the text that the prompt of the review gets at its end. */
@@ -132,6 +133,18 @@ export async function reviewInPasses(
     confidence_score: passesScore(answers, checked.kept),
     not_reviewed: [...new Set(answers.flatMap((a) => a.answer.not_reviewed ?? []))],
     deeper_review: answers.map((a) => a.answer.deeper_review).find((d) => d?.recommended) ?? lead.answer.deeper_review,
+    // KNT-153. The questions of every pass, once each.
+    // A pass can give a null or a malformed item: only a question with a text goes on.
+    questions: [
+      ...new Map(
+        answers
+          .flatMap((a) => (Array.isArray(a.answer.questions) ? a.answer.questions : []))
+          .filter((q) => q && typeof q.question === 'string')
+          .map((q) => [`${q.path}\n${q.question}`, q]),
+      ).values(),
+    ].slice(0, MAX_QUESTIONS),
+    // KNT-154. What each pass checked: one pass must name both a path and a role (finishReview).
+    checkedByPass: answers.map((a) => a.answer.checked ?? { paths: [], roles: [] }),
     findings: linked.findings,
     // REV-71. The verdicts of every pass, with their pass: only the pass of a finding can uphold its
     // thread against a refutation (answered.ts).

@@ -69,10 +69,10 @@ const frames: { file: string; node: unknown }[] = [
         frame={frame('sumi', member, '/repos')}
         section="repos"
         title="Repos"
-        lead="The repos of the installation, and where each one is in its switch."
+        lead="The repos of the installation, and their reviews."
         actions={<a class={buttonClass('primary')} href="#">Enable a repo</a>}
       >
-        <section class="empty"><h2>Soon here</h2><p>The list of the repos, their mode and their switch counter will show here.</p></section>
+        <section class="empty"><h2>Soon here</h2><p>The list of the repos, their level and their last review will show here.</p></section>
       </Shell>
     ),
   },
@@ -150,7 +150,6 @@ function repo(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Re
     workflowRef: null,
     workflowCheckedAt: minutesAgo(4),
     streak: 0,
-    resetBy: null, resetPr: null,
     lastReview: null,
     ...fields,
   }
@@ -169,7 +168,7 @@ const REPOS: RepoView[] = [
   }),
   repo({
     id: 'r-orchard', fullName: 'sakuga-software/orchard', enabled: true, workflow: 'reusable', workflowRef: 'stable',
-    workflowPath: '.github/workflows/sakuga-review.yml', streak: 0, resetBy: 'failure', resetPr: 12,
+    workflowPath: '.github/workflows/sakuga-review.yml', streak: 0,
     lastReview: { prNumber: 12, score: 3, model: 'anthropic/claude-haiku-5.5', publishedAt: minutesAgo(190) },
   }),
   repo({ id: 'r-pantry', fullName: 'sakuga-software/pantry', workflow: 'reusable', workflowRef: 'stable', workflowPath: '.github/workflows/sakuga-review.yml' }),

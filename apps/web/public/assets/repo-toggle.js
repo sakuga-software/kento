@@ -35,7 +35,9 @@
   // The screen of the name of a repository: its row, when the change took it out of the list on
   // screen (the filter "Not enabled", or another page).
   const rowByName = async (row) => {
-    const name = row.querySelector('.repo-name')?.getAttribute('title')
+    // The title of the name is "owner/name (private)" (KNT-180): a name on GitHub has no space and
+    // no parenthesis, so the full name is what comes before " (".
+    const name = row.querySelector('.repo-name')?.getAttribute('title')?.replace(/ \(.*\)$/, '')
     if (!name) return null
     const response = await read(`${location.pathname}?${new URLSearchParams({ q: name })}`)
     return response.ok ? (await parse(response)).getElementById(row.id) : null
