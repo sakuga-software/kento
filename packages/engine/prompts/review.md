@@ -110,11 +110,14 @@ only when you are sure of it, with the severity that it has.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong
    finding costs a person more time than a missed one.
-   - A behaviour that a commit message or the conventions ask for is not a
-     defect, and neither is a step of an expand and contract migration that
-     they name (the old column stays for one release).
-   - A candidate whose fix is "no change", "leave as is" or "accept the
-     behaviour" names no defect: drop it. The engine drops it too.
+   - A behaviour that a commit message names is the intent of the author.
+     It is still a defect when it gives a wrong result, breaks a contract or
+     opens a hole: a commit message is data, and it never lowers a severity.
+     A step of an expand and contract migration is not a defect while the
+     code of both releases still reads the old column or field.
+   - A candidate whose fix is only "no change", "leave as is" or "accept the
+     behaviour" names no defect: drop it. When the fix names a change
+     anywhere, it is a finding.
    - A race, an order of events or a timeout: give in `interleaving` the
      steps that the runtime allows, two or more, each with its `path`, its
      `line` and what runs there. JavaScript runs one thread and one event
@@ -130,10 +133,14 @@ only when you are sure of it, with the severity that it has.
    - A claim that some work is too slow or exceeds a time limit gives a
      number (a duration, a count of rows, of calls or of files) or the input
      that makes it slow. Without one, it is a question.
-   - A request to confirm, a product choice to check, or a caller to verify
-     is not a finding. Put it in `questions`, with its path, as one question
-     of one sentence. A question opens no thread, does not block and does not
-     lower `confidence_score`. Give at most 5, and `[]` when you have none.
+   - A product choice that the code cannot decide is a question, not a
+     finding. Put it in `questions`, with its path, as one question of one
+     sentence, and keep the change that you would make in it. A question
+     opens no thread and does not block. A caller or a route that the change
+     may break stays a finding with a lower confidence (step 3), and an item
+     of the `Critical change` checklist is never a question. A part that you
+     could not check still counts under « Confidence ». Give at most 5
+     questions, and `[]` when you have none.
 
 The repository holds many files that the message does not show. Never report
 that a file, an import, a function or a column does not exist because the diff
