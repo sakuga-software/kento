@@ -165,6 +165,60 @@ test.describe('the Config screen of a repository', () => {
     })
   }
 
+  test('KNT-161: an admin sets a fallback provider on balanced, the screen says it, and the next job carries it', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'octocat')
+    await reset(page)
+    let sql = database()
+    let providerId: string
+    try {
+      let [provider] = await sql<{ id: string }[]>`
+        insert into providers (id, org_id, kind, label, runner_held)
+        select gen_random_uuid(), org_id, 'anthropic', 'Acme Anthropic', true from repos where full_name = ${ORCHARD.full_name}
+        returning id`
+      providerId = provider!.id
+    } finally {
+      await sql.end()
+    }
+
+    await openRepoConfig(page, 'orchard')
+    let balanced = page.getByRole('region', { name: 'balanced' })
+    await expect(balanced.getByLabel('Fallback provider on a usage limit')).toHaveValue('')
+
+    // A fallback provider without its model is refused, with the reason next to the field.
+    await balanced.getByLabel('Fallback provider on a usage limit').selectOption({ label: 'Acme Anthropic' })
+    await balanced.getByRole('button', { name: 'Set here for balanced' }).click()
+    balanced = page.getByRole('region', { name: 'balanced' })
+    await expect(balanced.getByText('Enter the model of the fallback provider.').first()).toBeVisible()
+    await expectNoAxeViolations(page)
+
+    await balanced.getByLabel('Model of the fallback provider').fill('claude-sonnet-5-5')
+    await balanced.getByRole('button', { name: 'Set here for balanced' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config saved (v1)' })).toBeVisible()
+    balanced = page.getByRole('region', { name: 'balanced' })
+    await expect(balanced.locator('.effective-line')).toContainText('on a usage limit, Acme Anthropic')
+    await expect(balanced.getByLabel('Fallback provider on a usage limit')).toHaveValue(providerId)
+    await expect(balanced.getByLabel('Model of the fallback provider')).toHaveValue('claude-sonnet-5-5')
+    await expectNoAxeViolations(page)
+
+    await page.getByRole('link', { name: 'Levels and passes' }).click()
+    await page.getByRole('radio', { name: /balanced/ }).check()
+    await page.getByRole('button', { name: 'Set here the level' }).click()
+    await expect(page.getByRole('status').filter({ hasText: 'Config saved (v2)' })).toBeVisible()
+    expect((await pullRequest(page, { action: 'synchronize', head: head(5) })).outcome).toBe('queued')
+    let [job] = await jobsOfOrchard()
+    expect(job!.config.models).toEqual({
+      provider: 'service',
+      model: 'anthropic/claude-sonnet-5.5',
+      fallback: null,
+      fallbackProvider: { provider: providerId, model: 'claude-sonnet-5-5' },
+    })
+    let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
+    // The form without the model answers 422 on purpose; nothing else may fail.
+    expect(errors.filter((e) => !e.includes('status of 422'))).toEqual([])
+  })
+
   test('a model id of the wrong form already in the database shows in error, with what to do (REV-62)', async ({ page }) => {
     let errors = watchConsole(page)
     await signIn(page, 'octocat')

@@ -194,6 +194,8 @@ export async function publishReview(
     assignment?: JobAssignment | null
     /** REV-21. The rules with paths that the push could not test: GitHub did not list the files. */
     assignmentUnread?: readonly number[]
+    /** KNT-161. The fallback provider answered: the labels of the two providers. The review says it. */
+    fellBack?: FellBack | null
     warn?: (event: string, fields: Record<string, unknown>) => void
   } = {},
 ): Promise<PublishOutcome> {
@@ -314,7 +316,7 @@ export async function publishReview(
   let marker = options.marker ? `\n\n<!-- kento:review ${options.marker} -->` : ''
   let body =
     reviewBody(answer, anchorOf, level, usage, posterOf(target), raiseConsidered) +
-    goneNote(gone, review.base, iconsOf(target)) + assignmentNote(options.assignment ?? null, options.assignmentUnread ?? []) + marker
+    goneNote(gone, review.base, iconsOf(target)) + assignmentNote(options.assignment ?? null, options.assignmentUnread ?? []) + fellBackNote(options.fellBack ?? null) + marker
   let event = verdict(answer, anchorOf, level)
   // A review that an earlier try posted, and could not mark (a restart, a lost connection): it is
   // not posted again. The steps after it run once more.
@@ -839,6 +841,23 @@ export function ledgerEntries(
     entries.push({ id, values, events: [...(id === null ? [opened] : []), ...byReaction(s)] })
   }
   return entries
+}
+
+/** KNT-161. The provider of the job refused the call on its usage limit, and the fallback provider answered. */
+export interface FellBack {
+  /** The label of the provider of the job. */
+  from: string
+  /** The label of the fallback provider. */
+  to: string
+  resetAt: string | null
+}
+
+/** KNT-161. The line of a review that the fallback provider answered: which provider answered, and why. */
+export function fellBackNote(fellBack: FellBack | null): string {
+  if (!fellBack) return ''
+  let label = (text: string) => `"${text.replace(/[`"\r\n]/g, ' ').trim().slice(0, 80)}"`
+  let until = fellBack.resetAt ? ` until ${fellBack.resetAt.slice(0, 10)} ${fellBack.resetAt.slice(11, 16)} UTC` : ''
+  return `\n\n<sub>The provider ${label(fellBack.from)} refused the call on its usage limit${until}: the fallback provider ${label(fellBack.to)} of this level answered.</sub>`
 }
 
 /**

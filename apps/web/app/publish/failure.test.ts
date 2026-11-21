@@ -108,7 +108,7 @@ describe('a usage limit of the provider (KNT-161)', () => {
     assert.ok(body.startsWith(`**Kentō · review did not happen** at commit \`${HEAD.slice(0, 9)}\``), body)
     assert.ok(body.includes('the model provider refused the call on its usage limit until 2026-11-21 10:02 UTC.'), body)
     assert.ok(body.includes('To run it again after that time: `@kento-review heavy`.'), body)
-    assert.ok(body.includes('change it in the [config of the repo]'), body)
+    assert.ok(body.includes('set its fallback provider in the [config of the repo]'), body)
   })
 
   it('without a reset time, says no time, and the check asks for an action', () => {

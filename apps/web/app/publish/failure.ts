@@ -59,7 +59,7 @@ export function failureComment(job: FailedJob): string {
     // KNT-161. The provider refused the call on its usage limit: no model read the code.
     let until = limit.resetAt ? ` until ${utcText(limit.resetAt)}` : ''
     let retry = `To run it again${limit.resetAt ? ' after that time' : ''}: \`${command}\`.`
-    if (job.configUrl) retry += ` To use another provider for this level, change it in the [config of the repo](${job.configUrl}).`
+    if (job.configUrl) retry += ` To use another provider for this level, change its provider or set its fallback provider in the [config of the repo](${job.configUrl}).`
     return [
       `**Kentō · ${what} did not happen** at commit \`${job.headSha.slice(0, 9)}\``,
       `${commenter}The \`${job.level}\` ${what} of this commit did not happen: the model provider refused the call on its usage limit${until}. ` +

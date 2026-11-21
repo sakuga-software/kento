@@ -17,6 +17,18 @@ export interface LevelModels {
   provider: string
   model: string
   fallback: string | null
+  /**
+   * KNT-161. Another provider of the org (or `service`) and its model, that takes over when
+   * `provider` refuses the call on its usage limit. Absent or null: none. The order of the org for
+   * the level is `provider`, then this one.
+   */
+  fallbackProvider?: FallbackProvider | null
+}
+
+/** KNT-161. The fallback provider of a level and its model. */
+export interface FallbackProvider {
+  provider: string
+  model: string
 }
 
 /**
@@ -156,7 +168,17 @@ function readLevelModels(value: unknown): LevelModels | null {
   if (typeof provider !== 'string' || !PROVIDER.test(provider)) return null
   if (typeof model !== 'string' || !MODEL.test(model)) return null
   if (fallback !== null && (typeof fallback !== 'string' || !MODEL.test(fallback))) return null
-  return { provider, model, fallback }
+  // KNT-161. A wrong fallback provider is dropped alone: the level keeps its provider and models.
+  let fallbackProvider = readFallbackProvider(value.fallbackProvider)
+  return fallbackProvider && fallbackProvider.provider !== provider ? { provider, model, fallback, fallbackProvider } : { provider, model, fallback }
+}
+
+function readFallbackProvider(value: unknown): FallbackProvider | null {
+  if (!isObject(value)) return null
+  let { provider, model } = value
+  if (typeof provider !== 'string' || !PROVIDER.test(provider)) return null
+  if (typeof model !== 'string' || !MODEL.test(model)) return null
+  return { provider, model }
 }
 
 /**
@@ -231,14 +253,27 @@ function field(form: FormData, name: string): string {
 }
 
 /**
- * The form of one level: the provider, its model, then the fallback model (empty: none). The
- * provider must be one of `providers`, the providers that the org can use.
+ * The form of one level: the provider, its model, then the fallback model (empty: none), then the
+ * fallback provider and its model (KNT-161, empty: none). The providers must be of `providers`, the
+ * providers that the org can use, and the fallback provider another one.
  */
 export function readModelsForm(form: FormData, providers: readonly { id: string; kind: ProviderKind }[]): FormResult<LevelModels> {
   let errors: Record<string, string> = {}
   let provider = field(form, 'provider')
   let model = field(form, 'model')
   let fallback = field(form, 'fallback')
+  let fallbackProviderId = field(form, 'fallbackProvider')
+  let fallbackProviderModel = field(form, 'fallbackProviderModel')
+  let fallbackKind = providers.find((p) => p.id === fallbackProviderId)?.kind
+  if (fallbackProviderId !== '') {
+    if (!fallbackKind) errors.fallbackProvider = 'Choose a provider of the organization, or none.'
+    else if (fallbackProviderId === provider) errors.fallbackProvider = 'Choose another provider than the one of the level, or none.'
+    if (fallbackProviderModel === '') errors.fallbackProviderModel = 'Enter the model of the fallback provider.'
+    else if (!MODEL.test(fallbackProviderModel)) errors.fallbackProviderModel = MODEL_HELP
+    else if (fallbackKind && idFormHelp(fallbackKind, fallbackProviderModel)) errors.fallbackProviderModel = idFormHelp(fallbackKind, fallbackProviderModel)!
+  } else if (fallbackProviderModel !== '') {
+    errors.fallbackProvider = 'Choose the provider of this model, or clear the model.'
+  }
   let kind = providers.find((p) => p.id === provider)?.kind
   if (!kind) errors.provider = 'Choose a provider of the organization.'
   if (model === '') errors.model = 'Enter a model.'
@@ -248,7 +283,9 @@ export function readModelsForm(form: FormData, providers: readonly { id: string;
   else if (fallback !== '' && kind && idFormHelp(kind, fallback)) errors.fallback = idFormHelp(kind, fallback)!
   else if (fallback !== '' && fallback === model) errors.fallback = 'The fallback must be another model, or stay empty.'
   if (Object.keys(errors).length > 0) return { ok: false, errors }
-  return { ok: true, value: { provider, model, fallback: fallback === '' ? null : fallback } }
+  let value: LevelModels = { provider, model, fallback: fallback === '' ? null : fallback }
+  if (fallbackProviderId !== '') value.fallbackProvider = { provider: fallbackProviderId, model: fallbackProviderModel }
+  return { ok: true, value }
 }
 
 const MODEL_HELP = 'A model id: letters, digits and ". _ : / @ -", 200 characters at most.'

@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'fallback-provider'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -754,7 +754,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'fallback-provider'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -1094,4 +1094,62 @@ test('a service that sends the last reviewed commit gets `seen` on a finding who
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, stubModel().fetch));
   assert.ok(old.results[0]!.outcome === 'done' && !('seen' in old.results[0]!.review.findings[0]!));
   assert.equal(old.results[0]!.review.verdict, 'REQUEST_CHANGES');
+});
+
+// --- fallback provider (KNT-161) ---------------------------------------------------------------
+
+const FALLBACK_ID = '2b3c4d5e-6f70-4a1b-8c2d-3e4f5a6b7c8d';
+const OPENROUTER_KEY = 'sk-or-v1-key-of-the-test-0123456789abcdef';
+
+/** Anthropic refuses on its usage limit; OpenRouter answers. Records the URL and the model of each call. */
+function stubLimitThenOpenRouter() {
+  const calls: { url: string; model: string }[] = [];
+  const stub = (async (url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    calls.push({ url: String(url), model: body.model });
+    if (String(url).includes('anthropic')) {
+      const message = 'You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.';
+      return new Response(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }), { status: 400 });
+    }
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(answer()) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  return { fetch: stub, calls };
+}
+
+const openRouterFallback = (apiKey: string | null) => ({ id: FALLBACK_ID, kind: 'openrouter' as const, apiKey, baseUrl: null, models: [] });
+
+test('KNT-161. a usage limit of the provider of the job: the fallback provider answers, and the review says it', async () => {
+  const { api, results } = fakeApi();
+  const model = stubLimitThenOpenRouter();
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: 'claude-opus-5-5', fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, model.fetch));
+  assert.equal(outcome, 'done');
+  assert.deepEqual(
+    model.calls.map((c) => [new URL(c.url).host, c.model]),
+    [['api.anthropic.com', 'claude-sonnet-5-5'], ['openrouter.ai', 'anthropic/claude-sonnet-5.5']],
+    'the second model of Anthropic is not called: the fallback provider takes over',
+  );
+  const result = results[0]!;
+  assert.equal(result.outcome, 'done');
+  if (result.outcome !== 'done') return;
+  assert.deepEqual(result.review.fellBack, { from: PROVIDER_ID, resetAt: '2026-12-01T00:00:00Z' });
+  assert.equal(result.review.model, 'anthropic/claude-sonnet-5.5');
+  assert.ok(logs.some((l) => l.includes('job.provider_usage_limit')));
+  assert.ok(!logs.join('\n').includes(OPENROUTER_KEY));
+  assertNoSecretInLogs();
+});
+
+test('KNT-161. without a fallback provider the runner can call, a usage limit fails the job with its reset time', async () => {
+  const { api, results } = fakeApi();
+  const model = stubLimitThenOpenRouter();
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  // The fallback provider came without its key: this runner cannot call it.
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(null)], models }), deps(api, model.fetch));
+  assert.equal(outcome, 'failed');
+  assert.equal(model.calls.length, 1);
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.match(result.reason, /refused the call on a usage limit \(400, until 2026-12-01T00:00:00Z\)/);
+  assert.equal(result.providerStatus, 400);
+  assert.ok(logs.some((l) => l.includes('job.fallback_provider_unusable')));
 });

@@ -45,6 +45,11 @@ export interface EffectiveLevel {
    * claim, before any call.
    */
   wrongIds: { id: string; help: string }[]
+  /**
+   * KNT-161. The fallback provider that the config chose for the level, and its model: `provider` is
+   * null when the org no longer has it (the job then goes without it). Null: none.
+   */
+  fallbackProvider?: { provider: ProviderOption | null; model: string } | null
 }
 
 export function effectiveLevel(level: Level, resolved: Resolved<LevelModels>, providers: readonly ProviderOption[]): EffectiveLevel {
@@ -53,7 +58,9 @@ export function effectiveLevel(level: Level, resolved: Resolved<LevelModels>, pr
     let help = id ? idFormHelp(effective.provider.kind, id) : null
     return id && help ? [{ id, help }] : []
   })
-  return { ...effective, wrongIds }
+  let chosen = effective.origin === 'chosen' ? (resolved.value.fallbackProvider ?? null) : null
+  let fallbackProvider = chosen ? { provider: providers.find((p) => p.id === chosen.provider) ?? null, model: chosen.model } : null
+  return { ...effective, wrongIds, fallbackProvider }
 }
 
 function nextJob(level: Level, resolved: Resolved<LevelModels>, providers: readonly ProviderOption[]): Omit<EffectiveLevel, 'wrongIds'> {
