@@ -3,6 +3,7 @@
 import { getCsrfToken } from 'remix/middleware/csrf'
 import { createController, type Middleware } from 'remix/router'
 
+import type { OrgRole } from '../db/schema.ts'
 import { docsRoutes, fallbackRoutes, pageRoutes } from '../routes.ts'
 import { assignmentActions } from './controllers/assignment.tsx'
 import { createAuth } from './controllers/auth.tsx'
@@ -123,7 +124,7 @@ export interface ScreenViewer {
   login: string
   orgId: string
   orgName: string
-  role: 'admin' | 'member'
+  role: OrgRole
 }
 
 /** REV-17. The frame of the screens, for a controller in a file of its own. */

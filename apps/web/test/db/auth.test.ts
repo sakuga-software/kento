@@ -10,7 +10,8 @@ import {
   type AuthDatabase,
   type KentoAuth,
 } from '../../app/auth/better-auth.ts'
-import type { GitHubOAuth, GitHubProfile, OrgRole } from '../../app/auth/github.ts'
+import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
+import { OWNER_ACTIVE_MS, saveGitHubRole } from '../../app/auth/access.ts'
 import { createAuthStore, type AuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -30,7 +31,7 @@ describe('the sign-in and the sessions in Postgres', () => {
   let store: AuthStore
   let auth: KentoAuth
   let profile: GitHubProfile
-  let roles: Map<string, OrgRole | null>
+  let roles: Map<string, GitHubRole | null>
   let router: ReturnType<typeof createAppRouter>
   let makeRouter: (authDatabase: AuthDatabase) => { auth: KentoAuth; router: ReturnType<typeof createAppRouter> }
 
@@ -124,8 +125,8 @@ describe('the sign-in and the sessions in Postgres', () => {
     let ttl = new Date(session!.expiresAt).getTime() - Date.now()
     assert.ok(ttl > SESSION_TTL_MS - 60_000 && ttl <= SESSION_TTL_MS, 'seven days from the sign-in')
 
-    let [membership] = await database.sql`select role from memberships`
-    assert.equal(membership!.role, 'admin')
+    let [membership] = await database.sql`select role, source from memberships`
+    assert.deepEqual({ ...membership }, { role: 'owner', source: 'github' }, 'the first admin of an org with no owner')
     // The verification of the sign-in (its state) is gone once used.
     assert.equal((await database.sql`select 1 from verifications`).length, 0)
 
@@ -233,6 +234,69 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.deepEqual({ ...counts }, { sessions: 0, memberships: 0, accounts: 0 })
   })
 
+  it('KNT-150: switches the org on screen through Better Auth, only to an org of the person', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    let initech = await insertOrgRow(database.sql, 'initech', 13)
+    roles.set('acme/octocat', 'admin')
+    roles.set('globex/octocat', 'member')
+    let { cookie } = await signIn()
+    let active = async () => (await database.sql`select active_organization_id as id from sessions`)[0]!.id
+    assert.equal(await active(), acme)
+    let page = await (await request('/', cookie!)).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(page)![1]!
+    let post = (orgId: string) =>
+      router.fetch(
+        new Request('http://localhost/preferences/org', {
+          method: 'POST',
+          headers: { Cookie: cookie!, Origin: PUBLIC_URL.origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ _csrf: csrf, orgId, returnTo: '/' }),
+        }),
+      )
+    assert.equal((await post(globex)).status, 303)
+    assert.equal(await active(), globex)
+    let html = await (await request('/', cookie!)).text()
+    assert.match(html, /<span class="org-menu-name">globex<\/span>/)
+    assert.match(html, /Read only/)
+    // An org where the person is not a member: nothing moves.
+    assert.equal((await post(initech)).status, 303)
+    assert.equal(await active(), globex)
+    let [roles_] = await database.sql`select array_agg(role order by role) as roles from memberships`
+    assert.deepEqual(roles_!.roles, ['member', 'owner'])
+  })
+
+  it('KNT-150: a write from GitHub never changes the role or the source of a membership from an invitation', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'member')
+    await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    await database.sql`update memberships set role = 'admin', source = 'invitation'`
+    await store.saveMembership(user!.id, acme, 'member', 'github')
+    let [row] = await database.sql`select role, source from memberships`
+    assert.deepEqual({ ...row }, { role: 'admin', source: 'invitation' })
+    // Kentō itself still changes it.
+    await store.saveMembership(user!.id, acme, 'member', 'invitation')
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'member')
+  })
+
+  it('KNT-150: an invitation turns a membership from GitHub into one from an invitation, which GitHub then keeps', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'member')
+    await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    let row = async () => ({ ...(await database.sql`select role, source from memberships`)[0] })
+    assert.deepEqual(await row(), { role: 'member', source: 'github' })
+    // An admin of Kentō invites octocat as an admin: the row becomes Kentō's.
+    await store.saveMembership(user!.id, acme, 'admin', 'invitation')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+    // The next GitHub check says member: role and source stay, and the write says so.
+    assert.equal(await store.saveMembership(user!.id, acme, 'member', 'github'), 'admin')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+    // The check of a GitHub admin in between gives the role of the invitation, not its own.
+    assert.equal(await saveGitHubRole(store, user!.id, acme, 'member', 'admin', Date.now()), 'admin')
+    assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
+  })
+
   it('KNT-150: a session read other than by its token comes back without a token, never with its hash', async () => {
     await insertOrgRow(database.sql, 'acme', 11)
     roles.set('acme/octocat', 'admin')
@@ -280,6 +344,112 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(signedIn.length, 1)
     assert.equal((await database.sql`select 1 from sessions`).length, 1)
     assert.equal((await database.sql`select 1 from verifications`).length, 0)
+  })
+
+  async function insertUser(githubId: number, login: string, lastSignInAt: Date | null = null): Promise<string> {
+    let [row] = await database.sql<{ id: string }[]>`
+      insert into users (github_id, login, email, last_sign_in_at) values (${githubId}, ${login}, ${githubEmail(githubId)}, ${lastSignInAt?.toISOString() ?? null}::timestamptz)
+      returning id`
+    return row!.id
+  }
+
+  it('KNT-150: counts an owner seen within 30 days, and not an older one', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let owner = await insertUser(101, 'founder')
+    let admin = await insertUser(102, 'second')
+    let now = Date.now()
+    await store.saveMembership(owner, acme, 'owner', 'github')
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
+    // A second GitHub admin is an admin while the owner is active.
+    assert.equal(await saveGitHubRole(store, admin, acme, null, 'admin', now), 'admin')
+    // The owner was last checked 31 days ago and never signed in since: a ghost.
+    await database.sql`update memberships set checked_at = now() - interval '31 days' where user_id = ${owner}`
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), false)
+    // A sign-in within the window counts too.
+    await database.sql`update users set last_sign_in_at = now() - interval '1 day' where id = ${owner}`
+    assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
+    await database.sql`update users set last_sign_in_at = now() - interval '40 days' where id = ${owner}`
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', now), 'owner')
+    let rows = await database.sql`select role from memberships order by role`
+    assert.deepEqual(rows.map((r) => r.role), ['owner', 'owner'])
+  })
+
+  it('KNT-150: two GitHub admins of an org with no owner at the same time make one owner', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let first = await insertUser(201, 'first')
+    let second = await insertUser(202, 'second')
+    // A slow check: without the lock of the org, both admins would read "no owner" before either writes.
+    let slow: AuthStore = {
+      ...store,
+      withOrgLock: (orgId, work) =>
+        store.withOrgLock(orgId, (locked) =>
+          work({
+            ...locked,
+            hasOwner: async (id, since, except) => {
+              let found = await locked.hasOwner(id, since, except)
+              await new Promise((resolve) => setTimeout(resolve, 150))
+              return found
+            },
+          }),
+        ),
+    }
+    let now = Date.now()
+    let roles_ = await Promise.all([saveGitHubRole(slow, first, acme, null, 'admin', now), saveGitHubRole(slow, second, acme, null, 'admin', now)])
+    assert.deepEqual(roles_.sort(), ['admin', 'owner'])
+    let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from memberships where role = 'owner'`
+    assert.equal(count!.n, 1)
+  })
+
+  it('KNT-150: a lock holds one org: a nested lock of another org is refused, of the same org runs', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    await assert.rejects(
+      store.withOrgLock(acme, (locked) => locked.withOrgLock(globex, async () => 'written without its lock')),
+      /the lock of .* is held, not the one of/,
+    )
+    assert.equal(await store.withOrgLock(acme, (locked) => locked.withOrgLock(acme, async () => 'same org')), 'same org')
+  })
+
+  it('KNT-150: a failure after the owner check, under the lock, writes nothing', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let admin = await insertUser(221, 'midway')
+    await store.saveMembership(admin, acme, 'admin', 'github')
+    await assert.rejects(
+      store.withOrgLock(acme, async (locked) => {
+        assert.equal(await locked.hasOwner(acme, new Date(Date.now() - OWNER_ACTIVE_MS), admin), false)
+        await locked.saveMembership(admin, acme, 'owner', 'github')
+        throw new Error('the request failed after the write')
+      }),
+      /the request failed/,
+    )
+    // The transaction of the lock rolled the write back.
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'admin')
+    // And the lock is free for the next check.
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', Date.now()), 'owner')
+  })
+
+  it('KNT-150: two checks of the same GitHub admin at the same time keep the org with an owner', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let admin = await insertUser(211, 'twice')
+    await store.saveMembership(admin, acme, 'admin', 'github')
+    let now = Date.now()
+    // Both requests read `admin` before the lock; each one takes the lock in turn.
+    let roles_ = await Promise.all([saveGitHubRole(store, admin, acme, 'admin', 'admin', now), saveGitHubRole(store, admin, acme, 'admin', 'admin', now)])
+    assert.deepEqual(roles_, ['owner', 'owner'])
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
+    // Three at the same time: still the owner.
+    await Promise.all([1, 2, 3].map(() => saveGitHubRole(store, admin, acme, 'admin', 'admin', now)))
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
+  })
+
+  it('KNT-150: lists only the orgs of a membership from an invitation as invited', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let globex = await insertOrgRow(database.sql, 'globex', 12)
+    let user = await insertUser(301, 'guest')
+    await store.saveMembership(user, acme, 'member', 'github')
+    await store.saveMembership(user, globex, 'member', 'invitation')
+    assert.deepEqual((await store.invitedOrgs(301)).map((o) => o.name), ['globex'])
+    assert.deepEqual(await store.invitedOrgs(999), [])
   })
 
   it('KNT-150: a failed write of the sign-in puts no parameter of its query on stdout or stderr', async () => {

@@ -25,7 +25,18 @@ Each entry says, when it applies:
   header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
   `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
   to it, as before.
-- **Migrations**: 31. `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
+- **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
+  and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
+  of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:
+  an owner holds only while GitHub says admin, and one whom GitHub demotes to member becomes a member
+  at the next check (10 minutes), as an admin would. A GitHub admin of an org with no active owner
+  (one checked or signed in within 30 days) becomes its owner at their next check.
+- **Rollback**: the release before reads `owner` as no admin: each owner reads only until GitHub is
+  asked again (10 minutes at most), and that release writes `admin` back. This release makes such an
+  admin the owner again at the next check when the org has no active owner.
+- **Screens**: the box of the org in the header is a menu of every org of the person, with their
+  role in each.
+- **Migrations** (before it): `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
   `users` gets the e-mail that Better Auth needs (`<github id>@users.github.invalid`, never mailed),
   `accounts` the GitHub account of each user (no token, ever), `verifications` the state of a
   sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and

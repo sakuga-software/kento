@@ -2,6 +2,7 @@
 // of the screens (`ScreenKit` of app/ui/pages.tsx): the session, the signed-in person, the 404 page.
 import { createController } from 'remix/router'
 
+import { canEdit } from '../auth/access.ts'
 import { InvalidCursorError } from '../findings/store.ts'
 import { errorMessage, log } from '../log.ts'
 import { pullRoutes } from '../routes.ts'
@@ -119,7 +120,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
             log('warn', 'pull.header_failed', { repo: summary.target.fullName, pr: prNumber, error: errorMessage(error) })
           }
         }
-        let estimates = signed.role === 'admin' ? await deps.store.estimates(summary.target.repoId) : null
+        let estimates = canEdit(signed.role) ? await deps.store.estimates(summary.target.repoId) : null
         let rerun = context.url.searchParams.get('rerun')
         return context.render(
           <PullPage
@@ -183,7 +184,7 @@ export function createPullControllers(kit: ScreenKit, deps: PullsDependencies | 
       // cop() and csrf() of the session layer ran before.
       async pullRerun(context) {
         let signed = kit.signed(context)
-        if (signed.role !== 'admin') {
+        if (!canEdit(signed.role)) {
           log('warn', 'pull.rerun_refused', { login: signed.login, org: signed.orgName, reason: 'not an admin' })
           return kit.forbidden()
         }

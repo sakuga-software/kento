@@ -409,8 +409,17 @@ export function createAuth(kit: UiKit) {
       let form = context.get(FormData)
       let orgId = form?.get('orgId')
       let signed = signedOf(context)
+      // Only an org where the person is a member now, as GitHub and Kentō say: an id of another org
+      // changes nothing, and gets no answer that tells it exists.
       if (typeof orgId === 'string' && signed.memberships.some((m) => m.org.id === orgId)) {
-        await auth!.store.setActiveOrg(signed.sessionId, orgId)
+        // Better Auth checks the membership again; it can be gone in between. The next request then
+        // moves the session to an org that remains (`orgMoved`).
+        try {
+          await auth!.auth.api.setActiveOrganization({ headers: context.headers, body: { organizationId: orgId } })
+          log('info', 'auth.org_switched', { login: signed.user.login, org: orgId })
+        } catch (error) {
+          log('warn', 'auth.org_switch_failed', { login: signed.user.login, org: orgId, error: errorMessage(error) })
+        }
       }
       return redirect(localPath(form?.get('returnTo')))
     }),

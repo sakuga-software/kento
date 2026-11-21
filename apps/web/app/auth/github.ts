@@ -103,8 +103,11 @@ export function createGitHubOAuth(options: {
   }
 }
 
-/** The role of a person in an org, or null when GitHub does not count them as an active member. */
-export type OrgRole = 'admin' | 'member'
+/**
+ * The role of a person in the account of an installation, as GitHub gives it, or null when GitHub
+ * does not count them as an active member.
+ */
+export type GitHubRole = 'admin' | 'member'
 
 /** KNT-150. An installation of the App, and the GitHub account (organization or user) that holds it. */
 export interface InstallationAccount {
@@ -114,7 +117,7 @@ export interface InstallationAccount {
 }
 
 /** Asks GitHub for the role of a person in the account of an installation. Throws when GitHub fails. */
-export type LookupRole = (installation: InstallationAccount, person: { githubId: number; login: string }) => Promise<OrgRole | null>
+export type LookupRole = (installation: InstallationAccount, person: { githubId: number; login: string }) => Promise<GitHubRole | null>
 
 /**
  * Reads the role with an installation token of the App that has only `members: read`:

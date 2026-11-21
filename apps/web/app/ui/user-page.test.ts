@@ -93,7 +93,7 @@ describe('the screen of a user', () => {
     let { signIn } = setup()
     let { html } = await signIn(OCTOCAT)
     assert.match(html, /<h1 class="page-title">octocat<\/h1>/)
-    assert.match(html, /Octocat · Admin of sakuga-software, from their rights on GitHub\./)
+    assert.match(html, /Octocat · Admin of sakuga-software\./)
     assert.match(html, /Reviews of my PRs/)
     assert.match(html, /action="\/users\/octocat\/prefs"/)
     assert.match(html, /<option value="off">Off: only on a command<\/option>/)

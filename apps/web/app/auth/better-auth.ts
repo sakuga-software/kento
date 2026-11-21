@@ -12,10 +12,10 @@ import { createHash } from 'node:crypto'
 
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { genericOAuth } from 'better-auth/plugins'
+import { genericOAuth, organization } from 'better-auth/plugins'
 
 import type { Db } from '../db/client.ts'
-import { accounts, sessions, users, verifications } from '../db/schema.ts'
+import { accounts, memberships, orgs, sessions, users, verifications } from '../db/schema.ts'
 import { errorMessage, log } from '../log.ts'
 import { saveSignInRoles, decideSignIn, type SignInDecision } from './access.ts'
 import type { GitHubOAuth, GitHubProfile, LookupRole } from './github.ts'
@@ -73,7 +73,7 @@ export type AuthDatabase = (options: BetterAuthOptions) => Adapter
 
 /** The tables of Kentō, under the names of the models of Better Auth. */
 export function postgresAuthDatabase(db: Db): AuthDatabase {
-  return drizzleAdapter(db, { provider: 'pg', schema: { users, accounts, sessions, verifications } })
+  return drizzleAdapter(db, { provider: 'pg', schema: { users, accounts, sessions, verifications, orgs, memberships } })
 }
 
 export interface KentoAuthOptions {
@@ -156,9 +156,6 @@ export function createKentoAuth(options: KentoAuthOptions) {
       expiresIn: SESSION_TTL_MS / 1000,
       // 7 days from the sign-in, whatever happens in between.
       disableSessionRefresh: true,
-      additionalFields: {
-        activeOrganizationId: { type: 'string', required: false, input: false },
-      },
     },
     verification: { modelName: 'verifications' },
     databaseHooks: {
@@ -176,6 +173,24 @@ export function createKentoAuth(options: KentoAuthOptions) {
       },
     },
     plugins: [
+      // The orgs, their members and the org on screen (`activeOrganizationId` of the session). An
+      // org comes from an installation of the App (the webhook), never from this API.
+      organization({
+        allowUserToCreateOrganization: false,
+        disableOrganizationDeletion: true,
+        creatorRole: 'owner',
+        schema: {
+          organization: { modelName: 'orgs' },
+          member: {
+            modelName: 'memberships',
+            fields: { organizationId: 'orgId' },
+            additionalFields: {
+              source: { type: 'string', required: false, input: false, defaultValue: 'github' },
+            },
+          },
+          session: { fields: { activeOrganizationId: 'activeOrganizationId' } },
+        },
+      }),
       genericOAuth({
         config: [
           {
@@ -223,7 +238,7 @@ export function createKentoAuth(options: KentoAuthOptions) {
     ],
   } satisfies BetterAuthOptions
 
-  return betterAuth(config as BetterAuthOptions)
+  return betterAuth(config)
 }
 
 export type KentoAuth = ReturnType<typeof createKentoAuth>
@@ -267,15 +282,20 @@ export async function beforeSessionCreate(
 ): Promise<false | { data: Record<string, unknown> }> {
   let decision = scope?.decision
   if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
-  let first = decision.roles.find((r) => r.role === 'admin') ?? decision.roles[0]
-  if (!first) return false
   let user = await store.findUser(session.userId)
   if (!user) return false
-  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed)
+  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed, now)
+  // The org on screen: the first org where GitHub counts the person as an admin, else the first one
+  // from GitHub, else the first one of an invitation; always one where the person is a member once
+  // the roles are saved (an org can go in between), else their first membership. None: no session.
+  let memberships = await store.memberships(user.id)
+  let wanted = [decision.roles.find((r) => r.role === 'admin')?.org, decision.roles[0]?.org, decision.invited[0]]
+  let first = wanted.find((org) => org && memberships.some((m) => m.org.id === org.id)) ?? memberships[0]?.org
+  if (!first) return false
   await store.touchSignIn(user.id)
   log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
   return {
-    data: { ...session, activeOrganizationId: first.org.id, expiresAt: new Date(now + SESSION_TTL_MS), ipAddress: scope?.clientIp ?? null },
+    data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS), ipAddress: scope?.clientIp ?? null },
   }
 }
 

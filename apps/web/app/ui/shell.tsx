@@ -1,10 +1,11 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
-import { Button, Select } from './controls.tsx'
+import { Button } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
 import type { Theme } from './theme.ts'
+import type { OrgRole } from '../db/schema.ts'
 
 /** The screens of the navigation, in its order. */
 export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
@@ -23,16 +24,21 @@ const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
 ]
 
 /** The person who is signed in, and their role in the org on screen. */
+/** KNT-150. What the screens call each role. */
+export const ROLE_LABELS: Record<OrgRole, string> = { owner: 'Owner', admin: 'Admin', member: 'Member' }
+
 export interface Viewer {
   login: string
   name: string | null
   avatarUrl: string | null
   /** An admin of the org edits; a member reads. */
-  role: 'admin' | 'member'
+  role: OrgRole
+  /** An owner or an admin: the forms of the org. */
+  canEdit: boolean
   /** The org on screen. */
   org: { id: string; name: string }
-  /** Every org where the person is a member; more than one shows a switch. */
-  orgs: { id: string; name: string }[]
+  /** Every org where the person is a member, with their role in it: the menu of the org. */
+  orgs: { id: string; name: string; role: OrgRole }[]
 }
 
 /** What every screen gives to the frame. */
@@ -77,7 +83,7 @@ export function Shell(handle: Handle<ShellProps>) {
   return () => {
     let { frame, section, title, before, lead, actions, tabs, meta, children, memberCan } = handle.props
     let { viewer } = frame
-    let readOnly = viewer?.role === 'member'
+    let readOnly = viewer !== null && !viewer.canEdit
     return (
       <Document title={title} theme={frame.theme} assetVersion={frame.assetVersion}>
         <a class="skip-link" href="#content">
@@ -160,36 +166,50 @@ function Mark(_handle: Handle<{}>) {
   )
 }
 
-/** The org on screen; a select when the person is a member of several. frame.js sends a choice at once. */
+/**
+ * KNT-150. The org on screen, and a menu of every org of the person with their role in it: a form
+ * per org (no JavaScript needed), then the settings of the org.
+ */
 function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
   return () => {
     let { frame, viewer } = handle.props
-    if (viewer.orgs.length < 2) {
-      return (
-        <span class="bar-org">
-          <span class="visually-hidden">Organization: </span>
-          <span class="bar-org-box">{viewer.org.name}</span>
-        </span>
-      )
-    }
     return (
-      <form class="bar-org" method="post" action={routes.org.href()} data-org-switch="">
-        {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
-        <input type="hidden" name="returnTo" value={frame.path} />
-        <label class="visually-hidden" for="org-switch">
-          Organization
-        </label>
-        <Select class="mono" wrapperClass="bar-org-select" id="org-switch" name="orgId">
-          {viewer.orgs.map((org) => (
-            <option value={org.id} selected={org.id === viewer.org.id}>
-              {org.name}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit">
-          Switch
-        </Button>
-      </form>
+      <details class="bar-org org-menu">
+        <summary class="bar-org-box">
+          <span class="visually-hidden">Organization: </span>
+          <span class="org-menu-name">{viewer.org.name}</span>
+        </summary>
+        <div class="org-menu-panel">
+          <p class="org-menu-title">Organizations</p>
+          <ul>
+            {viewer.orgs.map((org) =>
+              org.id === viewer.org.id ? (
+                <li>
+                  <span class="org-menu-item" aria-current="true">
+                    <span class="org-menu-item-name">{org.name}</span>
+                    <span class="tag tag-quiet">{ROLE_LABELS[org.role]}</span>
+                  </span>
+                </li>
+              ) : (
+                <li>
+                  <form method="post" action={routes.org.href()}>
+                    {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
+                    <input type="hidden" name="returnTo" value={frame.path} />
+                    <input type="hidden" name="orgId" value={org.id} />
+                    <button class="org-menu-item" type="submit">
+                      <span class="org-menu-item-name">{org.name}</span>
+                      <span class="tag tag-quiet">{ROLE_LABELS[org.role]}</span>
+                    </button>
+                  </form>
+                </li>
+              ),
+            )}
+          </ul>
+          <a class="org-menu-link" href={routes.settings.href()}>
+            Organization settings
+          </a>
+        </div>
+      </details>
     )
   }
 }
@@ -231,7 +251,7 @@ function Who(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
     return (
       <div class="who">
         <span class="who-login">{viewer.login}</span>
-        <span class="who-role">{viewer.role === 'admin' ? 'Admin' : 'Member'}</span>
+        <span class="who-role">{ROLE_LABELS[viewer.role]}</span>
         <form method="post" action={routes.signOut.href()}>
           {frame.csrfToken ? <input type="hidden" name="_csrf" value={frame.csrfToken} /> : null}
           <Button variant="ghost" type="submit">
