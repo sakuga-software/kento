@@ -41,6 +41,8 @@ export function Document(handle: Handle<DocumentProps>) {
           <script src={`/assets/frame.js?v=${v}`} defer></script>
           {/* KNT-144: the bar at the top of the window while the next page loads. */}
           <script src={`/assets/progress.js?v=${v}`} defer></script>
+          {/* KNT-172: a tap during the page transition reaches its target. */}
+          <script src={`/assets/transition.js?v=${v}`} defer></script>
         </head>
         <body>{children}</body>
       </html>

@@ -390,6 +390,19 @@ describe('providers and their encrypted keys', () => {
       return job!.id
     }
 
+    /** The events of the warnings that `work` writes on stderr. */
+    async function warnings(work: () => Promise<unknown>): Promise<string[]> {
+      let lines: string[] = []
+      let write = process.stderr.write.bind(process.stderr)
+      process.stderr.write = ((chunk: string) => (lines.push(String(chunk)), true)) as typeof process.stderr.write
+      try {
+        await work()
+      } finally {
+        process.stderr.write = write
+      }
+      return lines.flatMap((chunk) => chunk.split('\n')).filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).event as string)
+    }
+
     it('takes the provider that the config names, even when it is not the default, and sends its models', async () => {
       await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       let chosen = await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Chosen', baseUrl: null, apiKey: 'sk-or-chosen-0123456789', models: {} })
@@ -414,9 +427,21 @@ describe('providers and their encrypted keys', () => {
       let def = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
       await queueWithConfig({ repoConfigVersion: 0, source: 'kento', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: 'z-ai/glm-5.3' } })
       let token = await runner({ orgId: null, trusted: true })
-      let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })
+      let job: Job | null = null
+      let events = await warnings(async () => ({ job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })))
       assert.equal(job!.providers![0]!.id, def.id)
       assert.equal('models' in job!, false, 'the OpenRouter models of Kentō never go to Anthropic')
+      assert.ok(!events.includes('job.models_not_sent'), 'the normal path of a default provider: no warning (KNT-139)')
+    })
+
+    it('a runner with its own key of the default provider gets the job without a warning (KNT-139)', async () => {
+      await store.add({ orgId, userId: null, kind: 'anthropic', label: 'Default', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      await queueWithConfig({ repoConfigVersion: 0, source: 'kento', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null } })
+      let own = await runner({ trusted: false })
+      let job: Job | null = null
+      let events = await warnings(async () => ({ job } = await claim(own, { ...NEW_RUNNER, hasProviderKey: true, ownProvider: 'anthropic', features: ['providers', 'models'] })))
+      assert.equal(job!.providers![0]!.apiKey, null)
+      assert.ok(!events.includes('job.models_not_sent'))
     })
 
     it('a provider of another org named in a config is never given', async () => {
@@ -426,6 +451,14 @@ describe('providers and their encrypted keys', () => {
       let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] })
       assert.equal(job!.providers![0]!.id, 'service')
       assert.ok(!JSON.stringify(job).includes('sk-ant-orchard'))
+    })
+
+    it('warns when the models that the config chose cannot run', async () => {
+      let other = await store.add({ orgId: otherOrgId, userId: null, kind: 'anthropic', label: 'Other org', baseUrl: null, apiKey: 'sk-ant-orchard-0123456789', models: {} })
+      await queueWithConfig({ repoConfigVersion: 1, source: 'repo', models: { provider: other.id, model: 'claude-opus-5-5', fallback: null } })
+      let token = await runner({ orgId: null, trusted: true })
+      let events = await warnings(() => claim(token, { ...NEW_RUNNER, features: ['providers', 'models'] }))
+      assert.ok(events.includes('job.models_not_sent'))
     })
   })
 

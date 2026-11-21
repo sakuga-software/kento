@@ -107,6 +107,9 @@ Each entry says, when it applies:
 - `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
   HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
   your reverse proxy runs on another machine, publish the port on a private address.
+- A job with no choice of models in its config no longer logs `warn job.models_not_sent` when it
+  runs on the default provider of the org. That is the normal path. The warning stays for models that
+  the config chose and that the job cannot run (KNT-139).
 
 ### Security
 
