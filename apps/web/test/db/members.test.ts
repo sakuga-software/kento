@@ -4,7 +4,7 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 import { createKentoAuth, postgresAuthDatabase } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
 import type { OrgRole } from '../../app/db/schema.ts'
-import { ROLE_TTL_MS, saveGitHubRole } from '../../app/auth/access.ts'
+import { ROLE_TTL_MS, saveGitHubRole, type GitHubAnswer } from '../../app/auth/access.ts'
 import { createAuthStore, orgLockKey } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -144,6 +144,12 @@ describe('the members and the invitations of an org', () => {
     return row ?? null
   }
 
+
+  /** KNT-199. GitHub's answer `role`, given by every active installation of the org. */
+  async function everyInstallation(orgId: string, role: GitHubRole): Promise<GitHubAnswer> {
+    let rows = await database.sql<{ id: string }[]>`select id from installations where org_id = ${orgId} and suspended_at is null`
+    return { role, from: rows.map((r) => r.id) }
+  }
   it('an owner invites a GitHub login; the person, in no org of the App, signs in, sees only the invitation, and accepts it', async () => {
     let owner = (await signIn('octocat')).cookie!
     let invited = await post(owner, '/settings/members/invite', { login: '@Guest', role: 'member' })
@@ -364,7 +370,7 @@ describe('the members and the invitations of an org', () => {
     let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
     // The owner gives camille the owner role; a check that read `admin` before writes after it.
     await post(owner, `/settings/members/${camille.id}/role`, { role: 'owner' })
-    assert.equal(await saveGitHubRole(createAuthStore(database.sql), user!.id, acme, 'admin', 'admin', Date.now()), 'owner')
+    assert.equal(await saveGitHubRole(createAuthStore(database.sql), user!.id, acme, 'admin', await everyInstallation(acme, 'admin'), Date.now()), 'owner')
     assert.equal((await membership('camille', acme))!.role, 'owner')
   })
 
@@ -379,10 +385,10 @@ describe('the members and the invitations of an org', () => {
     // A check read the membership, then the owner removed it, then the check writes.
     await post(owner, `/settings/members/${guest.id}/remove`)
     let auth = createAuthStore(database.sql)
-    assert.equal(await saveGitHubRole(auth, user!.id, acme, 'member', 'admin', Date.now()), null)
+    assert.equal(await saveGitHubRole(auth, user!.id, acme, 'member', await everyInstallation(acme, 'admin'), Date.now()), null)
     assert.equal(await membership('guest', acme), null)
     // A person who joins from GitHub (nothing read before) gets a membership.
-    assert.equal(await saveGitHubRole(auth, user!.id, acme, null, 'member', Date.now()), 'member')
+    assert.equal(await saveGitHubRole(auth, user!.id, acme, null, await everyInstallation(acme, 'member'), Date.now()), 'member')
   })
 
   /** guest invited to acme with `role`, signed in, accepted; returns guest's cookie and membership. */

@@ -5,7 +5,7 @@ import { createController } from 'remix/router'
 
 import { UUID } from '@kento-review/protocol'
 
-import { canEdit, orgRole } from '../auth/access.ts'
+import { canEdit, orgAnswer } from '../auth/access.ts'
 import { GITHUB_LOGIN, type LookupRole, type LookupUser } from '../auth/github.ts'
 import { errorMessage, log } from '../log.ts'
 import { invitationRoutes, memberRoutes, pageRoutes } from '../routes.ts'
@@ -129,9 +129,12 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
           log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id, outcome: asked })
           return toMembers(asked === 'gone' ? 'not_found' : 'reclaim_wait')
         }
-        let githubAdmin: boolean
+        // The installations whose account GitHub counts the person an admin of: the store checks,
+        // under the lock, that one of them is still in the org.
+        let adminOf: string[]
         try {
-          githubAdmin = (await orgRole(deps.lookupRole, org, { githubId: signed.user.githubId, login: signed.user.login })) === 'admin'
+          let answer = await orgAnswer(deps.lookupRole, org, { githubId: signed.user.githubId, login: signed.user.login })
+          adminOf = answer?.role === 'admin' ? answer.from : []
         } catch (error) {
           log('warn', 'members.lookup_failed', { org: org.name, error: errorMessage(error) })
           // A failure of GitHub does not cost the person the whole minute. A failure to write that
@@ -141,7 +144,7 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
           )
           return toMembers('github_failed')
         }
-        let outcome = await deps.store.reclaim(org.id, signed.user.id, githubAdmin)
+        let outcome = await deps.store.reclaim(org.id, signed.user.id, adminOf)
         log(outcome.ok ? 'info' : 'warn', outcome.ok ? 'members.owner_reclaimed' : 'members.reclaim_refused', {
           login: signed.user.login,
           org: org.name,

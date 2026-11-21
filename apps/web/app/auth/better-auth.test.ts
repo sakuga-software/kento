@@ -11,7 +11,7 @@ describe('the hook before a session is written', () => {
   function allowed(): SignInScope {
     return {
       profile: OCTOCAT,
-      decision: { kind: 'allowed', roles: [{ org: ORG, role: 'admin' }], unconfirmed: [], invited: [] },
+      decision: { kind: 'allowed', roles: [{ org: ORG, role: 'admin', answer: { role: 'admin', from: ORG.installations.map((i) => i.id) } }], unconfirmed: [], invited: [] },
       clientIp: '203.0.113.5',
     }
   }
