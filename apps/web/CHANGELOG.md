@@ -19,6 +19,10 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
 - **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
   The one inline script is the import map of the components that hydrate. A proxy in front of the
   service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
