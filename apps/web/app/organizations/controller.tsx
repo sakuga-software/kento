@@ -142,7 +142,13 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
         log('info', 'organizations.installation_moved', { ...fields, to: outcome.orgId, detached: 'detach' in to, deleted: outcome.deleted })
         // A detach leaves the person where they are. A move: the session follows the installation.
         if ('detach' in to) return toOrganization('detached')
-        await kit.setActiveOrg(signed.sessionId, outcome.orgId)
+        // The move is committed: a failure here only leaves the session on the org it was on (or,
+        // when that org is gone, on another org of the person at the next request).
+        try {
+          await kit.setActiveOrg(signed.sessionId, outcome.orgId)
+        } catch (error) {
+          log('warn', 'organizations.session_org_failed', { ...fields, to: outcome.orgId, error: errorMessage(error) })
+        }
         return toOrganization('moved')
       },
     },

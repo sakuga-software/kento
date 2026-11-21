@@ -40,13 +40,22 @@ describe('the name and the installations of an org', () => {
   /** The accounts that GitHub says are a person (`User`), by login; GitHub failing for roles or types. */
   let people: Set<string>
   let gitHub = { calls: 0, failRoles: false, failTypes: false }
+  let failSessionSwitch = false
 
   before(async () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 10 })
     store = createMembersStore(database.sql)
-    let authStore = createAuthStore(database.sql)
+    let realStore = createAuthStore(database.sql)
+    // The session of a move switches orgs through this store; a test makes that switch fail.
+    let authStore = {
+      ...realStore,
+      async setActiveOrg(sessionId: string, orgId: string) {
+        if (failSessionSwitch) throw new Error('the database refused the update')
+        return realStore.setActiveOrg(sessionId, orgId)
+      },
+    }
     let github: GitHubOAuth = {
       clientId: 'Iv1.test',
       clientSecret: 'client-secret-for-the-tests',
@@ -112,6 +121,7 @@ describe('the name and the installations of an org', () => {
     clock.now = Date.now()
     people = new Set()
     gitHub = { calls: 0, failRoles: false, failTypes: false }
+    failSessionSwitch = false
   })
 
   /** The answers of a GitHub that counts the person as an admin of every account there is now, and no account as a person. */
@@ -236,6 +246,18 @@ describe('the name and the installations of an org', () => {
     assert.equal((await post(member, `/settings/organization/installations/${installationId}/move`, { to: 'new', name: 'Mine' })).status, 403)
     assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [acme])
     assert.equal((await database.sql`select count(*)::int as n from orgs`)[0]!.n, 2)
+  })
+
+  it('a move that committed answers "moved" even when the switch of the session fails', async () => {
+    roles.set('globex/octocat', 'admin')
+    roles.set('acme-labs/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    failSessionSwitch = true
+    assert.equal((await post(owner, `/settings/organization/installations/${installationId}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=moved')
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [globex])
+    // The session stays on acme.
+    assert.match(await (await request('/', owner)).text(), /<span class="org-menu-name">acme<\/span>/)
   })
 
   it('moves an installation to a new org of which the person is the owner', async () => {
