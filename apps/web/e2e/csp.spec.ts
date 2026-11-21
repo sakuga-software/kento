@@ -58,8 +58,9 @@ async function watchPolicy(page: Page) {
   })
   /**
    * Adds the refusals of the page in view, once the events of its last actions are out. Kentō
-   * #109d70: the page must still be the one of `path`, with its list: a page left or a list that
-   * the init script did not make fails the test, instead of losing its refusals.
+   * #109d70: the page must still be the one it arrived on (`path`, the URL after any redirect), with
+   * its list: a page left or a list that the init script did not make fails the test, instead of
+   * losing its refusals.
    */
   let collect = async (path: string) => {
     let { at, found } = await page.evaluate(
@@ -87,6 +88,9 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
     for (let path of ['/settings', '/findings', '/findings?view=precision', '/repos', '/', '/users/octocat', '/feedback', '/runners', '/settings/members']) {
       await page.goto(path)
       await page.waitForLoadState('load')
+      // Kentō #e556c1: the screen as it arrived, a redirect included (none of the list redirects today).
+      let arrived = new URL(page.url())
+      let landed = arrived.pathname + arrived.search
       if (path === '/settings' || path === '/findings') {
         await hydrated(page)
         // The selects of the screen: each one draws its list, a popover placed by script.
@@ -101,7 +105,7 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
           await expect(page.locator('.select-popover:popover-open')).toHaveCount(0)
         }
       }
-      await collect(path)
+      await collect(landed)
     }
     expect(refusals).toEqual([])
   })
