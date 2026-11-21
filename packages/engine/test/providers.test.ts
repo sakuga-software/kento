@@ -451,6 +451,29 @@ test('KNT-161. a short 429, then another failure, is not a limit', async () => {
   assert.equal(limitOfReason(String(error.message)), null);
 });
 
+test('KNT-161. another failure, then a short 429, is not a limit either: the order of the models changes nothing', async () => {
+  const { fetch } = fakeFetch([
+    () => json({ error: { message: 'overloaded' } }, 503),
+    () => new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429 }),
+  ]);
+  const error = await askJson({ apiKey: 'k', kind: 'openrouter', fetch, log: quiet }, levelConfig('lite'), 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.ok(!rateLimited(error) && !usageLimited(error), String(error));
+  assert.equal(error.status, 429);
+  assert.equal(limitOfReason(String(error.message)), null, 'the service does not queue the job again');
+  assert.match(error.message, /OpenRouter answered with a rate limit \(429\)/);
+});
+
+test('KNT-161. a short 429 on the Anthropic request without thinking stays a rate limit', async () => {
+  const { fetch, calls } = fakeFetch([
+    () => messageResponse('claude-haiku-5-5', [{ type: 'thinking', thinking: '', signature: 's' }], 'max_tokens', { output: 32000 }),
+    () => new Response(JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }), { status: 429, headers: { 'retry-after': '20' } }),
+  ]);
+  const error = await askJson({ apiKey: 'k', kind: 'anthropic', fetch, log: quiet }, providerLevelConfig('lite', 'anthropic'), 'review.md', 'p', SCHEMA).catch((e) => e);
+  assert.equal(calls.length, 2);
+  assert.ok(rateLimited(error), String(error));
+  assert.equal(limitOfReason(String(error.message))?.kind, 'rate');
+});
+
 test('KNT-161. the reason of a runner of an earlier release is read too: a 429, a 402 or a body that names a limit', () => {
   assert.deepEqual(limitOfReason('no model gave a usable answer: ProviderError: OpenRouter answered 403: {"error":{"message":"Key limit exceeded"}}'), { kind: 'usage', resetAt: null });
   assert.deepEqual(

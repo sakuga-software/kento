@@ -108,7 +108,9 @@ export async function askJson<T>(
     const until = resetAt ? `, until ${resetAt}` : '';
     throw new RateLimitError(`no model gave a usable answer: every model ${RATE_LIMIT_TEXT} (${status}${until}): ${lastError.message}`, status, resetAt);
   }
-  throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
+  // KNT-161. Not every model got a short rate limit: the service queues a job again only when each one
+  // did. The phrase of a rate limit leaves the text, so the order of the models changes nothing.
+  throw new ProviderError(`no model gave a usable answer: ${String(lastError).replaceAll(RATE_LIMIT_TEXT, 'answered with a rate limit')}`, status);
 }
 
 /**
