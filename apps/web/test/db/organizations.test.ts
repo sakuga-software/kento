@@ -35,6 +35,8 @@ describe('the name and the installations of an org', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
   let store: MembersStore
+  /** The store of the organization screen of the router: a test replaces one of its methods. */
+  let orgsStore: ReturnType<typeof createOrgsStore>
   let router: ReturnType<typeof createAppRouter>
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
@@ -92,6 +94,7 @@ describe('the name and the installations of an org', () => {
     let secret = 'a-session-secret-for-the-tests-0123456789'
     clock = { now: Date.now() }
     let auth = createKentoAuth({ database: postgresAuthDatabase(database.db), publicUrl: PUBLIC_URL, secret, github, store: authStore, lookupRole, now: () => clock.now })
+    orgsStore = createOrgsStore(database.sql, testClock)
     router = createAppRouter({
       checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
       version: '1.2.3',
@@ -99,7 +102,7 @@ describe('the name and the installations of an org', () => {
       webhook: disabledWebhook,
       // Every request of these tests comes with no socket, so they share one limit: a high one.
       auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now, signInLimit: 1000 },
-      organization: { store: createOrgsStore(database.sql, testClock), lookupRole, lookupAccountType },
+      organization: { store: orgsStore, lookupRole, lookupAccountType },
       members: {
         store,
         lookupRole,
@@ -945,5 +948,30 @@ describe('the name and the installations of an org', () => {
     assert.deepEqual(await move, { ok: true, orgId: globex, deleted: true })
     assert.equal(await asked, 'gone')
     assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
+  })
+
+  it('a move whose count answers gone asks GitHub nothing, says not found, and logs organizations.move_gone', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    let saved = orgsStore.askMove
+    orgsStore.askMove = async () => 'gone'
+    // A warn goes to stderr (app/log.ts).
+    let lines: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    try {
+      gitHub.calls = 0
+      let csrf = await csrfOf(owner)
+      process.stderr.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stderr.write
+      let response = await request(`/settings/organization/installations/${installationId}/move`, owner, { _csrf: csrf, to: 'new', name: 'Labs' })
+      process.stderr.write = stderr
+      assert.equal(response.headers.get('Location'), '/settings/organization?notice=not_found')
+      assert.equal(gitHub.calls, 0)
+    } finally {
+      process.stderr.write = stderr
+      orgsStore.askMove = saved
+    }
+    let events = lines.map((line) => JSON.parse(line) as { event: string }).map((line) => line.event)
+    assert.ok(events.includes('organizations.move_gone'), events.join(', '))
+    assert.ok(!events.includes('organizations.move_throttled'))
   })
 })

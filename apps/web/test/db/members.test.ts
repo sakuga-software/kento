@@ -507,21 +507,32 @@ describe('the members and the invitations of an org', () => {
     assert.deepEqual(gitHub.accounts, ['acme'])
   })
 
-  it('a count that answers gone asks GitHub nothing, and says not found', async () => {
+  it('a count that answers gone asks GitHub nothing, says not found, and logs members.reclaim_gone', async () => {
     await signIn('octocat')
     let camille = (await signIn('camille')).cookie!
     let saved = store.askReclaim
     store.askReclaim = async () => 'gone'
+    // A warn goes to stderr (app/log.ts).
+    let lines: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
     try {
       gitHub.calls = 0
-      assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_found')
+      let csrf = await csrfOf(camille)
+      process.stderr.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stderr.write
+      let response = await request('/settings/members/reclaim', camille, { _csrf: csrf })
+      process.stderr.write = stderr
+      assert.equal(response.headers.get('Location'), '/settings/members?notice=not_found')
       assert.equal(gitHub.calls, 0)
     } finally {
+      process.stderr.write = stderr
       store.askReclaim = saved
     }
+    let events = lines.map((line) => JSON.parse(line) as { event: string }).map((line) => line.event)
+    assert.ok(events.includes('members.reclaim_gone'), events.join(', '))
+    assert.ok(!events.includes('members.reclaim_throttled'))
   })
 
-  it('a person removed from the org while the take-back runs is not counted, and GitHub is not asked', async () => {
+  it('a person removed from the org before the take-back is counted is not counted, and GitHub is not asked', async () => {
     let owner = (await signIn('octocat')).cookie!
     let guest = await invitedGuest(owner, 'member')
     let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'guest'`

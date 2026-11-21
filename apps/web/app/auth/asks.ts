@@ -48,10 +48,12 @@ export async function takePersonAsk(
 /**
  * KNT-198. Counts one question of a person about an org (the take-back of the owner role). The
  * scope of the row is the id of the org, set here, so the lock and the scope cannot differ. The
- * count locks the key of the org and writes nothing for an org that is gone, or for a person who is
- * not a member of it any more: a move that deletes the org waits for it, or it waits for the move
- * and answers `gone`. The move deletes the rows of the org it deletes (`organizations/store.ts`),
- * so no row outlives its org.
+ * count locks the key of the org and writes nothing for an org that is gone: a move that deletes the
+ * org waits for it, or it waits for the move and answers `gone`. The move deletes the rows of the
+ * org it deletes (`organizations/store.ts`), so no row outlives its org. It also reads, in the same
+ * statement (on its snapshot, not after the lock), that the person is a member of the org: a person
+ * removed before the count gets `gone`. A removal while the count waits on the org is not seen;
+ * `reclaim` then refuses under the lock of the members, and no role is gained.
  */
 export async function takeOrgAsk(
   sql: postgres.Sql,
