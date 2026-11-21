@@ -15,7 +15,7 @@
 // finding near one of them, on its file, with a word of its title, is linked to it too. The service then answers in the thread of the
 // earlier finding instead of opening a new one, and the score counts the defect once.
 import { NEAR_THREAD_LINES } from './answered.ts';
-import { findingKey, toConsider, type Answer, type Finding } from './findings.ts';
+import { findingKey, reversesAFix, toConsider, type Answer, type Finding } from './findings.ts';
 import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
 import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
@@ -98,7 +98,11 @@ function probeNote(held: readonly HeldEarlier[]): string {
     `\n${refs} ${fixed.length === 1 ? 'was' : 'were'} fixed by a later commit. Read each fix in the diff, and check the ` +
     'cases next to it that the fix can break: a type and a value of the same name, an import and a local name, the first ' +
     'and the last definition, an empty value and a missing one, the other branch of the condition that it changed. A ' +
-    'fix that breaks one of them is a new finding, at the line of the fix.\n'
+    'fix that breaks one of them is a new finding, at the line of the fix. ' +
+    // KNT-167. A review asked for a fix, then for its opposite: the author could follow neither.
+    'Before you report a change that undoes one of these fixes (the opposite change at the same place), read that fix ' +
+    'in the diff. Report it only when the fix is wrong, and then say in the scenario which earlier finding it reverses ' +
+    'and why that finding was wrong. Such a finding does not block alone.\n'
   );
 }
 
@@ -146,7 +150,14 @@ export function linkEarlier<F extends Finding>(
   const byRef = new Map(held.map((h) => [h.ref, h]));
   let byModel = 0;
   let byNet = 0;
-  const findings: F[] = (answer.findings as F[]).map((f: F) => {
+  // KNT-167. `reverses` names a fixed earlier finding by its reference: it becomes its key. Any other
+  // value goes.
+  const reversing = (f: F): F => {
+    const named = typeof f.reverses === 'string' ? byRef.get(f.reverses.trim().toUpperCase()) : undefined;
+    const { reverses: _given, ...rest } = f;
+    return (named?.status === 'fixed' ? { ...rest, reverses: named.key } : rest) as F;
+  };
+  const findings: F[] = (answer.findings as F[]).map(reversing).map((f: F) => {
     const named = typeof f.follows === 'string' ? byRef.get(f.follows.trim().toUpperCase()) : undefined;
     if (named) {
       byModel++;
@@ -177,5 +188,6 @@ export function linkEarlier<F extends Finding>(
  * finding to consider (on code already read, not critical) does not lower it either.
  */
 export function isNewDefect<F extends Finding>(f: F, held: readonly HeldEarlier[]): boolean {
-  return followedBy(f, held) === null && !toConsider(f);
+  // KNT-167. A finding that asks to undo the fix of an earlier finding does not lower the score alone.
+  return followedBy(f, held) === null && !toConsider(f) && !reversesAFix(f);
 }

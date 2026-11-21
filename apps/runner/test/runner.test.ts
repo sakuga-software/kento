@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'reverses'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -754,7 +754,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'reverses'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -1092,6 +1092,29 @@ test('a service that sends earlier findings gets `follows` on a finding that con
   const old = fakeApi();
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, stubModel().fetch));
   assert.ok(old.results[0]!.outcome === 'done' && !('follows' in old.results[0]!.review.findings[0]!));
+});
+
+test('a finding that undoes the fix of an earlier finding carries `reverses`, and does not block alone (KNT-167)', async () => {
+  // The earlier finding asked for the subtraction; its fix is the code of the head. The review now asks for the opposite.
+  const fixed = { path: 'sum.ts', start_line: 2, line: 2, severity: 'major' as const, category: 'bug' as const, confidence: 90, title: 'Addition where the module subtracts', scenario: 's', fix: 'f', suggestion: '' };
+  const earlier = {
+    findings: [{ key: findingKey(fixed), path: 'sum.ts', line: 2, title: fixed.title, severity: 'major' as const, category: 'bug' as const, status: 'fixed' as const, reason: null, commit: head }],
+    last: null,
+  };
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    const linking = body.response_format?.json_schema?.name === 'links';
+    const content = linking ? { links: [{ finding: 0, rule_id: null, follows: null, reverses: 'E1' }] } : answer();
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  const { api, results } = fakeApi();
+  assert.equal(await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY }, earlier }), deps(api, model)), 'done');
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.equal(result.review.findings[0]!.reverses, findingKey(fixed));
+  assert.equal(result.review.findings[0]!.blocking, false);
+  assert.notEqual(result.review.verdict, 'REQUEST_CHANGES');
+  assert.ok(parseResultRequest(JSON.parse(JSON.stringify(result))).ok, 'the result is the protocol');
 });
 
 // --- code already read (REV-100) -----------------------------------------------------------------

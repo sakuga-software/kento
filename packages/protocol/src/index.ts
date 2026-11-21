@@ -107,8 +107,11 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  * - `questions`: the result can carry `questions`, what the review asks the author to confirm
  *   (KNT-153). A service of an earlier release refuses the claim of this feature, and so never
  *   receives the field.
+ * - `reverses`: a finding of the result can carry `reverses`, the key of the earlier finding whose
+ *   fix it asks to undo (KNT-167). A service of an earlier release refuses the claim of this
+ *   feature, and so never receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'reverses'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -461,6 +464,7 @@ const finding = obj({
   rule_id: optional(uuid),
   fingerprint: optional(str({ max: 16, pattern: /^[0-9a-f]{16}$/ })),
   follows: optional(str({ max: 12, pattern: FINDING_KEY_PATTERN })),
+  reverses: optional(str({ max: 12, pattern: FINDING_KEY_PATTERN })),
   seen: optional(bool),
 });
 const earlierFinding = obj({
@@ -583,6 +587,12 @@ export type ReviewFinding = {
    * same defect, reworded, or what a fix left of it. Only when the job carried `earlier`.
    */
   follows?: string;
+  /**
+   * KNT-167. The key of the earlier `fixed` finding (`EarlierFinding.key`) whose fix this finding
+   * asks to undo. Only when the job carried `earlier`. Such a finding, not critical, does not block
+   * (`reversesAFix` of packages/engine).
+   */
+  reverses?: string;
   /**
    * REV-100. The code of the finding (its lines, and 5 lines around) did not change since the last
    * commit that a review of Kentō read on the pull request. Only when the job carried `reviewed`.

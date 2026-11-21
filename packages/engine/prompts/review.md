@@ -68,6 +68,13 @@ score. A finding that follows an earlier one, with the same severity or a
 lower one, does not lower `confidence_score` again; a more severe one is a new
 fact, and lowers it.
 
+Before you report a change that undoes the fix of a `fixed` earlier finding
+(the opposite change at the same place), read that fix in the diff. Report it
+only when the fix is wrong. Then start the scenario with the reference of that
+finding and say why it was wrong: the author followed it, and a review that
+asks for a fix and then its opposite blocks the pull request for good. Such a
+finding does not block alone and does not lower `confidence_score` alone.
+
 A `Critical change` section can end the message: the engine found that the
 pull request touches authentication, access control, CI, secrets, webhooks,
 payments or a migration of data. It lists the files and gives a checklist.
