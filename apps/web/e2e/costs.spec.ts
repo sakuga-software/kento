@@ -94,10 +94,15 @@ test.describe('the Costs screen', () => {
     await amount.dblclick()
     expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('')
     await expect(page).not.toHaveURL(/\/costs$/)
-    // The focus ring goes round the whole tile (Fable P3).
-    await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).focus()
+    // The focus ring goes round the whole tile (Fable P3). After the double-click, a focus by script
+    // is not :focus-visible: the keyboard reaches the link, as a person would.
+    let costs = page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ })
+    await costs.focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await expect(costs).toBeFocused()
     await expect(tile).toHaveCSS('outline-style', 'solid')
-    await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).click()
+    await costs.click()
     await expect(page).toHaveURL(/\/costs$/)
     await expect(page.getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible()
   })
