@@ -7,6 +7,7 @@ import { findingKey, isBlocking, reversesAFix, score, verdict, type Answer, type
 import { levelConfig } from '../src/levels.ts';
 import { linkFindings, linkMessage } from '../src/link.ts';
 import { descriptionBlock, inlineBody } from '../src/render.ts';
+import { mergeDelta } from '../src/delta.ts';
 
 // KNT-167. A review asked for a fix, then for its opposite: the author could follow neither. A
 // finding that undoes the fix of an earlier finding says so, and does not block alone.
@@ -61,10 +62,10 @@ test('a reversal does not lower the score alone: it is no new defect', () => {
 
 test('the net keeps `reverses` only for a fixed earlier finding, as its key', () => {
   const answer = (f: Finding): Answer & { findings: Finding[] } => ({ confidence_score: 4, risk: '', summary: '', diagram: '', findings: [f], not_reviewed: [], deeper_review: { recommended: false, reason: '' } });
-  const fixedAnswer = answer(finding('Delete the old session only after a success', { reverses: 'E1', path: 'app/auth/other.ts' }));
+  const fixedAnswer = answer(finding('Delete the old session only after a success', { reverses: 'E1' }));
   linkEarlier(fixedAnswer, [held('fixed')], () => 30);
   assert.equal(fixedAnswer.findings[0]!.reverses, findingKey(earlierFinding));
-  const openAnswer = answer(finding('Delete the old session only after a success', { reverses: 'E1', path: 'app/auth/other.ts' }));
+  const openAnswer = answer(finding('Delete the old session only after a success', { reverses: 'E1' }));
   linkEarlier(openAnswer, [held('open')], () => 30);
   assert.equal(openAnswer.findings[0]!.reverses, undefined, 'an open finding has no fix to undo');
   // The net links a finding to the same earlier finding that it reverses: it repeats that defect,
@@ -73,7 +74,30 @@ test('the net keeps `reverses` only for a fixed earlier finding, as its key', ()
   linkEarlier(both, [held('fixed')], () => 30);
   assert.equal(both.findings[0]!.follows, findingKey(earlierFinding));
   assert.equal(both.findings[0]!.reverses, undefined);
-  const stray = answer(finding('x', { reverses: 'E9', path: 'app/auth/other.ts' }));
+  // A reversal with other words for the same place is not that defect again: the net does not link
+  // it to the finding that it reverses, and it keeps its reversal.
+  const reworded = answer(finding('The old session stays until the new one is stored', { reverses: 'E1' }));
+  linkEarlier(reworded, [held('fixed')], () => 30);
+  assert.equal(reworded.findings[0]!.follows, undefined);
+  assert.equal(reworded.findings[0]!.reverses, findingKey(earlierFinding));
+  // The critique of #62: a reversal holds only on the file of the earlier finding, and only when
+  // the finding is no more severe. A worse defect that the fix opened blocks.
+  const elsewhere = answer(finding('Delete the old session only after a success', { reverses: 'E1', path: 'app/auth/other.ts' }));
+  linkEarlier(elsewhere, [held('fixed')], () => 30);
+  assert.equal(elsewhere.findings[0]!.reverses, undefined, 'another file');
+  const minorEarlier = { ...held('fixed'), severity: 'minor' as const };
+  const worse = answer(finding('The sign-in answers 500 with no body', { reverses: 'E1' }));
+  linkEarlier(worse, [minorEarlier], () => 30);
+  assert.equal(worse.findings[0]!.reverses, undefined, 'a major reversal of a minor finding');
+  assert.equal(isBlocking(worse.findings[0]!, lines), true);
+  // A finding that follows a reversing earlier finding keeps the reversal.
+  const reversingEarlier: HeldEarlier = { ...held('open'), key: 'c'.repeat(12), ref: 'E2', title: 'Delete the old session only after a success', reverses: findingKey(earlierFinding) };
+  const again = answer(finding('Delete the old session only after a success', { follows: 'E2' }));
+  linkEarlier(again, [held('fixed'), reversingEarlier], () => 30);
+  assert.equal(again.findings[0]!.follows, 'c'.repeat(12));
+  assert.equal(again.findings[0]!.reverses, findingKey(earlierFinding));
+  assert.equal(isBlocking(again.findings[0]!, lines), false);
+  const stray = answer(finding('x', { reverses: 'E9' }));
   linkEarlier(stray, [held('fixed')], () => 30);
   assert.equal(stray.findings[0]!.reverses, undefined);
 });
@@ -95,6 +119,7 @@ test('the link call gives `reverses` for a fixed earlier finding only, and sends
   assert.equal(findings[0]!.reverses, 'E1');
   assert.equal(findings[1]!.reverses, undefined, 'E2 is open');
   assert.match(linkMessage([finding('A')], [], [held('fixed')]), /"status": "fixed"/);
+  assert.equal(report.reverses, 1, 'the report counts the reversals');
   assert.ok(bodies[0].response_format.json_schema.schema.properties.links.items.required.includes('reverses'));
 });
 
@@ -112,9 +137,36 @@ test('Kentō says that it changes its mind, in the thread and in the block', () 
 test('the prompts ask to read a fix before reporting its opposite, and to say why', () => {
   const review = readFileSync(join(import.meta.dirname, '..', 'prompts', 'review.md'), 'utf8').replace(/\s+/g, ' ');
   assert.match(review, /Before you report a change that undoes the fix of a `fixed` earlier finding \(the opposite change at the same place\), read that fix in the diff\. Report it only when the fix is wrong\./);
+  // The reader of the comment never sees `E1`: the scenario names the finding by its title.
+  assert.match(review, /start the scenario with the title of that finding, in quotes, never its reference/);
   const link = readFileSync(join(import.meta.dirname, '..', 'prompts', 'link.md'), 'utf8').replace(/\s+/g, ' ');
   assert.match(link, /`reverses`: the reference of an earlier finding of status `fixed` whose fix this finding asks to undo/);
   const { key, path, line, title, severity, category, status, reason, commit } = held('fixed');
   const { section } = earlierFindingsSection(process.cwd(), 'HEAD', [{ key, path, line, title, severity, category, status, reason, commit }]);
   assert.match(section.replace(/\s+/g, ' '), /Before you report a change that undoes one of these fixes \(the opposite change at the same place\), read that fix in the diff\./);
+  assert.match(section.replace(/\s+/g, ' '), /start the scenario with the title of that finding, in quotes, never its reference/);
+});
+
+test('the review call cannot set `reverses` itself: only the link call gives it', async () => {
+  const fetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ model: body.model, choices: [{ message: { content: JSON.stringify({ links: [{ finding: 0, rule_id: null, follows: null, reverses: null }] }) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
+  }) as typeof globalThis.fetch;
+  const given = finding('A', { reverses: 'E1' });
+  const { findings } = await linkFindings({ apiKey: 'k', fetch, log: () => {} }, levelConfig('lite'), [given], [], [held('fixed')]);
+  assert.equal(findings[0]!.reverses, undefined);
+});
+
+test('an incremental review carries a reversal that the service sends back: it stays non-blocking', () => {
+  // The finding of the last review, as the service sends it back in `delta.findings` (store.ts sendableFinding).
+  const stored = { ...finding('Delete the old session only after a success'), anchor: 30, blocking: false, suggestion_range: null, reverses: findingKey(earlierFinding) };
+  const empty: Answer = { confidence_score: 4, risk: '', summary: '', diagram: '', findings: [], not_reviewed: [], deeper_review: { recommended: false, reason: '' } };
+  const delta = { since: 'b'.repeat(40), score: 4, findings: [stored], settled: [] };
+  const plan = { since: delta.since, files: ['README.md'], pullFiles: ['README.md', 'app/auth/sign-in.ts'] };
+  const merged = mergeDelta(empty, delta, plan, () => ['x']);
+  assert.equal(merged.answer.findings[0]!.reverses, findingKey(earlierFinding));
+  assert.equal(verdict(merged.answer, lines, 'balanced'), 'APPROVE');
+  // Without it (a service of the release before), the same finding blocks again: the reason the service sends it.
+  const { reverses: _lost, ...plain } = stored;
+  assert.equal(verdict(mergeDelta(empty, { ...delta, findings: [plain] }, plan, () => ['x']).answer, lines, 'balanced'), 'REQUEST_CHANGES');
 });

@@ -101,8 +101,8 @@ function probeNote(held: readonly HeldEarlier[]): string {
     'fix that breaks one of them is a new finding, at the line of the fix. ' +
     // KNT-167. A review asked for a fix, then for its opposite: the author could follow neither.
     'Before you report a change that undoes one of these fixes (the opposite change at the same place), read that fix ' +
-    'in the diff. Report it only when the fix is wrong, and then say in the scenario which earlier finding it reverses ' +
-    'and why that finding was wrong. Such a finding does not block alone.\n'
+    'in the diff. Report it only when the fix is wrong. Then start the scenario with the title of that finding, in ' +
+    'quotes, never its reference, and say why it was wrong. Such a finding does not block alone.\n'
   );
 }
 
@@ -152,10 +152,13 @@ export function linkEarlier<F extends Finding>(
   let byNet = 0;
   // KNT-167. `reverses` names a fixed earlier finding by its reference: it becomes its key. Any other
   // value goes.
+  // It holds only on the file of that finding, and only when the finding is no more severe: a worse
+  // defect that a fix opened is a new fact, and blocks (the rule of `followedBy`).
   const reversing = (f: F): F => {
     const named = typeof f.reverses === 'string' ? byRef.get(f.reverses.trim().toUpperCase()) : undefined;
     const { reverses: _given, ...rest } = f;
-    return (named?.status === 'fixed' ? { ...rest, reverses: named.key } : rest) as F;
+    const holds = named?.status === 'fixed' && clean(named.path) === clean(f.path) && rank(f) <= rank(named);
+    return (holds ? { ...rest, reverses: named.key } : rest) as F;
   };
   const findings: F[] = (answer.findings as F[]).map(reversing).map((f: F) => {
     const named = typeof f.follows === 'string' ? byRef.get(f.follows.trim().toUpperCase()) : undefined;
@@ -167,7 +170,9 @@ export function linkEarlier<F extends Finding>(
     const lines = [f.line, anchorOf(f)].filter((l): l is number => l !== null);
     const distance = (h: HeldEarlier) => Math.min(...lines.map((l) => Math.abs(l - h.line)));
     const near = held
-      .filter((h) => clean(h.path) === clean(f.path) && h.category === f.category && rank(f) <= rank(h))
+      // KNT-167. A finding that reverses an earlier finding is not that defect again, unless it has its
+      // very key (the same path and title): then it is the defect back, and no reversal.
+      .filter((h) => clean(h.path) === clean(f.path) && h.category === f.category && rank(f) <= rank(h) && (h.key !== f.reverses || h.key === findingKey(f)))
       .filter((h) => h.key === findingKey(f) || (sharedWords(f.title, h.title) >= NET_SHARED_WORDS && distance(h) <= NEAR_THREAD_LINES))
       .sort((a, b) => Number(b.key === findingKey(f)) - Number(a.key === findingKey(f)) || distance(a) - distance(b))[0];
     if (!near) return rest as F;
@@ -184,9 +189,15 @@ export function linkEarlier<F extends Finding>(
   answer.findings = findings
     .filter((f) => !settledAway(f))
     .map((f) => {
-      if (!f.reverses || f.reverses !== f.follows) return f;
-      const { reverses: _same, ...rest } = f;
-      return rest as F;
+      if (f.reverses && f.reverses === f.follows) {
+        const { reverses: _same, ...rest } = f;
+        return rest as F;
+      }
+      // KNT-167. A finding that follows a reversing earlier finding, no more severe, keeps its reversal:
+      // the link call decides it again on each review, and a miss would block the PR again.
+      const followed = followedBy(f, held);
+      if (!f.reverses && followed?.reverses && followed.reverses !== f.follows) return { ...f, reverses: followed.reverses } as F;
+      return f;
     });
   return { dropped, byModel, byNet };
 }

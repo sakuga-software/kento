@@ -38,9 +38,9 @@ export const LINK_SCHEMA = {
  * no finding, and no call went out. `failed`: the findings have no link. `rules` and `follows`: the
  * links of the answer whose finding and reference exist.
  */
-export type LinkReport = { status: 'done' | 'failed' | 'none'; rules: number; follows: number; usage: Usage | null; error?: string };
+export type LinkReport = { status: 'done' | 'failed' | 'none'; rules: number; follows: number; reverses?: number; usage: Usage | null; error?: string };
 
-export const NO_LINK: LinkReport = { status: 'none', rules: 0, follows: 0, usage: null };
+export const NO_LINK: LinkReport = { status: 'none', rules: 0, follows: 0, reverses: 0, usage: null };
 
 // A link is a short answer with no thinking: one minute is enough, and a slow call must not hold the review.
 const LINK_TIMEOUT_MS = 60_000;
@@ -141,7 +141,7 @@ export async function linkFindings<F extends Finding>(
       linked[index]!.reverses = reverses;
     }
   }
-  return { findings: linked, report: { status: 'done', rules: ruled.size, follows: followed.size, usage } };
+  return { findings: linked, report: { status: 'done', rules: ruled.size, follows: followed.size, reverses: reversed.size, usage } };
 }
 
 /**

@@ -333,6 +333,11 @@ export type EarlierFinding = {
   status: (typeof EARLIER_STATUSES)[number];
   reason: string | null;
   commit: string;
+  /**
+   * KNT-167, with the feature `reverses`: the key of the earlier finding whose fix this finding asks to
+   * undo, as the last review that reported it said. A finding that follows it keeps the reversal.
+   */
+  reverses?: string;
 };
 
 /**
@@ -477,6 +482,7 @@ const earlierFinding = obj({
   status: oneOf(EARLIER_STATUSES),
   reason: nullable(str({ max: 500 })),
   commit: sha,
+  reverses: optional(str({ max: 12, pattern: FINDING_KEY_PATTERN })),
 });
 const jobEarlier = obj({
   findings: arr(earlierFinding, { max: MAX_EARLIER_FINDINGS }),

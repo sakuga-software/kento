@@ -342,6 +342,7 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
         linkCostUsd: result.link.usage?.cost ?? null,
         linkedRules: result.link.rules,
         linkedFollows: result.link.follows,
+        linkedReverses: result.link.reverses ?? 0,
       });
     }
     if (result.link.status === 'failed') log('warn', 'job.link_failed', { jobId: job.id, error: result.link.error ?? null });

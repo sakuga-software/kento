@@ -70,8 +70,8 @@ fact, and lowers it.
 
 Before you report a change that undoes the fix of a `fixed` earlier finding
 (the opposite change at the same place), read that fix in the diff. Report it
-only when the fix is wrong. Then start the scenario with the reference of that
-finding and say why it was wrong: the author followed it, and a review that
+only when the fix is wrong. Then start the scenario with the title of that
+finding, in quotes, never its reference, and say why it was wrong: the author followed it, and a review that
 asks for a fix and then its opposite blocks the pull request for good. Such a
 finding does not block alone and does not lower `confidence_score` alone.
 
