@@ -241,7 +241,7 @@ check by itself on that pull request, which the token of a workflow opened: clos
 run the CI. Merge it, and the job "Tag the release" of `.github/workflows/changesets.yml` tags the
 merge commit `vX.Y.Z` (an annotated tag, not signed) and starts the Release workflow on it. When
 that job fails, rerun it: it keeps the tag, and starts the release unless the release or a run of
-Release on the tag already exists.
+Release on the tag that did not fail already exists.
 
 When the Release workflow fails on a cause outside the code (the access to the package, an outage
 of GitHub), fix it and start the workflow again on the tag: Actions, Release, "Run workflow", with

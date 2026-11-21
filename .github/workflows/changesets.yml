@@ -132,15 +132,16 @@ jobs:
             gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$object" --silent
             echo "Tagged $tag on $SHA."
           fi
-          # A rerun of this job after a failed dispatch finds the tag: it starts the release unless
-          # the release exists, or a run of release.yml on the tag (a tag pushed by hand starts one).
+          # A rerun of this job finds the tag: it starts the release unless the release exists, or a
+          # run of release.yml on the tag that did not fail (a tag pushed by hand starts one).
           if gh api "repos/$REPO/releases/tags/$tag" --silent 2>/dev/null; then
             echo "::notice title=Release::The GitHub release $tag already exists."
             exit 0
           fi
-          runs=$(gh api "repos/$REPO/actions/workflows/release.yml/runs?branch=$tag" --jq .total_count)
+          runs=$(gh api "repos/$REPO/actions/workflows/release.yml/runs?branch=$tag&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion != "failure" and .conclusion != "cancelled")] | length')
           if [ "$runs" -gt 0 ]; then
-            echo "::notice title=Release::release.yml already ran on $tag: see its run, or start it again by hand (apps/runner/DEPLOY.md)."
+            echo "::notice title=Release::release.yml runs or ran on $tag: see that run."
             exit 0
           fi
           # A tag made with the token of the workflow starts no workflow: start the release on it.
