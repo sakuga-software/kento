@@ -104,7 +104,7 @@ export async function openRepoConfig(page: Page, repo: string) {
 export async function withLabelLineHeight(page: Page, lineHeight: string) {
   await page.route('**/assets/kento.css*', async (route) => {
     let response = await route.fetch()
-    await route.fulfill({ response, body: `${await response.text()}\n.label { line-height: ${lineHeight}; }\n` })
+    await route.fulfill({ response, body: `${await response.text()}\n.field-label { line-height: ${lineHeight}; }\n` })
   })
 }
 

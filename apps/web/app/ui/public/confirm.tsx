@@ -29,7 +29,7 @@ export function ConfirmSubmit(handle: Handle<{ action: string; csrf: string | nu
     let { action, csrf, form, children } = handle.props
     if (form) {
       return (
-        <Button variant="danger" type="submit" form={form} formaction={action}>
+        <Button variant="danger-solid" type="submit" form={form} formaction={action}>
           {children}
         </Button>
       )
@@ -37,7 +37,7 @@ export function ConfirmSubmit(handle: Handle<{ action: string; csrf: string | nu
     return (
       <form method="post" action={action}>
         {csrf ? <input type="hidden" name="_csrf" value={csrf} /> : null}
-        <Button variant="danger" type="submit">
+        <Button variant="danger-solid" type="submit">
           {children}
         </Button>
       </form>
@@ -51,7 +51,7 @@ export function ConfirmDetails(handle: Handle<ConfirmProps & { onDetails?: (node
     let { trigger, children, action, csrf, submit, form, onDetails } = handle.props
     return (
       <details class="confirm" mix={onDetails ? ref(onDetails) : undefined}>
-        <summary class={buttonClass('danger-soft')}>{trigger}</summary>
+        <summary class={buttonClass('danger')}>{trigger}</summary>
         <div class="confirm-body">
           {children}
           <div class="confirm-actions">
@@ -151,7 +151,7 @@ export const Confirm = clientEntry(import.meta.url, function Confirm(handle: Han
           <button
             type="button"
             id={id}
-            class={buttonClass('danger-soft')}
+            class={buttonClass('danger')}
             aria-haspopup="dialog"
             aria-expanded={open ? 'true' : 'false'}
             mix={[

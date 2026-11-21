@@ -91,6 +91,8 @@
     const fresh = document.importNode(nextRow, true)
     for (const marked of content.querySelectorAll('tr.row-changed')) marked.classList.remove('row-changed')
     fresh.classList.add('row-changed')
+    // KNT-163: the components of the old row go first, with their listeners (app/ui/public/runtime.ts).
+    document.dispatchEvent(new CustomEvent('kento:dispose', { detail: { root: row } }))
     row.replaceWith(fresh)
     const target = fresh.querySelector('.row-action > button') ?? fresh.querySelector('.row-menu > summary')
     target?.focus({ preventScroll: true })

@@ -34,7 +34,7 @@ export function DismissDialog(handle: Handle<DismissDialogProps>) {
         <summary class={buttonClass()}>{trigger}</summary>
         <div class="confirm-body">
           <fieldset class="field dismiss-reasons">
-            <legend class="label">Reason</legend>
+            <legend class="field-label">Reason</legend>
             {DISMISS_REASONS.map((reason, n) => (
               <Choice type="radio" id={`${id}-reason-${n}`} name="reason" value={reason} form={form} label={reason} />
             ))}
@@ -50,7 +50,7 @@ export function DismissDialog(handle: Handle<DismissDialogProps>) {
               placeholder="Other reason"
               autocomplete="off"
             />
-            <p class="description">Kentō gives the reason in the GitHub thread of each finding, and counts it in "Dismissal reasons".</p>
+            <p class="field-hint">Kentō gives the reason in the GitHub thread of each finding, and counts it in "Dismissal reasons".</p>
           </fieldset>
           <div class="confirm-actions">
             <Button variant="primary" type="submit" form={form} name="status" value="dismissed" formaction={action}>

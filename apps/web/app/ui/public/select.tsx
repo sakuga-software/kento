@@ -27,7 +27,7 @@ interface Native {
   form: string | null
   describedBy: string | null
   invalid: string | null
-  /** The classes of the native select (`select__trigger` and those of the screen, `mono`). */
+  /** The classes of the native select (`select-input` and those of the screen, `mono`). */
   className: string
   /** The id of the label of the control, given one when it had none. */
   labelId: string | null
@@ -67,7 +67,7 @@ function adopt(id: string): Native | null {
 function SelectValue(handle: Handle<{ id: string }>) {
   let context = handle.context.get(select.Context)
   return () => (
-    <span id={handle.props.id} class="select__value">
+    <span id={handle.props.id} class="select-value">
       {context.displayedLabel}
     </span>
   )
@@ -95,7 +95,7 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
         <button
           type="button"
           id={target}
-          class={`${className} select__button`}
+          class={`${className} select-button`}
           aria-labelledby={labelId ? `${labelId} ${valueId}` : undefined}
           aria-describedby={describedBy ?? undefined}
           aria-invalid={invalid === 'true' ? 'true' : undefined}

@@ -86,7 +86,7 @@ describe('the findings to consider (REV-102)', () => {
     assert.equal(lists.at(-1)!.considered, true)
     assert.match(html, /<option value="to-consider" selected>\s*To consider \(code already reviewed\)\s*<\/option>/)
     assert.match(html, /href="\/findings\?status=all&amp;type=to-consider"/)
-    assert.match(html, /<a href="\/findings" class="button button--ghost">Clear the filters/)
+    assert.match(html, /<a href="\/findings" class="button button-ghost">Clear the filters/)
     await request('/findings?type=autre', { cookie })
     assert.equal(lists.at(-1)!.considered, false, 'a value that the screen does not know is ignored')
   })
@@ -97,7 +97,7 @@ describe('the selects of the filters (KNT-165)', () => {
     let { signIn } = setup()
     let { html } = await signIn()
     for (let id of ['findings-repo', 'findings-priority', 'findings-rule', 'findings-type']) {
-      assert.match(html, new RegExp(`<span class="select select--native"><select [^>]*id="${id}"[^>]*>[\\s\\S]*?</select><!-- rmx:h:\\w+ --><!-- /rmx:h --></span>`), id)
+      assert.match(html, new RegExp(`<span class="select-box"><select [^>]*id="${id}"[^>]*>[\\s\\S]*?</select><!-- rmx:h:\\w+ --><!-- /rmx:h --></span>`), id)
     }
     let data = JSON.parse(html.match(/<script type="application\/json" id="rmx-data">(.*?)<\/script>/)![1]!) as {
       h: Record<string, { exportName: string; props: Record<string, unknown> }>
@@ -117,7 +117,7 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(admin.html, /aria-label="Select &quot;Key read with no expiry&quot;"/)
     // A finding fixed by a push has no checkbox: a person does not set it aside.
     assert.doesNotMatch(admin.html, new RegExp(`value="${C}"`))
-    assert.match(admin.html, /<summary class="button button--outline">Mark dismissed…<\/summary>/)
+    assert.match(admin.html, /<summary class="button">Mark dismissed…<\/summary>/)
     assert.match(admin.html, /value="Off topic" form="findings-bulk"/)
     assert.match(admin.html, /name="status" value="wontfix"[^>]*>\s*Mark wontfix/)
     // The form comes back to the list on screen.
@@ -137,7 +137,7 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /<option value=""[^>]*>\s*Review and rules\s*<\/option>/)
     // The org of the test has no rule: the list "Source" is disabled, as before REV-91.
     assert.match(html, /<select[^>]*id="findings-rule"[^>]*disabled|<select[^>]*disabled[^>]*id="findings-rule"/)
-    assert.match(html, /class="button button--outline findings-submit" type="submit"|type="submit" class="button button--outline findings-submit"/)
+    assert.match(html, /class="button findings-submit" type="submit"|type="submit" class="button findings-submit"/)
     assert.doesNotMatch(html, /Precision · last 30 days/)
     let precision = await (await request('/findings?view=precision', { cookie })).text()
     assert.match(precision, /<a href="\/findings\?view=precision" aria-current="page">Precision<\/a>/)
@@ -175,9 +175,9 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /<nav aria-label="Pages of the list" class="pager pager-numbered">/)
     assert.match(html, /1,226 to 1,228 of 1,234 findings/)
     assert.match(html, /href="\/findings\?status=all&amp;priority=major&amp;page=49" rel="prev"/)
-    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major&amp;page=50" aria-current="page" class="button button--outline button--sm pager-page">/)
+    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major&amp;page=50" aria-current="page" class="button button-small pager-page">/)
     // Page 1 drops `page` from the link; the last page has no "Next".
-    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major" class="button button--outline button--sm pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
+    assert.match(html, /<a href="\/findings\?status=all&amp;priority=major" class="button button-small pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
     assert.doesNotMatch(html, /rel="next"/)
     // A tab or a filter starts again at page 1.
     assert.doesNotMatch(html, /href="\/findings\?status=open[^"]*page=/)

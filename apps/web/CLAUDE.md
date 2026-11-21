@@ -19,7 +19,7 @@ screen must follow.
   `e2e/helpers.ts` replace `selectOption()`, which stays for a test without JavaScript.
 - **No React, and no third-party component or CSS framework.** The screens are `remix/component`
   JSX rendered on the server, and the styles are plain CSS in `kento.css`.
-- **Interactive widgets** (menu, popover, select, tabs, toast) use the headless primitives of
+- **Interactive widgets** (menu, popover, select, tabs; a toast from 0.14 on) use the headless primitives of
   `@remix-run/ui` (pinned to the version that matches the `remix` of the repo), styled by `kento.css`.
   Each one is a component that hydrates (KNT-163):
   - It lives in an `app/**/public/` folder (`app/ui/public/row-menu.tsx`, `confirm.tsx`) and is

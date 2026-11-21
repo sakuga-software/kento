@@ -9,8 +9,6 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { findingsHref } from './findings.tsx'
-import { repoFindingsHref } from './public/row-menu.tsx'
 import { withInstance } from '../../test/instance.ts'
 
 const COOKIE = '__Host-kento_session'
@@ -230,15 +228,15 @@ describe('the Repos screen', () => {
     assert.match(row, /<!-- rmx:h:\w+ --><details class="row-menu"><summary aria-label="Actions of fruitback">…<\/summary>/)
     // No icon in it: the menu draws them once it hydrates (25 rows, the budget of the page).
     assert.doesNotMatch(row.slice(row.indexOf('<details class="row-menu">')), /<svg/)
-    assert.match(row, /<details class="confirm"><summary class="button button--danger-soft"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
+    assert.match(row, /<details class="confirm"><summary class="button button-danger"><span>Disable<span class="visually-hidden"> fruitback<\/span> Kentō…<\/span><\/summary>/)
     // REV-36: the button posts the one form of the list, which carries the token.
-    assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button--danger">Disable fruitback</button>`))
+    assert.match(row, new RegExp(`<button type="submit" form="repo-actions" formaction="/repos/${FRUITBACK}/disable" class="button button-danger-solid">Disable fruitback</button>`))
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
     // "Cancel" is a part of the popover only: without JavaScript, the trigger closes the confirmation.
     assert.doesNotMatch(row, /Cancel/)
     assert.match(row, /The published reviews and the counter stay/)
     // No destructive button has the style of the main action.
-    assert.doesNotMatch(page, /button--primary[^>]*>\s*Disable/)
+    assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
 
     let response = await request(`/repos/${FRUITBACK}/disable`, { cookie, form: { _csrf: csrf } })
@@ -296,18 +294,18 @@ describe('the Repos screen', () => {
     assert.match(menus[0]!.moduleUrl, /^\/assets\/app\/ui\/public\/row-menu\.tsx$/)
     // A few props a row: its id and name, and `disable` only where it applies.
     assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name'])
-    // The menu makes the URL of the findings itself: the same as the Findings screen.
-    assert.equal(repoFindingsHref(ORCHARD), findingsHref({ repoId: ORCHARD }))
     assert.match(html, /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
     // The one inline script that runs, the import map, carries the nonce of the policy of the response.
     let response = await request('/repos', { cookie })
     let nonce = response.headers.get('Content-Security-Policy')?.match(/'nonce-([^']+)'/)?.[1]
     let page = await response.text()
+    // The import map comes before the module of the page (Fable critique P3-4).
+    assert.ok(page.indexOf('type="importmap"') < page.indexOf('<script type="module"'))
     let inline = [...page.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)].map((match) => match[1]!)
     assert.deepEqual(inline.map((attrs) => attrs.match(/type="([^"]+)"/)?.[1]).sort(), ['application/json', 'importmap'])
     assert.ok(nonce)
     assert.ok(inline.find((attrs) => attrs.includes('importmap'))!.includes(`nonce="${nonce}"`))
-    assert.match(html, /<button type="submit" class="button button--outline list-search-submit">Search<\/button>/)
+    assert.match(html, /<button type="submit" class="button list-search-submit">Search<\/button>/)
     checking.now = true
     html = await (await request('/repos', { cookie })).text()
     assert.match(html, /<span data-recheck="">check in progress on GitHub · <a href="\/repos">Reload<\/a><\/span>/)
@@ -351,8 +349,8 @@ describe('the Repos screen', () => {
     let { cookie, csrf } = await signIn()
     let html = await (await request('/repos?filter=disabled&q=orch', { cookie })).text()
     let action = `/repos/${ORCHARD}/enable\\?filter=disabled&amp;q=orch`
-    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button--outline button--sm"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!</svg>).)*</svg>Enable`))
-    assert.doesNotMatch(html, /button--primary/)
+    assert.match(html, new RegExp(`<button type="submit" form="repo-actions" formaction="${action}" class="button button-small"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!</svg>).)*</svg>Enable`))
+    assert.doesNotMatch(html, /button-primary/)
     let response = await request(`/repos/${ORCHARD}/enable?filter=disabled&q=orch&page=3&evil=1`, { cookie, form: { _csrf: csrf } })
     assert.equal(response.headers.get('Location'), `/repos?filter=disabled&q=orch&page=3&done=enabled&repo=${ORCHARD}#repo-${ORCHARD}`)
     // The repository left the filter: the notice still names it.
@@ -374,18 +372,18 @@ describe('the Repos screen', () => {
     assert.match(html, /href="\/repos\?filter=enabled&amp;q=s&amp;page=2" rel="prev"/)
     assert.match(html, /href="\/repos\?filter=enabled&amp;q=s&amp;page=4" rel="next"/)
     // Page 1 drops `page` from the link: the first page has one URL.
-    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s" class="button button--outline button--sm pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
-    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s&amp;page=3" aria-current="page" class="button button--outline button--sm pager-page">/)
-    assert.equal((html.match(/aria-current="page" class="button button--outline button--sm pager-page"/g) ?? []).length, 1)
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s" class="button button-small pager-page"><span class="visually-hidden">Page <\/span>1<\/a>/)
+    assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s&amp;page=3" aria-current="page" class="button button-small pager-page">/)
+    assert.equal((html.match(/aria-current="page" class="button button-small pager-page"/g) ?? []).length, 1)
     // The search and the filters start again at page 1.
     assert.match(html, /<a href="\/repos\?filter=enabled&amp;q=s" aria-current="page">Enabled/)
     assert.doesNotMatch(html, /name="page"/)
     // The icons of the pager are decorative.
-    assert.match(html, /rel="next" class="button button--outline button--sm"><span class="pager-step">Next<\/span><svg viewBox="0 0 24 24"[^>]*aria-hidden="true"/)
+    assert.match(html, /rel="next" class="button button-small"><span class="pager-step">Next<\/span><svg viewBox="0 0 24 24"[^>]*aria-hidden="true"/)
 
     Object.assign(pages, { offset: 100, page: 5, pages: 5 })
     html = await (await request('/repos?filter=enabled&q=s&page=9', { cookie })).text()
-    assert.match(html, /<span aria-disabled="true" class="button button--outline button--sm">[^]*?<span class="pager-step">Next<\/span>/)
+    assert.match(html, /<span aria-disabled="true" class="button button-small">[^]*?<span class="pager-step">Next<\/span>/)
     assert.doesNotMatch(html, /rel="next"/)
     // The dimmed Next says so to a screen reader; the steps and the numbers sit in a <div>, not a <span>.
     assert.match(html, /<span class="pager-step">Next<\/span><span class="visually-hidden"> \(no next page\)<\/span>/)

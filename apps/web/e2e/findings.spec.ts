@@ -270,10 +270,10 @@ test.describe('the Findings screen', () => {
     })
     expect(focused).toEqual({ check: true, outline: 'solid' })
     // The chevron of a select stays drawn, in the colour of the text of the field (FieldText).
-    let chevron = await page.locator('.select--native').first().evaluate((el) => {
+    let chevron = await page.locator('.select-box').first().evaluate((el) => {
       let after = getComputedStyle(el, '::after')
       // KNT-165: the field on screen is the button of the custom select; the native one is hidden.
-      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('.select__trigger:not([hidden])')!).color }
+      return { adjust: after.forcedColorAdjust, color: after.backgroundColor, text: getComputedStyle(el.querySelector('.select-input:not([hidden])')!).color }
     })
     expect(chevron.adjust).toBe('none')
     expect(chevron.color).toBe(chevron.text)

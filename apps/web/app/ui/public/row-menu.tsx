@@ -67,22 +67,26 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
    * A click outside closes the menu, and the menu then gives the focus back to "…", a frame or two
    * later: it would take it from the field, or the other menu, that the person just clicked (Kentō
    * CI, repos.spec "Search shows at the keyboard"). That one call to `focus()` of "…" is dropped:
-   * the focus stays where the click put it.
+   * the focus stays where the click put it. The guard arms on the `click` that closes the menu (the
+   * menu closes on `click`, not on `pointerdown`: a long press must not outlast it), and the next
+   * action of the person disarms it: a later Escape or choice gives the focus back as before.
    */
   let dropFocus = false
   let focusTrigger = () => trigger && HTMLElement.prototype.focus.call(trigger, { preventScroll: true })
   handle.queueTask(async () => {
+    let options = { capture: true, signal: handle.signal }
+    // Registered before the menu renders, so before its own `click` listener on the document.
     document.addEventListener(
-      'pointerdown',
+      'click',
       (event) => {
         let inside = event.target instanceof Node && !!box?.contains(event.target)
         dropFocus = !inside && trigger?.getAttribute('aria-expanded') === 'true'
-        // For this close only: the menu gives the focus back within a few frames, or not at all
-        // (a click that leaves the page). A later focus, an Escape for one, goes through (Kentō #0066dd).
-        if (dropFocus) setTimeout(() => (dropFocus = false), 500)
       },
-      { capture: true, signal: handle.signal },
+      options,
     )
+    let disarm = () => (dropFocus = false)
+    document.addEventListener('pointerdown', disarm, options)
+    document.addEventListener('keydown', disarm, options)
     enhanced = true
     // The focus was in the `<details>` (a row that repo-toggle.js swapped focuses its "…"): it goes to the new button.
     let focused = details?.contains(document.activeElement) ?? false

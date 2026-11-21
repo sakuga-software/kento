@@ -25,6 +25,43 @@ app.addEventListener('error', (event) => {
   console.error('Component error:', event.error)
 })
 
+/** Something that the runtime can take out of the page, with its listeners. */
+interface Disposable {
+  dispose(): void
+}
+
+/** The roots that `hydrateIn` made, by the comment that starts their range. */
+let roots = new WeakMap<Comment, Disposable>()
+
+/** The comments that start the range of a component in `root`, with their id and their end. */
+function ranges(root: Element) {
+  let walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
+  let found: { start: Comment; end: Comment; id: string }[] = []
+  while (walker.nextNode()) {
+    let start = walker.currentNode as Comment
+    let id = start.data.trim().match(/^rmx:h:(\w+)$/)?.[1]
+    if (!id) continue
+    let end = start.nextSibling
+    while (end && !(end instanceof Comment && end.data.trim() === '/rmx:h')) end = end.nextSibling
+    if (end instanceof Comment) found.push({ start, end, id })
+  }
+  return found
+}
+
+/**
+ * Takes the components of `root` out, before a script removes it from the page (repo-toggle.js
+ * swaps a row): their listeners on `document` go with them (Fable critique P3-3). A root of
+ * `hydrateIn` is in `roots`; one that `run()` hydrated at load is on its start comment, as `$rmx`
+ * (the runtime of remix/component 1.2 keeps it there).
+ */
+function disposeIn(root: Element) {
+  for (let { start } of ranges(root)) {
+    let owned = roots.get(start) ?? (start as Comment & { $rmx?: Partial<Disposable> }).$rmx
+    if (typeof owned?.dispose === 'function') owned.dispose()
+    roots.delete(start)
+  }
+}
+
 /** The components of the page that the server sent, from its `<script id="rmx-data">`. */
 interface HydrationData {
   h?: Record<string, { exportName: string; moduleUrl: string; props: Record<string, unknown> }>
@@ -43,25 +80,21 @@ async function hydrateIn(root: Element, source: Document) {
   } catch {
     return
   }
-  let walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
-  let ranges: { start: Comment; end: Comment; id: string }[] = []
-  while (walker.nextNode()) {
-    let start = walker.currentNode as Comment
-    let id = start.data.trim().match(/^rmx:h:(\w+)$/)?.[1]
-    if (!id) continue
-    let end = start.nextSibling
-    while (end && !(end instanceof Comment && end.data.trim() === '/rmx:h')) end = end.nextSibling
-    if (end instanceof Comment) ranges.push({ start, end, id })
-  }
-  for (let { start, end, id } of ranges) {
+  for (let { start, end, id } of ranges(root)) {
     let entry = data.h?.[id]
     if (!entry || JSON.stringify(entry.props).includes('"$rmx')) continue
     let module = (await import(entry.moduleUrl)) as Record<string, unknown>
     let component = module[entry.exportName]
     if (typeof component !== 'function') continue
-    createRangeRoot([start, end]).render(createElement(component as Parameters<typeof createElement>[0], entry.props))
+    let vroot = createRangeRoot([start, end])
+    roots.set(start, vroot)
+    vroot.render(createElement(component as Parameters<typeof createElement>[0], entry.props))
   }
 }
+
+document.addEventListener('kento:dispose', (event) => {
+  disposeIn((event as CustomEvent<{ root: Element }>).detail.root)
+})
 
 document.addEventListener('kento:hydrate', (event) => {
   let { root, source } = (event as CustomEvent<{ root: Element; source: Document }>).detail
