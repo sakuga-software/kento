@@ -131,7 +131,10 @@ only when you are sure of it, with the severity that it has.
      `line` and what runs there. JavaScript runs one thread and one event
      loop: code with no `await` between two lines runs in one turn, and a
      timer or a callback cannot run in the middle of it. A lock or a
-     transaction that the caller holds orders the steps too. If you cannot
+     transaction that the caller holds orders the steps too. Two requests
+     that check, then act, are the common real race. Write it as four steps:
+     request A reads no row (`path:line`), request B reads no row, A inserts,
+     B inserts (`path:line`). If you cannot
      write the steps, the race is a doubt: put it in `questions`. The engine
      moves a race finding with fewer than two steps there. Give
      `interleaving: []` for any other finding.
@@ -201,9 +204,10 @@ as it stands, after your review.
 
 When the message holds a `Critical change` section, a 4 or a 5 means that you
 checked the items of its checklist that apply. Give in `checked.paths` the
-files, routes and endpoints that you checked, and in `checked.roles` the roles
-and actors. The engine caps the score at 3 when `checked` names no file of the
-repository or no role. A change of who sees which data, or of when a session
+files of the diff, the routes and the library endpoints that you checked, and
+in `checked.roles` the roles and actors. The engine caps the score at 3 when
+`checked` names no file of the diff or route of the change, or no real role,
+and always at the `lite` level. A change of who sees which data, or of when a session
 starts or ends, is never "low risk" in `risk`. With no `Critical change`
 section, give `"checked": { "paths": [], "roles": [] }`.
 

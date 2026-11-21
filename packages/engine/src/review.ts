@@ -1,10 +1,11 @@
 // The review of a pull request, from the checkout to the findings, the score and the verdict.
 import { answeredSection, dropRefuted, refutedThreadIds, type AnsweredThread } from './answered.ts';
 import { fingerprint } from './fingerprint.ts';
-import { criticalSection, diffCriticality, namesChecks, areasText, type Criticality } from './critical.ts';
+import { changedFiles, criticality, criticalSection, namesChecks, areasText, type CheckContext, type Criticality } from './critical.ts';
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type CriticalReview, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
+import { withoutMergeAdvice } from './risk.ts';
 import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
@@ -211,6 +212,8 @@ export type PreparedReview = {
   seen: SeenCode | null;
   /** KNT-154. Why the whole pull request is a critical change, or null. */
   critical: Criticality | null;
+  /** KNT-154. What a path of `checked` is verified against, for a critical change; null otherwise. */
+  checkContext: CheckContext | null;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
@@ -246,7 +249,9 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // KNT-154. The whole pull request decides whether the change is critical, an incremental review
   // too. Its checklist ends the pack: the system prompt stays the same for every review (REV-113).
   // The diff decides it, so the reuse key of the diff covers it.
-  const critical = diffCriticality(input.repoDir, base, input.head);
+  const changed = changedFiles(input.repoDir, base, input.head);
+  const critical = criticality(changed);
+  const checkContext = critical ? criticalCheckContext(input.repoDir, input.head, changed, critical) : null;
   const checklist = critical ? criticalSection(critical, input.prompts) : '';
   const pack = built.pack + checklist;
   const parts = checklist ? [...built.parts, { text: checklist }] : built.parts;
@@ -267,7 +272,30 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     delta,
     seen,
     critical,
+    checkContext,
   };
+}
+
+// The most bytes of a critical file at the head that a check of a route or a library reads.
+const MAX_CHECK_FILE_BYTES = 200_000;
+
+/**
+ * KNT-154. What a path of `checked` must name: a file of the diff (or its old path) or a critical
+ * file; and the texts where a route or a library must appear: the changed lines and the critical
+ * files at the head.
+ */
+function criticalCheckContext(repo: string, head: string, changed: ReturnType<typeof changedFiles>, critical: Criticality): CheckContext {
+  const files = new Set(changed.flatMap((f) => (f.from ? [f.path, f.from] : [f.path])));
+  for (const f of critical.files) files.add(f.path);
+  const texts = [changed.flatMap((f) => [...f.added, ...f.removed]).join('\n')];
+  for (const { path } of critical.files) {
+    try {
+      texts.push(git(repo, 'show', `${head}:${path}`).slice(0, MAX_CHECK_FILE_BYTES));
+    } catch {
+      // A deleted file is not at the head: its changed lines are in the first text.
+    }
+  }
+  return { files, texts };
 }
 
 /**
@@ -285,9 +313,10 @@ export function finishReview<F extends Finding>(
   const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
   const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   const fileAt = headFiles(input.repoDir, input.head, log);
-  // KNT-154. A critical change, and whether the answer named a file of the head and a role that it
-  // checked. The score, the verdict and the deeper review read it.
-  const critical: CriticalReview | null = prepared.critical ? { ...prepared.critical, checked: namesChecks(answer.checked, (p) => fileAt(p) !== null) } : null;
+  // KNT-154. A critical change, what the answer named that the engine can verify, and whether the
+  // score is capped. A review in passes is checked pass by pass. The score, the verdict and the
+  // deeper review read it.
+  const critical = prepared.critical && prepared.checkContext ? criticalReview(prepared.critical, prepared.checkContext, answer, input.level) : null;
   answer = critical ? withCriticalText({ ...answer, critical }, critical) : { ...answer, critical: null };
   // KNT-152. A race with no traced steps, or a timing claim with no number, becomes a question.
   const timing = splitUntracedTiming(answer, (p) => fileAt(p) !== null);
@@ -353,9 +382,6 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
-  // KNT-154. The merge of an incremental review and the floor copy the answer. The critical state
-  // goes on the answer that the score, the verdict and the deeper review read, whatever they kept.
-  answer = { ...answer, critical };
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
     // REV-104. An applicable suggestion wins over the patch.
@@ -406,17 +432,46 @@ export function finishReview<F extends Finding>(
 }
 
 /**
- * KNT-154. The risk and the summary of a critical change, as the reader sees them: the risk names
- * the areas, and the summary the paths and the roles that the review checked, or says that it named
- * none and that the score stays at 3 at most.
+ * KNT-154. The review of a critical change: what the engine verified of `checked`, pass by pass for a
+ * review in passes (the first pass that names a verified path and a real role wins, else the pass
+ * that named the most), and whether the score is capped: when no pass named both, or at lite.
+ */
+export function criticalReview(critical: Criticality, context: CheckContext, answer: Pick<Answer, 'checked' | 'checkedByPass'>, level: Level): CriticalReview {
+  const given = answer.checkedByPass?.length ? answer.checkedByPass : [answer.checked ?? { paths: [], roles: [] }];
+  const results = given.map((c) => namesChecks(c, context));
+  const best = results.find((r) => r.checked) ?? [...results].sort((a, b) => b.paths.length + b.roles.length - (a.paths.length + a.roles.length))[0]!;
+  const lite = level === 'lite';
+  return { ...critical, checked: best.checked, checks: best, lite, capped: lite || !best.checked };
+}
+
+/**
+ * KNT-154. The risk and the summary of a critical change, as the reader sees them. The risk names the
+ * areas; when the score is capped, it drops each sentence of the model that calls the change safe.
+ * The summary lists the paths that the engine verified, the others marked "(not in the diff)", the
+ * roles, and says what is missing when the score is capped.
  */
 export function withCriticalText<A extends Answer>(answer: A, critical: CriticalReview): A {
   const areas = `Critical change (${areasText(critical.areas)}).`;
-  const list = (items: readonly string[]) => items.map((i) => i.trim()).filter(Boolean).map((i) => `\`${i.replace(/`/g, '')}\``).join(', ');
-  const checks = critical.checked
-    ? `Paths checked: ${list(answer.checked?.paths ?? [])}. Roles checked: ${list(answer.checked?.roles ?? [])}.`
-    : 'The review named no file and no role that it checked, so the score of this critical change is 3 at most.';
-  return { ...answer, risk: `${areas} ${answer.risk}`.trim(), summary: `${answer.summary}\n\n${checks}`.trim() };
+  const quote = (item: string) => `\`${item.replace(/`/g, "'").replace(/\s+/g, ' ').trim()}\``;
+  // A capped score drops the sentences of the model that advise a merge (risk.ts); a warning stays.
+  const kept = critical.capped ? withoutMergeAdvice(answer.risk ?? '') : (answer.risk ?? '').trim();
+  const risk = kept ? `${areas} ${kept}` : `${areas} It needs a review that names the paths and the roles that it checked.`;
+  const { paths, others, roles, missing } = critical.checks;
+  const lines: string[] = [];
+  if (paths.length || others.length) lines.push(`Paths checked: ${[...paths.map(quote), ...others.map((p) => `${quote(p)} (not in the diff)`)].join(', ')}.`);
+  if (roles.length) lines.push(`Roles checked: ${roles.map(quote).join(', ')}.`);
+  if (missing.length) {
+    const what =
+      missing.length === 2
+        ? 'no file of the diff and no role'
+        : missing[0] === 'paths'
+          ? 'no file of the diff, route or library endpoint of the change'
+          : 'no role (a placeholder such as "none" or "all" is none)';
+    lines.push(`The review named ${what} that it checked, so the score of this critical change is 3 at most.`);
+  } else if (critical.lite) {
+    lines.push('A lite review of a critical change scores 3 at most. A balanced or heavy review that names its checks can score more.');
+  }
+  return { ...answer, risk, summary: [answer.summary, lines.join(' ')].filter((t) => t?.trim()).join('\n\n') };
 }
 
 /**

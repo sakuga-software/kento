@@ -7,6 +7,7 @@ import { after, before, test } from 'node:test';
 import type { Answer, Finding } from '../src/findings.ts';
 import { levelConfig, reviewInPasses, reviewPullRequest } from '../src/index.ts';
 import { BASE_PASSES } from '../src/passes.ts';
+import { descriptionBlock } from '../src/render.ts';
 import { isRaceFinding, isTraced, isUnmeasuredSlowClaim, splitUntracedTiming } from '../src/timing.ts';
 
 // KNT-152. A race, an order of events or a timeout must trace the steps that the runtime allows.
@@ -110,6 +111,7 @@ test('the prompts ask for the steps, and the check reads them first', () => {
   const text = (name: string) => readFileSync(join(import.meta.dirname, '..', 'prompts', name), 'utf8').replace(/\s+/g, ' ');
   assert.match(text('review.md'), /A race, an order of events or a timeout: give in `interleaving` the steps that the runtime allows, two or more/);
   assert.match(text('review.md'), /JavaScript runs one thread and one event loop/);
+  assert.match(text('review.md'), /Two requests that check, then act, are the common real race\. Write it as four steps: request A reads no row \(`path:line`\), request B reads no row, A inserts, B inserts/);
   assert.match(text('review.md'), /gives a number \(a duration, a count of rows, of calls or of files\) or the input that makes it slow/);
   assert.match(text('verify.md'), /Then decide: - First, for a finding about a race, an order of events or a timeout: drop it when its `interleaving`/);
 });
@@ -209,4 +211,18 @@ test('the check of a review in passes reads the steps of a race', async () => {
   const check = users.find((u) => u.includes('# Findings to check'))!;
   assert.match(check, /"interleaving": \[\s*\{\s*"path": "queue\.ts",\s*"line": 12/);
   assert.equal(result.findings.length, 1);
+});
+
+test('an untraced race of two concurrent inserts is a question that the block of the description shows', () => {
+  const race = finding('Concurrent requests both insert the row', { scenario: 'Two requests at once both pass the check and both insert.' });
+  const { answer: got, asked } = splitUntracedTiming(answer([race]), exists);
+  assert.deepEqual(got.findings, []);
+  assert.deepEqual(asked, [race]);
+  const lines = new Map<string, Set<number>>([['src/queue.ts', new Set([9])]]);
+  const block = descriptionBlock(got, [], [], 0, { model: 'm' }, lines, { count: 1, head: 'a'.repeat(40), subject: 'feat: insert', commitUrl: 'https://github.com/acme/app/commit/aaa', level: 'balanced' });
+  assert.match(block, /<h3>Questions<\/h3>/);
+  assert.match(block, /1\. `src\/queue\.ts` Concurrent requests both insert the row\? The review traced no order of steps that the runtime allows\./);
+  // With its four steps, the same race stays a finding.
+  const traced = { ...race, interleaving: [step(9, 'A reads no row.'), step(10, 'B reads no row.'), step(12, 'A inserts.'), step(12, 'B inserts.')] };
+  assert.deepEqual(splitUntracedTiming(answer([traced]), exists).answer.findings, [traced]);
 });
