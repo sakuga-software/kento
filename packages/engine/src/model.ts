@@ -5,7 +5,6 @@ import { ANSWER_SCHEMA, withPatch, type Answer, type Usage } from './findings.ts
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
 import { ADAPTERS, defaultBaseUrl, ProviderError, refusedKey, type MessagePart, type Schema } from './providers.ts';
-import { splitNonFindings } from './nonfindings.ts';
 import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 
 export { OPENROUTER_BASE_URL, type MessagePart, type Schema } from './providers.ts';
@@ -125,10 +124,5 @@ export async function askModel(
   if (notes) parts.push({ text: `\n\n${notes}\n` });
   const reply = await askJson<Answer>(client, config, 'review.md', parts, { name: 'review', schema: asked }, patchNote, tools, onStart);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
-  // KNT-153. A finding that says no change is needed goes; one that asks to confirm becomes a question.
-  const { answer, dropped, asked: moved } = splitNonFindings(reply.answer);
-  const log = client.log ?? stderr;
-  for (const f of dropped) log(`finding dropped, its fix says that no change is needed: ${f.path}: ${f.title}`);
-  for (const f of moved) log(`finding moved to the questions, it asks to confirm and names no defect: ${f.path}: ${f.title}`);
-  return { ...reply, answer };
+  return reply;
 }
