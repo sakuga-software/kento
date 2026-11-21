@@ -10,6 +10,7 @@ import {
   MAX_EARLIER_FINDINGS,
   MAX_SETTLED,
   parseEarlierFinding,
+  UUID,
   parseReviewFinding,
   parseSettledFinding,
   REUSE_KEY,
@@ -205,6 +206,11 @@ export interface RunnerStore {
    * to this job, as a rule disabled during its run.
    */
   jobRules(jobId: string): Promise<JobRule[]>
+  /**
+   * KNT-161. The provider `providerId` of the org of the job `jobId`, or null when the org has no
+   * such provider: a provider of another org is never found.
+   */
+  jobOrgProvider(jobId: string, providerId: string): Promise<ClaimedProvider | null>
   /**
    * REV-95. The findings of the pull request of a review job that a person set aside (`dismissed`,
    * `wontfix`), the most recently changed first, MAX_REJECTED_FINDINGS at most.
@@ -462,6 +468,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return options.severity ? sent : sent.map(({ severity: _severity, ...rest }) => rest)
     },
 
+    async jobOrgProvider(jobId, providerId) {
+      if (!UUID.test(providerId)) return null
+      let [row] = await sql<ClaimedProvider[]>`
+        select p.id, p.org_id as "orgId", p.kind, p.label, p.base_url as "baseUrl", p.key_ciphertext as "keyCiphertext",
+          p.runner_held as "runnerHeld", p.models
+        from jobs
+        join repos on repos.id = jobs.repo_id
+        join providers p on p.org_id = repos.org_id
+        where jobs.id = ${jobId} and p.id = ${providerId}::uuid`
+      return row ?? null
+    },
+
     async jobRules(jobId) {
       let rows = await sql<JobRule[]>`
         select rules.id, case when rules.repo_id is null then 'org' else 'repo' end as scope,
@@ -709,7 +727,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         let { review } = result
         if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
-        await markValid(tx, jobId, job.providerId, true)
+        // KNT-161. A review that the fallback provider answered says nothing of the key of the job's provider.
+        await markValid(tx, jobId, job.providerId, !review.fellBack)
         review = { ...review, findings: await citedRules(tx, jobId, review.findings) }
         await tx`
           insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)

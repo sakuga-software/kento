@@ -7,7 +7,7 @@ import { describe, it } from 'remix/test'
 import { BOT, createFakeGitHub } from '../../test/fake-github.ts'
 import { withInstance } from '../../test/instance.ts'
 import { createGitHub } from './github.ts'
-import { anchorOf, answerOf, checkName, FIXED_NEAR_LINES, LABEL_DESCRIPTION, ledgerEntries, publishReview, publishUnchanged, touchedLines, usageOf } from './publish.ts'
+import { anchorOf, answerOf, checkName, fellBackNote, FIXED_NEAR_LINES, LABEL_DESCRIPTION, ledgerEntries, publishReview, publishUnchanged, touchedLines, usageOf } from './publish.ts'
 
 const BASE = 'a'.repeat(40)
 const HEAD1 = '1'.repeat(40)
@@ -692,5 +692,26 @@ describe('an incremental review (REV-88)', () => {
     fake.state.pr.head = HEAD3
     await publish(payload({ head: HEAD3, delta: { since: HEAD2, files: 1 } }))
     assert.match(fake.state.pr.body, /Incremental review: it read the file of the PR that changed since commit `222222222`\./, 'the singular, for one file')
+  })
+})
+
+describe('a review that the fallback provider answered (KNT-161)', () => {
+  it('says which provider refused on its usage limit, until when, and which one answered', async () => {
+    let { fake } = setup()
+    let github = createGitHub({ apiUrl: fake.apiUrl, token: 'ghs_fake_issues_pull_requests_1', fetch: fake.fetch })
+    let target = { owner: 'sakuga-software', name: 'sakuga-review', pr: 28, botLogin: BOT, webUrl: 'https://github.com' }
+    await publishReview(github, target, payload(), { fellBack: { from: 'Acme Anthropic', to: 'Acme OpenRouter', resetAt: '2026-12-01T00:00:00Z' } })
+    let body = fake.state.reviews.at(-1)!.body
+    assert.ok(
+      body.includes('<sub>The provider "Acme Anthropic" refused the call on its usage limit until 2026-12-01 00:00 UTC: the fallback provider "Acme OpenRouter" of this level answered.</sub>'),
+      body,
+    )
+  })
+
+  it('says nothing without a fallback, and keeps a label from breaking the line', () => {
+    assert.equal(fellBackNote(null), '')
+    assert.match(fellBackNote({ from: 'A', to: 'B', resetAt: '2026-12-24T08:30:00+01:00' }), /until 2026-12-24 07:30 UTC:/)
+    assert.match(fellBackNote({ from: 'A', to: 'B', resetAt: 'not a date' }), /refused the call on its usage limit: the fallback/)
+    assert.match(fellBackNote({ from: 'A `b`\n"c"', to: 'D', resetAt: null }), /The provider "A  b   c" refused the call on its usage limit: the fallback/)
   })
 })

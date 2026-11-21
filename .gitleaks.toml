@@ -17,4 +17,7 @@ regexes = [
   '''^kento_rt_wrong$''',
   # packages/protocol/test/protocol.test.ts: the key of a finding, which is no secret.
   '''^(abcdef012345|ABCDEF012345)$''',
+  # apps/web/test/db/providers.test.ts and apps/runner/test/runner.test.ts: the keys of the fallback
+  # providers of KNT-161, fake.
+  '''^(sk-or-second-0123456789|sk-or-other-0123456789|sk-or-v1-key-of-the-test-0123456789abcdef)$''',
 ]

@@ -9,11 +9,12 @@
 // A job that failed for good gets one comment on its pull request: `jobs.failure_noticed_at`.
 // A pull request whose job waits in the queue for too long gets one comment too (REV-52, queued.ts).
 import type { Icons } from '@kento-review/engine/render'
-import type { ResolvePayload, ReviewPayload } from '@kento-review/protocol'
+import { UUID, type ResolvePayload, type ReviewPayload } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { DOCS_PATH } from '../commands/hint.ts'
 import { readJobAssignment, readUnreadPathRules } from '../assignment/model.ts'
+import { jobModels, SERVICE_PROVIDER } from '../repo-config/model.ts'
 import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
 import { askForFeedback } from '../feedback/github.ts'
@@ -27,7 +28,7 @@ import { pageRoutes } from '../routes.ts'
 import { ONLINE_SECONDS } from '../runner/admin.ts'
 import { failedCheck, failureComment } from './failure.ts'
 import { createGitHub, GitHubError, type GitHub } from './github.ts'
-import { botReviewState, checkName, hasCheck, postReusedCheck, PR_ICONS_PATH, publishReview, publishUnchanged } from './publish.ts'
+import { botReviewState, checkName, hasCheck, postReusedCheck, PR_ICONS_PATH, publishReview, publishUnchanged, type FellBack } from './publish.ts'
 import type { StoredReview } from '../runner/store.ts'
 import { QUEUE_NOTICE_MAX_AGE, QUEUE_STALL_MINUTES, queuedComment, queuedMarker } from './queued.ts'
 
@@ -317,6 +318,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         marker: row.id,
         assignment: readJobAssignment(row.jobConfig),
         assignmentUnread: readUnreadPathRules(row.jobConfig),
+        fellBack: await fellBackOf(row, review),
         async onPosted(id) {
           githubReviewId = id
           await deps.sql`
@@ -581,6 +583,24 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       log('warn', 'job.failure_check_failed', { jobId: row.id, repo: row.fullName, pr: row.prNumber, error: errorMessage(error).slice(0, 500) })
       return null
     }
+  }
+
+  /**
+   * KNT-161. The labels of the provider of the job and of its fallback provider, when the fallback
+   * answered the review. Only providers of the org of the repository; `service` is the key of the service.
+   */
+  async function fellBackOf(row: { repoId: string; jobConfig: unknown }, review: ReviewPayload): Promise<FellBack | null> {
+    if (!review.fellBack) return null
+    let to = jobModels(row.jobConfig)?.fallbackProvider?.provider ?? null
+    let ids = [review.fellBack.from, to].filter((id): id is string => id !== null && UUID.test(id))
+    let rows = ids.length
+      ? await deps.sql<{ id: string; label: string }[]>`
+          select id, label from providers
+          where id = any(${ids}::uuid[]) and org_id = (select org_id from repos where id = ${row.repoId})`
+      : []
+    let label = (id: string | null, otherwise: string) =>
+      id === SERVICE_PROVIDER ? 'OpenRouter (key of the service)' : (rows.find((r) => r.id === id)?.label ?? otherwise)
+    return { from: label(review.fellBack.from, 'the provider of the level'), to: label(to, 'another provider'), resetAt: review.fellBack.resetAt }
   }
 
   async function githubOf(row: { installationId: string | number; githubRepoId: string | number }): Promise<GitHub> {
