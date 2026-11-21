@@ -86,9 +86,11 @@ test.describe('the Costs screen', () => {
     await page.goBack()
     // The amount stays above the stretched link: the mouse selects its text (Fable P3).
     let amount = tile.locator('.kpi-value')
+    // The return plays the view transition of the page (150 ms, KNT-145): while it runs, a hit test
+    // finds only <html>. Poll until it ends; the stretched link would give `kpi-link` for good.
     let box = (await amount.boundingBox())!
-    let under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className ?? '', { x: box.x + box.width / 2, y: box.y + box.height / 2 })
-    expect(under).toBe('kpi-value')
+    let under = () => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className ?? '', { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    await expect.poll(under).toBe('kpi-value')
     await amount.dblclick()
     expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('')
     await expect(page).not.toHaveURL(/\/costs$/)
