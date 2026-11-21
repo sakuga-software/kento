@@ -19,6 +19,7 @@ import { createPublisher } from './app/publish/publisher.ts'
 import { createKentoAuth, postgresAuthDatabase } from './app/auth/better-auth.ts'
 import { createGitHubOAuth, createGitHubPeople } from './app/auth/github.ts'
 import { createMembersStore } from './app/members/store.ts'
+import { createOrgsStore } from './app/organizations/store.ts'
 import { rememberClientAddress } from './app/auth/rate-limit.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
@@ -247,6 +248,7 @@ let router = createAppRouter({
   feedback: { store: createFeedbackStore(database.sql) },
   // KNT-150. The members and the invitations of an org.
   members: { store: createMembersStore(database.sql), lookupUser: people?.lookupUser ?? null },
+  organization: { store: createOrgsStore(database.sql), lookupRole },
   checkDatabase: createDatabaseCheck(database.sql),
   version: config.version,
   commit: config.commit,
