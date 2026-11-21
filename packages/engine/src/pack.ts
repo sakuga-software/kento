@@ -341,18 +341,29 @@ export function buildPack(
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // KNT-156. Over the budget, a test file that shows its whole tests goes back to three lines of
   // context before any file goes: the largest first.
+  const wide = new Map<string, string>();
   for (const [path, hunk] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
     if (!TEST_FILE.test(path)) continue;
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
     const narrow = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
-    if (narrow.length < hunk.length) hunks.set(path, narrow);
+    if (narrow.length < hunk.length) {
+      wide.set(path, hunk);
+      hunks.set(path, narrow);
+    }
   }
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
     skipped.push(`${path}: removed to fit in the maximum size of the review`);
     hunks.delete(path);
+  }
+  // KNT-156. A dropped file can leave room: the narrowed test files that fit show their whole tests
+  // again, the smallest first (Kentō #0b630a).
+  for (const [path, hunk] of [...wide].sort((a, b) => a[1].length - b[1].length)) {
+    const narrow = hunks.get(path);
+    if (narrow === undefined) continue;
+    if (size() - narrow.length + hunk.length <= budget) hunks.set(path, hunk);
   }
 
   const header = `# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`;

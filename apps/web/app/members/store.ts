@@ -5,9 +5,10 @@
 import type postgres from 'postgres'
 
 import { canEdit, OWNER_ACTIVE_MS } from '../auth/access.ts'
+import { shortenGitHubAsk, takeGitHubAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { InvitationRole, MembershipSource, OrgRole } from '../db/schema.ts'
-import { decideMemberChange, decideReclaim, INVITATION_TTL_MS, MAX_PENDING_INVITATIONS, type MemberChange, type MemberFacts, type MemberRefusal } from './rules.ts'
+import { decideMemberChange, decideReclaim, INVITATION_TTL_MS, MAX_PENDING_INVITATIONS, RECLAIM_COOLDOWN_MS, RECLAIM_RETRY_MS, type MemberChange, type MemberFacts, type MemberRefusal } from './rules.ts'
 
 export interface MemberView {
   membershipId: string
@@ -63,6 +64,14 @@ export interface MembersStore {
    * role (`decideReclaim`). `githubAdmin`: the answer of GitHub, asked by the caller.
    */
   reclaim(orgId: string, userId: string, githubAdmin: boolean): Promise<ChangeOutcome>
+  /**
+   * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
+   * and org, for every process of the service, on the clock of Postgres. `over`: the person asked
+   * within it; `gone`: the person or the org is gone, and nothing is written.
+   */
+  askReclaim(orgId: string, userId: string): Promise<'allowed' | 'over' | 'gone'>
+  /** KNT-173. GitHub failed for the take-back: the person asks again after `RECLAIM_RETRY_MS`. */
+  reclaimFailed(orgId: string, userId: string): Promise<void>
   /** A change of a membership of the org by a member of it, decided by `decideMemberChange`. */
   change(input: { orgId: string; actorUserId: string; membershipId: string | null; change: MemberChange; now: number }): Promise<ChangeOutcome>
   /** The pending invitations of a GitHub account, in the active orgs, not expired. */
@@ -89,7 +98,8 @@ async function cancelInvitationsOf(tx: postgres.Sql, orgId: string, inviterId: s
   return rows.map((r) => r.githubLogin).sort()
 }
 
-export function createMembersStore(sql: postgres.Sql): MembersStore {
+/** `clock`: the offset of the clock of the limits (`auth/asks.ts`); the tests move it. */
+export function createMembersStore(sql: postgres.Sql, clock: { offsetMs(): number } = { offsetMs: () => 0 }): MembersStore {
   /** Runs `work` in one transaction that holds the lock of the owners of the org. */
   async function locked<T>(orgId: string, work: (tx: postgres.Sql) => Promise<T>): Promise<T> {
     return (await sql.begin(async (tx) => {
@@ -240,6 +250,14 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
         await audit(tx, orgId, actor!, 'reclaim', actor!, null, actor!.role, 'owner', actor!.source === 'invitation' ? { sourceBefore: 'invitation' } : null)
         return { ok: true, role: 'owner', target: actor!.login } as const
       })
+    },
+
+    async askReclaim(orgId, userId) {
+      return takeGitHubAsk(sql, { userId, scope: orgId, org: orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
+    },
+
+    async reclaimFailed(orgId, userId) {
+      await shortenGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS, offsetMs: clock.offsetMs() })
     },
 
     async own(githubId) {

@@ -190,8 +190,8 @@ const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string
   },
   repos: {
     title: 'Repos',
-    lead: 'The repos of the installation, and where each one stands in its switch.',
-    empty: 'The list of the repos, their mode and their switch counter will show here.',
+    lead: 'The repos of the installation, and their reviews.',
+    empty: 'The list of the repos, their level and their last review will show here.',
   },
   findings: {
     title: 'Findings',

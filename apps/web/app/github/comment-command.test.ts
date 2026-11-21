@@ -133,7 +133,7 @@ describe('reject (REV-93)', () => {
     assert.equal(parseCommentCommand('@kento-review rejected')?.verb, 'unknown')
   })
 
-  it('refuses a reject without a reason, with a reason too long, without an id in the conversation, with an id in a thread', () => {
+  it('refuses a reject without a reason, with a reason too long, without an id in the conversation; an id in a thread passes (KNT-160)', () => {
     let reject = (id: string | null, reason: string) => ({ verb: 'reject' as const, id, reason })
     assert.equal(rejectProblem(reject(null, 'ok'), 'thread'), null)
     assert.equal(rejectProblem(reject('3cf454', 'ok'), 'conversation'), null)
@@ -142,7 +142,9 @@ describe('reject (REV-93)', () => {
     assert.equal(rejectProblem(reject(null, 'x'.repeat(REASON_MAX)), 'thread'), null)
     assert.equal(rejectProblem(reject(null, 'x'.repeat(REASON_MAX + 1)), 'thread'), 'reason_long')
     assert.equal(rejectProblem(reject(null, 'ok'), 'conversation'), 'id_missing')
-    assert.equal(rejectProblem(reject('3cf454', 'ok'), 'thread'), 'id_in_thread')
+    // KNT-160. In a thread, an id passes here: the handler checks it against the finding of the thread.
+    assert.equal(rejectProblem(reject('3cf454', 'ok'), 'thread'), null)
+    assert.equal(rejectProblem(reject('3cf454', ''), 'thread'), 'reason_missing')
   })
 })
 
