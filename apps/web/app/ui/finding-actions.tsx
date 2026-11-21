@@ -12,7 +12,7 @@ export const FINDING_NOTICES = {
   wontfix: 'Finding marked wontfix.',
   open: 'Finding reopened.',
   unchanged: 'This finding already had this status. Nothing changed.',
-  fixed: 'This finding is fixed. A push fixed it, so it cannot be set aside.',
+  fixed: 'This finding is fixed: a later review did not find it again after a push changed its file. It cannot be set aside.',
 } as const
 export type FindingNotice = keyof typeof FINDING_NOTICES
 
@@ -47,7 +47,7 @@ export function FindingActions(handle: Handle<{ finding: FindingDetail; csrf: st
   return () => {
     let { finding, csrf } = handle.props
     let decided = finding.status === 'dismissed' || finding.status === 'wontfix'
-    // A push fixed it: nothing to decide (REV-18 leaves a fixed finding as it is too).
+    // Not found again after a push changed its file: nothing to decide (REV-18 leaves a fixed finding as it is too).
     if (finding.status === 'fixed') return null
     let form = `finding-${finding.id}`
     let replies = finding.githubCommentId !== null

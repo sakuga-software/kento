@@ -144,7 +144,7 @@ describe('the Repos screen', () => {
   })
 
   it('shows each repository with its visibility, level, model and last review, in five columns (KNT-179, KNT-181)', async () => {
-    let { signIn } = setup()
+    let { signIn, rows } = setup()
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     // KNT-179, KNT-181: no column "Reviews by" nor "Switch"; the last one has no visible name.
@@ -166,9 +166,15 @@ describe('the Repos screen', () => {
     // of the name is the visibility (a lock, a globe), and its word is for a screen reader only.
     assert.match(
       html,
-      /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name"><svg[^>]*aria-hidden="true"[^>]*><path d="M6 11h12v9H6z"[^>]*>.*?<\/svg><span>orchard<\/span><\/a><span class="visually-hidden">, private<\/span><\/th>/,
+      /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard \(private\)" class="repo-name"><svg[^>]*aria-hidden="true"[^>]*><path d="M6 11h12v9H6z"[^>]*>.*?<\/svg><span>orchard<\/span><\/a><span class="visually-hidden">, private<\/span><\/th>/,
     )
     assert.match(html, /<span>fruitback<\/span><\/a><span class="visually-hidden">, public<\/span><\/th>/)
+    assert.match(html, /title="sakuga-software\/fruitback \(public\)" class="repo-name"/)
+    // The "?" of a visibility that GitHub did not give yet is named in the title.
+    rows[ORG.id]![0]!.private = null
+    assert.match((await signIn()).html, /title="sakuga-software\/orchard \(unknown visibility\)" class="repo-name"/)
+    // KNT-179: "To switch" says which repos it lists.
+    assert.match(html, /<a href="\/repos\?filter=switching" title="The repos that still hold review\.yml">To switch/)
     assert.doesNotMatch(html, /repo-visibility/)
     // KNT-194: no notes on the switch from review.yml under the table.
     assert.doesNotMatch(html, /repos-howto|Switch criterion|Fallback during the switch/)
@@ -256,7 +262,8 @@ describe('the Repos screen', () => {
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
     // "Cancel" is a part of the popover only: without JavaScript, the trigger closes the confirmation.
     assert.doesNotMatch(row, /Cancel/)
-    assert.match(row, /The published reviews stay\.<\/p>/)
+    // KNT-194: fruitback still holds review.yml, which reviews alone after the disable.
+    assert.match(row, /The published reviews stay\. review\.yml alone reviews the pull requests from the next push\.<\/p>/)
     // No destructive button has the style of the main action.
     assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
@@ -301,6 +308,10 @@ describe('the Repos screen', () => {
     rows[ORG.id]![1]!.streak = 23
     let html = (await signIn()).html
     assert.match(menuOf(html, FRUITBACK), remove)
+    // The row says it, beside its "…": one marker, on that row only.
+    let ready = /<span title="Kentō published 20 reviews in a row: &quot;Remove review\.yml&quot; is in the menu &quot;…&quot;" class="tag tag-ok row-ready">review\.yml can go<\/span><!-- rmx:h:/
+    assert.match(html.slice(html.indexOf(`id="repo-${FRUITBACK}"`)), ready)
+    assert.equal(html.match(/row-ready/g)?.length, 1)
     // Only on that row, and the URL crosses to the browser for that row only.
     assert.equal(html.match(/Remove review\.yml</g)?.length, 1)
     let data = JSON.parse(html.match(/<script type="application\/json" id="rmx-data">(.*?)<\/script>/)![1]!) as {
@@ -311,10 +322,14 @@ describe('the Repos screen', () => {
       null,
       'https://github.com/sakuga-software/fruitback/delete/main/.github/workflows/sakuga-review.yml',
     ])
-    // A member reads only; a repository with no review.yml left has nothing to remove.
-    assert.doesNotMatch((await signIn(CAMILLE)).html, /Remove review\.yml</)
+    // A member reads only; a disabled repository has no reviews of Kentō to take over; a repository
+    // with no review.yml left has nothing to remove. None of them gets the action or the marker.
+    assert.doesNotMatch((await signIn(CAMILLE)).html, /Remove review\.yml<|row-ready/)
+    rows[ORG.id]![1]!.enabled = false
+    assert.doesNotMatch((await signIn()).html, /Remove review\.yml<|row-ready/)
+    rows[ORG.id]![1]!.enabled = true
     rows[ORG.id]![1]!.workflow = 'none'
-    assert.doesNotMatch((await signIn()).html, /Remove review\.yml</)
+    assert.doesNotMatch((await signIn()).html, /Remove review\.yml<|row-ready/)
   })
 
   it('reads the screen again by itself while GitHub is being checked, and not after (REV-26)', async () => {
@@ -330,7 +345,7 @@ describe('the Repos screen', () => {
     assert.equal(menus.length, (html.match(/<details class="row-menu">/g) ?? []).length)
     assert.match(menus[0]!.moduleUrl, /^\/assets\/app\/ui\/public\/row-menu\.tsx$/)
     // A few props a row: its id and name, and `disable` only where it applies.
-    assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name'])
+    assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name,workflow'])
     assert.match(html, /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
     // The one inline script that runs, the import map, carries the nonce of the policy of the response.
     let response = await request('/repos', { cookie })

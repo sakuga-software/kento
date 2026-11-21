@@ -163,6 +163,8 @@ test.describe('the Repos screen', () => {
       await page.goto('/repos')
       let orchard = rowOf(page, 'orchard')
       await expect(orchard.getByRole('link', { name: '#20 · 4/5' })).toBeVisible()
+      // The row says it beside its "…" (critique P2-1).
+      await expect(orchard.locator('.row-action').getByText('review.yml can go')).toBeVisible()
       await hydrated(page)
       let { trigger, menu } = menuOf(page, 'orchard')
       await trigger.click()
@@ -188,12 +190,13 @@ test.describe('the Repos screen', () => {
       await trigger.click()
       await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeVisible()
       await expect(menu.getByRole('menuitem', { name: /Remove review\.yml/ })).toHaveCount(0)
+      await expect(orchard.getByText('review.yml can go')).toHaveCount(0)
     } finally {
       await sql.end()
     }
   })
 
-  test('the last review stays on one line at 1280 px and on a phone, cut with an ellipsis and whole in its title (KNT-182)', async ({ page }) => {
+  test('the last review stays on one line: whole in the table at 1280, 1024 and 800 px; on a card the link stays whole (KNT-182)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
     let sql = database()
@@ -210,40 +213,45 @@ test.describe('the Repos screen', () => {
       await sql.end()
     }
     let width = page.viewportSize()!.width
-    for (let viewport of width > 760 ? [1280] : [width, 320]) {
+    for (let viewport of width > 760 ? [1280, 1024, 800] : [width, 320]) {
       await page.setViewportSize({ width: viewport, height: 900 })
       await page.goto('/repos')
       let cell = rowOf(page, 'garden').locator('.repo-last-review')
       await expect(cell).toHaveAttribute('title', /^#123456 · 5\/5, published on \d+ \w+ at \d\d:\d\d$/)
-      let box = await cell.evaluate((el, narrow) => {
-        // The longest value fits at 320 px: a cell made narrower shows the cut.
-        if (narrow) (el as HTMLElement).style.maxWidth = '120px'
-        let style = getComputedStyle(el)
-        let line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5
-        let content = el.getBoundingClientRect().height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-        let link = el.querySelector('a')!.getBoundingClientRect()
-        let hint = el.querySelector('.hint')!.getBoundingClientRect()
-        let row = el.closest('tr')!.getBoundingClientRect()
+      let box = await cell.evaluate((el) => {
+        let link = el.querySelector('a')!
+        let hint = el.querySelector('.hint') as HTMLElement
+        let td = el.closest('td')!.getBoundingClientRect()
+        let a = link.getBoundingClientRect()
+        let h = hint.getBoundingClientRect()
         return {
-          lines: content / line,
-          sameLine: Math.abs(link.top - hint.top) < 4,
-          overflow: style.textOverflow,
-          cut: el.scrollWidth > el.clientWidth,
-          inside: el.getBoundingClientRect().right <= row.right + 0.5,
+          sameLine: Math.abs(a.top - h.top) < 4,
+          linkWhole: a.right <= td.right + 0.5,
+          hintWhole: hint.scrollWidth <= hint.clientWidth + 0.5 && h.right <= td.right + 0.5,
         }
-      }, viewport < 390)
-      expect(box.lines, `lines at ${viewport} px`).toBeLessThan(1.5)
+      })
       expect(box.sameLine, `link and date on one line at ${viewport} px`).toBe(true)
-      expect(box.overflow).toBe('ellipsis')
-      expect(box.inside, `the cell stays in its row at ${viewport} px`).toBe(true)
-      if (viewport >= 390) {
-        // Whole at 1280 px and on a phone of 390 px; cut, not wrapped, in a narrower cell.
-        expect(box.cut, `cut at ${viewport} px`).toBe(false)
-        let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-        expect(overflow, `page at ${viewport} px`).toBeLessThanOrEqual(0)
-      } else {
-        expect(box.cut, `cut at ${viewport} px`).toBe(true)
-      }
+      expect(box.linkWhole, `link whole at ${viewport} px`).toBe(true)
+      // Critique P3-1: in the table nothing is cut, so the keyboard reads all of it; the longest
+      // date fits a card of 320 px too.
+      expect(box.hintWhole, `date whole at ${viewport} px`).toBe(true)
+      let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+      expect(overflow, `page at ${viewport} px`).toBeLessThanOrEqual(viewport < 390 ? 24 : 0)
+    }
+    if (width <= 760) {
+      // A card narrower than the line: the date shrinks with an ellipsis, the link stays whole.
+      let cut = await rowOf(page, 'garden').locator('.repo-last-review').evaluate((el) => {
+        ;(el as HTMLElement).style.maxWidth = '150px'
+        let link = el.querySelector('a')!
+        let hint = el.querySelector('.hint') as HTMLElement
+        return {
+          linkWhole: link.getBoundingClientRect().right <= el.getBoundingClientRect().right + 0.5,
+          hintCut: hint.scrollWidth > hint.clientWidth,
+          overflow: getComputedStyle(hint).textOverflow,
+          sameLine: Math.abs(link.getBoundingClientRect().top - hint.getBoundingClientRect().top) < 4,
+        }
+      })
+      expect(cut).toEqual({ linkWhole: true, hintCut: true, overflow: 'ellipsis', sameLine: true })
     }
   })
 
@@ -321,7 +329,7 @@ test.describe('the Repos screen', () => {
       await page.setViewportSize({ width: viewport, height: 900 })
       await page.goto('/repos')
       let row = rowOf(page, LONG_REPO_NAME)
-      await expect(row.getByRole('link', { name: LONG_REPO_NAME, exact: true })).toHaveAttribute('title', `sakuga-software/${LONG_REPO_NAME}`)
+      await expect(row.getByRole('link', { name: LONG_REPO_NAME, exact: true })).toHaveAttribute('title', `sakuga-software/${LONG_REPO_NAME} (private)`)
       await expect(row.getByText('claude-sonnet-4-5')).toBeVisible()
 
       let layout = await page.evaluate(() => {
