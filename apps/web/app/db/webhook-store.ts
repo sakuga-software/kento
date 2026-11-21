@@ -720,12 +720,16 @@ async function upsertInstallation(tx: Tx, installation: Installation, suspended:
 }
 
 async function insertInstallation(tx: Tx, installation: Installation, suspendedAt: Date | null) {
+  // KNT-173. The row of the earlier installation is locked, as a move locks it first: a move of it
+  // that runs now ends before this reads its org, and this reads the org where it went (the org it
+  // left may be gone with the move).
   let [earlier] = await tx
     .select({ orgId: installations.orgId })
     .from(installations)
     .where(eq(installations.githubAccountId, installation.githubAccountId))
     .orderBy(desc(installations.createdAt))
     .limit(1)
+    .for('key share')
   let orgId = earlier?.orgId ?? (await insertOrg(tx, installation))
   let [row] = await tx
     .insert(installations)

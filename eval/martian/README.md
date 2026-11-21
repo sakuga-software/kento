@@ -149,6 +149,18 @@ Haiku:
   golden comments. The results by private repository are in the internal bench.
 - Cost: review $0.62, judge $1.47. 1 failure (network), 5 judge errors.
 
+## Scores at a minimum confidence (KNT-111)
+
+`run.ts` writes the confidence of each finding in `confidences`, in the order of `findings`.
+`rescore.ts` then gives the scores of the findings at a minimum confidence, with no new call:
+
+```bash
+node eval/martian/rescore.ts --subset eval/martian/subset-ts.json --min-confidence 50,60,70 ../results/*.json
+```
+
+A file written before KNT-111 has no confidences: `rescore.ts` says so and gives only the scores
+of all the findings.
+
 ## Compare two variants: a progress or noise (REV-109)
 
 One run of each variant does not tell a progress from noise. On 2026-11-12, four prompts of

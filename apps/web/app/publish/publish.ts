@@ -139,6 +139,8 @@ export function answerOf(review: ReviewPayload): Answer {
     findings: review.findings,
     not_reviewed: review.notReviewed,
     deeper_review: { recommended: review.deeperReview !== null, reason: review.deeperReview ?? '' },
+    // KNT-153. A review of an earlier runner has no question.
+    questions: review.questions ?? [],
   }
 }
 
