@@ -210,6 +210,13 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.equal(past.status, 303)
     assert.equal(past.headers.get('Location'), '/findings?status=all&page=3&done=dismissed&n=2')
     assert.equal(third.lists.at(-1)!.page, 9, 'the store read the page asked for, and gave the last one')
+    // Kentō #306b6a: only to a lower page of 1 or more. A store that answers page 0, or a higher page,
+    // gets the page shown at its URL: no redirect, so no loop.
+    for (let answered of [0, 7]) {
+      let odd = setup(undefined, false, { page: answered, pages: 7 })
+      let oddCookie = (await odd.signIn()).cookie
+      assert.equal((await odd.request('/findings?status=all&page=3', { cookie: oddCookie })).status, 200, `page ${answered}`)
+    }
   })
 
   it('reads ?per=n from 10 to 100, keeps it in every link of the list and the form, and passes it to the store (KNT-178)', async () => {

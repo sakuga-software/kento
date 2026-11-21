@@ -53,8 +53,10 @@ export function findingsActions(kit: UiKit) {
         precisionTab ? NO_FACETS : findings.store.facets(orgId),
         findings.store.precision(orgId),
       ])
-      // A page after the last one shows the last one (KNT-148): its URL says so, the notice kept.
-      if (!precisionTab && result.page !== list.page) {
+      // A page after the last one shows the last one (KNT-148): its URL says so, the notice kept. Only to
+      // a lower page of 1 or more: each redirect lowers the page, so a store that answers another page
+      // (or 0 for an empty list) cannot make it loop.
+      if (!precisionTab && result.page >= 1 && result.page < list.page) {
         let last = canonicalQuery(context.url.searchParams, { ...list, page: result.page })!
         return redirect(last ? `${pageRoutes.findings.href()}?${last}` : pageRoutes.findings.href())
       }
