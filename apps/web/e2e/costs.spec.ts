@@ -77,8 +77,16 @@ test.describe('the Costs screen', () => {
     expect(errors).toEqual([])
   })
 
-  test('opens from the tile "Cost of the month" of the dashboard', async ({ page }) => {
+  test('opens from the tile "Cost of the month" of the dashboard, whose "no cap" keeps its own link (KNT-190)', async ({ page }) => {
     await page.goto('/')
+    let tile = page.locator('.kpi-linked')
+    // The link inside the tile sits above the stretched one: a click on it goes to the caps.
+    await tile.getByRole('link', { name: /^no cap/ }).click()
+    await expect(page).toHaveURL(/\/settings#cap$/)
+    await page.goBack()
+    // The focus ring goes round the whole tile (Fable P3).
+    await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).focus()
+    await expect(tile).toHaveCSS('outline-style', 'solid')
     await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).click()
     await expect(page).toHaveURL(/\/costs$/)
     await expect(page.getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible()
