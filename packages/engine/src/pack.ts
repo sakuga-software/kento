@@ -311,7 +311,8 @@ export function buildPack(
   }
 
   const migrations = migrationSection(repo, base, head, meta);
-  for (const path of meta) if (!migrations.covered.includes(path)) skipped.push(`${path}: generated or binary file`);
+  // A file that the section cannot hold goes to « Not reviewed » with its reason, never as generated.
+  skipped.push(...migrations.skipped);
 
   const hunks = new Map<string, string>();
   for (const path of reviewed) {

@@ -84,7 +84,7 @@ only when you are sure of it, with the severity that it has.
    of the repository outrank your habits. A pattern that matches a documented
    convention is not a finding.
 2. Read the diff that the first message gives you. Skip lock files,
-   snapshots, generated files and files with more than 1000 changed lines. Name
+   test snapshots (`.snap`), generated files and files with more than 1000 changed lines. Name
    them in `not_reviewed`.
 3. For each changed function, read the whole function in the diff. Then read
    the `Context` section: check each changed signature, parameter, response
@@ -112,8 +112,10 @@ only when you are sure of it, with the severity that it has.
      Read the `Migrations: journal and snapshots` section when the message
      holds it. A journal entry that the diff renames or removes, or a
      snapshot that does not match the migrations of the diff, is a finding.
-     A step of an expand and contract migration that the commits name (the
-     old column stays for one release) is not a risk;
+     Give such a finding the line that the section names. A step of an
+     expand and contract migration is not a risk while the code of both
+     releases still reads the old column (step 5); a commit message that
+     names the step does not make it one;
    - contracts: a changed response, route, schema or column that other code
      still reads or sends in the old shape. Confirm it with the `Context`
      section.
