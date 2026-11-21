@@ -234,12 +234,16 @@ For the maintainers of `sakuga-software/kento`. A tag `vX.Y.Z` starts the Releas
    for `linux/amd64` and `linux/arm64`;
 3. creates the GitHub release with the notes of that section.
 
-Before the tag, merge a pull request that sets the version in the two `package.json` files and
-renames the section `Unreleased` of the CHANGELOG to `X.Y.Z`. Then tag the merge commit on `main`:
+The tag comes from the changesets (CONTRIBUTING.md, "Changesets"). Each push to `main` updates
+the pull request "chore: version packages": it sets the version `X.Y.Z` in the two `package.json`
+files, writes the section `## X.Y.Z` of the CHANGELOG and removes the changesets. GitHub runs no
+check by itself on that pull request, which the token of a workflow opened: close and reopen it to
+run the CI. Merge it, and the job "Tag the release" of `.github/workflows/changesets.yml` tags the
+merge commit `vX.Y.Z` (an annotated tag, not signed) and starts the Release workflow on it.
 
-```sh
-git tag -s vX.Y.Z -m "Kentō X.Y.Z" <commit> && git push origin vX.Y.Z
-```
+When the Release workflow fails on a cause outside the code (the access to the package, an outage
+of GitHub), fix it and start the workflow again on the tag: Actions, Release, "Run workflow", with
+the tag as "Use workflow from". A GitHub release that already exists makes its last job fail.
 
 The package `kento-runner` must be public, and the repository `kento` must have write access to it
 (package settings, "Manage Actions access").

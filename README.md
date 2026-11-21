@@ -228,7 +228,9 @@ more commands (tests against Postgres, the screens in a browser):
 ## CI
 
 The workflows are in `.github/workflows`: Test (the packages), Web (`apps/web`), Runner (the image of
-`apps/runner`), Secrets (gitleaks) and CodeQL.
+`apps/runner`), Secrets (gitleaks), CodeQL, Changesets (the changeset of each pull request, the pull
+request "chore: version packages" and the tag of a release) and Release (the runner image and the
+GitHub release of a tag `vX.Y.Z`).
 
 - **Where a job runs.** Each `runs-on` reads `github.event.repository.private`. While the repository
   is private, the jobs run on our self-hosted runners, which cost no minutes. Once it is public, they
@@ -251,8 +253,9 @@ The workflows are in `.github/workflows`: Test (the packages), Web (`apps/web`),
   of the actions and of the npm packages. It does not update the images of the jobs, nor gitleaks
   in `secrets.yml`: change those by hand.
 - **Least privilege.** The token of a workflow has no permission. Each job asks only for what it
-  needs (`contents: read`, and `security-events: write` for CodeQL), and no checkout keeps the
-  token in `.git/config`.
+  needs (`contents: read`, `security-events: write` for CodeQL, and the release jobs of
+  `changesets.yml` and `release.yml` the writes that they make), and no checkout keeps the token in
+  `.git/config`.
 - **Secrets.** gitleaks scans the history of each commit with its default rules. `.gitleaks.toml`
   lists the fake values of the tests that it must not report.
 - **Private names.** `.github/scripts/check-names.sh` fails when a tracked file, binary files

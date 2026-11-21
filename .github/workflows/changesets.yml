@@ -1,0 +1,137 @@
+name: Changesets
+
+# The versions and the changelog of Kentō, with Changesets (CONTRIBUTING.md, "Changesets").
+# - On a pull request, "Changeset" fails when the pull request adds no changeset in .changeset/, or
+#   when a changeset names another package than @kento-review/web.
+# - On a push to main, "Version pull request" opens or updates the pull request "chore: version
+#   packages" from the changesets on main. That pull request sets the version of apps/web and of
+#   apps/runner, writes their CHANGELOG.md and removes the changesets.
+# - On a push to main that changes the version of apps/web (the merge of that pull request), "Tag
+#   the release" tags vX.Y.Z on the commit and starts the Release workflow (release.yml) on the tag.
+#
+# Only the token of the workflow is used. GitHub starts no workflow for what that token does, with
+# one exception, a workflow_dispatch: the CI does not run by itself on the pull request "chore:
+# version packages" (close and reopen it to run it), and the tag starts release.yml only through
+# `gh workflow run`.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  check:
+    name: Changeset
+    # Not on the pull request "chore: version packages" of this repository: it removes the
+    # changesets. Not on Dependabot: a maintainer adds the changeset of a bump that an operator sees.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(github.event.pull_request.head.ref == 'changeset-release/main' &&
+        github.event.pull_request.head.repo.full_name == github.repository) &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
+    # Our self-hosted runners while the repository is private, the runners of GitHub once it is
+    # public: a pull request from a fork must not run on our machines (README, "CI").
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-light"]') || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    concurrency:
+      group: changeset-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    steps:
+      # The merge commit of the pull request and its first parent, the commit of main that it merges
+      # into.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      # The root package only: the changesets CLI, not the dependencies of the apps.
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          filter: kento
+      - name: Check the changesets
+        run: .github/scripts/check-changeset.sh HEAD^1
+
+  version:
+    name: Version pull request
+    if: github.event_name == 'push'
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-light"]') || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    # The newest commit of main holds every changeset: a newer run replaces an older one.
+    concurrency:
+      group: changesets-version
+      cancel-in-progress: true
+    permissions:
+      # To push the branch changeset-release/main, and to open or edit its pull request.
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          filter: kento
+      # The action pushes its commit through the API of GitHub (no git credentials), and gives the
+      # token to `changeset version`, which @changesets/changelog-github needs for the links of the
+      # entries. No publish script: nothing goes to npm.
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+
+  tag:
+    name: Tag the release
+    if: github.event_name == 'push'
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-light"]') || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    # No concurrency group: a pending run of a group can be cancelled, and each push must be seen.
+    permissions:
+      # To create the tag.
+      contents: write
+      # To start release.yml on the tag.
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag a new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          # A push that creates the branch has no commit before it: no release.
+          if [ -z "${BEFORE//0/}" ]; then
+            echo "No commit before this push: no release."
+            exit 0
+          fi
+          version=$(node -p "require('./apps/web/package.json').version")
+          before=$(gh api -H 'Accept: application/vnd.github.raw+json' "repos/$REPO/contents/apps/web/package.json?ref=$BEFORE" \
+            | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          # Only a higher version is a release: a revert of the pull request "chore: version
+          # packages" gives the version before it back, which has a section and no tag.
+          if [ "$version" = "$before" ] || [ "$(printf '%s\n%s\n' "$before" "$version" | sort -V | tail -n 1)" != "$version" ]; then
+            echo "The version goes from $before to $version: no release."
+            exit 0
+          fi
+          tag="v$version"
+          if ! grep -Eq "^## ${version//./\\.}( |$)" apps/web/CHANGELOG.md; then
+            echo "::error file=apps/web/CHANGELOG.md::The version went from $before to $version, but the changelog has no section '## $version'."
+            exit 1
+          fi
+          if gh api "repos/$REPO/git/ref/tags/$tag" --silent 2>/dev/null; then
+            echo "::notice title=Release::The tag $tag already exists: its push started the release."
+            exit 0
+          fi
+          # An annotated tag, as `git tag -m` gives. GitHub, not a maintainer, makes it: it is not
+          # signed.
+          object=$(gh api "repos/$REPO/git/tags" -f tag="$tag" -f message="Kentō $version" -f object="$SHA" -f type=commit --jq .sha)
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$object" --silent
+          echo "Tagged $tag on $SHA."
+          # A tag made with the token of the workflow starts no workflow: start the release on it.
+          gh workflow run release.yml --repo "$REPO" --ref "$tag"
+          echo "::notice title=Release::$tag is tagged. The Release workflow publishes the runner image and the GitHub release."

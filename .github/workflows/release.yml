@@ -4,10 +4,16 @@ name: Release
 # section of that version in apps/web/CHANGELOG.md. The Runners screen gives
 # `<KENTO_RUNNER_IMAGE>:<version of the service>`, so the tag, apps/web and apps/runner must have the
 # same version. The steps for a maintainer are in apps/runner/DEPLOY.md, "Publish a release".
+#
+# The job "Tag the release" of changesets.yml tags the merge of the pull request "chore: version
+# packages", then starts this workflow on the tag with a workflow_dispatch: a tag that the token of
+# a workflow pushes starts no workflow. A maintainer can also start it on a tag (Actions, "Run
+# workflow", "Use workflow from": the tag).
 
 on:
   push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -31,7 +37,11 @@ jobs:
       - id: version
         env:
           TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
+          if [ "$REF_TYPE" != tag ] || [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Run this workflow on a tag vX.Y.Z, not on the $REF_TYPE $TAG."; exit 1
+          fi
           version="${TAG#v}"
           for file in apps/web/package.json apps/runner/package.json; do
             found=$(node -p "require('./$file').version")

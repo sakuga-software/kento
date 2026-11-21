@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "baseBranch": "main",
+  "commit": false,
+  "access": "restricted",
+  "changelog": ["@changesets/changelog-github", { "repo": "sakuga-software/kento" }],
+  "format": false,
+  "fixed": [["@kento-review/web", "@kento-review/runner"]],
+  "ignore": ["@kento-review/engine", "@kento-review/protocol"],
+  "privatePackages": { "version": true, "tag": false }
+}

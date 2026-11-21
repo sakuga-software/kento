@@ -1,7 +1,13 @@
 # apps/web: notes for agents
 
 The service is described in [README.md](README.md). This file keeps the rules that a change of a
-screen must follow.
+screen must follow, and the one of every pull request.
+
+## Every pull request
+
+- **Add a changeset** that names `@kento-review/web`: `pnpm changeset`, or `pnpm changeset --empty`
+  when nobody who runs Kentō sees the change. Never edit the sections of CHANGELOG.md by hand
+  ([CONTRIBUTING.md, "Changesets"](../../CONTRIBUTING.md#changesets)).
 
 ## UI components
 
