@@ -100,6 +100,20 @@ only when you are sure of it, with the severity that it has.
      query or a shell;
    - data: a write that leaves two records inconsistent, a missing transaction,
      a migration that removes or renames a column, a unit mismatch;
+   - a migration or a backfill in the diff: answer four questions.
+     1. Can the version in service run on the new data, during the deploy
+        and after a rollback?
+     2. Can every write path (the app, a library, an admin tool) still write
+        a value that the migration does not handle?
+     3. What does a rollback leave?
+     4. Are mixed or legacy values (a list in one column, a value with a
+        prefix, an old spelling) mapped, and to what?
+
+     Read the `Migrations: journal and snapshots` section when the message
+     holds it. A journal entry that the diff renames or removes, or a
+     snapshot that does not match the migrations of the diff, is a finding.
+     A step of an expand and contract migration that the commits name (the
+     old column stays for one release) is not a risk;
    - contracts: a changed response, route, schema or column that other code
      still reads or sends in the old shape. Confirm it with the `Context`
      section.
@@ -225,7 +239,8 @@ Recommend it only when this review could not check something that matters:
 - the change modifies a signature, a response, a schema or a route, and its
   callers are not in the message;
 - the change touches authentication, authorization, payments, a migration of
-  data, or concurrency, and you could not confirm the behaviour (the engine
+  data (one of the four questions of method step 4 has no answer from the
+  message), or concurrency, and you could not confirm the behaviour (the engine
   recommends a deeper review of each `Critical change` at this level anyway);
 - a part of the pull request is in `not_reviewed` and holds logic;
 - a `major` or `critical` finding has a confidence below 70.
