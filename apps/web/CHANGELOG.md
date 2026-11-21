@@ -2,9 +2,12 @@
 
 What each release of Kentō changes for the person who runs it: the migrations, the variables, the
 permissions of the GitHub App, the protocol between the service and the runners, and the order of
-the deployment. The newest release first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
+the deployment. The newest release first. The versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Do not edit the sections by hand: Changesets writes each one from the changesets of the merged pull
+requests, in the pull request "chore: version packages". Each entry links its pull request. To add
+an entry, see [CONTRIBUTING.md, "Changesets"](../../CONTRIBUTING.md#changesets).
 
 The service (`apps/web`) and the runner (`apps/runner`) share one version. Read the entries since
 your release before an upgrade or a rollback. [DEPLOY.md](DEPLOY.md) describes the installation as
@@ -16,8 +19,6 @@ Each entry says, when it applies:
 - **Variables**: the new, changed or removed variables of the service and of the runner.
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
-
-## Unreleased
 
 ## 0.2.0 (2026-11-21)
 
