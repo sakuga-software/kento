@@ -25,29 +25,61 @@ export interface AskClock {
   offsetMs?: number
 }
 
+/** What a count answers. */
+export type AskOutcome =
+  /** Within the limit: the form asks GitHub. */
+  | 'allowed'
+  /** The person asked `limit` times in the window already: the form must not ask GitHub. */
+  | 'over'
+  /** The person, their membership or the org is gone: nothing is written, and GitHub is not asked. */
+  | 'gone'
+
 /**
- * Counts one question of a person. `allowed`: within the limit. `over`: the person asked `limit`
- * times in the window already, and the form must not ask GitHub. `gone`: the person is gone, as a
- * request that was under way when the account went, or the org of `org` is gone. A window starts
- * at the first question after the end of the one before.
- *
- * `org`: the org whose count this is (the scope of the take-back). The count locks the key of the
- * org, and writes nothing for an org that is gone: a move that deletes the org waits for it, or it
- * waits for the move and finds no org. The move deletes the rows of the org it deletes
- * (`organizations/store.ts`), so no row outlives its org.
+ * Counts one question of a person, in a scope that belongs to them alone (`MOVES_SCOPE`). A window
+ * starts at the first question after the end of the one before.
  */
-export async function takeGitHubAsk(
+export async function takePersonAsk(
   sql: postgres.Sql,
-  input: { userId: string; scope: string; action: GitHubAsk; org?: string } & AskLimit & AskClock,
-): Promise<'allowed' | 'over' | 'gone'> {
+  input: { userId: string; scope: typeof MOVES_SCOPE; action: GitHubAsk } & AskLimit & AskClock,
+): Promise<AskOutcome> {
+  return take(sql, { ...input, org: null })
+}
+
+/**
+ * KNT-198. Counts one question of a person about an org (the take-back of the owner role). The
+ * scope of the row is the id of the org, set here, so the lock and the scope cannot differ. The
+ * count locks the key of the org and writes nothing for an org that is gone, or for a person who is
+ * not a member of it any more: a move that deletes the org waits for it, or it waits for the move
+ * and answers `gone`. The move deletes the rows of the org it deletes (`organizations/store.ts`),
+ * so no row outlives its org.
+ */
+export async function takeOrgAsk(
+  sql: postgres.Sql,
+  input: { userId: string; orgId: string; action: GitHubAsk } & AskLimit & AskClock,
+): Promise<AskOutcome> {
+  return take(sql, { userId: input.userId, scope: input.orgId, action: input.action, limit: input.limit, windowMs: input.windowMs, offsetMs: input.offsetMs, org: input.orgId })
+}
+
+async function take(
+  sql: postgres.Sql,
+  input: { userId: string; scope: string; action: GitHubAsk; org: string | null } & AskLimit & AskClock,
+): Promise<AskOutcome> {
   let now = sql`(now() + ${input.offsetMs ?? 0}::float8 * interval '1 millisecond')`
   let windowStart = sql`(now() + ${(input.offsetMs ?? 0) - input.windowMs}::float8 * interval '1 millisecond')`
   try {
     let [row] = await sql<{ count: number }[]>`
-      ${input.org === undefined ? sql`` : sql`with org as (select id from orgs where id = ${input.org} for key share)`}
+      ${
+        input.org === null
+          ? sql``
+          : sql`with org as (
+              select o.id from orgs o
+              where o.id = ${input.org}
+                and exists (select 1 from memberships m where m.org_id = o.id and m.user_id = ${input.userId})
+              for key share of o)`
+      }
       insert into github_asks (user_id, scope, action, window_start, count)
       select ${input.userId}, ${input.scope}, ${input.action}, ${now}, 1
-      ${input.org === undefined ? sql`` : sql`from org`}
+      ${input.org === null ? sql`` : sql`from org`}
       on conflict (user_id, scope, action) do update set
         count = case when github_asks.window_start <= ${windowStart} then 1 else least(github_asks.count + 1, ${input.limit + 1}) end,
         window_start = case when github_asks.window_start <= ${windowStart} then ${now} else github_asks.window_start end
@@ -65,11 +97,11 @@ export async function takeGitHubAsk(
  * GitHub failed for a question: the window of the person ends `retryMs` from now at the latest, so a
  * failure of GitHub does not cost them the whole window.
  */
-export async function shortenGitHubAsk(
+export async function shortenOrgAsk(
   sql: postgres.Sql,
-  input: { userId: string; scope: string; action: GitHubAsk; windowMs: number; retryMs: number } & AskClock,
+  input: { userId: string; orgId: string; action: GitHubAsk; windowMs: number; retryMs: number } & AskClock,
 ) {
   await sql`
     update github_asks set window_start = least(window_start, now() + ${(input.offsetMs ?? 0) + input.retryMs - input.windowMs}::float8 * interval '1 millisecond')
-    where user_id = ${input.userId} and scope = ${input.scope} and action = ${input.action}`
+    where user_id = ${input.userId} and scope = ${input.orgId} and action = ${input.action}`
 }

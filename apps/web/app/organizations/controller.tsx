@@ -92,7 +92,7 @@ export function createOrganizationController(kit: ScreenKit, deps: OrganizationD
         // person, whatever the org, before any question.
         let asked = await deps.store.askMove(signed.user.id)
         if (asked !== 'allowed') {
-          log('warn', 'organizations.move_throttled', { login: signed.user.login, org: org.id, outcome: asked })
+          log('warn', asked === 'gone' ? 'organizations.move_gone' : 'organizations.move_throttled', { login: signed.user.login, org: org.id })
           return toOrganization(asked === 'gone' ? 'not_found' : 'move_wait')
         }
         let { lookupRole, lookupAccountType } = deps
