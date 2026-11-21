@@ -77,6 +77,14 @@ export function withValues(data: SourceData): SourceData {
   }
 }
 
+/** The longest label on the axis of a bar chart; the tooltip and the table keep the whole name (Fable P3). */
+export const LABEL_MAX = 24
+
+/** A label cut to `max` characters, with an ellipsis. */
+export function shortLabel(label: string, max = LABEL_MAX): string {
+  return label.length > max ? `${label.slice(0, max - 1)}…` : label
+}
+
 /** "$0.004" under ten cents, "$12.50" above: `usdPrecise` of app/ui/format.ts. */
 export function money(value: number): string {
   return value > 0 && value < 0.1 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`
@@ -206,7 +214,11 @@ function config({ kind, unit, tone }: ChartOptions, data: SourceData, reduce: bo
           border: { display: false },
           ticks: { ...valueTicks, maxTicksLimit: unit === 'pct' ? 6 : 4 },
         },
-        y: { grid: { display: false }, border: { color: colors.grid }, ticks: { color: colors.ink, font } },
+        y: {
+          grid: { display: false },
+          border: { color: colors.grid },
+          ticks: { color: colors.ink, font, callback: (_value: number | string, index: number) => shortLabel(data.labels[index] ?? '') },
+        },
       },
       // One series: its title names it, no legend.
       plugins: { legend: { display: false }, tooltip },
@@ -229,12 +241,20 @@ export function drawChart(box: HTMLElement, source: HTMLElement, options: ChartO
   // CSSOM, not a style attribute: the content security policy allows it.
   if (options.kind === 'bars') box.style.setProperty('--rows', String(Math.max(1, data.labels.length)))
   box.append(canvas)
+  // Shown before the chart is built: Chart.js measures the box. The table folds only once the chart
+  // stands (Fable P3): if Chart.js throws, the box goes and the table stays open.
   box.hidden = false
+  let motion = matchMedia('(prefers-reduced-motion: reduce)')
+  let chart: Chart
+  try {
+    chart = new Chart(canvas, config(options, data, motion.matches))
+  } catch (error) {
+    canvas.remove()
+    box.hidden = true
+    throw error
+  }
   let details = source.closest('details')
   if (details) details.open = false
-
-  let motion = matchMedia('(prefers-reduced-motion: reduce)')
-  let chart = new Chart(canvas, config(options, data, motion.matches))
   let restyle = () => {
     let next = config(options, data, motion.matches)
     chart.data = next.data

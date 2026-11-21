@@ -9,6 +9,7 @@ import type { ReadPullRequest } from '../../dashboard/github.ts'
 import type { RetryOutcome } from '../../dashboard/store.ts'
 import { errorMessage, log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
+import { chartsAvailable } from '../../assets.ts'
 import { PRECISION_DAYS } from '../../findings/precision.ts'
 import { DASHBOARD_NOTICES, DashboardPage, readPrecisionWindow, type DashboardNotice } from '../dashboard.tsx'
 import { forbidden, installationUrl, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
@@ -47,6 +48,7 @@ export function dashboardActions(kit: UiKit) {
           installationUrl={firstInstallation ? installationUrl(dashboard.githubUrl, firstInstallation) : null}
           precision={precision}
           precisionDays={precisionDays}
+          charts={dashboard.charts ?? chartsAvailable()}
         />,
       )
     }),

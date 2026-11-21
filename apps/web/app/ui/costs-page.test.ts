@@ -8,7 +8,7 @@ import type { CostPeriod } from '../costs/period.ts'
 import type { CostReport, CostsStore } from '../costs/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { change, dayLabel } from './costs.tsx'
+import { change, dayLabel, utcWhen } from './costs.tsx'
 
 const NOW = new Date('2026-11-21T10:00:00Z')
 
@@ -38,7 +38,7 @@ function reportOf(orgId: string, period: CostPeriod, empty = false): CostReport 
   }
 }
 
-function setup(options: { empty?: boolean } = {}) {
+function setup(options: { empty?: boolean; charts?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, OCTOCAT, 'member')
   auth.setRole(ORG, CAMILLE, 'admin')
@@ -56,7 +56,7 @@ function setup(options: { empty?: boolean } = {}) {
     commit: null,
     webhook: disabledWebhook,
     auth: auth.deps,
-    costs: { store },
+    costs: { store, charts: options.charts },
   })
   function request(path: string, cookie?: string | null) {
     let headers = new Headers({ Accept: 'text/html' })
@@ -136,6 +136,32 @@ describe('the Costs screen (KNT-188)', () => {
     assert.match(html, /<a href="\/repos\/repo-1\/pulls\/7">org-1\/app#7<\/a>/)
     // The navigation names the screen.
     assert.match(html, /href="\/costs"[^>]*aria-current="page"[^>]*>Costs</)
+  })
+
+  it('renders the tables alone when the asset server cannot serve the charts (Fable P2-2)', async () => {
+    let { request, signIn } = setup({ charts: false })
+    let cookie = await signIn(OCTOCAT)
+    let response = await request('/costs', cookie)
+    assert.equal(response.status, 200)
+    let html = await response.text()
+    assert.doesNotMatch(html, /chart-box|cost-chart|importmap/)
+    assert.match(html, /<table[^>]*id="cost-days-table"/)
+    assert.match(html, /\$1\.25/)
+    assert.equal(html.match(/<details(?=[^>]*\sopen[\s>])[^>]*>/g)?.length, 4)
+  })
+
+  it('names each "Show the data" after its chart, and writes the days and the times in UTC (Fable P3)', async () => {
+    let { request, signIn } = setup()
+    let cookie = await signIn(OCTOCAT)
+    let html = await (await request('/costs', cookie)).text()
+    for (let name of ['cost per day', 'cost by repo', 'cost by level', 'cost by model']) {
+      assert.match(html, new RegExp(`Show the data<span class="visually-hidden">: ${name}</span>`), name)
+    }
+    assert.match(html, /This month \(UTC\)/)
+    assert.match(html, /When \(UTC\)/)
+    assert.match(html, /21 Nov, 10:00 UTC/)
+    // 00:30 in Paris on the 1st is still the 31st in UTC: the row says the day of its bucket.
+    assert.equal(utcWhen(new Date('2026-10-31T23:30:00Z')), '31 Oct, 23:30 UTC')
   })
 
   it('says that nothing cost anything, with no chart, when the period is empty', async () => {

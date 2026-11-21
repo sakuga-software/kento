@@ -61,7 +61,7 @@ describe('KENTO_COMMAND_NAMES', () => {
       assert.ok(usage.startsWith('Kentō commands, in a comment of the PR (`@acme` works too):\n'), usage)
       assert.ok(usage.includes('- `@acme-review reject <cause>`, as a reply'))
       assert.ok(!/kento-review|sakuga-review/.test(usage), usage)
-      for (let problem of ['reason_missing', 'id_missing', 'id_in_thread'] as const) assert.match(rejectProblemText(problem), /`@acme-review reject /)
+      for (let problem of ['reason_missing', 'id_missing'] as const) assert.match(rejectProblemText(problem), /`@acme-review reject /)
       assert.match(hintText(null), /`@acme-review reject <cause>`/)
       assert.ok(namesReject('Refuted.\n@acme reject the schema validates it'))
       assert.ok(!namesReject('@kento-review reject the schema validates it'))

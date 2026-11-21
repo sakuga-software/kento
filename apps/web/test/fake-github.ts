@@ -90,7 +90,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     checkRuns: [] as { name: string; head_sha: string; conclusion: string; output: { title: string; summary: string }; token: string; app?: string }[],
     commits: { ...options.commits } as Record<string, string>,
     /** `from...to` → the answer of the compare API. A missing entry answers 404, a status `error` 500. */
-    compare: new Map<string, { status: string; files: string[] }>(),
+    compare: new Map<string, { status: string; files: (string | { filename: string; patch?: string })[] }>(),
     /** The tokens that the App can mint, by permission. A permission outside the list answers 422. */
     appPermissions: new Set(['contents', 'pull_requests', 'issues', 'checks']),
     tokens: [] as { installationId: number; repositoryIds: number[]; permissions: Record<string, string>; token: string }[],
@@ -414,7 +414,7 @@ export function createFakeGitHub(options: FakeGitHubOptions) {
     if ((m = /^\/compare\/([0-9a-f]+\.\.\.[0-9a-f]+)$/.exec(rest)) && method === 'GET') {
       let out = state.compare.get(m[1]!)
       if (out?.status === 'error') return json(500, { message: 'Server Error' })
-      return out ? json(200, { status: out.status, files: out.files.map((filename) => ({ filename })) }) : json(404, { message: 'Not Found' })
+      return out ? json(200, { status: out.status, files: out.files.map((f) => (typeof f === 'string' ? { filename: f } : f)) }) : json(404, { message: 'Not Found' })
     }
     if ((m = /^\/labels\/(.+)$/.exec(rest)) && method === 'GET') {
       let label = decodeURIComponent(m[1]!)

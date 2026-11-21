@@ -8,7 +8,7 @@ import { COST_PERIODS, PERIOD_LABELS, PREVIOUS_LABELS, periodQuery, type CostPer
 import type { CostReport, CostShare } from '../costs/store.ts'
 import { TableChart } from './public/chart.tsx'
 import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
-import { count, plural, usdPrecise, when } from './format.ts'
+import { count, plural, usdPrecise } from './format.ts'
 import { Shell, type PageFrame } from './shell.tsx'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -17,6 +17,15 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function dayLabel(day: string): string {
   let [, month, date] = day.split('-')
   return `${Number(date)} ${MONTHS[Number(month) - 1] ?? ''}`
+}
+
+/**
+ * "6 Nov, 22:23 UTC": the time of a run in UTC, as its day on this screen (Fable P3). `when()` of
+ * format.ts writes the time of Paris, which can fall on another day than the bucket of the run.
+ */
+export function utcWhen(date: Date): string {
+  let iso = date.toISOString()
+  return `${dayLabel(iso.slice(0, 10))}, ${iso.slice(11, 16)} UTC`
 }
 
 /** "+12%", "−40%", or null when the period before cost nothing. */
@@ -36,9 +45,10 @@ export function periodHref(period: CostPeriod): string {
   return `${costRoutes.costs.href()}${periodQuery(period)}`
 }
 
-export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport }>) {
+export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport; charts?: boolean }>) {
   return () => {
     let { frame, report } = handle.props
+    let charts = handle.props.charts ?? true
     let { period } = report
     return (
       <Shell
@@ -47,7 +57,7 @@ export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport 
         title="Costs"
         lead="What the reviews and resolutions of the organization cost, by day, repo, level and model. Days are UTC days, as for the cap."
       >
-        <nav class="period-links" aria-label="Period">
+        <nav class="period-links" aria-label="Period, in UTC days">
           {COST_PERIODS.map((key) => (
             <a href={periodHref(key)} aria-current={key === period ? 'page' : undefined}>
               {PERIOD_LABELS[key]}
@@ -66,7 +76,7 @@ export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport 
           </section>
         ) : (
           <>
-            <DaysSection report={report} />
+            <DaysSection report={report} charts={charts} />
             <div class="cost-grid">
               <SharesSection
                 id="repos"
@@ -74,12 +84,13 @@ export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport 
                 head="Repo"
                 shares={report.byRepo}
                 total={report.totalUsd}
+                charts={charts}
                 link={(row) => (row.key ? routes.repoConfig.href({ id: row.key }) : null)}
                 // The repos of one org share its name: the chart keeps the part after it.
                 short={(row) => (row.key ? (row.label.split('/').pop() ?? row.label) : row.label)}
               />
-              <SharesSection id="levels" title="By level" head="Level" shares={report.byLevel} total={report.totalUsd} mono />
-              <SharesSection id="models" title="By model" head="Model" shares={report.byModel} total={report.totalUsd} mono />
+              <SharesSection id="levels" title="By level" head="Level" shares={report.byLevel} total={report.totalUsd} mono charts={charts} />
+              <SharesSection id="models" title="By model" head="Model" shares={report.byModel} total={report.totalUsd} mono charts={charts} />
             </div>
             <TopSection report={report} />
           </>
@@ -99,7 +110,7 @@ function Summary(handle: Handle<{ report: CostReport }>) {
     return (
       <section class="dash-kpis card cost-kpis" aria-label="Summary">
         <div class="kpi">
-          <span class="kpi-label">{PERIOD_LABELS[report.period]}</span>
+          <span class="kpi-label">{PERIOD_LABELS[report.period]} (UTC)</span>
           <span class="kpi-value">{usdPrecise(report.totalUsd)}</span>
           <span class="kpi-sub">
             {usdPrecise(report.previousTotalUsd)} {PREVIOUS_LABELS[report.period].toLowerCase()}
@@ -152,18 +163,21 @@ function Summary(handle: Handle<{ report: CostReport }>) {
   }
 }
 
-function DaysSection(handle: Handle<{ report: CostReport }>) {
+function DaysSection(handle: Handle<{ report: CostReport; charts: boolean }>) {
   return () => {
-    let { report } = handle.props
+    let { report, charts } = handle.props
     let previous = PREVIOUS_LABELS[report.period]
     return (
       <section class="card cost-section" aria-labelledby="cost-days-title">
         <h2 id="cost-days-title" class="section-title">
           Cost per day
         </h2>
-        <TableChart table="cost-days-table" kind="days" />
+        {charts ? <TableChart table="cost-days-table" kind="days" /> : null}
         <details class="chart-data" open>
-          <summary>Show the data</summary>
+          {/* A name of its own in the list of the controls of a screen reader (Fable P3). */}
+          <summary>
+            Show the data<span class="visually-hidden">: cost per day</span>
+          </summary>
           <table class="dash-table cost-table" id="cost-days-table">
             <caption class="visually-hidden">Cost per day, {PERIOD_LABELS[report.period].toLowerCase()}, and {previous.toLowerCase()}</caption>
             <thead>
@@ -207,22 +221,26 @@ function SharesSection(
     shares: CostShare[]
     total: number
     mono?: boolean
+    /** Fable P2-2: false when the asset server cannot serve the charts. */
+    charts: boolean
     link?: (row: CostShare) => string | null
     /** The label of a row on the chart, when the one of the table is too long for its axis. */
     short?: (row: CostShare) => string
   }>,
 ) {
   return () => {
-    let { id, title, head, shares, total, mono, link, short } = handle.props
+    let { id, title, head, shares, total, mono, charts, link, short } = handle.props
     let table = `cost-${id}-table`
     return (
       <section class="card cost-section" aria-labelledby={`cost-${id}-title`}>
         <h2 id={`cost-${id}-title`} class="section-title">
           {title}
         </h2>
-        <TableChart table={table} kind="bars" />
+        {charts ? <TableChart table={table} kind="bars" /> : null}
         <details class="chart-data" open>
-          <summary>Show the data</summary>
+          <summary>
+            Show the data<span class="visually-hidden">: cost {title.toLowerCase()}</span>
+          </summary>
           <table class="dash-table cost-table" id={table}>
             <caption class="visually-hidden">Cost {title.toLowerCase()}</caption>
             <thead>
@@ -285,7 +303,7 @@ function TopSection(handle: Handle<{ report: CostReport }>) {
                   <th scope="col" class="num">
                     Cost
                   </th>
-                  <th scope="col">When</th>
+                  <th scope="col">When (UTC)</th>
                 </tr>
               </thead>
               <tbody>
@@ -302,7 +320,7 @@ function TopSection(handle: Handle<{ report: CostReport }>) {
                     <td class="mono">{run.model ?? '–'}</td>
                     <td class="num">{usdPrecise(run.usd)}</td>
                     <td>
-                      <time dateTime={run.createdAt.toISOString()}>{when(run.createdAt)}</time>
+                      <time dateTime={run.createdAt.toISOString()}>{utcWhen(run.createdAt)}</time>
                     </td>
                   </tr>
                 ))}

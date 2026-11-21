@@ -3,6 +3,7 @@
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
 
+import { projectMonth } from '../../app/costs/period.ts'
 import { createCostsStore, REPO_LIMIT, type CostsStore } from '../../app/costs/store.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { readOrgCosts } from '../../app/db/costs.ts'
@@ -151,8 +152,9 @@ describe('the costs of an org by period (KNT-188)', () => {
     let dashboard = await readOrgCosts(database.db, org)
     assert.equal(report.totalUsd, dashboard.monthUsd)
     assert.equal(report.count >= 0, true)
-    assert.ok(report.projectionUsd !== null)
-    assert.equal(report.projectionUsd, Math.round((report.totalUsd / report.days.length) * new Date(Date.UTC(report.start.getUTCFullYear(), report.start.getUTCMonth() + 1, 0)).getUTCDate() * 1e6) / 1e6)
+    // The math of the projection is in app/costs/period.test.ts; here, the report uses it for this month only.
+    let monthDays = new Date(Date.UTC(report.start.getUTCFullYear(), report.start.getUTCMonth() + 1, 0)).getUTCDate()
+    assert.equal(report.projectionUsd, projectMonth(report.totalUsd, report.start, report.now, monthDays))
     // The other periods have no projection.
     assert.equal((await store.report(org, '90d')).projectionUsd, null)
   })

@@ -29,7 +29,14 @@ export const TableChart = clientEntry(import.meta.url, function TableChart(handl
     let source = document.getElementById(handle.props.table)
     if (!box || !source) return
     let { kind, unit = 'usd', tone = 'ai' } = handle.props
-    let chart = drawChart(box, source, { kind, unit, tone })
+    let chart: ReturnType<typeof drawChart>
+    try {
+      chart = drawChart(box, source, { kind, unit, tone })
+    } catch (error) {
+      // The table or the list stays: it is the content without a chart.
+      console.error('Chart error:', error)
+      return
+    }
     handle.signal.addEventListener('abort', () => chart.destroy(), { once: true })
   })
   return () => <div class="chart-box" data-kind={handle.props.kind} hidden mix={ref((node: HTMLElement) => (box = node))} />
