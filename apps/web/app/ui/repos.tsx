@@ -1,6 +1,6 @@
 import type { Handle } from 'remix/component'
 
-import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
+import { CONFIDENCE_DAYS, REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
 import { RowMenu } from './public/row-menu.tsx'
@@ -14,6 +14,7 @@ import { readPageNumber } from '../paging.ts'
 import { Pager } from './pager.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
 import { Toast } from './toast.tsx'
+import { Score } from './score.tsx'
 
 /** What the screen says after a change, from the query of the redirect. */
 export type ReposNotice =
@@ -101,7 +102,7 @@ function shortName(fullName: string, org: string): string {
 
 /**
  * The Repos screen (REV-9): the repositories of the installation, their visibility, their level,
- * the model of their last review, and their last review. An admin enables and disables a
+ * the model of their last review, their last review, and their confidence over 30 days. An admin enables and disables a
  * repository; a member reads.
  */
 export function ReposPage(handle: Handle<ReposPageProps>) {
@@ -202,6 +203,7 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                       <th scope="col">Level</th>
                       <th scope="col">Model</th>
                       <th scope="col">Last review</th>
+                      <th scope="col">Confidence 30 d</th>
                       <th scope="col">
                         Precision 30 d
                       </th>
@@ -331,6 +333,18 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               </a>{' '}
               <span class="hint">· {agoOrDate(repo.lastReview.publishedAt, now)}</span>
             </span>
+          ) : (
+            '–'
+          )}
+        </td>
+        <td>
+          {/* KNT-183: the average confidence score of the reviews of 30 days, drawn as on the dashboard. */}
+          {repo.confidence ? (
+            <Score
+              value={repo.confidence.average}
+              average
+              title={`Average of ${repo.confidence.reviews} ${plural(repo.confidence.reviews, 'review')} over ${CONFIDENCE_DAYS} days`}
+            />
           ) : (
             '–'
           )}

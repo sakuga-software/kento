@@ -121,6 +121,27 @@ describe('the Repos screen against Postgres', () => {
     assert.equal((await orchard()).streak, 1)
   })
 
+  it('KNT-183: averages the confidence of the reviews published in the last 30 days; none gives null', async () => {
+    let repo = await orchard()
+    await store.setEnabled(orgId, repo.id, true)
+    assert.equal((await orchard()).confidence, null)
+    let review = async (n: number, score: number, minutesAgo: number, githubReviewId?: number | null) => {
+      let { jobId } = await push(n, n)
+      await publish(jobId!, minutesAgo, githubReviewId === undefined ? 900 + n : githubReviewId)
+      await sql`update reviews set score = ${score} where job_id = ${jobId!}`
+    }
+    // Three published reviews of the 30 days: 5, 3 and 2.
+    await review(1, 5, 60)
+    await review(2, 3, 120)
+    await review(3, 2, 29 * 24 * 60)
+    // One published 31 days ago, and one that was not published: neither counts.
+    await review(4, 1, 31 * 24 * 60)
+    await review(5, 1, 10, null)
+    let { confidence } = await orchard()
+    assert.equal(confidence?.reviews, 3)
+    assert.ok(Math.abs(confidence!.average - 10 / 3) < 1e-9, String(confidence?.average))
+  })
+
   it('a review that was skipped, not published, does not count', async () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)

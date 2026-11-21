@@ -402,7 +402,11 @@ describe('the dashboard', () => {
     assert.match(html, /unknown cost/)
     assert.match(html, /Published reviews · 7 days/)
     assert.match(html, /Changes requested/)
-    assert.match(html, /2\/5/)
+    // KNT-187: the score of a review drawn with its marks, in the band of a low score, and its number.
+    assert.match(
+      html,
+      /<td data-label="Score" class="num mono"><span class="score score-low score-n2"><span aria-hidden="true" class="score-marks">(?:<span><\/span>){5}<\/span><span class="score-value">2\/5<\/span><\/span><\/td>/,
+    )
     assert.match(html, /Alert threshold reached/)
     assert.match(html, /2 reviews or resolutions of the month with no known/)
     assert.match(html, /On <span class="mono">runner-1<\/span>/)
