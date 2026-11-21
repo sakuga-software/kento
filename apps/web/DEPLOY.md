@@ -111,7 +111,7 @@ Make each secret with `openssl rand -hex 32` for the webhook, registration and s
 | `KENTO_PUBLIC_URL` | for the sign-in | `https://kento.example.com` | The origin as the browser sees it: the callback URL, the expected `Origin` of a form, the `Secure` cookie. `http://` only on `localhost` or `127.0.0.1`. Also the link to the Config screen in the comment of a failed job, the page of the commands and the icons of the texts on GitHub. |
 | `GITHUB_APP_CLIENT_ID` | for the sign-in | `Iv23li…` | The client of the user authorization. |
 | `GITHUB_APP_CLIENT_SECRET` | for the sign-in | from section 3 | A secret. |
-| `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | Signs the session cookie; 32 characters or more. Comma-separated during a rotation (section 9). A secret. |
+| `KENTO_SESSION_SECRET` | for the sign-in | 64 hex characters | The first one signs the session cookie and the state of a sign-in, and keys the CSRF tokens; 32 characters or more. A new first one signs everybody out (section 9). A secret. |
 | `KENTO_SECRETS_KEY` | to store provider keys | 44 base64 characters | The master key of the keys of the providers (AES-256-GCM). Without it, the Settings screen stores no key (`startup.secrets_disabled`). See [SECURITY.md](../../SECURITY.md#the-master-key). A secret. |
 | `KENTO_PROVIDER_API_KEY` | no | an OpenRouter key | The key of the service, for the jobs of an org that has no provider. Sent with a job only to a trusted runner of the service with no key of its own, never to a runner of an org. A secret. |
 
@@ -123,6 +123,8 @@ Without them, every screen says "Sign-in unavailable." and nobody gets in.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `DATABASE_POOL_MAX` | `10` | The connections of the pool, 1 to 100. The migrations at startup use one more, closed before the server listens. |
+| `KENTO_TRUSTED_PROXY_HOPS` | required when `KENTO_PUBLIC_URL` is https; else `0` | The proxies in front of the service, 0 to 10. Each one appends to `X-Forwarded-For` the address it got the request from; the client is the entry this many from the end, and the entries before it are never read. `1` behind Traefik alone, `2` behind a CDN then Traefik. With `0` the address of the socket is the client: behind a proxy, every client then shares one sign-in limit. A chain shorter than this, or an entry that is not an address, gives the address of the socket. With 1 or more, the port of the service must be reachable only through the proxy: a client that reaches it directly writes its own address. |
+| `KENTO_SIGN_IN_LIMIT` | `10` | The starts of a GitHub sign-in per minute and per client (an IPv6 client by its /64), 1 to 10000; the callbacks of GitHub get twice as many. Over it, the sign-in page answers 429 and nothing is written. Each start writes a row of `verifications` for 10 minutes. The limit lives in the memory of each process: a restart resets it, and N replicas allow N times as many. |
 | `HOST` | `0.0.0.0` | The address the server listens on. |
 | `PORT` | `3000` | The port the server listens on. |
 | `MIGRATE_ON_START` | `true` | Apply the pending migrations before listening. Keep `true`. |
@@ -189,6 +191,9 @@ A migration already applied is skipped, and a redeploy applies nothing twice.
 - **Exception, migration 0029 (KNT-150).** It moves the GitHub App installation out of `orgs` and
   drops the old columns, so the previous release does not run on the new schema. Follow the steps
   of [the deployment of 0029](#the-deployment-of-migration-0029) instead of a rolling deploy.
+- **Exception, migration 0030 (KNT-150).** It drops the table of the sessions and makes the one of
+  Better Auth: the previous release cannot read a session any more, and every person signs in
+  again once. Follow [the deployment of 0030](#the-deployment-of-migration-0030).
 - `startup.migrations_failed` gives the error of the database. The process stops before it listens,
   and the previous container keeps serving.
 - How to write one: [README.md](README.md#migrations).
@@ -283,6 +288,28 @@ only way back.
    in the settings of the GitHub App and **Redeliver** the deliveries of that window that failed.
 6. To roll back: stop the new release, restore the backup, start the previous release.
 
+### The deployment of migration 0030
+
+Migration 0030 (KNT-150) needs 0029 before it, and nothing else of the state that 0029 left: it
+changes only `users`, `accounts`, `sessions` and `verifications`. Both can run in the same deploy (the service applies every
+pending migration in one start), or 0030 in a later one.
+
+1. Take a backup of the database (`pg_dump`). There is no down migration.
+2. Set `KENTO_TRUSTED_PROXY_HOPS=1` behind Traefik alone (`2` behind a CDN then Traefik). The new
+   release refuses to start without it when `KENTO_PUBLIC_URL` is https: the limits of the sign-in
+   are by client, and with 0 hops every client would have the address of the proxy.
+3. Stop the container of the previous release: it reads the old table of the sessions, and fails
+   on every screen once 0030 commits.
+4. Deploy the new release: it migrates at startup (`/healthz` gives the new number of migrations).
+   Each person signs in again once, with one click on GitHub, and keeps their rights
+   (`memberships` do not change). The cookie of the previous release gives "Session ended." once,
+   and is cleared.
+5. If the old container served webhooks after a migration committed (a rolling deploy, or 0029 in
+   the same deploy), open **Advanced** in the settings of the GitHub App and **Redeliver** the
+   deliveries of that window that failed.
+6. To roll back: stop the new release, restore the backup, start the previous release. Everyone
+   signs in again once more.
+
 **Roll back**: run the image of the previous release again. It does not undo a migration, and the
 previous release runs on the newer schema. Read the entry of the release in
 [CHANGELOG.md](CHANGELOG.md) first: a release that removed a variable may need it back.
@@ -294,9 +321,9 @@ previous release runs on the newer schema. Read the entry of the release in
 - **Webhook secret**: a new value in the environment, deploy, then the same value in the App
   settings, one right after the other. The deliveries in between get 401: redeliver them from
   **Recent Deliveries**.
-- **Session secret**: put the new one first and keep the old one after a comma
-  (`KENTO_SESSION_SECRET=<new>,<old>`), deploy, and remove the old one 7 days later. Removing it at
-  once signs everybody out: that is the way to end every session now.
+- **Session secret**: since KNT-150, Better Auth signs the session cookie with the first secret
+  only. A new first secret signs everybody out: each person signs in again with one click on
+  GitHub, and keeps their rights. That is also the way to end every session now.
 - **Master key of the provider keys**: [SECURITY.md](../../SECURITY.md#the-master-key)
   (`KENTO_SECRETS_PREVIOUS_KEYS`, then `node app/providers/rotate-keys.ts --apply`).
 - **Private key of the App**: generate a new key in the App settings, put it in the environment,

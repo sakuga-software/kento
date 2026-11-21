@@ -1,55 +1,103 @@
-// REV-48. The session of the screens, the signed-in person, the sign-in with GitHub, and the forms of
-// the frame (theme, org, sign-out).
+// REV-48, KNT-150. The session of the screens, the signed-in person, the sign-in with GitHub through
+// Better Auth, and the forms of the frame (theme, org, sign-out).
+import { createHmac, randomBytes } from 'node:crypto'
+
 import { renderToString } from 'remix/component/server'
-import { completeAuth, finishExternalAuth, startExternalAuth } from 'remix/auth'
 import { createCookie } from 'remix/cookie'
 import { cop } from 'remix/middleware/cop'
 import { csrf } from 'remix/middleware/csrf'
 import { formData } from 'remix/middleware/form-data'
-import { session as sessionMiddleware } from 'remix/middleware/session'
-import { createAction, createController, type Middleware } from 'remix/router'
-import { Session } from 'remix/session'
+import { createAction, createContextKey, createController, type Middleware } from 'remix/router'
+import { createSession, Session } from 'remix/session'
 
-import { currentMemberships, decideSignIn, saveSignInRoles } from '../../auth/access.ts'
-import type { GitHubProfile } from '../../auth/github.ts'
-import { readSessionAuth, SESSION_TTL_MS } from '../../auth/session-storage.ts'
+import { currentMemberships } from '../../auth/access.ts'
+import { AUTH_BASE_PATH, sessionCookieName, signInScope, type SignInScope } from '../../auth/better-auth.ts'
+import { clientAddress, createRateLimiter, limitKey, SIGN_IN_STARTS_PER_MINUTE, socketAddressOf } from '../../auth/rate-limit.ts'
 import { errorMessage, log } from '../../log.ts'
 import { authRoutes, pageRoutes } from '../../routes.ts'
 import { securityHeaders } from '../security-headers.ts'
 import { SignInPage, type SignInNotice } from '../sign-in.tsx'
 import { isTheme, readTheme, themeCookie, type Theme } from '../theme.ts'
-import { localPath, redirect, sessionOf, Signed, signedOf, type SignedIn, type UiKit } from './kit.tsx'
+import { localPath, redirect, Signed, signedOf, type SignedIn, type UiKit } from './kit.tsx'
 
 const NOTICES: readonly SignInNotice[] = ['not_member', 'failed', 'signed_out', 'expired', 'disabled']
 
 /** A login of GitHub: what the page "Access refused" accepts to show from its cookie. */
 const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/
 
+/** The session of Better Auth of a request, read once by the session layer. Null: no valid session. */
+interface AuthSession {
+  sessionId: string
+  userId: string
+  activeOrgId: string | null
+  /** 7 days after the sign-in, on the clock of Kentō. */
+  expiresAt: number
+}
+
+const CurrentSession = createContextKey<AuthSession | null>()
+
+/** The org on screen of a session of Better Auth (an additional field of the session). */
+function activeOrgOf(session: object): string | null {
+  let value = (session as { activeOrganizationId?: unknown }).activeOrganizationId
+  return typeof value === 'string' ? value : null
+}
+
 export function createAuth(kit: UiKit) {
   let { deps, assetVersion, now, secure } = kit
   let auth = deps.auth
+  let sessionCookie = sessionCookieName(secure)
+  // KNT-150. The starts of a sign-in and the callbacks, by client (app/auth/rate-limit.ts).
+  let limit = auth?.signInLimit ?? SIGN_IN_STARTS_PER_MINUTE
+  let starts = createRateLimiter({ windowMs: 60_000, max: limit, now })
+  let callbacks = createRateLimiter({ windowMs: 60_000, max: 2 * limit, now })
+  let socketWarned = false
+
+  /**
+   * The CSRF token of a session: an HMAC of its id. Nothing to store, and it changes with the
+   * session. A visitor without a session gets a random token: no form of theirs passes.
+   */
+  function csrfToken(sessionId: string | null): string {
+    if (!auth || sessionId === null) return randomBytes(32).toString('hex')
+    return createHmac('sha256', auth.sessionSecrets[0]!).update(`kento.csrf:${sessionId}`).digest('hex')
+  }
+
+  /** The request carries a session cookie, valid or not. */
+  function hasSessionCookie(cookies: string | null): boolean {
+    return (cookies ?? '').split(/;\s*/).some((pair) => pair.startsWith(`${sessionCookie}=`))
+  }
+
+  // Reads the session of Better Auth once, then gives remix/middleware/csrf the token of that
+  // session in a `Session` of the request only: it is never stored.
+  //
+  // When the session cannot be read (the database does not answer), the screens answer 503 and keep
+  // the cookie: the session works again as soon as the database answers.
+  let readSession: Middleware = async (context, next) => {
+    let found: Awaited<ReturnType<NonNullable<typeof auth>['auth']['api']['getSession']>> = null
+    if (auth) {
+      try {
+        found = await auth.auth.api.getSession({ headers: context.headers, query: { disableCookieCache: true } })
+      } catch (error) {
+        log('warn', 'auth.session_read_failed', { error: errorMessage(error) })
+        return unavailable(context)
+      }
+    }
+    let session: AuthSession | null = found
+      ? {
+          sessionId: found.session.id,
+          userId: found.user.id,
+          activeOrgId: activeOrgOf(found.session),
+          expiresAt: new Date(found.session.expiresAt).getTime(),
+        }
+      : null
+    context.set(CurrentSession, session)
+    context.set(Session, createSession(undefined, [{ _csrf: csrfToken(session?.sessionId ?? null) }, {}]))
+    return next()
+  }
 
   // cop() refuses a cross-site POST from what the browser says (Sec-Fetch-Site, Origin); csrf()
-  // wants the token of the session in each form, and an Origin that is the public URL. The session
-  // cookie is signed, HttpOnly, SameSite=Lax (the callback from GitHub is a top-level GET from
-  // another site, and must carry it), and `__Host-` over HTTPS (no Domain, Path=/, Secure).
+  // wants the token of the session in each form, and an Origin that is the public URL.
   let sessionLayer: Middleware<any>[] = auth
-    ? [
-        cop({ trustedOrigins: [auth.publicUrl.origin] }),
-        sessionMiddleware(
-          createCookie(secure ? '__Host-kento_session' : 'kento_session', {
-            secrets: auth.sessionSecrets,
-            httpOnly: true,
-            secure,
-            sameSite: 'lax',
-            path: '/',
-            maxAge: SESSION_TTL_MS / 1000,
-          }),
-          auth.sessionStorage,
-        ),
-        formData(),
-        csrf({ origin: auth.publicUrl.origin }),
-      ]
+    ? [cop({ trustedOrigins: [auth.publicUrl.origin] }), readSession, formData(), csrf({ origin: auth.publicUrl.origin })]
     : []
 
   // REV-32. The login of a GitHub account that the sign-in refused, for the page "Access refused" that
@@ -83,39 +131,86 @@ export function createAuth(kit: UiKit) {
     return redirect(`${authRoutes.signIn.href()}${search ? `?${search}` : ''}`)
   }
 
+  /** A response of Better Auth with its cookies, as a redirect of Kentō to `location`. */
+  function withCookiesOf(source: Headers, location: string): Response {
+    let response = redirect(location)
+    for (let cookie of source.getSetCookie()) response.headers.append('Set-Cookie', cookie)
+    return response
+  }
+
+  /** Clears the session cookie on a response, whatever the state of the session. */
+  function clearSessionCookie(response: Response): Response {
+    response.headers.append('Set-Cookie', `${sessionCookie}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`)
+    return response
+  }
+
   /**
-   * The signed-in member of the request, read without changing the session. The role comes from
-   * GitHub again when it is older than ten minutes: a person removed from the org on GitHub loses
-   * the access.
+   * The signed-in member of the request. The role comes from GitHub again when it is older than
+   * ten minutes: a person removed from the org on GitHub loses the access.
    */
-  async function readViewer(
-    context: { get(key: typeof Session): Session | undefined },
-  ): Promise<
+  async function readViewer(context: {
+    get(key: typeof CurrentSession): AuthSession | null | undefined
+    headers: Headers
+  }): Promise<
     | { kind: 'signed'; signed: SignedIn; orgMoved: boolean }
-    | { kind: 'anonymous' | 'expired' | 'gone' }
+    | { kind: 'anonymous' | 'expired' }
+    | { kind: 'gone'; sessionId: string; expired?: boolean }
     | { kind: 'unconfirmed'; login: string; orgs: number }
   > {
     if (!auth) return { kind: 'anonymous' }
-    let session = sessionOf(context)
-    let record = readSessionAuth(session)
-    if (!record) return { kind: 'anonymous' }
-    if (record.signedInAt + SESSION_TTL_MS <= now()) return { kind: 'expired' }
-    let user = await auth.store.findUser(record.userId)
-    if (!user) return { kind: 'gone' }
+    let session = context.get(CurrentSession) ?? null
+    if (!session) return { kind: hasSessionCookie(context.headers.get('Cookie')) ? 'expired' : 'anonymous' }
+    // Better Auth ends a session at its `expires_at`; Kentō checks it again on its own clock.
+    if (session.expiresAt <= now()) return { kind: 'gone', sessionId: session.sessionId, expired: true }
+    let user = await auth.store.findUser(session.userId)
+    if (!user) return { kind: 'gone', sessionId: session.sessionId }
     let { memberships, unconfirmed } = await currentMemberships(auth.store, auth.lookupRole, user, now())
     // GitHub has not answered for over an hour: no access, but no sign-out either. The session
     // works again as soon as GitHub confirms the role.
     if (memberships.length === 0 && unconfirmed > 0) return { kind: 'unconfirmed', login: user.login, orgs: unconfirmed }
-    if (memberships.length === 0) return { kind: 'gone' }
-    let orgId = session.get('orgId')
-    let membership = memberships.find((m) => m.org.id === orgId)
+    if (memberships.length === 0) return { kind: 'gone', sessionId: session.sessionId }
+    let membership = memberships.find((m) => m.org.id === session.activeOrgId)
     // The org of the session is gone (left on GitHub, or suspended): the first org that remains.
-    return { kind: 'signed', signed: { user, membership: membership ?? memberships[0]!, memberships }, orgMoved: !membership }
+    return {
+      kind: 'signed',
+      signed: { sessionId: session.sessionId, user, membership: membership ?? memberships[0]!, memberships },
+      orgMoved: !membership,
+    }
   }
 
   /** The 503 of the screens while GitHub does not confirm the role. */
   async function roleUnconfirmed(context: { headers: Headers }, login: string, orgs: number) {
     log('warn', 'auth.role_unconfirmed', { login, orgs })
+    return unavailable(context)
+  }
+
+  /** The address of the client of a request, as the limits and the session see it. */
+  function clientOf(request: Request): string | null {
+    return clientAddress(request, socketAddressOf(request), auth?.trustedProxyHops ?? 0)
+  }
+
+  /**
+   * KNT-150. A client over the limit of a step of the sign-in gets the sign-in page in a 429, and
+   * nothing is written. A request whose socket nobody wrote (server.ts writes it for each request;
+   * only a test of the routes has none) shares one limit with the others like it: never no limit.
+   */
+  async function overLimit(limiter: ReturnType<typeof createRateLimiter>, context: { request: Request; headers: Headers }, step: 'start' | 'callback') {
+    let address = clientOf(context.request)
+    if (address === null && !socketWarned) {
+      socketWarned = true
+      log('warn', 'auth.client_address_missing', { reason: 'no socket address for a request: one shared sign-in limit' })
+    }
+    if (limiter.hit(address === null ? 'no-socket' : limitKey(address))) return null
+    log('warn', 'auth.sign_in_limited', { step })
+    let html = await renderToString(signInPage(readTheme(context.headers.get('Cookie')), 'rate_limited', '/'))
+    return new Response(`<!DOCTYPE html>${html}`, {
+      status: 429,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '60' },
+    })
+  }
+
+  /** The 503 of the screens: the sign-in cannot be checked now. Nothing changes in the session. */
+  async function unavailable(context: { headers: Headers }) {
     let html = await renderToString(
       <SignInPage
         theme={readTheme(context.headers.get('Cookie'))}
@@ -138,19 +233,21 @@ export function createAuth(kit: UiKit) {
     let viewer = await readViewer(context)
     if (viewer.kind === 'unconfirmed') return roleUnconfirmed(context, viewer.login, viewer.orgs)
     if (viewer.kind !== 'signed') {
-      if (viewer.kind !== 'anonymous') sessionOf(context).destroy()
+      // A session whose person has no org left ends here, and its cookie with it.
+      if (viewer.kind === 'gone') await auth!.store.deleteSession(viewer.sessionId)
       let notice: SignInNotice | undefined = viewer.kind === 'anonymous' ? undefined : 'expired'
-      return isGet ? toSignIn(path, notice) : new Response('Unauthorized', { status: 401 })
+      let response = isGet ? toSignIn(path, notice) : new Response('Unauthorized', { status: 401 })
+      return viewer.kind === 'anonymous' ? response : clearSessionCookie(response)
     }
     // The session moves to the org on screen, and stays there, so the org and the role match.
-    if (viewer.orgMoved) sessionOf(context).set('orgId', viewer.signed.membership.org.id)
+    if (viewer.orgMoved) await auth!.store.setActiveOrg(viewer.signed.sessionId, viewer.signed.membership.org.id)
     context.set(Signed, viewer.signed)
     return next()
   }
 
   /**
    * REV-40. The middleware of the 404 page: the person is signed in or not; either way the 404 stays,
-   * in the frame, in French.
+   * in the frame.
    */
   let optionalViewer: Middleware = async (context, next) => {
     // Reads the session and changes nothing in it: an unknown URL never signs a person out.
@@ -191,13 +288,11 @@ export function createAuth(kit: UiKit) {
         let cookies = context.headers.get('Cookie')
         // Any visit of the page empties the cookie of a refusal, forged or not, whatever the answer.
         let leftover = hasRefused(cookies)
-        if (auth) {
-          let record = readSessionAuth(sessionOf(context))
-          if (record && record.signedInAt + SESSION_TTL_MS > now()) {
-            let back = redirect(returnTo)
-            if (leftover) back.headers.append('Set-Cookie', await clearRefused())
-            return back
-          }
+        let current = context.get(CurrentSession)
+        if (auth && current && current.expiresAt > now()) {
+          let back = redirect(returnTo)
+          if (leftover) back.headers.append('Set-Cookie', await clearRefused())
+          return back
         }
         let theme = readTheme(cookies)
         let known = NOTICES.find((n) => n === notice) ?? null
@@ -210,65 +305,89 @@ export function createAuth(kit: UiKit) {
 
       async signInGitHub(context) {
         if (!auth) return redirect(authRoutes.signIn.href())
-        let response = await startExternalAuth(auth.provider, context, {
-          returnTo: localPath(context.url.searchParams.get('returnTo')),
-        })
-        // REV-32. "Switch GitHub account": GitHub shows its account picker instead of signing in
-        // the same account again.
-        // A new sign-in starts: the login of an earlier refusal has no use now.
-        if (hasRefused(context.headers.get('Cookie'))) response.headers.append('Set-Cookie', await clearRefused())
-        let location = response.headers.get('Location')
-        if (context.url.searchParams.get('switch') !== '1' || !location) return response
-        let url = new URL(location)
-        url.searchParams.set('prompt', 'select_account')
-        // A new response: the headers of the one of `remix/auth` may be immutable.
-        let headers = new Headers(response.headers)
-        headers.set('Location', url.href)
-        return new Response(null, { status: response.status, headers })
-      },
-
-      // GitHub comes back here. The person gets a session only when GitHub counts them in an org
-      // of the App: nothing is written for anyone else.
-      async callback(context) {
-        if (!auth) return redirect(authRoutes.signIn.href())
-        let profile: GitHubProfile
-        let returnTo: string | undefined
+        // Each start writes a row of `verifications`: one client writes a bounded number of them.
+        let limited = await overLimit(starts, context, 'start')
+        if (limited) return limited
+        let started: { headers: Headers; response: { url?: string } }
         try {
-          let finished = await finishExternalAuth(auth.provider, context)
-          profile = finished.result.profile
-          returnTo = finished.returnTo
+          started = (await auth.auth.api.signInSocial({
+            body: {
+              provider: 'github',
+              callbackURL: localPath(context.url.searchParams.get('returnTo')),
+              errorCallbackURL: authRoutes.signIn.href(),
+              disableRedirect: true,
+            },
+            headers: context.headers,
+            returnHeaders: true,
+          })) as { headers: Headers; response: { url?: string } }
         } catch (error) {
           log('warn', 'auth.sign_in_failed', { error: errorMessage(error) })
-          sessionOf(context).destroy()
           return redirect(`${authRoutes.signIn.href()}?notice=failed`)
         }
+        if (!started.response.url) return redirect(`${authRoutes.signIn.href()}?notice=failed`)
+        let url = new URL(started.response.url)
+        // REV-32. "Switch GitHub account": GitHub shows its account picker instead of signing in
+        // the same account again.
+        if (context.url.searchParams.get('switch') === '1') url.searchParams.set('prompt', 'select_account')
+        let response = withCookiesOf(started.headers, url.href)
+        response.headers.set('Location', url.href)
+        // A new sign-in starts: the login of an earlier refusal has no use now.
+        if (hasRefused(context.headers.get('Cookie'))) response.headers.append('Set-Cookie', await clearRefused())
+        return response
+      },
 
-        let decision = await decideSignIn(auth.store, auth.lookupRole, profile)
-        if (decision.kind !== 'allowed') {
-          log('info', 'auth.sign_in_refused', { login: profile.login, reason: decision.kind })
-          sessionOf(context).destroy()
-          let refused = redirect(`${authRoutes.signIn.href()}?notice=${decision.kind === 'refused' ? 'not_member' : 'failed'}`)
-          if (decision.kind === 'refused' && refusedCookie) refused.headers.append('Set-Cookie', await refusedCookie.serialize(profile.login))
-          return refused
+      // GitHub comes back here, at the callback URL of the GitHub App. The callback of Better Auth
+      // runs it: the person gets a session only when GitHub counts them in an org of the App, and
+      // nothing is written for anyone else.
+      async callback(context) {
+        if (!auth) return redirect(authRoutes.signIn.href())
+        let limited = await overLimit(callbacks, context, 'callback')
+        if (limited) return limited
+        let previous = context.get(CurrentSession) ?? null
+        let scope: SignInScope = { profile: null, decision: null, clientIp: clientOf(context.request) }
+        let target = new URL(`${AUTH_BASE_PATH}/callback/github${context.url.search}`, auth.publicUrl)
+        let answer: Response
+        try {
+          answer = await signInScope.run(scope, () =>
+            auth!.auth.handler(new Request(target, { method: 'GET', headers: context.request.headers })),
+          )
+        } catch (error) {
+          log('warn', 'auth.sign_in_failed', { error: errorMessage(error) })
+          return redirect(`${authRoutes.signIn.href()}?notice=failed`)
         }
-
-        let user = await auth.store.upsertUser(profile)
-        let signedIn = await clearRefused()
-        await saveSignInRoles(auth.store, user, decision.roles, decision.unconfirmed)
-        // A new session id: an id known before the sign-in never becomes a signed-in one.
-        let session = completeAuth(context)
+        let location = new URL(answer.headers.get('Location') ?? authRoutes.signIn.href(), auth.publicUrl)
+        // A success is a sign-in that Kentō allowed and that got a session cookie. The address that
+        // Better Auth redirects to is the `returnTo` of the person then, which may hold anything.
+        let cookies = answer.headers.getSetCookie()
+        let signedIn =
+          scope.decision?.kind === 'allowed' &&
+          answer.status >= 300 &&
+          answer.status < 400 &&
+          cookies.some((cookie) => cookie.startsWith(`${sessionCookie}=`) && !cookie.startsWith(`${sessionCookie}=;`))
+        if (!signedIn) {
+          if (scope.decision?.kind !== 'refused' && scope.decision?.kind !== 'unknown') {
+            let error = answer.status >= 300 && answer.status < 400 ? location.searchParams.get('error') : 'no_redirect'
+            log('warn', 'auth.sign_in_failed', { error: error ?? 'no decision' })
+          }
+          let refused = scope.decision?.kind === 'refused'
+          let response = redirect(`${authRoutes.signIn.href()}?notice=${refused ? 'not_member' : 'failed'}`)
+          // The cookies of Better Auth, but never a session cookie: the state of the sign-in, cleared.
+          for (let cookie of cookies) if (!cookie.startsWith(`${sessionCookie}=`)) response.headers.append('Set-Cookie', cookie)
+          if (refused && refusedCookie && scope.profile) response.headers.append('Set-Cookie', await refusedCookie.serialize(scope.profile.login))
+          return response
+        }
         // A sign-in from a session that was already signed in (another account, or the same one)
-        // keeps nothing of it: not its user, its org, nor its CSRF token.
-        for (let key of ['auth', 'orgId', '_csrf']) session.unset(key)
-        session.set('auth', { userId: user.id, signedInAt: now() })
-        let first = decision.roles.find((r) => r.role === 'admin') ?? decision.roles[0]!
-        session.set('orgId', first.org.id)
-        log('info', 'auth.signed_in', {
-          login: user.login,
-          orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`),
-        })
-        let done = redirect(localPath(returnTo ?? '/'))
-        done.headers.append('Set-Cookie', signedIn)
+        // keeps nothing of it once it succeeds: the row of the old session goes. The new row has an id
+        // of its own (a random uuid), so this delete never touches it. A refused or failed sign-in
+        // keeps the old session as it was, and a failure of the delete is logged, never a lost sign-in.
+        if (previous) {
+          await auth.store.deleteSession(previous.sessionId).catch((error: unknown) => {
+            log('warn', 'auth.previous_session_not_deleted', { error: errorMessage(error) })
+          })
+        }
+        let done = withCookiesOf(answer.headers, localPath(`${location.pathname}${location.search}`))
+        // The login of an earlier refusal has no use now.
+        if (refusedCookie) done.headers.append('Set-Cookie', await clearRefused())
         return done
       },
     },
@@ -286,19 +405,21 @@ export function createAuth(kit: UiKit) {
     }),
 
     // The org on screen, for a person who is a member of several.
-    org: createAction(pageRoutes.org, (context) => {
+    org: createAction(pageRoutes.org, async (context) => {
       let form = context.get(FormData)
       let orgId = form?.get('orgId')
-      if (typeof orgId === 'string' && signedOf(context).memberships.some((m) => m.org.id === orgId)) {
-        sessionOf(context).set('orgId', orgId)
+      let signed = signedOf(context)
+      if (typeof orgId === 'string' && signed.memberships.some((m) => m.org.id === orgId)) {
+        await auth!.store.setActiveOrg(signed.sessionId, orgId)
       }
       return redirect(localPath(form?.get('returnTo')))
     }),
 
-    signOut: createAction(pageRoutes.signOut, (context) => {
-      log('info', 'auth.signed_out', { login: signedOf(context).user.login })
-      sessionOf(context).destroy()
-      return redirect(`${authRoutes.signIn.href()}?notice=signed_out`)
+    signOut: createAction(pageRoutes.signOut, async (context) => {
+      let signed = signedOf(context)
+      log('info', 'auth.signed_out', { login: signed.user.login })
+      await auth!.store.deleteSession(signed.sessionId)
+      return clearSessionCookie(redirect(`${authRoutes.signIn.href()}?notice=signed_out`))
     }),
   }
 

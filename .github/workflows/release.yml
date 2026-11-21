@@ -1,0 +1,132 @@
+name: Release
+
+# A tag vX.Y.Z publishes a release: the runner image on ghcr.io, then the GitHub release with the
+# section of that version in apps/web/CHANGELOG.md. The Runners screen gives
+# `<KENTO_RUNNER_IMAGE>:<version of the service>`, so the tag, apps/web and apps/runner must have the
+# same version. The steps for a maintainer are in apps/runner/DEPLOY.md, "Publish a release".
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          for file in apps/web/package.json apps/runner/package.json; do
+            found=$(node -p "require('./$file').version")
+            if [ "$found" != "$version" ]; then
+              echo "::error file=$file::version $found, but the tag is $TAG"; exit 1
+            fi
+          done
+          if ! grep -Eq "^## ${version//./\\.}( |$)" apps/web/CHANGELOG.md; then
+            echo "::error file=apps/web/CHANGELOG.md::no section '## $version'"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Runner image
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/kento-runner
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The image must start before any tag of it is public: build it for this machine, check it,
+      # then push every platform. The push reuses the cache of the first build.
+      - name: Build the image for the check
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/runner/Dockerfile
+          platforms: linux/amd64
+          build-args: APP_COMMIT=${{ github.sha }}
+          tags: kento-runner:check
+          load: true
+          push: false
+      # As in the Runner workflow: without KENTO_URL, the image must stop with the name of the
+      # variable in its log.
+      - name: Start the image
+        run: |
+          set -o pipefail
+          if docker run --rm kento-runner:check > out.log 2>&1; then
+            echo "::error::the runner started without KENTO_URL"; exit 1
+          fi
+          cat out.log
+          grep -q '"event":"startup.config_invalid".*KENTO_URL' out.log
+      - name: Push the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/runner/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: APP_COMMIT=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          push: true
+
+  release:
+    name: GitHub release
+    needs: [check, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish the notes of the CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.check.outputs.version }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          awk -v v="$VERSION" '
+            $0 ~ "^## " { if (inside) exit; if ($2 == v) { inside = 1; next } }
+            inside { print }
+          ' apps/web/CHANGELOG.md > notes.md
+          {
+            echo
+            echo "Runner image: \`ghcr.io/$OWNER/kento-runner:$VERSION\`."
+            echo "The links of these notes are relative to [apps/web/CHANGELOG.md](https://github.com/$REPO/blob/$TAG/apps/web/CHANGELOG.md)."
+          } >> notes.md
+          gh release create "$TAG" --repo "$REPO" --verify-tag --title "Kentō $VERSION" --notes-file notes.md

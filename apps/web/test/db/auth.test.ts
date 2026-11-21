@@ -1,27 +1,75 @@
 import * as assert from 'remix/assert'
-import { createSession } from 'remix/session'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import {
-  createPostgresSessionStorage,
-  PENDING_SIGN_IN_TTL_MS,
+  createKentoAuth,
+  githubEmail,
+  postgresAuthDatabase,
   SESSION_TTL_MS,
-  sessionIdHash,
-} from '../../app/auth/session-storage.ts'
-import { createAuthStore } from '../../app/auth/store.ts'
+  sessionTokenHash,
+  type AuthDatabase,
+  type KentoAuth,
+} from '../../app/auth/better-auth.ts'
+import type { GitHubOAuth, GitHubProfile, OrgRole } from '../../app/auth/github.ts'
+import { createAuthStore, type AuthStore } from '../../app/auth/store.ts'
+import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
+import { createAppRouter } from '../../app/router.ts'
+import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createTestDatabase, insertOrg as insertOrgRow } from './helpers.ts'
 
-describe('sessions and people in Postgres', () => {
+// KNT-150. The sign-in of Better Auth on the tables of Kentō, from the start at GitHub to the row in
+// `sessions`, against Postgres.
+
+const PUBLIC_URL = new URL('https://kento.example.com')
+
+describe('the sign-in and the sessions in Postgres', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
-  let clock = { now: Date.parse('2026-10-28T12:00:00Z') }
+  let store: AuthStore
+  let auth: KentoAuth
+  let profile: GitHubProfile
+  let roles: Map<string, OrgRole | null>
+  let router: ReturnType<typeof createAppRouter>
+  let makeRouter: (authDatabase: AuthDatabase) => { auth: KentoAuth; router: ReturnType<typeof createAppRouter> }
 
   before(async () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 2 })
+    store = createAuthStore(database.sql)
+    let github: GitHubOAuth = {
+      clientId: 'Iv1.test',
+      clientSecret: 'client-secret-for-the-tests',
+      authorizationUrl: 'https://github.test/login/oauth/authorize',
+      tokenUrl: 'https://github.test/login/oauth/access_token',
+      redirectUri: new URL('/auth/github/callback', PUBLIC_URL),
+      async exchangeCode({ code }) {
+        if (code !== 'good') throw new Error('GitHub refused the code: 400 bad_verification_code')
+        return { accessToken: 'gho_user_token' }
+      },
+      async readProfile() {
+        return profile
+      },
+    }
+    let lookupRole = async (installation: { login: string }, person: { login: string }) => roles.get(`${installation.login}/${person.login}`) ?? null
+    let secret = 'a-session-secret-for-the-tests-0123456789'
+    makeRouter = (authDatabase) => {
+      let made = createKentoAuth({ database: authDatabase, publicUrl: PUBLIC_URL, secret, github, store, lookupRole })
+      return {
+        auth: made,
+        router: createAppRouter({
+          checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
+          version: '1.2.3',
+          commit: null,
+          webhook: disabledWebhook,
+          // Every request of these tests comes with no socket, so they share one limit: a high one.
+          auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth: made, store, lookupRole, signInLimit: 1000 },
+        }),
+      }
+    }
+    ;({ auth, router } = makeRouter(postgresAuthDatabase(database.db)))
   })
 
   after(async () => {
@@ -30,154 +78,244 @@ describe('sessions and people in Postgres', () => {
   })
 
   beforeEach(async () => {
-    clock.now = Date.parse('2026-10-28T12:00:00Z')
-    await database.sql`truncate sessions, memberships, users, orgs cascade`
+    await database.sql`truncate sessions, verifications, accounts, memberships, users, orgs cascade`
+    profile = { id: 1, login: 'octocat', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/1' }
+    roles = new Map()
   })
 
-  async function insertOrg(login: string, installationId: number, suspended = false) {
-    return insertOrgRow(database.sql, login, installationId, installationId + 1000, { suspended })
+  function request(path: string, cookie?: string) {
+    return router.fetch(new Request(new URL(path, 'http://localhost'), { headers: cookie ? { Cookie: cookie } : {} }))
   }
 
-  async function rows() {
-    return database.sql<{ id_hash: string; user_id: string | null; data: unknown; expires_at: string }[]>`
-      select id_hash, user_id, data, expires_at from sessions
-    `
+  async function signIn() {
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookiesOf(start))
+    let pair = callback.headers.getSetCookie().find((c) => c.startsWith(`${SESSION_COOKIE}=`))?.split(';')[0] ?? null
+    return { callback, cookie: pair }
   }
 
-  describe('the session storage', () => {
-    it('keeps nothing for a visit: no row, no cookie', async () => {
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let session = await storage.read(null)
-      session.set('_csrf', 'token')
+  it('creates the user and its account, a session under the hash of its token, and no token of GitHub', async () => {
+    let orgId = await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
 
-      assert.equal(await storage.save(session), null)
-      assert.equal((await rows()).length, 0)
+    let { callback, cookie } = await signIn()
+    assert.equal(callback.headers.get('Location'), '/')
+    assert.ok(cookie)
+
+    let [user] = await database.sql<{ id: string; githubId: number; login: string; name: string | null; email: string; lastSignInAt: unknown }[]>`
+      select id, github_id::float8 as "githubId", login, name, email, last_sign_in_at as "lastSignInAt" from users`
+    assert.deepEqual({ ...user, id: undefined, lastSignInAt: undefined }, {
+      id: undefined, githubId: 1, login: 'octocat', name: 'Octocat', email: githubEmail(1), lastSignInAt: undefined,
     })
+    assert.notEqual(user!.lastSignInAt, null)
 
-    it('keeps a sign-in on its way for ten minutes, under the hash of its id only', async () => {
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let session = await storage.read(null)
-      session.set('__auth', { provider: 'github', state: 's', codeVerifier: 'v' })
+    let accounts = await database.sql`select provider_id, account_id, access_token, refresh_token, id_token from accounts`
+    assert.deepEqual(accounts.map((a) => ({ ...a })), [{ provider_id: 'github', account_id: '1', access_token: null, refresh_token: null, id_token: null }])
+    assert.equal(JSON.stringify(await database.sql`select * from accounts`).includes('gho_user_token'), false)
 
-      let cookie = await storage.save(session)
+    let [session] = await database.sql<{ tokenHash: string; userId: string; activeOrg: string; expiresAt: Date }[]>`
+      select token_hash as "tokenHash", user_id as "userId", active_organization_id as "activeOrg", expires_at as "expiresAt" from sessions`
+    let token = decodeURIComponent(cookie!.split('=')[1]!).split('.')[0]!
+    assert.equal(session!.tokenHash, sessionTokenHash(token))
+    assert.equal(JSON.stringify(await database.sql`select * from sessions`).includes(token), false, 'the token itself is not in the table')
+    assert.equal(session!.userId, user!.id)
+    assert.equal(session!.activeOrg, orgId)
+    let ttl = new Date(session!.expiresAt).getTime() - Date.now()
+    assert.ok(ttl > SESSION_TTL_MS - 60_000 && ttl <= SESSION_TTL_MS, 'seven days from the sign-in')
 
-      assert.equal(cookie, session.id)
-      let [row] = await rows()
-      assert.equal(row!.id_hash, sessionIdHash(session.id))
-      assert.ok(!JSON.stringify(row).includes(session.id), 'the id itself is not in the table')
-      assert.equal(row!.user_id, null)
-      assert.equal(new Date(row!.expires_at).getTime(), clock.now + PENDING_SIGN_IN_TTL_MS)
+    let [membership] = await database.sql`select role from memberships`
+    assert.equal(membership!.role, 'admin')
+    // The verification of the sign-in (its state) is gone once used.
+    assert.equal((await database.sql`select 1 from verifications`).length, 0)
 
-      let again = await storage.read(cookie)
-      assert.deepEqual(again.get('__auth'), { provider: 'github', state: 's', codeVerifier: 'v' })
-    })
-
-    it('keeps a signed-in session seven days from the sign-in, with its user, then forgets it', async () => {
-      let store = createAuthStore(database.sql)
-      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let session = await storage.read(null)
-      session.set('auth', { userId: user.id, signedInAt: clock.now })
-      let cookie = (await storage.save(session))!
-
-      let [row] = await rows()
-      assert.equal(row!.user_id, user.id)
-      assert.equal(new Date(row!.expires_at).getTime(), clock.now + SESSION_TTL_MS)
-
-      clock.now += SESSION_TTL_MS
-      let expired = await storage.read(cookie)
-      assert.equal(expired.get('auth'), undefined)
-      assert.notEqual(expired.id, cookie)
-
-      assert.equal(await storage.sweep(), 1)
-      assert.equal((await rows()).length, 0)
-    })
-
-    it('deletes the row of the old id when the sign-in gives a new one, and at sign-out', async () => {
-      let store = createAuthStore(database.sql)
-      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let pending = await storage.read(null)
-      pending.set('__auth', { provider: 'github', state: 's', codeVerifier: 'v' })
-      let first = (await storage.save(pending))!
-
-      let session = await storage.read(first)
-      session.unset('__auth')
-      session.regenerateId(true)
-      session.set('auth', { userId: user.id, signedInAt: clock.now })
-      let second = (await storage.save(session))!
-
-      assert.notEqual(second, first)
-      assert.deepEqual((await rows()).map((r) => r.id_hash), [sessionIdHash(second)])
-      assert.equal((await storage.read(first)).get('auth'), undefined)
-
-      let signedIn = await storage.read(second)
-      signedIn.destroy()
-      assert.equal(await storage.save(signedIn), '')
-      assert.equal((await rows()).length, 0)
-    })
-
-    it('deletes a stored session that no longer holds a sign-in, and clears its cookie', async () => {
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let pending = createSession()
-      pending.set('__auth', { provider: 'github', state: 's', codeVerifier: 'v' })
-      let cookie = (await storage.save(pending))!
-
-      let session = await storage.read(cookie)
-      session.unset('__auth')
-
-      assert.equal(await storage.save(session), '')
-      assert.equal((await rows()).length, 0)
-    })
-
-    it('reads nothing from a cookie that is not in the table', async () => {
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let session = await storage.read('00000000-0000-4000-8000-000000000000')
-      assert.notEqual(session.id, '00000000-0000-4000-8000-000000000000')
-    })
+    let screen = await request('/', cookie!)
+    assert.equal(screen.status, 200)
   })
 
-  describe('the store of people', () => {
-    it('creates a user once per GitHub account, and follows a new login', async () => {
-      let store = createAuthStore(database.sql)
-      let first = await store.upsertUser({ id: 77, login: 'old-login', name: 'Octocat', avatarUrl: null })
-      let second = await store.upsertUser({ id: 77, login: 'new-login', name: 'Octocat', avatarUrl: 'https://avatars.githubusercontent.com/u/77' })
+  it('reads the session back with the token of the cookie, never its hash, and never signs a new cookie', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let { cookie } = await signIn()
+    let token = decodeURIComponent(cookie!.split('=')[1]!).split('.')[0]!
+    for (let n = 0; n < 2; n++) {
+      let found = await auth.api.getSession({ headers: new Headers({ Cookie: cookie! }), query: { disableCookieCache: true } })
+      assert.equal(found?.session.token, token)
+      let screen = await request('/', cookie!)
+      assert.equal(screen.status, 200)
+      // No refresh and no cookie cache: the cookie of the sign-in is the only one.
+      assert.equal(screen.headers.getSetCookie().some((c) => c.startsWith(`${SESSION_COOKIE}=`)), false)
+    }
+  })
 
-      assert.equal(second.id, first.id)
-      assert.deepEqual(await store.findUser(first.id), {
-        id: first.id,
-        githubId: 77,
-        login: 'new-login',
-        name: 'Octocat',
-        avatarUrl: 'https://avatars.githubusercontent.com/u/77',
-      })
-    })
+  it('ends the sessions of a user by user id through Better Auth, and never hands out a hash as a token', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let first = await signIn()
+    let second = await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    assert.equal((await database.sql`select 1 from sessions`).length, 2, 'two browsers, two sessions')
+    let context = await auth.$context
+    await context.internalAdapter.deleteUserSessions(user!.id)
+    assert.equal((await database.sql`select 1 from sessions`).length, 0)
+    for (let cookie of [first.cookie, second.cookie]) assert.equal((await request('/', cookie!)).status, 303)
+  })
 
-    it('lists the memberships in the orgs that are not suspended, and forgets a deleted user everywhere', async () => {
-      let store = createAuthStore(database.sql)
-      let active = await insertOrg('sakuga-software', 11)
-      let suspended = await insertOrg('orchard', 12, true)
-      let user = await store.upsertUser({ id: 1, login: 'octocat', name: null, avatarUrl: null })
-      await store.saveMembership(user.id, active, 'admin')
-      await store.saveMembership(user.id, suspended, 'member')
-      await store.saveMembership(user.id, active, 'member')
+  it('refuses a person outside of every org: no user, no account, no session', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    let { callback, cookie } = await signIn()
+    assert.equal(callback.headers.get('Location'), '/login?notice=not_member')
+    assert.equal(cookie, null)
+    let [counts] = await database.sql<{ users: number; accounts: number; sessions: number }[]>`
+      select (select count(*)::int from users) as users, (select count(*)::int from accounts) as accounts, (select count(*)::int from sessions) as sessions`
+    assert.deepEqual({ ...counts }, { users: 0, accounts: 0, sessions: 0 })
+  })
 
-      let memberships = await store.memberships(user.id)
-      assert.deepEqual(
-        memberships.map((m) => [m.org.name, m.role, m.org.installations.map((i) => i.githubInstallationId)]),
-        [['sakuga-software', 'member', [11]]],
-      )
-      assert.deepEqual((await store.activeOrgs()).map((o) => o.name), ['sakuga-software'])
+  it('signs the same GitHub account in to the same user, and follows its new login', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'member')
+    roles.set('acme/new-login', 'member')
+    await signIn()
+    profile = { ...profile, login: 'new-login', name: null }
+    await signIn()
+    let users = await database.sql`select login, name from users`
+    assert.deepEqual(users.map((u) => ({ ...u })), [{ login: 'new-login', name: null }])
+    assert.equal((await database.sql`select 1 from accounts`).length, 1)
+  })
 
-      let storage = createPostgresSessionStorage(database.sql, { now: () => clock.now })
-      let session = createSession()
-      session.set('auth', { userId: user.id, signedInAt: clock.now })
-      await storage.save(session)
+  it('a cookie with the hash of the token opens nothing, sign-out deletes the row, and the sweep deletes the expired ones', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let { cookie } = await signIn()
+    let [row] = await database.sql<{ tokenHash: string }[]>`select token_hash as "tokenHash" from sessions`
+    // A copy of the table gives the hash: the hash in a cookie is not a session.
+    assert.equal(await auth.api.getSession({ headers: new Headers({ Cookie: `${SESSION_COOKIE}=${row!.tokenHash}` }) }), null)
 
-      await database.sql`delete from users where id = ${user.id}`
-      assert.equal((await rows()).length, 0)
-      let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from memberships`
-      assert.equal(count!.n, 0)
-    })
+    let page = await (await request('/', cookie!)).text()
+    let csrf = /name="_csrf" value="([0-9a-f]+)"/.exec(page)![1]!
+    let out = await router.fetch(
+      new Request('http://localhost/logout', {
+        method: 'POST',
+        headers: { Cookie: cookie!, Origin: PUBLIC_URL.origin, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ _csrf: csrf }),
+      }),
+    )
+    assert.equal(out.status, 303)
+    assert.equal((await database.sql`select 1 from sessions`).length, 0)
+    assert.equal((await request('/', cookie!)).status, 303)
+
+    await signIn()
+    await database.sql`update sessions set expires_at = now() - interval '1 second'`
+    await database.sql`insert into verifications (identifier, value, expires_at) values ('old', 'x', now() - interval '1 second')`
+    assert.equal(await store.sweep(), 2)
+  })
+
+  it('lists the memberships in the orgs that are not suspended, and forgets a deleted user everywhere', async () => {
+    let active = await insertOrgRow(database.sql, 'sakuga-software', 11)
+    let suspended = await insertOrgRow(database.sql, 'orchard', 12, 1012, { suspended: true })
+    roles.set('sakuga-software/octocat', 'admin')
+    await signIn()
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    await store.saveMembership(user!.id, suspended, 'member')
+    await store.saveMembership(user!.id, active, 'member')
+
+    let memberships = await store.memberships(user!.id)
+    assert.deepEqual(
+      memberships.map((m) => [m.org.name, m.role, m.org.installations.map((i) => i.githubInstallationId)]),
+      [['sakuga-software', 'member', [11]]],
+    )
+    assert.deepEqual((await store.activeOrgs()).map((o) => o.name), ['sakuga-software'])
+
+    await database.sql`delete from users where id = ${user!.id}`
+    let [counts] = await database.sql<{ sessions: number; memberships: number; accounts: number }[]>`
+      select (select count(*)::int from sessions) as sessions, (select count(*)::int from memberships) as memberships,
+        (select count(*)::int from accounts) as accounts`
+    assert.deepEqual({ ...counts }, { sessions: 0, memberships: 0, accounts: 0 })
+  })
+
+  it('KNT-150: a session read other than by its token comes back without a token, never with its hash', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    await signIn()
+    let [row] = await database.sql<{ id: string; userId: string; tokenHash: string }[]>`
+      select id, user_id as "userId", token_hash as "tokenHash" from sessions`
+    let context = await auth.$context
+    let listed = await context.adapter.findMany<Record<string, unknown>>({ model: 'session', where: [{ field: 'userId', value: row!.userId }] })
+    assert.equal(listed.length, 1)
+    assert.equal('token' in listed[0]!, false)
+    assert.equal(JSON.stringify(listed).includes(row!.tokenHash), false)
+    let byId = await context.adapter.findOne<Record<string, unknown>>({ model: 'session', where: [{ field: 'id', value: row!.id }] })
+    assert.ok(byId)
+    assert.equal('token' in byId, false)
+    let updated = await context.adapter.update<Record<string, unknown>>({ model: 'session', where: [{ field: 'id', value: row!.id }], update: { userAgent: 'x' } })
+    assert.equal(JSON.stringify(updated).includes(row!.tokenHash), false)
+  })
+
+  it('KNT-150: the state of a sign-in is used once, even by callbacks at the same time', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    // A slow database: a delete of a state waits, so that the three callbacks read it before any
+    // delete. Only a read that deletes in the same statement lets one callback through.
+    let slow: AuthDatabase = (options) => {
+      let adapter = postgresAuthDatabase(database.db)(options)
+      let wait = () => new Promise((resolve) => setTimeout(resolve, 150))
+      return {
+        ...adapter,
+        delete: async (input) => (input.model === 'verification' ? (await wait(), adapter.delete(input)) : adapter.delete(input)),
+        deleteMany: async (input) => (input.model === 'verification' ? (await wait(), adapter.deleteMany(input)) : adapter.deleteMany(input)),
+      }
+    }
+    let racy = makeRouter(slow).router
+    // The user exists already: the three callbacks would not trip on its unique row, only on the state.
+    await signIn()
+    await database.sql`delete from sessions`
+    let start = await racy.fetch(new Request('http://localhost/login/github'))
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let callbacks = await Promise.all(
+      [1, 2, 3].map(() =>
+        racy.fetch(new Request(`http://localhost/auth/github/callback?code=good&state=${state}`, { headers: { Cookie: cookiesOf(start) } })),
+      ),
+    )
+    let signedIn = callbacks.filter((c) => c.headers.getSetCookie().some((h) => h.startsWith(`${SESSION_COOKIE}=`) && !h.startsWith(`${SESSION_COOKIE}=;`)))
+    assert.equal(signedIn.length, 1)
+    assert.equal((await database.sql`select 1 from sessions`).length, 1)
+    assert.equal((await database.sql`select 1 from verifications`).length, 0)
+  })
+
+  it('KNT-150: a failed write of the sign-in puts no parameter of its query on stdout or stderr', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    let start = await request('/login/github')
+    let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
+    let written: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    let stdout = process.stdout.write.bind(process.stdout)
+    let consoleError = console.error
+    process.stderr.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stderr.write
+    process.stdout.write = ((chunk: unknown) => written.push(String(chunk)) > 0) as typeof process.stdout.write
+    console.error = (...args: unknown[]) => void written.push(args.map((a) => (a instanceof Error ? `${a.message} ${String(a.cause ?? '')}` : String(a))).join(' '))
+    let callback: Response
+    try {
+      await database.sql`alter table sessions rename to sessions_away`
+      callback = await request(`/auth/github/callback?code=good&state=${state}`, cookiesOf(start))
+    } finally {
+      await database.sql`alter table sessions_away rename to sessions`
+      process.stderr.write = stderr
+      process.stdout.write = stdout
+      console.error = consoleError
+    }
+    assert.equal(callback.headers.get('Location'), '/login?notice=failed')
+    let all = written.join('')
+    assert.match(all, /auth\.sign_in_failed/)
+    assert.doesNotMatch(all, /params:|SERVER_ERROR/, all)
+    let [user] = await database.sql<{ id: string }[]>`select id from users`
+    assert.doesNotMatch(all, new RegExp(user!.id), 'not even the id of the user')
+  })
+
+  it('the table refuses a token of GitHub in an account', async () => {
+    await insertOrgRow(database.sql, 'acme', 11)
+    roles.set('acme/octocat', 'admin')
+    await signIn()
+    await assert.rejects(database.sql`update accounts set access_token = 'gho_x'`, /accounts_no_secret/)
   })
 })

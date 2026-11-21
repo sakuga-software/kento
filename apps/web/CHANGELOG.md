@@ -25,7 +25,29 @@ Each entry says, when it applies:
   header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
   `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
   to it, as before.
-- **Migrations**: 30. `0029_installations` (KNT-150) moves the GitHub App installation out of
+- **Migrations**: 31. `0030_better_auth` (KNT-150): Better Auth runs the sign-in and the sessions.
+  `users` gets the e-mail that Better Auth needs (`<github id>@users.github.invalid`, never mailed),
+  `accounts` the GitHub account of each user (no token, ever), `verifications` the state of a
+  sign-in. **Every session ends**: each person signs in again once, with one click on GitHub, and
+  keeps their rights (`memberships` stay). The GitHub App needs no change: the callback URL is the
+  same.
+- **Session cookie**: still `__Host-kento_session` over HTTPS (HttpOnly, Secure, SameSite=Lax,
+  Path=/, no Domain, 7 days), now written by Better Auth. The cookie of the release before opens no
+  session: its holder sees "Session ended." once, the cookie is cleared, and they sign in again. The
+  state of a sign-in in progress has its own cookie, `__Host-kento_state` (10 minutes).
+- **Sign-in limits**: Kentō limits the starts of a sign-in (10 a minute) and the callbacks of GitHub
+  (20 a minute) by client; over it, the sign-in page answers 429 (`auth.sign_in_limited`). The
+  limiter of Better Auth is off. **Behind a proxy, set `KENTO_TRUSTED_PROXY_HOPS`** (1 behind
+  Traefik alone) before the deploy: with the default 0, every client has the address of the proxy
+  and shares one limit.
+- **Sessions keep** the address of the client (as resolved above) and its user agent, for an
+  admin who reads the table; nothing shows them.
+- **Variables**: `KENTO_SESSION_SECRET` signs with its first secret only; a new first secret signs
+  everybody out (DEPLOY.md, section 9).
+- **Variables**: new `KENTO_TRUSTED_PROXY_HOPS`, **required when `KENTO_PUBLIC_URL` is https** (the
+  service does not start without it: `1` behind Traefik alone, an explicit `0` when nothing is in
+  front), and `KENTO_SIGN_IN_LIMIT` (default 10, per process).
+- **Migrations** (before it): `0029_installations` (KNT-150) moves the GitHub App installation out of
   `orgs` into a new table `installations`: an org of Kentō can now hold several installations. Each
   org keeps its id, its settings and its members, and gets one installation with the same GitHub
   ids; each repository gets the installation of its org (`repos.installation_id`). Orgs get a
@@ -80,6 +102,9 @@ Each entry says, when it applies:
 - `compose.yaml` publishes port 3000 on `127.0.0.1` only. Before, the service also answered in plain
   HTTP on every address of the machine, and a firewall such as `ufw` did not close the port. If
   your reverse proxy runs on another machine, publish the port on a private address.
+- A job with no choice of models in its config no longer logs `warn job.models_not_sent` when it
+  runs on the default provider of the org. That is the normal path. The warning stays for models that
+  the config chose and that the job cannot run (KNT-139).
 
 ### Security
 

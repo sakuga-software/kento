@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { generateKeyPairSync } from 'node:crypto'
 import * as net from 'node:net'
 import { fileURLToPath } from 'node:url'
 
@@ -80,7 +81,7 @@ describe('server', () => {
       assert.equal(response.status, 200, first.output())
       assert.equal(body.status, 'ok')
       assert.equal(body.commit, 'abc1234')
-      assert.equal(body.database.migrations, 30)
+      assert.equal(body.database.migrations, 31)
       assert.match(first.output(), /"event":"startup.migrations_applied"/)
     } finally {
       assert.equal(await stop(first), 0, first.output())
@@ -98,6 +99,41 @@ describe('server', () => {
     } finally {
       await sql.end()
       assert.equal(await stop(second), 0, second.output())
+    }
+  })
+
+  it('KNT-150: limits the starts of a sign-in by client, through the address that server.ts gives and the trusted proxy', async () => {
+    let port = await freePort()
+    let { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    let started = start({
+      DATABASE_URL: test.url,
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      GITHUB_API_URL: 'http://127.0.0.1:9',
+      GITHUB_APP_ID: '1',
+      GITHUB_APP_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      GITHUB_APP_CLIENT_ID: 'Iv-server-test',
+      GITHUB_APP_CLIENT_SECRET: 'server-test-client-secret',
+      KENTO_PUBLIC_URL: `http://127.0.0.1:${port}`,
+      KENTO_SESSION_SECRET: 'server-test-session-secret-0123456789',
+      // One proxy in front (as Traefik), and a low limit.
+      KENTO_TRUSTED_PROXY_HOPS: '1',
+      KENTO_SIGN_IN_LIMIT: '3',
+    })
+    try {
+      await waitForHealthz(port, started)
+      let startFrom = async (forwarded: string) =>
+        (await fetch(`http://127.0.0.1:${port}/login/github`, { headers: { 'X-Forwarded-For': forwarded }, redirect: 'manual' })).status
+      let codes: number[] = []
+      for (let n = 0; n < 4; n++) codes.push(await startFrom('198.51.100.1'))
+      assert.deepEqual(codes, [303, 303, 303, 429], started.output())
+      // The client writes its own entry first: the proxy's entry, the last one, is the client.
+      assert.equal(await startFrom('203.0.113.9, 198.51.100.1'), 429)
+      // Another client behind the same proxy, the same socket, has its own limit.
+      assert.equal(await startFrom('198.51.100.2'), 303)
+      assert.equal(await startFrom('203.0.113.9, 198.51.100.3'), 303)
+    } finally {
+      await stop(started)
     }
   })
 

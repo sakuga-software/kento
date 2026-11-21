@@ -1,6 +1,4 @@
-import { createHash, type KeyObject } from 'node:crypto'
-
-import { createOAuthProvider, type OAuthProvider } from 'remix/auth'
+import type { KeyObject } from 'node:crypto'
 
 import { appJwt } from '../github/installation-token.ts'
 
@@ -23,43 +21,48 @@ const HEADERS = {
 }
 
 /**
- * The sign-in with the user authorization of the GitHub App: authorization code with PKCE and
- * `state` (checked by `remix/auth`). The user token reads `GET /user` once and is dropped: it is
- * never stored, and Kentō never acts as the person.
+ * KNT-150. The GitHub side of the sign-in, for the generic OAuth of Better Auth: the user
+ * authorization of the GitHub App, authorization code with PKCE and `state` (checked by Better
+ * Auth). The user token reads `GET /user` once and is dropped: it is never stored, and Kentō never
+ * acts as the person.
  *
- * Not `createGitHubAuthProvider` of `remix/auth`: it has the addresses of github.com built in (no
- * GitHub Enterprise Server, no fake GitHub in the tests), and it reads `/user/emails`, which the
- * App is not allowed to read and which Kentō does not need.
+ * Not the `github` provider of Better Auth: it has the addresses of github.com built in (no GitHub
+ * Enterprise Server, no fake GitHub in the tests), and it reads `/user/emails`, which the App is
+ * not allowed to read and which Kentō does not need.
  */
-export function createGitHubSignIn(options: {
+export interface GitHubOAuth {
+  clientId: string
+  clientSecret: string
+  authorizationUrl: string
+  tokenUrl: string
+  /** The callback URL of the GitHub App. */
+  redirectUri: URL
+  /** Trades the code of the callback for a user token. Throws when GitHub refuses it. */
+  exchangeCode(input: { code: string; codeVerifier: string | null; redirectUri: string }): Promise<{ accessToken: string }>
+  /** Reads `GET /user` with a user token. */
+  readProfile(accessToken: string): Promise<GitHubProfile>
+}
+
+export function createGitHubOAuth(options: {
   clientId: string
   clientSecret: string
   redirectUri: URL
   oauthUrl: string
   apiUrl: string
   fetch?: typeof globalThis.fetch
-}): OAuthProvider<GitHubProfile, 'github'> {
+}): GitHubOAuth {
   let doFetch = options.fetch ?? globalThis.fetch
   let oauthUrl = options.oauthUrl.replace(/\/+$/, '')
   let apiUrl = options.apiUrl.replace(/\/+$/, '')
 
-  return createOAuthProvider<GitHubProfile, 'github'>('github', {
-    async createAuthorizationURL(transaction) {
-      let url = new URL(`${oauthUrl}/login/oauth/authorize`)
-      url.searchParams.set('client_id', options.clientId)
-      url.searchParams.set('redirect_uri', options.redirectUri.href)
-      url.searchParams.set('state', transaction.state)
-      url.searchParams.set('code_challenge', createHash('sha256').update(transaction.codeVerifier).digest('base64url'))
-      url.searchParams.set('code_challenge_method', 'S256')
-      // A GitHub App takes its permissions from its settings, not from scopes.
-      url.searchParams.set('allow_signup', 'false')
-      return url
-    },
+  return {
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+    authorizationUrl: `${oauthUrl}/login/oauth/authorize`,
+    tokenUrl: `${oauthUrl}/login/oauth/access_token`,
+    redirectUri: options.redirectUri,
 
-    async handleCallback(context, transaction) {
-      let code = context.url.searchParams.get('code')
-      if (!code) throw new GitHubError('GitHub sent no code')
-
+    async exchangeCode({ code, codeVerifier, redirectUri }) {
       let tokenResponse = await doFetch(`${oauthUrl}/login/oauth/access_token`, {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'kento-web' },
@@ -67,8 +70,8 @@ export function createGitHubSignIn(options: {
           client_id: options.clientId,
           client_secret: options.clientSecret,
           code,
-          redirect_uri: options.redirectUri.href,
-          code_verifier: transaction.codeVerifier,
+          redirect_uri: redirectUri,
+          ...(codeVerifier ? { code_verifier: codeVerifier } : {}),
         }),
         signal: AbortSignal.timeout(10_000),
       })
@@ -77,9 +80,12 @@ export function createGitHubSignIn(options: {
         // `error` is a code such as `bad_verification_code`; it holds no secret.
         throw new GitHubError(`GitHub refused the code: ${tokenResponse.status} ${String(token?.error ?? '')}`.trim())
       }
+      return { accessToken: token.access_token }
+    },
 
+    async readProfile(accessToken) {
       let userResponse = await doFetch(`${apiUrl}/user`, {
-        headers: { ...HEADERS, Authorization: `Bearer ${token.access_token}` },
+        headers: { ...HEADERS, Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(10_000),
       })
       if (!userResponse.ok) throw new GitHubError(`GitHub answered ${userResponse.status} on /user`)
@@ -87,21 +93,14 @@ export function createGitHubSignIn(options: {
       if (!Number.isSafeInteger(user.id) || typeof user.login !== 'string') {
         throw new GitHubError('GitHub answered /user without an id or a login')
       }
-      let profile: GitHubProfile = {
+      return {
         id: user.id as number,
         login: user.login,
         name: typeof user.name === 'string' ? user.name : null,
         avatarUrl: typeof user.avatar_url === 'string' && user.avatar_url.startsWith('https://') ? user.avatar_url : null,
       }
-      return {
-        provider: 'github',
-        account: { provider: 'github', providerAccountId: String(profile.id) },
-        profile,
-        // `remix/auth` wants the tokens in its result. The route never reads or stores them.
-        tokens: { accessToken: token.access_token },
-      }
     },
-  })
+  }
 }
 
 /** The role of a person in an org, or null when GitHub does not count them as an active member. */

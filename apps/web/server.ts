@@ -1,6 +1,6 @@
 import * as http from 'node:http'
 
-import { createRequestListener } from 'remix/node-fetch-server'
+import { createRequestListener, type ClientAddress } from 'remix/node-fetch-server'
 
 import { createCommandHandler } from './app/commands/handler.ts'
 import { createFeedbackHandler } from './app/feedback/handler.ts'
@@ -16,8 +16,9 @@ import { createInstallationTokenMinter, GITHUB_API_URL } from './app/github/inst
 import { setInstance } from './app/instance.ts'
 import { errorMessage, log } from './app/log.ts'
 import { createPublisher } from './app/publish/publisher.ts'
-import { createGitHubSignIn, createRoleLookup } from './app/auth/github.ts'
-import { createPostgresSessionStorage } from './app/auth/session-storage.ts'
+import { createKentoAuth, postgresAuthDatabase } from './app/auth/better-auth.ts'
+import { createGitHubOAuth, createRoleLookup } from './app/auth/github.ts'
+import { rememberClientAddress } from './app/auth/rate-limit.ts'
 import { createAuthStore } from './app/auth/store.ts'
 import { createListChangedFiles } from './app/repo-config/changed-files.ts'
 import { createConfigProviders } from './app/providers/catalog.ts'
@@ -100,31 +101,41 @@ let publisher =
 
 // The GitHub sign-in of the screens (REV-8). Without its variables, every screen says that the
 // sign-in is not configured, and nobody gets in.
-let sessionStorage = config.signIn ? createPostgresSessionStorage(database.sql) : null
+let authStore = createAuthStore(database.sql)
+let lookupRole = config.githubApp ? createRoleLookup(config.githubApp) : null
 let auth =
-  config.signIn && config.githubApp && sessionStorage
+  config.signIn && lookupRole
     ? {
         publicUrl: config.signIn.publicUrl,
         sessionSecrets: config.signIn.sessionSecrets,
-        sessionStorage,
-        provider: createGitHubSignIn({
-          clientId: config.signIn.clientId,
-          clientSecret: config.signIn.clientSecret,
-          redirectUri: new URL(authRoutes.callback.href(), config.signIn.publicUrl),
-          oauthUrl: config.signIn.oauthUrl,
-          apiUrl: config.signIn.apiUrl,
+        auth: createKentoAuth({
+          database: postgresAuthDatabase(database.db),
+          publicUrl: config.signIn.publicUrl,
+          secret: config.signIn.sessionSecrets[0]!,
+          github: createGitHubOAuth({
+            clientId: config.signIn.clientId,
+            clientSecret: config.signIn.clientSecret,
+            redirectUri: new URL(authRoutes.callback.href(), config.signIn.publicUrl),
+            oauthUrl: config.signIn.oauthUrl,
+            apiUrl: config.signIn.apiUrl,
+          }),
+          store: authStore,
+          lookupRole,
         }),
-        store: createAuthStore(database.sql),
-        lookupRole: createRoleLookup(config.githubApp),
+        store: authStore,
+        lookupRole,
         // REV-32: "Install Kentō on an organization" on the page "Access refused".
         installUrl: appInstallUrl(config.githubUrl, config.appSlug),
+        // KNT-150. The limits of the sign-in, by client.
+        trustedProxyHops: config.signIn.trustedProxyHops,
+        signInLimit: config.signIn.signInLimit,
       }
     : null
 
-// Expired sessions leave the table every hour.
-let sweepTimer = sessionStorage
+// Expired sessions and sign-ins that never came back leave the tables every hour.
+let sweepTimer = auth
   ? setInterval(() => {
-      sessionStorage
+      authStore
         .sweep()
         .then((deleted) => {
           if (deleted > 0) log('info', 'sessions.swept', { deleted })
@@ -310,7 +321,11 @@ let stopLeaseSweeper = startLeaseSweeper(runnerStore)
 let stopJobsPurge = startJobsPurge(database.sql)
 
 let server = http.createServer(
-  createRequestListener(router.fetch, {
+  // KNT-150. The router reads the address of the socket of each request (app/auth/rate-limit.ts).
+  createRequestListener((request: Request, client: ClientAddress) => {
+    rememberClientAddress(request, client.address)
+    return router.fetch(request)
+  }, {
     onError(error) {
       log('error', 'http.unhandled_error', { error: errorMessage(error) })
       return new Response('Internal Server Error', { status: 500 })

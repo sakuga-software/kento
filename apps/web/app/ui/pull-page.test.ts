@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { CAMILLE, cookieOf, fakeAuth, OCTOCAT, ORG } from '../auth/test-helpers.ts'
+import { CAMILLE, cookieOf, cookiesOf, fakeAuth, OCTOCAT, ORG, SESSION_COOKIE } from '../auth/test-helpers.ts'
 import { InvalidCursorError } from '../findings/store.ts'
 import { disabledWebhook } from '../github/test-helpers.ts'
 import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
@@ -13,7 +13,7 @@ import { DISMISS_REASONS, replyText } from '../findings/dismiss.ts'
 import { codeText } from './finding.tsx'
 import { firstSentence, levelLine, modelName, readPullQuery, scoreProgress } from './pull.tsx'
 
-const COOKIE = '__Host-kento_session'
+const COOKIE = SESSION_COOKIE
 const REPO_ID = '22222222-2222-4222-8222-222222222222'
 const NOW = new Date('2026-10-30T10:00:00Z')
 
@@ -188,7 +188,7 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
     auth.as(profile)
     let start = await request('/login/github')
     let state = new URL(start.headers.get('Location')!).searchParams.get('state')!
-    let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookieOf(start, COOKIE))
+    let callback = await request(`/auth/github/callback?code=good&state=${state}`, cookiesOf(start))
     return cookieOf(callback, COOKIE)!
   }
   let post = (path: string, cookie: string, form: Record<string, string>) =>

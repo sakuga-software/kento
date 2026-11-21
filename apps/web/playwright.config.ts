@@ -61,6 +61,8 @@ export default defineConfig({
         // The master key of the keys of the providers (REV-11): random, for this run only.
         KENTO_SECRETS_KEY: randomBytes(32).toString('base64'),
         GITHUB_WEBHOOK_SECRET: E2E_WEBHOOK_SECRET,
+        // Every browser of the tests signs in from 127.0.0.1: the limit by client would stop them.
+        KENTO_SIGN_IN_LIMIT: '10000',
       },
     },
   ],
