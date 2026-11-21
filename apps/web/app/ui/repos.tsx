@@ -8,11 +8,12 @@ import { Button, Input, buttonClass } from './controls.tsx'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue } from './precision.tsx'
 import { agoOrDate, plural, when } from './format.ts'
-import { AlertIcon, CheckIcon, ExternalIcon, GitHubIcon, LockIcon } from './icons.tsx'
+import { AlertIcon, ExternalIcon, GitHubIcon, LockIcon } from './icons.tsx'
 import { CircleHelpIcon, GlobeIcon, PowerIcon, RefreshCwIcon, SearchIcon } from './lucide.tsx'
 import { readPageNumber } from '../paging.ts'
 import { Pager } from './pager.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
+import { Toast } from './toast.tsx'
 
 /** What the screen says after a change, from the query of the redirect. */
 export type ReposNotice =
@@ -79,10 +80,15 @@ export function repoListQuery(list: Partial<RepoList>): URLSearchParams {
   return query
 }
 
+/** `path`, with `query` when it has a parameter. */
+function withQuery(path: string, query: URLSearchParams): string {
+  let search = query.toString()
+  return search ? `${path}?${search}` : path
+}
+
 /** `/repos`, with the query of a list when it has one. */
 function reposHref(list: Partial<RepoList>): string {
-  let query = repoListQuery(list).toString()
-  return query ? `${routes.repos.href()}?${query}` : routes.repos.href()
+  return withQuery(routes.repos.href(), repoListQuery(list))
 }
 
 const LEVELS: Record<RepoView['defaultLevel'], string> = { lite: 'lite', balanced: 'balanced', heavy: 'heavy' }
@@ -124,24 +130,26 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
                 <span class="visually-hidden">(new tab)</span>
               </a>
             ))}
-            <form method="post" action={routes.reposCheck.href()}>
+            {/* KNT-195: the query of the list on screen: the redirect comes back to it. */}
+            <form method="post" action={withQuery(routes.reposCheck.href(), repoListQuery(list))}>
               {csrf}
-              <Button type="submit">
+              {/* KNT-185: a quiet button, the icon alone; its name in aria-label, and in its title for the
+                  pointer. progress.js marks it busy (data-busy) while the check posts. */}
+              <Button type="submit" variant="ghost" class="button-icon" aria-label="Read GitHub again" title="Read GitHub again" data-busy="">
                 <RefreshCwIcon />
-                Read GitHub again
               </Button>
             </form>
           </>
         }
       >
-        {notice?.kind === 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+        {notice?.kind === 'check_failed' ? <Notice notice={notice} org={org} dismiss={reposHref(list)} /> : null}
         {/* KNT-147: a live region on every load, empty when there is no notice. repo-toggle.js fills
             it after a change in place: a screen reader reads a change of its content, not a region
-            that comes in already filled. */}
+            that comes in already filled. KNT-184: it holds a toast, in a corner of the window. */}
         {admin || (notice && notice.kind !== 'check_failed') ? (
           // Only for an admin when empty: a member has the "Read only" status, and changes nothing.
-          <div class="notice-slot" role="status">
-            {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} /> : null}
+          <div class="notice-slot toast-region" role="status">
+            {notice && notice.kind !== 'check_failed' ? <Notice notice={notice} org={org} dismiss={reposHref(list)} /> : null}
           </div>
         ) : null}
 
@@ -233,14 +241,16 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
         {/* KNT-147: "Enable" and "Disable" change the row in place, with no reload and no jump. */}
         {admin ? <script src={`/assets/repo-toggle.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
+        {/* KNT-184: the toast of a notice, and the one that repo-toggle.js puts in the slot. */}
+        {admin || notice ? <script src={`/assets/toast.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
       </Shell>
     )
   }
 }
 
-function Notice(handle: Handle<{ notice: ReposNotice; org: string }>) {
+function Notice(handle: Handle<{ notice: ReposNotice; org: string; dismiss: string }>) {
   return () => {
-    let { notice, org } = handle.props
+    let { notice, org, dismiss } = handle.props
     if (notice.kind === 'check_failed') {
       return (
         <div class="banner banner-alert" role="alert">
@@ -269,12 +279,12 @@ function Notice(handle: Handle<{ notice: ReposNotice; org: string }>) {
           . The published reviews stay.
         </p>
       )
-    // In the slot `role="status"` of the screen: no role of its own.
+    // In the slot `role="status"` of the screen: no role of its own. KNT-184: a toast; the parameters
+    // of the redirect leave the URL (controllers/repos.tsx).
     return (
-      <div class="banner banner-ok">
-        <CheckIcon />
+      <Toast dismiss={dismiss} params="done repo cancelled">
         {text}
-      </div>
+      </Toast>
     )
   }
 }

@@ -39,6 +39,7 @@ export const SettingsIcon = icon([
 export const EyeIcon = icon(['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z', 'M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'])
 export const AlertIcon = icon(['M12 3l10 18H2z', 'M12 10v4', 'M12 17h.01'])
 export const CheckIcon = icon(['M20 6L9 17l-5-5'])
+export const CloseIcon = icon(['M6 6l12 12', 'M18 6L6 18'])
 export const ExternalIcon = icon(['M14 4h6v6', 'M20 4l-9 9', 'M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'])
 export const SignOutIcon = icon(['M15 4h4v16h-4', 'M10 8l-4 4 4 4', 'M6 12h10'])
 export const LockIcon = icon(['M6 11h12v9H6z', 'M8.5 11V8a3.5 3.5 0 0 1 7 0v3'])

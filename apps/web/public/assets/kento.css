@@ -518,6 +518,38 @@ summary.button::-webkit-details-marker {
   height: 32px;
   padding: 0 var(--space-3);
 }
+/* KNT-185. A button with its icon alone, square at the height of the controls; its name is in
+   aria-label and title. Quiet: the muted ink of a hint, the ink on hover. */
+.button-icon {
+  --button-fg: var(--ink-muted);
+  width: var(--control-h);
+  padding: 0;
+}
+.button-icon:hover {
+  --button-fg: var(--ink);
+}
+.button-icon svg {
+  width: 18px;
+  height: 18px;
+}
+/* A button with data-busy while its form posts (progress.js): its icon turns, but not under
+   reduced motion. */
+.button[aria-busy='true'] {
+  cursor: progress;
+}
+.button[aria-busy='true'] svg {
+  animation: button-busy 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .button[aria-busy='true'] svg {
+    animation: none;
+  }
+}
+@keyframes button-busy {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .button-large {
   height: var(--control-h-touch);
   padding: 0 var(--space-5);
@@ -1241,6 +1273,104 @@ button.org-menu-item:hover {
 .banner-info svg {
   color: var(--ai);
 }
+/* KNT-184. The toast of an action that went well (app/ui/toast.tsx): in the bottom right corner of
+   the window, over the page, in the live region of the page. It goes after 8 s, and waits while the
+   pointer or the focus is on it. With reduced motion it neither slides nor fades: it goes at once. */
+.toast-region {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 60;
+  display: grid;
+  gap: var(--space-2);
+  width: min(380px, calc(100vw - 2 * var(--space-4)));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--matsu);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  pointer-events: auto;
+  animation:
+    toast-in 180ms ease-out,
+    toast-out 200ms ease-in 8s forwards;
+}
+.toast:hover,
+.toast:focus-within {
+  animation-play-state: paused;
+}
+.toast > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--matsu);
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.toast-text p {
+  margin: 0;
+}
+.toast-text strong {
+  font-weight: 600;
+}
+/* The close link: 32 px to press, its icon of 16 px. */
+.toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -7px -4px -7px 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+}
+.toast-close:hover {
+  background: var(--paper-sunken);
+  color: var(--ink);
+}
+.toast-close svg {
+  width: 16px;
+  height: 16px;
+}
+/* It slides in, with no fade: its text keeps its contrast from the first frame. */
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+  }
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: toast-out 1ms linear 8s forwards;
+  }
+}
+@media (max-width: 760px) {
+  .toast-region {
+    right: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-4);
+    width: auto;
+  }
+}
+
 /* "Read only", on its own line, then what a member can do. */
 .banner-title {
   display: block;

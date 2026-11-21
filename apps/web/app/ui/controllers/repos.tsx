@@ -77,14 +77,20 @@ export function reposActions(kit: UiKit) {
     reposCheck: createAction(pageRoutes.reposCheck, async (context) => {
       let signed = signedOf(context)
       if (!isAdmin(signed)) return forbidden()
+      // KNT-195: back to the list that the form was on, its filter, search and page kept.
+      let back = (done: 'checked' | 'check_failed') => {
+        let query = repoListQuery(readRepoList(context.url.searchParams))
+        query.set('done', done)
+        return redirect(`${pageRoutes.repos.href()}?${query}`)
+      }
       let check = deps.repos?.check
-      if (!check) return redirect(`${pageRoutes.repos.href()}?done=check_failed`)
+      if (!check) return back('check_failed')
       try {
         await check.run(signed.membership.org)
-        return redirect(`${pageRoutes.repos.href()}?done=checked`)
+        return back('checked')
       } catch {
         // The check logs its error.
-        return redirect(`${pageRoutes.repos.href()}?done=check_failed`)
+        return back('check_failed')
       }
     }),
   }

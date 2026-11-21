@@ -21,6 +21,9 @@ class FakeElement {
   setAttribute(name: string, value: string) {
     this.attributes.set(name, value)
   }
+  removeAttribute(name: string) {
+    this.attributes.delete(name)
+  }
 }
 
 class FakeLink extends FakeElement {
@@ -55,6 +58,7 @@ interface FakeEvent {
   submitter?: FakeElement | null
   persisted?: boolean
   key?: string
+  preventDefault?: () => void
 }
 
 /** Runs the script on a fake page. `bars()` counts the bars in the body; `run()` fires the timers. */
@@ -106,6 +110,41 @@ function load() {
 }
 
 describe('the bar of a navigation (KNT-144)', () => {
+  it('marks a button with data-busy as busy while its form posts, holds a second press, and clears it on a return (KNT-185)', () => {
+    let page = load()
+    let button = new FakeElement({ 'data-busy': '' })
+    page.submit({ method: 'post' }, { submitter: button })
+    assert.equal(button.getAttribute('aria-busy'), 'true')
+    assert.equal(page.bars(), 1)
+    // A second press of the same button waits for the page: its submit is cancelled.
+    let again: FakeEvent = {
+      target: new FakeForm({ method: 'post' }),
+      defaultPrevented: false,
+      submitter: button,
+      preventDefault() {
+        again.defaultPrevented = true
+      },
+    }
+    page.fire('submit', again)
+    assert.equal(again.defaultPrevented, true)
+    // A button without data-busy is not marked.
+    let plain = new FakeElement()
+    page.submit({ method: 'post' }, { submitter: plain })
+    assert.equal(plain.getAttribute('aria-busy'), null)
+    // Back from the cache of the browser: not busy any more, and it posts again.
+    page.fire('pageshow', { target: null, defaultPrevented: false, persisted: true })
+    assert.equal(button.getAttribute('aria-busy'), null)
+    page.submit({ method: 'post' }, { submitter: button })
+    assert.equal(button.getAttribute('aria-busy'), 'true')
+    // Escape stops the loading of the page: the button is not busy any more.
+    page.fire('keydown', { target: null, defaultPrevented: false, key: 'Escape' })
+    page.run(0)
+    assert.equal(button.getAttribute('aria-busy'), null)
+    // A submit that another script cancels leaves it as it is.
+    page.submit({ method: 'post' }, { submitter: button, defaultPrevented: true })
+    assert.equal(button.getAttribute('aria-busy'), null)
+  })
+
   it('shows one bar for a click on a link to another page of Kentō', () => {
     let page = load()
     page.click({ href: '/findings' })
