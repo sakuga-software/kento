@@ -81,7 +81,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   under that lock (`app/members/rules.ts` decides, `app/members/store.ts` applies).
 - Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
   sees them on `/invitations` (a banner of the frame leads there), and accepts (they become a member
-  from an invitation, or keep a higher role they had) or declines. A person invited stays a member
+  from an invitation; a person who is a member already keeps their membership as it is, its role
+  and its source) or declines. A person invited stays a member
   when they leave the account on GitHub.
 - The header shows the org on screen; its menu lists every org of the person with their role, and
   switches the org (`POST /preferences/org`, Better Auth's `setActiveOrganization`, only to an org

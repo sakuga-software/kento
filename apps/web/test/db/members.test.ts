@@ -312,7 +312,7 @@ describe('the members and the invitations of an org', () => {
     assert.equal(owners!.n, 1)
   })
 
-  it('accepting an invitation as a member keeps the higher role that the person had', async () => {
+  it('accepting an invitation keeps a membership that exists already as it is, its role and its source', async () => {
     roles.set('acme/camille', 'admin')
     let owner = (await signIn('octocat')).cookie!
     await signIn('camille')
@@ -324,7 +324,9 @@ describe('the members and the invitations of an org', () => {
       values (${acme}, 2, 'camille', 'member', ${inviter!.id}, now() + interval '7 days') returning id`
     let accepted = await store.accept(invitation!.id, { id: (await database.sql<{ id: string }[]>`select id from users where login = 'camille'`)[0]!.id, githubId: 2 }, Date.now())
     assert.deepEqual(accepted, { orgId: acme, role: 'admin' })
-    assert.deepEqual({ ...(await membership('camille', acme)), id: undefined }, { id: undefined, role: 'admin', source: 'invitation' })
+    // Still from GitHub: GitHub still demotes or ends it.
+    assert.deepEqual({ ...(await membership('camille', acme)), id: undefined }, { id: undefined, role: 'admin', source: 'github' })
+    assert.equal((await database.sql`select status from invitations where id = ${invitation!.id}`)[0]!.status, 'accepted')
     assert.ok(owner)
   })
 

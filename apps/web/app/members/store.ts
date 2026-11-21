@@ -56,15 +56,13 @@ export interface MembersStore {
   own(githubId: number, now: number): Promise<OwnInvitation[]>
   /**
    * Accepts a pending invitation of the GitHub account of `user`: the person becomes a member from
-   * an invitation, with the role of the invitation, or keeps a higher role. Null: no such pending
-   * invitation of this account.
+   * an invitation, with the role of the invitation. A person who is a member already keeps their
+   * membership as it is. Null: no such pending invitation of this account.
    */
   accept(invitationId: string, user: { id: string; githubId: number }, now: number): Promise<{ orgId: string; role: OrgRole } | null>
   /** Declines a pending invitation of the GitHub account. */
   decline(invitationId: string, githubId: number, now: number): Promise<boolean>
 }
-
-const ROLE_RANK: Record<OrgRole, number> = { member: 0, admin: 1, owner: 2 }
 
 export function createMembersStore(sql: postgres.Sql): MembersStore {
   /** Runs `work` in one transaction that holds the lock of the owners of the org. */
@@ -188,14 +186,15 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
         let [current] = await tx<{ role: OrgRole }[]>`
           select role from memberships where user_id = ${user.id} and org_id = ${invitation.orgId} for update
         `
-        // The invitation wins over GitHub for the source; the person keeps a higher role they had.
-        let role: OrgRole = current && ROLE_RANK[current.role] > ROLE_RANK[invitation.role] ? current.role : invitation.role
+        // Already a member (from GitHub, since the invitation was sent): the membership stays as it
+        // is, its role and its source. An invitation never takes a membership away from GitHub,
+        // nor changes a role outside of the rules of the members screen.
+        if (current) return { orgId: invitation.orgId, role: current.role }
         await tx`
           insert into memberships (user_id, org_id, role, source, checked_at)
-          values (${user.id}, ${invitation.orgId}, ${role}, 'invitation', now())
-          on conflict (user_id, org_id) do update set role = excluded.role, source = 'invitation', checked_at = now()
+          values (${user.id}, ${invitation.orgId}, ${invitation.role}, 'invitation', now())
         `
-        return { orgId: invitation.orgId, role }
+        return { orgId: invitation.orgId, role: invitation.role }
       })
     },
 
