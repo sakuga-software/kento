@@ -969,4 +969,17 @@ describe('the name and the installations of an org', () => {
     // Not an admin of acme from an account that left it.
     assert.equal((await membership('camille', acme))!.role, 'member')
   })
+
+  it('a sign-in whose admin installation leaves the org while GitHub is asked asks again, and keeps the role of now', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    // camille: a member of the account acme, an admin of acme-labs. She signs in for the first time.
+    roles.set('acme-labs/camille', 'admin')
+    moveLabsWhileAsked('camille', installationId, actor)
+    let { cookie } = await signIn('camille')
+    assert.deepEqual(await orgOf('installations', `id = '${installationId}'`), [globex])
+    // Asked again about what stays in acme: a member, not an admin from an account that left.
+    assert.equal((await membership('camille', acme))!.role, 'member')
+    assert.ok(cookie, 'the sign-in ends with a session')
+  })
 })

@@ -165,7 +165,8 @@ export async function saveSignInRoles(
   user: UserRow,
   roles: { org: OrgRow; role: GitHubRole; answer: GitHubAnswer }[],
   unconfirmed: OrgRow[] = [],
-  now: number = Date.now(),
+  now: number,
+  lookupRole: LookupRole,
 ) {
   let kept = new Set([...roles, ...unconfirmed.map((org) => ({ org }))].map(({ org }) => org.id))
   let existing = new Map((await store.memberships(user.id)).map((m) => [m.org.id, m]))
@@ -175,8 +176,23 @@ export async function saveSignInRoles(
   for (let { org, answer } of roles) {
     let membership = existing.get(org.id)
     if (membership?.source === 'invitation') continue
-    // `changed`: nothing written; the first request asks GitHub again.
-    await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, answer, now)
+    if ((await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, answer, now)) !== 'changed') continue
+    // KNT-199. The installations that gave the role left the org while GitHub was asked: GitHub is
+    // asked again, once, about the installations of the org now. Without an answer, the membership
+    // stays as it was, as for an org where GitHub failed.
+    log('info', 'auth.role_check_changed', { login: user.login, org: org.name })
+    let current = (await store.activeOrgs()).find((active) => active.id === org.id)
+    if (!current) continue
+    try {
+      let again = await orgAnswer(lookupRole, current, { githubId: user.githubId, login: user.login })
+      if (again === null) {
+        if (membership?.source === 'github') await store.deleteMembership(user.id, org.id)
+        continue
+      }
+      await saveGitHubRole(store, user.id, org.id, membership?.role ?? null, again, now)
+    } catch (error) {
+      log('warn', 'auth.role_check_failed', { org: org.name, login: user.login, error: errorMessage(error) })
+    }
   }
 }
 
