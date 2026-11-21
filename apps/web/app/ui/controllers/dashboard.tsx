@@ -1,6 +1,8 @@
 // REV-14. The dashboard: a member reads it; an admin can also retry the last failure, or hide a failure (REV-59).
 import { createAction } from 'remix/router'
 
+import { canEdit } from '../../auth/access.ts'
+
 import { UUID } from '@kento-review/protocol'
 
 import type { ReadPullRequest } from '../../dashboard/github.ts'
@@ -42,7 +44,7 @@ export function dashboardActions(kit: UiKit) {
     jobRetry: createAction(pageRoutes.jobRetry, async (context) => {
       let signed = signedOf(context)
       let dashboard = deps.dashboard
-      if (!dashboard || signed.membership.role !== 'admin') {
+      if (!dashboard || !canEdit(signed.membership.role)) {
         log('warn', 'dashboard.retry_refused', { login: signed.user.login, org: signed.membership.org.name, reason: 'not an admin' })
         return forbidden()
       }
@@ -84,7 +86,7 @@ export function dashboardActions(kit: UiKit) {
     jobDismiss: createAction(pageRoutes.jobDismiss, async (context) => {
       let signed = signedOf(context)
       let dashboard = deps.dashboard
-      if (!dashboard || signed.membership.role !== 'admin') {
+      if (!dashboard || !canEdit(signed.membership.role)) {
         log('warn', 'dashboard.dismiss_refused', { login: signed.user.login, org: signed.membership.org.name, reason: 'not an admin' })
         return forbidden()
       }

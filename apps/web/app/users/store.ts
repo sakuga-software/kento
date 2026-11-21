@@ -7,6 +7,7 @@ import type postgres from 'postgres'
 import { toDate } from '../db/rows.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import { listFindingScreen, type FindingView } from '../findings/screen.ts'
+import type { OrgRole } from '../db/schema.ts'
 
 /** The days of "Findings received". The link to the Findings screen carries the same period. */
 export const RECEIVED_DAYS = 30
@@ -43,8 +44,8 @@ export interface ReviewedPull {
 
 export interface UserScreen {
   user: { id: string; githubId: number; login: string; name: string | null; avatarUrl: string | null }
-  /** The role in the org on screen, as GitHub gave it at the last check. */
-  role: 'admin' | 'member'
+  /** The role in the org on screen. */
+  role: OrgRole
   prefs: { global: UserPref | null; repos: RepoPref[] }
   /** The enabled repositories of the org without a preference of the user: the choices of "Add a repo". */
   addable: { id: string; fullName: string }[]
@@ -86,7 +87,7 @@ export function createUsersStore(sql: postgres.Sql): UsersStore {
   // A login is unique on GitHub, but a renamed account can leave an old row with the same login: the
   // last one signed in is the person.
   async function member(orgId: string, login: string) {
-    let [user] = await sql<(UserScreen['user'] & { githubId: string | number; role: 'admin' | 'member' })[]>`
+    let [user] = await sql<(UserScreen['user'] & { githubId: string | number; role: OrgRole })[]>`
       select users.id, users.github_id as "githubId", users.login, users.name, users.avatar_url as "avatarUrl", memberships.role
       from users
       join memberships on memberships.user_id = users.id and memberships.org_id = ${orgId}

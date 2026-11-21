@@ -7,6 +7,12 @@ import * as http from 'node:http'
 
 export const FAKE_ORG = { installationId: 4242, accountId: 9000, login: 'sakuga-software' }
 
+/**
+ * KNT-150. A second account with the App, where GitHub counts nobody: its members come from an
+ * invitation in Kentō (e2e/orgs.spec.ts).
+ */
+export const SECOND_ORG = { installationId: 9150, accountId: 9151, login: 'globex' }
+
 /** The webhook secret of the server of the tests: e2e/config.spec.ts signs its events with it. */
 export const E2E_WEBHOOK_SECRET = 'e2e-webhook-secret-0123456789abcdef'
 
@@ -131,6 +137,9 @@ let server = http.createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === `/app/installations/${FAKE_ORG.installationId}/access_tokens`) {
     return json(response, 201, { token: 'ghs_members', expires_at: new Date(Date.now() + 3600_000).toISOString() })
   }
+  if (request.method === 'POST' && url.pathname === `/app/installations/${SECOND_ORG.installationId}/access_tokens`) {
+    return json(response, 201, { token: 'ghs_second', expires_at: new Date(Date.now() + 3600_000).toISOString() })
+  }
 
   if (request.method === 'GET' && url.pathname === '/installation/repositories') {
     if (request.headers.authorization !== 'Bearer ghs_members') return json(response, 401, { message: 'Bad credentials' })
@@ -222,6 +231,9 @@ let server = http.createServer(async (request, response) => {
 
   let membership = /^\/orgs\/([^/]+)\/memberships\/([^/]+)$/.exec(url.pathname)
   if (request.method === 'GET' && membership) {
+    if (request.headers.authorization === 'Bearer ghs_second' && membership[1] === SECOND_ORG.login) {
+      return json(response, 404, { message: 'Not Found' })
+    }
     if (request.headers.authorization !== 'Bearer ghs_members' || membership[1] !== FAKE_ORG.login) {
       return json(response, 403, { message: 'Forbidden' })
     }

@@ -13,7 +13,7 @@ import { VERDICT_LABEL } from './dashboard.tsx'
 import { findingsHref } from './findings.tsx'
 import { agoOrDate, plural } from './format.ts'
 import { pullHref } from './pull.tsx'
-import { Shell, type PageFrame } from './shell.tsx'
+import { ROLE_LABELS, Shell, type PageFrame } from './shell.tsx'
 import { THEME_LABELS, THEMES } from './theme.ts'
 
 /** What the screen says after a form, from `?done=`. */
@@ -50,12 +50,12 @@ export function UserPage(handle: Handle<UserPageProps>) {
     let { frame, screen, self, pulls, notice, now } = handle.props
     let { user } = screen
     let org = frame.viewer!.org.name
-    let role = screen.role === 'admin' ? 'Admin' : 'Member'
+    let role = ROLE_LABELS[screen.role]
     return (
       <Shell
         frame={frame}
         title={user.login}
-        lead={`${user.name ? `${user.name} · ` : ''}${role} of ${org}, from their rights on GitHub.`}
+        lead={`${user.name ? `${user.name} · ` : ''}${role} of ${org}.`}
         memberCan={self ? 'you set the reviews of your own PRs' : undefined}
       >
         {notice ? (

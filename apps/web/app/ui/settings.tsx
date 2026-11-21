@@ -78,7 +78,7 @@ export interface SettingsPageProps {
 export function SettingsPage(handle: Handle<SettingsPageProps>) {
   return () => {
     let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError, rules } = handle.props
-    let admin = frame.viewer?.role === 'admin'
+    let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
     // REV-27. Which levels of the org run on each provider: the same rule as Default values.

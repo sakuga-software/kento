@@ -50,6 +50,9 @@ export const orgs = pgTable('orgs', {
   name: text('name').notNull(),
   /** Unique, lowercase. At its creation by the webhook: the login, then `-<installation id>` if it is taken. */
   slug: text('slug').notNull().unique(),
+  /** KNT-150. Fields of the `organization` of Better Auth that Kentō does not use yet. */
+  logo: text('logo'),
+  metadata: text('metadata'),
   /**
    * The config of the org: what its repositories inherit (`ConfigOverrides` of app/repo-config). A
    * key that it does not hold takes the value of Kentō. The settings of the org (REV-13) write it.
@@ -463,8 +466,19 @@ export const resolutions = pgTable(
   ],
 )
 
-/** The role of a person in an org, as GitHub gives it: an admin edits, a member reads. */
-export const orgRole = pgEnum('org_role', ['admin', 'member'])
+/**
+ * KNT-150. The roles of a person in an org: an owner does what an admin does, and manages the owners
+ * and the org itself; an admin edits; a member reads.
+ */
+export const ORG_ROLES = ['owner', 'admin', 'member'] as const
+export type OrgRole = (typeof ORG_ROLES)[number]
+
+/**
+ * KNT-150. Where a membership comes from: GitHub counts the person in the account of an installation
+ * of the org (`github`: GitHub keeps deciding), or an admin of Kentō invited them (`invitation`).
+ */
+export const MEMBERSHIP_SOURCES = ['github', 'invitation'] as const
+export type MembershipSource = (typeof MEMBERSHIP_SOURCES)[number]
 
 /**
  * A person who signed in with GitHub. Kentō keeps no GitHub token of theirs. KNT-150: the `user` of
@@ -542,23 +556,34 @@ export const verifications = pgTable(
 )
 
 /**
- * The role of a user in an org, read from GitHub at sign-in and again when `checked_at` is older
- * than a few minutes. GitHub is the source: a row is a cache, deleted when GitHub says the person
- * left the org.
+ * KNT-150. A person in an org: the `member` of the organization plugin of Better Auth.
+ *
+ * - `source = github`: GitHub counts the person in the account of an installation of the org. GitHub
+ *   gives `admin` or `member`, read again when `checked_at` is older than a few minutes; the row goes
+ *   when GitHub says the person left. `owner` is given in Kentō, and stays while GitHub counts them.
+ * - `source = invitation`: an admin of Kentō invited them. Only Kentō changes the row.
  */
 export const memberships = pgTable(
   'memberships',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     orgId: uuid('org_id')
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
-    role: orgRole('role').notNull(),
+    role: text('role').$type<OrgRole>().notNull(),
+    source: text('source').$type<MembershipSource>().notNull().default('github'),
     checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.orgId] }), index('memberships_org_id_idx').on(table.orgId)],
+  (table) => [
+    uniqueIndex('memberships_user_org_idx').on(table.userId, table.orgId),
+    index('memberships_org_id_idx').on(table.orgId),
+    check('memberships_role', sql`${table.role} in ('owner', 'admin', 'member')`),
+    check('memberships_source', sql`${table.source} in ('github', 'invitation')`),
+  ],
 )
 
 /**

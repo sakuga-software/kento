@@ -25,9 +25,16 @@
     if (bar && !event.composedPath().includes(bar)) setOpen(false)
   })
 
-  document.addEventListener('change', (event) => {
-    const select = event.target
-    if (!(select instanceof HTMLSelectElement) || select.name !== 'orgId') return
-    select.closest('form[data-org-switch]')?.requestSubmit()
-  })
+  // KNT-150. The menu of the org closes on Escape and on a click outside of it.
+  const orgMenu = document.querySelector('details.org-menu')
+  if (orgMenu) {
+    document.addEventListener('click', (event) => {
+      if (orgMenu.open && !event.composedPath().includes(orgMenu)) orgMenu.open = false
+    })
+    orgMenu.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !orgMenu.open) return
+      orgMenu.open = false
+      orgMenu.querySelector('summary')?.focus()
+    })
+  }
 }
