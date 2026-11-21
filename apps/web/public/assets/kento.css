@@ -5476,3 +5476,152 @@ a.sheet-title {
   max-width: 28rem;
   margin-top: var(--space-3);
 }
+
+/*
+ * KNT-188. A tile of "At a glance" that opens a screen: its label is the link, stretched over the
+ * tile; a link inside the tile stays above it.
+ */
+.kpi-linked {
+  position: relative;
+}
+.kpi-linked:hover {
+  background: var(--paper-sunken);
+}
+.kpi-link {
+  color: inherit;
+  text-decoration: none;
+}
+.kpi-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.kpi-linked:hover .kpi-link {
+  text-decoration: underline;
+}
+/* A link inside the tile, and the amount (to select it with the mouse), stay above the stretched link. */
+.kpi-linked a:not(.kpi-link),
+.kpi-linked .kpi-value {
+  position: relative;
+  z-index: 1;
+}
+/* The focus ring goes round the whole tile, the area that the link covers (Fable P3). */
+.kpi-link:focus-visible {
+  outline: none;
+}
+.kpi-linked:has(.kpi-link:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .kpi-linked:has(.kpi-link:focus-visible) {
+    outline-color: Highlight;
+  }
+}
+
+/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. */
+.cost-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+.cost-periods a {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  text-decoration: none;
+}
+.cost-periods a:hover {
+  border-color: var(--ink);
+}
+.cost-periods a[aria-current='page'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper-raised);
+}
+.dash-kpis.cost-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: var(--space-6);
+}
+.cost-kpis .cost-unknown {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--line);
+}
+.cost-section {
+  min-width: 0;
+  margin-bottom: var(--space-6);
+}
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+  margin-bottom: var(--space-6);
+}
+.cost-grid .cost-section {
+  margin-bottom: 0;
+}
+.cost-chart {
+  position: relative;
+  height: 260px;
+  margin-top: var(--space-4);
+}
+.cost-chart[hidden] {
+  display: none;
+}
+/* One bar per row: the chart grows with its rows (draw.ts sets --rows). */
+.cost-chart[data-kind='bars'] {
+  height: calc(var(--rows, 4) * 30px + 36px);
+}
+.chart-data {
+  margin-top: var(--space-4);
+}
+.chart-data > summary {
+  width: fit-content;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.cost-scroll {
+  overflow-x: auto;
+}
+/* The most expensive runs: one line per run, the table scrolls on a narrow screen. */
+.cost-scroll .cost-table {
+  min-width: 600px;
+}
+.cost-scroll .cost-table :is(th, td) {
+  white-space: nowrap;
+}
+.cost-table th.mono {
+  font-family: var(--font-mono);
+}
+.cost-empty {
+  margin-bottom: var(--space-6);
+}
+@media (max-width: 1100px) {
+  .cost-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dash-kpis.cost-kpis .kpi:nth-child(4) {
+    border-left: 1px solid var(--line);
+    border-top: 0;
+  }
+}
+@media (max-width: 760px) {
+  .dash-kpis.cost-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-kpis.cost-kpis .kpi:nth-child(4) {
+    border-left: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+  }
+  .cost-kpis .cost-unknown {
+    padding: var(--space-3) var(--space-4);
+  }
+}
