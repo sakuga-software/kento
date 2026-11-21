@@ -84,12 +84,43 @@ test.describe('the Costs screen', () => {
     await tile.getByRole('link', { name: /^no cap/ }).click()
     await expect(page).toHaveURL(/\/settings#cap$/)
     await page.goBack()
+    // The amount stays above the stretched link: the mouse selects its text (Fable P3).
+    let amount = tile.locator('.kpi-value')
+    let box = (await amount.boundingBox())!
+    let under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.className ?? '', { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+    expect(under).toBe('kpi-value')
+    await amount.dblclick()
+    expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('')
+    await expect(page).not.toHaveURL(/\/costs$/)
     // The focus ring goes round the whole tile (Fable P3).
     await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).focus()
     await expect(tile).toHaveCSS('outline-style', 'solid')
     await page.getByRole('link', { name: /^Cost of the month\s*: see the costs$/ }).click()
     await expect(page).toHaveURL(/\/costs$/)
     await expect(page.getByRole('heading', { name: 'Costs', level: 1 })).toBeVisible()
+  })
+})
+
+test.describe('the Costs screen when Chart.js fails', () => {
+  test.afterEach(cleanUp)
+
+  test('keeps every table open and no empty chart box (Fable P3)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    // Chart.js asks the canvas for its context in its constructor: make it throw.
+    await page.addInitScript(() => {
+      HTMLCanvasElement.prototype.getContext = () => {
+        throw new Error('no canvas in this test')
+      }
+    })
+    let errors: string[] = []
+    page.on('console', (message) => message.type() === 'error' && errors.push(message.text()))
+    await page.goto('/costs?period=30d')
+    await hydrated(page)
+    await expect(page.locator('details.chart-data[open]')).toHaveCount(4)
+    await expect(page.locator('.cost-chart canvas')).toHaveCount(0)
+    for (let box of await page.locator('.cost-chart').all()) await expect(box).toBeHidden()
+    expect(errors.some((text) => text.includes('Chart error:'))).toBe(true)
   })
 })
 

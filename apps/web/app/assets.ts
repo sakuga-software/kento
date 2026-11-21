@@ -50,7 +50,8 @@ const requestPath = new AsyncLocalStorage<string>()
  */
 export function assetError(error: unknown): Response {
   let code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : null
-  let path = requestPath.getStore()
+  // Repeated slashes reach the same file (`/assets//__@remix/…`): the prefix is compared without them (Fable re-check).
+  let path = requestPath.getStore()?.replace(/\/{2,}/g, '/')
   let ofPackage = path !== undefined && path.startsWith(STORE_PATH)
   if ((code && NOT_SERVED.has(code)) || ofPackage) {
     log('warn', 'assets.not_served', { code, ...(ofPackage ? { path } : {}), error: errorMessage(error) })
