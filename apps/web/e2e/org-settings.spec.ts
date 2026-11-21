@@ -267,24 +267,22 @@ test.describe('the settings of the org', () => {
       return
     }
     expect(await behavior()).toBe('smooth')
-    // The scroll positions of the next frames, from the click on.
-    let positions = page.evaluate(
-      () =>
-        new Promise<number[]>((resolve) => {
-          let seen: number[] = []
-          let step = () => {
-            seen.push(Math.round(window.scrollY))
-            if (seen.length < 120) requestAnimationFrame(step)
-            else resolve(seen)
-          }
-          requestAnimationFrame(step)
-        }),
-    )
+    // The positions of the page at each scroll event, from the click to the end of the scroll: a
+    // jump gives one, a glide many. No count of frames: a slow runner can click late.
+    let record = () =>
+      page.evaluate(() => {
+        let seen: number[] = []
+        ;(window as unknown as { glide: number[] }).glide = seen
+        window.addEventListener('scroll', () => seen.push(Math.round(window.scrollY)), { passive: true })
+      })
+    let recorded = () => page.evaluate(() => [...new Set((window as unknown as { glide: number[] }).glide)])
+    await record()
     await goToSettingsLink(page, 'Levels and models')
-    let seen = await positions
-    // Smooth: the page passes through positions between its start and its end.
-    expect(new Set(seen).size, `positions ${seen.join(',')}`).toBeGreaterThan(3)
+    await expect.poll(async () => (await recorded()).length).toBeGreaterThan(0)
     await scrollSettled(page)
+    let seen = await recorded()
+    // Smooth: the page passes through positions between its start and its end.
+    expect(seen.length, `positions ${seen.join(',')}`).toBeGreaterThan(3)
     // The heading lands near the top of the window, clear of its edge; the sidebar marks it.
     let top = await page.locator('#defaults').evaluate((el) => Math.round(el.getBoundingClientRect().top))
     expect(top).toBeGreaterThanOrEqual(8)
@@ -296,7 +294,13 @@ test.describe('the settings of the org', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     expect(await behavior()).toBe('auto')
     await page.evaluate(() => window.scrollTo(0, 0))
+    await scrollSettled(page)
+    await record()
     await goToSettingsLink(page, 'Trusted bots')
+    await expect.poll(async () => (await recorded()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    // A jump: one scroll event, at the end.
+    expect(await recorded()).toHaveLength(1)
     top = await page.locator('#bots').evaluate((el) => Math.round(el.getBoundingClientRect().top))
     expect(top).toBeGreaterThanOrEqual(8)
     expect(top).toBeLessThan(40)
