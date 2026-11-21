@@ -29,7 +29,9 @@ of the service as the tag.
 
 ## 1. Publish the image
 
-From a checkout of the release to publish, on a machine logged in to your registry:
+The releases of Kentō publish `ghcr.io/sakuga-software/kento-runner:<version>` (see "Publish a
+release" below). Use that image, or publish your own: from a checkout of the release to publish, on
+a machine logged in to your registry:
 
 ```sh
 IMAGE=registry.example.com/kento-runner
@@ -220,3 +222,24 @@ thread to answer, it clones nothing and calls no model.
 
 A runner of an earlier release that sends no `kinds` gets review jobs only. Deploy `web` first, then
 the runners; the resolve jobs wait in the queue meanwhile.
+
+## Publish a release
+
+For the maintainers of `sakuga-software/kento`. A tag `vX.Y.Z` starts the Release workflow
+(`.github/workflows/release.yml`). The workflow:
+
+1. checks that `apps/web/package.json` and `apps/runner/package.json` have the version `X.Y.Z`, and
+   that `apps/web/CHANGELOG.md` has a section `## X.Y.Z`;
+2. publishes `ghcr.io/sakuga-software/kento-runner` with the tags `X.Y.Z`, the commit and `latest`,
+   for `linux/amd64` and `linux/arm64`;
+3. creates the GitHub release with the notes of that section.
+
+Before the tag, merge a pull request that sets the version in the two `package.json` files and
+renames the section `Unreleased` of the CHANGELOG to `X.Y.Z`. Then tag the merge commit on `main`:
+
+```sh
+git tag -s vX.Y.Z -m "Kentō X.Y.Z" <commit> && git push origin vX.Y.Z
+```
+
+The package `kento-runner` must be public, and the repository `kento` must have write access to it
+(package settings, "Manage Actions access").
