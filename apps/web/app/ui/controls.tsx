@@ -4,6 +4,8 @@
 // `formaction`, `aria-*`, `data-*`…) goes to the element as is.
 import type { Handle, Props, RemixNode } from 'remix/component'
 
+import { CustomSelect } from './public/select.tsx'
+
 /**
  * The variants that the screens use, named as their classes: `outline` is the default button of
  * Kentō (the class `button` alone), `danger` opens the confirmation of a destructive action and
@@ -68,18 +70,23 @@ export function Textarea(handle: Handle<Props<'textarea'>>) {
 }
 
 /**
- * A native `<select>`. The box around it draws the chevron in CSS (no SVG: the Findings screen has
- * four selects in its filters). `class` goes to the `<select>`; `wrapperClass` goes to the box, for
- * the layout of a screen.
+ * A select. The server renders a native `<select>`, which works without JavaScript. KNT-165: with
+ * an `id`, `CustomSelect` (./public/select.tsx) hydrates next to it and draws the select of
+ * @remix-run/ui in its place, with the same name and value; its only prop is that id, so a long
+ * list of options is written once in the page. The box around it draws the chevron in CSS (no SVG:
+ * the Findings screen has four selects in its filters). `class` goes to the `<select>`;
+ * `wrapperClass` goes to the box, for the layout of a screen.
  */
 export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string }>) {
   return () => {
     let { class: extra, wrapperClass, children, ...rest } = handle.props
+    let id = typeof rest.id === 'string' ? rest.id : null
     return (
       <span class={classes('select-box', wrapperClass)}>
         <select {...rest} class={classes('select-input', extra as string | undefined)}>
           {children}
         </select>
+        {id ? <CustomSelect target={id} /> : null}
       </span>
     )
   }

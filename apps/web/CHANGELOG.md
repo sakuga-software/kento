@@ -19,6 +19,31 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
+  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
+  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
+  the move joins; an installation on a personal account stays in an org of its own. Moving the last
+  installation deletes the empty org, after a confirmation by its name that lists its members and
+  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
+  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
+  to it, as before.
+- **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
+  row per change of the members). It only adds: the release before runs on it.
+- **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu
+  of the org and the settings) and `/invitations` (the invitations of the person). An owner or an
+  admin invites a GitHub login; a person whom GitHub counts in no org of the App signs in with a
+  pending invitation, and sees only it until they accept. No change leaves an org without an
+  active owner.
 - **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
   and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
   of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:

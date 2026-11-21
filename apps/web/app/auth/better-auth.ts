@@ -291,11 +291,14 @@ export async function beforeSessionCreate(
   let memberships = await store.memberships(user.id)
   let wanted = [decision.roles.find((r) => r.role === 'admin')?.org, decision.roles[0]?.org, decision.invited[0]]
   let first = wanted.find((org) => org && memberships.some((m) => m.org.id === org.id)) ?? memberships[0]?.org
-  if (!first) return false
+  // KNT-150. No org yet, and an invitation to answer: a session with no org, for the page of the
+  // invitations only.
+  // The count of the decision is read again: an invitation can end between the two.
+  if (!first && !(decision.pending && decision.pending > 0 && (await store.pendingInvitations(user.githubId)) > 0)) return false
   await store.touchSignIn(user.id)
   log('info', 'auth.signed_in', { login: user.login, orgs: decision.roles.map((r) => `${r.org.name}:${r.role}`) })
   return {
-    data: { ...session, activeOrganizationId: first.id, expiresAt: new Date(now + SESSION_TTL_MS), ipAddress: scope?.clientIp ?? null },
+    data: { ...session, activeOrganizationId: first?.id ?? null, expiresAt: new Date(now + SESSION_TTL_MS), ipAddress: scope?.clientIp ?? null },
   }
 }
 

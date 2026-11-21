@@ -32,6 +32,9 @@ importers:
       '@kento-review/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@remix-run/ui':
+        specifier: 0.13.1
+        version: 0.13.1
       better-auth:
         specifier: 1.7.26
         version: 1.7.26(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(kysely@0.29.9)(postgres@4.1.1))
@@ -1584,6 +1587,9 @@ packages:
     peerDependenciesMeta:
       playwright:
         optional: true
+
+  '@remix-run/ui@0.13.1':
+    resolution: {integrity: sha512-FbjoQqz20HqWAxLvacKu/a1437At0Ul468wN9uANTm6ae8HdneM3QsbPLg3mjPq/xX4tz1GHjQS1BMwe5rI9DA==}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -3175,6 +3181,10 @@ snapshots:
     transitivePeerDependencies:
       - '@emnapi/core'
       - '@emnapi/runtime'
+
+  '@remix-run/ui@0.13.1':
+    dependencies:
+      '@remix-run/component': 1.2.0
 
   '@standard-schema/spec@1.1.0': {}
 
