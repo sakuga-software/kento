@@ -136,6 +136,11 @@ export type ReviewResult = {
   contextHash: string;
   /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
   link: LinkReport;
+  /**
+   * KNT-151. The findings moved to « Not reviewed » (premise.ts), with their anchor and fingerprint:
+   * the service matches them to its open findings and leaves their threads open, never `fixed`.
+   */
+  moved?: ReviewedFinding[];
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -291,6 +296,10 @@ export function finishReview<F extends Finding>(
   });
   // A rewording of an earlier finding, or a new finding to consider (REV-100), is no new defect.
   const isVariant = (f: F) => !isNewDefect(f, earlier);
+  // KNT-151. A finding whose premise is code that the review did not read goes to « Not reviewed ».
+  // Before the merge of REV-88: a moved finding is no new defect, so the floor of the score holds.
+  const moved = moveUnreadPremises(answer);
+  for (const f of moved) log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
   // REV-88. The findings of the last review on the files not read again, the settled findings
   // dropped, and the score kept without a new finding.
   let settledAgain: F[] = [];
@@ -309,8 +318,6 @@ export function finishReview<F extends Finding>(
   // REV-70. A finding that says a name is not imported or not defined is checked against its file.
   const { refuted } = checkMissingNames(answer, fileAt);
   for (const f of refuted) log(`finding dropped, its file at the head holds the name: ${f.path}: ${f.title}`);
-  // KNT-151. A finding whose premise is code that the review did not read goes to « Not reviewed ».
-  for (const f of moveUnreadPremises(answer)) log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
   // REV-71. A finding that a reply refuted in its thread, on a file that did not change since.
   const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
@@ -333,6 +340,7 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
+  const reviewed = (f: F) => ({ ...f, anchor: anchor(f, lines), blocking: isBlocking(f, lines), suggestion_range: null, fingerprint: fingerprint(f, fileAt(f.path)) });
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
     // REV-104. An applicable suggestion wins over the patch.
@@ -378,6 +386,7 @@ export function finishReview<F extends Finding>(
     seenSince: seen?.since ?? null,
     contextHash,
     link,
+    moved: moved.map(({ patch: _patch, ...f }) => reviewed(f as F)) as (ReviewedFinding & F)[],
   };
 }
 

@@ -313,6 +313,30 @@ describe('publishReview', () => {
     assert.deepEqual(fake.repliesTo(thread!.id), [])
   })
 
+  it('keeps open the thread of a finding that the engine moved to « Not reviewed », though its file changed (KNT-151)', async () => {
+    let { fake, publish } = setup()
+    // Kept at 82: above the floor of premise.ts, the finding is posted with its thread.
+    let hedged = finding({ confidence: 82, title: 'The role is not checked', scenario: 'The definition of requireOwner is not in the pack, so a member may pay.' })
+    await publish(payload({ findings: [hedged] }))
+    let [thread] = fake.botThreads()
+
+    // A push on its file. The same finding comes back at 75, and the engine moves it to « Not reviewed ».
+    fake.state.pr.head = HEAD3
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: ['src/sum.ts'] })
+    let moved = { ...hedged, confidence: 75 }
+    let outcome = await publish(payload({ head: HEAD3, score: 4, verdict: 'APPROVE', findings: [], notReviewed: ['src/sum.ts: The role is not checked. To check: …'], moved: [moved] }))
+
+    assert.equal(outcome.resolved, 0)
+    assert.deepEqual(fake.repliesTo(thread!.id), [], 'no « does not show anymore » answer')
+    assert.doesNotMatch(fake.state.pr.body, /does not show anymore/)
+    // Without `moved`, the same review shows it fixed: what the field prevents.
+    let other = setup()
+    await other.publish(payload({ findings: [hedged] }))
+    other.fake.state.pr.head = HEAD3
+    other.fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: ['src/sum.ts'] })
+    assert.equal((await other.publish(payload({ head: HEAD3, score: 4, verdict: 'APPROVE', findings: [] }))).resolved, 1)
+  })
+
   it('keeps open a thread whose file did not change: a finding that the model did not repeat is not fixed', async () => {
     let { fake, publish } = setup()
     await publish(payload())

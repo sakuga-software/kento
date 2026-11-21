@@ -19,6 +19,10 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Order**: the service, then the runners (KNT-151). A runner of this release claims the feature
+  `moved`, which the service of the release before refuses. The runner sends the findings that it
+  moved to « Not reviewed » (their premise is code that the review did not read), and the service
+  leaves their open findings and threads open instead of closing them as fixed.
 - **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
   The one inline script is the import map of the components that hydrate. A proxy in front of the
   service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this

@@ -86,8 +86,9 @@ only when you are sure of it, with the severity that it has.
    the `Context` section: check each changed signature, parameter, response
    and schema against its callers and definitions there. When a finding
    depends on a caller, a definition or a schema that the message does not
-   show, do not report it: write in `not_reviewed` one line that names the code
-   to check (`path: what to check`).
+   show, and your confidence in it is below 80, do not report it: write in
+   `not_reviewed` one line that names the code to check (`path: what to
+   check`).
 4. Look, in this order, for:
    - correctness: wrong logic, a missing case, an inverted condition, an
      off-by-one, an unhandled `null`, an unawaited promise, a race;
