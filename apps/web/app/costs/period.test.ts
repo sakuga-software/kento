@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { dayKey, periodQuery, periodRange, projectMonth, readPeriod } from './period.ts'
+import { dayKey, periodQuery, periodRange, previousLabel, projectMonth, readPeriod } from './period.ts'
 
 const at = (iso: string) => new Date(iso)
 const day = (date: Date) => dayKey(date)
@@ -43,6 +43,21 @@ describe('the periods of the Costs screen (KNT-188)', () => {
     assert.deepEqual(first.days, ['2026-01-01'])
     assert.equal(day(first.previousStart), '2025-12-01')
     assert.equal(day(first.previousEnd), '2025-12-02')
+  })
+
+  it('names the whole month before, with its days, once the day is past its end (Kentō #79f3f5)', () => {
+    // February 2026 has 28 days: on 31 and 30 March the comparison is all of February.
+    assert.equal(previousLabel('month', at('2026-03-31T08:00:00Z')), 'All of February, 28 days')
+    assert.equal(previousLabel('month', at('2026-03-30T23:59:59Z')), 'All of February, 28 days')
+    assert.equal(previousLabel('month', at('2028-03-30T12:00:00Z')), 'All of February, 29 days')
+    assert.equal(previousLabel('month', at('2026-12-31T12:00:00Z')), 'All of November, 30 days')
+    // Up to the last day of the month before, the same days.
+    assert.equal(previousLabel('month', at('2026-03-28T12:00:00Z')), 'Last month, same days')
+    assert.equal(previousLabel('month', at('2026-11-21T22:30:00Z')), 'Last month, same days')
+    assert.equal(previousLabel('month', at('2026-08-31T12:00:00Z')), 'Last month, same days')
+    // The other periods have the same number of days as the period before.
+    assert.equal(previousLabel('last-month', at('2026-03-31T08:00:00Z')), 'The month before')
+    assert.equal(previousLabel('30d', at('2026-03-31T08:00:00Z')), 'The 30 days before')
   })
 
   it('makes "last month" the whole month before, against the month before it', () => {

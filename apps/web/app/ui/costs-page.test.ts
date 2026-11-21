@@ -13,10 +13,10 @@ import { change, dayLabel, utcWhen } from './costs.tsx'
 const NOW = new Date('2026-11-21T10:00:00Z')
 
 /** A report whose repository carries the id of the org it was read for. */
-function reportOf(orgId: string, period: CostPeriod, empty = false): CostReport {
+function reportOf(orgId: string, period: CostPeriod, empty = false, now = NOW): CostReport {
   return {
     period,
-    now: NOW,
+    now,
     start: new Date('2026-11-01T00:00:00Z'),
     end: new Date('2026-11-22T00:00:00Z'),
     days: [
@@ -38,7 +38,7 @@ function reportOf(orgId: string, period: CostPeriod, empty = false): CostReport 
   }
 }
 
-function setup(options: { empty?: boolean; charts?: boolean } = {}) {
+function setup(options: { empty?: boolean; charts?: boolean; now?: Date } = {}) {
   let auth = fakeAuth({ orgs: [ORG, OTHER_ORG] })
   auth.setRole(ORG, OCTOCAT, 'member')
   auth.setRole(ORG, CAMILLE, 'admin')
@@ -47,7 +47,7 @@ function setup(options: { empty?: boolean; charts?: boolean } = {}) {
   let store: CostsStore = {
     async report(orgId, period) {
       reads.push(`${orgId} ${period}`)
-      return reportOf(orgId, period, options.empty)
+      return reportOf(orgId, period, options.empty, options.now)
     },
   }
   let router = createAppRouter({
@@ -108,6 +108,18 @@ describe('the Costs screen (KNT-188)', () => {
     assert.equal((await request('/costs', cookie)).status, 200)
     assert.equal((await request('/costs?period=last-month', cookie)).status, 200)
     assert.deepEqual(reads, [`${ORG.id} month`, `${ORG.id} last-month`])
+  })
+
+  it('names the whole month before, with its days, on 30 and 31 March (Kentō #79f3f5)', async () => {
+    for (let now of ['2026-03-31T10:00:00Z', '2026-03-30T10:00:00Z']) {
+      let { request, signIn } = setup({ now: new Date(now) })
+      let html = await (await request('/costs', await signIn(OCTOCAT))).text()
+      assert.match(html, /\$0\.50 all of February, 28 days · \+151%/)
+      // The column of the table, and the series of the chart that reads it.
+      assert.match(html, /<th(?=[^>]*\bdata-series="All of February, 28 days")[^>]*>All of February, 28 days<\/th>/)
+      assert.match(html, /<caption class="visually-hidden">Cost per day, this month, and all of February, 28 days<\/caption>/)
+      assert.doesNotMatch(html, /same days/)
+    }
   })
 
   it('renders every number in tables, with the charts empty and hidden until the browser draws them', async () => {

@@ -4,7 +4,7 @@
 // "Show the data". Without JavaScript the tables are the page.
 import type { Handle } from 'remix/component'
 
-import { COST_PERIODS, PERIOD_LABELS, PREVIOUS_LABELS, periodQuery, type CostPeriod } from '../costs/period.ts'
+import { COST_PERIODS, PERIOD_LABELS, periodQuery, previousLabel, type CostPeriod } from '../costs/period.ts'
 import type { CostReport, CostShare } from '../costs/store.ts'
 import { CostChart } from '../costs/public/cost-chart.tsx'
 import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
@@ -100,6 +100,11 @@ export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport;
   }
 }
 
+/** A label inside a sentence: the name of a month keeps its capital. */
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1)
+}
+
 function Summary(handle: Handle<{ report: CostReport }>) {
   return () => {
     let { report } = handle.props
@@ -113,7 +118,7 @@ function Summary(handle: Handle<{ report: CostReport }>) {
           <span class="kpi-label">{PERIOD_LABELS[report.period]} (UTC)</span>
           <span class="kpi-value">{usdPrecise(report.totalUsd)}</span>
           <span class="kpi-sub">
-            {usdPrecise(report.previousTotalUsd)} {PREVIOUS_LABELS[report.period].toLowerCase()}
+            {usdPrecise(report.previousTotalUsd)} {lowerFirst(previousLabel(report.period, report.now))}
             {delta ? ` · ${delta}` : ''}
           </span>
         </div>
@@ -166,7 +171,7 @@ function Summary(handle: Handle<{ report: CostReport }>) {
 function DaysSection(handle: Handle<{ report: CostReport; charts: boolean }>) {
   return () => {
     let { report, charts } = handle.props
-    let previous = PREVIOUS_LABELS[report.period]
+    let previous = previousLabel(report.period, report.now)
     return (
       <section class="card cost-section" aria-labelledby="cost-days-title">
         <h2 id="cost-days-title" class="section-title">
@@ -179,7 +184,7 @@ function DaysSection(handle: Handle<{ report: CostReport; charts: boolean }>) {
             Show the data<span class="visually-hidden">: cost per day</span>
           </summary>
           <table class="dash-table cost-table" id="cost-days-table">
-            <caption class="visually-hidden">Cost per day, {PERIOD_LABELS[report.period].toLowerCase()}, and {previous.toLowerCase()}</caption>
+            <caption class="visually-hidden">Cost per day, {PERIOD_LABELS[report.period].toLowerCase()}, and {lowerFirst(previous)}</caption>
             <thead>
               <tr>
                 <th scope="col">Day (UTC)</th>

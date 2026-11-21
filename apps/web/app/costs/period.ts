@@ -21,6 +21,23 @@ export const PREVIOUS_LABELS: Record<CostPeriod, string> = {
   '90d': 'The 90 days before',
 }
 
+/**
+ * What the period of the comparison is called at `now`. "This month" is compared with the same days
+ * of the month before; from the day after the end of a shorter month, that is the whole month before,
+ * and the label says so with its number of days (Kentō #79f3f5): the days it does not have get no
+ * value, and the total is not scaled.
+ */
+export function previousLabel(period: CostPeriod, now: Date): string {
+  if (period !== 'month') return PREVIOUS_LABELS[period]
+  let year = now.getUTCFullYear()
+  let month = now.getUTCMonth()
+  let previousStart = monthStart(year, month - 1)
+  let previousDays = Math.round((monthStart(year, month).getTime() - previousStart.getTime()) / DAY_MS)
+  if (now.getUTCDate() <= previousDays) return PREVIOUS_LABELS.month
+  let name = previousStart.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+  return `All of ${name}, ${previousDays} days`
+}
+
 /** The period of a query: an unknown value, or none, is the default (KNT-195). */
 export function readPeriod(value: string | null): CostPeriod {
   return (COST_PERIODS as readonly string[]).includes(value ?? '') ? (value as CostPeriod) : DEFAULT_PERIOD
@@ -65,7 +82,7 @@ export function dayKey(date: Date): string {
 
 /**
  * The days of a period at `now`. "This month" ends today, and compares with the same days of the
- * month before (as many as that month has). "Last month" compares with the month before it. 30 and
+ * month before (as many as that month has: see `previousLabel`). "Last month" compares with the month before it. 30 and
  * 90 days end today, and compare with the as many days before them.
  */
 export function periodRange(period: CostPeriod, now: Date): PeriodRange {
