@@ -165,15 +165,6 @@ The first public release. The runner image is `ghcr.io/sakuga-software/kento-run
 - The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
   judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
   are refused.
-- **Usage limit of a provider** (KNT-161): a 429, a 402, or an error that names a usage limit stops
-  the review at the first model of the provider (its other models get the same refusal), and keeps
-  the reset time that the provider gives. The comment on the pull request says that the review did
-  not happen, until when, and how to run it again. Such a refusal no longer marks the key of the
-  provider as refused, even as a 403.
-- **Check of a failed review**: a review that fails for good now posts the check of Kentō on its
-  head when the head has none: `action_required` for a usage limit, `failure` otherwise, never
-  `success`. A head that another review already checked keeps its check. It uses the `checks: write`
-  permission that the App already has.
 
 ## 0.1.0
 
