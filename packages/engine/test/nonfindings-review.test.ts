@@ -114,6 +114,24 @@ test('a review in passes keeps the questions of every pass, once each', async ()
   assert.deepEqual(result.answer.questions, [shared, { path: 'save.ts', question: 'Is a saved count of zero allowed?' }]);
 });
 
+test('a review in passes survives a null question of a pass', async () => {
+  const byPass: Record<string, unknown> = {
+    security: { ...answer([]), questions: [null, { path: 'list.ts' }, { path: 'list.ts', question: 'Does the product count from one?' }] },
+    data: answer([]),
+    contracts: answer([]),
+  };
+  const fetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    const user: string = body.messages[1].content;
+    const pass = BASE_PASSES.find((p) => user.endsWith(`${p.focus}\n`));
+    const content = JSON.stringify(pass ? byPass[pass.id] : { verdicts: [] });
+    return new Response(JSON.stringify({ model: body.model, choices: [{ message: { content } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
+  }) as typeof globalThis.fetch;
+  const config = (level: 'lite' | 'balanced') => ({ ...levelConfig(level), models: ['test/model'] });
+  const result = await reviewInPasses({ repoDir: repo, base, head: first, level: 'balanced', apiKey: 'k', fetch, log: () => {} }, { passConfig: config('lite'), verifyConfig: config('balanced') });
+  assert.deepEqual(result.answer.questions, [{ path: 'list.ts', question: 'Does the product count from one?' }]);
+});
+
 test('the answer schema asks for the questions', () => {
   assert.ok(ANSWER_SCHEMA.required.includes('questions'));
   assert.deepEqual((ANSWER_SCHEMA.properties as Record<string, { items?: { required?: string[] } }>).questions?.items?.required, ['path', 'question']);

@@ -9,7 +9,6 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { withInstance } from '../../test/instance.ts'
 
 const COOKIE = SESSION_COOKIE
 const ORCHARD = '00000000-0000-4000-8000-000000000001'
@@ -28,7 +27,6 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
     workflowRef: null,
     workflowCheckedAt: new Date('2026-10-28T11:58:00Z'),
     streak: 0,
-    resetBy: null, resetPr: null,
     lastReview: null,
     ...fields,
   }
@@ -47,7 +45,7 @@ function setup(findings: FindingsScreenStore | null = null, orgs = [ORG, OTHER_O
       }),
       row({
         id: FRUITBACK, fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
-        workflowPath: '.github/workflows/sakuga-review.yml', streak: 3, resetBy: 'failure', resetPr: 12,
+        workflowPath: '.github/workflows/sakuga-review.yml', streak: 3,
         lastReview: { prNumber: 677, score: 4, model: 'anthropic/claude-haiku-5.5', publishedAt: new Date('2026-10-28T11:00:00Z') },
       }),
     ],
@@ -138,15 +136,6 @@ function setup(findings: FindingsScreenStore | null = null, orgs = [ORG, OTHER_O
 }
 
 describe('the Repos screen', () => {
-  it('names the commands of the instance in the note on the switch (REV-127)', async () => {
-    let fallback = async () => /<h2 id="fallback-title">.*?<\/ul>/s.exec((await setup().signIn()).html)![0]
-    let own = await withInstance({ commandNames: ['acme-review'] }, fallback)
-    assert.match(own, /<li><code>@acme-review<\/code> speaks to Kentō only\.<\/li>/)
-    assert.doesNotMatch(own, /two answers|kento-review/)
-    let shared = await withInstance({ commandNames: ['acme-review', 'sakuga-review'] }, fallback)
-    assert.match(shared, /<li>A <code>@sakuga-review<\/code> command then gets two answers\. <code>@acme-review<\/code> speaks to Kentō only\.<\/li>/)
-  })
-
   it('shows the precision of each repository of the page over 30 days, linked to its closed findings (REV-18)', async () => {
     let { store } = fakeFindingsScreenStore({ precisions: { [FRUITBACK]: precisionOf(12, 3), [ORCHARD]: precisionOf(2, 1) } })
     let { html } = await setup(store).signIn()
@@ -154,28 +143,41 @@ describe('the Repos screen', () => {
     assert.match(html, new RegExp(`href="/findings\\?status=closed&amp;repo=${ORCHARD}"><span [^>]*class="precision-value precision-pending">n = 3 of 10`))
   })
 
-  it('shows each repository with its mode, level, model, switch counter and last review', async () => {
-    let { signIn } = setup()
+  it('shows each repository with its visibility, level, model and last review, in five columns (KNT-179, KNT-181)', async () => {
+    let { signIn, rows } = setup()
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
-    assert.match(html, /review\.yml@stable/)
-    // REV-91: "Reviews by" in the four words of the design, with the detail under it.
-    assert.match(html, /Kentō \+ review\.yml/)
-    // KNT-146: the badge starts with its decorative icon.
-    assert.match(html, /<span class="tag"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg>review\.yml<\/span>/)
-    assert.match(html, /3\/20/)
-    assert.match(html, /set back to zero after a failure/)
+    // KNT-179, KNT-181: no column "Reviews by" nor "Switch"; the last one has no visible name.
+    assert.match(
+      html,
+      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
+    )
+    assert.doesNotMatch(html, /Reviews by|review\.yml@stable|copy of review\.yml|3\/20|set back to zero|class="switch/)
     assert.match(html, /claude-haiku-5\.5/)
     assert.match(html, new RegExp(`href="/repos/${FRUITBACK}/pulls/677"`))
-    assert.match(html, /#677 · 4\/5/)
-    assert.match(html, /Precision 30 d/)
-    // REV-25: the name can be cut short on screen; its title keeps it whole.
-    assert.match(html, /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard" class="repo-name"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg><span>orchard<\/span><\/a>/)
-    // KNT-146: the visibility with its icon.
-    assert.match(html, /<span class="hint repo-visibility"><svg[^>]*aria-hidden="true"[^>]*>(?:(?!<\/svg>).)*<\/svg>private<\/span>/)
-    assert.match(html, /Switch criterion/)
-    assert.match(html, /Fallback during the switch/)
-    assert.match(html, /<li>A <code>@sakuga-review<\/code> command then gets two answers\. <code>@kento-review<\/code> speaks to Kentō only\.<\/li>/)
+    // KNT-182: the last review on one line, its date after the score, the whole of it in the title.
+    assert.match(
+      html,
+      new RegExp(
+        `<span title="#677 · 4/5, published on 28 Oct at 12:00" class="repo-last-review"><a href="/repos/${FRUITBACK}/pulls/677" class="mono">#677 · 4/5</a> <span class="hint">· [^<]+</span></span>`,
+      ),
+    )
+    // REV-25: the name can be cut short on screen; its title keeps it whole. KNT-180: the icon left
+    // of the name is the visibility (a lock, a globe), and its word is for a screen reader only.
+    assert.match(
+      html,
+      /<a href="https:\/\/github\.com\/sakuga-software\/orchard" rel="noreferrer" title="sakuga-software\/orchard \(private\)" class="repo-name"><svg[^>]*aria-hidden="true"[^>]*><path d="M6 11h12v9H6z"[^>]*>.*?<\/svg><span>orchard<\/span><\/a><span class="visually-hidden">, private<\/span><\/th>/,
+    )
+    assert.match(html, /<span>fruitback<\/span><\/a><span class="visually-hidden">, public<\/span><\/th>/)
+    assert.match(html, /title="sakuga-software\/fruitback \(public\)" class="repo-name"/)
+    // The "?" of a visibility that GitHub did not give yet is named in the title.
+    rows[ORG.id]![0]!.private = null
+    assert.match((await signIn()).html, /title="sakuga-software\/orchard \(unknown visibility\)" class="repo-name"/)
+    // KNT-179: "To switch" says which repos it lists.
+    assert.match(html, /<a href="\/repos\?filter=switching" title="The repos that still hold review\.yml">To switch/)
+    assert.doesNotMatch(html, /repo-visibility/)
+    // KNT-194: no notes on the switch from review.yml under the table.
+    assert.doesNotMatch(html, /repos-howto|Switch criterion|Fallback during the switch/)
     // "Manage the installation" leads to the page of the App on GitHub.
     assert.match(html, /href="https:\/\/github\.com\/organizations\/sakuga-software\/settings\/installations\/11"/)
     // The repositories of another org of the person are not on screen.
@@ -234,7 +236,8 @@ describe('the Repos screen', () => {
     assert.match(page, new RegExp(`<form id="repo-actions" method="post" hidden><input type="hidden" name="_csrf" value="${csrf}" /></form>`))
     // "Cancel" is a part of the popover only: without JavaScript, the trigger closes the confirmation.
     assert.doesNotMatch(row, /Cancel/)
-    assert.match(row, /The published reviews and the counter stay/)
+    // KNT-194: fruitback still holds review.yml, which reviews alone after the disable.
+    assert.match(row, /The published reviews stay\. review\.yml alone reviews the pull requests from the next push\.<\/p>/)
     // No destructive button has the style of the main action.
     assert.doesNotMatch(page, /button-primary[^>]*>\s*Disable/)
     assert.deepEqual(changes, [], 'the confirmation changes nothing')
@@ -266,18 +269,41 @@ describe('the Repos screen', () => {
     assert.deepEqual(changes, [])
   })
 
-  it('shows "Remove review.yml" to an admin at 20/20 with the workflow still there, and "switched" without it', async () => {
+  it('KNT-179: offers "Remove review.yml" in the menu of the row, to an admin at 20 reviews in a row with the workflow still there', async () => {
     let { signIn, rows } = setup()
-    rows[ORG.id]![1]!.streak = 23
-    rows[ORG.id]![1]!.resetBy = 'failure'
-    let { html } = await signIn()
-    assert.match(html, /20\/20/)
-    assert.doesNotMatch(html, /set back to zero/)
-    assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/fruitback\/delete\/main\/\.github\/workflows\/sakuga-review\.yml"/)
-    assert.match((await signIn(CAMILLE)).html, /ready to remove review\.yml/)
+    let menuOf = (html: string, id: string) => {
+      let start = html.indexOf(`id="repo-${id}"`)
+      return html.slice(html.indexOf('<details class="row-menu">', start), html.indexOf('</tr>', start))
+    }
+    let remove = /<a href="https:\/\/github\.com\/sakuga-software\/fruitback\/delete\/main\/\.github\/workflows\/sakuga-review\.yml" rel="noreferrer" target="_blank">Remove review\.yml<span class="visually-hidden"> from fruitback \(GitHub, new tab\)<\/span><\/a>/
+    // 3 of 20: not yet.
+    assert.doesNotMatch((await signIn()).html, /Remove review\.yml</)
 
+    rows[ORG.id]![1]!.streak = 23
+    let html = (await signIn()).html
+    assert.match(menuOf(html, FRUITBACK), remove)
+    // The row says it, beside its "…": one marker, on that row only.
+    let ready = /<span title="Kentō published 20 reviews in a row: &quot;Remove review\.yml&quot; is in the menu &quot;…&quot;" class="tag tag-ok row-ready">review\.yml can go<\/span><!-- rmx:h:/
+    assert.match(html.slice(html.indexOf(`id="repo-${FRUITBACK}"`)), ready)
+    assert.equal(html.match(/row-ready/g)?.length, 1)
+    // Only on that row, and the URL crosses to the browser for that row only.
+    assert.equal(html.match(/Remove review\.yml</g)?.length, 1)
+    let data = JSON.parse(html.match(/<script type="application\/json" id="rmx-data">(.*?)<\/script>/)![1]!) as {
+      h: Record<string, { exportName: string; props: Record<string, unknown> }>
+    }
+    let props = Object.values(data.h).filter((entry) => entry.exportName === 'RowMenu').map((entry) => entry.props)
+    assert.deepEqual(props.map((entry) => entry.removeWorkflow ?? null), [
+      null,
+      'https://github.com/sakuga-software/fruitback/delete/main/.github/workflows/sakuga-review.yml',
+    ])
+    // A member reads only; a disabled repository has no reviews of Kentō to take over; a repository
+    // with no review.yml left has nothing to remove. None of them gets the action or the marker.
+    assert.doesNotMatch((await signIn(CAMILLE)).html, /Remove review\.yml<|row-ready/)
+    rows[ORG.id]![1]!.enabled = false
+    assert.doesNotMatch((await signIn()).html, /Remove review\.yml<|row-ready/)
+    rows[ORG.id]![1]!.enabled = true
     rows[ORG.id]![1]!.workflow = 'none'
-    assert.match((await signIn()).html, /switched/)
+    assert.doesNotMatch((await signIn()).html, /Remove review\.yml<|row-ready/)
   })
 
   it('reads the screen again by itself while GitHub is being checked, and not after (REV-26)', async () => {
@@ -293,7 +319,7 @@ describe('the Repos screen', () => {
     assert.equal(menus.length, (html.match(/<details class="row-menu">/g) ?? []).length)
     assert.match(menus[0]!.moduleUrl, /^\/assets\/app\/ui\/public\/row-menu\.tsx$/)
     // A few props a row: its id and name, and `disable` only where it applies.
-    assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name'])
+    assert.deepEqual(menus.map((entry) => Object.keys(entry.props).sort().join()), ['id,name', 'disable,id,name,workflow'])
     assert.match(html, /<script type="module" src="\/assets\/app\/ui\/public\/boot\.ts" data-runtime="[^"]+"><\/script>/)
     // The one inline script that runs, the import map, carries the nonce of the policy of the response.
     let response = await request('/repos', { cookie })
@@ -311,13 +337,6 @@ describe('the Repos screen', () => {
     assert.match(html, /<span data-recheck="">check in progress on GitHub · <a href="\/repos">Reload<\/a><\/span>/)
     assert.match(html, /src="\/assets\/repos.js\?v=1.2.3"/)
     assert.doesNotMatch(html, /reload in a moment/)
-  })
-
-  it('says in a note, not an alert, that a failed job set the counter back to zero, with a link to its PR', async () => {
-    let { signIn } = setup()
-    let { html } = await signIn()
-    assert.match(html, /<span class="hint">set back to zero after a failure on <a href="https:\/\/github\.com\/sakuga-software\/fruitback\/pull\/12" rel="noreferrer">#12<\/a><\/span>/)
-    assert.doesNotMatch(html, /hint-alert/)
   })
 
   it('searches the name and filters the list, with the counts of the org, and keeps both in the links (REV-36)', async () => {

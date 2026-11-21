@@ -30,6 +30,8 @@ const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const BASE = 'a'.repeat(40)
 const HEADS = ['1', '2', '3', '4', '5'].map((c) => c.repeat(40))
 const PR = 28
+/** A file of the compare API: its name, or its name and its patch. */
+type CompareFile = string | { filename: string; patch?: string }
 const GONE = '<!-- sakuga-review:gone -->'
 
 let pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
@@ -129,13 +131,13 @@ describe('findings from push to push (REV-16)', () => {
   }
 
   /** A push: GitHub moves the head, a runner reviews it, and the publisher posts the review. */
-  async function push(head: string, findings: ReviewFinding[], changed: string[]) {
+  async function push(head: string, findings: ReviewFinding[], changed: CompareFile[], older: CompareFile[] = ['src/sum.ts', 'src/div.ts', 'src/mean.ts']) {
     let previous = fake.state.pr.head
     fake.state.pr.head = head
     fake.state.commits[head] = `push ${head.slice(0, 1)}`
     // Every earlier head is an ancestor of this one; `changed` lists the files of the last push.
     for (let earlier of HEADS.slice(0, HEADS.indexOf(head))) {
-      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : ['src/sum.ts', 'src/div.ts', 'src/mean.ts'] })
+      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : older })
     }
     await database.sql`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref)
@@ -405,6 +407,52 @@ describe('findings from push to push (REV-16)', () => {
       ['Division by zero', 'open'],
       ['The sum subtracts', 'open'],
     ])
+  })
+
+  it('keeps open a finding not found again when a push changed another function of its file, and fixes it when its line changes (KNT-160)', async () => {
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    let [thread] = fake.botThreads()
+    // The push changes lines 40 to 42 of src/sum.ts: far from the line 2 of the finding.
+    let elsewhere = { filename: 'src/sum.ts', patch: '@@ -40,3 +40,4 @@ export function other() {\n   let a = 1;\n-  let b = 2;\n+  let b = 3;\n+  let c = 4;\n   return a + b;' }
+    await push(HEADS[1]!, [], [elsewhere])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+    assert.equal(fake.repliesTo(thread!.id).length, 0, 'no reply that the finding does not show anymore')
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
+
+    // A push that changes its line: the finding is fixed.
+    let onLine = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[2]!, [], [onLine], [onLine])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['fixed'])
+  })
+
+  it('KNT-160: a dismissed finding that a follower moved, then reopened, is not fixed by a push far from its new line', async () => {
+    let long = [...SUM_V1, ...Array.from({ length: 50 }, (_, i) => `// line ${i + 4}`)]
+    await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+    await database.sql`update findings set status = 'dismissed', status_reason = 'not a bug' where repo_id = ${repoId}`
+    let [stored] = await database.sql<{ key: string }[]>`select key from findings where repo_id = ${repoId}`
+    let key = stored!.key
+    // REV-99. The same defect at line 40, on a head that did not change src/sum.ts: the dismissal holds,
+    // and the row moves its line with its head.
+    let follower = { ...finding({ path: 'src/sum.ts', line: 40, title: 'The sum still subtracts', file: long }), follows: key }
+    await push(HEADS[1]!, [follower], ['src/div.ts'])
+    let [moved] = await database.sql<{ status: string; line: number; sha: string }[]>`
+      select status::text as status, line, last_seen_sha as sha from findings where repo_id = ${repoId}`
+    assert.deepEqual({ ...moved }, { status: 'dismissed', line: 40, sha: HEADS[1] })
+
+    // A person opens it again; a push changes lines 1 to 3, far from line 40: it stays open.
+    await database.sql`update findings set status = 'open', status_reason = null where repo_id = ${repoId}`
+    let nearOld = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[2]!, [], [nearOld], [nearOld])
+    assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+  })
+
+  it('KNT-160: the fixed check reads only open findings: a dismissed one stays dismissed when a push changes its line', async () => {
+    await push(HEADS[0]!, [SUBTRACTS(2, SUM_V1)], ['src/sum.ts'])
+    await database.sql`update findings set status = 'dismissed', status_reason = 'not a bug' where repo_id = ${repoId}`
+    let onLine = { filename: 'src/sum.ts', patch: '@@ -1,3 +1,3 @@\n export function sum(a: number, b: number) {\n-  return a - b;\n+  return a + b;\n }' }
+    await push(HEADS[1]!, [], [onLine], [onLine])
+    assert.deepEqual((await findingRows()).map((r) => [r.status, r.statusReason]), [['dismissed', 'not a bug']])
+    assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
   })
 
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {
