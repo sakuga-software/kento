@@ -39,26 +39,41 @@ async function unseed() {
   }
 }
 
-/** Every refusal of the policy on the page, from the event and from the console. */
-async function watchPolicy(page: Page): Promise<string[]> {
+/**
+ * Every refusal of the policy: the page keeps the `securitypolicyviolation` events in a list, which
+ * `collect()` reads before the test leaves the page (Kentō #0413d5: no call out of the page that a
+ * navigation could cut), and the console lines of the browser are the backstop.
+ */
+async function watchPolicy(page: Page) {
   let refusals: string[] = []
-  await page.exposeFunction('reportRefusal', (line: string) => refusals.push(line))
   await page.addInitScript(() => {
+    let found: string[] = []
+    ;(window as unknown as { cspRefusals: string[] }).cspRefusals = found
     document.addEventListener('securitypolicyviolation', (event) => {
-      void (window as unknown as { reportRefusal: (line: string) => void }).reportRefusal(`${location.pathname} ${event.violatedDirective} ${event.blockedURI} ${event.sourceFile}:${event.lineNumber}`)
+      found.push(`${location.pathname} ${event.violatedDirective} ${event.blockedURI} ${event.sourceFile}:${event.lineNumber}`)
     })
   })
   page.on('console', (message) => {
     if (/Content Security Policy|Refused to (apply|execute|load)/.test(message.text())) refusals.push(`console: ${message.text()}`)
   })
-  return refusals
+  /** Adds the refusals of the page in view, once the events of its last actions are out. */
+  let collect = async () => {
+    let found = await page.evaluate(
+      () =>
+        new Promise<string[]>((resolve) =>
+          requestAnimationFrame(() => setTimeout(() => resolve((window as unknown as { cspRefusals: string[] }).cspRefusals), 0)),
+        ),
+    )
+    refusals.push(...found)
+  }
+  return { refusals, collect }
 }
 
 test.describe('the content security policy holds on every screen (KNT-171)', () => {
   test.afterEach(unseed)
 
   test('no refusal on /settings, /findings and the other screens, with their selects opened', async ({ page }) => {
-    let refusals = await watchPolicy(page)
+    let { refusals, collect } = await watchPolicy(page)
     await signIn(page, 'octocat')
     await seed()
     for (let path of ['/settings', '/findings', '/findings?view=precision', '/repos', '/', '/users/octocat', '/feedback', '/runners', '/settings/members']) {
@@ -78,6 +93,7 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
           await expect(page.locator('.select-popover:popover-open')).toHaveCount(0)
         }
       }
+      await collect()
     }
     expect(refusals).toEqual([])
   })
