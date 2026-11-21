@@ -758,7 +758,8 @@ describe('the precision of the dashboard by window (KNT-191)', () => {
     let { html } = await setup(screen(), undefined, undefined, false, findings.store).signIn(OCTOCAT)
     let block = html.slice(html.indexOf('id="precision-block"') - 80)
     assert.match(block, new RegExp(`data-keep="${precisionKey(findings.report, 30)}"`))
-    assert.match(block, /<div data-kind="bars" hidden class="chart-box">/)
+    // The attributes in any order (Kentō #34df04).
+    assert.match(block, /<div(?=[^>]*\sdata-kind="bars")(?=[^>]*\shidden[\s>])(?=[^>]*\sclass="chart-box")[^>]*>/)
     assert.match(block, /<ul[^>]*id="precision-list"[^>]*>/)
     // A share with enough closed findings has its value; one under the minimum has none (no bar).
     assert.match(block, /<li[^>]*data-label="orchard"[^>]*data-value="85.7"|<li[^>]*data-value="85.7"[^>]*data-label="orchard"/)

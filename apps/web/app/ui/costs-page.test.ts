@@ -127,8 +127,9 @@ describe('the Costs screen (KNT-188)', () => {
     assert.match(html, /<tr data-label="20 Nov"><th scope="row"><time datetime="2026-11-20">20 Nov<\/time><\/th><td data-value="1.25" class="num">\$1\.25<\/td><td data-value="0.5" class="num">\$0\.50<\/td><\/tr>/)
     assert.match(html, /<td data-value="" class="num">–<\/td>/)
     // Open details: without JavaScript the tables show. The chart boxes are hidden.
-    assert.equal(html.match(/<details open class="chart-data">/g)?.length, 4)
-    assert.equal(html.match(/<div data-kind="(days|bars)" hidden class="chart-box">/g)?.length, 4)
+    // The attributes in any order (Kentō #34df04).
+    assert.equal(html.match(/<details(?=[^>]*\sopen[\s>])(?=[^>]*\sclass="chart-data")[^>]*>/g)?.length, 4)
+    assert.equal(html.match(/<div(?=[^>]*\sdata-kind="(days|bars)")(?=[^>]*\shidden[\s>])(?=[^>]*\sclass="chart-box")[^>]*>/g)?.length, 4)
     // The repo links to its config; the chart names it after the org.
     assert.match(html, /<tr data-label="app"><th scope="row"><a href="\/repos\/repo-1\/config">org-1\/app<\/a><\/th>/)
     // The most expensive run links to the screen of its pull request.
