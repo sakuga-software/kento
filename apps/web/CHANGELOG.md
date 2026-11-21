@@ -2,9 +2,12 @@
 
 What each release of Kentō changes for the person who runs it: the migrations, the variables, the
 permissions of the GitHub App, the protocol between the service and the runners, and the order of
-the deployment. The newest release first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
+the deployment. The newest release first. The versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Do not edit the sections by hand: Changesets writes each one from the changesets of the merged pull
+requests, in the pull request "chore: version packages". Each entry links its pull request. To add
+an entry, see [CONTRIBUTING.md, "Changesets"](../../CONTRIBUTING.md#changesets).
 
 The service (`apps/web`) and the runner (`apps/runner`) share one version. Read the entries since
 your release before an upgrade or a rollback. [DEPLOY.md](DEPLOY.md) describes the installation as
@@ -17,8 +20,23 @@ Each entry says, when it applies:
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
 
-## Unreleased
+## 0.2.0 (2026-11-21)
 
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
+  to it, as before.
+- **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
+  row per change of the members). It only adds: the release before runs on it.
+- **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu
+  of the org and the settings) and `/invitations` (the invitations of the person). An owner or an
+  admin invites a GitHub login; a person whom GitHub counts in no org of the App signs in with a
+  pending invitation, and sees only it until they accept. No change leaves an org without an
+  active owner.
 - **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
   and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
   of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:
@@ -147,19 +165,6 @@ Each entry says, when it applies:
 - The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
   judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
   are refused.
-- **Reviews** (KNT-154): a pull request that touches authentication, access control, CI, the
-  supply chain, secrets, webhooks, payments, a migration of data or the security of the web layer
-  is a critical change. Its review gets a checklist, its risk starts with "Critical change (…)",
-  and it scores 3/5 at most unless it names a file of the diff (or a route or a library of the
-  change) and a real role that it checked. A `lite` review of it scores 3 at most and advises a
-  deeper one. The runner computes it: no change of the protocol, and a service of the release
-  before shows it as it is.
-- **Reviews** (KNT-153): a finding whose fix says that no change is needed is dropped, and one that
-  only asks the author to confirm becomes a question. The block of the description lists the
-  questions under « Questions »: no thread, no block, no weight in the score.
-- **Protocol** (KNT-153): the runner claims the feature `questions`, and the result of a review can
-  carry `questions`. **Order**: the service first, as always; a service of the release before
-  refuses the claim of a runner of this release.
 
 ## 0.1.0
 

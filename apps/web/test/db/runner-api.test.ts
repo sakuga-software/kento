@@ -17,6 +17,21 @@ const REGISTRATION_TOKEN = 'registration-token-for-the-tests-0123456789'
 const HEAD = 'b'.repeat(40)
 const BASE = 'a'.repeat(40)
 
+
+/**
+ * Runs `work` with timers that fire `early` ms before their time, as a Node timer can on the clock
+ * of `performance.now()` under load: a wait must still last its whole time.
+ */
+async function withEarlyTimers<T>(work: () => Promise<T>, early = 20): Promise<T> {
+  let real = globalThis.setTimeout
+  globalThis.setTimeout = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) =>
+    real(callback, Math.max(0, (ms ?? 0) - early), ...args)) as unknown as typeof setTimeout
+  try {
+    return await work()
+  } finally {
+    globalThis.setTimeout = real
+  }
+}
 describe('runner API', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
@@ -290,10 +305,10 @@ describe('runner API', () => {
 
     it('answers 204 at the end of the wait when no job comes', async () => {
       let { token } = await register()
-      let start = Date.now()
-      let response = await claim(token, undefined, router({ claimWaitMs: 300, claimPollMs: 50 }))
+      let start = performance.now()
+      let response = await withEarlyTimers(() => claim(token, undefined, router({ claimWaitMs: 300, claimPollMs: 50 })))
       assert.equal(response.status, 204)
-      assert.ok(Date.now() - start >= 300)
+      assert.ok(performance.now() - start >= 300, `waited ${performance.now() - start} ms`)
     })
 
     it('never gives a job without its base branch, nor a cancelled or running job', async () => {
@@ -355,9 +370,9 @@ describe('runner API', () => {
       let jobId = await queueJob()
 
       // Not trusted yet, and no key of its own: it could only fail the job.
-      let start = Date.now()
-      assert.equal((await claim(token, { hasProviderKey: false }, router({ claimWaitMs: 300, claimPollMs: 50 }))).status, 204)
-      assert.ok(Date.now() - start >= 300, 'the claim still waits, so the runner does not loop')
+      let start = performance.now()
+      assert.equal((await withEarlyTimers(() => claim(token, { hasProviderKey: false }, router({ claimWaitMs: 300, claimPollMs: 50 })))).status, 204)
+      assert.ok(performance.now() - start >= 300, 'the claim still waits, so the runner does not loop')
 
       // Trusted, but the service has no key to give.
       await database.sql`update runners set trusted = true where id = ${runnerId}`
@@ -399,10 +414,10 @@ describe('runner API', () => {
     it('gives no job when the GitHub App is not configured, after the whole wait', async () => {
       let { token } = await register()
       await queueJob()
-      let start = Date.now()
       let app = router({ mintInstallationToken: null, claimWaitMs: 300 })
-      assert.equal((await claim(token, undefined, app)).status, 204)
-      assert.ok(Date.now() - start >= 300, 'the claim waits, so a runner does not loop on the service')
+      let start = performance.now()
+      assert.equal((await withEarlyTimers(() => claim(token, undefined, app))).status, 204)
+      assert.ok(performance.now() - start >= 300, 'the claim waits, so a runner does not loop on the service')
       let [row] = await database.sql<{ state: string }[]>`select state from jobs`
       assert.equal(row!.state, 'queued')
     })

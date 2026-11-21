@@ -1,6 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
-import { feedbackRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
+import { feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Button } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
@@ -39,6 +39,8 @@ export interface Viewer {
   org: { id: string; name: string }
   /** Every org where the person is a member, with their role in it: the menu of the org. */
   orgs: { id: string; name: string; role: OrgRole }[]
+  /** KNT-150. The pending invitations of the person, in other orgs. */
+  invitations?: number
 }
 
 /** What every screen gives to the frame. */
@@ -136,6 +138,15 @@ export function Shell(handle: Handle<ShellProps>) {
             {tabs ? <div class="page-tabs">{tabs}</div> : null}
             {actions && !readOnly ? <div class="page-actions">{actions}</div> : null}
           </div>
+          {viewer?.invitations && viewer.invitations > 0 && frame.path !== invitationRoutes.invitations.href() ? (
+            <div class="banner banner-info" role="status">
+              <p>
+                <strong class="banner-title">{viewer.invitations === 1 ? 'An invitation' : `${viewer.invitations} invitations`}</strong>{' '}
+                {viewer.invitations === 1 ? 'An organization invites you to Kentō.' : 'Organizations invite you to Kentō.'}{' '}
+                <a href={invitationRoutes.invitations.href()}>See the invitations</a>
+              </p>
+            </div>
+          ) : null}
           {readOnly && viewer ? (
             <div class="banner banner-info" role="status">
               <LockIcon />
@@ -207,6 +218,12 @@ function OrgSwitch(handle: Handle<{ frame: PageFrame; viewer: Viewer }>) {
           </ul>
           <a class="org-menu-link" href={routes.settings.href()}>
             Organization settings
+          </a>
+          <a class="org-menu-link" href={memberRoutes.members.href()}>
+            Members
+          </a>
+          <a class="org-menu-link" href={organizationRoutes.organization.href()}>
+            Name and installations
           </a>
         </div>
       </details>
