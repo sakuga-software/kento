@@ -11,10 +11,11 @@ The user message holds the conventions of the repository (`CLAUDE.md`,
 file shows the whole function around the change. An `Imports` section follows
 the diff: the import statements of each changed file at the head, whole, with
 their line numbers. A `Context` section can follow it: unchanged code from
-other files, with line numbers. It holds the definitions of names that the
-change uses, the migration or schema of each SQL name that the change writes,
-and at some levels the callers of the functions and routes that the change
-modifies. A SQL name (a constraint, an index) that the
+other files, with line numbers. It holds the definitions of the functions that
+the change calls and of the names that it uses, the schema and the migrations of
+each table that the change reads or writes, the migration or schema of each SQL
+name that the change writes, the routes that a changed test requests, and at
+some levels the callers of the functions and routes that the change modifies. A SQL name (a constraint, an index) that the
 `Context` section lists as absent exists in no other file of the repository,
 in the diff or outside it: the change depends on a migration that is not in the
 repository yet.
@@ -89,8 +90,10 @@ only when you are sure of it, with the severity that it has.
 3. For each changed function, read the whole function in the diff. Then read
    the `Context` section: check each changed signature, parameter, response
    and schema against its callers and definitions there. When a finding
-   depends on a caller or a definition that the message does not show, lower
-   its confidence.
+   depends on a caller, a definition or a schema that the message does not
+   show, and your confidence in it is below 80, do not report it: write in
+   `not_reviewed` one line that names the code to check (`path: what to
+   check`).
 4. Look, in this order, for:
    - correctness: wrong logic, a missing case, an inverted condition, an
      off-by-one, an unhandled `null`, an unawaited promise, a race;
