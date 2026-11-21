@@ -803,7 +803,9 @@ summary.button::-webkit-details-marker {
 
 /* KNT-145. View transitions between the pages: each screen is a whole page from the server, so the
    browser runs them across documents. The page fades in 150 ms. The bar at the top is its own part:
-   it does not move or fade, so the header never shifts. Nothing under prefers-reduced-motion. */
+   it does not move or fade, so the header never shifts. Nothing under prefers-reduced-motion.
+   KNT-172: during it every press lands on <html>; public/assets/transition.js ends it at the press and
+   gives the click to the element under it. */
 @media (prefers-reduced-motion: no-preference) {
   @view-transition {
     navigation: auto;
