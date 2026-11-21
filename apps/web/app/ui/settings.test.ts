@@ -284,7 +284,7 @@ describe('the section "Providers and keys"', () => {
     let { request, signIn } = setup([])
     let { cookie, csrf } = await signIn(OCTOCAT)
     let page = await (await request('/settings', { cookie })).text()
-    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button button--outline">/.exec(page)?.[1]
+    let toggle = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)<summary class="button">/.exec(page)?.[1]
     assert.equal(toggle, '<details class="new-provider-toggle">', 'folded')
     // REV-91: the button of the section opens it, and so does a link to #new-provider. With the
     // providers alone, the page has no sidebar (KNT-149: two sections at least).
@@ -292,6 +292,8 @@ describe('the section "Providers and keys"', () => {
     assert.doesNotMatch(page, /Sections of the settings/)
     // Without the sidebar, the page keeps its column of 760 px (kento.css: only .settings-layout-nav widens it).
     assert.match(page, /<div class="settings-layout">/)
+    // KNT-168: no link back to a bar that is not there.
+    assert.doesNotMatch(page, /data-settings-back/)
     assert.match(page, /src="\/assets\/settings\.js\?v=/)
     let response = await request('/settings/providers', { cookie, form: { _csrf: csrf, kind: 'anthropic', label: '', apiKey: KEY } })
     let open = /<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(await response.text())?.[1] ?? ''
@@ -442,6 +444,10 @@ describe('the sidebar of the settings (KNT-149)', () => {
       let ids = [...nav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!)
       assert.deepEqual(ids, [...expected], profile.login)
       assert.match(html, /<div class="settings-layout settings-layout-nav">/)
+      // KNT-168: the rules and the providers end with a link back to the bar of a phone.
+      assert.deepEqual([...html.matchAll(/data-settings-back="([^"]+)"/g)].map((m) => m[1]), ['org-rules', 'providers'], profile.login)
+      // Each link names where it leads and where from, with the label of its section.
+      assert.match(html, /<span class="visually-hidden">Back to the <\/span>Sections<span class="visually-hidden"> from Providers and keys<\/span>/)
       for (let id of ids) assert.match(html, new RegExp(`<[a-z]+ [^>]*\\bid="${id}"`), `#${id} is on the page for ${profile.login}`)
     }
   })

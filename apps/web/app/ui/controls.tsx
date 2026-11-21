@@ -4,20 +4,33 @@
 // `formaction`, `aria-*`, `data-*`…) goes to the element as is.
 import type { Handle, Props, RemixNode } from 'remix/component'
 
-/** The variants that the screens use. `outline` is the default button of Kentō. */
-export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger' | 'danger-soft'
+/**
+ * The variants that the screens use, named as their classes: `outline` is the default button of
+ * Kentō (the class `button` alone), `danger` opens the confirmation of a destructive action and
+ * `danger-solid` acts.
+ */
+export type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger' | 'danger-solid'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 function classes(...names: (string | false | null | undefined)[]): string {
   return names.filter(Boolean).join(' ')
 }
 
+const VARIANT_CLASS: Record<ButtonVariant, string | null> = {
+  primary: 'button-primary',
+  outline: null,
+  ghost: 'button-ghost',
+  danger: 'button-danger',
+  'danger-solid': 'button-danger-solid',
+}
+const SIZE_CLASS: Record<ButtonSize, string | null> = { sm: 'button-small', md: null, lg: 'button-large' }
+
 /**
  * The class of a button, for a `<button>` and for what looks like one: a link, the `<summary>` of a
  * `<details>`, a disabled page link. `extra` is a class of the screen (its layout in kento.css).
  */
 export function buttonClass(variant: ButtonVariant = 'outline', size: ButtonSize = 'md', extra?: string): string {
-  return classes('button', `button--${variant}`, size !== 'md' && `button--${size}`, extra)
+  return classes('button', VARIANT_CLASS[variant], SIZE_CLASS[size], extra)
 }
 
 export type ButtonProps = Props<'button'> & { variant?: ButtonVariant; size?: ButtonSize }
@@ -63,8 +76,8 @@ export function Select(handle: Handle<Props<'select'> & { wrapperClass?: string 
   return () => {
     let { class: extra, wrapperClass, children, ...rest } = handle.props
     return (
-      <span class={classes('select', 'select--native', wrapperClass)}>
-        <select {...rest} class={classes('select__trigger', extra as string | undefined)}>
+      <span class={classes('select-box', wrapperClass)}>
+        <select {...rest} class={classes('select-input', extra as string | undefined)}>
           {children}
         </select>
       </span>
@@ -113,7 +126,7 @@ export function Field(handle: Handle<{ id: string; label: RemixNode; class?: str
     let { id, label, class: extra, children, message } = handle.props
     return (
       <div class={classes('field', extra)}>
-        <label class="label" for={id}>
+        <label class="field-label" for={id}>
           {label}
         </label>
         {children}

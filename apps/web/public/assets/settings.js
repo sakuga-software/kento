@@ -31,7 +31,6 @@
   // section on screen gets aria-current="location", the link of its part on screen aria-current="true".
   const nav = document.querySelector('[data-settings-nav]')
   const toggle = nav?.querySelector('[data-settings-nav-toggle]')
-  const currentLabel = nav?.querySelector('[data-settings-nav-current]')
   const targetOf = (link) => document.getElementById(link.getAttribute('href').slice(1))
   const sections = []
   for (const item of nav?.querySelectorAll('.settings-nav-list > li') ?? []) {
@@ -46,7 +45,7 @@
     sections.push({ link, target, parts })
   }
 
-  // Under 900 px, "Section …" at the top of the page opens the list under it; a link folds it again.
+  // Under 900 px, "Sections" at the top of the page opens the list under it; a link folds it again.
   const setOpen = (open) => {
     if (!nav || !toggle) return
     nav.classList.toggle('settings-nav-open', open)
@@ -98,11 +97,66 @@
     if (row.top < box.top) nav.scrollTop -= box.top - row.top + 8
     else if (row.bottom > box.bottom) nav.scrollTop += row.bottom - box.bottom + 8
   }
+  // KNT-168. Under 900 px the list is at the top of the page: the section on screen is never the
+  // one under the list. There, the marks show the section that the person chose in the list, or
+  // came back from with its link "Sections", while the person is in it; otherwise nothing.
+  const phone = () => !!toggle && getComputedStyle(toggle).display !== 'none'
+  // The section of the last choice, and whether it came from a link "Sections": the page is then at
+  // the bar, away from that section, and the mark stays until the person leaves the bar.
+  let chosen = null
+  let fromBack = false
+  const clearMarks = () => {
+    chosen = null
+    mark(sections, null, 'location')
+    for (const other of sections) mark(other.parts, null, 'true')
+  }
+  const markChoice = (link) => {
+    const section = sections.find((entry) => entry.link === link || entry.parts.some((part) => part.link === link) || entry.target.id === link?.dataset?.settingsBack)
+    chosen = section ?? null
+    mark(sections, chosen, 'location')
+    for (const other of sections) mark(other.parts, other === chosen ? other.parts.find((part) => part.link === link) ?? null : null, 'true')
+  }
+  nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
+    const link = event.target instanceof Element ? event.target.closest('a') : null
+    if (!link || !phone()) return
+    fromBack = false
+    markChoice(link)
+  })
+  // "Sections" at the end of a section: the link leads to the bar; the list opens on that section,
+  // and the focus goes to the button, so that Tab goes on into the list.
+  document.addEventListener('click', (event) => {
+    // A click that opens another tab or window leaves this page as it is.
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const back = event.target instanceof Element ? event.target.closest('[data-settings-back]') : null
+    if (!back || !phone()) return
+    setOpen(true)
+    fromBack = true
+    markChoice(back)
+    requestAnimationFrame(() => toggle.focus({ preventScroll: true }))
+  })
+  // A window that narrows to a phone drops the marks of the scroll: they named a section that the
+  // person did not choose.
+  let wasPhone = false
   const update = () => {
+    if (phone()) {
+      if (!wasPhone) {
+        clearMarks()
+        // The sidebar scrolls to its marked link again once the window widens.
+        shown = null
+      } else if (chosen) {
+        // The person scrolled out of the chosen section by hand: the mark goes.
+        const box = nav.getBoundingClientRect()
+        const atBar = box.bottom > 0 && box.top < window.innerHeight
+        if (!(fromBack && atBar) && pick(sections) !== chosen) clearMarks()
+        if (!atBar) fromBack = false
+      }
+      wasPhone = true
+      return
+    }
+    wasPhone = false
     const section = pick(sections) ?? sections[0]
     mark(sections, section, 'location')
     for (const other of sections) mark(other.parts, other === section ? pick(other.parts) : null, 'true')
-    if (currentLabel && section) currentLabel.textContent = section.link.textContent
     const deepest = nav?.querySelector('a[aria-current="true"]') ?? section?.link
     if (deepest && deepest !== shown) keepInView(deepest)
     shown = deepest
