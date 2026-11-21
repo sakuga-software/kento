@@ -21,6 +21,29 @@ const TEST_FILE = /\.test\.|\.spec\.|(^|\/)(tests?|__tests__)\//;
 const WORKFLOW_FILE = /^\.github\/(workflows\/[^/]+|actions\/.+\/action)\.ya?ml$/;
 const WHOLE_FILE_CONTEXT = 100_000;
 
+/**
+ * KNT-166. The value of a changed file for the review, when the pack must cut: the lowest goes first.
+ * The schema, the migrations and the storage come last: on a large pull request, the defects and the
+ * code that refutes a wrong finding were there.
+ */
+export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, core: 5 } as const;
+const GENERATED_LIKE = /\.min\.(js|css)$|\.map$|(^|\/)public\/(assets|build)\/|(^|\/)(fixtures?|__fixtures__|testdata)\//;
+const DOC_FILE = /\.(md|mdx|markdown|rst|adoc|txt)$|(^|\/)docs?\//i;
+const E2E_FILE = /(^|\/)e2e\//;
+const UI_FILE = /\.(css|scss|sass|less|html|vue|svelte)$|(^|\/)(ui|components?|views?|pages?|styles?)\/.*\.(tsx|jsx)$/;
+const CORE_FILE = /\.(sql|prisma)$|(^|\/)(migrations?|drizzle|prisma)\/|(^|\/)schema\.[a-z]+$|(^|\/)(db|database)\/|(^|[/-])(store|stores|repository|repositories|dao)(\.[a-z]+$|\/)/;
+export function trimRank(path: string): number {
+  if (GENERATED_LIKE.test(path)) return TRIM_RANK.generated;
+  if (DOC_FILE.test(path)) return TRIM_RANK.docs;
+  if (TEST_FILE.test(path) || E2E_FILE.test(path)) return TRIM_RANK.tests;
+  if (CORE_FILE.test(path)) return TRIM_RANK.core;
+  if (UI_FILE.test(path)) return TRIM_RANK.ui;
+  return TRIM_RANK.source;
+}
+
+/** KNT-166. The changed files, and those that the review did not read or read with less context. */
+export type Coverage = { files: number; cut: string[]; narrowed: string[] };
+
 // The context: unchanged code that the change uses or that uses the change
 
 /** The text as a literal in a regular expression, with every special character escaped. */
@@ -623,7 +646,16 @@ export function buildPack(
    * (MAX_EARLIER_BYTES, and MAX_CHANGED_ZONES_BYTES of REV-100).
    */
   unkeyed = '',
-): { pack: string; parts: MessagePart[]; skipped: string[]; rules: PackedRule[]; body: string; contextHash: string } {
+): {
+  pack: string;
+  parts: MessagePart[];
+  skipped: string[];
+  rules: PackedRule[];
+  body: string;
+  contextHash: string;
+  /** KNT-166. What the pack read of the changed files: the review says it, and its score follows it. */
+  coverage: Coverage;
+} {
   const reviewed: string[] = [];
   const skipped: string[] = [];
   // The old path of each renamed file: the diff of a rename needs both paths.
@@ -666,18 +698,56 @@ export function buildPack(
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
   const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
-  // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
-  for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
-    if (size() <= budget) break;
+  // KNT-166. Over the budget, the files of least value go first, the largest first in each rank:
+  // generated-like files and docs are dropped; then the source files lose the whole function around
+  // each hunk and keep three lines of context, the core last; then the tests, the UI, the source and
+  // the core are dropped, in this order.
+  const byRank = (ranks: number[]) =>
+    [...hunks]
+      .filter(([path]) => ranks.includes(trimRank(path)))
+      .sort((a, b) => trimRank(a[0]) - trimRank(b[0]) || b[1].length - a[1].length)
+      .map(([path]) => path);
+  const cut: string[] = [];
+  const narrowed: string[] = [];
+  const whole = new Map<string, string>();
+  const drop = (path: string) => {
     skipped.push(`${path}: removed to fit in the maximum size of the review`);
+    cut.push(path);
     hunks.delete(path);
+  };
+  for (const path of byRank([TRIM_RANK.generated, TRIM_RANK.docs])) {
+    if (size() <= budget) break;
+    drop(path);
   }
+  for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+    if (size() <= budget) break;
+    if (WORKFLOW_FILE.test(path) || TEST_FILE.test(path)) continue;
+    const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+    const smaller = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
+    if (smaller.length < hunks.get(path)!.length) {
+      whole.set(path, hunks.get(path)!);
+      hunks.set(path, smaller);
+      narrowed.push(path);
+    }
+  }
+  for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+    if (size() <= budget) break;
+    drop(path);
+  }
+  // The drops can leave room: the core files get their whole functions back first, the smallest first.
+  for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => trimRank(b) - trimRank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
+    const wider = size() - hunks.get(path)!.length + whole.get(path)!.length;
+    if (wider <= budget) hunks.set(path, whole.get(path)!);
+  }
+  const narrowedNote = narrowed.filter((path) => hunks.has(path) && hunks.get(path) !== whole.get(path));
 
   const header = `# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`;
   const notReviewed = skipped.length ? `## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n` : '';
   const diff =
     '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
-    'A test file shows three lines of context. A workflow file shows whole.\n\n```diff\n' +
+    'A test file shows three lines of context. A workflow file shows whole.' +
+    (narrowedNote.length ? ` To fit in the size of the review, these files show three lines of context only: ${narrowedNote.map((p) => `\`${p}\``).join(', ')}.` : '') +
+    '\n\n```diff\n' +
     reviewed.map((path) => hunks.get(path) ?? '').join('') +
     '```\n';
   const imports = [...hunks.keys()].map((path) => importsOf.get(path) ?? '').join('');
@@ -711,5 +781,8 @@ export function buildPack(
   // REV-113. A short hash of the rules, the imports and the context: the logs of the runner tell how
   // often a review of a pull request holds the same ones as the last review.
   const contextHash = createHash('sha256').update(rulesText + importsPart + contextPart).digest('hex').slice(0, 12);
-  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash };
+  // A file of more than MAX_FILE_CHANGED_LINES is logic that the review did not read, as a cut one.
+  const unread = [...cut, ...changes.map((c) => c.path).filter((path) => !SKIP.test(path) && !reviewed.includes(path))];
+  const coverage: Coverage = { files: changes.length, cut: unread, narrowed: narrowedNote };
+  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage };
 }

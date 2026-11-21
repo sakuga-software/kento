@@ -12,7 +12,8 @@ import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts'
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type MessagePart, type ModelClient } from './model.ts';
 import { linkFindings, NO_LINK, withLinkUsage, type LinkReport } from './link.ts';
-import { buildPack } from './pack.ts';
+import { applyCoverage } from './coverage.ts';
+import { buildPack, type Coverage } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
@@ -136,6 +137,8 @@ export type ReviewResult = {
   contextHash: string;
   /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
   link: LinkReport;
+  /** KNT-166. The changed files that the pack did not read, or read with less context. */
+  coverage: Coverage | null;
 };
 
 /** REV-89. A head whose input is the one of the last review: no model call. */
@@ -206,6 +209,8 @@ export type PreparedReview = {
   delta: DeltaPlan | null;
   /** REV-100. What changed since the last reviewed commit, or null. */
   seen: SeenCode | null;
+  /** KNT-166. The changed files that the pack did not read, or read with less context. */
+  coverage?: Coverage;
 };
 
 export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
@@ -233,7 +238,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
-  const { pack, parts, skipped, rules, contextHash } =
+  const { pack, parts, skipped, rules, contextHash, coverage } =
     delta || earlier
       ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
@@ -253,6 +258,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     reuseKey: key,
     delta,
     seen,
+    coverage,
   };
 }
 
@@ -268,7 +274,7 @@ export function finishReview<F extends Finding>(
   usage: Usage,
   link: LinkReport = NO_LINK,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
+  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash, coverage } = prepared;
   // A finding cites a rule of the pack, or none; the floor of the rule sets its lowest severity. It
   // runs before the anchors and the fingerprint, so that the score, the verdict and the fingerprint
   // see the rule.
@@ -333,6 +339,11 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
+  // KNT-166. Last, after the floors: a review that did not read a file of logic says so, and its score
+  // cannot pass what it read.
+  const said = answer.confidence_score;
+  const cap = applyCoverage(answer, coverage);
+  if (cap !== null && said > cap) log(`score capped at ${cap}: the model said ${said}, and the review did not read ${coverage!.cut.length} changed file${coverage!.cut.length === 1 ? '' : 's'}`);
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
     // REV-104. An applicable suggestion wins over the patch.
@@ -378,6 +389,7 @@ export function finishReview<F extends Finding>(
     seenSince: seen?.since ?? null,
     contextHash,
     link,
+    coverage: coverage ?? null,
   };
 }
 
