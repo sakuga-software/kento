@@ -15,7 +15,8 @@ import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts'
 import { levelConfig, type LevelConfig } from './levels.ts';
 import { askModel, type MessagePart, type ModelClient } from './model.ts';
 import { linkFindings, NO_LINK, withLinkUsage, type LinkReport } from './link.ts';
-import { buildPack } from './pack.ts';
+import { applyCoverage } from './coverage.ts';
+import { buildPack, type Coverage } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
@@ -139,6 +140,8 @@ export type ReviewResult = {
   contextHash: string;
   /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
   link: LinkReport;
+  /** KNT-166. The changed files that the pack did not read, or read with less context. */
+  coverage: Coverage | null;
   /**
    * KNT-151. The findings moved to « Not reviewed » (premise.ts), with their anchor and fingerprint:
    * the service matches them to its open findings and leaves their threads open, never `fixed`.
@@ -197,6 +200,25 @@ export function packSchema(prepared: Pick<PreparedReview, 'threads'>): object {
   return answerSchema({ threads: prepared.threads.length > 0 });
 }
 
+/**
+ * KNT-166. The coverage of an incremental review: the files that its pack cut, and those of the pull
+ * request that the whole pack cuts and that it did not read again.
+ */
+export function deltaCoverage(whole: Coverage, incremental: Coverage, reread: readonly string[]): Coverage {
+  const unreadNow = new Set([...incremental.cut, ...incremental.large]);
+  const readNow = new Set(reread.filter((p) => !unreadNow.has(p)));
+  const notRead = (p: string) => !readNow.has(p);
+  const merge = (a: string[], b: string[]) => [...new Set([...a, ...b.filter(notRead)])];
+  return {
+    files: whole.files,
+    cut: merge(incremental.cut, whole.cut),
+    large: merge(incremental.large, whole.large),
+    narrowed: incremental.narrowed,
+    logic: merge(incremental.logic, whole.logic),
+    core: merge(incremental.core, whole.core),
+  };
+}
+
 /** What a review reads before its model call: the merge base, the pack and the changed lines. */
 export type PreparedReview = {
   base: string;
@@ -216,6 +238,8 @@ export type PreparedReview = {
   delta: DeltaPlan | null;
   /** REV-100. What changed since the last reviewed commit, or null. */
   seen: SeenCode | null;
+  /** KNT-166. The changed files that the pack did not read, or read with less context. */
+  coverage?: Coverage;
   /** KNT-154. Why the whole pull request is a critical change, or null. */
   critical: Criticality | null;
   /** KNT-154. What a path of `checked` is verified against, for a critical change; null otherwise. */
@@ -252,6 +276,13 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
       ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
       : whole;
   const { skipped, rules, contextHash } = built;
+  // KNT-166. An incremental pack reads only the files that changed since the last review. A file of
+  // the pull request that the whole pack cuts, and that this pack does not read, was most likely cut
+  // then too: it counts as not read.
+  const coverage = delta ? deltaCoverage(whole.coverage, built.coverage, delta.files) : built.coverage;
+  // « Not reviewed » lists the same files as the summary and the cap: those of the whole pull request
+  // that this incremental pack did not read again.
+  const skippedAll = delta ? [...skipped, ...whole.skipped.filter((s) => coverage.cut.concat(coverage.large).some((p) => s.startsWith(`${p}: `)) && !skipped.includes(s))] : skipped;
   // KNT-154. The whole pull request decides whether the change is critical, an incremental review
   // too. Its checklist ends the pack: the system prompt stays the same for every review (REV-113).
   // The diff decides it, so the reuse key of the diff covers it.
@@ -266,7 +297,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     pack,
     parts,
     contextHash,
-    skipped,
+    skipped: skippedAll,
     rules,
     lines,
     hunks: hunkLines(input.repoDir, base, input.head),
@@ -277,6 +308,7 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     reuseKey: key,
     delta,
     seen,
+    coverage,
     critical,
     checkContext,
   };
@@ -316,7 +348,7 @@ export function finishReview<F extends Finding>(
   usage: Usage,
   link: LinkReport = NO_LINK,
 ): ReviewResult & { findings: (ReviewedFinding & F)[] } {
-  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash } = prepared;
+  const { base, pack, skipped, rules, lines, hunks, threads, rejected, earlier, diffHash, reuseKey, delta, seen, contextHash, coverage } = prepared;
   const log = input.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   const fileAt = headFiles(input.repoDir, input.head, log);
   // KNT-154. A critical change, what the answer named that the engine can verify, and whether the
@@ -402,6 +434,11 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
+  // KNT-166. Last, after the floors: a review that did not read a file of logic says so, and its score
+  // cannot pass what it read.
+  const said = Number(answer.confidence_score) || 0;
+  const cap = applyCoverage(answer, coverage);
+  if (cap !== null && said > cap) log(`score capped at ${cap}: the model said ${said}, and the review did not read ${coverage!.logic.length} changed file${coverage!.logic.length === 1 ? '' : 's'} of logic`);
   const reviewed = (f: F) => ({ ...f, anchor: anchor(f, lines), blocking: isBlocking(f, lines), suggestion_range: null, fingerprint: fingerprint(f, fileAt(f.path)) });
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
@@ -448,6 +485,7 @@ export function finishReview<F extends Finding>(
     seenSince: seen?.since ?? null,
     contextHash,
     link,
+    coverage: coverage ?? null,
     moved: moved.map(({ patch: _patch, ...f }) => reviewed(f as F)) as (ReviewedFinding & F)[],
     critical,
   };
