@@ -89,7 +89,7 @@ test('a test file whose whole tests pass the limit shows three lines of context'
 });
 
 const earlier = (status: EarlierFinding['status'], commit: string): EarlierFinding => ({
-  key: '0123456789ab',
+  key: 'f'.repeat(12),
   path: 'src/names.ts',
   line: 2,
   title: 'The first name is dropped when the list has two names',
