@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, expectReadableButtons, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, expectReadableButtons, hydrated, selectValue, signIn, watchConsole } from './helpers.ts'
 
 // KNT-150: the name and the installations of the org. The name goes back at the end: the other
 // specs read it.
@@ -34,6 +34,10 @@ test.describe('the name and the installations of the org (KNT-150)', () => {
     await expect(installation.getByText(`It is the last installation: ${FAKE_ORG.login} is deleted with the move`, { exact: false })).toBeVisible()
     await expect(installation.getByText('Its members from GitHub leave it:', { exact: false })).toBeVisible()
     await expect(installation.getByLabel(`Type ${FAKE_ORG.login} to confirm.`)).toBeVisible()
+    // KNT-165: the target is the select of @remix-run/ui once hydrated; the form posts its value.
+    await hydrated(page)
+    await chooseOption(installation, 'To', { label: 'A new organization' })
+    await expect(selectValue(installation, 'to')).toHaveValue('new')
     await expectNoAxeViolations(page)
     await expectReadableButtons(page)
 
