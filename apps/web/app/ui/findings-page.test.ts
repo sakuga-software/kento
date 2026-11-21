@@ -260,7 +260,7 @@ describe('the Findings screen, its selection and its actions', () => {
     assert.match(html, /role="status" class="banner banner-alert"/)
     assert.match(html, /1 thread got no reply/)
     assert.match(html, /1 already had this status and this reason/)
-    assert.match(html, /1 fixed finding stays as is\. A push fixed it/)
+    assert.match(html, /1 fixed finding stays as is: a later review did not find it again after a push changed its file\./)
     assert.match(html, /Kentō could not save 1 finding\. Try again/)
   })
 

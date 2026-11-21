@@ -156,15 +156,15 @@ function rejectCommand(rest: string): CommentCommand {
 /** Where a command was written: the conversation of the pull request, or a reply in a review thread. */
 export type PlaceKind = 'conversation' | 'thread'
 
-export type RejectProblem = 'reason_missing' | 'reason_long' | 'id_missing' | 'id_in_thread'
+export type RejectProblem = 'reason_missing' | 'reason_long' | 'id_missing'
 
 /**
- * Why a `reject` cannot run, before any read of the findings, or null. In a thread, the thread names
- * the finding: an id there is refused, so that a reply never sets aside another finding than the one
- * of its thread. In the conversation, the id is needed.
+ * Why a `reject` cannot run, before any read of the findings, or null. In the conversation, the id is
+ * needed. In a thread, the thread names the finding, and an id is optional (KNT-160): the handler
+ * checks that it is the id of the finding of the thread, so that a reply never sets aside another
+ * finding.
  */
 export function rejectProblem(command: Extract<CommentCommand, { verb: 'reject' }>, place: PlaceKind): RejectProblem | null {
-  if (place === 'thread' && command.id !== null) return 'id_in_thread'
   if (place === 'conversation' && command.id === null) return 'id_missing'
   if (command.reason === '') return 'reason_missing'
   if (command.reason.length > REASON_MAX) return 'reason_long'
@@ -180,8 +180,6 @@ export function rejectProblemText(problem: RejectProblem): string {
       return `The cause of a \`reject\` has at most ${REASON_MAX} characters.`
     case 'id_missing':
       return `In the conversation of the PR, \`reject\` needs the id of the finding, shown in the list of the description: \`${mention('reject #3cf454 <cause>')}\`.`
-    case 'id_in_thread':
-      return `In the thread of a finding, \`reject\` applies to that finding. Write the cause without an id: \`${mention('reject <cause>')}\`.`
   }
 }
 
