@@ -8,19 +8,32 @@ import { describe, it } from 'remix/test'
 
 const SOURCE = readFileSync(new URL('../../public/assets/transition.js', import.meta.url), 'utf8')
 
-class FakeElement {
-  clicks = 0
-  focused = false
+class FakeMouseEvent {
   constructor(
-    readonly tag: string,
-    readonly field: FakeElement | null = null,
+    readonly type: string,
+    readonly init: Record<string, unknown>,
   ) {}
+}
+
+/** An element; an SVG icon is one, and is not an HTMLElement. */
+class FakeElement {
+  events: FakeMouseEvent[] = []
+  field: FakeHTMLElement | null = null
+  constructor(readonly tag: string) {}
   closest() {
     return this.field
   }
-  click() {
-    this.clicks++
+  dispatchEvent(event: FakeMouseEvent) {
+    this.events.push(event)
+    return true
   }
+  get clicks() {
+    return this.events.filter((event) => event.type === 'click').length
+  }
+}
+
+class FakeHTMLElement extends FakeElement {
+  focused = false
   focus() {
     this.focused = true
   }
@@ -32,6 +45,12 @@ interface FakeEvent {
   clientY?: number
   timeStamp: number
   isPrimary?: boolean
+  button?: number
+  detail?: number
+  ctrlKey?: boolean
+  metaKey?: boolean
+  shiftKey?: boolean
+  altKey?: boolean
   stopped?: boolean
   stopImmediatePropagation?: () => void
 }
@@ -48,130 +67,174 @@ class FakeTransition {
 /** Runs the script on a fake page, with `transition` as document.activeViewTransition. */
 function load({ transition = null as FakeTransition | null, under = null as FakeElement | null } = {}) {
   let listeners = new Map<string, ((event: FakeEvent) => void)[]>()
-  let html = new FakeElement('html')
-  let body = new FakeElement('body')
+  let html = new FakeHTMLElement('html')
+  let body = new FakeHTMLElement('body')
   let points: [number, number][] = []
-  let view = { scrollX: 0, scrollY: 0 }
   let document = {
     documentElement: html,
     body,
     activeViewTransition: transition,
     elementFromPoint: (x: number, y: number) => (points.push([x, y]), under),
   }
-  let context = {
-    HTMLElement: FakeElement,
-    document,
-    window: { addEventListener: (type: string, listener: (event: FakeEvent) => void) => listeners.set(type, [...(listeners.get(type) ?? []), listener]) },
-    ...view,
-  }
+  let window = { addEventListener: (type: string, listener: (event: FakeEvent) => void) => listeners.set(type, [...(listeners.get(type) ?? []), listener]) }
+  let context = { Element: FakeElement, HTMLElement: FakeHTMLElement, MouseEvent: FakeMouseEvent, document, window, scrollX: 0, scrollY: 0 }
   runInNewContext(SOURCE, context)
   let fire = (type: string, event: FakeEvent) => {
     event.stopImmediatePropagation = () => (event.stopped = true)
     for (let listener of listeners.get(type) ?? []) listener(event)
     return event
   }
-  /** A press then its click, at (10, 20). */
-  let tap = (target: unknown = html, { at = 1000, after = 80 } = {}) => {
-    fire('pointerdown', { target, clientX: 10, clientY: 20, timeStamp: at, isPrimary: true })
-    return fire('click', { target, timeStamp: at + after })
+  /** A press of the main button then its click, at (10, 20). */
+  let tap = (target: unknown = html, { at = 1000, after = 80, keys = {} as Partial<FakeEvent>, detail = 1 } = {}) => {
+    fire('pointerdown', { target, clientX: 10, clientY: 20, timeStamp: at, isPrimary: true, button: 0, ...keys })
+    return fire('click', { target, timeStamp: at + after, detail, ...keys })
+  }
+  /** Ends the transition, and lets the replay run. */
+  let finish = async (end: FakeTransition | null = transition) => {
+    document.activeViewTransition = null
+    end?.done()
+    await end?.finished
+    await Promise.resolve()
   }
   /** Scrolls the fake window. */
   let scroll = (y: number) => (context.scrollY = y)
-  return { document, html, fire, tap, points, scroll }
+  return { document, html, window, fire, tap, finish, points, scroll }
 }
 
 describe('a tap during the page transition (KNT-172)', () => {
   it('ends the transition, stops the click on <html>, and clicks the element under the press once the page is back', async () => {
     let transition = new FakeTransition()
-    let link = new FakeElement('a')
+    let link = new FakeHTMLElement('a')
     let page = load({ transition, under: link })
     let click = page.tap()
     assert.equal(transition.skipped, 1)
     assert.equal(click.stopped, true)
     assert.equal(link.clicks, 0, 'not before the transition ends: the browser would still send it to <html>')
-    page.document.activeViewTransition = null
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.deepEqual(page.points, [[10, 20]])
     assert.equal(link.clicks, 1)
+    let init = link.events[0]!.init
+    assert.equal(init.bubbles, true)
+    assert.equal(init.cancelable, true)
+    assert.equal(init.view, page.window)
+    assert.equal(init.button, 0)
+    assert.equal(init.detail, 1)
+    assert.equal(init.clientX, 10)
+    assert.equal(init.clientY, 20)
     assert.equal(link.focused, false)
+  })
+
+  it('keeps the keys of the press: Ctrl or Cmd opens the link in a new tab', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeHTMLElement('a')
+    let page = load({ transition, under: link })
+    page.tap(page.html, { keys: { ctrlKey: true, metaKey: true, shiftKey: false, altKey: true } })
+    await page.finish()
+    let init = link.events[0]!.init
+    assert.deepEqual([init.ctrlKey, init.metaKey, init.shiftKey, init.altKey], [true, true, false, true])
+  })
+
+  it('clicks an SVG icon too, which is no HTMLElement: the click reaches its link', async () => {
+    let transition = new FakeTransition()
+    let path = new FakeElement('path')
+    let page = load({ transition, under: path })
+    page.tap()
+    await page.finish()
+    assert.equal(path.clicks, 1)
   })
 
   it('gives the focus to a field, as a real click does', async () => {
     let transition = new FakeTransition()
-    let input = new FakeElement('input')
-    input.closest = () => input
+    let input = new FakeHTMLElement('input')
+    input.field = input
     let page = load({ transition, under: input })
     page.tap()
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.equal(input.focused, true)
     assert.equal(input.clicks, 1)
   })
 
+  it('ends the transition on a middle or right press, and replays nothing', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeHTMLElement('a')
+    let page = load({ transition, under: link })
+    page.fire('pointerdown', { target: page.html, clientX: 10, clientY: 20, timeStamp: 1000, isPrimary: true, button: 1 })
+    assert.equal(transition.skipped, 1)
+    assert.equal(page.fire('click', { target: page.html, timeStamp: 1080, detail: 1 }).stopped, undefined)
+    await page.finish()
+    assert.equal(link.clicks, 0)
+  })
+
+  it('replays no hurried second click: it was aimed at the page before', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeHTMLElement('a')
+    let page = load({ transition, under: link })
+    assert.equal(page.tap(page.html, { detail: 2 }).stopped, true)
+    await page.finish()
+    assert.equal(link.clicks, 0)
+  })
+
   it('leaves a press alone with no transition, on an element, or not primary', async () => {
-    let link = new FakeElement('a')
+    let link = new FakeHTMLElement('a')
     let none = load({ under: link })
     assert.equal(none.tap().stopped, undefined)
 
     let transition = new FakeTransition()
     let page = load({ transition, under: link })
     assert.equal(page.tap(link).stopped, undefined, 'the press reached an element: nothing to do')
-    page.fire('pointerdown', { target: page.html, clientX: 1, clientY: 1, timeStamp: 1, isPrimary: false })
-    assert.equal(page.fire('click', { target: page.html, timeStamp: 2 }).stopped, undefined, 'a second finger')
+    page.fire('pointerdown', { target: page.html, clientX: 1, clientY: 1, timeStamp: 1, isPrimary: false, button: 0 })
+    assert.equal(page.fire('click', { target: page.html, timeStamp: 2, detail: 1 }).stopped, undefined, 'a second finger')
     assert.equal(transition.skipped, 0)
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.equal(link.clicks, 0)
+  })
+
+  it('replays nothing when the real click reached the element (a touch after the end of the transition)', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeHTMLElement('a')
+    let page = load({ transition, under: link })
+    page.fire('pointerdown', { target: page.html, clientX: 10, clientY: 20, timeStamp: 1000, isPrimary: true, button: 0 })
+    assert.equal(page.fire('click', { target: link, timeStamp: 1080, detail: 1 }).stopped, undefined)
+    await page.finish()
+    assert.equal(link.clicks, 0, 'the browser gave the click: a replay would activate the link twice')
   })
 
   it('forgets a press with no click: a scroll, or a click too late, or one after another press', async () => {
     let transition = new FakeTransition()
-    let link = new FakeElement('a')
+    let link = new FakeHTMLElement('a')
     let page = load({ transition, under: link })
     assert.equal(page.tap(page.html, { after: 1500 }).stopped, undefined, 'a click 1.5 s later is not that tap')
-    page.fire('pointerdown', { target: page.html, clientX: 1, clientY: 1, timeStamp: 3000, isPrimary: true })
-    page.fire('pointerdown', { target: link, clientX: 1, clientY: 1, timeStamp: 3100, isPrimary: true })
-    assert.equal(page.fire('click', { target: page.html, timeStamp: 3200 }).stopped, undefined)
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    page.fire('pointerdown', { target: page.html, clientX: 1, clientY: 1, timeStamp: 3000, isPrimary: true, button: 0 })
+    page.fire('pointerdown', { target: link, clientX: 1, clientY: 1, timeStamp: 3100, isPrimary: true, button: 0 })
+    assert.equal(page.fire('click', { target: page.html, timeStamp: 3200, detail: 1 }).stopped, undefined)
+    await page.finish()
     assert.equal(link.clicks, 0)
   })
 
   it('replays nothing on a page that the browser left before the transition ended (Kentō #36cca6)', async () => {
     let transition = new FakeTransition()
-    let link = new FakeElement('a')
+    let link = new FakeHTMLElement('a')
     let page = load({ transition, under: link })
     assert.equal(page.tap().stopped, true)
     page.fire('pagehide', { target: null, timeStamp: 1100 })
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.equal(link.clicks, 0)
     // Back from the cache of the browser, the page handles the next tap again.
     let next = new FakeTransition()
     page.document.activeViewTransition = next
     page.fire('pageshow', { target: null, timeStamp: 5000 })
     page.tap(page.html, { at: 6000 })
-    next.done()
-    await next.finished
-    await Promise.resolve()
+    await page.finish(next)
     assert.equal(link.clicks, 1)
   })
 
   it('replays nothing when the page scrolled between the press and the end of the transition (Kentō #160162)', async () => {
     let transition = new FakeTransition()
-    let link = new FakeElement('a')
+    let link = new FakeHTMLElement('a')
     let page = load({ transition, under: link })
     assert.equal(page.tap().stopped, true)
     page.scroll(120)
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.equal(link.clicks, 0)
   })
 
@@ -179,9 +242,7 @@ describe('a tap during the page transition (KNT-172)', () => {
     let transition = new FakeTransition()
     let page = load({ transition, under: null })
     page.tap()
-    transition.done()
-    await transition.finished
-    await Promise.resolve()
+    await page.finish()
     assert.deepEqual(page.points, [[10, 20]])
   })
 })

@@ -141,29 +141,8 @@ test.describe('a tap during the page transition (KNT-172)', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   })
 
-  /** Taps the middle of the element, with the pointer of the project, while the transition runs. */
-  async function tapDuringTransition(page: Page, locator: Locator, mobile: boolean) {
-    let box = (await locator.boundingBox())!
-    let x = box.x + box.width / 2
-    let y = box.y + box.height / 2
-    expect(await page.evaluate(() => (window as unknown as { transition: string }).transition)).toBe('running')
-    // The defect: the browser sends the press to <html>, not to the element.
-    expect(await page.evaluate(([px, py]) => document.elementFromPoint(px!, py!)?.tagName, [x, y])).toBe('HTML')
-    if (mobile) await page.touchscreen.tap(x, y)
-    else await page.mouse.click(x, y)
-  }
-
-  test('a tap right after a navigation reaches its target, while the transition still runs', async ({ page }, testInfo) => {
-    // A navigation from a script, as from a link: the browser runs the transition (an entry in the
-    // address bar would not).
-    await page.evaluate(() => (location.href = '/findings'))
-    await page.waitForFunction(() => (window as unknown as { transition: string }).transition === 'running')
-    await tapDuringTransition(page, page.getByRole('link', { name: 'Precision', exact: true }), testInfo.project.name === 'mobile')
-    await expect(page).toHaveURL(/view=precision/)
-  })
-
-  test('a tap on a field during the transition gives it the focus', async ({ page }, testInfo) => {
-    // One finding, so that Findings shows its filters and their search field.
+  /** One finding, so that Findings shows its filters, its search field and a row with a checkbox. */
+  async function withFinding(run: () => Promise<void>) {
     let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
     try {
       let [org] = await sql<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
@@ -175,17 +154,83 @@ test.describe('a tap during the page transition (KNT-172)', () => {
         insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
         select id, 1, 'knt-172', 'knt-172', 'a.ts', 1, 'A finding for KNT-172', 'minor', 'bug', 80, 'open', ${'a'.repeat(40)}, ${'a'.repeat(40)}
         from repos where github_repo_id = 7001 on conflict do nothing`
-      await page.evaluate(() => (location.href = '/findings'))
-      await page.waitForFunction(() => (window as unknown as { transition: string }).transition === 'running')
+      await run()
+    } finally {
+      await sql`delete from findings where fingerprint = 'knt-172'`
+      await sql.end()
+    }
+  }
+
+  /** A navigation from a script, as from a link: the browser runs the transition (an entry in the address bar would not). */
+  async function goDuringTransition(page: Page, path: string) {
+    await page.evaluate((to) => (location.href = to), path)
+    await page.waitForFunction(() => (window as unknown as { transition: string }).transition === 'running')
+  }
+
+  /**
+   * Presses the middle of the element while the transition runs: a touch on mobile, else the mouse
+   * with a real gap between press and release. A fixed point, not a locator click, which would retry.
+   */
+  async function tapDuringTransition(page: Page, locator: Locator, mobile: boolean) {
+    let box = (await locator.boundingBox())!
+    let x = box.x + box.width / 2
+    let y = box.y + box.height / 2
+    expect(await page.evaluate(() => (window as unknown as { transition: string }).transition)).toBe('running')
+    // The defect: the browser sends the press to <html>, not to the element.
+    expect(await page.evaluate(([px, py]) => document.elementFromPoint(px!, py!)?.tagName, [x, y])).toBe('HTML')
+    if (mobile) return page.touchscreen.tap(x, y)
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.waitForTimeout(100)
+    await page.mouse.up()
+  }
+
+  test('a tap right after a navigation reaches its target, while the transition still runs', async ({ page }, testInfo) => {
+    await goDuringTransition(page, '/findings')
+    await tapDuringTransition(page, page.getByRole('link', { name: 'Precision', exact: true }), testInfo.project.name === 'mobile')
+    await expect(page).toHaveURL(/view=precision/)
+  })
+
+  test('a tap on the logo, an SVG in its link, leads home', async ({ page }, testInfo) => {
+    await goDuringTransition(page, '/findings')
+    await tapDuringTransition(page, page.getByRole('link', { name: 'Kentō, dashboard' }), testInfo.project.name === 'mobile')
+    await expect(page).toHaveURL(/\/$/)
+  })
+
+  test('a tap on a field during the transition gives it the focus', async ({ page }, testInfo) => {
+    await withFinding(async () => {
+      await goDuringTransition(page, '/findings')
       let search = page.locator('#findings-q')
       await tapDuringTransition(page, search, testInfo.project.name === 'mobile')
       await expect(search).toBeFocused()
       // The tap ends the transition at once.
       await expect.poll(() => page.evaluate(() => (window as unknown as { transition: string }).transition)).toBe('done')
-    } finally {
-      await sql`delete from findings where fingerprint = 'knt-172'`
-      await sql.end()
-    }
+    })
+  })
+
+  test('a tap on a checkbox checks it once: no second click undoes it', async ({ page }, testInfo) => {
+    await withFinding(async () => {
+      await goDuringTransition(page, '/findings')
+      let check = page.getByRole('checkbox', { name: 'Select "A finding for KNT-172"' })
+      await tapDuringTransition(page, check, testInfo.project.name === 'mobile')
+      await expect(check).toBeChecked()
+      await page.waitForTimeout(300)
+      await expect(check).toBeChecked()
+    })
+  })
+
+  test('a Ctrl or Cmd click during the transition opens the link in a new tab, and the page stays', async ({ page, context }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'a mouse with a modifier key')
+    await goDuringTransition(page, '/findings')
+    let opened = context.waitForEvent('page')
+    await page.keyboard.down('ControlOrMeta')
+    await tapDuringTransition(page, page.getByRole('link', { name: 'Precision', exact: true }), false)
+    await page.keyboard.up('ControlOrMeta')
+    let tab = await opened
+    await tab.waitForLoadState()
+    expect(tab.url()).toMatch(/view=precision/)
+    expect(new URL(page.url()).search).toBe('')
+    await tab.close()
   })
 
   test('the page still has its transition, and none under reduced motion', async ({ page }) => {
