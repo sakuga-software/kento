@@ -2,9 +2,12 @@
 
 What each release of Kentō changes for the person who runs it: the migrations, the variables, the
 permissions of the GitHub App, the protocol between the service and the runners, and the order of
-the deployment. The newest release first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
+the deployment. The newest release first. The versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Do not edit the sections by hand: Changesets writes each one from the changesets of the merged pull
+requests, in the pull request "chore: version packages". Each entry links its pull request. To add
+an entry, see [CONTRIBUTING.md, "Changesets"](../../CONTRIBUTING.md#changesets).
 
 The service (`apps/web`) and the runner (`apps/runner`) share one version. Read the entries since
 your release before an upgrade or a rollback. [DEPLOY.md](DEPLOY.md) describes the installation as
@@ -16,16 +19,6 @@ Each entry says, when it applies:
 - **Variables**: the new, changed or removed variables of the service and of the runner.
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
-
-## Unreleased
-
-- **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
-  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
-  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
-  the move joins; an installation on a personal account stays in an org of its own. Moving the last
-  installation deletes the empty org, after a confirmation by its name that lists its members and
-  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
-  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
 
 ## 0.2.0 (2026-11-21)
 
@@ -172,25 +165,6 @@ The first public release. The runner image is `ghcr.io/sakuga-software/kento-run
 - The test of a provider refuses more addresses: `::ffff:0:a.b.c.d` and 6to4 (`2002::/16`) are
   judged by their IPv4, and local NAT64 (`64:ff9b:1::/48`), Teredo (`2001::/32`) and `192.0.0.0/24`
   are refused.
-- **Usage limit of a provider** (KNT-161): a 429, a 402, or an error that names a usage limit stops
-  the review at the first model of the provider (its other models get the same refusal), and keeps
-  the reset time that the provider gives. The comment on the pull request says that the review did
-  not happen, until when, and how to run it again. Such a refusal no longer marks the key of the
-  provider as refused, even as a 403.
-- **Check of a failed review**: a review that fails for good now posts the check of Kentō on its
-  head when the head has none: `action_required` for a usage limit, `failure` otherwise, never
-  `success`. A head that another review already checked keeps its check. It uses the `checks: write`
-  permission that the App already has.
-- **Fallback provider** (KNT-161): each level of Config and Settings gets an optional fallback
-  provider and its model, next to the fallback model. When the provider of the level refuses the
-  call on its usage limit, the runner calls the fallback provider once, and the review says which
-  provider answered. Its key goes to a runner under the rules of the provider of the job: only a
-  provider of the org of the job, its key only to a trusted runner, and never a key held on the
-  runners of the org unless the runner holds that kind. Otherwise the job goes without it, and
-  the log says why (`job.fallback_provider_not_sent`).
-- **Protocol**: the feature `fallback-provider` (`models.fallbackProvider` in a job, `fellBack` in a
-  review). **Order**: the service first. A runner of this release claims the feature, and a service
-  of an earlier release refuses a claim with a feature that it does not know.
 
 ## 0.1.0
 
