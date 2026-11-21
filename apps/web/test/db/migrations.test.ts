@@ -60,7 +60,7 @@ describe('migrations', () => {
       where table_schema = 'public' order by table_name`
     assert.deepEqual(
       tables.map((t) => t.table_name),
-      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'installations', 'invitations', 'jobs', 'memberships', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
+      ['accounts', 'assignment_rules', 'feedback', 'feedback_requests', 'finding_events', 'findings', 'installations', 'invitations', 'jobs', 'memberships', 'org_audit', 'orgs', 'providers', 'pull_authors', 'pull_closures', 'queue_notices', 'repos', 'resolutions', 'reviews', 'rules', 'runner_registrations', 'runners', 'sessions', 'user_prefs', 'users', 'verifications', 'webhook_deliveries'],
     )
   })
 
@@ -392,9 +392,12 @@ describe('migrations', () => {
       // The inviter goes: the invitation stays, without its inviter. The org goes: its invitations go.
       await sql`delete from users where id = ${user!.id}`
       assert.deepEqual((await sql`select inviter_id from invitations`).map((r) => r.inviter_id), [null, null])
+      // The audit of the org stays when the org goes, with its name.
+      await sql`insert into org_audit (org_id, org_name, actor_login, action) values (${acme}, 'acme', 'octocat', 'invite')`
       await sql`delete from installations where org_id = ${acme}`
       await sql`delete from orgs where id = ${acme}`
       assert.equal((await sql`select count(*)::int as n from invitations`)[0]!.n, 0)
+      assert.deepEqual((await sql`select org_id, org_name from org_audit`).map((r) => ({ ...r })), [{ org_id: null, org_name: 'acme' }])
     } finally {
       await check.close()
       await rm(earlier, { recursive: true, force: true })

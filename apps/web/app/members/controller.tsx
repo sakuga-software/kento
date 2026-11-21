@@ -5,8 +5,8 @@ import { createController } from 'remix/router'
 
 import { UUID } from '@kento-review/protocol'
 
-import { canEdit } from '../auth/access.ts'
-import { GITHUB_LOGIN, type LookupUser } from '../auth/github.ts'
+import { canEdit, orgRole } from '../auth/access.ts'
+import { GITHUB_LOGIN, type LookupRole, type LookupUser } from '../auth/github.ts'
 import { errorMessage, log } from '../log.ts'
 import { invitationRoutes, memberRoutes, pageRoutes } from '../routes.ts'
 import { InvitationsPage, isMemberNotice, MembersPage, refusalNotice, type MemberNotice } from '../ui/members.tsx'
@@ -19,6 +19,8 @@ export interface MembersDependencies {
   store: MembersStore
   /** Reads the account of a login on GitHub. Null without the GitHub App: nobody can be invited. */
   lookupUser: LookupUser | null
+  /** Asks GitHub for the role of a person in an account of the org: the take-back of the owner role. */
+  lookupRole?: LookupRole | null
 }
 
 const EXIT = { href: pageRoutes.settings.href(), label: 'Back to the settings' }
@@ -80,9 +82,9 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
           githubLogin: account.login,
           role,
           inviterId: signed.user.id,
-          now: kit.now(),
         })
-        log('info', 'members.invited', { login: signed.user.login, org: signed.membership.org.name, invitee: account.login, role, outcome })
+        log('info', 'members.invited', { login: signed.user.login, org: signed.membership.org.name, invitee: account.login, inviteeId: account.id, role, outcome })
+        if (outcome === 'not_admin') return kit.forbidden()
         return toMembers(outcome)
       },
 
@@ -91,9 +93,10 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
         let signed = kit.signedIn(context)
         if (!canEdit(signed.membership.role)) return kit.forbidden()
         if (!UUID.test(context.params.id)) return toMembers('not_found')
-        let canceled = await deps.store.cancel(signed.membership.org.id, context.params.id, kit.now())
-        if (canceled) log('info', 'members.invitation_canceled', { login: signed.user.login, org: signed.membership.org.name })
-        return toMembers(canceled ? 'canceled' : 'not_found')
+        let outcome = await deps.store.cancel(signed.membership.org.id, signed.user.id, context.params.id)
+        log('info', 'members.invitation_canceled', { login: signed.user.login, org: signed.membership.org.name, invitation: context.params.id, outcome })
+        if (outcome === 'not_admin') return kit.forbidden()
+        return toMembers(outcome)
       },
 
       async memberRole(context) {
@@ -110,6 +113,29 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
       async memberLeave(context) {
         return change(context, null, { kind: 'leave' }, null)
       },
+
+      // KNT-150. A person whom GitHub says, now, is an admin of an account of the org takes the
+      // owner role back, whatever an owner from an invitation did.
+      async memberReclaim(context) {
+        if (!deps) return kit.errorPage(context, 404, 'page', 'settings', EXIT)
+        let signed = kit.signedIn(context)
+        let org = signed.membership.org
+        if (!deps.lookupRole) return toMembers('github_failed')
+        let githubAdmin: boolean
+        try {
+          githubAdmin = (await orgRole(deps.lookupRole, org, { githubId: signed.user.githubId, login: signed.user.login })) === 'admin'
+        } catch (error) {
+          log('warn', 'members.lookup_failed', { org: org.name, error: errorMessage(error) })
+          return toMembers('github_failed')
+        }
+        let outcome = await deps.store.reclaim(org.id, signed.user.id, githubAdmin)
+        log(outcome.ok ? 'info' : 'warn', outcome.ok ? 'members.owner_reclaimed' : 'members.reclaim_refused', {
+          login: signed.user.login,
+          org: org.name,
+          ...(outcome.ok ? {} : { reason: outcome.reason }),
+        })
+        return toMembers(outcome.ok ? 'reclaimed' : refusalNotice(outcome.reason))
+      },
     },
   })
 
@@ -119,14 +145,14 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
     let signed = kit.signedIn(context)
     if (membershipId !== null && !UUID.test(membershipId)) return toMembers('not_found')
     let outcome = await deps.store.change({ orgId: signed.membership.org.id, actorUserId: signed.user.id, membershipId, change, now: kit.now() })
-    let fields = { login: signed.user.login, org: signed.membership.org.name, change: change.kind }
+    let fields = { login: signed.user.login, org: signed.membership.org.name, change: change.kind, membership: membershipId }
     if (!outcome.ok) {
-      log('warn', 'members.change_refused', { ...fields, reason: outcome.reason })
+      log('warn', 'members.change_refused', { ...fields, target: outcome.target ?? null, reason: outcome.reason })
       // A member who posts a form of an admin gets the 403 of every screen.
       if (outcome.reason === 'not_admin' && change.kind !== 'leave') return kit.forbidden()
       return toMembers(refusalNotice(outcome.reason))
     }
-    log('info', 'members.changed', { ...fields, role: outcome.role })
+    log('info', 'members.changed', { ...fields, target: outcome.target, role: outcome.role })
     // Gone from the org: the next request moves the session to another org, or to the sign-in.
     if (change.kind === 'leave') return kit.redirect(pageRoutes.home.href())
     return toMembers(done ?? 'role')
@@ -138,7 +164,7 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
       async invitations(context) {
         if (!deps) return kit.errorPage(context, 404, 'page', undefined, { href: '/', label: 'Back to the dashboard' })
         let person = kit.person(context)
-        let own = await deps.store.own(person.user.githubId, kit.now())
+        let own = await deps.store.own(person.user.githubId)
         let notice = context.url.searchParams.get('notice')
         return context.render(
           <InvitationsPage
@@ -154,7 +180,7 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
       async invitationAccept(context) {
         if (!deps) return kit.redirect(invitationRoutes.invitations.href())
         let person = kit.person(context)
-        let accepted = UUID.test(context.params.id) ? await deps.store.accept(context.params.id, person.user, kit.now()) : null
+        let accepted = UUID.test(context.params.id) ? await deps.store.accept(context.params.id, person.user) : null
         if (!accepted) return kit.redirect(`${invitationRoutes.invitations.href()}?notice=gone`)
         log('info', 'members.invitation_accepted', { login: person.user.login, org: accepted.orgId, role: accepted.role })
         // The session opens the org of the invitation.
@@ -165,7 +191,7 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
       async invitationDecline(context) {
         if (!deps) return kit.redirect(invitationRoutes.invitations.href())
         let person = kit.person(context)
-        let declined = UUID.test(context.params.id) ? await deps.store.decline(context.params.id, person.user.githubId, kit.now()) : false
+        let declined = UUID.test(context.params.id) ? await deps.store.decline(context.params.id, person.user.githubId) : false
         if (declined) log('info', 'members.invitation_declined', { login: person.user.login })
         return kit.redirect(`${invitationRoutes.invitations.href()}?notice=${declined ? 'declined' : 'gone'}`)
       },
