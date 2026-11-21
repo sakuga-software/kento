@@ -157,6 +157,13 @@ describe('the bundles of the browser modules (KNT-170)', () => {
         let refused = await stderrOf(() => assert.equal(loadClientBuild(true, partial.dir), null))
         let logged = JSON.parse(refused[0]!)
         assert.deepEqual([logged.event, logged.missing], ['startup.client_build_incomplete', ['chunk.@C.js.gz', 'runtime.@R.js']])
+        // Kentō #9505b4: a manifest that does not read (a truncated copy) is refused, logged.
+        writeFileSync(path.join(partial.dir, 'manifest.json'), '{"entries": {')
+        assert.ok('invalid' in (readClientBuild(partial.dir) as object))
+        let broken = await stderrOf(() => assert.equal(loadClientBuild(true, partial.dir), null))
+        assert.equal(JSON.parse(broken[0]!).event, 'startup.client_build_invalid')
+        writeFileSync(path.join(partial.dir, 'manifest.json'), '{"entries": {}}')
+        assert.deepEqual(readClientBuild(partial.dir), { invalid: 'no entries or no files' })
         let whole = fakeBuild()
         try {
           assert.equal(loadClientBuild(true, whole.dir)?.files.size, 5)

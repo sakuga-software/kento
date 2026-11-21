@@ -102,6 +102,10 @@ export function loadClientBuild(production = isProduction, dir = CLIENT_DIR): Cl
     log('error', 'startup.client_build_incomplete', { dir, missing: build.missing })
     return null
   }
+  if ('invalid' in build) {
+    log('error', 'startup.client_build_invalid', { dir, error: build.invalid })
+    return null
+  }
   return build
 }
 

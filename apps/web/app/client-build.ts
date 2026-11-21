@@ -65,13 +65,20 @@ export function missingFiles(dir: string, manifest: ClientManifest): string[] {
 }
 
 /**
- * The build of `dir`, or null when it has no manifest (not built). Kentō #18d066: a build whose
- * folder lacks one of its files is refused too (`missing`), so that no request ends in a failed read.
+ * The build of `dir`, or null when it has no manifest (not built). A build that cannot serve is
+ * refused, with the reason: a manifest that does not read (Kentō #9505b4, a truncated copy), or a
+ * folder that lacks one of its files (Kentō #18d066), so that no request ends in a failed read.
  */
-export function readClientBuild(dir = CLIENT_DIR): ClientBuild | { missing: string[] } | null {
+export function readClientBuild(dir = CLIENT_DIR): ClientBuild | { missing: string[] } | { invalid: string } | null {
   let file = path.join(dir, 'manifest.json')
   if (!existsSync(file)) return null
-  let manifest = JSON.parse(readFileSync(file, 'utf8')) as ClientManifest
+  let manifest: ClientManifest
+  try {
+    manifest = JSON.parse(readFileSync(file, 'utf8')) as ClientManifest
+    if (!manifest || typeof manifest.entries !== 'object' || !Array.isArray(manifest.files)) throw new Error('no entries or no files')
+  } catch (error) {
+    return { invalid: errorMessage(error) }
+  }
   let missing = missingFiles(dir, manifest)
   if (missing.length > 0) return { missing }
   return { dir, manifest, files: new Set(manifest.files) }
