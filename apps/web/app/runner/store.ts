@@ -1,4 +1,4 @@
-import { usageLimitOfReason } from '@kento-review/engine/providers'
+import { limitOfReason, RATE_LIMIT_MAX_MS } from '@kento-review/engine/providers'
 import type postgres from 'postgres'
 
 import {
@@ -623,8 +623,27 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         if (job.state !== 'running') return 'not_running' as const
 
         if (result.outcome === 'failed') {
+          let limit = limitOfReason(result.reason)
+          if (limit?.kind === 'rate') {
+            // KNT-161. Every model got a short rate limit: the job goes back to the queue until the
+            // limit ends (at least the backoff), while attempts remain. After the last attempt it
+            // fails, and the publisher says that the review did not happen.
+            let wait = limit.resetAt ? Math.min(RATE_LIMIT_MAX_MS, Math.max(0, Date.parse(limit.resetAt) - Date.now())) / 1000 : 0
+            await tx`
+              update jobs set
+                state = case when attempts < ${MAX_ATTEMPTS} then 'queued'::job_state else 'failed'::job_state end,
+                failure_reason = case when attempts < ${MAX_ATTEMPTS} then null else ${result.reason} end,
+                finished_at = case when attempts < ${MAX_ATTEMPTS} then null else now() end,
+                not_before = case when attempts < ${MAX_ATTEMPTS}
+                  then greatest(now() + ${backoff}::interval * power(2, attempts - 1), now() + ${wait} * interval '1 second')
+                  else null end,
+                lease_expires_at = null,
+                updated_at = now()
+              where id = ${jobId}`
+            return 'stored' as const
+          }
           // KNT-161. A usage limit (a 403 "key limit" of a provider among them) is not a wrong key.
-          let refused = (result.providerStatus === 401 || result.providerStatus === 403) && !usageLimitOfReason(result.reason)
+          let refused = (result.providerStatus === 401 || result.providerStatus === 403) && !limit
           let reason = result.reason
           if (refused && job.providerId) {
             // The provider refused its key: the state of the provider says it on the screen, with a

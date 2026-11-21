@@ -115,6 +115,21 @@ describe('comment of a failed job', () => {
     assert.ok(!check!.output.summary.includes('@octocat'), 'the check mentions nobody')
   })
 
+  it('13. KNT-161: a review that failed on a rate limit at each attempt says that it did not happen, with no time, and its check asks for an action', async () => {
+    let reason =
+      'no model gave a usable answer: every model refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): ' +
+      'OpenRouter refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): Rate limit exceeded'
+    await failedJob({ reason })
+    await publisher().publishPending()
+    let body = failureComments()[0]!.body
+    assert.ok(body.includes('the model provider refused the call on its rate limit, at each attempt.'), body)
+    assert.ok(body.includes('To run it again: `@kento-review lite`.'), body)
+    assert.deepEqual(
+      fake.state.checkRuns.map((c) => [c.conclusion, c.output.title]),
+      [['action_required', 'Rate limit of the provider: no review']],
+    )
+  })
+
   it('12. KNT-161: a head that already has a check of Kentō keeps it, and a failed resolve posts no check', async () => {
     fake.state.checkRuns.push({ name: checkName(), head_sha: HEAD, conclusion: 'success', output: { title: 'Confidence score: 5/5', summary: '' }, token: 't' })
     await failedJob({ level: 'heavy' })
