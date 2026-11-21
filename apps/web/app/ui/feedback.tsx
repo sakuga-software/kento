@@ -1,21 +1,23 @@
 // REV-107. "Feedback": the answers about the reviews of Kentō in the org, the newest first. A
 // command `feedback`, a comment that quotes the request for feedback, or a 👍 or 👎 on the request.
+import { UUID } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
 import {
   FEEDBACK_KINDS,
-  FEEDBACK_PAGE_MAX,
   FEEDBACK_SOURCES,
   type FeedbackKind,
   type FeedbackQuery,
   type FeedbackRow,
   type FeedbackScreen,
   type FeedbackSource,
+  readFeedbackCursor,
 } from '../feedback/store.ts'
 import { mention } from '../instance.ts'
 import { feedbackRoutes } from '../routes.ts'
 import { Button, Select, buttonClass } from './controls.tsx'
-import { agoOrDate, count, plural } from './format.ts'
+import { agoOrDate } from './format.ts'
+import { ChevronLeftIcon, ChevronRightIcon } from './lucide.tsx'
 import { shortName } from './precision.tsx'
 import { pullHref } from './pull.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -31,14 +33,20 @@ export const KIND_LABELS: Record<FeedbackKind, string> = {
   agent: 'Agent',
 }
 
-/** The filters of the query: `repo`, `source`, `author`. A value that the screen does not know is dropped. */
+/**
+ * The query: the filters `repo`, `source`, `author`, and the page `before` (KNT-176). A value that
+ * the screen cannot read (not an id, a source it does not know, a broken cursor) gives the default.
+ */
 export function readFeedbackQuery(params: URLSearchParams): FeedbackQuery {
+  let repo = params.get('repo') ?? ''
   let source = params.get('source')
   let kind = params.get('author')
+  let before = params.get('before')
   return {
-    repoId: params.get('repo') || null,
+    repoId: UUID.test(repo) ? repo : null,
     source: (FEEDBACK_SOURCES as readonly string[]).includes(source ?? '') ? (source as FeedbackSource) : null,
     kind: (FEEDBACK_KINDS as readonly string[]).includes(kind ?? '') ? (kind as FeedbackKind) : null,
+    before: before && readFeedbackCursor(before) ? before : null,
   }
 }
 
@@ -47,6 +55,7 @@ export function feedbackHref(query: FeedbackQuery = {}): string {
   if (query.repoId) params.set('repo', query.repoId)
   if (query.source) params.set('source', query.source)
   if (query.kind) params.set('author', query.kind)
+  if (query.before) params.set('before', query.before)
   let search = params.toString()
   return search ? `${feedbackRoutes.feedback.href()}?${search}` : feedbackRoutes.feedback.href()
 }
@@ -63,7 +72,9 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
     let { frame, screen, query, now } = handle.props
     let org = frame.viewer!.org.name
     let filtered = Boolean(query.repoId || query.source || query.kind)
-    let none = screen.total === 0 && !filtered
+    let none = screen.rows.length === 0 && !screen.newer && !filtered
+    // The same filters, on the first page.
+    let newest = feedbackHref({ ...query, before: null })
     return (
       <Shell
         frame={frame}
@@ -82,7 +93,15 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
         ) : (
           <>
             <FilterForm screen={screen} query={query} org={org} />
-            {screen.rows.length === 0 ? (
+            {screen.rows.length === 0 && screen.newer ? (
+              // A page after the last one: an answer left the list, or the link is old.
+              <section class="empty" aria-labelledby="empty-title">
+                <h2 id="empty-title">No older feedback</h2>
+                <p>
+                  <a href={newest}>See the newest feedback</a>
+                </p>
+              </section>
+            ) : screen.rows.length === 0 ? (
               <section class="empty" aria-labelledby="empty-title">
                 <h2 id="empty-title">No feedback for these filters</h2>
                 <p>
@@ -91,10 +110,6 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
               </section>
             ) : (
               <>
-                <p class="hint">
-                  {count(screen.total)} {plural(screen.total, 'answer')}
-                  {screen.total > screen.rows.length ? `, the ${FEEDBACK_PAGE_MAX} most recent shown` : ''}.
-                </p>
                 <div class="table-wrap">
                   <table class="table feedback-table">
                     <caption class="visually-hidden">Feedback on the reviews of Kentō in {org}, from the most recent to the oldest</caption>
@@ -117,6 +132,7 @@ export function FeedbackPage(handle: Handle<FeedbackPageProps>) {
                     </tbody>
                   </table>
                 </div>
+                <FeedbackPager screen={screen} query={query} />
               </>
             )}
           </>
@@ -157,6 +173,46 @@ function FeedbackLine(handle: Handle<{ row: FeedbackRow; org: string; now: Date 
           <time dateTime={row.createdAt.toISOString()}>{agoOrDate(row.createdAt, now)}</time>
         </td>
       </tr>
+    )
+  }
+}
+
+/**
+ * KNT-176. "Newer" and "Older": plain links, without JavaScript, that keep the filters. Not shown
+ * when the list fits on one page.
+ */
+function FeedbackPager(handle: Handle<{ screen: FeedbackScreen; query: FeedbackQuery }>) {
+  return () => {
+    let { screen, query } = handle.props
+    if (!screen.newer && !screen.older) return null
+    return (
+      <nav class="pager pager-steps" aria-label="Pages of the feedback">
+        {screen.newer ? (
+          <a class={buttonClass('outline', 'sm')} href={feedbackHref({ ...query, before: screen.newer.before })} rel="prev">
+            <ChevronLeftIcon />
+            Newer
+          </a>
+        ) : (
+          // Not a link and not focusable: its text says that there is no page before.
+          <span class={buttonClass('outline', 'sm')} aria-disabled="true">
+            <ChevronLeftIcon />
+            Newer
+            <span class="visually-hidden"> (this is the newest feedback)</span>
+          </span>
+        )}
+        {screen.older ? (
+          <a class={buttonClass('outline', 'sm')} href={feedbackHref({ ...query, before: screen.older })} rel="next">
+            Older
+            <ChevronRightIcon />
+          </a>
+        ) : (
+          <span class={buttonClass('outline', 'sm')} aria-disabled="true">
+            Older
+            <span class="visually-hidden"> (no older feedback)</span>
+            <ChevronRightIcon />
+          </span>
+        )}
+      </nav>
     )
   }
 }
