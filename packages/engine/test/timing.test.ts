@@ -41,6 +41,10 @@ test('the findings about a race, an order of events or a timer', () => {
   assert.equal(isRaceFinding(finding('A missing id gives 500')), false);
   assert.equal(isRaceFinding(finding('Wrong total', { scenario: 'The handler races the timer: the timer fires before the grant.' })), true, 'the scenario counts');
   assert.equal(isRaceFinding(finding('The cache key traces the user')), false, '"traces" is no race');
+  // A retry or a loop that sends twice is no order of events (Kentō #4783c3).
+  assert.equal(isRaceFinding(finding('The webhook handler sends the e-mail twice on retry')), false);
+  assert.equal(isRaceFinding(finding('The e-mail is sent twice')), false);
+  assert.equal(isRaceFinding(finding('`save` is called twice by the loop')), false);
 });
 
 test('a claim that some work is too slow needs a number or an input', () => {
@@ -85,10 +89,19 @@ test('a race with no traced steps and a slow claim with no number become questio
   assert.deepEqual(got.findings, [traced, hole, plain]);
   assert.deepEqual(asked, [guessed, slow]);
   assert.deepEqual(got.questions, [
-    { path: 'a.ts', question: 'Q?' },
     { path: 'src/queue.ts', question: 'A waiter is granted after its timer fired? The review traced no order of steps that the runtime allows.' },
     { path: 'src/queue.ts', question: 'The compiler in `beforeAll` may exceed its timeout? The review gave no number and no input that makes it slow.' },
+    { path: 'a.ts', question: 'Q?' },
   ]);
+  // With the questions full of the model's, the moved findings take the first places; past the
+  // cap, a finding stays a finding (Kentō #6523fc).
+  const full = Array.from({ length: 5 }, (_, i) => ({ path: '', question: `Q${i}?` }));
+  const races = Array.from({ length: 7 }, (_, i) => finding(`Race ${i} between two writers`));
+  const capped = splitUntracedTiming(answer(races, { questions: full }), exists);
+  assert.equal(capped.asked.length, 5);
+  assert.deepEqual(capped.answer.findings, races.slice(5));
+  assert.equal(capped.answer.questions?.length, 5);
+  assert.match(capped.answer.questions?.[0]?.question ?? '', /^Race 0 between two writers\?/);
   const none = answer([plain]);
   assert.equal(splitUntracedTiming(none, exists).answer, none, 'nothing to move: the same answer');
 });
