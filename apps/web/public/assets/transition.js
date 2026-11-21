@@ -34,7 +34,7 @@
       pending = null
       const transition = running()
       if (!transition || event.target !== document.documentElement || !event.isPrimary) return
-      pending = { x: event.clientX, y: event.clientY, at: event.timeStamp, transition }
+      pending = { x: event.clientX, y: event.clientY, at: event.timeStamp, scroll: [scrollX, scrollY], transition }
       transition.skipTransition()
     },
     true,
@@ -49,7 +49,8 @@
       // The click on <html> stops here: the one on the element replaces it.
       event.stopImmediatePropagation()
       press.transition.finished.finally(() => {
-        if (leaving) return
+        // Kentō #160162: a page that scrolled since the press has another element under the point.
+        if (leaving || scrollX !== press.scroll[0] || scrollY !== press.scroll[1]) return
         const target = document.elementFromPoint(press.x, press.y)
         if (!(target instanceof HTMLElement) || target === document.documentElement || target === document.body) return
         // A field takes the focus, as from a real click; click() alone does not give it.

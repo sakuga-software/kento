@@ -51,17 +51,20 @@ function load({ transition = null as FakeTransition | null, under = null as Fake
   let html = new FakeElement('html')
   let body = new FakeElement('body')
   let points: [number, number][] = []
+  let view = { scrollX: 0, scrollY: 0 }
   let document = {
     documentElement: html,
     body,
     activeViewTransition: transition,
     elementFromPoint: (x: number, y: number) => (points.push([x, y]), under),
   }
-  runInNewContext(SOURCE, {
+  let context = {
     HTMLElement: FakeElement,
     document,
     window: { addEventListener: (type: string, listener: (event: FakeEvent) => void) => listeners.set(type, [...(listeners.get(type) ?? []), listener]) },
-  })
+    ...view,
+  }
+  runInNewContext(SOURCE, context)
   let fire = (type: string, event: FakeEvent) => {
     event.stopImmediatePropagation = () => (event.stopped = true)
     for (let listener of listeners.get(type) ?? []) listener(event)
@@ -72,7 +75,9 @@ function load({ transition = null as FakeTransition | null, under = null as Fake
     fire('pointerdown', { target, clientX: 10, clientY: 20, timeStamp: at, isPrimary: true })
     return fire('click', { target, timeStamp: at + after })
   }
-  return { document, html, fire, tap, points }
+  /** Scrolls the fake window. */
+  let scroll = (y: number) => (context.scrollY = y)
+  return { document, html, fire, tap, points, scroll }
 }
 
 describe('a tap during the page transition (KNT-172)', () => {
@@ -156,6 +161,18 @@ describe('a tap during the page transition (KNT-172)', () => {
     await next.finished
     await Promise.resolve()
     assert.equal(link.clicks, 1)
+  })
+
+  it('replays nothing when the page scrolled between the press and the end of the transition (Kentō #160162)', async () => {
+    let transition = new FakeTransition()
+    let link = new FakeElement('a')
+    let page = load({ transition, under: link })
+    assert.equal(page.tap().stopped, true)
+    page.scroll(120)
+    transition.done()
+    await transition.finished
+    await Promise.resolve()
+    assert.equal(link.clicks, 0)
   })
 
   it('clicks nothing when the press was over no element of the page', async () => {
