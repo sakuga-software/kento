@@ -195,6 +195,7 @@ describe('the costs of an org by period (KNT-188)', () => {
       apply(target, self, args) {
         let query = Reflect.apply(target, self, args) as PromiseLike<unknown> & { then: PromiseLike<unknown>['then'] }
         let then = query.then.bind(query)
+        // oxlint-disable-next-line unicorn/no-thenable -- the test wraps the `then` of a query of postgres.js to count it while it runs.
         query.then = ((resolve?: (value: unknown) => unknown, reject?: (error: unknown) => unknown) => {
           running += 1
           most = Math.max(most, running)
