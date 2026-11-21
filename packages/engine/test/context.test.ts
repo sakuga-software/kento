@@ -409,3 +409,21 @@ test('on a large pull request, the context keeps its room: the diff gives up a f
   assert.ok(skipped.includes('src/big.ts: removed to fit in the maximum size of the review'), skipped.join('\n'));
   assert.match(pack, /### src\/pay\.ts:\d+-\d+ · definition of `settle`, which the PR calls/);
 });
+
+test('an incremental review moves a carried finding whose premise is unread code, as a new one (Kentō on #44)', async () => {
+  const sum = (body: string) => `export function total(a: number, b: number) {\n  return ${body};\n}\n`;
+  const r = repoWith({ 'src/a.ts': sum('a + b'), 'src/b.ts': sum('a * b') }, { 'src/a.ts': sum('a - b'), 'src/b.ts': sum('a / b') });
+  const run = (...args: string[]) => execFileSync('git', args, { cwd: r.repo, encoding: 'utf8' }).trim();
+  writeFileSync(join(r.repo, 'src/b.ts'), sum('a / b / 1'));
+  run('commit', '-q', '-am', 'fix b');
+  const head = run('rev-parse', 'HEAD');
+  const carried = { ...finding({ path: 'src/a.ts', line: 2, start_line: 2, title: 'The total may be negative', scenario: 'The callers of total are not in the pack, so a negative total may reach the invoice.' }) };
+  const fetch = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(answer([], 4)) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.001 } }));
+  }) as typeof globalThis.fetch;
+  const result = await reviewPullRequest({ repoDir: r.repo, base: r.base, head, level: 'lite', apiKey: 'k', fetch, log: () => {}, delta: { since: r.head, score: 4, findings: [carried], settled: [] } });
+  assert.deepEqual(result.delta?.files, ['src/b.ts'], 'an incremental review');
+  assert.deepEqual(result.findings.map((f) => f.title), []);
+  assert.deepEqual((result.moved ?? []).map((f) => f.title), ['The total may be negative']);
+});

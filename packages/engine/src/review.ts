@@ -398,6 +398,12 @@ export function finishReview<F extends Finding>(
     if (merged.floored) {
       log(`score kept at ${merged.floored.kept} by the floor: the model said ${merged.floored.model} with no new finding on ${delta?.files.length ?? 0} files read again`);
     }
+    // KNT-151. A finding carried from the last review goes through the same check (Kentō on #44): the
+    // same defect is not a finding in one review and « Not reviewed » in the next.
+    for (const f of moveUnreadPremises(answer)) {
+      moved.push(f);
+      log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
+    }
   }
   // KNT-153. The findings that an incremental review carries from the last review go through the
   // same filter: a review of an earlier release kept its non-findings. The filter gives the same
