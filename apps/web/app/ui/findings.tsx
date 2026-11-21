@@ -617,7 +617,9 @@ function Notice(handle: Handle<{ notice: FindingsNotice }>) {
             ? `${unreplied} ${plural(unreplied, 'thread', 'threads')} got no reply. GitHub refused or did not answer. Kentō saved the status all the same. `
             : ''}
           {unchanged > 0 ? `${unchanged} already had this status and this reason. ` : ''}
-          {fixed > 0 ? `${fixed} fixed ${plural(fixed, 'finding stays', 'findings stay')} as is. A push fixed ${plural(fixed, 'it', 'them')}. ` : ''}
+          {fixed > 0
+            ? `${fixed} fixed ${plural(fixed, 'finding stays', 'findings stay')} as is: a later review did not find ${plural(fixed, 'it', 'them')} again after a push changed ${plural(fixed, 'its file', 'their files')}. `
+            : ''}
           {missing > 0
             ? `${missing} ${plural(missing, 'finding no longer exists', 'findings no longer exist')} in this organization, for example because someone removed the repo after the page loaded. The list below is up to date. `
             : ''}

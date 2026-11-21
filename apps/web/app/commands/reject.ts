@@ -22,7 +22,7 @@ import type postgres from 'postgres'
 import { replyText } from '../findings/dismiss.ts'
 import { setFindingStatus } from '../findings/store.ts'
 import type { CommandPlace } from '../github/events.ts'
-import { resolveReviewThread } from '../github/graphql.ts'
+import { resolveReviewThread, reviewThreadPages } from '../github/graphql.ts'
 import { errorMessage } from '../log.ts'
 import type { TokenPermissions } from '../github/installation-token.ts'
 import { GitHubError, type GitHub } from '../publish/github.ts'
@@ -109,19 +109,32 @@ export async function applyReject(input: RejectInput): Promise<RejectOutcome> {
 
   // The thread first: its reply says whether the App could resolve it.
   let writer: GitHub | null = null
-  if (finding.githubThreadId) {
+  if (finding.githubThreadId || finding.githubCommentId !== null) {
     try {
       writer = await input.writer()
     } catch (error) {
       input.warn('command.reject_write_token_refused', { error: errorMessage(error) })
     }
   }
-  if (writer && finding.githubThreadId) {
+  // KNT-160. The ledger knows the node id of a thread only once a later review read the threads: a
+  // finding whose thread the last review opened has only the id of its first comment. Without this
+  // lookup, the reject never tried to resolve the thread, and its reply said that it could not.
+  let threadId = finding.githubThreadId
+  if (writer && !threadId && finding.githubCommentId !== null) {
     try {
-      await resolveReviewThread(writer, finding.githubThreadId)
+      threadId = await threadOfComment(writer, fullName, prNumber, finding.githubCommentId)
+      if (threadId) await input.sql`update findings set github_thread_id = ${threadId} where id = ${finding.id} and github_thread_id is null`
+      else input.warn('command.reject_thread_not_found', { comment: finding.githubCommentId })
+    } catch (error) {
+      input.warn('command.reject_thread_unread', { comment: finding.githubCommentId, error: errorMessage(error) })
+    }
+  }
+  if (writer && threadId) {
+    try {
+      await resolveReviewThread(writer, threadId)
       outcome.resolved = true
     } catch (error) {
-      input.warn('command.reject_thread_not_resolved', { thread: finding.githubThreadId, error: errorMessage(error) })
+      input.warn('command.reject_thread_not_resolved', { thread: threadId, error: errorMessage(error) })
     }
   }
 
@@ -151,6 +164,17 @@ export async function applyReject(input: RejectInput): Promise<RejectOutcome> {
     outcome.dismissedReview = await dismissBlockingReview(input)
   })
   return outcome
+}
+
+/** KNT-160. The node id of the review thread whose first comment is `commentId`, or null. */
+async function threadOfComment(github: GitHub, fullName: string, prNumber: number, commentId: number): Promise<string | null> {
+  let [owner = '', name = ''] = fullName.split('/')
+  type Node = { id: string; comments: { nodes: { databaseId: number | null }[] } }
+  for await (let page of reviewThreadPages<Node>(github, { owner, name, pr: prNumber }, 'id comments(first: 1) { nodes { databaseId } }')) {
+    let found = page.find((thread) => thread.comments.nodes[0]?.databaseId === commentId)
+    if (found) return found.id
+  }
+  return null
 }
 
 /** The hidden marker of the replies of the reject of a finding. */

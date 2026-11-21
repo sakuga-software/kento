@@ -42,9 +42,11 @@ describe('the Repos screen with 300 repositories and 50 000 jobs', () => {
       with org as (insert into orgs (name, slug) values ('orchard', lower('orchard')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 12, 901, 'orchard' from org returning org_id as id`
     for (let [orgId, offset, owner] of [[org!.id, 0, 'sakuga-software'], [other!.id, 1000, 'orchard']] as const) {
       await sql`
-        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, private, default_branch, workflow, workflow_checked_at)
+        insert into repos (org_id, installation_id, github_repo_id, full_name, enabled, private, default_branch, workflow, workflow_path, workflow_checked_at)
         select ${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), ${offset} + g, ${owner} || '/service-' || lpad(g::text, 3, '0'), g % 5 < 2, g % 3 = 0, 'main',
-          (array['none', 'reusable', 'copy'])[1 + g % 3]::workflow_mode, now()
+          (array['none', 'reusable', 'copy'])[1 + g % 3]::workflow_mode,
+          -- KNT-179: a path to review.yml, so that the rows at 20 reviews carry "Remove review.yml".
+          case when g % 3 = 0 then null else '.github/workflows/sakuga-review.yml' end, now()
         from generate_series(1, 300) g`
       // 50 000 jobs over 180 days on the enabled repositories, one in 12 failed, and a review for each done one.
       await sql`
@@ -100,6 +102,8 @@ describe('the Repos screen with 300 repositories and 50 000 jobs', () => {
     assert.match(first.html, /300 repos in the installation · 120 enabled/)
     assert.match(first.html, /1 to 25 of 300/)
     assert.equal((first.html.match(/<tr id="repo-/g) ?? []).length, 25)
+    // KNT-179: the page holds rows at the end of the switch, with their marker and the URL of GitHub.
+    assert.ok((first.html.match(/class="tag tag-ok row-ready"/g) ?? []).length >= 5, 'rows ready to remove review.yml')
     assert.ok(first.bytes < MAX_BYTES, `${first.bytes} bytes`)
 
     // The best of 5 loads: the budget is for the work of the screen, not for a busy machine.
