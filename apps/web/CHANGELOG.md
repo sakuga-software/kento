@@ -26,6 +26,11 @@ Each entry says, when it applies:
   installation deletes the empty org, after a confirmation by its name that lists its members and
   invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
   an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
 - **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
   The one inline script is the import map of the components that hydrate. A proxy in front of the
   service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this

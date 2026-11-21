@@ -31,7 +31,9 @@ export interface FeedbackInput {
 
 /**
  * Writes the row of the request when the pull request has at least FEEDBACK_AFTER_REVIEWS published
- * reviews and no request yet. A pull request with a skipped row (its third review came before the
+ * reviews and no request yet. KNT-157: a copy of an earlier review on a head with no changed reviewed
+ * file (`result.reusedFrom`, REV-89) does not count. It has the `github_review_id` of its source, but no
+ * model read the code for it. A pull request with a skipped row (its third review came before the
  * migration 0025) has a row already, so it is never asked. A count above FEEDBACK_AFTER_REVIEWS
  * occurs after GitHub refused an earlier request. Returns the number of these reviews when the row is new, else null.
  * The row comes before the comment: of two publications, or of two tries, one only gets it.
@@ -40,7 +42,7 @@ export async function claimRequest(sql: postgres.Sql, repoId: string, prNumber: 
   let [row] = await sql<{ reviews: string | number }[]>`
     with published as (
       select count(*) as reviews from reviews
-      where repo_id = ${repoId} and pr_number = ${prNumber} and github_review_id is not null
+      where repo_id = ${repoId} and pr_number = ${prNumber} and github_review_id is not null and result -> 'reusedFrom' is null
     ),
     claimed as (
       insert into feedback_requests (repo_id, pr_number, author_login)
