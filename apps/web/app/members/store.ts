@@ -272,19 +272,23 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
     },
 
     async decline(invitationId, githubId) {
-      return (await sql.begin(async (begun) => {
-        let tx = begun as unknown as postgres.Sql
+      let [found] = await sql<{ orgId: string }[]>`select org_id as "orgId" from invitations where id = ${invitationId}`
+      if (!found) return false
+      // Under the lock of the org, as an acceptance: the two never cross.
+      return locked(found.orgId, async (tx) => {
         let [declined] = await tx<{ orgId: string; login: string; role: string }[]>`
           update invitations set status = 'declined', responded_at = now()
           where id = ${invitationId} and github_id = ${githubId} and status = 'pending'
           returning org_id as "orgId", github_login as login, role
         `
         if (!declined) return false
+        // The person who declines is signed in: their row exists.
         let [person] = await tx<{ id: string; login: string }[]>`select id, login from users where github_id = ${githubId}`
-        let who = { userId: person?.id ?? '', login: person?.login ?? declined.login, githubId }
-        await audit(tx, declined.orgId, { userId: person?.id ?? (null as unknown as string), login: who.login }, 'decline', who, invitationId, declined.role, null)
+        if (!person) return false
+        let who = { userId: person.id, login: person.login, githubId }
+        await audit(tx, declined.orgId, who, 'decline', who, invitationId, declined.role, null)
         return true
-      })) as boolean
+      })
     },
   }
 }

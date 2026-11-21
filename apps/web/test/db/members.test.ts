@@ -227,6 +227,8 @@ describe('the members and the invitations of an org', () => {
     let { cookie } = await signIn('guest')
     let [second] = await database.sql<{ id: string }[]>`select id from invitations where status = 'pending'`
     assert.equal((await post(cookie!, `/invitations/${second!.id}/decline`)).headers.get('Location'), '/invitations?notice=declined')
+    let [declined] = await database.sql`select actor_login, actor_id is not null as "hasActor", action from org_audit where action = 'decline'`
+    assert.deepEqual({ ...declined }, { actor_login: 'guest', hasActor: true, action: 'decline' })
     assert.equal(await membership('guest', acme), null)
 
     // An invitation of 8 days ago is not pending any more: not shown, not accepted, a new one is possible.
