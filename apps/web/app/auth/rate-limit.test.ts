@@ -36,6 +36,10 @@ describe('the address of the client', () => {
     assert.equal(limitKey('2001:0db8:0001:0002:ffff::1'), '2001:db8:1:2::/64')
     assert.equal(limitKey('2001:db8::1'), '2001:db8:0:0::/64')
     assert.equal(limitKey('::1'), '0:0:0:0::/64')
+    // A dotted IPv4 tail counts as two groups.
+    assert.equal(limitKey('1::2:3:4:5:1.2.3.4'), '1:0:2:3::/64')
+    assert.equal(limitKey('64:ff9b::1.2.3.4'), '64:ff9b:0:0::/64')
+    assert.equal(limitKey('1:2:3:4:5:6:1.2.3.4'), '1:2:3:4::/64')
   })
 })
 

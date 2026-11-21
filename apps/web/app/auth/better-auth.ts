@@ -100,6 +100,9 @@ export function createKentoAuth(options: KentoAuthOptions) {
     secret: options.secret,
     trustedOrigins: [options.publicUrl.origin],
     telemetry: { enabled: false },
+    // An error of the callback goes to the controller of Kentō, which logs its message without the
+    // parameters of the query. Better Auth would print the whole error, parameters and all, on stderr.
+    onAPIError: { throw: true },
     logger: {
       // The message, and the message of an error that comes with it: never the other arguments,
       // which can hold a row or a request.

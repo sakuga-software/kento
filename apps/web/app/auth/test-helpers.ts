@@ -66,7 +66,8 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
   let sessionRows = tables.sessions!
   Object.defineProperty(tables, 'sessions', {
     get() {
-      if (failing) throw new Error('connect ECONNREFUSED')
+      // As a failed query of Drizzle: its message ends with the parameters of the query.
+      if (failing) throw new Error('Failed query: select from "sessions"\nparams: the-token-hash-param,203.0.113.5')
       return sessionRows
     },
     set(rows: Record<string, unknown>[]) {
@@ -129,8 +130,14 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
       let user = tables.users!.find((u) => Number(u.githubId) === githubId)
       return user ? orgs.filter((org) => rows().some((m) => m.userId === user.id && m.orgId === org.id && m.source === 'invitation')) : []
     },
-    async hasOwner(orgId, since) {
-      return rows().some((m) => m.orgId === orgId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime())
+    async hasOwner(orgId, since, exceptUserId) {
+      return rows().some(
+        (m) => m.orgId === orgId && m.userId !== exceptUserId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime(),
+      )
+    },
+    async membershipOf(userId, orgId) {
+      let m = memberships.get(`${userId}/${orgId}`)
+      return m ? { role: m.role, source: m.source } : null
     },
     async pendingInvitations(githubId) {
       return pending.get(githubId) ?? 0

@@ -93,23 +93,28 @@ export function roleFromGitHub(current: OrgRole | null, github: GitHubRole): Org
 /**
  * KNT-150. Writes the role that GitHub gives to a membership from GitHub. A GitHub admin of an org
  * that has no active owner (`OWNER_ACTIVE_MS`) becomes its owner: a new installation gets one, and
- * so does an org whose owner left. The check and the write run under one lock of the org, so two
- * admins at the same time make one owner.
+ * so does an org whose owner left. The check and the write run under one lock of the org (the one
+ * of the changes of the members screen too), and start from the role stored under that lock: an
+ * owner given or taken in Kentō in between is not overwritten from a stale read. `_read`, the role
+ * read before, is only what the caller saw.
  */
 export async function saveGitHubRole(
   store: AuthStore,
   userId: string,
   orgId: string,
-  current: OrgRole | null,
+  _read: OrgRole | null,
   github: GitHubRole,
   now: number,
 ): Promise<OrgRole> {
-  let role = roleFromGitHub(current, github)
-  // The role that the row holds after the write: an invitation made in between keeps its own.
-  if (github !== 'admin' || role === 'owner') return store.saveMembership(userId, orgId, role, 'github')
   return store.withOrgLock(orgId, async (locked) => {
-    let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS))) ? 'admin' : 'owner'
-    return locked.saveMembership(userId, orgId, next, 'github')
+    let stored = await locked.membershipOf(userId, orgId)
+    // A membership from an invitation is Kentō's: GitHub changes nothing of it.
+    if (stored?.source === 'invitation') return stored.role
+    let role = roleFromGitHub(stored?.role ?? null, github)
+    // Another active owner, not this person: a second request of the same admin at the same time
+    // finds its own row as owner, and keeps it.
+    if (github === 'admin' && role !== 'owner' && !(await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS), userId))) role = 'owner'
+    return locked.saveMembership(userId, orgId, role, 'github')
   })
 }
 

@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 import { createKentoAuth, postgresAuthDatabase } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
 import type { OrgRole } from '../../app/db/schema.ts'
+import { saveGitHubRole } from '../../app/auth/access.ts'
 import { createAuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -61,7 +62,8 @@ describe('the members and the invitations of an org', () => {
       version: '1.2.3',
       commit: null,
       webhook: disabledWebhook,
-      auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now },
+      // Every request of these tests comes with no socket, so they share one limit: a high one.
+      auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now, signInLimit: 1000 },
       members: {
         store,
         async lookupUser(_installation, login) {
@@ -308,6 +310,35 @@ describe('the members and the invitations of an org', () => {
     assert.deepEqual(outcomes.map((o) => o.ok).sort(), [false, true])
     let [owners] = await database.sql<{ n: number }[]>`select count(*)::int as n from memberships where org_id = ${acme} and role = 'owner'`
     assert.equal(owners!.n, 1)
+  })
+
+  it('accepting an invitation as a member keeps the higher role that the person had', async () => {
+    roles.set('acme/camille', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    await signIn('camille')
+    assert.equal((await membership('camille', acme))!.role, 'admin')
+    // An invitation made before camille joined from GitHub (the screen refuses one for a member).
+    let [inviter] = await database.sql<{ id: string }[]>`select id from users where login = 'octocat'`
+    let [invitation] = await database.sql<{ id: string }[]>`
+      insert into invitations (org_id, github_id, github_login, role, inviter_id, expires_at)
+      values (${acme}, 2, 'camille', 'member', ${inviter!.id}, now() + interval '7 days') returning id`
+    let accepted = await store.accept(invitation!.id, { id: (await database.sql<{ id: string }[]>`select id from users where login = 'camille'`)[0]!.id, githubId: 2 }, Date.now())
+    assert.deepEqual(accepted, { orgId: acme, role: 'admin' })
+    assert.deepEqual({ ...(await membership('camille', acme)), id: undefined }, { id: undefined, role: 'admin', source: 'invitation' })
+    assert.ok(owner)
+  })
+
+  it('a check of GitHub that read the role before an owner changed it keeps the change', async () => {
+    roles.set('acme/camille', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    await signIn('camille')
+    let camille = (await membership('camille', acme))!
+    assert.equal(camille.role, 'admin')
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
+    // The owner gives camille the owner role; a check that read `admin` before writes after it.
+    await post(owner, `/settings/members/${camille.id}/role`, { role: 'owner' })
+    assert.equal(await saveGitHubRole(createAuthStore(database.sql), user!.id, acme, 'admin', 'admin', Date.now()), 'owner')
+    assert.equal((await membership('camille', acme))!.role, 'owner')
   })
 
   it('a member sees the members and the invitations, with no form', async () => {

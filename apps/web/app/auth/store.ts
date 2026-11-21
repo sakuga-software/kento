@@ -56,10 +56,12 @@ export interface AuthStore {
    */
   saveMembership(userId: string, orgId: string, role: OrgRole, source?: MembershipSource): Promise<OrgRole>
   /**
-   * KNT-150. The org has an active owner: one whose membership was checked, or who signed in, at
-   * `since` or after.
+   * KNT-150. The org has an active owner other than `exceptUserId`: one whose membership was
+   * checked, or who signed in, at `since` or after.
    */
-  hasOwner(orgId: string, since: Date): Promise<boolean>
+  hasOwner(orgId: string, since: Date, exceptUserId?: string): Promise<boolean>
+  /** KNT-150. The role and the source of a membership, as stored. */
+  membershipOf(userId: string, orgId: string): Promise<{ role: OrgRole; source: MembershipSource } | null>
   /** KNT-150. Runs `work` in one transaction that holds the lock of the owners of the org. */
   withOrgLock<T>(orgId: string, work: (store: AuthStore) => Promise<T>): Promise<T>
   /** KNT-150. The active orgs where the user of a GitHub account is a member from an invitation. */
@@ -142,6 +144,13 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
       return readOrgs(sql, rows.map((r) => r.orgId))
     },
 
+    async membershipOf(userId, orgId) {
+      let [row] = await sql<{ role: OrgRole; source: MembershipSource }[]>`
+        select role, source from memberships where user_id = ${userId} and org_id = ${orgId}
+      `
+      return row ?? null
+    },
+
     async pendingInvitations(githubId) {
       let [row] = await sql<{ n: number }[]>`
         select count(*)::int as n from invitations i
@@ -151,11 +160,11 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
       return row!.n
     },
 
-    async hasOwner(orgId, since) {
+    async hasOwner(orgId, since, exceptUserId) {
       // drizzle shares this client and turns off its date conversion: the time goes as text.
       let [row] = await sql`
         select 1 from memberships m join users u on u.id = m.user_id
-        where m.org_id = ${orgId} and m.role = 'owner'
+        where m.org_id = ${orgId} and m.role = 'owner' ${exceptUserId ? sql`and m.user_id <> ${exceptUserId}` : sql``}
           and (m.checked_at >= ${since.toISOString()}::timestamptz or u.last_sign_in_at >= ${since.toISOString()}::timestamptz)
         limit 1
       `
