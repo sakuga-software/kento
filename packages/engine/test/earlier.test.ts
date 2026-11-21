@@ -371,6 +371,8 @@ test('the review publishes no label of the pack: a « still stands » on a dismi
   const settled = finding(ACCOUNT, 237, 'The message is not translated');
   const model = fakeModel(() => ({ ...answer(4, []), summary: 'The change is small. The open earlier finding E1 still stands.', not_reviewed: [`${ACCOUNT}: not in the changed zone, so E1 was not rechecked`] }));
   const result = await reviewPullRequest(input(model.fetch, { earlier: { findings: [earlier(settled, 'dismissed', 'Translated by the layout')], last: null } }));
-  assert.equal(result.answer.summary, 'The change is small.');
+  // The fixture is a critical change (KNT-154), whose lines of checks follow the summary.
+  assert.match(result.answer.summary, /^The change is small\.( |$)/);
+  assert.doesNotMatch(result.answer.summary, /\bE1\b|still stands/);
   assert.deepEqual(result.answer.not_reviewed, []);
 });
