@@ -64,7 +64,7 @@ function adopt(id: string): Native | null {
 }
 
 /** The popover and its list. A child of `select.Context`, to close the list. */
-function SelectPopover(handle: Handle<{ labelId: string | null; options: Choice[]; onTab: () => void; onClosed: () => void }>) {
+function SelectPopover(handle: Handle<{ labelId: string | null; options: Choice[]; onTab: () => void; onToggle: () => void }>) {
   let context = handle.context.get(select.Context)
   // @remix-run/ui 0.13.1 turns Tab in the list into "go to the first option" (listbox.ts:273), and
   // the focus stays in the list. A native select lets Tab go on. This listener sees Tab before the
@@ -84,9 +84,10 @@ function SelectPopover(handle: Handle<{ labelId: string | null; options: Choice[
         mix={[
           select.popover(),
           on<HTMLElement, 'keydown'>('keydown', leave, true),
-          // After every listener of the event, the one of the library included.
+          // On close: after every listener of the event, the one of the library included.
           on<HTMLElement, 'toggle'>('toggle', (event) => {
-            if (event.newState === 'closed') setTimeout(handle.props.onClosed)
+            if (event.newState === 'closed') setTimeout(handle.props.onToggle)
+            else handle.props.onToggle()
           }),
         ]}
       >
@@ -118,7 +119,8 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
   let native: Native | null = null
   let hidden: HTMLInputElement | null = null
   let button: HTMLButtonElement | null = null
-  // True from a Tab in the open list until the list has closed. When the list closes, the popover of
+  // True from a Tab in the open list until the list has closed, or opens again (Kentō #11e704: a
+  // close with no `toggle` event must not leave it set). When the list closes, the popover of
   // @remix-run/ui gives the focus back to the button; after a Tab, the focus is already on the next
   // field, and stays there.
   let tabbedOut = false
@@ -170,7 +172,7 @@ export const CustomSelect = clientEntry(import.meta.url, function CustomSelect(h
           <SelectValue id={valueId} />
         </button>
         <popover.Context>
-          <SelectPopover labelId={labelId} options={options} onTab={tabOut} onClosed={() => (tabbedOut = false)} />
+          <SelectPopover labelId={labelId} options={options} onTab={tabOut} onToggle={() => (tabbedOut = false)} />
         </popover.Context>
         {/* Disabled with the select: the form does not post it, as a disabled native select (Kentō #117783). */}
         <input form={form ?? undefined} disabled={disabled || undefined} data-select="" mix={[select.hiddenInput(), ref((node) => (hidden = node))]} />
