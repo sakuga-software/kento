@@ -952,13 +952,16 @@ function filesChangedSince(github: GitHub, repo: string, head: string) {
   }
   /**
    * KNT-160. Whether the file changed within FIXED_NEAR_LINES of `line` (a line of the file at
-   * `commit`). Without a patch from GitHub, a change of the file counts, as before.
+   * `commit`: the ledger writes the two together). Without a patch from GitHub, or without a line
+   * (0: an outdated thread of an earlier release that the ledger adopted), a change of the file
+   * counts, as before.
    */
   let near = async (commit: string | undefined, path: string, line: number): Promise<boolean | null> => {
     if (!commit) return false
     let out = await compare(commit)
     if (!out || !out.ancestor) return null
     if (!out.files.has(path)) return false
+    if (line < 1) return true
     let patch = out.files.get(path)
     let touched = patch ? touchedLines(patch) : null
     if (!touched) return true

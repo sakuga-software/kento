@@ -242,6 +242,18 @@ describe('publishReview', () => {
     assert.equal(fake.repliesTo(thread!.id).length, 0)
   })
 
+  it('fixes a finding with no line (an outdated thread of an earlier release) on any change of its file (KNT-160)', async () => {
+    let { fake, publish } = setup()
+    await publish(payload({ findings: [] }))
+    let old = fake.addThread({ path: 'src/a.ts', line: 0, body: 'x <!-- sakuga-review:finding 0000000000aa -->', commit: HEAD1 })
+    fake.state.pr.head = HEAD3
+    let patch = '@@ -40,1 +40,1 @@\n-  let x = 1;\n+  let x = 2;'
+    fake.state.compare.set(`${HEAD1}...${HEAD3}`, { status: 'ahead', files: [{ filename: 'src/a.ts', patch }] })
+    let outcome = await publish(payload({ head: HEAD3, score: 5, verdict: 'APPROVE', findings: [] }))
+    assert.equal(outcome.resolved, 1)
+    assert.equal(fake.repliesTo(old).length, 1)
+  })
+
   it('reads the lines that a patch removes, and the lines around the place where it adds (KNT-160)', () => {
     assert.deepEqual([...touchedLines('@@ -10,3 +10,3 @@ fn\n a\n-b\n+c\n d')!].sort((x, y) => x - y), [11, 12])
     assert.deepEqual([...touchedLines('@@ -5 +5,2 @@\n e\n+f')!].sort((x, y) => x - y), [5, 6])
