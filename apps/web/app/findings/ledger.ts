@@ -3,6 +3,7 @@
 import type postgres from 'postgres'
 
 import type { FindingEventDraft, StoredFinding } from './lifecycle.ts'
+import { KENTO_ACTOR } from './store.ts'
 
 /** A finding to write: a new one (`id` null) or a change of a stored one, with its events. */
 export type LedgerEntry = {
@@ -13,8 +14,16 @@ export type LedgerEntry = {
 
 export interface FindingsLedger {
   load(): Promise<StoredFinding[]>
-  /** Writes every entry and its events in one transaction. */
-  save(entries: LedgerEntry[]): Promise<void>
+  /**
+   * Writes every entry and its events in one transaction. Returns the ids of the findings whose
+   * status it wrote: the new ones, and the stored ones whose status did not change since the load.
+   */
+  save(entries: LedgerEntry[]): Promise<ReadonlySet<string>>
+  /**
+   * KNT-192. The head of the last review of the pull request on GitHub before this one, or null. A
+   * push review reads again only the files changed since that head (REV-88).
+   */
+  previousHead?(): Promise<string | null>
   /** REV-96. Claims the one hint of `reject` of an open finding: false when it is taken or the finding is not open. */
   claimHint?(findingId: string): Promise<boolean>
   /** REV-96. Gives the claim back, after a hint that GitHub refused. */
@@ -30,6 +39,25 @@ export async function claimRejectHint(sql: postgres.ISql, findingId: string): Pr
     update findings set reject_hint_at = now()
     where id = ${findingId} and reject_hint_at is null and status = 'open'
     returning id`
+  return rows.length === 1
+}
+
+/**
+ * KNT-192. A `resolve` confirmed the fix of a finding: the model read its thread against the code, and
+ * the file changed since the thread. An open or stale finding becomes `fixed`, with a `fixed` event of
+ * Kentō (source `resolve`), so that the precision counts it. A status that a person set stays.
+ * Returns whether the status changed.
+ */
+export async function markFixedByResolve(sql: postgres.ISql, findingId: string): Promise<boolean> {
+  let rows = await sql`
+    with changed as (
+      update findings set status = 'fixed', status_reason = null, updated_at = now()
+      where id = ${findingId} and status in ('open', 'stale')
+      returning id
+    )
+    insert into finding_events (finding_id, type, actor, source, created_at)
+    select id, 'fixed', ${KENTO_ACTOR}, 'resolve', clock_timestamp() from changed
+    returning finding_id`
   return rows.length === 1
 }
 
@@ -64,8 +92,20 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
       return rows.map((r) => ({ ...r, githubCommentId: r.githubCommentId === null ? null : Number(r.githubCommentId) }))
     },
 
+    async previousHead() {
+      // The base of the delta of a push review (`lastReviewOnGitHub` of runner/store.ts): copies count.
+      let [row] = await sql<{ headSha: string }[]>`
+        select head_sha as "headSha" from reviews
+        where repo_id = ${input.repoId} and pr_number = ${input.prNumber} and github_review_id is not null
+          and id <> ${input.reviewId}
+        order by published_at desc nulls last, created_at desc
+        limit 1`
+      return row?.headSha ?? null
+    },
+
     async save(entries) {
-      if (!entries.length) return
+      let written = new Set<string>()
+      if (!entries.length) return written
       await sql.begin(async (tx) => {
         for (let entry of entries) {
           let v = entry.values
@@ -82,6 +122,7 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
                 ${v.githubCommentId}, ${v.githubThreadId})
               returning id`
             id = row!.id
+            written.add(id)
           } else {
             // The status read before the review may have changed since (a person dismissed the
             // finding, the pull request closed). The row is locked and read again: a status that
@@ -99,6 +140,7 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
                 github_thread_id = ${v.githubThreadId}, updated_at = now()
               where id = ${id}`
             if (!statusHolds) continue
+            written.add(id)
           }
           // `now()` is the start of the transaction: two events of one finding (an adopted thread
           // `opened` then `dismissed` or `fixed`) would share it, and their order would rest on
@@ -110,6 +152,7 @@ export function createFindingsLedger(sql: postgres.Sql, input: { repoId: string;
           }
         }
       })
+      return written
     },
   }
 }

@@ -131,13 +131,20 @@ describe('findings from push to push (REV-16)', () => {
   }
 
   /** A push: GitHub moves the head, a runner reviews it, and the publisher posts the review. */
-  async function push(head: string, findings: ReviewFinding[], changed: CompareFile[], older: CompareFile[] = ['src/sum.ts', 'src/div.ts', 'src/mean.ts']) {
+  async function push(
+    head: string,
+    findings: ReviewFinding[],
+    changed: CompareFile[],
+    older: CompareFile[] = ['src/sum.ts', 'src/div.ts', 'src/mean.ts'],
+    /** `diverged`: a force-push, no earlier head is an ancestor of this one. */
+    status: 'ahead' | 'diverged' = 'ahead',
+  ) {
     let previous = fake.state.pr.head
     fake.state.pr.head = head
     fake.state.commits[head] = `push ${head.slice(0, 1)}`
     // Every earlier head is an ancestor of this one; `changed` lists the files of the last push.
     for (let earlier of HEADS.slice(0, HEADS.indexOf(head))) {
-      fake.state.compare.set(`${earlier}...${head}`, { status: 'ahead', files: earlier === previous ? changed : older })
+      fake.state.compare.set(`${earlier}...${head}`, { status, files: earlier === previous ? changed : older })
     }
     await database.sql`
       insert into jobs (repo_id, level, pr_number, head_sha, base_ref)
@@ -490,6 +497,81 @@ describe('findings from push to push (REV-16)', () => {
       ['Division by zero', 'open'],
       ['The sum subtracts', 'open'],
     ])
+  })
+
+  describe('KNT-192: the reviews that count as a miss', () => {
+    let long = [...SUM_V1, ...Array.from({ length: 50 }, (_, i) => `// line ${i + 4}`)]
+    let far = (n: number) => ({ filename: 'src/sum.ts', patch: `@@ -${n},1 +${n},1 @@\n-// line ${n}\n+// line ${n}, edited` })
+
+    it('a push review that did not read the file again is not a miss: one miss, then a push of another file, stays open with no note', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      // Miss 1: the push changed src/sum.ts, so its review read the file again.
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      // A push of src/div.ts only: its review reads only src/div.ts (REV-88), and cannot find the finding.
+      await push(HEADS[2]!, [], ['src/div.ts'], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      assert.equal(fake.repliesTo(thread!.id).length, 0)
+      assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened'])
+
+      // A push that changes src/sum.ts again, far from the line: the second review that read it, a miss.
+      await push(HEADS[3]!, [], [far(45)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
+      assert.equal(fake.repliesTo(thread!.id).length, 1)
+    })
+
+    it('a person who dismisses the finding while the review is posted gets no note in its thread', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      let [row] = await findingRows()
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      fake.state.onReview = async () => {
+        fake.state.onReview = null
+        await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'False positive.', actor: 'octocat' })
+      }
+      await push(HEADS[2]!, [], [far(45)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => [r.status, r.statusReason]), [['dismissed', 'False positive.']])
+      assert.equal(fake.repliesTo(thread!.id).length, 0, 'no note that says the thread stays open')
+      assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor]), [
+        ['opened', 'kento'],
+        ['dismissed', 'octocat'],
+      ])
+    })
+
+    it('a force-push leaves the finding open with no note: nothing tells what changed since', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      await push(HEADS[2]!, [], [far(45)], [far(40)], 'diverged')
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      assert.equal(fake.repliesTo(thread!.id).length, 0)
+    })
+
+    it('a dismissed finding that the reviews no longer see stays dismissed, with no note', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      await database.sql`update findings set status = 'dismissed', status_reason = 'not a bug' where repo_id = ${repoId}`
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      await push(HEADS[2]!, [], [far(45)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => [r.status, r.statusReason]), [['dismissed', 'not a bug']])
+      assert.equal(fake.repliesTo(thread!.id).length, 0)
+    })
+
+    it('a stale finding that a review finds again is open, and the count starts again: one miss after it keeps it open', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      await push(HEADS[2]!, [], [far(45)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
+      // Found again: open.
+      await push(HEADS[3]!, [SUBTRACTS(2, long)], [far(46)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      // One miss after it: the model can miss a finding once.
+      await push(HEADS[4]!, [], [far(47)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      assert.deepEqual((await events('The sum subtracts')).map((e) => e.type), ['opened', 'stale', 'reopened'])
+      assert.equal(fake.repliesTo(thread!.id).length, 1, 'one note, for the one stale episode')
+    })
   })
 
   it('tells apart two findings of one title in one file by the code around them, after their lines move', async () => {
