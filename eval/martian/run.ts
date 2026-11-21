@@ -254,7 +254,7 @@ async function review(pr: Pr, model: string, repoDir: string, mode: Mode): Promi
     };
   } catch (error) {
     const message = [...failures, String(error)].join('\n').slice(-600);
-    return { findings: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: message };
+    return { findings: [], confidences: [], cost: 0, seconds: Math.round((Date.now() - start) / 1000), error: message };
   }
 }
 

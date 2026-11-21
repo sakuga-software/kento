@@ -20,3 +20,11 @@ test('atMinConfidence: a file written before KNT-111 has no confidences, and giv
   assert.equal(atMinConfidence([{ categories: ['bug'], matches: [[0]] }], 60), null);
   assert.equal(atMinConfidence([{ categories: ['bug'], matches: [[0], []], confidences: [90] }], 60), null, 'one confidence for each finding');
 });
+
+test('atMinConfidence: a row with no finding needs no confidences, so a failed review keeps the file scorable', () => {
+  const rows = [
+    { categories: ['bug'], matches: [[0], []], confidences: [80, 50] },
+    { categories: ['bug'], matches: [] },
+  ];
+  assert.deepEqual(atMinConfidence(rows, 60)!.map((row) => row.matches), [[[0]], []]);
+});

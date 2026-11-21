@@ -65,6 +65,7 @@ export function profileMetrics(rows: readonly ScoredRow[], profile: Profile): Pr
  * go, with their matches. A row without `confidences` (a file written before KNT-111) gives null.
  */
 export function atMinConfidence<R extends ScoredRow & { confidences?: number[] }>(rows: readonly R[], minimum: number): R[] | null {
-  if (!rows.every((row) => Array.isArray(row.confidences) && row.confidences.length === row.matches.length)) return null;
-  return rows.map((row) => ({ ...row, matches: row.matches.filter((_, i) => row.confidences![i] >= minimum) }));
+  // A row with no finding (a review that failed) needs no confidence.
+  if (!rows.every((row) => row.matches.length === 0 || row.confidences?.length === row.matches.length)) return null;
+  return rows.map((row) => ({ ...row, matches: row.matches.filter((_, i) => row.confidences![i]! >= minimum) }));
 }
