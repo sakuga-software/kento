@@ -5488,9 +5488,24 @@ a.sheet-title {
 .kpi-linked:hover .kpi-link {
   text-decoration: underline;
 }
-.kpi-linked a:not(.kpi-link) {
+/* A link inside the tile, and the amount (to select it with the mouse), stay above the stretched link. */
+.kpi-linked a:not(.kpi-link),
+.kpi-linked .kpi-value {
   position: relative;
   z-index: 1;
+}
+/* The focus ring goes round the whole tile, the area that the link covers (Fable P3). */
+.kpi-link:focus-visible {
+  outline: none;
+}
+.kpi-linked:has(.kpi-link:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .kpi-linked:has(.kpi-link:focus-visible) {
+    outline-color: Highlight;
+  }
 }
 
 /* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. */

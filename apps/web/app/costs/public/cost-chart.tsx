@@ -22,7 +22,14 @@ export const CostChart = clientEntry(import.meta.url, function CostChart(handle:
   handle.queueTask(() => {
     let table = document.getElementById(handle.props.table)
     if (!box || !(table instanceof HTMLTableElement)) return
-    let chart = drawCostChart(box, table, handle.props.kind)
+    let chart: ReturnType<typeof drawCostChart>
+    try {
+      chart = drawCostChart(box, table, handle.props.kind)
+    } catch (error) {
+      // The table stays open: it is the content without a chart.
+      console.error('Chart error:', error)
+      return
+    }
     handle.signal.addEventListener('abort', () => chart.destroy(), { once: true })
   })
   return () => <div class="cost-chart" data-kind={handle.props.kind} hidden mix={ref((node: HTMLElement) => (box = node))} />

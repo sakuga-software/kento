@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { dayKey, periodQuery, periodRange, readPeriod } from './period.ts'
+import { dayKey, periodQuery, periodRange, projectMonth, readPeriod } from './period.ts'
 
 const at = (iso: string) => new Date(iso)
 const day = (date: Date) => dayKey(date)
@@ -65,5 +65,15 @@ describe('the periods of the Costs screen (KNT-188)', () => {
     assert.equal(ninety.days.length, 90)
     assert.equal(ninety.previousEnd.getTime(), ninety.start.getTime())
     assert.equal((ninety.start.getTime() - ninety.previousStart.getTime()) / 86_400_000, 90)
+  })
+
+  it('projects the month at the pace of the time elapsed, from one full day on (Fable P3)', () => {
+    let start = at('2026-11-01T00:00:00Z')
+    // Noon of the first day: no pace yet.
+    assert.equal(projectMonth(3, start, at('2026-11-01T12:00:00Z'), 30), null)
+    // 00:10 on the second day: about one day elapsed, not two days counted in full.
+    assert.equal(projectMonth(3, start, at('2026-11-02T00:10:00Z'), 30), Math.round((3 / (1 + 10 / 1440)) * 30 * 1e6) / 1e6)
+    // The 16th at noon: 15.5 days.
+    assert.equal(projectMonth(15.5, start, at('2026-11-16T12:00:00Z'), 30), 30)
   })
 })

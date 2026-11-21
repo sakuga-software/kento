@@ -7,7 +7,7 @@ import type { JobKind, Level } from '@kento-review/protocol'
 import type { Database } from '../db/client.ts'
 import { toDate } from '../db/rows.ts'
 import { readMoney, type OrgCaps } from '../org-settings/model.ts'
-import { dayKey, periodRange, type CostPeriod } from './period.ts'
+import { dayKey, periodRange, projectMonth, type CostPeriod } from './period.ts'
 
 /** The repositories on the chart and in the table; the others add up in one "Other" row. */
 export const REPO_LIMIT = 8
@@ -75,6 +75,11 @@ function round(value: number): number {
   return Math.round(value * 1e6) / 1e6
 }
 
+/** Runs three queries at once, and keeps the type of each answer. */
+function three<A, B, C>(a: () => PromiseLike<A>, b: () => PromiseLike<B>, c: () => PromiseLike<C>): Promise<[A, B, C]> {
+  return Promise.all([a(), b(), c()])
+}
+
 export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
   return {
     async report(orgId, period) {
@@ -97,12 +102,14 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           s.result->>'costSource'
         from resolutions s join repos on repos.id = s.repo_id
         where repos.org_id = ${orgId} and s.created_at >= ${from}::timestamptz and s.created_at < ${end}::timestamptz`
-      let [days, repos, levels, models, top, totals, caps] = await Promise.all([
-        sql<{ day: string; usd: string }[]>`
+      // Fable P3: three queries at most at once, on a pool of ten connections that the webhooks and
+      // the runners share. A query of postgres.js runs when it is awaited: each one is a function here.
+      let [days, repos, levels] = await three(
+        () => sql<{ day: string; usd: string }[]>`
           with costs as (${costs})
           select to_char(created_at at time zone 'utc', 'YYYY-MM-DD') as day, coalesce(sum(cost_usd), 0)::text as usd
           from costs group by 1`,
-        sql<{ key: string; label: string; usd: string; count: string }[]>`
+        () => sql<{ key: string; label: string; usd: string; count: string }[]>`
           with costs as (${costs})
           select repos.id as key, repos.full_name as label, coalesce(sum(costs.cost_usd), 0)::text as usd, count(*)::text as count
           from costs join repos on repos.id = costs.repo_id
@@ -110,19 +117,21 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           group by repos.id, repos.full_name
           -- A repo whose costs are all unknown counts $0, as its row says: it sorts with the $0 ones (Kentō #b5e005).
           order by coalesce(sum(costs.cost_usd), 0) desc, repos.full_name`,
-        sql<{ key: Level; usd: string; count: string }[]>`
+        () => sql<{ key: Level; usd: string; count: string }[]>`
           with costs as (${costs})
           select jobs.level as key, coalesce(sum(costs.cost_usd), 0)::text as usd, count(*)::text as count
           from costs join jobs on jobs.id = costs.job_id
           where costs.created_at >= ${start}::timestamptz
           group by jobs.level`,
-        sql<{ key: string | null; usd: string; count: string }[]>`
+      )
+      let [models, top, totals] = await three(
+        () => sql<{ key: string | null; usd: string; count: string }[]>`
           with costs as (${costs})
           select model as key, coalesce(sum(cost_usd), 0)::text as usd, count(*)::text as count
           from costs where created_at >= ${start}::timestamptz
           group by model
           order by coalesce(sum(cost_usd), 0) desc, model nulls last`,
-        sql<{ id: string; kind: JobKind; repoId: string; repo: string; prNumber: number; level: Level; model: string | null; usd: string; createdAt: Date | string }[]>`
+        () => sql<{ id: string; kind: JobKind; repoId: string; repo: string; prNumber: number; level: Level; model: string | null; usd: string; createdAt: Date | string }[]>`
           with costs as (${costs})
           select costs.id, jobs.kind, costs.repo_id as "repoId", repos.full_name as repo, costs.pr_number as "prNumber",
             jobs.level, costs.model, costs.cost_usd::text as usd, costs.created_at as "createdAt"
@@ -130,14 +139,14 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
           where costs.created_at >= ${start}::timestamptz and costs.cost_usd is not null
           order by costs.cost_usd desc, costs.created_at desc, costs.id
           limit ${TOP_LIMIT}`,
-        sql<{ count: string; unknown: string }[]>`
+        () => sql<{ count: string; unknown: string }[]>`
           with costs as (${costs})
           select count(*)::text as count,
             count(*) filter (where cost_usd is null or cost_source = 'unknown')::text as unknown
           from costs where created_at >= ${start}::timestamptz`,
-        sql<{ daily: string | null; monthly: string | null; alert: number | null }[]>`
-          select daily_cap_usd as daily, monthly_cap_usd as monthly, cap_alert_pct as alert from orgs where id = ${orgId}`,
-      ])
+      )
+      let caps = await sql<{ daily: string | null; monthly: string | null; alert: number | null }[]>`
+        select daily_cap_usd as daily, monthly_cap_usd as monthly, cap_alert_pct as alert from orgs where id = ${orgId}`
 
       let byDay = new Map(days.map((row) => [row.day, Number(row.usd)]))
       let previousDays: string[] = []
@@ -168,8 +177,7 @@ export function createCostsStore({ sql }: Pick<Database, 'sql'>): CostsStore {
         .map((row) => ({ key: row.key, label: row.key, usd: round(Number(row.usd)), count: Number(row.count) }))
       let byModel = models.map((row) => ({ key: row.key, label: row.key ?? 'No model call', usd: round(Number(row.usd)), count: Number(row.count) }))
 
-      let elapsed = range.days.length
-      let projectionUsd = period === 'month' && elapsed > 0 ? round((totalUsd / elapsed) * range.monthDays) : null
+      let projectionUsd = period === 'month' ? projectMonth(totalUsd, range.start, now, range.monthDays) : null
       return {
         period,
         now,

@@ -100,3 +100,13 @@ export function periodRange(period: CostPeriod, now: Date): PeriodRange {
   let monthDays = Math.round((monthStart(start.getUTCFullYear(), start.getUTCMonth() + 1).getTime() - monthStart(start.getUTCFullYear(), start.getUTCMonth()).getTime()) / DAY_MS)
   return { start, end, days, previousStart, previousEnd, monthDays }
 }
+
+/**
+ * The cost of the whole month at the pace of the time elapsed since its start (Fable P3: not of
+ * whole days, which count today in full). Null before one full day: no pace yet.
+ */
+export function projectMonth(totalUsd: number, start: Date, now: Date, monthDays: number): number | null {
+  let elapsedDays = (now.getTime() - start.getTime()) / DAY_MS
+  if (elapsedDays < 1) return null
+  return Math.round((totalUsd / elapsedDays) * monthDays * 1e6) / 1e6
+}
