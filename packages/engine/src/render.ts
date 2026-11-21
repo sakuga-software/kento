@@ -17,6 +17,7 @@ import {
 } from './findings.ts';
 import type { Level } from '../../protocol/src/index.ts';
 import { levelCost } from './levels.ts';
+import { shownRisk } from './risk.ts';
 
 // The markers that the next review reads back in the comments and the description.
 export const MARKER_SUMMARY = '<!-- sakuga-review:summary -->';
@@ -250,8 +251,9 @@ function reviewHead(answer: Answer, lines: Anchors, raised: boolean, icons: Icon
 export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, poster?: Poster, raised = false): string {
   const head = reviewHead(answer, lines, raised, poster?.icons ?? 'emoji');
   const deeper = deeperReview(answer, level);
+  const risk = shownRisk(answer.risk, answer.findings.filter((f) => isBlocking(f, lines)).length);
   return (
-    `${MARKER_SUMMARY}\n**Confidence score: ${score(answer, lines)}/5** · ${head} · ${answer.risk}\n\n` +
+    `${MARKER_SUMMARY}\n**Confidence score: ${score(answer, lines)}/5** · ${head} · ${risk}\n\n` +
     (deeper ? `${deeperReviewNote(deeper, poster)}\n\n` : '') +
     `<sub>${costLine(level, usage, poster?.by)} · The summary, the diagram and the list of findings are at the end of the PR description.</sub>`
   );
@@ -294,7 +296,8 @@ export function descriptionBlock(
   },
 ): string {
   const icons = context.poster?.icons ?? 'emoji';
-  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · ${scoreTitle(score(answer, lines), icons)}</h2>`, '', answer.risk, ''];
+  const risk = shownRisk(answer.risk, answer.findings.filter((f) => isBlocking(f, lines)).length);
+  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · ${scoreTitle(score(answer, lines), icons)}</h2>`, '', risk, ''];
   const deeper = deeperReview(answer, context.level);
   if (deeper) out.push(deeperReviewNote(deeper, context.poster), '');
   const item = ({ finding: f, url }: Link, i: number) => {
@@ -341,7 +344,7 @@ export function descriptionBlock(
   out.push('</details>', '');
   const flow = diagram(answer);
   if (flow) out.push('<details><summary>Diagram</summary>', '', '```mermaid', "%%{init: {'theme': 'neutral'}}%%", flow, '```', '</details>', '');
-  const notReviewed = [...skipped, ...answer.not_reviewed.filter((n) => !skipped.includes(n))];
+  const notReviewed = notReviewedLines(skipped, answer.not_reviewed);
   if (notReviewed.length) out.push('<details><summary>Not reviewed</summary>', '', ...notReviewed.map((n) => `- ${n}`), '', '</details>', '');
   if (context.delta) {
     const files =
@@ -367,6 +370,26 @@ export function descriptionBlock(
   if (context.poster && context.docsUrl) out.push(commandsLine(context.poster, context.docsUrl), '');
   out.push(`<!-- sakuga-review:count ${context.count} -->`, BLOCK_END);
   return out.join('\n');
+}
+
+/**
+ * KNT-158. The « Not reviewed » lines: those of the pack, then those of the model, one per path, with
+ * the first reason. `a.json: generated or binary file` and `a.json (generated)` are one line. A line
+ * that names no path (a rule) keys on its text. Empty lines go.
+ */
+export function notReviewedLines(skipped: readonly string[], model: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of [...skipped, ...model]) {
+    const text = String(line ?? '').trim();
+    if (!text) continue;
+    const path = /^`?([^\s:`()]+)`?(?=\s*(?::|\(|$|\s[-–—]\s))/.exec(text)?.[1];
+    const key = path && /[./]/.test(path) ? path.replace(/^\/+/, '') : text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
 }
 
 /** The body of the pull request with the block of the review at its end, in place of the earlier one. */

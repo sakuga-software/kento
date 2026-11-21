@@ -34,7 +34,8 @@ function pullRequest(files: Record<string, string>, changes: Record<string, stri
   const base = git('rev-parse', 'HEAD');
   write(changes);
   git('add', '-A');
-  git('commit', '-q', '-m', 'add the invoices');
+  // A message that names none of the files: KNT-158 keeps a file that the commits name.
+  git('commit', '-q', '-m', 'add the columns');
   return { repo, base, head: git('rev-parse', 'HEAD') };
 }
 
@@ -129,7 +130,8 @@ test('a review that did not read a schema says so in its risk and its summary, a
   const cap = applyCoverage(reply, { files: 6, cut: ['app/db/schema.ts', 'test/invoices.test.ts'], narrowed: ['app/lib/report.ts'] });
   assert.equal(cap, 3);
   assert.equal(reply.confidence_score, 3);
-  assert.equal(reply.risk, 'Partial review: 1 file of logic not read, a schema, a migration or a store among them (see Not reviewed). Low risk: the invoices get new columns.');
+  // KNT-158: the sentence « Low risk » of the model goes.
+  assert.equal(reply.risk, 'Partial review: 1 file of logic not read, a schema, a migration or a store among them (see Not reviewed).');
   assert.equal(
     reply.summary,
     'Adds the columns of the invoices.\n\nThis review did not read 2 of the 6 changed files, to fit in its size: `app/db/schema.ts`, `test/invoices.test.ts`.\n\nIt read this file with three lines of context only: `app/lib/report.ts`.',

@@ -26,7 +26,7 @@ const WHOLE_FILE_CONTEXT = 100_000;
  * The schema, the migrations and the storage come last: on a large pull request, the defects and the
  * code that refutes a wrong finding were there.
  */
-export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, core: 5 } as const;
+export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, core: 5, named: 6 } as const;
 const GENERATED_LIKE = /\.min\.(js|css)$|\.map$|(^|\/)public\/(assets|build)\/|(^|\/)(fixtures?|__fixtures__|testdata)\//;
 const DOC_FILE = /\.(md|mdx|markdown|rst|adoc|txt)$|(^|\/)docs?\//i;
 const E2E_FILE = /(^|\/)e2e\//;
@@ -39,6 +39,39 @@ export function trimRank(path: string): number {
   if (CORE_FILE.test(path)) return TRIM_RANK.core;
   if (UI_FILE.test(path)) return TRIM_RANK.ui;
   return TRIM_RANK.source;
+}
+
+// KNT-158. Stems of file names too common to tell that a commit names that file.
+const COMMON_STEMS = new Set(['index', 'route', 'routes', 'main', 'store', 'schema', 'types', 'utils', 'util', 'config', 'test', 'tests', 'page', 'server', 'client', 'app', 'readme', 'changelog', 'package', 'styles', 'helpers']);
+
+/**
+ * KNT-158. The changed files that the commit messages name: by path, by file name, or by stem when it
+ * is not a common one (`no-raw-sql` names `rules/no-raw-sql.ts` and `no-raw-sql.test.ts`). The pack
+ * cuts them last: the change is about them.
+ */
+export function namedFiles(message: string, paths: readonly string[]): Set<string> {
+  const text = message.toLowerCase();
+  const has = (word: string) => new RegExp(`(^|[^\\w.-])${escapeRegExp(word.toLowerCase())}($|[^\\w-])`).test(text);
+  return new Set(
+    paths.filter((path) => {
+      const name = path.split('/').pop()!;
+      const stem = name.replace(/(\.(test|spec))?\.[^.]+$/, '');
+      return has(path) || has(name) || (stem.length >= 5 && !COMMON_STEMS.has(stem.toLowerCase()) && has(stem));
+    }),
+  );
+}
+
+/** KNT-158. The changed files that `.gitattributes` marks `linguist-generated` at the head. */
+function linguistGenerated(repo: string, head: string, paths: readonly string[]): Set<string> {
+  if (!paths.length) return new Set();
+  try {
+    const out = git(repo, 'check-attr', `--source=${head}`, '-z', 'linguist-generated', '--', ...paths).split('\0');
+    const generated = new Set<string>();
+    for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === 'set' || out[i + 2] === 'true') generated.add(out[i]!);
+    return generated;
+  } catch {
+    return new Set();
+  }
 }
 
 /** KNT-166. The changed files, and those that the review did not read or read with less context. */
@@ -702,10 +735,24 @@ export function buildPack(
   // generated-like files and docs are dropped; then the source files lose the whole function around
   // each hunk and keep three lines of context, the core last; then the tests, the UI, the source and
   // the core are dropped, in this order.
+  // KNT-158. Over the budget only: a file that the commits name comes last, a file whose change is
+  // only whitespace or that `.gitattributes` marks generated comes first.
+  const rankOf = new Map<string, number>();
+  if (size() > budget) {
+    const message = git(repo, 'log', '--format=%s%n%b', `${base}..${head}`);
+    const named = namedFiles(message, [...hunks.keys()]);
+    const generated = linguistGenerated(repo, head, [...hunks.keys()]);
+    for (const path of hunks.keys()) {
+      const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+      const formatting = !/^[+-](?![+-]{2} )/m.test(git(repo, 'diff', '-w', '--ignore-blank-lines', `${base}...${head}`, '--', ...paths));
+      rankOf.set(path, named.has(path) ? TRIM_RANK.named : generated.has(path) || formatting ? TRIM_RANK.generated : trimRank(path));
+    }
+  }
+  const rank = (path: string) => rankOf.get(path) ?? trimRank(path);
   const byRank = (ranks: number[]) =>
     [...hunks]
-      .filter(([path]) => ranks.includes(trimRank(path)))
-      .sort((a, b) => trimRank(a[0]) - trimRank(b[0]) || b[1].length - a[1].length)
+      .filter(([path]) => ranks.includes(rank(path)))
+      .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1].length - a[1].length)
       .map(([path]) => path);
   const cut: string[] = [];
   const narrowed: string[] = [];
@@ -719,7 +766,7 @@ export function buildPack(
     if (size() <= budget) break;
     drop(path);
   }
-  for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+  for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core, TRIM_RANK.named])) {
     if (size() <= budget) break;
     if (WORKFLOW_FILE.test(path) || TEST_FILE.test(path)) continue;
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
@@ -730,12 +777,12 @@ export function buildPack(
       narrowed.push(path);
     }
   }
-  for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+  for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core, TRIM_RANK.named])) {
     if (size() <= budget) break;
     drop(path);
   }
   // The drops can leave room: the core files get their whole functions back first, the smallest first.
-  for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => trimRank(b) - trimRank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
+  for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => rank(b) - rank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
     const wider = size() - hunks.get(path)!.length + whole.get(path)!.length;
     if (wider <= budget) hunks.set(path, whole.get(path)!);
   }

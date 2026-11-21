@@ -20,6 +20,9 @@ import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
 import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
 
+/** KNT-158. Two earlier findings of one category this many lines apart, or less, are on the same code. */
+const SAME_CODE_LINES = 20;
+
 /** The pack holds at most this many bytes of earlier findings. */
 export const MAX_EARLIER_BYTES = 16_000;
 
@@ -36,6 +39,31 @@ const PRIORITY = { critical: 'P0', major: 'P1', minor: 'P2' } as const;
 function oneLine(text: string, max: number): string {
   const flat = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/[`<>]/g, "'").replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
+/** KNT-158. The most groups, and the most references of a group, that the note of classes lists. */
+const MAX_CLASSES = 4;
+const MAX_CLASS_REFS = 4;
+
+/** The note on the defects that earlier reviews found more than once on the same code, or ''. */
+function classesNote(held: readonly HeldEarlier[]): string {
+  // A finding that a person set aside is no defect. A group holds the findings near its first one.
+  const groups: HeldEarlier[][] = [];
+  for (const e of held.filter((h) => h.status !== 'dismissed' && h.status !== 'wontfix')) {
+    const group = groups.find((g) => g[0]!.path === e.path && g[0]!.category === e.category && Math.abs(g[0]!.line - e.line) <= SAME_CODE_LINES);
+    if (group) group.push(e);
+    else groups.push([e]);
+  }
+  const repeated = groups.filter((g) => g.length >= 2).slice(0, MAX_CLASSES);
+  if (!repeated.length) return '';
+  const refs = (g: HeldEarlier[]) => g.slice(0, MAX_CLASS_REFS).map((e) => e.ref).join(', ') + (g.length > MAX_CLASS_REFS ? ` and ${g.length - MAX_CLASS_REFS} more` : '');
+  return (
+    '\n### Defects found more than once on the same code\n\n' +
+    repeated.map((g) => `- ${refs(g)} · \`${oneLine(g[0]!.path, 120)}:${Math.min(...g.map((e) => e.line))}\` · ${g[0]!.category}\n`).join('') +
+    '\nEach line is a defect that earlier reviews found again in another form on the same code. A finding of yours that ' +
+    'follows one of them is not one more case: name the root cause that lets every form through, and give in `fix` the fix ' +
+    'of the whole class (for example a parser in place of one more pattern), not of this form only.\n'
+  );
 }
 
 /**
@@ -64,6 +92,16 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     size += row.length;
   }
   if (!held.length) return { section: '', held };
+  // KNT-158. Two earlier findings of one kind on the same code: a third one is a class of defect. On a
+  // hand-written scanner, three holes came one per review, three pushes in a row, and the fix of the
+  // class (a parser) closed them all. The note fits in MAX_EARLIER_BYTES with the rows: the last rows
+  // give it their place.
+  let classes = classesNote(held);
+  while (held.length > 1 && size + classes.length > MAX_EARLIER_BYTES) {
+    size -= rows.pop()!.length;
+    held.pop();
+    classes = classesNote(held);
+  }
   const intro =
     '## Earlier findings\n\n' +
     'The findings that earlier reviews of this pull request reported, with their status: `open` (still in the code at ' +
@@ -74,7 +112,7 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     '`fixed` finding that the code no longer has, nor a `dismissed` or `wontfix` finding whose file did not change since. ' +
     'A finding that follows an earlier one, no more severe, does not lower `confidence_score` again: that defect was already ' +
     'counted. A more severe one is a new fact, and lowers it.\n\n';
-  return { section: `${intro}${rows.join('')}\n`, held };
+  return { section: `${intro}${rows.join('')}${classes}\n`, held };
 }
 
 /**

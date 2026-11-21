@@ -6,6 +6,7 @@
 // not read as safe.
 import type { Answer } from './findings.ts';
 import { TRIM_RANK, trimRank, type Coverage } from './pack.ts';
+import { withoutMergeAdvice } from './risk.ts';
 
 /** The highest score when the review did not read a file of logic: « one part you could not check ». */
 export const PARTIAL_SCORE = 4;
@@ -33,7 +34,8 @@ export function applyCoverage(answer: Answer, coverage: Coverage | undefined): n
   if (!logic.length) return null;
   const core = logic.some((p) => trimRank(p) === TRIM_RANK.core);
   const cap = core ? PARTIAL_CORE_SCORE : PARTIAL_SCORE;
-  answer.risk = `Partial review: ${logic.length} file${logic.length === 1 ? '' : 's'} of logic not read${core ? ', a schema, a migration or a store among them' : ''} (see Not reviewed). ${answer.risk}`.trim();
+  // KNT-158. The words of the model that advise a merge go: the review did not read all the code.
+  answer.risk = `Partial review: ${logic.length} file${logic.length === 1 ? '' : 's'} of logic not read${core ? ', a schema, a migration or a store among them' : ''} (see Not reviewed). ${withoutMergeAdvice(answer.risk)}`.trim();
   const said = Number(answer.confidence_score) || 0;
   if (said > cap) answer.confidence_score = cap;
   return cap;
