@@ -581,6 +581,43 @@ describe('findings from push to push (REV-16)', () => {
       assert.equal(fake.repliesTo(thread!.id).length, 0)
     })
 
+    it('a person who opens a stale finding again starts the count again: one miss after it keeps it open, two make it stale', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      await push(HEADS[2]!, [], [far(45)], [far(40)])
+      let [row] = await findingRows()
+      assert.equal(row!.status, 'stale')
+      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'open', actor: 'octocat' })
+      // One miss after the reopen: the model can miss a finding once.
+      await push(HEADS[3]!, [], [far(46)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      // The second one in a row: stale again.
+      await push(HEADS[4]!, [], [far(47)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['stale'])
+      assert.deepEqual((await events('The sum subtracts')).map((e) => [e.type, e.actor]), [
+        ['opened', 'kento'],
+        ['stale', 'kento'],
+        ['reopened', 'octocat'],
+        ['stale', 'kento'],
+      ])
+      assert.equal(fake.repliesTo(thread!.id).length, 1, 'the thread already holds the note')
+    })
+
+    it('the reviews while a person had dismissed the finding are no misses: after a reopen, one miss keeps it open with no note', async () => {
+      await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
+      let [thread] = fake.botThreads()
+      let [row] = await findingRows()
+      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'dismissed', reason: 'Not now.', actor: 'octocat' })
+      // The runner gets it as settled: these reviews do not report it.
+      await push(HEADS[1]!, [], [far(40)], [far(40)])
+      await push(HEADS[2]!, [], [far(45)], [far(40)])
+      await setFindingStatus(database.sql, { orgId, findingId: row!.id, status: 'open', actor: 'octocat' })
+      await push(HEADS[3]!, [], [far(46)], [far(40)])
+      assert.deepEqual((await findingRows()).map((r) => r.status), ['open'])
+      assert.equal(fake.repliesTo(thread!.id).length, 0)
+    })
+
     it('a stale finding that a review finds again is open, and the count starts again: one miss after it keeps it open', async () => {
       await push(HEADS[0]!, [SUBTRACTS(2, long)], ['src/sum.ts'])
       let [thread] = fake.botThreads()
