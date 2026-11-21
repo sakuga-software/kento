@@ -21,6 +21,8 @@ export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' 
   octocat: { id: 101, name: 'Alex Martin', role: 'admin' },
   camille: { id: 102, name: 'Camille', role: 'member' },
   stranger: { id: 103, name: 'Someone Else', role: null },
+  // KNT-150: counted nowhere on GitHub, and invited in Kentō by the tests of the members.
+  visitor: { id: 104, name: 'Visitor', role: null },
 }
 
 /** A repository name of 80 characters (REV-25). */
@@ -127,6 +129,14 @@ let server = http.createServer(async (request, response) => {
     return json(response, 200, { access_token: `ghu_${entry.login}`, token_type: 'bearer' })
   }
 
+  // KNT-150: the account of a login, for an invitation.
+  let user = /^\/users\/([^/]+)$/.exec(url.pathname)
+  if (request.method === 'GET' && user) {
+    let login = decodeURIComponent(user[1]!).toLowerCase()
+    let account = ACCOUNTS[login]
+    return account ? json(response, 200, { id: account.id, login, type: 'User' }) : json(response, 404, { message: 'Not Found' })
+  }
+
   if (request.method === 'GET' && url.pathname === '/user') {
     let login = (request.headers.authorization ?? '').replace('Bearer ghu_', '')
     let account = ACCOUNTS[login]
@@ -207,7 +217,12 @@ let server = http.createServer(async (request, response) => {
       repository_selection: 'all',
       suspended_at: null,
       html_url: `https://github.com/organizations/${FAKE_ORG.login}/settings/installations/${FAKE_ORG.installationId}`,
+      account: { id: FAKE_ORG.accountId, login: FAKE_ORG.login, type: 'Organization' },
     })
+  }
+  // KNT-150: the type of the account of the second installation, for the move of an installation.
+  if (request.method === 'GET' && url.pathname === `/app/installations/${SECOND_ORG.installationId}`) {
+    return json(response, 200, { id: SECOND_ORG.installationId, suspended_at: null, account: { id: SECOND_ORG.accountId, login: SECOND_ORG.login, type: 'Organization' } })
   }
   if (request.method === 'GET' && url.pathname === '/app/hook/config') {
     return json(response, 200, { url: `${process.env.KENTO_URL ?? 'http://127.0.0.1:3488'}/webhooks/github`, content_type: 'json', insecure_ssl: '0' })

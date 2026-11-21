@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG, FAKE_PULLS } from './fake-github.ts'
-import { expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, openRepoConfig, signIn, watchConsole } from './helpers.ts'
 
 // The assignment rules of a repository (REV-21) in a browser, with the test of the ticket on orchard:
 // rule 1 gives the pull requests of the agent balanced; rule 2 gives a pull request that touches a
@@ -97,13 +97,13 @@ test.describe('the assignment rules of a repository', () => {
 
     let form = page.locator('#assignment-new')
     await form.getByLabel('The author of the PR is').fill('sakuga-agent[bot]')
-    await form.getByLabel('Then').selectOption('balanced')
+    await chooseOption(form, 'Then', 'balanced')
     await form.getByRole('button', { name: 'Add the rule' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Rule added last.' })).toBeVisible()
 
     await page.locator('#assignment-new > summary').click()
     await form.getByLabel('The PR changes one of these paths').fill('**/migrations/**')
-    await form.getByLabel('Then').selectOption('heavy')
+    await chooseOption(form, 'Then', 'heavy')
     await form.getByLabel('Mention in the review (optional)').fill('octocat')
     await form.getByRole('button', { name: 'Add the rule' }).click()
     let list = page.locator('.assignment-list')
