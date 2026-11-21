@@ -1,7 +1,7 @@
 import { LEVELS, type Level } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
-import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
+import type { DashboardScreen, DayStats, FailedJob, FailureBanner, QueueCardView, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
 import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
 import { Button, buttonClass } from './controls.tsx'
 import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
@@ -15,6 +15,7 @@ import { Shell, type PageFrame } from './shell.tsx'
 import { PRECISION_DAYS, PRECISION_MIN, type PrecisionReport } from '../findings/precision.ts'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
+import { LiveQueue, QUEUE_CARD_ID } from './public/live-queue.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
@@ -306,7 +307,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
           <div class="dash-main">
             <RecentSection recent={screen.recent} now={screen.now} org={org} />
             <div class="dash-side">
-              <QueueRunnersSection queue={screen.queue} runners={screen.runners} counts={screen.runnerCounts} now={screen.now} githubUrl={githubUrl} />
+              <QueueRunnersSection card={screen} githubUrl={githubUrl} orgId={frame.viewer?.org.id ?? ''} />
               <CostSection costs={screen.costs} caps={screen.caps} admin={admin} />
             </div>
           </div>
@@ -1025,92 +1026,122 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
   }
 }
 
-/** REV-91. The jobs running then waiting, and the runners, in one panel beside the last reviews. */
-function QueueRunnersSection(
-  handle: Handle<{ queue: DashboardScreen['queue']; runners: DashboardRunner[]; counts: RunnerCounts; now: Date; githubUrl: string }>,
-) {
+/** KNT-189. "2 ready / 3 online": the online runners that run no job, of the online ones. */
+export function readyText(counts: Pick<RunnerCounts, 'ready' | 'online'>): string {
+  return `${counts.ready} ready / ${counts.online} online`
+}
+
+/**
+ * REV-91. The jobs running then waiting, and the runners, in one panel beside the last reviews.
+ * KNT-189: `LiveQueue` keeps the card up to date in the browser (`data-live-queue`, and
+ * public/assets/dashboard.js keeps this section when it reads the page again).
+ */
+function QueueRunnersSection(handle: Handle<{ card: QueueCardView; githubUrl: string; orgId: string }>) {
   return () => {
-    let { queue, runners, counts, now, githubUrl } = handle.props
-    let total = counts.online + counts.late + counts.offline
-    let more = total - runners.length
+    let { card, githubUrl, orgId } = handle.props
     return (
-      <section class="dash-section" aria-labelledby="queue-title">
+      // data-org: a card of the stream for another org reloads the page (live-queue.tsx).
+      <section class="dash-section" aria-labelledby="queue-title" data-live-queue="" data-org={orgId}>
         <div class="dash-section-head">
           <h2 id="queue-title" class="section-title">
             Queue and runners
           </h2>
+          <LiveQueue />
           <a href={routes.runners.href()}>
             Runners<span class="visually-hidden">: manage the runners</span>
           </a>
         </div>
-        <div class="card dash-queue">
-          <h3 class="dash-subtitle">
-            In progress <span class="count">{queue.runningCount}</span>
-          </h3>
-          {queue.running.length === 0 ? (
-            <p class="hint">No job in progress.</p>
-          ) : (
-            <ul class="dash-jobs">
-              {queue.running.map((job) => (
-                <QueueItem job={job} now={now} githubUrl={githubUrl} />
-              ))}
-            </ul>
-          )}
-          <h3 class="dash-subtitle">
-            Waiting <span class="count">{queue.queuedCount}</span>
-          </h3>
-          {queue.queued.length === 0 ? (
-            <p class="hint">No job waiting.</p>
-          ) : (
-            <ul class="dash-jobs">
-              {queue.queued.map((job) => (
-                <QueueItem job={job} now={now} githubUrl={githubUrl} />
-              ))}
-            </ul>
-          )}
-          {queue.queuedCount > queue.queued.length ? <p class="hint">and {queue.queuedCount - queue.queued.length} more.</p> : null}
-          <section class="dash-runners" aria-labelledby="dash-runners-title">
-            <h3 id="dash-runners-title" class="dash-subtitle">
-              Runners
-            </h3>
-            {total === 0 ? (
-              <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
-            ) : (
-              <>
-                <p class="runner-counts">{countsText(counts)}</p>
-                {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
-                <ul class="dash-jobs">
-                  {runners.map((runner) => {
-                    let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
-                    let state = runnerState(seen, now)
-                    return (
-                      <li class="dash-job">
-                        <div class="dash-job-head">
-                          <span class="mono">{runner.name}</span>
-                          <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
-                          {runner.orgId === null ? <span class="tag">Runner of the service</span> : null}
-                        </div>
-                        <p class="hint">
-                          {runner.running === 0 ? 'No job in progress' : `${runner.running} ${plural(runner.running, 'job')} in progress`} · last
-                          signal{' '}
-                          {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'never'}
-                        </p>
-                      </li>
-                    )
-                  })}
-                </ul>
-                {more > 0 ? (
-                  <p class="hint">
-                    <a href={routes.runners.href()}>
-                      and {more} more<span class="visually-hidden"> on the Runners screen</span>
-                    </a>
-                  </p>
-                ) : null}
-              </>
-            )}
-          </section>
-        </div>
+        <QueueCard card={card} githubUrl={githubUrl} />
       </section>
+    )
+  }
+}
+
+/** KNT-189. The card of the queue and of the runners: the page renders it, and the live stream sends it again. */
+export function QueueCard(handle: Handle<{ card: QueueCardView; githubUrl: string }>) {
+  return () => {
+    let { card, githubUrl } = handle.props
+    let { queue, runners, runnerCounts: counts, now } = card
+    let total = counts.online + counts.late + counts.offline
+    let more = total - runners.length
+    return (
+      <div class="card dash-queue" id={QUEUE_CARD_ID}>
+        <h3 class="dash-subtitle">
+          In progress <span class="count">{queue.runningCount}</span>
+        </h3>
+        {queue.running.length === 0 ? (
+          <p class="hint">No job in progress.</p>
+        ) : (
+          <ul class="dash-jobs">
+            {queue.running.map((job) => (
+              <QueueItem job={job} now={now} githubUrl={githubUrl} />
+            ))}
+          </ul>
+        )}
+        <h3 class="dash-subtitle">
+          Waiting <span class="count">{queue.queuedCount}</span>
+        </h3>
+        {queue.queued.length === 0 ? (
+          <p class="hint">No job waiting.</p>
+        ) : (
+          <ul class="dash-jobs">
+            {queue.queued.map((job) => (
+              <QueueItem job={job} now={now} githubUrl={githubUrl} />
+            ))}
+          </ul>
+        )}
+        {queue.queuedCount > queue.queued.length ? <p class="hint">and {queue.queuedCount - queue.queued.length} more.</p> : null}
+        <section class="dash-runners" aria-labelledby="dash-runners-title">
+          <h3 id="dash-runners-title" class="dash-subtitle">
+            Runners
+            {total === 0 ? null : (
+              <span class="runner-ready" data-ready={String(counts.ready)} title="Online and with no job in progress: the next job starts at once.">
+                {readyText(counts)}
+              </span>
+            )}
+          </h3>
+          {total === 0 ? (
+            <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
+          ) : (
+            <>
+              {/* KNT-189: "N online" alone would repeat the count beside the title. */}
+              {counts.late + counts.offline > 0 ? <p class="runner-counts">{countsText(counts)}</p> : null}
+              {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
+              <ul class="dash-jobs">
+                {runners.map((runner) => {
+                  let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
+                  let state = runnerState(seen, now)
+                  return (
+                    <li class="dash-job">
+                      <div class="dash-job-head">
+                        <span class="mono">{runner.name}</span>
+                        <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
+                        {runner.orgId === null ? <span class="tag">Runner of the service</span> : null}
+                      </div>
+                      <p class="hint">
+                        {runner.running > 0
+                          ? `${runner.running} ${plural(runner.running, 'job')} in progress`
+                          : runner.busy
+                            ? 'Busy with a job of another organization'
+                            : 'No job in progress'}{' '}
+                        · last signal{' '}
+                        {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'never'}
+                      </p>
+                    </li>
+                  )
+                })}
+              </ul>
+              {more > 0 ? (
+                <p class="hint">
+                  <a href={routes.runners.href()}>
+                    and {more} more<span class="visually-hidden"> on the Runners screen</span>
+                  </a>
+                </p>
+              ) : null}
+            </>
+          )}
+        </section>
+      </div>
     )
   }
 }
