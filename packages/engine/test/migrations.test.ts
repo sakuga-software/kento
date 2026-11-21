@@ -95,3 +95,33 @@ test('the prompt asks the four questions of a migration', () => {
   assert.match(text, /Are mixed or legacy values \(a list in one column, a value with a prefix, an old spelling\) mapped, and to what\?/);
   assert.match(text, /A step of an expand and contract migration that the commits name \(the old column stays for one release\) is not a risk/);
 });
+
+test('a part that passes the size of the section goes whole, and its file goes back to « Not reviewed »', () => {
+  const big = { version: '7', dialect: 'postgresql', entries: Array.from({ length: 19 }, (_, idx) => ({ idx, version: '7', when: idx, tag: `${String(idx).padStart(4, '0')}_${'x'.repeat(1_200)}`, breakpoints: true })) };
+  const dir = mkdtempSync(join(tmpdir(), 'engine-migrations-big-'));
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+  g('init', '-q', '-b', 'main');
+  g('config', 'user.email', 'test@example.com');
+  g('config', 'user.name', 'Test');
+  mkdirSync(join(dir, 'drizzle/meta'), { recursive: true });
+  writeFileSync(join(dir, 'drizzle/meta/_journal.json'), '{}\n');
+  g('add', '.');
+  g('commit', '-q', '-m', 'base');
+  const from = g('rev-parse', 'HEAD');
+  writeFileSync(join(dir, 'drizzle/meta/_journal.json'), JSON.stringify(big));
+  writeFileSync(join(dir, 'drizzle/meta/0000_snapshot.json'), JSON.stringify({ id: 'a', prevId: '0', tables: { 'public.t': { columns: {} } } }));
+  g('add', '.');
+  g('commit', '-q', '-m', 'a long journal');
+  const to = g('rev-parse', 'HEAD');
+  try {
+    const { section, covered } = migrationSection(dir, from, to, ['drizzle/meta/_journal.json', 'drizzle/meta/0000_snapshot.json']);
+    assert.deepEqual(covered, ['drizzle/meta/0000_snapshot.json'], 'the journal does not fit');
+    assert.equal((section.match(/```/g) ?? []).length % 2, 0, 'no code fence stays open');
+    assert.match(section, /no earlier snapshot to compare with: the snapshot holds 1 tables/);
+    assert.doesNotMatch(section, /table added/, 'a first snapshot does not list every table as added');
+    const { skipped } = buildPack(dir, from, to, 'definitions');
+    assert.ok(skipped.includes('drizzle/meta/_journal.json: generated or binary file'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
