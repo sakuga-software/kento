@@ -11,6 +11,8 @@ const MAX_PACK_BYTES = 240_000;
 const MAX_FILE_CHANGED_LINES = 1000;
 const MAX_DOC_LINES = 400;
 const MAX_CONTEXT_BYTES = 60_000;
+/** KNT-156. The most bytes of the whole tests of one changed test file; over it, three lines of context. */
+export const MAX_TEST_HUNK_BYTES = 40_000;
 
 const SKIP =
   /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock)$|\.snap$|(^|\/)(dist|build|vendor|\.next|\.react-router)\/|drizzle\/migrations\/meta\/|\.gen\.[a-z]+$|\.(png|jpe?g|gif|webp|avif|svg|ico|pdf|mp4|webm|woff2?|ttf|otf|zip|tgz)$/;
@@ -307,7 +309,10 @@ export function buildPack(
   const hunks = new Map<string, string>();
   for (const path of reviewed) {
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
-    hunks.set(path, git(repo, 'diff', TEST_FILE.test(path) ? '-U3' : '-W', `${base}...${head}`, '--', ...paths));
+    hunks.set(path, git(repo, 'diff', '-W', `${base}...${head}`, '--', ...paths));
+    // KNT-156. A changed test shows its whole test, so that the review can read the assertion. A test
+    // file whose whole tests pass MAX_TEST_HUNK_BYTES shows three lines of context, as before.
+    if (TEST_FILE.test(path) && hunks.get(path)!.length > MAX_TEST_HUNK_BYTES) hunks.set(path, git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths));
   }
 
   let docs = '';
@@ -327,18 +332,38 @@ export function buildPack(
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
   const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
+  // KNT-156. Over the budget, a test file that shows its whole tests goes back to three lines of
+  // context before any file goes: the largest first.
+  const wide = new Map<string, string>();
+  for (const [path, hunk] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
+    if (size() <= budget) break;
+    if (!TEST_FILE.test(path)) continue;
+    const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+    const narrow = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
+    if (narrow.length < hunk.length) {
+      wide.set(path, hunk);
+      hunks.set(path, narrow);
+    }
+  }
   // Drop the largest diffs first: the small ones are where most of the logic of a change sits.
   for (const [path] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= budget) break;
     skipped.push(`${path}: removed to fit in the maximum size of the review`);
     hunks.delete(path);
   }
+  // KNT-156. A dropped file can leave room: the narrowed test files that fit show their whole tests
+  // again, the smallest first (Kentō #0b630a).
+  for (const [path, hunk] of [...wide].sort((a, b) => a[1].length - b[1].length)) {
+    const narrow = hunks.get(path);
+    if (narrow === undefined) continue;
+    if (size() - narrow.length + hunk.length <= budget) hunks.set(path, hunk);
+  }
 
   const header = `# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`;
   const notReviewed = skipped.length ? `## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n` : '';
   const diff =
-    '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
-    'A test file shows three lines of context.\n\n```diff\n' +
+    '## Diff\n\nEach hunk shows the whole function around the change, the whole test for a test file. ' +
+    'A test file with very long tests shows three lines of context.\n\n```diff\n' +
     reviewed.map((path) => hunks.get(path) ?? '').join('') +
     '```\n';
   const imports = [...hunks.keys()].map((path) => importsOf.get(path) ?? '').join('');
