@@ -124,14 +124,25 @@ jobs:
             exit 1
           fi
           if gh api "repos/$REPO/git/ref/tags/$tag" --silent 2>/dev/null; then
-            echo "::notice title=Release::The tag $tag already exists: its push started the release."
+            echo "The tag $tag already exists."
+          else
+            # An annotated tag, as `git tag -m` gives. GitHub, not a maintainer, makes it: it is not
+            # signed.
+            object=$(gh api "repos/$REPO/git/tags" -f tag="$tag" -f message="Kentō $version" -f object="$SHA" -f type=commit --jq .sha)
+            gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$object" --silent
+            echo "Tagged $tag on $SHA."
+          fi
+          # A rerun of this job after a failed dispatch finds the tag: it starts the release unless
+          # the release exists, or a run of release.yml on the tag (a tag pushed by hand starts one).
+          if gh api "repos/$REPO/releases/tags/$tag" --silent 2>/dev/null; then
+            echo "::notice title=Release::The GitHub release $tag already exists."
             exit 0
           fi
-          # An annotated tag, as `git tag -m` gives. GitHub, not a maintainer, makes it: it is not
-          # signed.
-          object=$(gh api "repos/$REPO/git/tags" -f tag="$tag" -f message="Kentō $version" -f object="$SHA" -f type=commit --jq .sha)
-          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$object" --silent
-          echo "Tagged $tag on $SHA."
+          runs=$(gh api "repos/$REPO/actions/workflows/release.yml/runs?branch=$tag" --jq .total_count)
+          if [ "$runs" -gt 0 ]; then
+            echo "::notice title=Release::release.yml already ran on $tag: see its run, or start it again by hand (apps/runner/DEPLOY.md)."
+            exit 0
+          fi
           # A tag made with the token of the workflow starts no workflow: start the release on it.
           gh workflow run release.yml --repo "$REPO" --ref "$tag"
-          echo "::notice title=Release::$tag is tagged. The Release workflow publishes the runner image and the GitHub release."
+          echo "::notice title=Release::release.yml starts on $tag: it publishes the runner image and the GitHub release."
