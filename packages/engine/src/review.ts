@@ -377,7 +377,7 @@ export function finishReview<F extends Finding>(
   // cannot pass what it read.
   const said = Number(answer.confidence_score) || 0;
   const cap = applyCoverage(answer, coverage);
-  if (cap !== null && said > cap) log(`score capped at ${cap}: the model said ${said}, and the review did not read ${coverage!.cut.length} changed file${coverage!.cut.length === 1 ? '' : 's'}`);
+  if (cap !== null && said > cap) log(`score capped at ${cap}: the model said ${said}, and the review did not read ${coverage!.logic.length} changed file${coverage!.logic.length === 1 ? '' : 's'} of logic`);
   const reviewed = (f: F) => ({ ...f, anchor: anchor(f, lines), blocking: isBlocking(f, lines), suggestion_range: null, fingerprint: fingerprint(f, fileAt(f.path)) });
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
