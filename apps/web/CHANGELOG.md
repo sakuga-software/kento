@@ -19,6 +19,10 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
 - **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
   and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
   of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:
