@@ -29,7 +29,16 @@
         if (!response.ok || response.redirected) return
         const next = new DOMParser().parseFromString(await response.text(), 'text/html').getElementById('dashboard-live')
         if (next) {
+          // KNT-189. The section of the queue holds the live card (app/ui/public/live-queue.tsx): it
+          // stays, so that its stream goes on. Its card takes the one just read, unless the stream is live.
+          const kept = live.querySelector('[data-live-queue]')
           live.replaceChildren(...next.childNodes)
+          const fresh = kept && live.querySelector('[data-live-queue]')
+          if (fresh) {
+            const card = fresh.querySelector('#dash-queue-card')
+            if (kept.dataset.liveState !== 'live' && card) kept.querySelector('#dash-queue-card')?.replaceWith(card)
+            fresh.replaceWith(kept)
+          }
           stampNow()
           age()
         }

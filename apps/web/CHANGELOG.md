@@ -19,6 +19,14 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Live card of the dashboard** (KNT-189): the card "Queue and runners" follows a stream of
+  server-sent events, `GET /dashboard/live`, for a signed-in member, for the org of the session. A
+  proxy in front of the service must not buffer `text/event-stream` answers (Traefik does not by
+  default) and must keep an idle connection open 30 s at least: the stream sends a comment every
+  25 s and ends after 2 minutes, then the browser opens another one, which checks the session and
+  its org again. Each session holds 4 streams at most. The card also says how many runners are
+  ready: online, with no job in progress. No migration, no new variable.
+
 ## 0.2.0 (2026-11-21)
 
 The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.

@@ -48,15 +48,16 @@ function banner(overrides: Partial<FailureBanner> = {}): FailureBanner {
 
 /** The runners of the default screen. */
 function runnersOf(): DashboardScreen['runners'] {
-  return [{ id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }]
+  return [{ id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true }]
 }
 
 /** The counts that the store reads in SQL, from the runners of a screen. */
 function countRunners(runners: DashboardScreen['runners']): DashboardScreen['runnerCounts'] {
-  let counts = { online: 0, late: 0, offline: 0 }
+  let counts = { online: 0, late: 0, offline: 0, ready: 0 }
   for (let runner of runners) {
     let state = runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, NOW)
     if (state !== 'revoked') counts[state]++
+    if (state === 'online' && !runner.busy) counts.ready++
   }
   return counts
 }
@@ -140,6 +141,9 @@ function setup(
     async screen(orgId) {
       reads.push(orgId)
       return view
+    },
+    async queueCard() {
+      return { now: view.now, queue: view.queue, runners: view.runners, runnerCounts: view.runnerCounts }
     },
     async retryTarget(_orgId, jobId) {
       return jobId === JOB_ID ? { installationId: 42, githubRepoId: 7, fullName: 'sakuga-software/orchard', prNumber: 128, headSha: HEAD } : null
@@ -263,14 +267,14 @@ describe('the list "Getting started" (REV-26)', () => {
   it('marks each step from what the org has, and the first review as waiting while a job is in the queue', () => {
     let view = fresh({
       setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, serviceRunners: 1, pendingRegistrations: 0 },
-      runners: [{ id: 'r', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
+      runners: [{ id: 'r', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: false }],
       queue: { running: [], queued: [], runningCount: 0, queuedCount: 1 },
     })
     assert.deepEqual(states(view), ['app:done', 'provider:done', 'runner:done', 'repo:done', 'review:wait'])
   })
 
   it('says that a runner is on its way when it is registered but silent, or when a token waits for it', () => {
-    let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0 }] })
+    let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0, busy: false }] })
     assert.equal(states(silent)?.[2], 'runner:wait')
     let token = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, serviceRunners: 1, pendingRegistrations: 1 } })
     assert.equal(states(token)?.[2], 'runner:wait')
@@ -327,7 +331,7 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     let { signIn } = setup(
       screen({
         banner: null,
-        runners: [{ id: 'run9', name: 'runner-laptop', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0 }],
+        runners: [{ id: 'run9', name: 'runner-laptop', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0, busy: false }],
       }),
     )
     let { html } = await signIn(OCTOCAT)
@@ -345,14 +349,14 @@ describe('"To do" and the band of numbers (REV-91)', () => {
   })
 
   it('counts the silent runners that the bounded list leaves out, with no empty names (REV-91)', async () => {
-    let { signIn } = setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 4 } }))
+    let { signIn } = setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 4, ready: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</section>', html.indexOf('id="todo-runners"')))
     assert.match(todo, /<h3 id="todo-runners" class="todo-title">5 runners give no signal<\/h3>/)
     assert.match(todo, /<p class="hint">A runner is online again at its next signal\.<\/p>/)
     // Each row is a region named by its title, inside an item of the list.
     assert.match(html, /<li><section aria-labelledby="todo-runners" class="todo">/)
-    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0 } })).signIn(OCTOCAT)).html
+    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0, ready: 0 } })).signIn(OCTOCAT)).html
     assert.match(one, /1 runner gives no signal/)
   })
 
@@ -485,10 +489,10 @@ describe('the dashboard', () => {
     let { signIn } = setup(
       screen({
         runners: [
-          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
-          { id: 'run2', name: 'runner-0', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
+          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true },
+          { id: 'run2', name: 'runner-0', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0, busy: false },
         ],
-        runnerCounts: { online: 1, late: 0, offline: 23 },
+        runnerCounts: { online: 1, late: 0, offline: 23, ready: 0 },
       }),
     )
     let { html } = await signIn(OCTOCAT)
@@ -502,7 +506,7 @@ describe('the dashboard', () => {
   it('says that jobs wait with no runner online, since when, and what to do (REV-52)', async () => {
     let since = new Date(NOW.getTime() - 14 * 60_000)
     let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)
-    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
+    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1, ready: 0 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /2 jobs have waited in the queue for more than 10 min \(the oldest for 14 min\)/)
@@ -540,7 +544,7 @@ describe('the dashboard', () => {
     // With no runner online, the cause stays the missing runner.
     assert.match(stallText({ count: 2, since, lastRunnerSeenAt: null, serviceKeyJobs: 2, serviceRunnersOnline: 0 }, 0, NOW).cause, /^No runner ever called Kentō/)
 
-    let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
+    let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0, ready: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /These jobs have no provider: they wait for a runner with an OpenRouter key\./)

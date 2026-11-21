@@ -9,6 +9,11 @@ export const routes = route({
 /** The screens, and the forms of their frame. A signed-in member of an org only. */
 export const pageRoutes = route({
   home: get('/'),
+  /**
+   * KNT-189. The card "Queue and runners" of the dashboard, as a stream of server-sent events: the
+   * org of the session only, as the dashboard.
+   */
+  dashboardLive: get('/dashboard/live'),
   /** REV-14: "Run again at <level>" on the banner of the last failure. An admin only. */
   jobRetry: post('/jobs/:id/retry'),
   /** REV-59: "Hide" hides a failure of the dashboard. An admin only. */

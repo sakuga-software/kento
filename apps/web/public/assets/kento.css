@@ -3541,6 +3541,50 @@ a.finding-title:hover {
 .dash-subtitle:first-child {
   margin-top: 0;
 }
+/* KNT-189. "Live" beside the title of the queue while the stream keeps the card; "Reconnecting…" while it waits. */
+.live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-right: auto;
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 1 var(--font-ui);
+}
+.live-state[hidden] {
+  display: none;
+}
+.live-state::before {
+  content: '';
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--matsu);
+}
+.live-state[data-state='reconnecting']::before {
+  background: none;
+  border: 2px dotted var(--nezumi);
+}
+/* KNT-189. "2 ready / 3 online" beside "Runners". */
+.runner-ready {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 20px var(--font-mono);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The count changed since the last card: a short wash, once. */
+  .runner-ready.is-changed {
+    animation: ready-changed 1.2s ease-out;
+  }
+}
+@keyframes ready-changed {
+  from {
+    background: var(--matsu-wash);
+    color: var(--matsu);
+  }
+}
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -185,6 +185,9 @@ let feedbackHandler = createFeedbackHandler({
   webUrl: config.githubUrl,
 })
 
+/** KNT-189. Aborts at the shutdown: the open streams of the dashboard end. */
+let closing = new AbortController()
+
 let router = createAppRouter({
   auth,
   repos,
@@ -232,6 +235,8 @@ let router = createAppRouter({
     readPullRequest:
       mintInstallationToken && config.githubApp ? createReadPullRequest({ mintInstallationToken, apiUrl: config.githubApp.apiUrl }) : null,
     serviceKey: config.providerApiKey !== null,
+    // KNT-189. The streams of the live card end at the shutdown: server.close() then waits for none.
+    live: { closing: closing.signal },
   },
   // The screen of a pull request (REV-17): its sheet of reviews and findings.
   pulls: {
@@ -355,6 +360,7 @@ function shutdown(signal: NodeJS.Signals) {
   if (shuttingDown) return
   shuttingDown = true
   log('info', 'shutdown.started', { signal })
+  closing.abort()
   server.close(async () => {
     await stopLeaseSweeper()
     await stopJobsPurge()
