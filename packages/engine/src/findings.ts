@@ -68,7 +68,15 @@ export type Answer = {
    * paths and the roles that it checked. The engine sets it; the model never gives it.
    */
   critical?: CriticalReview | null;
+  /**
+   * KNT-153. What the review asks the author to confirm or to check: no defect, no thread, no block,
+   * and no weight in the score. An answer of an earlier release has none.
+   */
+  questions?: Question[];
 };
+
+/** KNT-153. A question of a review: the file it is about, and the question. */
+export type Question = { path: string; question: string };
 
 /** KNT-154. A critical change, and whether its review named what it checked. */
 export type CriticalReview = Criticality & { checked: boolean };
@@ -197,6 +205,16 @@ export const ANSWER_SCHEMA = {
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
+    // KNT-153. A request to confirm, a product choice or a caller to check: not a finding.
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { path: { type: 'string' }, question: { type: 'string' } },
+        required: ['path', 'question'],
+        additionalProperties: false,
+      },
+    },
     // KNT-154. Empty lists when the pack holds no Critical change section.
     checked: {
       type: 'object',
@@ -205,7 +223,7 @@ export const ANSWER_SCHEMA = {
       additionalProperties: false,
     },
   },
-  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'checked'],
+  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'checked', 'questions'],
   additionalProperties: false,
 };
 

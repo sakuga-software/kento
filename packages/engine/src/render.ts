@@ -329,6 +329,13 @@ export function descriptionBlock(
     considered.forEach(item);
     out.push('');
   }
+  // KNT-153. What the review asks the author to confirm: no thread, no block, no weight in the score.
+  const questions = (answer.questions ?? []).filter((q) => typeof q?.question === 'string' && q.question.trim());
+  if (questions.length) {
+    out.push('<h3>Questions</h3>', '', 'The review asks these questions. They name no defect, do not block the PR and do not change the score.', '');
+    questions.forEach((q, i) => out.push(`${i + 1}. ${q.path?.trim() ? `\`${q.path.trim()}\` ` : ''}${q.question.replace(/\s+/g, ' ').trim()}`));
+    out.push('');
+  }
   out.push('<details><summary>Summary</summary>', '', answer.summary, '');
   if (resolved) {
     out.push(

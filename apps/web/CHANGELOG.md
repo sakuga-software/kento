@@ -152,6 +152,12 @@ Each entry says, when it applies:
   risk starts with "Critical change (…)", and it scores 3/5 at most unless it names a file and a
   role that it checked. A `lite` review of it always advises a deeper one. The runner computes it:
   no change of the protocol, and a service of the release before shows it as it is.
+- **Reviews** (KNT-153): a finding whose fix says that no change is needed is dropped, and one that
+  only asks the author to confirm becomes a question. The block of the description lists the
+  questions under « Questions »: no thread, no block, no weight in the score.
+- **Protocol** (KNT-153): the runner claims the feature `questions`, and the result of a review can
+  carry `questions`. **Order**: the service first, as always; a service of the release before
+  refuses the claim of a runner of this release.
 
 ## 0.1.0
 
