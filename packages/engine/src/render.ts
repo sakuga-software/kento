@@ -107,6 +107,17 @@ function threadMark(finding: Finding, icons: Icons): string {
   return finding.confidence < BLOCKING_CONFIDENCE ? ` ${icon('to-check', icons)}` : '';
 }
 
+/**
+ * KNT-167. The note of a finding that asks to undo the fix of an earlier finding: it names that
+ * finding by its short id, and says whether it blocks.
+ */
+export function reversesNote(finding: Finding): string {
+  const earlier = `\`#${(finding.reverses ?? '').slice(0, SHORT_ID_LENGTH)}\``;
+  return finding.severity === 'critical'
+    ? `Kentō changes its mind: this finding asks to undo the fix of ${earlier}, an earlier finding of this PR. The scenario says why that finding was wrong.`
+    : `Kentō changes its mind: this finding asks to undo the fix of ${earlier}, an earlier finding of this PR. The scenario says why that finding was wrong. It does not block the PR alone.`;
+}
+
 /** The length of the short id of a finding that a reader sees, and gives to `@kento-review reject`. */
 export const SHORT_ID_LENGTH = 6;
 
@@ -133,6 +144,8 @@ export function inlineBody(
   handle: string = DEFAULT_HANDLE,
 ): string {
   const out = [`${badges(finding, icons)}${threadMark(finding, icons)} **${finding.title}** \`${shortId(finding)}\``, '', finding.scenario, '', `**Fix:** ${finding.fix}`];
+  // KNT-167. Kentō changed its mind: the finding names the earlier finding whose fix it undoes.
+  if (finding.reverses) out.splice(1, 0, '', reversesNote(finding));
   // REV-19. The rule of the repository or of the org that the finding applies.
   if (finding.rule_title) out.splice(1, 0, '', `Rule: "${finding.rule_title.replace(/\s+/g, ' ').trim()}"`);
   const patch = shownPatch(finding);
@@ -307,7 +320,7 @@ export function descriptionBlock(
     }
     out.push(`${i + 1}. ${badges(f, icons)}&nbsp;**${f.title}** \`${shortId(f)}\` ${where}${url ? ` <a href="${url}">${icons === 'emoji' ? '▶' : icon('thread', icons)}</a>` : ''}`);
     // A finding with no thread shows its scenario here: this is the only place it appears.
-    if (!url) out.push(`   ${f.scenario} **Fix:** ${f.fix}`);
+    if (!url) out.push(`   ${f.reverses ? `${reversesNote(f)} ` : ''}${f.scenario} **Fix:** ${f.fix}`);
     const patch = url ? null : shownPatch(f);
     if (patch) out.push('', '   <details><summary>Fix</summary>', '', '   ```diff', ...patch.split('\n').map((row) => `   ${row}`), '   ```', '   </details>', '');
   };

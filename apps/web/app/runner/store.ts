@@ -7,6 +7,7 @@ import {
   MAX_REJECTED_FINDINGS,
   MAX_DELTA_FINDINGS,
   MAX_EARLIER_FINDINGS,
+  FINDING_KEY_PATTERN,
   MAX_SETTLED,
   parseEarlierFinding,
   parseReviewFinding,
@@ -27,7 +28,7 @@ import {
   type UnchangedPayload,
 } from '@kento-review/protocol'
 
-import { withoutSettled } from '@kento-review/engine/findings'
+import { findingKey, withoutSettled } from '@kento-review/engine/findings'
 
 import { jsonOf, toDate } from '../db/rows.ts'
 import type { ProviderModels } from '../db/schema.ts'
@@ -229,13 +230,13 @@ export interface RunnerStore {
    * the whole pull request. `patch`: the runner claims the feature `patch` (REV-104) and reads the
    * `patch` of a finding.
    */
-  jobDelta(jobId: string, reuse: JobReuse, options?: { patch: boolean }): Promise<JobDelta | null>
+  jobDelta(jobId: string, reuse: JobReuse, options?: { patch: boolean; reverses?: boolean }): Promise<JobDelta | null>
   /**
    * REV-99. Every finding of the pull request of a review job, whatever its status, the open ones
    * first, then the most recently changed, MAX_EARLIER_FINDINGS at most; and the head and the score
    * of the last review of the pull request at the level of the job, or null.
    */
-  jobEarlier(jobId: string): Promise<JobEarlier>
+  jobEarlier(jobId: string, options?: { reverses: boolean }): Promise<JobEarlier>
   /**
    * REV-100. The head of the last review of Kentō published on the pull request of a review job, of
    * any level (the head of the job too), or null before the first one.
@@ -526,7 +527,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       // The job carries only what the runner accepts (the protocol): a stored finding has keys of the
       // service (`rule_title`), and an older row can fail a check. One of them would fail the claim.
       // At most MAX_DELTA_FINDINGS, the limit of the job: a longer list would fail the claim.
-      let valid = open.map((f) => sendableFinding(f, options.patch)).filter((f) => parseReviewFinding(f).ok)
+      let valid = open.map((f) => sendableFinding(f, options.patch, options.reverses ?? false)).filter((f) => parseReviewFinding(f).ok)
       let findings = valid.slice(0, MAX_DELTA_FINDINGS)
       let sent = settled.map((f) => ({ ...f, title: f.title.slice(0, 1000), line: Math.max(0, f.line) })).filter((f) => parseSettledFinding(f).ok)
       let dropped = open.length - valid.length + settled.length - sent.length
@@ -535,7 +536,7 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return { score: previous.score, findings, settled: sent }
     },
 
-    async jobEarlier(jobId) {
+    async jobEarlier(jobId, options = { reverses: false }) {
       let rows = await sql<(Omit<EarlierFinding, 'reason'> & { reason: string | null })[]>`
         select findings.key, findings.path, findings.line, findings.title, findings.severity, findings.category,
           findings.status::text as status, findings.status_reason as reason, findings.last_seen_sha as commit
@@ -559,6 +560,26 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         order by reviews.published_at desc nulls last
         limit 1`
       let score = last ? Number(jsonOf<StoredReview>(last.result).score) : NaN
+      // KNT-167. The reversals that the last reviews found, by the key of the reversing finding: a
+      // finding that follows one of them keeps the reversal. Only to a runner that claims `reverses`.
+      if (options.reverses) {
+        let results = await sql<{ result: unknown }[]>`
+          select reviews.result
+          from jobs
+          join reviews on reviews.repo_id = jobs.repo_id and reviews.pr_number = jobs.pr_number
+            and reviews.github_review_id is not null
+          where jobs.id = ${jobId}
+          order by reviews.published_at desc nulls last
+          limit 20`
+        let reversals = new Map<string, string>()
+        for (let { result } of results) {
+          for (let f of jsonOf<StoredReview>(result).findings ?? []) {
+            let key = findingKey(f)
+            if (f.reverses && FINDING_KEY_PATTERN.test(f.reverses) && !reversals.has(key)) reversals.set(key, f.reverses)
+          }
+        }
+        findings = findings.map((f) => (reversals.has(f.key) ? { ...f, reverses: reversals.get(f.key)! } : f))
+      }
       return { findings, last: last && Number.isInteger(score) && score >= 1 && score <= 5 ? { head: last.head, score } : null }
     },
 
@@ -753,8 +774,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
  * REV-88. A stored finding with the keys of the protocol only. `withPatch`: the runner reads `patch`
  * (REV-104); a runner of an earlier release refuses the key.
  */
-function sendableFinding(f: ReviewPayload['findings'][number], withPatch: boolean): ReviewPayload['findings'][number] {
-  let { path, start_line, line, severity, category, confidence, title, scenario, fix, suggestion, patch, anchor, blocking, suggestion_range, rule_id, fingerprint } = f
+function sendableFinding(f: ReviewPayload['findings'][number], withPatch: boolean, withReverses: boolean): ReviewPayload['findings'][number] {
+  let { path, start_line, line, severity, category, confidence, title, scenario, fix, suggestion, patch, anchor, blocking, suggestion_range, rule_id, fingerprint, reverses } = f
   return {
     path,
     start_line,
@@ -772,6 +793,9 @@ function sendableFinding(f: ReviewPayload['findings'][number], withPatch: boolea
     suggestion_range,
     ...(rule_id ? { rule_id } : {}),
     ...(fingerprint ? { fingerprint } : {}),
+    // KNT-167. A carried finding that reverses a fix stays a reversal: without it, it blocks again
+    // on the next incremental review. Only to a runner that claims `reverses`.
+    ...(withReverses && reverses ? { reverses } : {}),
   }
 }
 

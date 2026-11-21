@@ -193,7 +193,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         reuse = job.attempt > 1 ? null : await deps.store.reusableReview(job.id)
         // REV-88. To a runner that reads it, the last review to review only the change since.
         if (reuse && (body.features?.includes('delta') ?? false)) {
-          let delta = await deps.store.jobDelta(job.id, reuse, { patch: body.features?.includes('patch') ?? false })
+          let delta = await deps.store.jobDelta(job.id, reuse, { patch: body.features?.includes('patch') ?? false, reverses: body.features?.includes('reverses') ?? false })
           if (delta) reuse = { ...reuse, delta }
         }
       } catch (cause) {
@@ -205,7 +205,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     let earlier: JobEarlier | null = null
     if (job.kind === 'review' && (body.features?.includes('earlier') ?? false)) {
       try {
-        earlier = await deps.store.jobEarlier(job.id)
+        earlier = await deps.store.jobEarlier(job.id, { reverses: body.features?.includes('reverses') ?? false })
       } catch (cause) {
         log('warn', 'job.earlier_failed', { jobId: job.id, runnerId: runner.id, attempt: job.attempt, error: errorMessage(cause).slice(0, 1000) })
       }

@@ -342,6 +342,7 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
         linkCostUsd: result.link.usage?.cost ?? null,
         linkedRules: result.link.rules,
         linkedFollows: result.link.follows,
+        linkedReverses: result.link.reverses ?? 0,
       });
     }
     if (result.link.status === 'failed') log('warn', 'job.link_failed', { jobId: job.id, error: result.link.error ?? null });
@@ -493,6 +494,8 @@ export function payload(
       ...(f.rule_id ? { rule_id: f.rule_id } : {}),
       // REV-99. Only to a service that sent `earlier`: an earlier release refuses a key it does not know.
       ...(withFollows && f.follows ? { follows: f.follows } : {}),
+      // KNT-167. Only to a service that sent `earlier`, which accepted the claim of `reverses`.
+      ...(withFollows && f.reverses ? { reverses: f.reverses } : {}),
       // REV-100. Only to a service that sent `reviewed`.
       ...(withSeen && f.seen ? { seen: true } : {}),
     })),

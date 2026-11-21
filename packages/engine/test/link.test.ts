@@ -81,7 +81,7 @@ test('the links go on their findings; an unknown index or reference is ignored, 
       ['C', 'R1', undefined],
     ],
   );
-  assert.deepEqual({ ...out.report, usage: null }, { status: 'done', rules: 2, follows: 1, usage: null });
+  assert.deepEqual({ ...out.report, usage: null }, { status: 'done', rules: 2, follows: 1, reverses: 0, usage: null });
   // The cheapest model of OpenRouter, at low effort, with the link schema and its prompt.
   assert.equal(bodies.length, 1);
   assert.equal(bodies[0].model, 'anthropic/claude-haiku-5.5');
