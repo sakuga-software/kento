@@ -280,7 +280,7 @@ describe('the Repos screen against Postgres', () => {
     let repo = await orchard()
     await store.setEnabled(orgId, repo.id, true)
     await sql`update repos set default_level = 'balanced' where id = ${repo.id}`
-    await store.saveCheck({ orgId, installationId: await installationOf(sql, orgId) }, [
+    await store.saveCheck(await installationOf(sql, orgId), [
       {
         githubRepoId: ORCHARD.id, fullName: ORCHARD.full_name, private: true, defaultBranch: 'main',
         workflow: { mode: 'reusable', path: '.github/workflows/sakuga-review.yml', ref: 'stable' },

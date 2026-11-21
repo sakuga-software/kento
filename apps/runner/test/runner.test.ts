@@ -596,7 +596,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'moved'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -754,7 +754,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'moved'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -967,6 +967,25 @@ test('the patch of a finding without a suggestion goes to the service (REV-104)'
   assert.ok(result.outcome === 'done');
   assert.equal(result.review.findings[0]!.patch, patch);
   assert.equal(result.review.findings[0]!.suggestion_range, null);
+});
+
+test('the questions of a review go to the service, and a finding that only asks to confirm becomes one (KNT-153)', async () => {
+  const { api, results } = fakeApi();
+  const ask = { ...answer().findings[0]!, severity: 'minor', suggestion: '', title: 'Other callers', fix: 'Please confirm that every other caller of `sum` still passes two numbers.' };
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    const content = { ...answer(), findings: [ask], questions: [{ path: 'sum.ts', question: 'Is the subtraction a product choice?' }] };
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model));
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  assert.deepEqual(result.review.findings, []);
+  assert.deepEqual(result.review.questions, [
+    { path: 'sum.ts', question: 'Please confirm that every other caller of `sum` still passes two numbers.' },
+    { path: 'sum.ts', question: 'Is the subtraction a product choice?' },
+  ]);
+  assert.ok(parseResultRequest(JSON.parse(JSON.stringify(result))).ok, 'the result is the protocol');
 });
 
 // --- rejected findings (REV-95) -----------------------------------------------------------------
