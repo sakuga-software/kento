@@ -222,9 +222,13 @@ test('a sure finding, or a defect about a check that the code lacks, stays a fin
   const sure = finding({ confidence: 90 });
   const email = finding({ title: 'An email not verified can pay', scenario: 'The route never reads emailVerified, so a user whose email is not verified pays an invoice.' });
   const migration = finding({ title: 'The column has no migration', scenario: 'The schema adds paid_at, but the migration is not in the diff, so the update fails on the database.' });
-  const reply = answer([sure, email, migration]);
+  // Kentō on #44: a defect that the model states in the first person.
+  const lock = finding({ title: 'Paid twice on a retry', scenario: 'I could not see a lock here, so two requests both update the row.' });
+  const reply = answer([sure, email, migration, lock]);
   assert.deepEqual(moveUnreadPremises(reply), []);
-  assert.equal(reply.findings.length, 3);
+  assert.equal(reply.findings.length, 4);
+  const unread = answer([finding({ scenario: 'I could not confirm the implementation of requireOwner, so a member may pay.' })]);
+  assert.equal(moveUnreadPremises(unread).length, 1, 'a hedge that names the code it did not read moves');
   assert.deepEqual(reply.not_reviewed, []);
 });
 
