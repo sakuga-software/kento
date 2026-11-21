@@ -119,9 +119,8 @@ test.describe('the frame of the screens', () => {
 
 // KNT-172. The page transition of KNT-145 must not eat a tap: during it, every press lands on <html>
 // (the browser draws the pages over it), and transition.js gives the tap to the element under it. The
-// test makes the transition last 2 s (a style of its own, before the styles of the page), so that the
-// tap lands inside it for sure, and taps a fixed point with a real pointer: the click of a locator
-// would retry until the transition ends, and hide the defect.
+// test makes the transition last 2 s, so that the tap lands inside it for sure, and taps a fixed point
+// with a real pointer: the click of a locator would retry until the transition ends, and hide the defect.
 test.describe('a tap during the page transition (KNT-172)', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -133,9 +132,13 @@ test.describe('a tap during the page transition (KNT-172)', () => {
         state.transition = 'running'
         void transition.finished.finally(() => (state.transition = 'done'))
       })
-      let slow = document.createElement('style')
-      slow.textContent = '::view-transition-group(root) { animation-duration: 2s !important }'
-      document.documentElement.append(slow)
+    })
+    // The transition lasts 2 s here, not 150 ms, so that a tap lands inside it for sure. The rule
+    // rides on kento.css itself: an element added by a script at the start of the document could come
+    // too late, and leave the test racing 150 ms (KNT-172, red on CI once).
+    await page.route(/\/assets\/kento\.css/, async (route) => {
+      let response = await route.fetch()
+      await route.fulfill({ response, body: `${await response.text()}\n::view-transition-group(root) { animation-duration: 2s !important }\n` })
     })
     await signIn(page, 'octocat')
     await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
@@ -165,6 +168,8 @@ test.describe('a tap during the page transition (KNT-172)', () => {
   async function goDuringTransition(page: Page, path: string) {
     await page.evaluate((to) => (location.href = to), path)
     await page.waitForFunction(() => (window as unknown as { transition: string }).transition === 'running')
+    // The slow rule applies: the fade of the page lasts 2 s.
+    expect(await page.evaluate(() => Math.max(...document.getAnimations().map((animation) => Number(animation.effect?.getTiming().duration) || 0)))).toBe(2000)
   }
 
   /**

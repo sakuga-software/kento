@@ -15,7 +15,8 @@
   // deferred: it may run after `pagereveal`, and then only activeViewTransition knows.
   window.addEventListener('pagereveal', (event) => {
     revealed = event.viewTransition ?? null
-    revealed?.finished.finally(() => (revealed = null))
+    const forget = () => (revealed = null)
+    revealed?.finished.then(forget, forget)
   })
 
   const running = () => document.activeViewTransition ?? revealed
@@ -55,7 +56,9 @@
       event.stopImmediatePropagation()
       // A hurried second click was aimed at the page before: it is not replayed.
       if (event.detail > 1) return
-      press.transition.finished.finally(() => {
+      // Kentō #2d9c39: then(replay, replay), not finally(): a rejected `finished` must not end as an
+      // unhandled rejection.
+      const replay = () => {
         // Kentō #160162: a page that scrolled since the press has another element under the point.
         if (leaving || scrollX !== press.scroll[0] || scrollY !== press.scroll[1]) return
         const { clientX, clientY } = press.init
@@ -67,7 +70,8 @@
         if (field instanceof HTMLElement) field.focus()
         // With the keys of the press: Ctrl or Cmd opens a link in a new tab, as it would have.
         target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail: 1, button: 0, ...press.init }))
-      })
+      }
+      press.transition.finished.then(replay, replay)
     },
     true,
   )

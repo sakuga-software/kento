@@ -58,7 +58,8 @@ interface FakeEvent {
 class FakeTransition {
   skipped = 0
   done!: () => void
-  finished = new Promise<void>((resolve) => (this.done = resolve))
+  fail!: (error: Error) => void
+  finished = new Promise<void>((resolve, reject) => ((this.done = resolve), (this.fail = reject)))
   skipTransition() {
     this.skipped++
   }
@@ -236,6 +237,26 @@ describe('a tap during the page transition (KNT-172)', () => {
     page.scroll(120)
     await page.finish()
     assert.equal(link.clicks, 0)
+  })
+
+  it('replays the click when `finished` rejects, with no unhandled rejection (Kentō #2d9c39)', async () => {
+    let unhandled: unknown[] = []
+    let track = (reason: unknown) => unhandled.push(reason)
+    process.on('unhandledRejection', track)
+    try {
+      let transition = new FakeTransition()
+      let link = new FakeHTMLElement('a')
+      let page = load({ transition, under: link })
+      page.tap()
+      page.document.activeViewTransition = null
+      transition.fail(new Error('the update callback threw'))
+      await transition.finished.catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(link.clicks, 1)
+      assert.deepEqual(unhandled, [])
+    } finally {
+      process.off('unhandledRejection', track)
+    }
   })
 
   it('clicks nothing when the press was over no element of the page', async () => {
