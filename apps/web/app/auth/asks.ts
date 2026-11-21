@@ -28,24 +28,32 @@ export interface AskClock {
 /**
  * Counts one question of a person. `allowed`: within the limit. `over`: the person asked `limit`
  * times in the window already, and the form must not ask GitHub. `gone`: the person is gone, as a
- * request that was under way when the account went. A window starts at the first question after
- * the end of the one before.
+ * request that was under way when the account went, or the org of `org` is gone. A window starts
+ * at the first question after the end of the one before.
+ *
+ * `org`: the org whose count this is (the scope of the take-back). The count locks the key of the
+ * org, and writes nothing for an org that is gone: a move that deletes the org waits for it, or it
+ * waits for the move and finds no org. The move deletes the rows of the org it deletes
+ * (`organizations/store.ts`), so no row outlives its org.
  */
 export async function takeGitHubAsk(
   sql: postgres.Sql,
-  input: { userId: string; scope: string; action: GitHubAsk } & AskLimit & AskClock,
+  input: { userId: string; scope: string; action: GitHubAsk; org?: string } & AskLimit & AskClock,
 ): Promise<'allowed' | 'over' | 'gone'> {
   let now = sql`(now() + ${input.offsetMs ?? 0}::float8 * interval '1 millisecond')`
   let windowStart = sql`(now() + ${(input.offsetMs ?? 0) - input.windowMs}::float8 * interval '1 millisecond')`
   try {
     let [row] = await sql<{ count: number }[]>`
+      ${input.org === undefined ? sql`` : sql`with org as (select id from orgs where id = ${input.org} for key share)`}
       insert into github_asks (user_id, scope, action, window_start, count)
-      values (${input.userId}, ${input.scope}, ${input.action}, ${now}, 1)
+      select ${input.userId}, ${input.scope}, ${input.action}, ${now}, 1
+      ${input.org === undefined ? sql`` : sql`from org`}
       on conflict (user_id, scope, action) do update set
         count = case when github_asks.window_start <= ${windowStart} then 1 else least(github_asks.count + 1, ${input.limit + 1}) end,
         window_start = case when github_asks.window_start <= ${windowStart} then ${now} else github_asks.window_start end
       returning count`
-    return row!.count <= input.limit ? 'allowed' : 'over'
+    if (!row) return 'gone'
+    return row.count <= input.limit ? 'allowed' : 'over'
   } catch (error) {
     // 23503: the user was deleted in between.
     if ((error as { code?: string }).code === '23503') return 'gone'
