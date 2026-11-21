@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, expectReadableButtons, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, expectReadableButtons, hydrated, signIn, watchConsole } from './helpers.ts'
 
 // KNT-150: the members of an org and its invitations. Visitor is an account that GitHub counts in no
 // org of the App: an invitation is their only way in.
@@ -32,12 +32,14 @@ test.describe('the members and the invitations (KNT-150)', () => {
     // The only owner has no form to change their own role.
     let self = page.locator('.member', { hasText: 'octocat' })
     await expect(self.getByText('Owner', { exact: true })).toBeVisible()
-    await expect(self.getByRole('combobox')).toHaveCount(0)
+    // KNT-165: a role is a select of @remix-run/ui once hydrated (a button with a listbox).
+    await hydrated(page)
+    await expect(self.locator('select, [aria-haspopup="listbox"]')).toHaveCount(0)
     await expectNoAxeViolations(page)
     await expectReadableButtons(page)
 
     await page.getByLabel('GitHub login').fill('visitor')
-    await page.getByLabel('Role').selectOption('member')
+    await chooseOption(page, 'Role', 'member')
     await page.getByRole('button', { name: 'Invite', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Invitation sent.' })).toBeVisible()
     let invitations = page.locator('section', { has: page.getByRole('heading', { name: /Invitations/ }) })

@@ -611,6 +611,89 @@ summary.button::-webkit-details-marker {
 }
 
 /*
+ * KNT-165. The select once it hydrates (app/ui/public/select.tsx): a button in the same box, with
+ * the same chevron, and a list in a popover of the top layer, over the button, its chosen option
+ * on the button. The native select stays in the box, hidden and disabled.
+ */
+.select-button {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-popover:not(:popover-open) {
+  display: none;
+}
+.select-popover {
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(360px, calc(100vh - 2 * var(--space-4)));
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+}
+.select-list {
+  display: grid;
+}
+.select-list:focus {
+  outline: none;
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.select-option[aria-selected='true'] {
+  font-weight: 600;
+}
+.select-option[aria-selected='true']::after {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  background-color: currentColor;
+  clip-path: polygon(14% 52%, 24% 42%, 40% 58%, 76% 22%, 86% 32%, 40% 78%);
+}
+.select-option[data-highlighted='true'] {
+  background: var(--paper);
+}
+.select-option[aria-disabled='true'] {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+.select-option[data-select-flash] {
+  background: var(--ai-wash);
+}
+@media (forced-colors: active) {
+  .select-option[data-highlighted='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* The check mark is a background, like the chevron: keep it, in the colour of the text. */
+  .select-option[aria-selected='true']::after {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/*
  * A checkbox or a radio button: the native input, drawn as a 16 px box (a circle for a radio
  * button) with no wrapper, so that a list of 50 rows stays light. `Check` and `Choice` write it.
  */
@@ -5374,4 +5457,11 @@ a.sheet-title {
 .member-invite-title {
   margin: 0 0 var(--space-3);
   font-size: var(--text-base);
+}
+.installation-move {
+  flex-basis: 100%;
+}
+.installation-move form {
+  max-width: 28rem;
+  margin-top: var(--space-3);
 }

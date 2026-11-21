@@ -180,6 +180,28 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.deepEqual(claims.filter((c) => c !== null), [3])
   })
 
+  it('does not count the copies of a review on an unchanged head (KNT-157)', async () => {
+    /** A published review at `sha`; a copy carries the GitHub review of its source, as the publisher writes it. */
+    async function published(sha: string, githubReviewId: number, copyOf: string | null) {
+      await storeReview(sha)
+      let reusedFrom = copyOf ? { reviewId: '00000000-0000-0000-0000-000000000001', head: copyOf, githubReviewId } : null
+      await database.sql`
+        update reviews set published_at = now(), github_review_id = ${githubReviewId},
+          result = case when ${reusedFrom === null}::boolean then result else result || jsonb_build_object('reusedFrom', ${JSON.stringify(reusedFrom)}::jsonb) end
+        where head_sha = ${sha}`
+    }
+    await published(head(1), 1, null)
+    for (let n = 2; n <= 4; n++) await published(head(n), 1, head(1))
+    assert.equal(await claimRequest(database.sql, repoId, PR, 'camille'), null, 'one review and three copies: no request')
+
+    await database.sql`delete from jobs`
+    for (let n = 1; n <= 3; n++) await published(head(n), n, null)
+    await published(head(4), 3, head(3))
+    let reviews = await claimRequest(database.sql, repoId, PR, 'camille')
+    assert.equal(reviews, 3, 'three reviews and one copy: one request, for three reviews')
+    assert.ok(requestText('camille', reviews!).startsWith('@camille Kentō reviewed this PR 3 times.'))
+  })
+
   it('gives the claim back when GitHub refuses the comment, so that the next review asks', async () => {
     for (let n = 1; n <= 2; n++) await publish(head(n))
     fake.state.failIssueComments = 1

@@ -20,11 +20,24 @@ Each entry says, when it applies:
 ## Unreleased
 
 - **Browser modules** (KNT-170): the image bundles them at build time (a `client` stage, esbuild):
-  six files under `/assets/js/`, compressed with brotli and gzip, named by their hash, cached a year,
+  a few files under `/assets/js/` (8 today), compressed with brotli and gzip, named by their hash, cached a year,
   instead of some 70 modules compiled on request under `/assets/app/`, `/assets/c/`… Nothing to
   change in the proxy (`/assets/` still goes to the service). An install that runs the source without
   the image runs `pnpm build:client` before `pnpm start`; without it, the service logs
-  `startup.client_build_missing` and serves the modules one by one, as before.
+  `startup.client_build_missing` and serves the modules one by one, as before. The pages no longer
+  carry an import map: their one inline script is gone, the policy is unchanged.
+- **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
+  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
+  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
+  the move joins; an installation on a personal account stays in an org of its own. Moving the last
+  installation deletes the empty org, after a confirmation by its name that lists its members and
+  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
+  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+
+## 0.2.0 (2026-11-21)
+
+The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
+
 - **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
   The one inline script is the import map of the components that hydrate. A proxy in front of the
   service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
