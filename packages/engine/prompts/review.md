@@ -120,7 +120,10 @@ only when you are sure of it, with the severity that it has.
      `line` and what runs there. JavaScript runs one thread and one event
      loop: code with no `await` between two lines runs in one turn, and a
      timer or a callback cannot run in the middle of it. A lock or a
-     transaction that the caller holds orders the steps too. If you cannot
+     transaction that the caller holds orders the steps too. Two requests
+     that check, then act, are the common real race. Write it as four steps:
+     request A reads no row (`path:line`), request B reads no row, A inserts,
+     B inserts (`path:line`). If you cannot
      write the steps, the race is a doubt: put it in `questions`. The engine
      moves a race finding with fewer than two steps there. Give
      `interleaving: []` for any other finding.
