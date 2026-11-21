@@ -76,8 +76,8 @@ export function orgLockKey(orgId: string): string {
   return `kento.org_owners:${orgId}`
 }
 
-/** `locked`: a store of `withOrgLock`, inside its transaction. */
-export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
+/** `locked`: the org of the `withOrgLock` whose transaction this store runs in. */
+export function createAuthStore(sql: postgres.Sql, locked: string | null = null): AuthStore {
   let store: AuthStore = {
     async findUser(userId) {
       let [row] = await sql<UserRow[]>`
@@ -174,13 +174,15 @@ export function createAuthStore(sql: postgres.Sql, locked = false): AuthStore {
     async withOrgLock(orgId, work) {
       // The store of a `withOrgLock` is in its transaction already: it takes the lock of this org
       // there too (the lock of the same org again is a no-op), and runs.
-      if (locked) {
-        await sql`select pg_advisory_xact_lock(hashtextextended(${`kento.org_owners:${orgId}`}, 0))`
+      if (locked !== null) {
+        // One org per transaction: a second lock could be taken in another order by another
+        // request, and the two would wait on each other.
+        if (orgId !== locked) throw new Error(`withOrgLock: the lock of ${locked} is held, not the one of ${orgId}`)
         return work(store)
       }
       return (await sql.begin(async (tx) => {
         await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(orgId)}, 0))`
-        return work(createAuthStore(tx as unknown as postgres.Sql, true))
+        return work(createAuthStore(tx as unknown as postgres.Sql, orgId))
       })) as Awaited<ReturnType<typeof work>>
     },
 

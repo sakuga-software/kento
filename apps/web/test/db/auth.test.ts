@@ -400,27 +400,14 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(count!.n, 1)
   })
 
-  it('KNT-150: a lock of another org taken inside a lock holds that org too', async () => {
+  it('KNT-150: a lock holds one org: a nested lock of another org is refused, of the same org runs', async () => {
     let acme = await insertOrgRow(database.sql, 'acme', 11)
     let globex = await insertOrgRow(database.sql, 'globex', 12)
-    let order: string[] = []
-    let release!: () => void
-    let held = new Promise<void>((resolve) => (release = resolve))
-    let outer = store.withOrgLock(acme, (locked) =>
-      locked.withOrgLock(globex, async () => {
-        order.push('nested holds globex')
-        await held
-        order.push('nested ends')
-      }),
+    await assert.rejects(
+      store.withOrgLock(acme, (locked) => locked.withOrgLock(globex, async () => 'written without its lock')),
+      /the lock of .* is held, not the one of/,
     )
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    let other = store.withOrgLock(globex, async () => {
-      order.push('other gets globex')
-    })
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    release()
-    await Promise.all([outer, other])
-    assert.deepEqual(order, ['nested holds globex', 'nested ends', 'other gets globex'])
+    assert.equal(await store.withOrgLock(acme, (locked) => locked.withOrgLock(acme, async () => 'same org')), 'same org')
   })
 
   it('KNT-150: a failure after the owner check, under the lock, writes nothing', async () => {
