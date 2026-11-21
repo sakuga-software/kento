@@ -3683,9 +3683,6 @@ a.finding-title:hover {
   color: var(--ink-muted);
   font-size: var(--text-xs);
 }
-.todo-empty {
-  padding: var(--space-5) var(--space-6);
-}
 /* The marks of "To do": a triangle for a cost, a ring in two halves for the switch of review.yml. */
 .status-cost {
   color: var(--kuchiba);
