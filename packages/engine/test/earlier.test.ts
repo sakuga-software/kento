@@ -12,6 +12,7 @@ import { earlierFindingsSection, linkEarlier } from '../src/earlier.ts';
 import { findingKey, type Answer, type Finding } from '../src/findings.ts';
 import { buildPack } from '../src/pack.ts';
 import { reviewPullRequest } from '../src/index.ts';
+import { publicLabels, withPublicLabels } from '../src/labels.ts';
 
 let repo = '';
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
@@ -318,4 +319,38 @@ test('the earlier findings never change which hunks the body of the pack holds: 
   } finally {
     rmSync(big, { recursive: true, force: true });
   }
+});
+
+// KNT-196. The labels of the pack never reach a reader.
+
+test('a label of an open earlier finding is written as its public id and title; a sentence on a finding that is not open goes', () => {
+  const open = finding(BILLING, 386, 'The start date comes from a new schedule');
+  const settled = finding(ACCOUNT, 237, 'The message is not translated');
+  const held = earlierFindingsSection(repo, pushed, [earlier(open, 'open'), earlier(settled, 'dismissed', 'Translated by the layout')]).held;
+  const reply: Answer = {
+    ...answer(4, [finding(BILLING, 394, 'Refused change leaves the row', 'major', { scenario: 'As in E1, the start is wrong. Stripe refuses the change.' })]),
+    summary: 'The fix handles the refusal. The open earlier finding E1 still stands. E2 still stands too. Tests cover it, e.g. the 409 path.',
+    risk: 'E2 is not rechecked.',
+    not_reviewed: [`${ACCOUNT}: not in the changed zone, so E2 was not rechecked`, 'docs/a.md: generated'],
+  };
+  assert.ok(publicLabels(reply, held) > 0);
+  const id = (f: Finding) => `#${findingKey(f).slice(0, 6)}`;
+  assert.equal(reply.summary, `The fix handles the refusal. The open earlier finding ${id(open)} ("The start date comes from a new schedule") still stands. Tests cover it, e.g. the 409 path.`);
+  assert.equal(reply.risk, '');
+  assert.deepEqual(reply.not_reviewed, ['docs/a.md: generated']);
+  assert.equal(reply.findings[0]!.scenario, `As in ${id(open)} ("The start date comes from a new schedule"), the start is wrong. Stripe refuses the change.`);
+  assert.doesNotMatch(JSON.stringify(reply), /\bE[12]\b/);
+});
+
+test('a label that the pack did not hold goes with its sentence; a code such as E11000 or E2E stays', () => {
+  const held = earlierFindingsSection(repo, pushed, [earlier(finding(BILLING, 386, 'The start date comes from a new schedule'), 'open')]).held;
+  assert.equal(withPublicLabels('The earlier finding E7 still stands. Mongo answers E11000 on a duplicate, and the E2E tests pass.', held), 'Mongo answers E11000 on a duplicate, and the E2E tests pass.');
+});
+
+test('the review publishes no label of the pack: a « still stands » on a dismissed finding is gone', async () => {
+  const settled = finding(ACCOUNT, 237, 'The message is not translated');
+  const model = fakeModel(() => ({ ...answer(4, []), summary: 'The change is small. The open earlier finding E1 still stands.', not_reviewed: [`${ACCOUNT}: not in the changed zone, so E1 was not rechecked`] }));
+  const result = await reviewPullRequest(input(model.fetch, { earlier: { findings: [earlier(settled, 'dismissed', 'Translated by the layout')], last: null } }));
+  assert.equal(result.answer.summary, 'The change is small.');
+  assert.deepEqual(result.answer.not_reviewed, []);
 });
