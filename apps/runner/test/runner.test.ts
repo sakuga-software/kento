@@ -1280,3 +1280,26 @@ test('KNT-161. a short rate limit of the provider of the job does not switch pro
   assert.equal(result.providerStatus, 429);
   assert.equal(limitOfReason(result.reason)?.kind, 'rate');
 });
+
+test('KNT-161. a short rate limit of the fallback provider: the reason reads as a rate limit with the reset of the fallback, so the service retries once (#30497a)', async () => {
+  const { api, results } = fakeApi();
+  const calls: string[] = [];
+  const stub = (async (url: string): Promise<Response> => {
+    calls.push(new URL(String(url)).host);
+    if (String(url).includes('anthropic')) return anthropicUsageLimit();
+    return new Response('{"error":{"message":"Rate limit exceeded"}}', { status: 429, headers: { 'retry-after': '40' } });
+  }) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const before = Date.now();
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
+  assert.equal(outcome, 'failed');
+  assert.deepEqual(calls, ['api.anthropic.com', 'openrouter.ai'], 'one call to each provider: the job provider stops at its usage limit');
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.equal(result.providerStatus, null, 'the provider of the job is not marked');
+  // The store queues the job again once (MAX_ATTEMPTS), at the reset of the fallback, not at the far reset of the job provider.
+  const limit = limitOfReason(result.reason);
+  assert.equal(limit?.kind, 'rate');
+  const wait = Date.parse(limit!.resetAt ?? '') - before;
+  assert.ok(wait > 30_000 && wait <= 42_000, `the reset of the fallback, about 40 s away: ${limit!.resetAt}`);
+});
