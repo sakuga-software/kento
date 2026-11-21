@@ -157,6 +157,9 @@ describe('the page of the answers about the reviews (REV-107)', () => {
       [`/feedback?before=${cursor('2026-02-30T10:00:00.000000Z')}`, '/feedback'],
       [`/feedback?author=agent&repo=${REPO}`, `/feedback?repo=${REPO}&author=agent`],
       ['/feedback?other=1', '/feedback'],
+      // A variant of a cursor that reads as the same one goes to the cursor as the screen writes it.
+      [`/feedback?before=${HERE}+`, `/feedback?before=${HERE}`],
+      [`/feedback?before=${Buffer.from(`${Buffer.from(HERE, 'base64url').toString()}|x`).toString('base64url')}`, `/feedback?before=${HERE}`],
     ]
     for (let [from, to] of cases) {
       let response = await request(from, cookie)

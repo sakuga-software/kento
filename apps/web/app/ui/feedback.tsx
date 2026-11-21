@@ -13,6 +13,7 @@ import {
   type FeedbackSource,
   readFeedbackCursor,
 } from '../feedback/store.ts'
+import { encodeCursor } from '../findings/store.ts'
 import { mention } from '../instance.ts'
 import { feedbackRoutes } from '../routes.ts'
 import { Button, Select, buttonClass } from './controls.tsx'
@@ -41,12 +42,14 @@ export function readFeedbackQuery(params: URLSearchParams): FeedbackQuery {
   let repo = params.get('repo') ?? ''
   let source = params.get('source')
   let kind = params.get('author')
-  let before = params.get('before')
+  // Written again from what it reads: a variant that decodes to the same cursor (a trailing space, a
+  // third field) gets the one URL of the page.
+  let cursor = readFeedbackCursor(params.get('before'))
   return {
     repoId: UUID.test(repo) ? repo : null,
     source: (FEEDBACK_SOURCES as readonly string[]).includes(source ?? '') ? (source as FeedbackSource) : null,
     kind: (FEEDBACK_KINDS as readonly string[]).includes(kind ?? '') ? (kind as FeedbackKind) : null,
-    before: before && readFeedbackCursor(before) ? before : null,
+    before: cursor ? encodeCursor(cursor) : null,
   }
 }
 
