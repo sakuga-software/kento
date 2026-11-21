@@ -162,6 +162,9 @@ describe('the settings of the org (REV-13)', () => {
     // The button that folds the list under 900 px controls the list, folded until settings.js opens it.
     assert.match(nav, /<button [^>]*aria-expanded="false"[^>]*aria-controls="settings-nav-list"/)
     assert.match(nav, /<ul [^>]*id="settings-nav-list"/)
+    // KNT-168: each section ends with a link back to the bar of a phone, to the nav.
+    assert.match(html, /<nav [^>]*id="settings-nav"/)
+    assert.deepEqual([...html.matchAll(/<a href="#settings-nav" data-settings-back="([^"]+)"/g)].map((m) => m[1]), ['cap', 'defaults', 'bots', 'app'])
     // Each section of the org: at most one primary button (the defaults have none, their rows are secondary).
     let sections = html.split('<section ').slice(1)
     assert.ok(sections.length >= 4)
