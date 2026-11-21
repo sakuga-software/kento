@@ -127,6 +127,14 @@ export const invitationRoutes = route({
   invitationDecline: post('/invitations/:id/decline'),
 })
 
+/**
+ * KNT-188. The costs of the org, by day, repository, level and model. Every member of the org reads
+ * them, as the card Cost of the dashboard and "Costs and cap" of the settings.
+ */
+export const costRoutes = route({
+  costs: get('/costs'),
+})
+
 /** REV-107. The answers about the reviews of Kentō. Every member of the org reads them. */
 export const feedbackRoutes = route({
   feedback: get('/feedback'),

@@ -1,15 +1,16 @@
 // KNT-163. What the browser can download from the asset server, and the policy that lets the page
 // run it: modules from 'self', and one inline script, the import map, with the nonce of the request.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { createAssetServer } from 'remix/assets'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { assetError, assets, BOOT, resolveBootScript, RUNTIME } from './assets.ts'
+import { assetError, assets, BOOT, chartsAvailable, resolveBootScript, resolveCharts, RUNTIME } from './assets.ts'
 import { fakeAuth } from './auth/test-helpers.ts'
 import { spyStore, webhookDeps } from './github/test-helpers.ts'
 import { createAppRouter } from './router.ts'
@@ -185,5 +186,94 @@ describe('the content security policy of the screens (KNT-163)', () => {
     let nonce = policy.match(/'nonce-([A-Za-z0-9+/=]+)'/)?.[1]
     assert.ok(nonce, policy)
     assert.equal(policy, EXPECTED_POLICY.replace('{nonce}', nonce))
+  })
+})
+
+/** The URL of a file of the pnpm store, as the asset server serves it (no hash outside production). */
+function storeUrl(file: string): string {
+  let real = realpathSync(file)
+  let inStore = real.slice(real.indexOf('/.pnpm/') + '/.pnpm/'.length)
+  return `/assets/__@remix/virtual-store/${inStore.split('/').map(encodeURIComponent).join('/')}`
+}
+
+/** The ES module of chart.js, and its package folder. */
+const CHART_ENTRY = fileURLToPath(import.meta.resolve('chart.js'))
+const CHART_DIR = path.dirname(path.dirname(CHART_ENTRY))
+
+describe('the charts of the Costs screen and the asset server (KNT-188)', () => {
+  it('answers 404 and logs a warning for a file of chart.js that is no browser module (Fable P2-1)', async () => {
+    let statuses: Record<string, number> = {}
+    let lines = await stderrOf(async () => {
+      for (let file of ['dist/chart.umd.min.js', 'dist/chart.umd.js', 'dist/types.d.ts', 'dist/chart.cjs']) {
+        let response = await fetch(storeUrl(path.join(CHART_DIR, file)))
+        statuses[file] = response.status
+      }
+      // Repeated slashes reach the same files (Fable re-check).
+      let umd = storeUrl(path.join(CHART_DIR, 'dist/chart.umd.min.js'))
+      let types = storeUrl(path.join(CHART_DIR, 'dist/types.d.ts'))
+      for (let url of [
+        umd.replace('/assets/', '/assets//'),
+        umd.replace('/assets/', '/assets///'),
+        umd.replace('__@remix/virtual-store', '__@remix//virtual-store'),
+        types.replace('/assets/', '/assets//'),
+      ]) {
+        statuses[url] = (await fetch(url)).status
+      }
+    })
+    assert.deepEqual(
+      Object.values(statuses).filter((status) => status !== 404),
+      [],
+      JSON.stringify(statuses),
+    )
+    assert.equal(Object.keys(statuses).length, 8)
+    assert.deepEqual(
+      lines.filter((line) => line.level === 'error'),
+      [],
+      'a file that no page imports is not a broken release',
+    )
+  })
+
+  it('pins what chart.js opens to the browser: one dependency, its modules, nothing else of the store (Fable P2-3)', async () => {
+    // `allowPackages` also allows the dependencies of a package, at any depth: a bump that adds one
+    // widens the boundary, and fails here.
+    let manifest = JSON.parse(readFileSync(path.join(CHART_DIR, 'package.json'), 'utf8')) as { dependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }
+    assert.deepEqual(Object.keys(manifest.dependencies ?? {}), ['@kurkle/color'])
+    assert.deepEqual(Object.keys(manifest.optionalDependencies ?? {}), [])
+    // Its ES module, beside the CommonJS entry that `require` finds.
+    let color = path.join(path.dirname(createRequire(CHART_ENTRY).resolve('@kurkle/color')), 'color.esm.js')
+    let expected: [string, number][] = [
+      [storeUrl(CHART_ENTRY), 200],
+      [storeUrl(color), 200],
+      [storeUrl(path.join(CHART_DIR, 'package.json')), 404],
+      // Another package of the store, of the server.
+      [storeUrl(createRequire(import.meta.url).resolve('postgres')), 404],
+      [`${path.posix.dirname(storeUrl(CHART_ENTRY))}/%2e%2e/%2e%2e/%2e%2e/%2e%2e/package.json`, 404],
+    ]
+    await stderrOf(async () => {
+      for (let [url, status] of expected) assert.equal((await fetch(url)).status, status, url)
+    })
+  })
+
+  it('says at startup when the asset server cannot serve the charts, and the screen then renders its tables only (Fable P2-2)', async () => {
+    // The allow list of main before KNT-188: chart.js is not in it.
+    let root = path.dirname(fileURLToPath(new URL('../package.json', import.meta.url)))
+    let without = createAssetServer({ basePath: '/assets', rootDir: root, mounts: { app: 'app' }, allowFiles: ['app/**/public/**', 'app/routes.ts'], allowPackages: ['remix', '@remix-run/ui'], watch: false, onError: assetError })
+    let withCharts = createAssetServer({ basePath: '/assets', rootDir: root, mounts: { app: 'app' }, allowFiles: ['app/**/public/**', 'app/routes.ts'], allowPackages: ['remix', '@remix-run/ui', 'chart.js'], watch: false, onError: assetError })
+    try {
+      let answers: boolean[] = []
+      let lines = await stderrOf(async () => {
+        answers.push(await resolveCharts(without))
+        answers.push(await resolveCharts(withCharts))
+      })
+      assert.deepEqual(answers, [false, true])
+      assert.deepEqual(
+        lines.map((line) => `${line.level} ${line.event}`),
+        ['error startup.assets_unavailable'],
+      )
+    } finally {
+      await without.close()
+      await withCharts.close()
+    }
+    assert.equal(chartsAvailable(), true, 'the asset server of the service serves them')
   })
 })
