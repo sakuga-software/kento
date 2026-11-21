@@ -138,7 +138,7 @@ const answer = (score: number, findings: Finding[]): Answer => ({
   checked: { paths: [BILLING], roles: ['customer'] },
 });
 
-const input =(fetch: typeof globalThis.fetch, extra: Partial<Parameters<typeof reviewPullRequest>[0]> = {}) => ({
+const input = (fetch: typeof globalThis.fetch, extra: Partial<Parameters<typeof reviewPullRequest>[0]> = {}) => ({
   repoDir: repo,
   base: main1,
   head: pushed,
