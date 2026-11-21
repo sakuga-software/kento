@@ -1917,6 +1917,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "detail": {
+          "name": "detail",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",

@@ -30,6 +30,7 @@ export const MEMBER_NOTICES = {
   github_admin: { tone: 'alert', text: 'GitHub counts this person as an admin of the account: an owner from an invitation does not demote them.' },
   not_github_admin: { tone: 'alert', text: 'GitHub does not count you now as an admin of an account of this organization.' },
   reclaimed: { tone: 'ok', text: 'You are an owner of the organization again.' },
+  reclaim_wait: { tone: 'info', text: 'Kentō asked GitHub less than a minute ago. Try again in a minute.' },
   too_many: { tone: 'alert', text: 'The organization has 50 pending invitations: cancel some before you invite again.' },
 } as const satisfies Record<string, { tone: 'ok' | 'info' | 'alert'; text: string }>
 
@@ -142,12 +143,13 @@ export function MembersPage(handle: Handle<MembersPageProps>) {
               )
             })}
           </ul>
-          {self && self.source === 'github' && self.role === 'admin' ? (
+          {self && ((self.source === 'github' && self.role === 'admin') || self.source === 'invitation') ? (
             <form class="member-leave" method="post" action={memberRoutes.memberReclaim.href()}>
               <input type="hidden" name="_csrf" value={csrf} />
               <p class="hint">
-                GitHub counts you as an admin of an account of this organization: you can take the owner role, whatever an
-                owner from an invitation did. Kentō asks GitHub again first.
+                {self.source === 'github'
+                  ? 'GitHub counts you as an admin of an account of this organization: you can take the owner role, whatever an owner from an invitation did. Kentō asks GitHub again first.'
+                  : 'You joined from an invitation. If GitHub counts you as an admin of an account of this organization, take the owner role from GitHub: Kentō asks GitHub first, and your membership then follows GitHub.'}
               </p>
               <Button type="submit">Take the owner role</Button>
             </form>

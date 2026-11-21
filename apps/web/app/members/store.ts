@@ -77,6 +77,18 @@ export interface MembersStore {
   decline(invitationId: string, githubId: number): Promise<boolean>
 }
 
+/**
+ * KNT-150. Cancels the pending invitations that a person made in an org: they go with the person.
+ * Gives the logins of the invited accounts, for the audit.
+ */
+async function cancelInvitationsOf(tx: postgres.Sql, orgId: string, inviterId: string): Promise<string[]> {
+  let rows = await tx<{ githubLogin: string }[]>`
+    update invitations set status = 'canceled', responded_at = now()
+    where org_id = ${orgId} and inviter_id = ${inviterId} and status = 'pending'
+    returning github_login as "githubLogin"`
+  return rows.map((r) => r.githubLogin).sort()
+}
+
 export function createMembersStore(sql: postgres.Sql): MembersStore {
   /** Runs `work` in one transaction that holds the lock of the owners of the org. */
   async function locked<T>(orgId: string, work: (tx: postgres.Sql) => Promise<T>): Promise<T> {
@@ -108,11 +120,12 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
     invitationId: string | null,
     before: string | null,
     after: string | null,
+    detail: Record<string, unknown> | null = null,
   ) {
     await tx`
-      insert into org_audit (org_id, org_name, actor_id, actor_login, action, target_login, target_github_id, invitation_id, role_before, role_after)
+      insert into org_audit (org_id, org_name, actor_id, actor_login, action, target_login, target_github_id, invitation_id, role_before, role_after, detail)
       values (${orgId}, (select name from orgs where id = ${orgId}), ${actor.userId}, ${actor.login}, ${action},
-        ${target?.login ?? null}, ${target?.githubId ?? null}, ${invitationId}, ${before}, ${after})`
+        ${target?.login ?? null}, ${target?.githubId ?? null}, ${invitationId}, ${before}, ${after}, ${detail === null ? null : JSON.stringify(detail)}::jsonb)`
   }
 
   return {
@@ -211,11 +224,8 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
           return { ok: true, role: change.role, target: target.login } as const
         }
         await tx`delete from memberships where id = ${target.id}`
-        // The invitations that the person made and nobody answered yet go with them.
-        await tx`
-          update invitations set status = 'canceled', responded_at = now()
-          where org_id = ${orgId} and inviter_id = ${target.userId} and status = 'pending'`
-        await audit(tx, orgId, actor, change.kind, target, null, target.role, null)
+        let canceled = await cancelInvitationsOf(tx, orgId, target.userId)
+        await audit(tx, orgId, actor, change.kind, target, null, target.role, null, canceled.length > 0 ? { canceledInvitations: canceled } : null)
         return { ok: true, role: null, target: target.login } as const
       })
     },
@@ -225,8 +235,9 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
         let actor = await memberOf(tx, orgId, userId)
         let refusal = decideReclaim(actor, githubAdmin)
         if (refusal) return { ok: false, reason: refusal } as const
-        await tx`update memberships set role = 'owner', checked_at = now() where id = ${actor!.id}`
-        await audit(tx, orgId, actor!, 'reclaim', actor!, null, actor!.role, 'owner')
+        // GitHub said admin: the membership is GitHub's from now on, checked as every other one.
+        await tx`update memberships set role = 'owner', source = 'github', checked_at = now() where id = ${actor!.id}`
+        await audit(tx, orgId, actor!, 'reclaim', actor!, null, actor!.role, 'owner', actor!.source === 'invitation' ? { sourceBefore: 'invitation' } : null)
         return { ok: true, role: 'owner', target: actor!.login } as const
       })
     },

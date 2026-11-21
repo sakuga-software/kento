@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { decideInvite, decideMemberChange, rolesFor, type MemberFacts } from './rules.ts'
+import { decideInvite, decideMemberChange, decideReclaim, rolesFor, type MemberFacts } from './rules.ts'
 
 // KNT-150. Who changes which membership of an org.
 const owner: MemberFacts = { userId: 'o', role: 'owner', source: 'github' }
@@ -70,5 +70,16 @@ describe('an invitation', () => {
     assert.equal(decideInvite(admin, 'admin'), null)
     assert.equal(decideInvite(member, 'member'), 'not_admin')
     assert.equal(decideInvite(admin, 'owner'), 'bad_role')
+  })
+
+  it('a GitHub admin takes the owner role back, whatever the source of the membership', () => {
+    assert.equal(decideReclaim(null, true), 'not_found')
+    assert.equal(decideReclaim(admin, false), 'not_github_admin')
+    assert.equal(decideReclaim(guestAdmin, false), 'not_github_admin')
+    assert.equal(decideReclaim(admin, true), null)
+    assert.equal(decideReclaim(guest, true), null)
+    // An owner from an invitation whom GitHub counts as an admin: the membership becomes GitHub's.
+    assert.equal(decideReclaim(guestOwner, true), null)
+    assert.equal(decideReclaim(owner, true), 'same_role')
   })
 })

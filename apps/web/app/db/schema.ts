@@ -638,13 +638,18 @@ export const orgAudit = pgTable(
     orgName: text('org_name').notNull(),
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     actorLogin: text('actor_login').notNull(),
-    /** invite, cancel, role, remove, leave, accept, decline, reclaim. */
+    /**
+     * invite, cancel, role, remove, leave, accept, decline, reclaim, github_removed (GitHub ended a
+     * membership: the actor is `(GitHub)`, no user).
+     */
     action: text('action').notNull(),
     targetLogin: text('target_login'),
     targetGithubId: bigint('target_github_id', { mode: 'number' }),
     invitationId: uuid('invitation_id'),
     roleBefore: text('role_before'),
     roleAfter: text('role_after'),
+    /** What else the change did, for a person who reads the table: for example the invitations it canceled. */
+    detail: jsonb('detail').$type<Record<string, unknown>>(),
     createdAt: createdAt(),
   },
   (table) => [index('org_audit_org_idx').on(table.orgId, table.createdAt)],

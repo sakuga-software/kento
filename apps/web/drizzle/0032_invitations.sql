@@ -27,6 +27,7 @@ CREATE TABLE "org_audit" (
 	"invitation_id" uuid,
 	"role_before" text,
 	"role_after" text,
+	"detail" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

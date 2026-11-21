@@ -4,12 +4,13 @@ import { after, before, beforeEach, describe, it } from 'remix/test'
 import { createKentoAuth, postgresAuthDatabase } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
 import type { OrgRole } from '../../app/db/schema.ts'
-import { saveGitHubRole } from '../../app/auth/access.ts'
-import { createAuthStore } from '../../app/auth/store.ts'
+import { ROLE_TTL_MS, saveGitHubRole } from '../../app/auth/access.ts'
+import { createAuthStore, orgLockKey } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
+import { RECLAIM_COOLDOWN_MS } from '../../app/members/rules.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase, insertOrg } from './helpers.ts'
@@ -33,6 +34,8 @@ describe('the members and the invitations of an org', () => {
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let clock: { now: number }
+  /** The questions to GitHub of `lookupRole`, and a GitHub that fails. */
+  let gitHub = { calls: 0, fail: false }
 
   before(async () => {
     test = await createTestDatabase()
@@ -53,7 +56,11 @@ describe('the members and the invitations of an org', () => {
         return profile
       },
     }
-    let lookupRole = async (installation: { login: string }, person: { login: string }) => roles.get(`${installation.login}/${person.login}`) ?? null
+    let lookupRole = async (installation: { login: string }, person: { login: string }) => {
+      gitHub.calls++
+      if (gitHub.fail) throw new Error('GitHub answered 502')
+      return roles.get(`${installation.login}/${person.login}`) ?? null
+    }
     let secret = 'a-session-secret-for-the-tests-0123456789'
     clock = { now: Date.now() }
     let auth = createKentoAuth({ database: postgresAuthDatabase(database.db), publicUrl: PUBLIC_URL, secret, github, store: authStore, lookupRole, now: () => clock.now })
@@ -93,6 +100,7 @@ describe('the members and the invitations of an org', () => {
       ['globex/other', 'admin'],
     ])
     clock.now = Date.now()
+    gitHub = { calls: 0, fail: false }
   })
 
   function request(path: string, cookie?: string | null, form?: Record<string, string>) {
@@ -396,10 +404,113 @@ describe('the members and the invitations of an org', () => {
     let camille = (await signIn('camille')).cookie!
     assert.doesNotMatch(await (await request('/settings/members', camille)).text(), /\/settings\/members\/reclaim/)
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
-    // And octocat, demoted on GitHub in between, cannot either.
+    // GitHub fails: no answer is no admin. The role stays as it is.
     await database.sql`update memberships set role = 'admin' where id = ${octocat.id}`
+    clock.now += RECLAIM_COOLDOWN_MS
+    gitHub.fail = true
+    assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
+    gitHub.fail = false
+    assert.equal((await membership('octocat', acme))!.role, 'admin')
+    // And octocat, demoted on GitHub in between, cannot either.
+    clock.now += RECLAIM_COOLDOWN_MS
     roles.set('acme/octocat', 'member')
     assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+    assert.equal((await membership('octocat', acme))!.role, 'admin')
+    // The take-back and the changes of roles are in org_audit, with their actor and their target.
+    let audit = await database.sql`
+      select actor_login, action, target_login, role_before, role_after from org_audit where action in ('role', 'reclaim', 'remove') order by created_at`
+    assert.deepEqual(audit.map((r) => ({ ...r })), [
+      { actor_login: 'octocat', action: 'role', target_login: 'guest', role_before: 'admin', role_after: 'owner' },
+      { actor_login: 'octocat', action: 'reclaim', target_login: 'octocat', role_before: 'admin', role_after: 'owner' },
+      { actor_login: 'octocat', action: 'remove', target_login: 'guest', role_before: 'owner', role_after: null },
+    ])
+  })
+
+  it('the take-back asks GitHub once a minute per person and org', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let csrf = await csrfOf(camille)
+    gitHub.calls = 0
+    let first = await request('/settings/members/reclaim', camille, { _csrf: csrf })
+    assert.equal(first.headers.get('Location'), '/settings/members?notice=not_github_admin')
+    assert.equal(gitHub.calls, 1)
+    for (let n = 0; n < 5; n++) {
+      assert.equal((await request('/settings/members/reclaim', camille, { _csrf: csrf })).headers.get('Location'), '/settings/members?notice=reclaim_wait')
+    }
+    assert.equal(gitHub.calls, 1)
+    assert.match(await (await request('/settings/members?notice=reclaim_wait', camille)).text(), /Kentō asked GitHub less than a minute ago/)
+    // A minute later, GitHub is asked again.
+    clock.now += RECLAIM_COOLDOWN_MS
+    await request('/settings/members/reclaim', camille, { _csrf: csrf })
+    assert.equal(gitHub.calls, 2)
+  })
+
+  it('a GitHub admin who joined from an invitation takes the owner role; an owner from an invitation then neither demotes nor removes them', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'admin')
+    let other = await invitedGuest(owner, 'admin', 'other')
+    await post(owner, `/settings/members/${other.membership.id}/role`, { role: 'owner' })
+    // GitHub now counts guest as an admin of acme; the membership of guest is still from the invitation.
+    roles.set('acme/guest', 'admin')
+    assert.match(await (await request('/settings/members', guest.cookie)).text(), /action="\/settings\/members\/reclaim"/)
+    assert.equal((await post(guest.cookie, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaimed')
+    assert.deepEqual({ ...(await membership('guest', acme)) }, { id: guest.membership.id, role: 'owner', source: 'github' })
+    // other, owner from an invitation, can do nothing to guest now.
+    assert.equal((await post(other.cookie, `/settings/members/${guest.membership.id}/role`, { role: 'member' })).headers.get('Location'), '/settings/members?notice=github_admin')
+    assert.equal((await post(other.cookie, `/settings/members/${guest.membership.id}/remove`)).headers.get('Location'), '/settings/members?notice=github')
+    assert.equal((await membership('guest', acme))!.role, 'owner')
+    let [row] = await database.sql`select role_before, role_after, detail from org_audit where action = 'reclaim'`
+    assert.deepEqual({ ...row }, { role_before: 'admin', role_after: 'owner', detail: { sourceBefore: 'invitation' } })
+    // other, whom GitHub does not count as an admin of acme, gets nothing, and stays from the invitation.
+    assert.equal((await post(other.cookie, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+    assert.deepEqual({ ...(await membership('other', acme)) }, { id: other.membership.id, role: 'owner', source: 'invitation' })
+  })
+
+  it('GitHub ends the membership of a person who invited: their invitations are canceled, in org_audit', async () => {
+    roles.set('acme/camille', 'admin')
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    assert.equal((await post(camille, '/settings/members/invite', { login: 'guest', role: 'admin' })).headers.get('Location'), '/settings/members?notice=invited')
+    // GitHub removes camille from acme. Her next request after the time of a role reads GitHub again.
+    roles.delete('acme/camille')
+    clock.now += ROLE_TTL_MS + 1000
+    await request('/', camille)
+    assert.equal(await membership('camille', acme), null)
+    assert.equal((await database.sql`select status from invitations where github_login = 'guest'`)[0]!.status, 'canceled')
+    let [row] = await database.sql`
+      select actor_id, actor_login, action, target_login, role_before, detail from org_audit where action = 'github_removed'`
+    assert.deepEqual({ ...row }, { actor_id: null, actor_login: '(GitHub)', action: 'github_removed', target_login: 'camille', role_before: 'admin', detail: { canceledInvitations: ['guest'] } })
+  })
+
+  it('the end of a membership by GitHub waits for the lock of the org, and never deletes one from an invitation', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'member')
+    let authStore = createAuthStore(database.sql)
+    let [guestUser] = await database.sql<{ id: string }[]>`select id from users where login = 'guest'`
+    // A membership from an invitation is Kentō's: a stale "not a member" of GitHub leaves it.
+    await authStore.deleteMembership(guestUser!.id, acme)
+    assert.deepEqual({ ...(await membership('guest', acme)) }, { ...guest.membership })
+    // A change of the members screen holds the lock: the end by GitHub waits for it.
+    await signIn('camille')
+    let [member] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
+    let release!: () => void
+    let held = new Promise<void>((resolve) => (release = resolve))
+    let locked = new Promise<void>((resolve) => {
+      void database.sql.begin(async (tx) => {
+        await tx`select pg_advisory_xact_lock(hashtextextended(${orgLockKey(acme)}, 0))`
+        resolve()
+        await held
+      })
+    })
+    await locked
+    let done = false
+    let ended = authStore.deleteMembership(member!.id, acme).then(() => (done = true))
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    assert.equal(done, false)
+    assert.notEqual(await membership('camille', acme), null)
+    release()
+    await ended
+    assert.equal(await membership('camille', acme), null)
   })
 
   it('a person with roles in two orgs acts in the org of the session with the role they have there', async () => {
@@ -445,6 +556,12 @@ describe('the members and the invitations of an org', () => {
       { actor_login: 'guest', action: 'accept', target_login: 'guest', role_before: null, role_after: 'member', org_name: 'acme' },
       { actor_login: 'octocat', action: 'remove', target_login: 'guest', role_before: 'member', role_after: null, org_name: 'acme' },
     ])
+    // A cancel: its actor, the invited account and the role of the invitation.
+    await post(owner, '/settings/members/invite', { login: 'other', role: 'admin' })
+    let [invitation] = await database.sql<{ id: string }[]>`select id from invitations where github_login = 'other'`
+    await post(owner, `/settings/invitations/${invitation!.id}/cancel`)
+    let [canceled] = await database.sql`select actor_login, target_login, invitation_id, role_before, role_after from org_audit where action = 'cancel'`
+    assert.deepEqual({ ...canceled }, { actor_login: 'octocat', target_login: 'other', invitation_id: invitation!.id, role_before: 'admin', role_after: null })
   })
 
   it('caps the pending invitations of an org, and cancels those of a person who leaves the org', async () => {
@@ -452,9 +569,10 @@ describe('the members and the invitations of an org', () => {
     let admin = await invitedGuest(owner, 'admin')
     await post(admin.cookie, '/settings/members/invite', { login: 'other', role: 'member' })
     assert.equal((await database.sql`select status from invitations where github_login = 'other'`)[0]!.status, 'pending')
-    // guest, who invited other, is removed: the invitation goes with them.
+    // guest, who invited other, is removed: the invitation goes with them, and the audit lists it.
     await post(owner, `/settings/members/${admin.membership.id}/remove`)
     assert.equal((await database.sql`select status from invitations where github_login = 'other'`)[0]!.status, 'canceled')
+    assert.deepEqual((await database.sql`select detail from org_audit where action = 'remove'`)[0]!.detail, { canceledInvitations: ['other'] })
     // 50 pending invitations: the 51st is refused.
     let [octocat] = await database.sql<{ id: string }[]>`select id from users where login = 'octocat'`
     for (let n = 0; n < 50; n++) {
