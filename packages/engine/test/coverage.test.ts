@@ -193,7 +193,7 @@ test('a review whose pack cut the schema is not « safe to merge » at 5: the mo
   assert.notEqual(result.verdict, 'APPROVE');
   assert.match(result.answer.risk, /^Partial review: 1 file of logic not read, a schema, a migration or a store among them/);
   assert.match(result.answer.summary, /This review did not read 1 of the 3 changed files: 1 to fit in its size \(`app\/db\/[a-z-]+\.ts`\)\./);
-  assert.match(logs.join('\n'), /score capped at 3: the model said 5, and the review did not read 1 changed file/);
+  assert.match(logs.join('\n'), /score capped at 3: the model said 5, and the review did not read 1 changed file of logic/);
 });
 
 test('an incremental review counts as not read a store that the whole pack cuts and that it does not read again', async () => {
@@ -254,4 +254,19 @@ test('a test-only pull request over the budget: the tests are the change, the fi
   const { coverage: c } = buildPack(repo, base, head, 'full');
   assert.deepEqual(c.cut, ['test/a.test.ts'], 'the larger test goes; the fixture, ranked as the tests, is smaller');
   assert.deepEqual(c.logic, ['test/a.test.ts']);
+});
+
+test('a file of logic over 1000 changed lines, and no cut: the review gives 4, and its log counts that file (Kentō on #46)', async () => {
+  const big = Array.from({ length: 1100 }, (_, i) => `export const step${i} = ${i};`).join('\n');
+  const { repo, base, head } = pullRequest({}, { 'app/lib/steps.ts': `${big}\n`, 'app/lib/pay.ts': 'export const pay = 1;\n' });
+  const fetch = (async (_url: string, init: RequestInit) => {
+    const request = JSON.parse(String(init.body));
+    return new Response(JSON.stringify({ model: request.model, provider: 'Fake', choices: [{ message: { content: JSON.stringify(answer()) } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.001 } }));
+  }) as typeof globalThis.fetch;
+  const logs: string[] = [];
+  const result = await reviewPullRequest({ repoDir: repo, base, head, level: 'balanced', apiKey: 'k', fetch, log: (m) => logs.push(m) });
+  assert.deepEqual(result.coverage?.cut, []);
+  assert.deepEqual(result.coverage?.large, ['app/lib/steps.ts']);
+  assert.equal(result.score, 4);
+  assert.match(logs.join('\n'), /score capped at 4: the model said 5, and the review did not read 1 changed file of logic/);
 });
