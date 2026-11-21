@@ -230,7 +230,7 @@ For the maintainers of `sakuga-software/kento`. A tag `vX.Y.Z` starts the Releas
 
 1. checks that `apps/web/package.json` and `apps/runner/package.json` have the version `X.Y.Z`, and
    that `apps/web/CHANGELOG.md` has a section `## X.Y.Z`;
-2. publishes `ghcr.io/sakuga-software/kento-runner` with the tags `X.Y.Z`, the commit and `latest`,
+2. builds the image, checks that it starts, then publishes `ghcr.io/sakuga-software/kento-runner` with the tags `X.Y.Z`, the commit and `latest`,
    for `linux/amd64` and `linux/arm64`;
 3. creates the GitHub release with the notes of that section.
 
