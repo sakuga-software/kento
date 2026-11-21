@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import postgres from 'postgres'
 
 import { FAKE_ORG } from './fake-github.ts'
-import { chooseOption, expectNoAxeViolations, goToSettingsLink, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, goToSettingsLink, hydrated, signIn, watchConsole, withLabelLineHeight } from './helpers.ts'
 
 // The end-to-end test of REV-11: an admin adds an Anthropic provider; the database holds no key in
 // clear; a trusted runner of the org gets the key with a job; the provider refuses the key (401),
@@ -177,6 +177,45 @@ test('a provider form with an error opens on its first field in error, in view a
   await expect(page.locator('#cap-alert')).toBeFocused()
   await expect(page.locator('#cap-alert')).toBeInViewport()
   // The two 422 answers are the only errors of the console.
+  expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
+})
+
+// KNT-165: "Type" is a select that hydrates. Its error stays on the button that takes the place of
+// the native select: the focus (the server gave it to the native one), aria-invalid, and the error
+// first in its description.
+test('an error on the select "Type" stays on its button after hydration: focus, aria-invalid, the error read', async ({ page }, testInfo) => {
+  let errors = watchConsole(page)
+  await signIn(page, 'octocat')
+  await page.goto('/settings#new-provider')
+  await hydrated(page)
+  let form = page.locator('#new-provider')
+  // A type that the server refuses, through the hidden input of the select: no option offers it.
+  await form.locator('input[data-select][name="kind"]').evaluate((el) => ((el as HTMLInputElement).value = 'not-a-kind'))
+  await form.getByLabel('Name').fill('vLLM')
+  await form.getByRole('button', { name: 'Add the provider' }).click()
+  await expect(form.getByRole('alert')).toContainText('Nothing is saved')
+  await hydrated(page)
+  let type = form.getByRole('button', { name: /^Type / })
+  await expect(type).toBeFocused()
+  await expect(type).toHaveAttribute('aria-invalid', 'true')
+  await expect(type).toHaveAttribute('aria-describedby', 'provider-kind-error provider-kind-hint')
+  await expect(type).toHaveAccessibleDescription(/^Choose the type of provider\. /)
+  await expect(form.locator('select#provider-kind-native')).toBeHidden()
+  await expectNoAxeViolations(page)
+  if (testInfo.project.name === 'mobile') {
+    // Under 900 px: Escape in the list closes the list only, not the open "Sections" (settings.js).
+    let toggle = page.getByRole('navigation', { name: 'Sections of the settings' }).locator('[data-settings-nav-toggle]')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await type.focus()
+    await page.keyboard.press('ArrowDown')
+    let list = page.getByRole('listbox', { name: 'Type' })
+    await expect(list).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(list).toBeHidden()
+    await expect(type).toBeFocused()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  }
   expect(errors.filter((e) => !/status of 422/.test(e))).toEqual([])
 })
 

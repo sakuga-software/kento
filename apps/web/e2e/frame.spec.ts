@@ -1,6 +1,7 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import postgres from 'postgres'
 
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { chooseOption, expectNoAxeViolations, hydrated, signIn, watchConsole } from './helpers.ts'
 
 const SCREENS = [
   { path: '/', title: 'Dashboard' },
@@ -10,6 +11,47 @@ const SCREENS = [
   { path: '/runners', title: 'Runners' },
   { path: '/settings', title: 'Settings' },
 ]
+
+// KNT-165: a person of two orgs gets the switch of org in the bar. Its own installation, so that the
+// org is a real one; deleted after the test (the membership goes with the org).
+const SECOND_ORG = 'e2e-second-org'
+
+async function addSecondOrg() {
+  let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
+  try {
+    let [user] = await sql<{ id: string }[]>`select id from users where login = 'octocat'`
+    let [org] = await sql<{ id: string }[]>`
+      insert into orgs (name, slug) values (${SECOND_ORG}, ${SECOND_ORG})
+      on conflict (slug) do update set name = excluded.name returning id`
+    await sql`
+      insert into installations (org_id, github_installation_id, github_account_id, account_login)
+      values (${org!.id}, 777101, 777102, ${SECOND_ORG}) on conflict (github_installation_id) do nothing`
+    await sql`
+      insert into memberships (user_id, org_id, role, checked_at) values (${user!.id}, ${org!.id}, 'admin', now())
+      on conflict (user_id, org_id) do update set checked_at = now()`
+  } finally {
+    await sql.end()
+  }
+}
+
+async function removeSecondOrg() {
+  let sql = postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
+  try {
+    await sql`delete from installations where org_id in (select id from orgs where slug = ${SECOND_ORG})`
+    await sql`delete from orgs where slug = ${SECOND_ORG}`
+  } finally {
+    await sql.end()
+  }
+}
+
+/** The paths of the POST requests of the page, from now on. */
+function posts(page: Page): string[] {
+  let paths: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST') paths.push(new URL(request.url()).pathname)
+  })
+  return paths
+}
 
 test.describe('the frame of the screens', () => {
   test.beforeEach(async ({ page }) => {
@@ -111,6 +153,65 @@ test.describe('the frame of the screens', () => {
     // Nothing is wider than the screen.
     let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
+  })
+})
+
+test.describe('the switch of org (KNT-165)', () => {
+  test.afterEach(removeSecondOrg)
+
+  test('a person of two orgs switches org from the bar: one post, and the bar names the other org', async ({ page }, testInfo) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'octocat')
+    await addSecondOrg()
+    await page.goto('/repos')
+    await hydrated(page)
+    let trigger = page.getByRole('button', { name: 'Organization sakuga-software', exact: true })
+    await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
+    // With JavaScript a choice applies at once: no "Switch" button.
+    await expect(page.locator('form[data-org-switch]').getByRole('button', { name: 'Switch' })).toBeHidden()
+    if (testInfo.project.name === 'mobile') {
+      // Escape in the list of orgs closes the list only, not the menu of the bar around it.
+      let menu = page.getByRole('button', { name: 'Menu' })
+      await menu.click()
+      await expect(menu).toHaveAttribute('aria-expanded', 'true')
+      await trigger.click()
+      let list = page.getByRole('listbox', { name: 'Organization' })
+      await expect(list).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(list).toBeHidden()
+      await expect(trigger).toBeFocused()
+      await expect(menu).toHaveAttribute('aria-expanded', 'true')
+      await page.keyboard.press('Escape')
+      await expect(menu).toHaveAttribute('aria-expanded', 'false')
+    }
+    await trigger.click()
+    await expect(page.getByRole('listbox', { name: 'Organization' })).toBeFocused()
+    await expectNoAxeViolations(page)
+    await page.keyboard.press('Escape')
+    let sent = posts(page)
+    await chooseOption(page, 'Organization', { label: SECOND_ORG })
+    await expect(page.getByRole('button', { name: `Organization ${SECOND_ORG}`, exact: true })).toBeVisible()
+    await expect(page).toHaveURL(/\/repos$/)
+    expect(sent).toEqual(['/preferences/org'])
+    expect(errors).toEqual([])
+  })
+
+  test.describe('without JavaScript', () => {
+    test.use({ javaScriptEnabled: false })
+
+    test('the switch is the native select, and "Switch" posts it', async ({ page }) => {
+      await signIn(page, 'octocat')
+      await addSecondOrg()
+      await page.goto('/repos')
+      let form = page.locator('form[data-org-switch]')
+      await expect(page.getByRole('combobox', { name: 'Organization' })).toHaveValue(/.+/)
+      await page.getByRole('combobox', { name: 'Organization' }).selectOption({ label: SECOND_ORG })
+      let sent = posts(page)
+      await form.getByRole('button', { name: 'Switch' }).click()
+      await expect(page).toHaveURL(/\/repos$/)
+      await expect(page.getByRole('combobox', { name: 'Organization' }).locator('option:checked')).toHaveText(SECOND_ORG)
+      expect(sent).toEqual(['/preferences/org'])
+    })
   })
 })
 

@@ -15,6 +15,8 @@
   menu?.addEventListener('click', () => setOpen(menu.getAttribute('aria-expanded') !== 'true'))
 
   document.addEventListener('keydown', (event) => {
+    // An open list (a select, a menu) handles its own Escape first, and marks it handled.
+    if (event.defaultPrevented) return
     if (event.key !== 'Escape' || menu?.getAttribute('aria-expanded') !== 'true') return
     setOpen(false)
     menu.focus()

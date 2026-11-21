@@ -153,6 +153,8 @@ test.describe('the Findings screen', () => {
       let trigger = page.getByRole('button', { name: 'Priority All' })
       await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
       await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      // The value is read once, in the name: the button has no description of its own.
+      await expect(trigger).toHaveAccessibleDescription('')
       // The <label for> of the server now points at the button; it names it, with the value.
       await expect(page.locator('#findings-priority')).toHaveJSProperty('tagName', 'BUTTON')
       // The focus ring of a field, from the keyboard.
@@ -181,6 +183,38 @@ test.describe('the Findings screen', () => {
       await expect(list).toBeHidden()
       await expect(trigger).toBeFocused()
       await expect(page).not.toHaveURL(/priority=/)
+
+      // Tab and Shift+Tab leave an open list, as they leave a native select: the list closes, the
+      // value stays, and the focus goes to the next field ("Source" is disabled) or to the one before.
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Tab')
+      await expect(list).toBeHidden()
+      let type = page.getByRole('button', { name: /^Type / })
+      await expect(type).toBeFocused()
+      // When the list closes, @remix-run/ui gives the focus back to the button; after a Tab, it must not.
+      await page.waitForTimeout(300)
+      await expect(type).toBeFocused()
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      await expect(selectValue(page, 'priority')).toHaveValue('')
+      await expect(page).not.toHaveURL(/priority=/)
+      await page.keyboard.press('Shift+Tab')
+      await expect(trigger).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('Shift+Tab')
+      await expect(list).toBeHidden()
+      await page.waitForTimeout(300)
+      await expect(page.getByRole('button', { name: /^Repo / })).toBeFocused()
+      // Escape still gives the focus back to the button: the Tab does not leave a trace.
+      await page.keyboard.press('Tab')
+      await expect(trigger).toBeFocused()
+      await page.keyboard.press('ArrowDown')
+      await expect(list).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(list).toBeHidden()
+      await expect(trigger).toBeFocused()
 
       // Enter on an option: the value goes to the hidden input, and the filter applies (findings.js).
       await page.keyboard.press('ArrowDown')
