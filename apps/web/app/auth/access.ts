@@ -19,7 +19,7 @@ export type SignInDecision =
    * `unconfirmed`: the orgs where GitHub failed. Their memberships stay as they were, with their old
    * `checked_at`, so the first request asks GitHub again.
    */
-  | { kind: 'allowed'; roles: { org: OrgRow; role: GitHubRole }[]; unconfirmed: OrgRow[]; invited: OrgRow[] }
+  | { kind: 'allowed'; roles: { org: OrgRow; role: GitHubRole }[]; unconfirmed: OrgRow[]; invited: OrgRow[]; pending?: number }
   /** GitHub counts the person in none of the orgs of the App. */
   | { kind: 'refused' }
   /** GitHub failed for every org where the answer could have let the person in. */
@@ -73,8 +73,10 @@ export async function decideSignIn(
   let roles = results.flatMap(({ org, role }) => (role ? [{ org, role }] : []))
   // KNT-150. A person invited in Kentō signs in to the orgs of their invitations, whatever GitHub says.
   let invited = await store.invitedOrgs(profile.id)
-  if (roles.length > 0 || invited.length > 0) {
-    return { kind: 'allowed', roles, unconfirmed: results.flatMap(({ org, failed }) => (failed ? [org] : [])), invited }
+  // A person with a pending invitation signs in to see it, even with no org yet.
+  let pending = await store.pendingInvitations(profile.id)
+  if (roles.length > 0 || invited.length > 0 || pending > 0) {
+    return { kind: 'allowed', roles, unconfirmed: results.flatMap(({ org, failed }) => (failed ? [org] : [])), invited, pending }
   }
   return results.some((result) => result.failed) ? { kind: 'unknown' } : { kind: 'refused' }
 }
@@ -91,25 +93,30 @@ export function roleFromGitHub(current: OrgRole | null, github: GitHubRole): Org
 /**
  * KNT-150. Writes the role that GitHub gives to a membership from GitHub. A GitHub admin of an org
  * that has no active owner (`OWNER_ACTIVE_MS`) becomes its owner: a new installation gets one, and
- * so does an org whose owner left. The check and the write run under one lock of the org, so two
- * admins at the same time make one owner.
+ * so does an org whose owner left. The check and the write run under one lock of the org (the one
+ * of the changes of the members screen too), and start from the role stored under that lock: an
+ * owner given or taken in Kentō in between is not overwritten from a stale read. `read`, the role
+ * that the caller saw: null for a person who joins. A membership that the caller saw and that is
+ * gone under the lock (removed or left in between) stays gone: null, nothing written.
  */
 export async function saveGitHubRole(
   store: AuthStore,
   userId: string,
   orgId: string,
-  current: OrgRole | null,
+  read: OrgRole | null,
   github: GitHubRole,
   now: number,
-): Promise<OrgRole> {
-  let role = roleFromGitHub(current, github)
-  // The role that the row holds after the write: an invitation made in between keeps its own.
-  if (github !== 'admin' || role === 'owner') return store.saveMembership(userId, orgId, role, 'github')
+): Promise<OrgRole | null> {
   return store.withOrgLock(orgId, async (locked) => {
+    let stored = await locked.membershipOf(userId, orgId)
+    if (stored === null && read !== null) return null
+    // A membership from an invitation is Kentō's: GitHub changes nothing of it.
+    if (stored?.source === 'invitation') return stored.role
+    let role = roleFromGitHub(stored?.role ?? null, github)
     // Another active owner, not this person: a second request of the same admin at the same time
     // finds its own row as owner, and keeps it.
-    let next: OrgRole = (await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS), userId)) ? 'admin' : 'owner'
-    return locked.saveMembership(userId, orgId, next, 'github')
+    if (github === 'admin' && role !== 'owner' && !(await locked.hasOwner(orgId, new Date(now - OWNER_ACTIVE_MS), userId))) role = 'owner'
+    return locked.saveMembership(userId, orgId, role, 'github')
   })
 }
 
@@ -170,6 +177,8 @@ export async function currentMemberships(
         continue
       }
       let role = await saveGitHubRole(store, user.id, membership.org.id, membership.role, github, now)
+      // Removed while GitHub was asked: the membership stays gone.
+      if (role === null) continue
       current.push({ ...membership, role, checkedAt: new Date(now) })
     } catch (error) {
       log('warn', 'auth.role_check_failed', { org: membership.org.name, login: user.login, error: errorMessage(error) })
