@@ -29,7 +29,7 @@ import { errorMessage, log } from '../log.ts'
 import { createGitHub, type GitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { KIND_LABELS } from '../providers/form.ts'
-import { idFormHelp, jobModels, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
+import { idFormHelp, jobModels, jobModelsChosen, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
 import { readAnsweredThreads, readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { ClaimedJob, RunnerRow, RunnerStore } from './store.ts'
@@ -302,10 +302,12 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     // REV-12. The models of the config, to a runner that reads them, and only when the job
     // also carries their provider: `service`, or an entry of `providers`. Else the runner
     // would fail the job; it runs the models of the engine instead, and the log says why.
+    // KNT-139. The values of Kentō are not a choice: with a default provider of the org, the job
+    // runs the models of that provider, and no warning is necessary.
     let models = jobModels(job.config)
     let wantsModels = body.features?.includes('models') ?? false
     let reachable = carriesProvider(models, providers?.map((p) => p.id))
-    if (models && (!wantsModels || !reachable)) {
+    if (models && jobModelsChosen(job.config) && (!wantsModels || !reachable)) {
       log('warn', 'job.models_not_sent', {
         jobId: job.id,
         runnerId: runner.id,
