@@ -611,6 +611,89 @@ summary.button::-webkit-details-marker {
 }
 
 /*
+ * KNT-165. The select once it hydrates (app/ui/public/select.tsx): a button in the same box, with
+ * the same chevron, and a list in a popover of the top layer, over the button, its chosen option
+ * on the button. The native select stays in the box, hidden and disabled.
+ */
+.select-button {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-popover:not(:popover-open) {
+  display: none;
+}
+.select-popover {
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(360px, calc(100vh - 2 * var(--space-4)));
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+}
+.select-list {
+  display: grid;
+}
+.select-list:focus {
+  outline: none;
+}
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.select-option[aria-selected='true'] {
+  font-weight: 600;
+}
+.select-option[aria-selected='true']::after {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  background-color: currentColor;
+  clip-path: polygon(14% 52%, 24% 42%, 40% 58%, 76% 22%, 86% 32%, 40% 78%);
+}
+.select-option[data-highlighted='true'] {
+  background: var(--paper);
+}
+.select-option[aria-disabled='true'] {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+.select-option[data-select-flash] {
+  background: var(--ai-wash);
+}
+@media (forced-colors: active) {
+  .select-option[data-highlighted='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  /* The check mark is a background, like the chevron: keep it, in the colour of the text. */
+  .select-option[aria-selected='true']::after {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
+/*
  * A checkbox or a radio button: the native input, drawn as a 16 px box (a circle for a radio
  * button) with no wrapper, so that a list of 50 rows stays light. `Check` and `Choice` write it.
  */
@@ -1797,21 +1880,103 @@ a.repo-name {
 .row-action:has(.row-menu[open]) {
   z-index: 16;
 }
-/* Set by row-menu.js: a browser without :has() also gets the open cell above the rows under it. */
-.row-action.row-action-open {
-  z-index: 16;
-}
-/* Without JavaScript nothing measures: the menu of the last two rows opens upwards, over the rows
-   above it (at least three, else there is no room there either). */
-html:not(.js) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)) .row-menu > div {
+/* Until the menu hydrates (KNT-163) nothing measures: the menu of the last two rows opens upwards,
+   over the rows above it (at least three, else there is no room there either). The table scrolls
+   sideways, so it would clip a menu that goes past its bottom. */
+html:not([data-hydrated]) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-child(-n + 3)) .row-menu > div {
   top: auto;
   bottom: calc(100% + var(--space-1));
 }
-/* The table scrolls sideways, so it also clips a menu that goes past its bottom: row-menu.js measures
-   the open menu and gives the table that room (padding-bottom), and takes it back once closed. */
+/* KNT-163. The menu once it hydrates: a button, and a popover in the top layer, placed by
+   @remix-run/ui against the button. No table clips it, and it flips upwards when there is no room.
+   Its own classes: the rules of `.row-menu > div` are for the `<details>` without JavaScript. */
+.row-menu-box {
+  display: inline-block;
+  margin-left: var(--space-1);
+}
+.row-menu-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.row-menu-trigger:hover,
+.row-menu-trigger[aria-expanded='true'] {
+  border-color: var(--line-strong);
+  background: var(--paper-raised);
+}
+.row-menu-popover {
+  min-width: 220px;
+  max-width: calc(100vw - 2 * var(--space-4));
+  margin: 0;
+  padding: var(--space-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+}
+.row-menu-list {
+  display: grid;
+}
+.row-menu-list:focus {
+  outline: none;
+}
+.row-menu-list > [role='menuitem'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.row-menu-list > [role='menuitem'] svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.row-menu-list > [data-highlighted] {
+  background: var(--paper);
+}
+.row-menu-list > .row-menu-danger {
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--enji);
+}
+/* The confirmation of a destructive action once it hydrates: the same panel, in a popover. A
+   closed popover is hidden by the browser, unless a class sets `display`: `.confirm-body` does. */
+.confirm-popover:not(:popover-open) {
+  display: none;
+}
+.confirm-popover {
+  width: min(22rem, calc(100vw - 2 * var(--space-4)));
+  max-width: none;
+  margin: 0;
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+@media (forced-colors: active) {
+  .row-menu-list > [data-highlighted] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
 @media (max-width: 760px) {
   /* A row is a card and "…" is at its left: the menu opens to the right, in the page. */
-  .row-menu {
+  .row-menu,
+  .row-menu-box {
     margin-left: 0;
   }
   .row-menu > div {
@@ -5224,4 +5389,79 @@ a.sheet-title {
   .feedback-text {
     max-width: none;
   }
+}
+
+/* ---------------------------------------------------------------- Members and invitations (KNT-150) */
+
+.settings-members,
+.members-back {
+  margin: 0 0 var(--space-4);
+}
+.members-card {
+  margin-bottom: var(--space-6);
+}
+.member-list {
+  display: grid;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+.member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+}
+.member-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 12rem;
+  flex: 1 1 12rem;
+}
+.member-login {
+  font-weight: 600;
+}
+.member-name,
+.member-source {
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+}
+.member-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.member-role,
+.invitation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.member-leave,
+.member-invite,
+.invitation-signout {
+  margin-top: var(--space-5);
+}
+.member-invite {
+  max-width: 28rem;
+}
+.member-invite-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-base);
+}
+.installation-move {
+  flex-basis: 100%;
+}
+.installation-move form {
+  max-width: 28rem;
+  margin-top: var(--space-3);
 }

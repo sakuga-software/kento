@@ -14,8 +14,8 @@ Deployment: [DEPLOY.md](DEPLOY.md). What each release changed: [CHANGELOG.md](CH
 
 ## Screens
 
-Server-rendered HTML in English (REV-114), with `remix/component`, and one small script
-(`public/assets/theme.js`).
+Server-rendered HTML in English (REV-114), with `remix/component`, small scripts in
+`public/assets/`, and a few components that hydrate in the browser (KNT-163).
 
 - `app/ui/shell.tsx`: the frame of every screen. Sidebar (wider than 760 px) or top bar and tab
   bar, page header, "Read only" banner for a member, footer `Kentō x.y.z · by Sakuga`.
@@ -26,7 +26,17 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   controls of every screen are in [CLAUDE.md](CLAUDE.md#ui-components).
 - `public/assets/fonts/`: Archivo, Zen Kaku Gothic New, JetBrains Mono (SIL OFL 1.1). The app serves
   everything under `/assets/`; the content security policy allows no other origin except the avatars
-  of GitHub, and no inline script or style.
+  of GitHub, no inline style, and one inline script: the import map, with the nonce of the response.
+- `app/assets.ts` (KNT-163): the asset server of Remix. It compiles the browser modules of
+  `app/**/public/` and the packages `remix` and `@remix-run/ui` when the browser asks for them, under
+  `/assets/app/…` and short names (`/assets/c/…`, `/assets/ui/…`); with `NODE_ENV=production`,
+  minified, with the hash of the content in each URL, cached a year. `public/boot.ts` is the module of
+  every page; it loads `public/runtime.ts` (the runtime of `remix/component`, `run()`) only on a page
+  with a component to hydrate: the menu "…" of the Repos screen (`public/row-menu.tsx`) and the
+  confirmations (`public/confirm.tsx`), on the menu and the popover of `@remix-run/ui`. Without
+  JavaScript, each one stays the `<details>` of the server. Every select of the screens (KNT-165,
+  `public/select.tsx`) is the select of `@remix-run/ui` in the browser, and the native `<select>`
+  without JavaScript.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
@@ -66,8 +76,59 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
     several installations, the role is the highest that their accounts give.
   - `invitation`: an admin of Kentō invited the person. GitHub is never asked about it, even when
     GitHub also counts the person in the account: the invitation wins, and only Kentō changes or ends it.
-- At the sign-in, someone whom GitHub counts in none of the orgs of the App, and who has no
-  membership from an invitation, is refused, and nothing is written.
+- At the sign-in, someone whom GitHub counts in none of the orgs of the App, who has no
+  membership from an invitation and no pending invitation, is refused, and nothing is written. A
+  person with only a pending invitation gets a session with no org, and reaches only
+  `/invitations` (and the sign-out).
+- Members and invitations (`app/members/`, `/settings/members`, KNT-150). Every member reads the
+  members and the pending invitations; an owner or an admin invites a GitHub login as a member or an
+  admin (Kentō reads its id on GitHub with an installation token; it sends no mail), cancels an
+  invitation, sets member or admin on a person invited, and removes them. Only an owner gives the
+  owner role (to a GitHub admin, or to a person invited), takes it back, or removes an owner. GitHub
+  decides a membership from GitHub: Kentō neither removes it nor moves it between admin and member.
+  No change leaves the org without an active owner: every change, removal, departure and acceptance
+  runs in one transaction under the advisory lock of the owners of the org, with the rows read
+  under that lock (`app/members/rules.ts` decides, `app/members/store.ts` applies). Kentō never
+  overrides the admin of GitHub: an owner from an invitation does not demote a person whom GitHub
+  counts as an admin of an account of the org, and that person can always take the owner role
+  back ("Take the owner role", after Kentō asks GitHub again, at most once a minute per person and
+  org). A GitHub admin who joined from an invitation takes it too: their membership then becomes
+  one from GitHub. Each change writes a row of `org_audit` (actor, action, target, roles before and
+  after, and what else it did in `detail`), which stays when the org goes; so does an end of a
+  membership by GitHub (`github_removed`, actor `(GitHub)`). At most 50 pending invitations per
+  org; the pending invitations of a person who leaves the org, or whom GitHub removes, go with them.
+- The org (`app/organizations/`, `/settings/organization`, KNT-150). Every member reads its name and
+  its installations of the App. An owner renames it (one line, 1 to 60 characters, no control or
+  invisible character), and moves an installation; Kentō asks GitHub first, and the store decides
+  with those answers under the locks (`app/organizations/rules.ts`). The rights that GitHub gives in
+  an org never come from an account that is not the org's:
+  - into an org that exists, and has an active installation: the person is an owner of it, and
+    GitHub says that they are an admin of both the account that moves and an account already
+    there (an owner from an invitation brings no account of their own);
+  - an installation on a personal account stays in an org of its own: it joins no org of other
+    accounts, and no other account joins its org;
+  - into a new org: GitHub says that the person is an admin of the account; they become its owner;
+  - a detach (a new org with no member): an owner whom GitHub counts as an admin of another
+    account of the org takes any installation out, with no right on it. The next GitHub admin of
+    that account who signs in becomes the owner of the new org; the memberships that only that
+    account gave end at their next check.
+
+  The repositories of the installation go with it, with their reviews, findings, rules and
+  assignment rules; the settings, providers, runners and org rules stay. Moving the last active
+  installation of an org asks for its name, and the form lists what goes: the org, now empty, is
+  deleted with its members, pending invitations, settings, providers, runners and org rules; one
+  that still holds a suspended installation stays, and nobody reaches it until one of its accounts
+  comes back. A rename, a move and a deletion write their rows of `org_audit` (`rename`, `move_out`,
+  `move_in`, `delete` with what it took). The order of the locks is written once, at the top of
+  `app/organizations/store.ts`: the webhook, the saves of rules and the moves take them in that
+  order. A provider of another org never matches a job (`runner/store.ts`): a repository whose
+  config names a provider of the org it left gets the key of the service until its Config names a
+  provider of its new org.
+- Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
+  sees them on `/invitations` (a banner of the frame leads there), and accepts (they become a member
+  from an invitation; a person who is a member already keeps their membership as it is, its role
+  and its source) or declines. A person invited stays a member
+  when they leave the account on GitHub.
 - The header shows the org on screen; its menu lists every org of the person with their role, and
   switches the org (`POST /preferences/org`, Better Auth's `setActiveOrganization`, only to an org
   of the person). The org on screen is `sessions.active_organization_id`.

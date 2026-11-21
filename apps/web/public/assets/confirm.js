@@ -1,6 +1,7 @@
-// The confirmation of a destructive action (app/ui/confirm.tsx, REV-33): "Cancel" and Escape
-// close it, and the focus goes back to its trigger. Without JavaScript, "Cancel" stays hidden
-// and the trigger closes the confirmation.
+// The confirmations that are still a `<details data-confirm>` (the dialog of "Mark dismissed…",
+// "Run R5 again…"; REV-33): "Cancel" and Escape close it, and the focus goes back to its trigger.
+// Without JavaScript, "Cancel" stays hidden and the trigger closes the confirmation. The
+// component Confirm (app/ui/public/confirm.tsx) hydrates instead (KNT-163).
 // Its names stay in a block: the scripts of a page share one global scope.
 {
   for (const button of document.querySelectorAll('[data-confirm-cancel]')) button.hidden = false

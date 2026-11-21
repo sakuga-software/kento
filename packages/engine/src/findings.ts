@@ -385,7 +385,8 @@ export function diagram(answer: Answer): string | null {
  * `line` stays a changed line, and only the lines before it can be context lines.
  */
 export function suggestionRange(finding: Finding, hunks: HunkLines): [number, number] | null {
-  if (!finding.suggestion.trim()) return null;
+  // KNT-159. A placeholder would replace the lines of the PR with the word: no suggestion.
+  if (!finding.suggestion.trim() || isPlaceholder(finding.suggestion, true)) return null;
   const shown = hunks.get(finding.path.replace(/^\/+/, '')) ?? new Set<number>();
   const start = Math.min(finding.start_line || finding.line, finding.line);
   if (finding.line - start > 30) return null;
@@ -396,12 +397,88 @@ export function suggestionRange(finding: Finding, hunks: HunkLines): [number, nu
 /** REV-104. The longest patch that a reader sees: a reader does not check a longer one. */
 export const MAX_PATCH_LINES = 40;
 
-/** REV-104. The patch of a finding as a reader sees it, or null when it has none or it is too long. */
+/**
+ * KNT-159. The words that a model writes in a field when it has no value for it: `follows` (a field of
+ * the link call), `none`, `n/a`, or the reference of an earlier finding (`E1`). Case, quotes and a final
+ * dot do not count.
+ */
+const PLACEHOLDERS = new Set(['follows', 'none', 'null', 'n/a', 'nothing', 'no patch', 'no suggestion', 'no fix', 'not applicable', 'tbd', 'todo', '-', '...', '…']);
+
+/**
+ * The placeholders that are never a line of code. A suggestion replaces whole lines, and `null`,
+ * `none`, `-` or `...` can be such a line (`...` is a statement in Python): only these words drop it.
+ */
+const NEVER_CODE = new Set(['follows', 'n/a', 'no patch', 'no suggestion', 'no fix', 'not applicable']);
+
+/** The quotes around a placeholder, and the dot after it. */
+const QUOTES = `"'\``;
+
+/**
+ * KNT-159. Whether a text is only a placeholder word, or empty after trim. `code`: the text replaces
+ * lines of code (a suggestion), so only a word that is never code counts. No regular expression on the
+ * ends: the text comes from the model, and a run of quotes would make one slow.
+ */
+export function isPlaceholder(text: string, code = false): boolean {
+  const trimmed = text.trim();
+  // The longest placeholder has 14 characters: a longer text is code or a sentence.
+  if (trimmed.length > 40) return false;
+  let start = 0;
+  let end = trimmed.length;
+  while (start < end && QUOTES.includes(trimmed[start]!)) start++;
+  while (end > start && (QUOTES.includes(trimmed[end - 1]!) || trimmed[end - 1] === '.')) end--;
+  const word = trimmed.slice(start, end).trim().toLowerCase();
+  // Only quotes or dots: a placeholder, but a line of code (`...`) for a suggestion.
+  if (word === '') return !code || trimmed === '';
+  return (code ? NEVER_CODE : PLACEHOLDERS).has(word) || /^e\d+$/.test(word);
+}
+
+/** The lines of a git diff header, before the first hunk of a file. */
+const GIT_HEADER = /^(diff --git |index |(?:new|deleted) file mode |old mode |new mode |similarity index |dissimilarity index |rename (?:from|to) |copy (?:from|to) )/;
+
+/**
+ * KNT-159. True when `patch` reads as a unified diff, and adds or removes more than a placeholder.
+ *
+ * - The header of a file (`diff --git`, `index`, `new file mode`, `rename from`…, then the pair
+ *   `--- a/…` and `+++ b/…`) is read only before its first `@@`. Elsewhere, `--- note` is a removed
+ *   line (a SQL comment).
+ * - Each other line starts with `+`, `-`, a space, `@@` or `\` ("No newline at end of file"), or is empty.
+ * - At least one added or removed line holds more than a placeholder: `+follows` alone is not a fix.
+ */
+function readsAsDiff(patch: string): boolean {
+  const rows = patch.split('\n');
+  let header = true;
+  const changed: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (row.startsWith('diff --git ')) {
+      header = true;
+      continue;
+    }
+    if (header && GIT_HEADER.test(row)) continue;
+    if (header && row.startsWith('--- ') && rows[i + 1]?.startsWith('+++ ')) {
+      i++;
+      continue;
+    }
+    header = false;
+    if (row === '' || row.startsWith(' ') || row.startsWith('@@') || row.startsWith('\\')) continue;
+    if (!/^[+-]/.test(row)) return false;
+    changed.push(row.slice(1));
+  }
+  return changed.some((text) => !isPlaceholder(text));
+}
+
+/**
+ * REV-104. The patch of a finding as a reader sees it, or null when it has none, it is too long,
+ * or it is not a diff (KNT-159).
+ */
 export function shownPatch(finding: Finding): string | null {
-  const patch = (finding.patch ?? '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
+  // The fence around the patch goes: its first line, and the backquotes at its end. trimEnd and
+  // endsWith, not a regular expression on the end: a long run of spaces would make one slow.
+  let patch = (finding.patch ?? '').replaceAll('\r', '').replace(/^\s*```(diff)?[^\n]*\n/i, '').trimEnd();
+  if (patch.endsWith('```')) patch = patch.slice(0, -3).trimEnd();
   // A fence in the patch would close the code block of the comment.
   if (!patch.trim() || patch.includes('```') || patch.split('\n').length > MAX_PATCH_LINES) return null;
-  return patch;
+  return readsAsDiff(patch) ? patch : null;
 }
 
 
