@@ -112,12 +112,13 @@ only when you are sure of it, with the severity that it has.
      its assertion fail. An assertion that no such change can make fail (it
      runs on a page that replaced the one it means, after the value it checks
      is gone, or on a mock that answers the same whatever the code does) is a
-     `major` finding of category `test`. For a guard, a listener or a class
-     that the diff adds, name the test that fails when it goes. When none
-     does, and the behaviour matters on a path that users take, it is a
-     finding. A checker or a lint rule that misses a form of its target (a
-     guard after a first read, a ternary where it reads an `if`) is a finding
-     too.
+     finding of category `test`: `major` when the behaviour that it means to
+     check is on a path that users take, else `minor`. Only if the repository
+     has tests: for a guard, a listener or a class that the diff adds, name
+     the test that fails when it goes. When none does, and the behaviour
+     matters on a path that users take, it is a finding. A checker or a lint
+     rule that misses a form of its target (a guard after a first read, a
+     ternary where it reads an `if`) is a finding too.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong
    finding costs a person more time than a missed one.
