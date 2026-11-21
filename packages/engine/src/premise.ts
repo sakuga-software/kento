@@ -16,7 +16,8 @@ const READER = '(?:message|pack|context|review|code shown)';
 const UNREAD = [
   new RegExp(`\\b(?:is|are)n?(?:'t| not) (?:shown |visible |included |present |provided |available )?in (?:the|this) ${READER}\\b`, 'i'),
   new RegExp(`\\b(?:the|this) ${READER} (?:does not|doesn't|did not|didn't) (?:show|include|hold|contain|give)\\b`, 'i'),
-  /\b(?:I|we|the review|this review) (?:could|can)(?:not|n't| not) (?:confirm|verify|see|check|read)\b/i,
+  // « I could not see a lock here » states a defect: the hedge must name the code that it could not read.
+  /\b(?:I|we|the review|this review) (?:could|can)(?:not|n't| not) (?:confirm|verify|see|check|read)\b[^.;]{0,80}?\b(?:definitions?|implementation|code of|callees?|callers?|schema|migration|service code|route file)\b/i,
   new RegExp(`\\b(?:cannot|can't|could not|couldn't) be (?:confirmed|verified|checked) (?:from|in|with) (?:the|this) ${READER}\\b`, 'i'),
   new RegExp(`\\bnot confirmed (?:in|by|from) (?:the|this) ${READER}\\b`, 'i'),
   /\bunseen (?:callers?|code|callees?|definitions?)\b/i,
