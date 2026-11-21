@@ -94,7 +94,14 @@ export const assets = createAssetServer({
 export function loadClientBuild(production = isProduction, dir = CLIENT_DIR): ClientBuild | null {
   if (!production) return null
   let build = readClientBuild(dir)
-  if (!build) log('error', 'startup.client_build_missing', { dir })
+  if (!build) {
+    log('error', 'startup.client_build_missing', { dir })
+    return null
+  }
+  if ('missing' in build) {
+    log('error', 'startup.client_build_incomplete', { dir, missing: build.missing })
+    return null
+  }
   return build
 }
 

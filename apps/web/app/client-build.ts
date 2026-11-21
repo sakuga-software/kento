@@ -47,6 +47,9 @@ export interface ClientManifest {
   files: string[]
 }
 
+/** The compressed copies that the build writes beside each file. */
+const SUFFIXES = { br: '.br', gzip: '.gz' } as const
+
 /** A build read from its folder. */
 export interface ClientBuild {
   dir: string
@@ -54,11 +57,21 @@ export interface ClientBuild {
   files: Set<string>
 }
 
-/** The build of `dir`, or null when it has no manifest (not built). */
-export function readClientBuild(dir = CLIENT_DIR): ClientBuild | null {
+/** The files that a build lists but its folder lacks: each bundle comes with its .br and .gz. */
+export function missingFiles(dir: string, manifest: ClientManifest): string[] {
+  return manifest.files.flatMap((file) => ['', SUFFIXES.br, SUFFIXES.gzip].map((suffix) => file + suffix)).filter((file) => !existsSync(path.join(dir, file)))
+}
+
+/**
+ * The build of `dir`, or null when it has no manifest (not built). Kentō #18d066: a build whose
+ * folder lacks one of its files is refused too (`missing`), so that no request ends in a failed read.
+ */
+export function readClientBuild(dir = CLIENT_DIR): ClientBuild | { missing: string[] } | null {
   let file = path.join(dir, 'manifest.json')
   if (!existsSync(file)) return null
   let manifest = JSON.parse(readFileSync(file, 'utf8')) as ClientManifest
+  let missing = missingFiles(dir, manifest)
+  if (missing.length > 0) return { missing }
   return { dir, manifest, files: new Set(manifest.files) }
 }
 
@@ -80,8 +93,6 @@ export function bundleOf(build: ClientBuild, entryId: string): { href: string; p
   return { href: CLIENT_BASE + entry.file, preloads: entry.imports.map((file) => CLIENT_BASE + file) }
 }
 
-/** The compressed copies that the build writes beside each file, best first. */
-const SUFFIXES = { br: '.br', gzip: '.gz' } as const
 
 /**
  * The answer to a request under /assets/js/: the bundle, compressed as the browser accepts it.
@@ -91,10 +102,10 @@ const SUFFIXES = { br: '.br', gzip: '.gz' } as const
 export async function serveClientFile(build: ClientBuild, request: Request, pathname: string): Promise<Response | null> {
   if (!pathname.startsWith(CLIENT_BASE)) return null
   let name = pathname.slice(CLIENT_BASE.length)
-  if (!build.files.has(name)) return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, HEAD' } })
   }
+  if (!build.files.has(name)) return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
   // The weights of the browser decide; at equal weight, brotli. None of the two: the plain file.
   let encoding = AcceptEncoding.from(request.headers.get('Accept-Encoding')).getPreferred(['br', 'gzip'] as const)
   let body = await readFile(path.join(build.dir, name + (encoding ? SUFFIXES[encoding] : '')))

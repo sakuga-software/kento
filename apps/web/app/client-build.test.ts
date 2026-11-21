@@ -40,7 +40,10 @@ function fakeBuild(): ClientBuild & { cleanup: () => void } {
     },
     files: ['a.@AAA.js', 'boot.@B.js', 'chunk.@C.js', 'chunk.@D.js', 'runtime.@R.js'],
   }))
-  return { ...readClientBuild(dir)!, cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+  for (let file of ['boot.@B.js', 'chunk.@C.js', 'chunk.@D.js', 'runtime.@R.js']) {
+    for (let suffix of ['', '.br', '.gz']) writeFileSync(path.join(dir, file + suffix), file)
+  }
+  return { ...(readClientBuild(dir) as ClientBuild), cleanup: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
 function get(path: string, headers: Record<string, string> = {}, method = 'GET') {
@@ -105,8 +108,10 @@ describe('the bundles of the browser modules (KNT-170)', () => {
       assert.equal(head.status, 200)
       assert.equal(head.headers.get('Content-Length'), '6')
       assert.equal(await head.text(), '')
-      let post = (await serveClientFile(build, get('/assets/js/a.@AAA.js', {}, 'POST'), '/assets/js/a.@AAA.js'))!
-      assert.equal(post.status, 405)
+      for (let name of ['a.@AAA.js', 'unknown.js']) {
+        let post = (await serveClientFile(build, get(`/assets/js/${name}`, {}, 'POST'), `/assets/js/${name}`))!
+        assert.equal(post.status, 405, name)
+      }
     } finally {
       build.cleanup()
     }
@@ -134,6 +139,24 @@ describe('the bundles of the browser modules (KNT-170)', () => {
       assert.equal(lines.length, 1)
       let line = JSON.parse(lines[0]!)
       assert.deepEqual([line.level, line.event, line.dir], ['error', 'startup.client_build_missing', empty])
+      // Kentō #18d066: a build that lacks a file it lists is refused, with the files it lacks.
+      let partial = fakeBuild()
+      try {
+        rmSync(path.join(partial.dir, 'chunk.@C.js.gz'))
+        rmSync(path.join(partial.dir, 'runtime.@R.js'))
+        assert.deepEqual(readClientBuild(partial.dir), { missing: ['chunk.@C.js.gz', 'runtime.@R.js'] })
+        let refused = await stderrOf(() => assert.equal(loadClientBuild(true, partial.dir), null))
+        let logged = JSON.parse(refused[0]!)
+        assert.deepEqual([logged.event, logged.missing], ['startup.client_build_incomplete', ['chunk.@C.js.gz', 'runtime.@R.js']])
+        let whole = fakeBuild()
+        try {
+          assert.equal(loadClientBuild(true, whole.dir)?.files.size, 5)
+        } finally {
+          whole.cleanup()
+        }
+      } finally {
+        partial.cleanup()
+      }
     } finally {
       rmSync(empty, { recursive: true, force: true })
     }
