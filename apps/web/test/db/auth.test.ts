@@ -400,6 +400,24 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(count!.n, 1)
   })
 
+  it('KNT-150: a failure after the owner check, under the lock, writes nothing', async () => {
+    let acme = await insertOrgRow(database.sql, 'acme', 11)
+    let admin = await insertUser(221, 'midway')
+    await store.saveMembership(admin, acme, 'admin', 'github')
+    await assert.rejects(
+      store.withOrgLock(acme, async (locked) => {
+        assert.equal(await locked.hasOwner(acme, new Date(Date.now() - OWNER_ACTIVE_MS), admin), false)
+        await locked.saveMembership(admin, acme, 'owner', 'github')
+        throw new Error('the request failed after the write')
+      }),
+      /the request failed/,
+    )
+    // The transaction of the lock rolled the write back.
+    assert.equal((await database.sql`select role from memberships`)[0]!.role, 'admin')
+    // And the lock is free for the next check.
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', Date.now()), 'owner')
+  })
+
   it('KNT-150: two checks of the same GitHub admin at the same time keep the org with an owner', async () => {
     let acme = await insertOrgRow(database.sql, 'acme', 11)
     let admin = await insertUser(211, 'twice')
