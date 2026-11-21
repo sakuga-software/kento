@@ -369,3 +369,18 @@ test('KNT-161. OpenRouter: a 429 on the first model is a usage limit, and GLM is
   assert.equal(error.status, 429);
   assert.match(error.message, /refused the call on a usage limit \(429, until \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\)/);
 });
+
+test('KNT-161. the reason of a runner of an earlier release is read too: a 429, a 402 or a body that names a limit', () => {
+  assert.deepEqual(usageLimitOfReason('no model gave a usable answer: ProviderError: OpenRouter answered 403: {"error":{"message":"Key limit exceeded"}}'), { resetAt: null });
+  assert.deepEqual(
+    usageLimitOfReason('no model gave a usable answer: ProviderError: Anthropic answered 400: {"error":{"message":"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."}}'),
+    { resetAt: '2026-12-01T00:00:00Z' },
+  );
+  assert.deepEqual(usageLimitOfReason('OpenRouter answered 429: Rate limit exceeded'), { resetAt: null });
+  assert.equal(usageLimitOfReason('no model gave a usable answer: ProviderError: Anthropic answered 401: invalid x-api-key'), null);
+  assert.equal(usageLimitOfReason('OpenRouter answered 500: rate limit of the upstream'), null);
+  assert.equal(usageLimitOfReason('clone failed: exit 128'), null);
+  // A 401 stays a refused key, even when its body names a limit.
+  assert.equal(usageLimitOfReason('OpenRouter answered 401: {"error":{"message":"invalid key, see the rate limit page"}}'), null);
+  assert.equal(usageLimitOf(401, 'quota of the key', undefined), null);
+});

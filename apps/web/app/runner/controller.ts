@@ -441,7 +441,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         if (!mint || !threadsTokens) {
           // No job can run without the GitHub App. Hold the claim for the whole wait anyway, so that
           // a runner does not call again at once and loop on the service.
-          await sleep(claimWaitMs, request.signal)
+          await waitFor(claimWaitMs, request.signal)
           return new Response(null, { status: 204 })
         }
 
@@ -454,14 +454,14 @@ export function createRunnerController(deps: RunnerApiDependencies) {
         // A runner that holds no provider can run a job only with a key that the service holds, and
         // only when it is trusted. With no such key at all, a claim would take a job only to fail it.
         if (ownProvider === null && !deps.providerApiKey && !(readsProviders && secrets)) {
-          await sleep(claimWaitMs, request.signal)
+          await waitFor(claimWaitMs, request.signal)
           return new Response(null, { status: 204 })
         }
 
         // Long poll: look for a job until one comes or the wait is over. A runner that hangs up
         // stops the loop. A job that cannot go to this runner is released, and the loop looks again.
         let claim: Claim = { runner, body, mint, threadsTokens, ownProvider, ownKey, readsProviders, secrets }
-        let deadline = Date.now() + claimWaitMs
+        let deadline = performance.now() + claimWaitMs
         while (!request.signal.aborted) {
           let job = await deps.store.claimJob(runner.id, {
             kinds: body.kinds ?? ['review'],
@@ -471,7 +471,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
             secrets: secrets !== null,
           })
           if (!job) {
-            let left = deadline - Date.now()
+            let left = deadline - performance.now()
             if (left <= 0) break
             await sleep(Math.min(claimPollMs, left), request.signal)
             continue
@@ -653,6 +653,15 @@ async function readJson<T>(request: Request, parse: (value: unknown) => Checked<
   let checked = parse(value)
   if (!checked.ok) return error(400, 'invalid_body', {}, checked.errors.slice(0, 20))
   return checked.value
+}
+
+/**
+ * Waits at least `ms` on the clock of `performance.now()`, or until the signal aborts. A timer can
+ * fire a little before its time on that clock: the wait then sleeps again for what is left.
+ */
+async function waitFor(ms: number, signal: AbortSignal): Promise<void> {
+  let deadline = performance.now() + ms
+  for (let left = ms; left > 0 && !signal.aborted; left = deadline - performance.now()) await sleep(left, signal)
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

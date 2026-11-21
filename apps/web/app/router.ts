@@ -13,7 +13,8 @@ import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, invitationRoutes, memberRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { createOrganizationController, type OrganizationDependencies } from './organizations/controller.tsx'
 import { createMemberControllers, type MembersDependencies } from './members/controller.tsx'
 import { createFeedbackControllers, type FeedbackDependencies } from './feedback/controller.tsx'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
@@ -70,6 +71,8 @@ export interface AppDependencies {
   feedback?: FeedbackDependencies | null
   /** KNT-150. The members and the invitations. Without them, their screens answer 404. */
   members?: MembersDependencies | null
+  /** KNT-150. The name and the installations of an org. Without them, the screen answers 404. */
+  organization?: OrganizationDependencies | null
 }
 
 /**
@@ -132,6 +135,7 @@ export function createAppRouter(deps: AppDependencies) {
   let members = createMemberControllers(ui.screens, deps.members ?? null)
   router.map(memberRoutes, members.members)
   router.map(invitationRoutes, members.invitations)
+  router.map(organizationRoutes, createOrganizationController(ui.screens, deps.organization ?? null))
   router.map(authRoutes, ui.signIn)
   router.map(docsRoutes, ui.docs)
   fallback.map(fallbackRoutes, ui.notFound)

@@ -123,6 +123,11 @@ describe('a usage limit of the provider (KNT-161)', () => {
     )
   })
 
+  it('reads the plain answer of a runner of an earlier release as a usage limit', () => {
+    let body = failureComment(job({ failureReason: 'no model gave a usable answer: ProviderError: OpenRouter answered 429: Rate limit exceeded' }))
+    assert.ok(body.startsWith('**Kentō · review did not happen**'), body)
+  })
+
   it('another failure gives a failed check, never a success', () => {
     let check = failedCheck(job())
     assert.equal(check.conclusion, 'failure')

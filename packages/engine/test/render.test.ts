@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { findingKey, type Answer, type Finding, type Usage } from '../src/index.ts';
-import type { Anchors } from '../src/findings.ts';
+import { suggestionRange, type Anchors } from '../src/findings.ts';
 import { descriptionBlock, fileCommentBody, icon, inlineBody, reviewBody, shortId, toCheck, variantReplyBody, withBlock, type Icons } from '../src/render.ts';
 import { LEVEL_COST_CENTS, levelCost } from '../src/levels.ts';
 
@@ -161,6 +161,22 @@ test('a finding without a thread shows its patch in the description, in a detail
   );
   const threaded = descriptionBlock({ ...answer, findings: [withPatch] }, [{ finding: withPatch, url: 'https://github.com/o/n/pull/1#discussion_r1' }], [], 0, usage, anchors, context);
   assert.doesNotMatch(threaded, /```diff/);
+});
+
+test('a finding whose patch is not a diff shows no Fix block, in the description or in its thread (KNT-159)', () => {
+  const context = { count: 1, head: '1'.repeat(40), subject: 's', commitUrl: `https://github.com/o/n/commit/${'1'.repeat(40)}`, level: 'lite' as const };
+  const placeholder = { ...finding, patch: 'follows' };
+  const block = descriptionBlock({ ...answer, findings: [placeholder] }, [{ finding: placeholder, url: null }], [], 0, usage, () => null, context);
+  assert.match(block, /\*\*Fix:\*\* Compare exp with Date\.now\(\)\./, 'the fix text stays');
+  assert.doesNotMatch(block, /<summary>Fix<\/summary>|```diff|follows/);
+  assert.doesNotMatch(inlineBody(placeholder, false), /```diff|follows/);
+});
+
+test('a finding whose suggestion is a placeholder gets no suggestion block in its thread (KNT-159)', () => {
+  const placeholder = { ...finding, suggestion: 'follows' };
+  const range = suggestionRange(placeholder, new Map([['src/auth.ts', new Set([12])]]));
+  assert.equal(range, null);
+  assert.doesNotMatch(inlineBody(placeholder, range !== null), /```suggestion|follows/);
 });
 
 // REV-106. Every text that a review posts, for each priority and each mark.
