@@ -14,11 +14,11 @@ import { currentMemberships } from '../../auth/access.ts'
 import { AUTH_BASE_PATH, sessionCookieName, signInScope, type SignInScope } from '../../auth/better-auth.ts'
 import { clientAddress, createRateLimiter, limitKey, SIGN_IN_STARTS_PER_MINUTE, socketAddressOf } from '../../auth/rate-limit.ts'
 import { errorMessage, log } from '../../log.ts'
-import { authRoutes, pageRoutes } from '../../routes.ts'
+import { authRoutes, invitationRoutes, pageRoutes } from '../../routes.ts'
 import { securityHeaders } from '../security-headers.ts'
 import { SignInPage, type SignInNotice } from '../sign-in.tsx'
 import { isTheme, readTheme, themeCookie, type Theme } from '../theme.ts'
-import { localPath, redirect, Signed, signedOf, type SignedIn, type UiKit } from './kit.tsx'
+import { forbidden, localPath, Person, redirect, Signed, signedOf, type SignedIn, type SignedPerson, type UiKit } from './kit.tsx'
 
 const NOTICES: readonly SignInNotice[] = ['not_member', 'failed', 'signed_out', 'expired', 'disabled']
 
@@ -156,6 +156,7 @@ export function createAuth(kit: UiKit) {
     | { kind: 'anonymous' | 'expired' }
     | { kind: 'gone'; sessionId: string; expired?: boolean }
     | { kind: 'unconfirmed'; login: string; orgs: number }
+    | { kind: 'invited'; person: SignedPerson }
   > {
     if (!auth) return { kind: 'anonymous' }
     let session = context.get(CurrentSession) ?? null
@@ -168,14 +169,18 @@ export function createAuth(kit: UiKit) {
     // GitHub has not answered for over an hour: no access, but no sign-out either. The session
     // works again as soon as GitHub confirms the role.
     if (memberships.length === 0 && unconfirmed > 0) return { kind: 'unconfirmed', login: user.login, orgs: unconfirmed }
-    if (memberships.length === 0) return { kind: 'gone', sessionId: session.sessionId }
+    // KNT-150. The pending invitations of the person: the banner of the frame, or the only page of
+    // a person who has no org yet.
+    let invitations = await auth.store.pendingInvitations(user.githubId)
+    if (memberships.length === 0) {
+      return invitations > 0
+        ? { kind: 'invited', person: { sessionId: session.sessionId, user, signed: null } }
+        : { kind: 'gone', sessionId: session.sessionId }
+    }
     let membership = memberships.find((m) => m.org.id === session.activeOrgId)
     // The org of the session is gone (left on GitHub, or suspended): the first org that remains.
-    return {
-      kind: 'signed',
-      signed: { sessionId: session.sessionId, user, membership: membership ?? memberships[0]!, memberships },
-      orgMoved: !membership,
-    }
+    let signed: SignedIn = { sessionId: session.sessionId, user, membership: membership ?? memberships[0]!, memberships, invitations }
+    return { kind: 'signed', signed, orgMoved: !membership }
   }
 
   /** The 503 of the screens while GitHub does not confirm the role. */
@@ -232,6 +237,14 @@ export function createAuth(kit: UiKit) {
     let isGet = context.request.method === 'GET' || context.request.method === 'HEAD'
     let viewer = await readViewer(context)
     if (viewer.kind === 'unconfirmed') return roleUnconfirmed(context, viewer.login, viewer.orgs)
+    if (viewer.kind === 'invited') {
+      // KNT-150. A person with no org yet sees their invitations, and can sign out; nothing else.
+      if (context.url.pathname === pageRoutes.signOut.href() && !isGet) {
+        context.set(Person, viewer.person)
+        return next()
+      }
+      return isGet ? redirect(invitationRoutes.invitations.href()) : forbidden()
+    }
     if (viewer.kind !== 'signed') {
       // A session whose person has no org left ends here, and its cookie with it.
       if (viewer.kind === 'gone') await auth!.store.deleteSession(viewer.sessionId)
@@ -242,7 +255,21 @@ export function createAuth(kit: UiKit) {
     // The session moves to the org on screen, and stays there, so the org and the role match.
     if (viewer.orgMoved) await auth!.store.setActiveOrg(viewer.signed.sessionId, viewer.signed.membership.org.id)
     context.set(Signed, viewer.signed)
+    context.set(Person, { sessionId: viewer.signed.sessionId, user: viewer.signed.user, signed: viewer.signed })
     return next()
+  }
+
+  /**
+   * KNT-150. The pages of the invitations of a person: a member of an org, or a person whose only
+   * access is an invitation to answer.
+   */
+  let requirePerson: Middleware = async (context, next) => {
+    let viewer = await readViewer(context)
+    if (viewer.kind === 'invited') {
+      context.set(Person, viewer.person)
+      return next()
+    }
+    return requireViewer(context, next)
   }
 
   /**
@@ -425,12 +452,14 @@ export function createAuth(kit: UiKit) {
     }),
 
     signOut: createAction(pageRoutes.signOut, async (context) => {
-      let signed = signedOf(context)
-      log('info', 'auth.signed_out', { login: signed.user.login })
-      await auth!.store.deleteSession(signed.sessionId)
+      // A member of an org, or a person whose only access is an invitation.
+      let person = context.get(Person)
+      if (!person) throw new Error('requireViewer did not run')
+      log('info', 'auth.signed_out', { login: person.user.login })
+      await auth!.store.deleteSession(person.sessionId)
       return clearSessionCookie(redirect(`${authRoutes.signIn.href()}?notice=signed_out`))
     }),
   }
 
-  return { sessionLayer, requireViewer, optionalViewer, signIn, frameActions }
+  return { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions }
 }

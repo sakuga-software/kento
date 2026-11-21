@@ -4,7 +4,7 @@ import { commandNames } from '../github/comment-command.ts'
 import { REPO_FILTERS, SWITCH_TARGET, type RepoFilter, type RepoListQuery, type RepoPage, type RepoView } from '../repos/store.ts'
 import { pageRoutes as routes, pullRoutes } from '../routes.ts'
 import type { Precision } from '../findings/precision.ts'
-import { Confirm } from './confirm.tsx'
+import { RowMenu } from './public/row-menu.tsx'
 import { Button, Input, buttonClass } from './controls.tsx'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue } from './precision.tsx'
@@ -16,12 +16,9 @@ import {
   CircleDashedIcon,
   CircleHelpIcon,
   GlobeIcon,
-  ListChecksIcon,
   PowerIcon,
-  PowerOffIcon,
   RefreshCwIcon,
   SearchIcon,
-  SlidersIcon,
 } from './lucide.tsx'
 import { readPageNumber } from '../paging.ts'
 import { Pager } from './pager.tsx'
@@ -329,8 +326,6 @@ export function ReposPage(handle: Handle<ReposPageProps>) {
         {checking ? <script src={`/assets/repos.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
         {/* KNT-147: "Enable" and "Disable" change the row in place, with no reload and no jump. */}
         {admin ? <script src={`/assets/repo-toggle.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script> : null}
-        {/* REV-91: the menus "…" of the rows close on Escape and on a click outside. */}
-        <script src={`/assets/row-menu.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
       </Shell>
     )
   }
@@ -447,40 +442,8 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               Enable<span class="visually-hidden"> {name}</span>
             </Button>
           ) : null}
-          {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…". */}
-          <details class="row-menu">
-            {/* No class: kento.css styles `.row-menu > summary` and `> div`, the page holds 25 of them (budget of 110 KB). */}
-            <summary aria-label={`Actions of ${name}`}>…</summary>
-            <div>
-              <a href={routes.repoConfig.href({ id: repo.id })}>
-                <SlidersIcon />
-                Open the config
-              </a>
-              <a href={findingsHref({ repoId: repo.id })}>
-                <ListChecksIcon />
-                See the findings
-              </a>
-              {admin && repo.enabled ? (
-                <Confirm
-                  trigger={
-                    // The icon, then one flex item: the gap of .button would split the visible "Disable…".
-                    <>
-                      <PowerOffIcon />
-                      <span>
-                        Disable<span class="visually-hidden"> {name}</span> Kentō…
-                      </span>
-                    </>
-                  }
-                  action={routes.repoDisable.href({ id: repo.id }) + suffix}
-                  csrf={null}
-                  form="repo-actions"
-                  submit={`Disable ${name}`}
-                >
-                  <p>No new job starts, and the queued jobs are cancelled. The published reviews and the counter stay.</p>
-                </Confirm>
-              ) : null}
-            </div>
-          </details>
+          {/* REV-91: the other actions of a row sit in "…": the config, the findings, and "Disable Kentō…" (KNT-163: it hydrates). */}
+          <RowMenu id={repo.id} name={name} disable={admin && repo.enabled ? true : undefined} back={suffix || undefined} />
         </td>
       </tr>
     )

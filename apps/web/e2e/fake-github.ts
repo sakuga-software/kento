@@ -21,6 +21,8 @@ export const ACCOUNTS: Record<string, { id: number; name: string; role: 'admin' 
   octocat: { id: 101, name: 'Alex Martin', role: 'admin' },
   camille: { id: 102, name: 'Camille', role: 'member' },
   stranger: { id: 103, name: 'Someone Else', role: null },
+  // KNT-150: counted nowhere on GitHub, and invited in Kentō by the tests of the members.
+  visitor: { id: 104, name: 'Visitor', role: null },
 }
 
 /** A repository name of 80 characters (REV-25). */
@@ -125,6 +127,14 @@ let server = http.createServer(async (request, response) => {
       return json(response, 200, { error: 'bad_verification_code' })
     }
     return json(response, 200, { access_token: `ghu_${entry.login}`, token_type: 'bearer' })
+  }
+
+  // KNT-150: the account of a login, for an invitation.
+  let user = /^\/users\/([^/]+)$/.exec(url.pathname)
+  if (request.method === 'GET' && user) {
+    let login = decodeURIComponent(user[1]!).toLowerCase()
+    let account = ACCOUNTS[login]
+    return account ? json(response, 200, { id: account.id, login, type: 'User' }) : json(response, 404, { message: 'Not Found' })
   }
 
   if (request.method === 'GET' && url.pathname === '/user') {
