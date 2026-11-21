@@ -200,7 +200,33 @@ describe('the Repos screen', () => {
     assert.match(member, /Read only<\/strong>/)
     assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation|repo-toggle\.js|notice-slot/)
     // KNT-147: an admin gets the live region of the notices on every load, empty with no notice.
-    assert.match(admin, /<div role="status" class="notice-slot"><\/div>/)
+    assert.match(admin, /<div role="status" class="notice-slot toast-region"><\/div>/)
+  })
+
+  it('KNT-185: "Read GitHub again" is a quiet button with the icon alone, named for a screen reader and the pointer', async () => {
+    let html = (await setup().signIn(OCTOCAT)).html
+    assert.match(
+      html,
+      /<form method="post" action="\/repos\/check">.*?<button type="submit" aria-label="Read GitHub again" title="Read GitHub again" data-busy="" class="button button-ghost button-icon"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg><\/button><\/form>/s,
+    )
+  })
+
+  it('KNT-184: says the result of an action in a toast, whose close link leaves the message out of the URL; an error stays a banner', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn()
+    let html = await (await request('/repos?filter=enabled&q=fruit&done=checked', { cookie })).text()
+    let slot = /<div role="status" class="notice-slot toast-region">(.*?)<\/div><p aria-live/s.exec(html)![1]!
+    assert.match(slot, /^<div data-toast="done repo cancelled" class="toast"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg><div class="toast-text"><p><strong>List up to date\.<\/strong>/s)
+    assert.match(
+      slot,
+      /<a href="\/repos\?filter=enabled&amp;q=fruit" aria-label="Close the message" title="Close" data-toast-close="" class="toast-close"><svg[^>]*aria-hidden="true"/,
+    )
+    assert.doesNotMatch(html, /banner-ok/)
+    assert.equal(html.match(/src="\/assets\/toast\.js\?v=1\.2\.3"/g)?.length, 1)
+
+    html = await (await request('/repos?done=check_failed', { cookie })).text()
+    assert.match(html, /<div role="alert" class="banner banner-alert">/)
+    assert.doesNotMatch(html, /class="toast"/)
   })
 
   it('enables a repository for an admin, with CSRF, and says what the next push does', async () => {
@@ -400,5 +426,11 @@ describe('the Repos screen', () => {
     let response = await request('/repos/check', { cookie, form: { _csrf: csrf } })
     assert.equal(response.headers.get('Location'), '/repos?done=checked')
     assert.deepEqual(checks, ['sakuga-software'])
+    // KNT-195: the form carries the list on screen, and the redirect comes back to it; a value that
+    // the list does not know is dropped.
+    let html = await (await request('/repos?filter=enabled&q=fruit&page=2', { cookie })).text()
+    assert.match(html, /<form method="post" action="\/repos\/check\?filter=enabled&amp;q=fruit&amp;page=2">/)
+    response = await request('/repos/check?filter=enabled&q=fruit&page=2&evil=1', { cookie, form: { _csrf: csrf } })
+    assert.equal(response.headers.get('Location'), '/repos?filter=enabled&q=fruit&page=2&done=checked')
   })
 })
