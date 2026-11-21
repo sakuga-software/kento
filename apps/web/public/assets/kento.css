@@ -1520,17 +1520,15 @@ a.repo-name {
 .repo-name svg {
   color: var(--ink-muted);
 }
-/* KNT-182. The last review on one line: a narrow cell cuts it with an ellipsis, and its title keeps
-   the whole of it. The padding, given back by the margin, keeps the focus ring of the link inside
-   the box that clips. */
+/* KNT-182. The last review on one line. In the table the column takes the width of the line, and the
+   table scrolls sideways before it cuts a text that the keyboard could not read. On a card (under
+   760 px, below), the link stays whole and only the date can shrink. */
 .repo-last-review {
-  display: block;
-  max-width: 100%;
-  margin: -4px;
-  padding: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* KNT-179: the row whose menu "…" offers "Remove review.yml". */
+.row-ready {
+  margin-right: var(--space-2);
 }
 .tag svg {
   flex: none;
@@ -1689,9 +1687,23 @@ a.repo-name {
   .repos-table td:nth-child(5)::before {
     content: 'Precision 30 d';
   }
-  /* KNT-182: the last review takes the width of the card, so that its line is seldom cut. */
+  /* KNT-182: the last review takes the width of the card, so that its line is seldom cut; then the
+     date shrinks, with an ellipsis, and the link stays whole. */
   .repos-table td:nth-child(4) {
     grid-column: 1 / -1;
+  }
+  .repo-last-review {
+    display: flex;
+    gap: var(--space-1);
+    max-width: 100%;
+  }
+  .repo-last-review > a {
+    flex: none;
+  }
+  .repo-last-review > .hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .table tbody th,
   .table .row-action {

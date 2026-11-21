@@ -297,11 +297,14 @@ function RepoRow(handle: Handle<RepoRowProps>) {
     let suffix = back ? `?${back}` : ''
     let name = shortName(repo.fullName, org)
     let repoUrl = `${githubUrl}/${repo.fullName}`
+    let removeWorkflow = admin ? removeWorkflowHref(repo, githubUrl) : undefined
+    let workflowLeft = repo.workflow === 'reusable' || repo.workflow === 'copy'
     return (
       <tr id={`repo-${repo.id}`}>
         <th scope="row">
           {/* KNT-180: the visibility is the icon left of the name; its word is for a screen reader only. */}
-          <a class="repo-name" href={repoUrl} rel="noreferrer" title={repo.fullName}>
+          {/* The title says the visibility to the pointer too, "unknown" for the "?". */}
+          <a class="repo-name" href={repoUrl} rel="noreferrer" title={`${repo.fullName} (${visibility(repo.private)})`}>
             {repo.private === null ? <CircleHelpIcon /> : repo.private ? <LockIcon /> : <GlobeIcon />}
             <span>{name}</span>
           </a>
@@ -345,12 +348,19 @@ function RepoRow(handle: Handle<RepoRowProps>) {
               Enable<span class="visually-hidden"> {name}</span>
             </Button>
           ) : null}
+          {removeWorkflow ? (
+            // KNT-179: the row whose "…" offers "Remove review.yml" says so, to an admin as the action.
+            <span class="tag tag-ok row-ready" title={`Kentō published ${SWITCH_TARGET} reviews in a row: "Remove review.yml" is in the menu "…"`}>
+              review.yml can go
+            </span>
+          ) : null}
           {/* REV-91: the other actions of a row sit in "…": the config, the findings, "Remove review.yml" at the end of the
               switch (KNT-179), and "Disable Kentō…" (KNT-163: it hydrates). */}
           <RowMenu
             id={repo.id}
             name={name}
-            removeWorkflow={admin ? removeWorkflowHref(repo, githubUrl) : undefined}
+            removeWorkflow={removeWorkflow}
+            workflow={admin && repo.enabled && workflowLeft ? true : undefined}
             disable={admin && repo.enabled ? true : undefined}
             back={suffix || undefined}
           />
@@ -390,7 +400,11 @@ function ListControls(handle: Handle<{ page: RepoPage; list: RepoList }>) {
         </form>
         <nav class="segmented-links" aria-label="Filter the repos">
           {REPO_FILTERS.map((filter) => (
-            <a href={reposHref({ filter, search: list.search })} aria-current={filter === list.filter ? 'page' : undefined}>
+            <a
+              href={reposHref({ filter, search: list.search })}
+              aria-current={filter === list.filter ? 'page' : undefined}
+              title={filter === 'switching' ? 'The repos that still hold review.yml' : undefined}
+            >
               {FILTER_LABELS[filter]}
               <span class="list-filter-count">{page.counts[filter]}</span>
             </a>

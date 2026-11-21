@@ -13,7 +13,7 @@ import { focusGuard, type FocusGuard } from './focus-guard.ts'
 
 /**
  * The props of a row: the page writes them once more for the browser (25 rows, a budget of 110 KB
- * of HTML), so they are few, and the URLs are made here.
+ * of HTML), so they are few, and the URLs are made here. One exception, `removeWorkflow`.
  */
 export interface RowMenuProps {
   /** The id of the repository. */
@@ -22,9 +22,14 @@ export interface RowMenuProps {
   name: string
   /**
    * KNT-179. "Remove review.yml": the page of GitHub that deletes the file, for an admin at the end
-   * of the switch. Only those few rows carry this URL.
+   * of the switch. The one URL of these props, against "ids, not URLs" of apps/web/CLAUDE.md: the
+   * browser cannot make it without the full name, the branch and the path of the file. Only the
+   * rows at the end of the switch carry it (about 100 B each); test/db/repos-volume.test.ts counts
+   * them in the budget of the page.
    */
   removeWorkflow?: string
+  /** review.yml is still in the repository: the confirmation of "Disable" says that it reviews alone then. */
+  workflow?: boolean
   /** "Disable Kentō…": an admin, on an enabled repository. */
   disable?: boolean
   /** The query of the list, that the disable comes back to (`?page=2`). */
@@ -64,8 +69,14 @@ function DisableLabel(handle: Handle<{ name: string; icon?: boolean }>) {
   )
 }
 
-function DisableText() {
-  return () => <p>No new job starts, and the queued jobs are cancelled. The published reviews stay.</p>
+function DisableText(handle: Handle<{ workflow?: boolean }>) {
+  return () => (
+    <p>
+      No new job starts, and the queued jobs are cancelled. The published reviews stay.
+      {/* KNT-194: the notes on the switch said it under the table; the confirmation says it now. */}
+      {handle.props.workflow ? ' review.yml alone reviews the pull requests from the next push.' : null}
+    </p>
+  )
 }
 
 export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Handle<RowMenuProps>) {
@@ -119,7 +130,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
   })
 
   return () => {
-    let { id: repoId, name, back, removeWorkflow } = handle.props
+    let { id: repoId, name, back, removeWorkflow, workflow } = handle.props
     let config = pageRoutes.repoConfig.href({ id: repoId })
     let findings = repoFindingsHref(repoId)
     let disable = handle.props.disable ? pageRoutes.repoDisable.href({ id: repoId }) + (back ?? '') : null
@@ -142,7 +153,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
             ) : null}
             {disable ? (
               <ConfirmDetails trigger={<DisableLabel name={name} />} action={disable} csrf={null} form={FORM} submit={`Disable ${name}`}>
-                <DisableText />
+                <DisableText workflow={workflow} />
               </ConfirmDetails>
             ) : null}
           </div>
@@ -236,7 +247,7 @@ export const RowMenu = clientEntry(import.meta.url, function RowMenu(handle: Han
             form={FORM}
             submit={`Disable ${name}`}
           >
-            <DisableText />
+            <DisableText workflow={workflow} />
           </ConfirmDialog>
         ) : null}
       </popover.Context>
