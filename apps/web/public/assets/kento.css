@@ -1039,6 +1039,9 @@ summary.button::-webkit-details-marker {
 /* KNT-150. The menu of the org: the box opens the list of the orgs of the person, with their role. */
 .org-menu {
   position: relative;
+  /* KNT-186: no gap. Open, the content of the <details> is a second item of the flex box of
+     .bar-org, and its gap made the menu 8 px wider than the box, so the list ended past it. */
+  gap: 0;
 }
 .org-menu > summary {
   gap: var(--space-2);
@@ -1069,8 +1072,11 @@ summary.button::-webkit-details-marker {
   right: 0;
   display: grid;
   gap: var(--space-1);
+  /* KNT-186: as wide as its content, never narrower than the box that opens it, and its right edge
+     on the right edge of the box. */
   width: max-content;
-  min-width: 240px;
+  min-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   max-width: min(320px, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-2);
   border: 1px solid var(--line);
@@ -1080,6 +1086,9 @@ summary.button::-webkit-details-marker {
 }
 .org-menu-panel ul {
   display: grid;
+  /* KNT-186: one column that may shrink, so that a long name is cut with an ellipsis instead of
+     pushing the items out of the menu and the page sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -2445,6 +2454,19 @@ a.finding-title:hover {
   .org-menu-link {
     min-height: 44px;
   }
+  /* KNT-186: the box of the org sits on the left of the bar, and a list aligned on its right edge
+     went past the left of the screen. Here the list hangs from the bar, the width of the screen less
+     its gutters: .bar is its containing block. */
+  .org-menu {
+    position: static;
+  }
+  .org-menu-panel {
+    left: var(--space-4);
+    right: var(--space-4);
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
   .bar-nav li {
     border-bottom: 1px solid var(--line);
   }
@@ -2599,6 +2621,69 @@ a.finding-title:hover {
   * {
     transition: none !important;
   }
+}
+
+/* KNT-186. The lists of the selects, the menus "…", the confirmations and the menu of the orgs open
+   in 140 ms and close in 80 ms: they fade and travel 4 px. A transition takes the duration of the
+   state it goes to: the closed rules say 80 ms, the open ones 140 ms (a click right after Escape is
+   not held up by a long close). A popover that closes keeps its box and its place in the top layer
+   for that time (`allow-discrete` on display and overlay; Chromium, WebKit has no `overlay`), then
+   hides. The menu of the orgs, a <details>, stays drawn while it closes (content-visibility), but
+   inert: no click and no focus reaches it then. Nothing moves under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .select-popover,
+  .row-menu-popover,
+  .confirm-popover {
+    transition:
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease),
+      display 80ms allow-discrete,
+      overlay 80ms allow-discrete;
+  }
+  .select-popover:popover-open,
+  .row-menu-popover:popover-open,
+  .confirm-popover:popover-open {
+    transition-duration: 140ms;
+  }
+  .select-popover:not(:popover-open),
+  .row-menu-popover:not(:popover-open),
+  .confirm-popover:not(:popover-open) {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+  @starting-style {
+    .select-popover:popover-open,
+    .row-menu-popover:popover-open,
+    .confirm-popover:popover-open {
+      opacity: 0;
+      translate: 0 -4px;
+    }
+  }
+  .org-menu::details-content {
+    transition: content-visibility 80ms allow-discrete;
+  }
+  .org-menu-panel {
+    transition:
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease);
+  }
+  .org-menu[open] .org-menu-panel {
+    transition-duration: 140ms;
+  }
+  @starting-style {
+    .org-menu[open] .org-menu-panel {
+      opacity: 0;
+      translate: 0 -4px;
+    }
+  }
+}
+/* KNT-186, critique P2-1. A menu of the orgs that closes is out of reach at once, with or without
+   motion: a click goes to the page under it, and Tab to the next control of the bar. */
+.org-menu:not([open]) .org-menu-panel {
+  opacity: 0;
+  translate: 0 -4px;
+  pointer-events: none;
+  interactivity: inert;
 }
 
 /* ---------------------------------------------------------------- Shared parts: sections, tags, states, fields (REV-10) */

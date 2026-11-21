@@ -368,14 +368,17 @@ describe('the name and the installations of an org', () => {
   })
 
   it('knows every table that carries an org: a new one must say whether it follows a moved repository', async () => {
-    let rows = await database.sql<{ table: string }[]>`
-      select table_name as table from information_schema.columns
-      where table_schema = 'public' and column_name = 'org_id' order by table_name`
+    let rows = await database.sql<{ table: string; column: string }[]>`
+      select table_name as table, column_name as column from information_schema.columns
+      where table_schema = 'public' and column_name in ('org_id', 'scope') order by table_name`
     // repos, rules and assignment_rules follow a moved installation (moveInstallation); the others
-    // belong to the org itself, and go with it when it is deleted. A new table with an org_id fails
-    // here until moveInstallation decides for it.
-    assert.deepEqual(rows.map((r) => r.table), [
-      'assignment_rules', 'installations', 'invitations', 'memberships', 'org_audit', 'providers', 'repos', 'rules', 'runner_registrations', 'runners',
+    // belong to the org itself, and go with it when it is deleted. github_asks holds the id of an org
+    // in its scope, with no foreign key: the move that deletes the org deletes its rows. A new table
+    // with an org_id or a scope fails here until moveInstallation decides for it. (accounts.scope is
+    // the scope of the GitHub sign-in, not an org.)
+    assert.deepEqual(rows.map((r) => `${r.table}.${r.column}`), [
+      'accounts.scope', 'assignment_rules.org_id', 'github_asks.scope', 'installations.org_id', 'invitations.org_id', 'memberships.org_id', 'org_audit.org_id',
+      'providers.org_id', 'repos.org_id', 'rules.org_id', 'runner_registrations.org_id', 'runners.org_id',
     ])
   })
 
@@ -515,7 +518,7 @@ describe('the name and the installations of an org', () => {
     assert.equal(await membership('guest', acme), null)
   })
 
-  it('asks GitHub for at most MOVES_PER_MINUTE moves a minute per person and org', async () => {
+  it('asks GitHub for at most MOVES_PER_MINUTE moves a minute per person, whatever the org', async () => {
     let owner = (await signIn('octocat')).cookie!
     let { installationId } = await secondInstallation()
     let path = `/settings/organization/installations/${installationId}/move`
@@ -906,6 +909,19 @@ describe('the name and the installations of an org', () => {
     assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, octocat), 'allowed')
     let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
     assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'acme' })).headers.get('Location'), '/settings/organization?notice=moved')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
+  })
+
+  it('a take-back counted while a move deletes its org leaves no row, and asks nothing', async () => {
+    let actor = await ownerOfBoth()
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    let { move, release } = await heldMove({ fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: true })
+    // The move holds the row of acme; the count of a take-back in acme waits for it.
+    let asked = createMembersStore(database.sql, testClock).askReclaim(acme, actor)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    release()
+    assert.deepEqual(await move, { ok: true, orgId: globex, deleted: true })
+    assert.equal(await asked, 'gone')
     assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
   })
 })
