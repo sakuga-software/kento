@@ -315,7 +315,8 @@ export function diagram(answer: Answer): string | null {
  * `line` stays a changed line, and only the lines before it can be context lines.
  */
 export function suggestionRange(finding: Finding, hunks: HunkLines): [number, number] | null {
-  if (!finding.suggestion.trim()) return null;
+  // KNT-159. A placeholder would replace the lines of the PR with the word: no suggestion.
+  if (!finding.suggestion.trim() || isPlaceholder(finding.suggestion)) return null;
   const shown = hunks.get(finding.path.replace(/^\/+/, '')) ?? new Set<number>();
   const start = Math.min(finding.start_line || finding.line, finding.line);
   if (finding.line - start > 30) return null;
@@ -327,14 +328,51 @@ export function suggestionRange(finding: Finding, hunks: HunkLines): [number, nu
 export const MAX_PATCH_LINES = 40;
 
 /**
- * KNT-159. True when `patch` reads as a unified diff: each line starts with `+`, `-`, a space, `@@`
- * or `\` ("No newline at end of file"), or is empty, and at least one line adds or removes code.
- * A word such as `follows` or `none`, or a sentence, is not a diff.
+ * KNT-159. The words that a model writes in a field when it has no value for it: `follows` (a field of
+ * the link call), `none`, `n/a`, or the reference of an earlier finding (`E1`). Case, quotes and a final
+ * dot do not count.
+ */
+const PLACEHOLDERS = new Set(['follows', 'none', 'null', 'n/a', 'nothing', 'no patch', 'no suggestion', 'no fix', 'not applicable', 'tbd', 'todo', '-', '...', '…']);
+
+/** KNT-159. Whether a text is only a placeholder word, or empty after trim. */
+export function isPlaceholder(text: string): boolean {
+  const word = text.trim().replace(/^["'`]+|["'`.]+$/g, '').trim().toLowerCase();
+  return word === '' || PLACEHOLDERS.has(word) || /^e\d+$/.test(word);
+}
+
+/** The lines of a git diff header, before the first hunk of a file. */
+const GIT_HEADER = /^(diff --git |index |(?:new|deleted) file mode |old mode |new mode |similarity index |dissimilarity index |rename (?:from|to) |copy (?:from|to) )/;
+
+/**
+ * KNT-159. True when `patch` reads as a unified diff, and adds or removes more than a placeholder.
+ *
+ * - The header of a file (`diff --git`, `index`, `new file mode`, `rename from`…, then the pair
+ *   `--- a/…` and `+++ b/…`) is read only before its first `@@`. Elsewhere, `--- note` is a removed
+ *   line (a SQL comment).
+ * - Each other line starts with `+`, `-`, a space, `@@` or `\` ("No newline at end of file"), or is empty.
+ * - At least one added or removed line holds more than a placeholder: `+follows` alone is not a fix.
  */
 function readsAsDiff(patch: string): boolean {
   const rows = patch.split('\n');
-  if (!rows.every((row) => row === '' || /^([+\- \\]|@@)/.test(row))) return false;
-  return rows.some((row) => /^[+-]/.test(row) && !/^(\+\+\+|---)( |$)/.test(row));
+  let header = true;
+  const changed: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (row.startsWith('diff --git ')) {
+      header = true;
+      continue;
+    }
+    if (header && GIT_HEADER.test(row)) continue;
+    if (header && row.startsWith('--- ') && rows[i + 1]?.startsWith('+++ ')) {
+      i++;
+      continue;
+    }
+    header = false;
+    if (row === '' || row.startsWith(' ') || row.startsWith('@@') || row.startsWith('\\')) continue;
+    if (!/^[+-]/.test(row)) return false;
+    changed.push(row.slice(1));
+  }
+  return changed.some((text) => !isPlaceholder(text));
 }
 
 /**
@@ -342,7 +380,7 @@ function readsAsDiff(patch: string): boolean {
  * or it is not a diff (KNT-159).
  */
 export function shownPatch(finding: Finding): string | null {
-  const patch = (finding.patch ?? '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
+  const patch = (finding.patch ?? '').replace(/\r/g, '').replace(/^\s*```(diff)?[^\n]*\n/i, '').replace(/\n?```\s*$/, '').replace(/\s+$/, '');
   // A fence in the patch would close the code block of the comment.
   if (!patch.trim() || patch.includes('```') || patch.split('\n').length > MAX_PATCH_LINES) return null;
   return readsAsDiff(patch) ? patch : null;

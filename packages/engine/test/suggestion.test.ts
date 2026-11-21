@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
-import { changedLines, hunkLines, MAX_PATCH_LINES, shownPatch, suggestionRange, type Finding } from '../src/findings.ts';
+import { changedLines, hunkLines, isPlaceholder, MAX_PATCH_LINES, shownPatch, suggestionRange, type Finding, type HunkLines } from '../src/findings.ts';
 import { reviewPullRequest, type Answer } from '../src/index.ts';
 
 let repo = '';
@@ -78,6 +78,30 @@ test('a patch shows only when it reads as a unified diff (KNT-159)', () => {
   assert.equal(shownPatch(finding({ patch: '-  return true;\n+  return exp > now;' })), '-  return true;\n+  return exp > now;');
   const blank = '@@ -3,3 +3,3 @@\n a();\n\n-b();\n+c();\n\\ No newline at end of file';
   assert.equal(shownPatch(finding({ patch: blank })), blank, 'an empty context line and the no-newline mark stay');
+  // A git header before the first hunk; `\r\n` line ends.
+  const git = 'diff --git a/a.ts b/a.ts\nindex 1111111..2222222 100644\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-x\n+y';
+  assert.equal(shownPatch(finding({ patch: git })), git);
+  const created = 'diff --git a/n.ts b/n.ts\nnew file mode 100644\n--- /dev/null\n+++ b/n.ts\n@@ -0,0 +1 @@\n+export const n = 1;';
+  assert.equal(shownPatch(finding({ patch: created })), created);
+  const renamed = 'diff --git a/o.ts b/p.ts\nsimilarity index 90%\nrename from o.ts\nrename to p.ts\n@@ -1 +1 @@\n-a\n+b';
+  assert.equal(shownPatch(finding({ patch: renamed })), renamed);
+  assert.equal(shownPatch(finding({ patch: '-x\r\n+y\r\n' })), '-x\n+y');
+  // After a hunk, `--- note` is a removed SQL comment, not a header.
+  assert.equal(shownPatch(finding({ patch: '@@ -4,2 +4,1 @@\n select 1;\n--- note' })), '@@ -4,2 +4,1 @@\n select 1;\n--- note');
+  assert.equal(shownPatch(finding({ patch: 'index 1111111..2222222 100644' })), null, 'a header alone');
+  assert.equal(shownPatch(finding({ patch: '@@ -1 +1 @@\nindex 1..2' })), null, 'a git header after a hunk is not a diff line');
+  // An added or removed placeholder is not a fix.
+  for (const text of ['+follows', '- none', '+E1', '@@ -1 +1 @@\n-follows\n+"none".']) assert.equal(shownPatch(finding({ patch: text })), null, text);
+});
+
+test('a placeholder in `suggestion` gives no applicable suggestion (KNT-159)', () => {
+  const hunks: HunkLines = new Map([['src/a.ts', new Set([8, 9, 10])]]);
+  const at = (suggestion: string) => suggestionRange(finding({ path: 'src/a.ts', start_line: 10, line: 10, suggestion }), hunks);
+  for (const text of ['follows', 'None', ' n/a ', '"follows"', 'E2', 'null.']) assert.equal(at(text), null, text);
+  assert.deepEqual(at('  return a + b;'), [10, 10]);
+  assert.deepEqual(at('  none: true,'), [10, 10], 'code that holds the word stays');
+  assert.equal(isPlaceholder('follows'), true);
+  assert.equal(isPlaceholder('return null;'), false);
 });
 
 test('the review keeps a patch only for a finding without an applicable suggestion (REV-104)', async () => {
