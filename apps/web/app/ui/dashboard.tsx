@@ -12,9 +12,10 @@ import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { jobReason, reasonSentence, TechDetails, type Reason } from './reasons.tsx'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
-import { PRECISION_DAYS, PRECISION_MIN, type PrecisionReport } from '../findings/precision.ts'
+import { PRECISION_DAYS, PRECISION_MIN, PRECISION_WINDOWS, type PrecisionReport, type PrecisionWindow } from '../findings/precision.ts'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
+import { TableChart } from './public/chart.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
@@ -84,8 +85,10 @@ export interface DashboardPageProps {
   serviceKey?: boolean
   /** The page of the installation of the App on GitHub, where an owner picks the repositories. */
   installationUrl?: string | null
-  /** REV-18. The precision of the org over 30 days; null without the Findings screen. */
+  /** REV-18. The precision of the org over 30 days (or `precisionDays`); null without the Findings screen. */
   precision?: PrecisionReport | null
+  /** KNT-191. The window of the precision, from `?precision=`. Default 30. */
+  precisionDays?: PrecisionWindow
 }
 
 /** One step of the list "Getting started" (REV-26). */
@@ -254,6 +257,7 @@ export function weekMeanDuration(week: DayStats[]): number | null {
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
     let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
+    let precisionDays = handle.props.precisionDays ?? PRECISION_DAYS
     let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let org = frame.viewer?.org.name ?? ''
@@ -283,7 +287,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <TodoSection screen={screen} admin={admin} csrf={csrf} githubUrl={githubUrl} />
 
-          <Kpis screen={screen} precision={precision ?? null} />
+          <Kpis screen={screen} precision={precision ?? null} precisionDays={precisionDays} />
 
           <WeekSection week={screen.week} />
 
@@ -297,7 +301,7 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <div class="dash-grid">
             <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} admin={admin} csrf={csrf} />
-            <DashPrecision precision={precision ?? null} org={org} />
+            <DashPrecision precision={precision ?? null} org={org} days={precisionDays} />
           </div>
         </div>
         <script src={`/assets/dashboard.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -626,9 +630,9 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
 }
 
 /** REV-91. Five numbers in one band: the reviews and failures of the week, the cost of the month, the precision, the queue. */
-function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null }>) {
+function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null; precisionDays: PrecisionWindow }>) {
   return () => {
-    let { screen, precision } = handle.props
+    let { screen, precision, precisionDays } = handle.props
     let today = screen.week.at(-1)
     let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
     let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
@@ -677,7 +681,7 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           </span>
         </div>
         <div class="kpi">
-          <span class="kpi-label">Precision · {PRECISION_DAYS} d</span>
+          <span class="kpi-label">Precision · {precisionDays} d</span>
           {/* The share needs closed findings: a rate with none would divide by 0. */}
           {org && org.rate !== null && org.closed > 0 ? (
             <>
@@ -1157,34 +1161,73 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
   }
 }
 
-/** REV-18. The precision of the org over 30 days and of its repositories with the most closed findings. */
-function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: string }>) {
+/** KNT-191, KNT-195. The window of the precision of a query: 7, or 30 (the default) for none or any other value. */
+export function readPrecisionWindow(value: string | null): PrecisionWindow {
+  return value === '7' ? 7 : PRECISION_DAYS
+}
+
+/** The dashboard at a window of the precision, back at its section: 30 days has no query. */
+export function precisionHref(days: PrecisionWindow): string {
+  return `${routes.home.href()}${days === PRECISION_DAYS ? '' : `?precision=${days}`}#precision-title`
+}
+
+/**
+ * KNT-191. A short key of the numbers of the precision: public/assets/dashboard.js keeps the block,
+ * and its chart, while the key of the page that it reads again is the same.
+ */
+export function precisionKey(precision: PrecisionReport, days: number): string {
+  let text = [days, precision.org.fixed, precision.org.dismissed, ...precision.repos.map((r) => `${r.id}:${r.fixed}:${r.dismissed}`)].join('|')
+  let hash = 5381
+  for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0
+  return hash.toString(36)
+}
+
+/**
+ * REV-18. The precision of the org over 30 days (or 7, KNT-191) and of its repositories with the most
+ * closed findings: a chart in the browser (KNT-191), above the list that stays without JavaScript.
+ */
+function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: string; days: PrecisionWindow }>) {
   return () => {
-    let { precision, org } = handle.props
+    let { precision, org, days } = handle.props
     return (
       <section class="dash-section" aria-labelledby="precision-title">
-        <h2 id="precision-title" class="section-title">
-          Precision by repo
-        </h2>
+        <div class="dash-section-head">
+          <h2 id="precision-title" class="section-title">
+            Precision by repo
+          </h2>
+          <nav class="period-links precision-windows" aria-label="Window of the precision">
+            {PRECISION_WINDOWS.map((window) => (
+              <a href={precisionHref(window)} aria-current={window === days ? 'page' : undefined}>
+                {window} days
+              </a>
+            ))}
+          </nav>
+        </div>
         {!precision || precision.org.closed === 0 ? (
           <div class="empty">
             <p>
-              No closed finding over {PRECISION_DAYS} days. The share of the findings that a push fixes shows here from {PRECISION_MIN}{' '}
-              closed findings.
+              No closed finding over {days} days. The share of the findings that a push fixes shows here from {PRECISION_MIN} closed
+              findings.
             </p>
           </div>
         ) : (
-          <div class="card precision-card">
+          <div class="card precision-card" id="precision-block" data-keep={precisionKey(precision, days)}>
             <p class="precision-headline">
               <PrecisionValue precision={precision.org} large />
               <span class="hint">
-                over {PRECISION_DAYS} days, whole org · {precisionCounts(precision.org)}
+                over {days} days, whole org · {precisionCounts(precision.org)}
               </span>
             </p>
-            <ul class="precision-list">
-              {precision.repos.slice(0, 5).map((repo) => {
+            <TableChart table="precision-list" kind="bars" unit="pct" tone="matsu" />
+            <ul class="precision-list" id="precision-list" data-series="Precision" aria-label={`Precision by repo, over ${days} days`}>
+              {precision.repos.map((repo) => {
                 return (
-                  <li class="precision-row">
+                  // data-label and data-value: what the chart reads (app/ui/public/chart-draw.ts).
+                  <li
+                    class="precision-row"
+                    data-label={shortName(repo.fullName, org)}
+                    data-value={repo.rate === null ? '' : String(Math.round(repo.rate * 1000) / 10)}
+                  >
                     <a class="precision-name" href={findingsHref({ view: 'closed', repoId: repo.id })} title={repo.fullName}>
                       {shortName(repo.fullName, org)}
                     </a>
@@ -1198,6 +1241,12 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
                 )
               })}
             </ul>
+            {precision.repoCount > precision.repos.length ? (
+              <p class="hint">
+                and {precision.repoCount - precision.repos.length} more {plural(precision.repoCount - precision.repos.length, 'repo')} with fewer
+                closed findings.
+              </p>
+            ) : null}
             <p class="hint">
               <a href={routes.findings.href()}>See the findings and the precision by rule</a>
             </p>

@@ -10,7 +10,7 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { EMPTY_REPORT, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { capState, failureText, setupSteps, stallText, weekMeanDuration } from './dashboard.tsx'
+import { capState, failureText, precisionHref, precisionKey, readPrecisionWindow, setupSteps, stallText, weekMeanDuration } from './dashboard.tsx'
 import { runnerState } from './runners.tsx'
 
 const COOKIE = SESSION_COOKIE
@@ -701,5 +701,81 @@ describe('the dashboard', () => {
       let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'lite' } })
       assert.equal(response.headers.get('Location'), `/?notice=${notice}`)
     }
+  })
+})
+
+describe('the precision of the dashboard by window (KNT-191)', () => {
+  /** A Findings store that records the window of each read. */
+  function windowed() {
+    let windows: (number | undefined)[] = []
+    let report = {
+      ...EMPTY_REPORT,
+      org: precisionOf(41, 9),
+      repos: [
+        { ...precisionOf(30, 5), id: 'r1', fullName: 'sakuga-software/orchard' },
+        { ...precisionOf(3, 2), id: 'r2', fullName: 'sakuga-software/dojo' },
+      ],
+      repoCount: 3,
+    }
+    let store: FindingsScreenStore = {
+      ...fakeFindingsScreenStore().store,
+      async precision(_orgId, days) {
+        windows.push(days)
+        return report
+      },
+    }
+    return { store, windows, report }
+  }
+
+  it('reads 30 days by default and 7 days from ?precision=7, and sends any other value back to the URL without it', async () => {
+    let findings = windowed()
+    let { signIn, request } = setup(screen(), undefined, undefined, false, findings.store)
+    let { cookie, html } = await signIn(OCTOCAT)
+    assert.deepEqual(findings.windows, [30])
+    assert.match(html, /Precision · 30 d/)
+
+    let seven = await (await request('/?precision=7', { cookie })).text()
+    assert.deepEqual(findings.windows, [30, 7])
+    assert.match(seven, /Precision · 7 d/)
+    assert.match(seven, /over 7 days, whole org/)
+    assert.match(seven, /<a href="\/\?precision=7#precision-title" aria-current="page">7 days<\/a>/)
+    assert.match(seven, /<a href="\/#precision-title">30 days<\/a>/)
+
+    for (let [asked, location] of [
+      ['30', '/'],
+      ['14', '/'],
+      ['14&notice=retried', '/?notice=retried'],
+    ] as const) {
+      let response = await request(`/?precision=${asked}`, { cookie })
+      assert.equal(response.status, 303, asked)
+      assert.equal(response.headers.get('Location'), location)
+    }
+    assert.deepEqual(findings.windows, [30, 7])
+  })
+
+  it('renders the list that the chart reads, with a hidden chart box and the key of its numbers', async () => {
+    let findings = windowed()
+    let { html } = await setup(screen(), undefined, undefined, false, findings.store).signIn(OCTOCAT)
+    let block = html.slice(html.indexOf('id="precision-block"') - 80)
+    assert.match(block, new RegExp(`data-keep="${precisionKey(findings.report, 30)}"`))
+    assert.match(block, /<div data-kind="bars" hidden class="chart-box">/)
+    assert.match(block, /<ul[^>]*id="precision-list"[^>]*>/)
+    // A share with enough closed findings has its value; one under the minimum has none (no bar).
+    assert.match(block, /<li[^>]*data-label="orchard"[^>]*data-value="85.7"|<li[^>]*data-value="85.7"[^>]*data-label="orchard"/)
+    assert.match(block, /<li[^>]*data-label="dojo"[^>]*data-value=""|<li[^>]*data-value=""[^>]*data-label="dojo"/)
+    assert.match(block, /and 1 more repo with fewer closed findings/)
+  })
+
+  it('reads a window, makes its link, and changes its key when a number changes', () => {
+    assert.equal(readPrecisionWindow(null), 30)
+    assert.equal(readPrecisionWindow('7'), 7)
+    assert.equal(readPrecisionWindow('07'), 30)
+    assert.equal(precisionHref(30), '/#precision-title')
+    assert.equal(precisionHref(7), '/?precision=7#precision-title')
+    let report = { ...EMPTY_REPORT, org: precisionOf(41, 9), repos: [{ ...precisionOf(30, 5), id: 'r1', fullName: 'a/b' }] }
+    let key = precisionKey(report, 30)
+    assert.equal(precisionKey(report, 30), key)
+    assert.notEqual(precisionKey(report, 7), key)
+    assert.notEqual(precisionKey({ ...report, repos: [{ ...precisionOf(31, 5), id: 'r1', fullName: 'a/b' }] }, 30), key)
   })
 })

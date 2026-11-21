@@ -118,6 +118,22 @@ describe('the precision of the reviews', () => {
     assert.deepEqual([Number(byHand!.fixed), Number(byHand!.dismissed)], [report.org.fixed, report.org.dismissed])
   })
 
+  it('counts the findings closed in 7 days when the dashboard asks for that window (KNT-191)', async () => {
+    let report = await precisionReport(database.sql, orgId, 8, 7)
+    // orchard: fixed 1 to 6 days ago, dismissed 2, 3 and 4 days ago, and the one fixed again 3 days ago.
+    assert.deepEqual(report.org, { fixed: 12, dismissed: 9, closed: 21, rate: 12 / 21 })
+    assert.deepEqual(
+      report.repos.map((r) => [r.fullName, r.fixed, r.dismissed, r.rate === null ? null : precisionLabel(r)]),
+      [
+        ['sakuga-software/orchard', 7, 3, '70%'],
+        ['sakuga-software/fruitback', 5, 4, null],
+        ['sakuga-software/quiet', 0, 2, null],
+      ],
+    )
+    // The default window stays 30 days.
+    assert.equal((await precisionReport(database.sql, orgId)).org.closed, 27)
+  })
+
   it('gives the precision by rule, and the reasons of the dismissed findings, the most frequent first', async () => {
     let report = await precisionReport(database.sql, orgId)
     assert.deepEqual(

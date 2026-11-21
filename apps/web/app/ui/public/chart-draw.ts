@@ -1,8 +1,10 @@
-// KNT-188. Draws a chart of the Costs screen with Chart.js, from the table that the server rendered:
-// the row labels (`data-label`), the series (`th[data-series]` of the head) and the numbers
-// (`td[data-value]`). Only the parts of Chart.js that these charts use are registered. The colors
-// are the tokens of kento.css, read again when the theme changes; no motion for
-// prefers-reduced-motion.
+// KNT-188, KNT-191. Draws a chart with Chart.js from numbers that the server rendered:
+// - a table: the row labels (`tr[data-label]`), the series (`th[data-series]` of the head) and the
+//   numbers (`td[data-value]`);
+// - a list: one series named by `data-series` on the list, one row per child with `data-label`, its
+//   number in its `data-value`.
+// Only the parts of Chart.js that these charts use are registered. The colors are the tokens of
+// kento.css, read again when the theme changes; no motion for prefers-reduced-motion.
 import {
   BarController,
   BarElement,
@@ -17,29 +19,61 @@ import {
   type ChartConfiguration,
 } from 'chart.js'
 
-import type { CostChartKind } from './cost-chart.tsx'
-
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement, Tooltip, Legend)
 
-export interface TableData {
+/** `days`: bars per day and a line for the period before. `bars`: one horizontal bar per row. */
+export type ChartKind = 'days' | 'bars'
+/** `usd`: dollars. `pct`: a share from 0 to 100. */
+export type ChartUnit = 'usd' | 'pct'
+/** The color token of the bars. */
+export type ChartTone = 'ai' | 'matsu'
+
+export interface ChartOptions {
+  kind: ChartKind
+  unit: ChartUnit
+  tone: ChartTone
+}
+
+export interface SourceData {
   labels: string[]
   series: { name: string; values: (number | null)[] }[]
 }
 
-/** The numbers of a table of the Costs screen. An empty `data-value` is no value (a day that the period before does not have). */
-export function readTable(table: HTMLTableElement): TableData {
-  let head = table.tHead?.rows[0]
-  let columns = head ? [...head.cells].filter((cell) => cell.dataset.series !== undefined) : []
-  let rows = [...(table.tBodies[0]?.rows ?? [])]
+/** An empty `data-value` is no value (a day that the period before does not have, a share under its minimum). */
+function valueOf(text: string | undefined): number | null {
+  return text === undefined || text === '' ? null : Number(text)
+}
+
+/** The numbers of a table or of a list that the server rendered. */
+export function readSource(source: HTMLElement): SourceData {
+  if (source instanceof HTMLTableElement) {
+    let head = source.tHead?.rows[0]
+    let columns = head ? [...head.cells].filter((cell) => cell.dataset.series !== undefined) : []
+    let rows = [...(source.tBodies[0]?.rows ?? [])]
+    return {
+      labels: rows.map((row) => row.dataset.label ?? row.cells[0]?.textContent?.trim() ?? ''),
+      series: columns.map((column) => ({
+        name: column.dataset.series ?? '',
+        values: rows.map((row) => valueOf(row.cells[column.cellIndex]?.dataset.value)),
+      })),
+    }
+  }
+  let rows = [...source.children].filter((row): row is HTMLElement => row instanceof HTMLElement && row.dataset.label !== undefined)
   return {
-    labels: rows.map((row) => row.dataset.label ?? row.cells[0]?.textContent?.trim() ?? ''),
-    series: columns.map((column) => ({
-      name: column.dataset.series ?? '',
-      values: rows.map((row) => {
-        let value = row.cells[column.cellIndex]?.dataset.value
-        return value === undefined || value === '' ? null : Number(value)
-      }),
-    })),
+    labels: rows.map((row) => row.dataset.label ?? ''),
+    series: [{ name: source.dataset.series ?? '', values: rows.map((row) => valueOf(row.dataset.value)) }],
+  }
+}
+
+/**
+ * The rows of a bar chart that have a value: a share under its minimum of closed findings has none,
+ * and its row stays in the list under the chart, not as an empty bar.
+ */
+export function withValues(data: SourceData): SourceData {
+  let keep = data.labels.map((_, i) => data.series.some((series) => series.values[i] !== null))
+  return {
+    labels: data.labels.filter((_, i) => keep[i]),
+    series: data.series.map((series) => ({ ...series, values: series.values.filter((_, i) => keep[i]) })),
   }
 }
 
@@ -48,14 +82,19 @@ export function money(value: number): string {
   return value > 0 && value < 0.1 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`
 }
 
+/** A number of the unit of a chart. */
+export function formatValue(value: number, unit: ChartUnit): string {
+  return unit === 'pct' ? `${Math.round(value)}%` : money(value)
+}
+
 function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
 /** The colors of the theme on screen. */
-function palette() {
+function palette(tone: ChartTone) {
   return {
-    bar: token('--ai'),
+    bar: token(tone === 'matsu' ? '--matsu' : '--ai'),
     previous: token('--nezumi'),
     ink: token('--ink'),
     muted: token('--ink-muted'),
@@ -66,8 +105,8 @@ function palette() {
   }
 }
 
-function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartConfiguration {
-  let colors = palette()
+function config({ kind, unit, tone }: ChartOptions, data: SourceData, reduce: boolean): ChartConfiguration {
+  let colors = palette(tone)
   let font = { family: colors.font, size: 12 }
   let tooltip = {
     backgroundColor: colors.ink,
@@ -79,11 +118,11 @@ function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartCon
     callbacks: {
       label: (item: { dataset: { label?: string }; parsed: { x: number | null; y: number | null } }) => {
         let value = kind === 'bars' ? item.parsed.x : item.parsed.y
-        return `${item.dataset.label ?? ''}: ${value === null ? '–' : money(value)}`
+        return `${item.dataset.label ?? ''}: ${value === null ? '–' : formatValue(value, unit)}`
       },
     },
   }
-  let moneyTicks = { color: colors.muted, font: { family: colors.mono, size: 11 }, callback: (value: number | string) => money(Number(value)) }
+  let valueTicks = { color: colors.muted, font: { family: colors.mono, size: 11 }, callback: (value: number | string) => formatValue(Number(value), unit) }
   if (kind === 'days') {
     let [current, previous] = data.series
     return {
@@ -127,7 +166,7 @@ function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartCon
         interaction: { mode: 'index', intersect: false },
         scales: {
           x: { grid: { display: false }, border: { color: colors.grid }, ticks: { color: colors.muted, font, maxRotation: 0, autoSkipPadding: 12 } },
-          y: { beginAtZero: true, grid: { color: colors.grid }, border: { display: false }, ticks: { ...moneyTicks, maxTicksLimit: 5 } },
+          y: { beginAtZero: true, grid: { color: colors.grid }, border: { display: false }, ticks: { ...valueTicks, maxTicksLimit: 5 } },
         },
         plugins: {
           // The legend draws each series as its mark: a square for the bars, a line for the period before.
@@ -137,15 +176,15 @@ function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartCon
       },
     } as ChartConfiguration
   }
-  let [cost] = data.series
+  let [series] = data.series
   return {
     type: 'bar',
     data: {
       labels: data.labels,
       datasets: [
         {
-          label: cost?.name ?? 'Cost',
-          data: cost?.values ?? [],
+          label: series?.name ?? '',
+          data: series?.values ?? [],
           backgroundColor: colors.bar,
           borderRadius: { topRight: 4, bottomRight: 4 },
           borderSkipped: 'start',
@@ -159,7 +198,14 @@ function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartCon
       maintainAspectRatio: false,
       animation: reduce ? false : { duration: 300 },
       scales: {
-        x: { beginAtZero: true, grid: { color: colors.grid }, border: { display: false }, ticks: { ...moneyTicks, maxTicksLimit: 4 } },
+        // A share runs from 0 to 100 %, whatever the largest one.
+        x: {
+          beginAtZero: true,
+          ...(unit === 'pct' ? { max: 100 } : {}),
+          grid: { color: colors.grid },
+          border: { display: false },
+          ticks: { ...valueTicks, maxTicksLimit: unit === 'pct' ? 6 : 4 },
+        },
         y: { grid: { display: false }, border: { color: colors.grid }, ticks: { color: colors.ink, font } },
       },
       // One series: its title names it, no legend.
@@ -168,24 +214,29 @@ function config(kind: CostChartKind, data: TableData, reduce: boolean): ChartCon
   } as ChartConfiguration
 }
 
-/** Draws the chart of `table` in `box`, shows the box and folds the table. `destroy()` undoes it. */
-export function drawCostChart(box: HTMLElement, table: HTMLTableElement, kind: CostChartKind): { destroy(): void } {
-  let data = readTable(table)
-  let caption = table.caption?.textContent?.trim() ?? 'Costs'
+/** Draws the chart of `source` in `box`, shows the box and folds a table. `destroy()` undoes it. */
+export function drawChart(box: HTMLElement, source: HTMLElement, options: ChartOptions): { destroy(): void } {
+  let data = options.kind === 'bars' ? withValues(readSource(source)) : readSource(source)
+  let caption = (source instanceof HTMLTableElement ? source.caption?.textContent : source.getAttribute('aria-label'))?.trim() || 'Chart'
   let canvas = document.createElement('canvas')
   canvas.setAttribute('role', 'img')
-  canvas.setAttribute('aria-label', `${caption}: chart. The numbers are in the table "Show the data" below.`)
+  canvas.setAttribute(
+    'aria-label',
+    source instanceof HTMLTableElement
+      ? `${caption}: chart. The numbers are in the table "Show the data" below.`
+      : `${caption}: chart. The numbers are in the list below.`,
+  )
   // CSSOM, not a style attribute: the content security policy allows it.
-  if (kind === 'bars') box.style.setProperty('--rows', String(Math.max(1, data.labels.length)))
+  if (options.kind === 'bars') box.style.setProperty('--rows', String(Math.max(1, data.labels.length)))
   box.append(canvas)
   box.hidden = false
-  let details = table.closest('details')
+  let details = source.closest('details')
   if (details) details.open = false
 
   let motion = matchMedia('(prefers-reduced-motion: reduce)')
-  let chart = new Chart(canvas, config(kind, data, motion.matches))
+  let chart = new Chart(canvas, config(options, data, motion.matches))
   let restyle = () => {
-    let next = config(kind, data, motion.matches)
+    let next = config(options, data, motion.matches)
     chart.data = next.data
     chart.options = next.options ?? {}
     chart.update('none')

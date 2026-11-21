@@ -128,7 +128,7 @@ describe('the Costs screen (KNT-188)', () => {
     assert.match(html, /<td data-value="" class="num">–<\/td>/)
     // Open details: without JavaScript the tables show. The chart boxes are hidden.
     assert.equal(html.match(/<details open class="chart-data">/g)?.length, 4)
-    assert.equal(html.match(/<div data-kind="(days|bars)" hidden class="cost-chart">/g)?.length, 4)
+    assert.equal(html.match(/<div data-kind="(days|bars)" hidden class="chart-box">/g)?.length, 4)
     // The repo links to its config; the chart names it after the org.
     assert.match(html, /<tr data-label="app"><th scope="row"><a href="\/repos\/repo-1\/config">org-1\/app<\/a><\/th>/)
     // The most expensive run links to the screen of its pull request.
@@ -142,7 +142,7 @@ describe('the Costs screen (KNT-188)', () => {
     let cookie = await signIn(OCTOCAT)
     let html = await (await request('/costs?period=90d', cookie)).text()
     assert.match(html, /No cost over 90 days/)
-    assert.doesNotMatch(html, /cost-chart/)
+    assert.doesNotMatch(html, /chart-box/)
   })
 
   it('formats a day of the costs, and the change from the period before', () => {

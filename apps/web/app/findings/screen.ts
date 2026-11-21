@@ -250,8 +250,11 @@ export async function findingFacets(sql: postgres.Sql, orgId: string): Promise<F
 export interface FindingsScreenStore {
   list(orgId: string, query?: FindingQuery): Promise<FindingScreenPage>
   facets(orgId: string): Promise<FindingFacets>
-  /** REV-18. The precision of the org over 30 days, by repository and by rule, and the reasons of the dismissed findings. */
-  precision(orgId: string): Promise<PrecisionReport>
+  /**
+   * REV-18. The precision of the org over 30 days (or `days`, KNT-191), by repository and by rule,
+   * and the reasons of the dismissed findings.
+   */
+  precision(orgId: string, days?: number): Promise<PrecisionReport>
   /** The precision of some repositories of the org, by id. */
   repoPrecisions(orgId: string, repoIds: string[]): Promise<Map<string, Precision>>
 }
@@ -260,7 +263,7 @@ export function createFindingsScreenStore(sql: postgres.Sql): FindingsScreenStor
   return {
     list: (orgId, query) => listFindingScreen(sql, orgId, query),
     facets: (orgId) => findingFacets(sql, orgId),
-    precision: (orgId) => precisionReport(sql, orgId),
+    precision: (orgId, days) => precisionReport(sql, orgId, undefined, days),
     repoPrecisions: (orgId, repoIds) => repoPrecisions(sql, orgId, repoIds),
   }
 }
