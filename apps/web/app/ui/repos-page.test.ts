@@ -148,10 +148,9 @@ describe('the Repos screen', () => {
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     // KNT-179, KNT-181: no column "Reviews by" nor "Switch"; the last one has no visible name.
-    let head = /<thead>(.*?)<\/thead>/s.exec(html)![1]!
-    assert.deepEqual(
-      [...head.matchAll(/<th scope="col">(.*?)<\/th>/gs)].map((match) => match[1]!.replace(/<[^>]+>/g, '').trim()),
-      ['Repo', 'Level', 'Model', 'Last review', 'Precision 30 d', 'Actions'],
+    assert.match(
+      html,
+      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
     )
     assert.doesNotMatch(html, /Reviews by|review\.yml@stable|copy of review\.yml|3\/20|set back to zero|class="switch/)
     assert.match(html, /claude-haiku-5\.5/)
