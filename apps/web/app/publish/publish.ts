@@ -862,7 +862,9 @@ export interface FellBack {
 export function fellBackNote(fellBack: FellBack | null): string {
   if (!fellBack) return ''
   let label = (text: string) => `"${text.replace(/[`"\r\n]/g, ' ').trim().slice(0, 80)}"`
-  let until = fellBack.resetAt ? ` until ${fellBack.resetAt.slice(0, 10)} ${fellBack.resetAt.slice(11, 16)} UTC` : ''
+  // The protocol gives an ISO date-time; it is written again at UTC, whatever its form.
+  let reset = fellBack.resetAt ? new Date(fellBack.resetAt) : null
+  let until = reset && !Number.isNaN(reset.getTime()) ? ` until ${reset.toISOString().slice(0, 10)} ${reset.toISOString().slice(11, 16)} UTC` : ''
   return `\n\n<sub>The provider ${label(fellBack.from)} refused the call on its usage limit${until}: the fallback provider ${label(fellBack.to)} of this level answered.</sub>`
 }
 

@@ -710,6 +710,8 @@ describe('a review that the fallback provider answered (KNT-161)', () => {
 
   it('says nothing without a fallback, and keeps a label from breaking the line', () => {
     assert.equal(fellBackNote(null), '')
+    assert.match(fellBackNote({ from: 'A', to: 'B', resetAt: '2026-12-24T08:30:00+01:00' }), /until 2026-12-24 07:30 UTC:/)
+    assert.match(fellBackNote({ from: 'A', to: 'B', resetAt: 'not a date' }), /refused the call on its usage limit: the fallback/)
     assert.match(fellBackNote({ from: 'A `b`\n"c"', to: 'D', resetAt: null }), /The provider "A  b   c" refused the call on its usage limit: the fallback/)
   })
 })
