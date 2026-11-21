@@ -19,6 +19,13 @@ Each entry says, when it applies:
 
 ## Unreleased
 
+- **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
+  row per change of the members). It only adds: the release before runs on it.
+- **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu
+  of the org and the settings) and `/invitations` (the invitations of the person). An owner or an
+  admin invites a GitHub login; a person whom GitHub counts in no org of the App signs in with a
+  pending invitation, and sees only it until they accept. No change leaves an org without an
+  active owner.
 - **Migrations**: 32. `0031_organization_roles` (KNT-150): the roles of an org are `owner`, `admin`
   and `member`. Every admin of today becomes an owner (nobody loses a right), and every membership
   of today is marked as coming from GitHub. GitHub keeps deciding between admin and member for those:
