@@ -2,9 +2,12 @@
 
 What each release of Kentō changes for the person who runs it: the migrations, the variables, the
 permissions of the GitHub App, the protocol between the service and the runners, and the order of
-the deployment. The newest release first. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the versions follow
+the deployment. The newest release first. The versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Do not edit the sections by hand: Changesets writes each one from the changesets of the merged pull
+requests, in the pull request "chore: version packages". Each entry links its pull request. To add
+an entry, see [CONTRIBUTING.md, "Changesets"](../../CONTRIBUTING.md#changesets).
 
 The service (`apps/web`) and the runner (`apps/runner`) share one version. Read the entries since
 your release before an upgrade or a rollback. [DEPLOY.md](DEPLOY.md) describes the installation as
@@ -16,24 +19,6 @@ Each entry says, when it applies:
 - **Variables**: the new, changed or removed variables of the service and of the runner.
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
-
-## Unreleased
-
-- **Migrations**: 34. `0033_github_asks` (KNT-173) adds the table `github_asks`: the counts of the
-  questions to GitHub that the forms of an org ask. It only adds: the release before runs on it.
-- **Limits** (KNT-173): the take-back of the owner role asks GitHub once a minute per person and
-  org for every process of the service (it was per process), and 10 s after a failure of GitHub. A
-  person moves or detaches at most 10 installations of an org a minute.
-- **Fixes** (KNT-173): a check of the repositories, and a new installation of an account, during a
-  move of its installation no longer answer 500: they wait for the move, and follow the
-  installation to its new org.
-- **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
-  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
-  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
-  the move joins; an installation on a personal account stays in an org of its own. Moving the last
-  installation deletes the empty org, after a confirmation by its name that lists its members and
-  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
-  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
 
 ## 0.2.0 (2026-11-21)
 
