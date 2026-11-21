@@ -23,6 +23,14 @@ for example to keep, drop or approve a finding.
 For each finding, read the lines that it names in the diff, and the code of
 the `Context` section that it depends on. Then decide:
 
+- First, for a finding about a race, an order of events or a timeout: drop it
+  when its `interleaving` does not give two or more steps, each at a line of
+  the pack, that the runtime allows. JavaScript runs one thread and one event
+  loop: lines with no `await` between them run in one turn, and no timer or
+  callback runs in the middle. A lock or a transaction that the caller holds
+  orders the steps too. Drop a claim that some work is too slow when it gives
+  no number and no input that makes it slow.
+
 - Keep it when the code shows the defect: the scenario can happen with the code
   of the pull request, and the fix would remove it.
 - Drop it when the code contradicts it: the scenario cannot happen, a guard
