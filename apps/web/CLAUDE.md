@@ -16,12 +16,46 @@ screen must follow, and the one of every pull request.
   a button, `Input`, `Textarea`, `Select`, `Choice`, `Check` for a checkbox repeated on every row,
   `Field`). `public/assets/kento.css` draws them with the tokens of Paper and Sumi; a screen adds only
   its layout.
+- **A select is `Select`, with an `id`** (KNT-165). The server renders the native `<select>`; in the
+  browser `CustomSelect` (`app/ui/public/select.tsx`, the select of `@remix-run/ui`) takes its place:
+  it reads the options and the value from the native one, moves its `id` to its button (the
+  `<label for>` names it), hides and disables the native one, and posts the same `name` from a hidden
+  input (`input[data-select]`), which sends `change`. A script that reacts to a select listens to
+  `change` on `select, input[data-select]`. In e2e, `chooseOption()` and `selectValue()` of
+  `e2e/helpers.ts` replace `selectOption()`, which stays for a test without JavaScript.
+  Where it differs from the native one: a click on the `<label>` opens the list; an open list locks
+  the scroll of the page; a click outside only closes the list (the link or button under it does not
+  act); Tab and Shift+Tab close the list without a choice and go on to the next or previous field
+  (`select.tsx` does it: `@remix-run/ui` 0.13.1 keeps the focus in the list). A script that handles
+  Escape on the page returns when `event.defaultPrevented`: the list handles its own Escape first.
 - **No React, and no third-party component or CSS framework.** The screens are `remix/component`
   JSX rendered on the server, and the styles are plain CSS in `kento.css`.
-- **Interactive widgets** (menu, popover, tabs, toast) use the headless primitives of
-  `@remix-run/ui` once the app has client hydration (KNT-163), and always keep a fallback without
-  JavaScript. Until then, a widget is a native element (`<details>`, a link, a form) with a small
-  script in `public/assets/`.
+- **Interactive widgets** (menu, popover, select, tabs; a toast from 0.14 on) use the headless primitives of
+  `@remix-run/ui` (pinned to the version that matches the `remix` of the repo), styled by `kento.css`.
+  Each one is a component that hydrates (KNT-163):
+  - It lives in an `app/**/public/` folder (`app/ui/public/row-menu.tsx`, `confirm.tsx`) and is
+    wrapped in `clientEntry(import.meta.url, function Name(…))`. The asset server of Remix
+    (`app/assets.ts`) compiles it when the browser asks: there is still no build step. A browser
+    module imports only `remix/component`, `@remix-run/ui/*`, another `public/` module, or a file
+    that `ALLOWED_FILES` of `app/assets.ts` lists (the routes, the controls, the icons). The asset
+    server refuses any other file of the server.
+  - The server renders the fallback without JavaScript (`<details>`, a link, a form, a native
+    `<select>`), and the first render in the browser is the same markup, to hydrate it. The widget
+    switches to the primitive in a `handle.queueTask()` of its setup, which runs only in the browser.
+  - Its props cross to the browser in the page (`<script id="rmx-data">`): keep them few and small
+    (ids, not URLs; no icon), above all in a row of a list. A page without such a component loads no
+    runtime: `public/boot.ts` loads `public/runtime.ts` only when there is one to hydrate.
+  - The runtime does not take over the links and the forms (no client navigation): a navigation is
+    a document load, so that the scripts of `public/assets/` keep working.
+  - A closed popover is hidden by the browser, unless a class of `kento.css` sets `display`: give it
+    a `:not(:popover-open) { display: none }` rule then. Give the hydrated markup its own classes: the
+    structural rules of the fallback (`.row-menu > div`) would apply to it too.
+  - e2e: `hydrated(page)` (`e2e/helpers.ts`) waits for the runtime; test the widget with JavaScript
+    and its fallback in a `test.use({ javaScriptEnabled: false })` block.
+- **Scripts.** The content security policy allows the scripts of the app (`'self'`) and one inline
+  script, the import map, with the nonce of the response (`app/ui/security-headers.ts`, the `csp()`
+  middleware of Remix). Never an inline script or style of your own. A small script in
+  `public/assets/` still fits a behaviour of a whole page (`progress.js`, `findings.js`).
 - **Forms keep working without JavaScript.** A script may apply a choice at once or reveal a
   control, never be the only way to submit.
 - **Every control passes the accessibility checks**:

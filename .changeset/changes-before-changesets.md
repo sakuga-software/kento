@@ -4,6 +4,12 @@
 
 The changes since 0.1.0, written in the section `Unreleased` of the changelog before Kentō used changesets (KNT-174):
 
+- **Content security policy** (KNT-163): `script-src 'self' 'nonce-…'`, a new nonce for each page.
+  The one inline script is the import map of the components that hydrate. A proxy in front of the
+  service must not cache the pages (they keep `Cache-Control: private, no-store`) nor rewrite this
+  header. The service serves the browser modules itself, under `/assets/app/`, `/assets/c/`,
+  `/assets/ui/`, `/assets/rp/` and `/assets/fr/`: the proxy routes all of `/assets/`
+  to it, as before.
 - **Migrations**: 33. `0032_invitations` (KNT-150) adds the tables `invitations` and `org_audit` (one
   row per change of the members). It only adds: the release before runs on it.
 - **Screens**: `/settings/members` (the members and the invitations of the org, linked from the menu

@@ -91,14 +91,14 @@
     const fresh = document.importNode(nextRow, true)
     for (const marked of content.querySelectorAll('tr.row-changed')) marked.classList.remove('row-changed')
     fresh.classList.add('row-changed')
-    // confirm.js shows "Cancel" once, at load: the new confirmation needs it too.
-    for (const button of fresh.querySelectorAll('[data-confirm-cancel]')) button.hidden = false
+    // KNT-163: the components of the old row go first, with their listeners (app/ui/public/runtime.ts).
+    document.dispatchEvent(new CustomEvent('kento:dispose', { detail: { root: row } }))
     row.replaceWith(fresh)
-    // row-menu.js gave the table the room of the open menu of the old row: it is gone now.
-    const wrap = fresh.closest('.table-wrap')
-    if (wrap) wrap.style.paddingBottom = ''
     const target = fresh.querySelector('.row-action > button') ?? fresh.querySelector('.row-menu > summary')
     target?.focus({ preventScroll: true })
+    // KNT-163: the menu "…" of the new row hydrates too (app/ui/public/runtime.ts), with its props from
+    // the page that the server sent.
+    document.dispatchEvent(new CustomEvent('kento:hydrate', { detail: { root: fresh, source: nextRow.ownerDocument } }))
   }
 
   // Two rows changed at the same time: their answers can come back in any order, and the counts of
