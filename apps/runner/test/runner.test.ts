@@ -1153,3 +1153,20 @@ test('KNT-161. without a fallback provider the runner can call, a usage limit fa
   assert.equal(result.providerStatus, 400);
   assert.ok(logs.some((l) => l.includes('job.fallback_provider_unusable')));
 });
+
+test('KNT-161. a failure of the fallback provider is not given as a status of the provider of the job', async () => {
+  const { api, results } = fakeApi();
+  const stub = (async (url: string, init: RequestInit): Promise<Response> => {
+    JSON.parse(String(init.body));
+    if (String(url).includes('anthropic')) return new Response('{"type":"error","error":{"type":"rate_limit_error","message":"Number of requests has exceeded your rate limit"}}', { status: 429 });
+    return new Response('{"error":{"message":"No auth credentials found"}}', { status: 401 });
+  }) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
+  assert.equal(outcome, 'failed');
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.equal(result.providerStatus, null, 'the key of the provider of the job is not the one that failed');
+  assert.match(result.reason, new RegExp(`the fallback provider ${FALLBACK_ID} failed after a usage limit of the provider ${PROVIDER_ID}: .*OpenRouter answered 401`));
+  assertNoSecretInLogs();
+});

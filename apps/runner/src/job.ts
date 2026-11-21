@@ -287,8 +287,17 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
       // be refused too. The fallback provider of the level takes over, once.
       if (!usageLimited(error) || !fallback || signal.aborted) throw error;
       const from = job.models!.provider;
-      log('warn', 'job.provider_usage_limit', { jobId: job.id, from, to: job.models!.fallbackProvider!.provider, resetAt: error.resetAt });
-      return await run({ ...fallback, fellBack: { from, resetAt: error.resetAt } });
+      const to = job.models!.fallbackProvider!.provider;
+      log('warn', 'job.provider_usage_limit', { jobId: job.id, from, to, resetAt: error.resetAt });
+      try {
+        return await run({ ...fallback, fellBack: { from, resetAt: error.resetAt } });
+      } catch (second) {
+        // The service reads `providerStatus` as a state of the provider of the job: a failure of the
+        // fallback provider must not mark it. A plain error carries no status; its text keeps the
+        // text of a usage limit, when the fallback refused on its own.
+        if (!(second instanceof ProviderError)) throw second;
+        throw new Error(`the fallback provider ${to} failed after a usage limit of the provider ${from}: ${second.message}`);
+      }
     }
   } finally {
     await checkout.remove();
