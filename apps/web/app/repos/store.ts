@@ -28,10 +28,6 @@ export interface RepoView {
    * the repository (all of them when there was none), counted up to `SWITCH_TARGET` (REV-36).
    */
   streak: number
-  /** What set the streak back to zero last; null when nothing did, or at `SWITCH_TARGET`. */
-  resetBy: 'failure' | 'double' | null
-  /** The pull request of the failed job or of the double publication that did it. */
-  resetPr: number | null
   /** The last review that Kentō published on GitHub. */
   lastReview: { prNumber: number; score: number; model: string; publishedAt: Date } | null
 }
@@ -151,7 +147,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
         ${filter === 'switching' ? sql`and repos.workflow in ('reusable', 'copy')` : sql``}
         ${search ? sql`and lower(repos.full_name) like ${likePattern(search)}` : sql``}`
 
-      // The page is cut first: the streak, the reset and the last review are read for its rows only.
+      // The page is cut first: the streak and the last review are read for its rows only.
       // Each lateral reads the reviews and jobs of one repository, by its indexes: the time of the
       // screen does not grow with the history of the other repositories, nor of the other orgs.
       //
@@ -192,24 +188,13 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             page.default_level as "defaultLevel", page.private, page.default_branch as "defaultBranch",
             page.workflow, page.workflow_path as "workflowPath", page.workflow_ref as "workflowRef",
             page.workflow_checked_at as "workflowCheckedAt",
-            -- A reset before the last SWITCH_TARGET reviews no longer counts: the switch is done.
-            case
-              when recent.streak >= ${SWITCH_TARGET} or (failed.at is null and recent.doubled_at is null) then null
-              when recent.doubled_at is null or failed.at >= recent.doubled_at then 'failure'
-              else 'double'
-            end as "resetBy",
-            case
-              when recent.streak >= ${SWITCH_TARGET} or (failed.at is null and recent.doubled_at is null) then null
-              when recent.doubled_at is null or failed.at >= recent.doubled_at then failed.pr_number
-              else recent.doubled_pr
-            end as "resetPr",
             coalesce(recent.streak, 0) as streak,
             recent.last_pr as "lastPr", recent.last_score as "lastScore", recent.last_model as "lastModel",
             recent.last_published_at as "lastPublishedAt"
           from page
           left join lateral (
             -- The last one, and of two at the same instant the same one at every load (id desc).
-            select coalesce(finished_at, updated_at) as at, pr_number from jobs
+            select coalesce(finished_at, updated_at) as at from jobs
             where jobs.repo_id = page.id and jobs.state = 'failed'
             order by coalesce(finished_at, updated_at) desc, id desc
             limit 1
@@ -229,7 +214,7 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             ),
             doubled as (
               -- Only a double publication after the last failed job can set the streak back.
-              select later.published_at as at, later.pr_number from recent later
+              select later.published_at as at from recent later
               where later.github_comment_id is null
                 and later.published_at > coalesce(failed.at, '-infinity'::timestamptz)
                 and exists (
@@ -251,8 +236,6 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
                 select count(*) from recent
                 where recent.published_at > coalesce(greatest(failed.at, (select at from doubled)), '-infinity'::timestamptz)
               ) as streak,
-              (select at from doubled) as doubled_at,
-              (select pr_number from doubled) as doubled_pr,
               last.pr_number as last_pr, last.score as last_score, last.model as last_model, last.published_at as last_published_at
             from (select 1) one
             left join last on true

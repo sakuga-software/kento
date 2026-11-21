@@ -67,7 +67,7 @@ export interface MembersStore {
   /**
    * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
    * and org, for every process of the service, on the clock of Postgres. `over`: the person asked
-   * within it; `gone`: the person is gone.
+   * within it; `gone`: the person or the org is gone, and nothing is written.
    */
   askReclaim(orgId: string, userId: string): Promise<'allowed' | 'over' | 'gone'>
   /** KNT-173. GitHub failed for the take-back: the person asks again after `RECLAIM_RETRY_MS`. */
@@ -253,7 +253,7 @@ export function createMembersStore(sql: postgres.Sql, clock: { offsetMs(): numbe
     },
 
     async askReclaim(orgId, userId) {
-      return takeGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
+      return takeGitHubAsk(sql, { userId, scope: orgId, org: orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
     },
 
     async reclaimFailed(orgId, userId) {
