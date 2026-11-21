@@ -56,7 +56,8 @@ Each entry says, when it applies:
   the runner says so in `org.opencontainers.image.licenses`.
 - The Settings screen has a sidebar in place of the tabs under its title: the sections, and under
   each one its parts (the levels, the parts of the GitHub App, each provider, "New rule", "Add a
-  provider"). It stays in view while the page scrolls and marks the section and the part on screen.
+  provider"). It stays in view while the page scrolls and marks the section and the part on screen
+  (on a phone, the section that the person chose, while they are in it).
   Under 900 px it is a bar, "Sections", at the top of the page, that opens the list under it. It does
   not follow the scroll: a sticky bar covered part of a field after a form came back with its
   errors. Instead, each section ends with a link "Sections" that leads back to the bar and opens

@@ -446,6 +446,8 @@ describe('the sidebar of the settings (KNT-149)', () => {
       assert.match(html, /<div class="settings-layout settings-layout-nav">/)
       // KNT-168: the rules and the providers end with a link back to the bar of a phone.
       assert.deepEqual([...html.matchAll(/data-settings-back="([^"]+)"/g)].map((m) => m[1]), ['org-rules', 'providers'], profile.login)
+      // Each link names where it leads and where from, with the label of its section.
+      assert.match(html, /<span class="visually-hidden">Back to the <\/span>Sections<span class="visually-hidden"> from Providers and keys<\/span>/)
       for (let id of ids) assert.match(html, new RegExp(`<[a-z]+ [^>]*\\bid="${id}"`), `#${id} is on the page for ${profile.login}`)
     }
   })

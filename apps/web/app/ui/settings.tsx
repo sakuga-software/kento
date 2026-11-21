@@ -85,8 +85,9 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
     let effective = org ? orgEffectiveLevels(org.view, org.providers) : null
     let usage = (id: string) => (effective ? LEVELS.filter((level) => effective[level].provider.id === id) : null)
     let sections = settingsSections({ org: org ?? null, rules: rules ? { count: rules.list.length } : null, providers, admin })
-    // KNT-168. With a sidebar, each section ends with a link back to the bar "Sections" of a phone.
-    let back = sections.length >= 2
+    // KNT-168. With a sidebar, each section ends with a link back to the bar "Sections" of a phone,
+    // named after its section.
+    let back = sections.length >= 2 ? Object.fromEntries(sections.map((section) => [section.id, section.label])) : null
     return (
       <Shell
         frame={frame}
@@ -161,7 +162,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
             />
           </section>
         ) : null}
-        {rules && back ? <SectionsLink section="org-rules" /> : null}
+        {rules && back ? <SectionsLink section="org-rules" label={back['org-rules'] ?? ''} /> : null}
 
         {providers ? (
           <section class="provider-section" id="providers" aria-labelledby="providers-title" tabIndex={-1}>
@@ -208,7 +209,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
         ) : null}
 
         {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
-        {providers && back ? <SectionsLink section="providers" /> : null}
+        {providers && back ? <SectionsLink section="providers" label={back['providers'] ?? ''} /> : null}
           </div>
         </div>
         <script src={`/assets/settings.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>

@@ -99,23 +99,38 @@
   }
   // KNT-168. Under 900 px the list is at the top of the page: the section on screen is never the
   // one under the list. There, the marks show the section that the person chose in the list, or
-  // came back from with its link "Sections", and the scroll does not move them.
+  // came back from with its link "Sections", while the person is in it; otherwise nothing.
   const phone = () => !!toggle && getComputedStyle(toggle).display !== 'none'
+  // The section of the last choice, and whether it came from a link "Sections": the page is then at
+  // the bar, away from that section, and the mark stays until the person leaves the bar.
+  let chosen = null
+  let fromBack = false
+  const clearMarks = () => {
+    chosen = null
+    mark(sections, null, 'location')
+    for (const other of sections) mark(other.parts, null, 'true')
+  }
   const markChoice = (link) => {
     const section = sections.find((entry) => entry.link === link || entry.parts.some((part) => part.link === link) || entry.target.id === link?.dataset?.settingsBack)
-    mark(sections, section ?? null, 'location')
-    for (const other of sections) mark(other.parts, other === section ? other.parts.find((part) => part.link === link) ?? null : null, 'true')
+    chosen = section ?? null
+    mark(sections, chosen, 'location')
+    for (const other of sections) mark(other.parts, other === chosen ? other.parts.find((part) => part.link === link) ?? null : null, 'true')
   }
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
     const link = event.target instanceof Element ? event.target.closest('a') : null
-    if (link && phone()) markChoice(link)
+    if (!link || !phone()) return
+    fromBack = false
+    markChoice(link)
   })
   // "Sections" at the end of a section: the link leads to the bar; the list opens on that section,
   // and the focus goes to the button, so that Tab goes on into the list.
   document.addEventListener('click', (event) => {
+    // A click that opens another tab or window leaves this page as it is.
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     const back = event.target instanceof Element ? event.target.closest('[data-settings-back]') : null
     if (!back || !phone()) return
     setOpen(true)
+    fromBack = true
     markChoice(back)
     requestAnimationFrame(() => toggle.focus({ preventScroll: true }))
   })
@@ -125,10 +140,15 @@
   const update = () => {
     if (phone()) {
       if (!wasPhone) {
-        mark(sections, null, 'location')
-        for (const other of sections) mark(other.parts, null, 'true')
+        clearMarks()
         // The sidebar scrolls to its marked link again once the window widens.
         shown = null
+      } else if (chosen) {
+        // The person scrolled out of the chosen section by hand: the mark goes.
+        const box = nav.getBoundingClientRect()
+        const atBar = box.bottom > 0 && box.top < window.innerHeight
+        if (!(fromBack && atBar) && pick(sections) !== chosen) clearMarks()
+        if (!atBar) fromBack = false
       }
       wasPhone = true
       return

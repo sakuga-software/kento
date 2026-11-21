@@ -93,17 +93,21 @@ const PERIOD_TEXT: Record<CapPeriod, string> = { day: 'Daily', month: 'Monthly' 
  * which opens the list (settings.js). Hidden where the sidebar stays in view. Without JavaScript the
  * link leads to the list, which is part of the page.
  */
-export function SectionsLink(handle: Handle<{ section: string }>) {
+export function SectionsLink(handle: Handle<{ section: string; label: string }>) {
+  // The name says where the link leads and where from: six of them on the page, and the button of
+  // the bar, all show "Sections".
   return () => (
     <p class="settings-back">
       <a href="#settings-nav" data-settings-back={handle.props.section}>
-        Sections
+        <span class="visually-hidden">Back to the </span>Sections<span class="visually-hidden"> from {handle.props.label}</span>
       </a>
     </p>
   )
 }
 
-export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: boolean; csrf: string; back: boolean }>) {
+export function OrgSettingsSections(
+  handle: Handle<OrgSectionProps & { admin: boolean; csrf: string; back: Record<string, string> | null }>,
+) {
   return () => {
     let props = handle.props
     let { view, now, notice, admin } = props
@@ -136,13 +140,13 @@ export function OrgSettingsSections(handle: Handle<OrgSectionProps & { admin: bo
         {notice ? <Notice notice={notice} /> : null}
         <div class="org-settings">
           <CapSection {...props} />
-          {props.back ? <SectionsLink section="cap" /> : null}
+          {props.back ? <SectionsLink section="cap" label={props.back['cap'] ?? ''} /> : null}
           <DefaultsSection {...props} />
-          {props.back ? <SectionsLink section="defaults" /> : null}
+          {props.back ? <SectionsLink section="defaults" label={props.back['defaults'] ?? ''} /> : null}
           <BotsSection {...props} />
-          {props.back ? <SectionsLink section="bots" /> : null}
+          {props.back ? <SectionsLink section="bots" label={props.back['bots'] ?? ''} /> : null}
           <AppSection {...props} />
-          {props.back ? <SectionsLink section="app" /> : null}
+          {props.back ? <SectionsLink section="app" label={props.back['app'] ?? ''} /> : null}
         </div>
       </>
     )
