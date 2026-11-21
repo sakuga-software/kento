@@ -272,7 +272,8 @@ export function createMembersStore(sql: postgres.Sql): MembersStore {
         // nor changes a role outside of the rules of the members screen.
         let [person] = await tx<{ login: string }[]>`select login from users where id = ${user.id}`
         let who = { userId: user.id, login: person?.login ?? '', githubId: user.githubId }
-        await audit(tx, invitation.orgId, who, 'accept', who, invitationId, current?.role ?? null, current?.role ?? invitation.role)
+        // `kept`: the person was a member already; the acceptance granted nothing.
+        await audit(tx, invitation.orgId, who, 'accept', who, invitationId, current?.role ?? null, current?.role ?? invitation.role, current ? { kept: true } : null)
         if (current) return { orgId: invitation.orgId, role: current.role }
         await tx`
           insert into memberships (user_id, org_id, role, source, checked_at)

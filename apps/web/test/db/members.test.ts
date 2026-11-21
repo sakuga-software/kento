@@ -341,6 +341,9 @@ describe('the members and the invitations of an org', () => {
     // Still from GitHub: GitHub still demotes or ends it.
     assert.deepEqual({ ...(await membership('camille', acme)), id: undefined }, { id: undefined, role: 'admin', source: 'github' })
     assert.equal((await database.sql`select status from invitations where id = ${invitation!.id}`)[0]!.status, 'accepted')
+    // The audit says that the acceptance granted nothing.
+    let [row] = await database.sql`select role_before, role_after, detail from org_audit where action = 'accept'`
+    assert.deepEqual({ ...row }, { role_before: 'admin', role_after: 'admin', detail: { kept: true } })
     assert.ok(owner)
   })
 
