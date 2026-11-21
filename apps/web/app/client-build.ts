@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 
 import { AcceptEncoding } from 'remix/headers'
 
+import { errorMessage, log } from './log.ts'
+
 /** The folder of `apps/web`. */
 export const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url))
 
@@ -108,7 +110,16 @@ export async function serveClientFile(build: ClientBuild, request: Request, path
   if (!build.files.has(name)) return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
   // The weights of the browser decide; at equal weight, brotli. None of the two: the plain file.
   let encoding = AcceptEncoding.from(request.headers.get('Accept-Encoding')).getPreferred(['br', 'gzip'] as const)
-  let body = await readFile(path.join(build.dir, name + (encoding ? SUFFIXES[encoding] : '')))
+  let file = path.join(build.dir, name + (encoding ? SUFFIXES[encoding] : ''))
+  let body: Uint8Array<ArrayBuffer>
+  try {
+    body = new Uint8Array(await readFile(file))
+  } catch (error) {
+    // Kentō #048c24: the folder was checked at startup; a file gone since is a fault of the
+    // deploy, logged, and the browser gets a plain 404 rather than a 500.
+    log('error', 'assets.client_file_unreadable', { file: name, error: errorMessage(error) })
+    return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+  }
   let headers = new Headers({
     'Content-Type': 'text/javascript; charset=utf-8',
     'Content-Length': String(body.byteLength),

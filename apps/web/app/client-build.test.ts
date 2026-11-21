@@ -125,6 +125,15 @@ describe('the bundles of the browser modules (KNT-170)', () => {
         assert.equal(response.status, 404, name)
       }
       assert.equal(await serveClientFile(build, get('/assets/kento.css'), '/assets/kento.css'), null)
+      // Kentō #048c24: a file of the manifest gone from the folder since startup: 404 and an error.
+      rmSync(path.join(build.dir, 'a.@AAA.js.br'))
+      let gone: Response | null = null
+      let lines = await stderrOf(async () => {
+        gone = await serveClientFile(build, get('/assets/js/a.@AAA.js', { 'Accept-Encoding': 'br' }), '/assets/js/a.@AAA.js')
+      })
+      assert.equal(gone!.status, 404)
+      let line = JSON.parse(lines[0]!)
+      assert.deepEqual([line.level, line.event, line.file], ['error', 'assets.client_file_unreadable', 'a.@AAA.js'])
     } finally {
       build.cleanup()
     }

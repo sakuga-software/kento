@@ -38,12 +38,11 @@ the tests against Postgres, the tests of the screens in a browser, and the migra
 3. Add or update the tests. A fix comes with a test that fails without it.
 4. Run `pnpm typecheck` and `pnpm test`, and the commands of the package that you changed
    (`pnpm -F @kento-review/web lint`, `test:db`, `e2e`).
-5. Update the documentation that your change makes wrong: the README of the package,
-   [apps/web/DEPLOY.md](apps/web/DEPLOY.md) for a new variable or permission, and the
-   `Unreleased` section of [apps/web/CHANGELOG.md](apps/web/CHANGELOG.md) for a change that an
-   operator sees.
-6. Sign off each commit (below).
-7. Open the pull request and fill in its template.
+5. Update the documentation that your change makes wrong: the README of the package, and
+   [apps/web/DEPLOY.md](apps/web/DEPLOY.md) for a new variable or permission.
+6. Add a changeset (see [Changesets](#changesets)).
+7. Sign off each commit (below).
+8. Open the pull request and fill in its template.
 
 The title of a pull request becomes the message of the squashed commit. It follows
 [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/), in English:
@@ -56,6 +55,41 @@ type(scope): imperative lowercase summary
 - `scope`: the area that the change touches, short (`engine`, `web`, `runner`, `publish`,
   `deploy`). No scope for `ci`.
 - For example: `fix(publish): keep the block of the description when the body changed`.
+
+## Changesets
+
+Each pull request adds a changeset: a small file in `.changeset/` with the entry of the change in
+the changelog of Kentō, [apps/web/CHANGELOG.md](apps/web/CHANGELOG.md), and the bump of the version
+that it asks for. The check "Changeset" fails on a pull request with none. Run at the root:
+
+```sh
+pnpm changeset                                          # asks the package, the bump and the entry
+pnpm changeset --patch @kento-review/web -m "Fix …"     # the same, with no question
+pnpm changeset --empty                                  # a change that nobody who runs Kentō sees
+```
+
+- **Name `@kento-review/web` only**, for a change of the runner or of the engine too. Its
+  CHANGELOG.md is the one of Kentō. The service and the runner share its version (`fixed` in
+  `.changeset/config.json`), and `packages/engine` and `packages/protocol` have no release of their
+  own (`ignore`).
+- **An empty changeset** (`--empty`) is for a change that nobody who runs or uses Kentō sees: a test,
+  the CI, the documentation of the contributors, a refactoring. It adds no entry and no bump.
+- **The bump, before 1.0.** `minor` when an operator must act, or when something that worked stops
+  working: a new required variable, a variable that changes or goes away, a new permission or event
+  of the GitHub App, the runners before the service, a protocol that an older runner does not
+  follow, sessions that end, a feature or a command that goes away. `patch` for the rest: a new
+  feature, a fix, a change of a screen. No `major` before 1.0.
+- **The entry is for the person who runs Kentō.** Write in English, in the style of the changelog:
+  what changes for them first. Add the lines that apply: **Migrations**, **Variables**,
+  **GitHub App**, **Order** (the head of the changelog says what each one gives). The changelog
+  links the pull request and its author by itself.
+- Change the changeset in your pull request as the change moves. Never edit the sections of the
+  changelog by hand.
+
+A maintainer releases. Each push to `main` updates the pull request "chore: version packages"
+(workflow Changesets): it sets the version, writes the changelog and removes the changesets. The
+merge of that pull request tags `vX.Y.Z` and starts the release
+([apps/runner/DEPLOY.md, "Publish a release"](apps/runner/DEPLOY.md#publish-a-release)).
 
 ## Sign your commits
 
