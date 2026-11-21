@@ -7,6 +7,7 @@ import { after, before, test } from 'node:test';
 import { fingerprint } from '../src/fingerprint.ts';
 import { levelConfig, reviewPullRequest, type Answer } from '../src/index.ts';
 import { LEVELS } from '../src/levels.ts';
+import { FINAL_INSTRUCTION } from '../src/sections.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 let repo = '';
@@ -96,7 +97,7 @@ test('reviews from the merge base, anchors the findings and gives the score and 
   assert.equal(calls[0].headers.Authorization, 'Bearer key-1');
   assert.equal(calls[0].body.model, LEVELS.lite.models[0]);
   assert.equal(calls[0].body.messages[0].content, readFileSync(join(ROOT, 'packages', 'engine', 'prompts', 'review.md'), 'utf8'));
-  assert.equal(calls[0].body.messages[1].content, result.pack);
+  assert.equal(calls[0].body.messages[1].content, `${result.pack}\n\n${FINAL_INSTRUCTION}\n`, 'the pack, then the last instruction (KNT-110)');
 });
 
 test('falls back to the next model of the level and logs the failed attempt', async () => {
