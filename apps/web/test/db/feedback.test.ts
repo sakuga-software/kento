@@ -308,7 +308,8 @@ describe('feedback on the reviews (REV-107)', () => {
     await insert('command', 'camille', false, '2026-11-10T10:00:00Z', 1)
     await insert('quote', 'sakuga-agent[bot]', true, '2026-11-11T10:00:00Z', 2)
     let all = await listFeedback(database.sql, orgId)
-    assert.equal(all.total, 2)
+    assert.equal(all.rows.length, 2)
+    assert.deepEqual([all.older, all.newer], [null, null], 'one page')
     assert.deepEqual(all.rows.map((r) => [r.authorLogin, r.score, r.repo]), [
       ['sakuga-agent[bot]', 4, 'sakuga-software/sakuga-review'],
       ['camille', 4, 'sakuga-software/sakuga-review'],
@@ -318,7 +319,7 @@ describe('feedback on the reviews (REV-107)', () => {
     assert.deepEqual((await listFeedback(database.sql, orgId, { source: 'quote' })).rows.map((r) => r.authorLogin), ['sakuga-agent[bot]'])
     let [other] = await database.sql<{ id: string }[]>`
       with org as (insert into orgs (name, slug) values ('other', lower('other')) returning id) insert into installations (org_id, github_installation_id, github_account_id, account_login) select id, 9999, 9998, 'other' from org returning org_id as id`
-    assert.equal((await listFeedback(database.sql, other!.id)).total, 0, 'another org sees nothing')
+    assert.equal((await listFeedback(database.sql, other!.id)).rows.length, 0, 'another org sees nothing')
   })
 })
 
