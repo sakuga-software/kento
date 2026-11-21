@@ -2,7 +2,7 @@
 "@kento-review/web": patch
 ---
 
-pr: #TBD
+pr: #70
 
 **Dashboard** (KNT-191): the cards "Recent failures" and "Precision by repo" take the whole width,
 one under the other. The precision by repo has a chart (Chart.js, above the list that stays without
