@@ -2,7 +2,7 @@
 "@kento-review/web": patch
 ---
 
-pr: #TBD
+pr: #68
 
 **A finding that the reviews no longer see** (KNT-192): when 2 reviews in a row that read the code
 no longer find an open finding, and pushes changed its file since, the finding becomes `stale` and
