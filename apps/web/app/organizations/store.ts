@@ -114,13 +114,17 @@ export function createOrgsStore(sql: postgres.Sql): OrgsStore {
           let [exists] = await tx`select 1 from orgs where id = ${targetId}`
           if (!exists) return { ok: false, reason: 'target_not_owner' }
         }
-        let [left] = await tx<{ n: number }[]>`select count(*)::int as n from installations where org_id = ${fromOrgId} and id <> ${installationId}`
+        // The installations left: the active ones decide the confirmation (the org cannot be reached
+        // without one), and any one, a suspended one too, keeps the org from being deleted.
+        let [left] = await tx<{ n: number; active: number }[]>`
+          select count(*)::int as n, count(*) filter (where suspended_at is null)::int as active
+          from installations where org_id = ${fromOrgId} and id <> ${installationId}`
         let refusal = decideMove({
           fromRole: await roleIn(tx, fromOrgId, actorUserId),
           toRole: targetId ? await roleIn(tx, targetId, actorUserId) : 'new',
           sameOrg: targetId === fromOrgId,
           githubAdmin,
-          last: left!.n === 0,
+          last: left!.active === 0,
           deleteConfirmed: deleteEmpty,
         })
         if (refusal) return { ok: false, reason: refusal }

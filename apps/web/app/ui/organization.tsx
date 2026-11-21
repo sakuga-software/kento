@@ -42,7 +42,9 @@ export function OrganizationPage(handle: Handle<OrganizationPageProps>) {
     let { frame, org, owner, targets, notice } = handle.props
     let csrf = frame.csrfToken ?? ''
     let message = notice ? ORG_NOTICES[notice] : null
-    let last = org.installations.length === 1
+    let active = org.installations.filter((i) => !i.suspended).length
+    let last = active === 1
+    let suspendedLeft = org.installations.length > active
     return (
       <Shell frame={frame} section="settings" title="Organization" lead={`The name of ${org.name} and the GitHub accounts where Kentō is installed for it.`}>
         <p class="members-back">
@@ -114,7 +116,14 @@ export function OrganizationPage(handle: Handle<OrganizationPageProps>) {
                         <Input id={`move-name-${installation.id}`} name="name" maxLength={ORG_NAME_MAX} value={installation.login} />
                       </Field>
                       {last ? (
-                        <Field id={`move-confirm-${installation.id}`} label={`It is the last installation: ${org.name} goes with the move, with its settings, providers, runners and rules. Type its name to confirm.`}>
+                        <Field
+                          id={`move-confirm-${installation.id}`}
+                          label={
+                            suspendedLeft
+                              ? `It is the last active installation: nobody reaches ${org.name} after the move. It keeps its suspended installations, and is deleted with the last of them. Type its name to confirm.`
+                              : `It is the last installation: ${org.name} goes with the move, with its settings, providers, runners and rules. Type its name to confirm.`
+                          }
+                        >
                           <Input id={`move-confirm-${installation.id}`} name="confirm" autocomplete="off" />
                         </Field>
                       ) : null}

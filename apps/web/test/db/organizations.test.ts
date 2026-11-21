@@ -229,6 +229,23 @@ describe('the name and the installations of an org', () => {
     assert.match(await (await request('/', owner)).text(), /<span class="org-menu-name">globex<\/span>/)
   })
 
+  it('the last active installation asks for the confirmation; a suspended installation left keeps the org', async () => {
+    roles.set('globex/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    await database.sql`
+      insert into installations (org_id, github_installation_id, github_account_id, account_login, suspended_at)
+      values (${acme}, 15, 1015, 'acme-old', now())`
+    let page = await (await request('/settings/organization', owner)).text()
+    assert.match(page, /It is the last active installation: nobody reaches acme after the move/)
+    assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex })).headers.get('Location'), '/settings/organization?notice=last_installation')
+    assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'acme' })).headers.get('Location'), '/settings/organization?notice=moved')
+    assert.deepEqual(await orgOf('installations', `id = '${only!.id}'`), [globex])
+    // The org stays, with its suspended installation, and nobody reaches it.
+    assert.equal((await database.sql`select count(*)::int as n from orgs where id = ${acme}`)[0]!.n, 1)
+    assert.match(await (await request('/', owner)).text(), /<span class="org-menu-name">globex<\/span>/)
+  })
+
   it('the store refuses by itself: a rename by an admin, an installation of another org', async () => {
     roles.set('acme/camille', 'admin')
     await signIn('octocat')

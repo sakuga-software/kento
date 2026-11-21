@@ -84,9 +84,9 @@ Server-rendered HTML in English (REV-114), with `remix/component`, and one small
   they are an owner, or to a new org of which they become the owner. A move needs GitHub to say, at
   that moment, that the person is an admin of the account of the installation. The repositories of
   the installation go with it, with their reviews, findings, rules and assignment rules; the
-  settings, providers, runners and org rules stay. Moving the last installation of an org deletes
-  the org, now empty, with its settings, providers, runners and org rules: the form asks for its
-  name. A move takes the locks of the owners of both orgs, in the order of their ids. A provider of
+  settings, providers, runners and org rules stay. Moving the last active installation of an org
+  asks for its name: the org, now empty, is deleted with its settings, providers, runners and org
+  rules; one that still holds a suspended installation stays, and nobody reaches it. A move takes the locks of the owners of both orgs, in the order of their ids. A provider of
   another org never matches a job (`runner/store.ts`): a repository whose config names a provider of
   the org it left gets the key of the service until its Config names a provider of its new org.
 - Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person
