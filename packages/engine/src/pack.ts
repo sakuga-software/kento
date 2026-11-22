@@ -24,6 +24,8 @@ export const generatedFile = (path: string): boolean => SKIP.test(path);
 const TEST_FILE = /\.test\.|\.spec\.|(^|\/)(tests?|__tests__)\//;
 // A GitHub workflow or a composite action, which the diff shows whole.
 const WORKFLOW_FILE = /^\.github\/(workflows\/[^/]+|actions\/.+\/action)\.ya?ml$/;
+// KNT-156. A test file that can go back to three lines of context. A workflow always shows whole.
+const narrowableTest = (path: string): boolean => TEST_FILE.test(path) && !WORKFLOW_FILE.test(path);
 const WHOLE_FILE_CONTEXT = 100_000;
 
 // The context: unchanged code that the change uses or that uses the change
@@ -788,7 +790,7 @@ export function buildPack(
     hunks.set(path, git(repo, 'diff', WORKFLOW_FILE.test(path) ? `-U${WHOLE_FILE_CONTEXT}` : '-W', `${base}...${head}`, '--', ...paths));
     // KNT-156. A changed test shows its whole test, so that the review can read the assertion. A test
     // file whose whole tests pass MAX_TEST_HUNK_BYTES shows three lines of context, as before.
-    if (TEST_FILE.test(path) && hunks.get(path)!.length > MAX_TEST_HUNK_BYTES) hunks.set(path, git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths));
+    if (narrowableTest(path) && hunks.get(path)!.length > MAX_TEST_HUNK_BYTES) hunks.set(path, git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths));
   }
 
   let docs = '';
@@ -818,7 +820,7 @@ export function buildPack(
   const wide = new Map<string, string>();
   for (const [path, hunk] of [...hunks].sort((a, b) => b[1].length - a[1].length)) {
     if (size() <= diffBudget) break;
-    if (!TEST_FILE.test(path)) continue;
+    if (!narrowableTest(path)) continue;
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
     const narrow = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
     if (narrow.length < hunk.length) {
