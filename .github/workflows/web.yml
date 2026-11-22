@@ -96,8 +96,9 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
         run: pnpm test:db
 
-  # The screens in Chromium against the real server and Postgres, with axe on each screen. The job
-  # container reaches Postgres by its name, as in test-db.
+  # The screens in Chromium against the real server and Postgres, with axe on each screen, and the
+  # content security policy of every screen under WebKit too (KNT-171). The job container reaches
+  # Postgres by its name, as in test-db.
   e2e:
     name: Screens in a browser (Playwright, axe)
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "sakuga-linux", "docker"]') || 'ubuntu-latest' }}
@@ -128,9 +129,11 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           filter: '@kento-review/web'
-      # Chromium of the Playwright version in package.json, and the system libraries it needs.
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      # Chromium and WebKit of the Playwright version in package.json, and the system libraries they
+      # need. WebKit runs e2e/csp.spec.ts only (KNT-171): the content security policy under the engine
+      # of Safari.
+      - name: Install Chromium and WebKit
+        run: pnpm exec playwright install --with-deps chromium webkit
       - name: Screens in a browser
         env:
           CI: 'true'

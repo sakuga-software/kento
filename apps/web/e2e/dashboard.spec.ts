@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test'
 import postgres from 'postgres'
 
 import { E2E_WEBHOOK_SECRET, FAKE_ORG } from './fake-github.ts'
-import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
+import { expectNoAxeViolations, hydrated, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-14: the banner of a failed job and "Run again", a push that shows in
 // the queue without a reload, the cost of the day against the database, and a member who reads only.
@@ -247,6 +247,94 @@ test.describe('the dashboard', () => {
     expect(errors).toEqual([])
   })
 
+  test('the card of the queue is live: a push and a claim show within 6 s, and the ready count follows (KNT-189)', async ({ page }) => {
+    let errors = watchConsole(page)
+    await seed()
+    await page.goto('/')
+    await hydrated(page)
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    await expect(queue.getByRole('status')).toHaveText('Live')
+    await expect(queue.locator('.runner-ready')).toHaveText(/^\d+ ready \/ \d+ online$/)
+    // The row of shared-01, the runner of this spec: other specs may leave runners in the database,
+    // online, late or busy, so the counts of all the runners prove nothing here (Fable P3-4).
+    let shared = queue.locator('li.dash-job').filter({ has: page.locator('.dash-job-head .mono', { hasText: /^shared-01$/ }) })
+    await expect(shared).toContainText('No job in progress')
+
+    // Faster than the read of the whole page every 10 s: the stream sends the card within a tick of 3 s.
+    let pushed = await push(page, 'e'.repeat(40))
+    expect(pushed.outcome).toBe('queued')
+    await expect(queue.getByRole('link', { name: 'sakuga-software/dash-e2e#42' })).toBeVisible({ timeout: 6_000 })
+
+    // shared-01 claims the job: it is no longer ready.
+    let sql = database()
+    try {
+      await sql`
+        update jobs set state = 'running', started_at = now(), lease_expires_at = now() + interval '2 minutes',
+          runner_id = (select id from runners where name = 'shared-01' and org_id is null)
+        where id = ${pushed.jobId!}`
+      await expect(shared).toContainText('1 job in progress', { timeout: 6_000 })
+      await expect(queue.getByText(/^On shared-01 for/)).toBeVisible()
+
+      // dashboard.js reads the whole page again (here at once, on visibilitychange): the live section stays, and so does its stream.
+      let marker = await queue.evaluate((el) => ((el as HTMLElement).dataset.marker = 'kept'))
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+      await expect(page.getByText(/Updated [0-2] s ago/)).toBeVisible()
+      expect(await queue.evaluate((el) => (el as HTMLElement).dataset.marker)).toBe(marker)
+      await sql`update jobs set state = 'done', finished_at = now(), lease_expires_at = null where id = ${pushed.jobId!}`
+      await expect(shared).toContainText('No job in progress', { timeout: 6_000 })
+      await expect(queue.getByRole('status')).toHaveText('Live')
+    } finally {
+      await sql.end()
+    }
+    expect(errors).toEqual([])
+  })
+
+  test('the live card says "Retrying…" while its stream fails, then "Live" again (KNT-189)', async ({ page }) => {
+    await seed()
+    await page.route('**/dashboard/live', (route) => route.abort())
+    await page.goto('/')
+    await hydrated(page)
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    await expect(queue.getByRole('status')).toHaveText('Retrying…')
+    await page.unroute('**/dashboard/live')
+    // The waits grow from 1 s: the third try at the latest comes within 8 s.
+    await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 10_000 })
+  })
+
+  test('the live card waits out a server that restarts (503 and Retry-After), then is "Live" again (Fable P2-1)', async ({ page }) => {
+    await seed()
+    let answered = 0
+    await page.route('**/dashboard/live', async (route) => {
+      answered += 1
+      if (answered === 1) return route.fulfill({ status: 503, headers: { 'Retry-After': '1', 'Content-Type': 'text/plain' }, body: 'Service Unavailable' })
+      return route.continue()
+    })
+    await page.goto('/')
+    await hydrated(page)
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    await expect(queue.getByRole('status')).toHaveText('Retrying…')
+    // A 503 is a wait, never the end: the next try comes after the second that it asked for.
+    await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 6_000 })
+    expect(answered).toBeGreaterThanOrEqual(2)
+  })
+
+  test('a changed ready count gets a short wash, and none with reduced motion (KNT-189)', async ({ page }) => {
+    await page.goto('/')
+    let animation = () =>
+      page.evaluate(() => {
+        let span = document.createElement('span')
+        span.className = 'runner-ready is-changed'
+        document.body.append(span)
+        let name = getComputedStyle(span).animationName
+        span.remove()
+        return name
+      })
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    expect(await animation()).toBe('ready-changed')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    expect(await animation()).toBe('none')
+  })
+
   test('the "Updated" line keeps its place beside the title while its text changes (KNT-141)', async ({ page }) => {
     // 332–356 px is where the line used to wrap and unwrap as its text grew and shrank.
     for (let width of [336, 350, 390, 1440]) {
@@ -278,5 +366,23 @@ test.describe('the dashboard', () => {
     await expect(page.getByRole('button', { name: /Hide/ })).toHaveCount(0)
     await expect(page.getByRole('link', { name: /manage the runners/ })).toHaveAttribute('href', '/runners')
     await expectNoAxeViolations(page)
+  })
+})
+
+test.describe('the dashboard without JavaScript (KNT-189)', () => {
+  test.use({ javaScriptEnabled: false })
+  test.afterEach(async () => {
+    await cleanUp()
+  })
+
+  test('the card of the queue shows the ready count, and no live state', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await seed()
+    await page.goto('/')
+    let queue = page.getByRole('region', { name: 'Queue and runners' })
+    // shared-01 is online and idle, so one runner at least is ready (other specs may leave more).
+    await expect(queue.locator('.runner-ready')).toHaveText(/^[1-9]\d* ready \/ [1-9]\d* online$/)
+    await expect(queue.getByText('shared-01')).toBeVisible()
+    await expect(queue.locator('.live-state')).toBeHidden()
   })
 })

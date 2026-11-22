@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { failureComment, failureMarker, sanitizeReason, type FailedJob } from './failure.ts'
+import { failedCheck, failureComment, failureMarker, sanitizeReason, type FailedJob } from './failure.ts'
 
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01'
 const NOT_FOUND =
@@ -97,5 +97,73 @@ describe('failureComment', () => {
 
   it('ends with the marker of the job', () => {
     assert.ok(failureComment(job()).endsWith('<!-- kento:failure 00000000-0000-4000-8000-000000000001 -->'))
+  })
+})
+
+describe('a usage limit of the provider (KNT-161)', () => {
+  const LIMIT = 'no model gave a usable answer: OpenRouter refused the call on a usage limit (429, until 2026-11-21T10:02:00Z): Rate limit exceeded'
+
+  it('says that the review did not happen, when the limit ends, and how to run it again', () => {
+    let body = failureComment(job({ failureReason: LIMIT, level: 'heavy' }))
+    assert.ok(body.startsWith(`**Kentō · review did not happen** at commit \`${HEAD.slice(0, 9)}\``), body)
+    assert.ok(body.includes('the model provider refused the call on its usage limit until 2026-11-21 10:02 UTC.'), body)
+    assert.ok(body.includes('To run it again after that time: `@kento-review heavy`.'), body)
+    assert.ok(body.includes('change it in the [config of the repo]'), body)
+  })
+
+  it('without a reset time, says no time, and the check asks for an action', () => {
+    let reason = 'no model gave a usable answer: Anthropic refused the call on a usage limit (402): Insufficient credits'
+    let body = failureComment(job({ failureReason: reason, kind: 'resolve' }))
+    assert.ok(body.includes('thread resolution did not happen'), body)
+    assert.ok(body.includes('usage limit. No model read the code'), body)
+    assert.ok(body.includes('To run it again: `@kento-review resolve lite`.'), body)
+    assert.deepEqual(
+      { ...failedCheck(job({ failureReason: reason })), summary: '' },
+      { conclusion: 'action_required', title: 'Usage limit of the provider: no review', summary: '' },
+    )
+  })
+
+  it('reads the plain answer of a runner of an earlier release as a usage limit', () => {
+    let body = failureComment(job({ failureReason: 'no model gave a usable answer: ProviderError: OpenRouter answered 429: Rate limit exceeded' }))
+    assert.ok(body.startsWith('**Kentō · review did not happen**'), body)
+  })
+
+  it('a time with seconds goes up to the next minute, never to a time before the reset', () => {
+    let reason = 'no model gave a usable answer: Anthropic refused the call on a usage limit (429, until 2026-11-21T10:02:30Z): quota'
+    assert.ok(failureComment(job({ failureReason: reason })).includes('usage limit until 2026-11-21 10:03 UTC.'))
+    assert.equal(failedCheck(job({ failureReason: reason })).title, 'Usage limit of the provider: no review, retry after 2026-11-21 10:03 UTC')
+  })
+
+  it('a rate limit at each attempt says that the review did not happen, with no time', () => {
+    let reason =
+      'no model gave a usable answer: every model refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): ' +
+      'OpenRouter refused the call on a rate limit (429, until 2026-11-21T10:00:30Z): Rate limit exceeded'
+    let body = failureComment(job({ failureReason: reason }))
+    assert.ok(body.startsWith('**Kentō · review did not happen**'), body)
+    assert.ok(body.includes('the model provider refused the call on its rate limit, at each attempt. No model read the code'), body)
+    assert.ok(body.includes('To run it again: `@kento-review lite`.'), body)
+    assert.ok(!body.includes(' UTC'), body)
+    let check = failedCheck(job({ failureReason: reason }))
+    assert.deepEqual({ conclusion: check.conclusion, title: check.title }, { conclusion: 'action_required', title: 'Rate limit of the provider: no review' })
+  })
+
+  it('masks the account ids that a provider echoes, in the comment and in the check', () => {
+    let reason =
+      'no model gave a usable answer: OpenAI-compatible refused the call on a usage limit (429): Rate limit reached in organization ' +
+      'org-AbCdEfGhIjKlMnOpQrStUvWx on tokens per min. You exceeded your current quota, user_AbCdEfGhIjKlMnOpQr {"user_id":"u-42"}'
+    let comment = failureComment(job({ failureReason: reason }))
+    let check = failedCheck(job({ failureReason: reason }))
+    for (let text of [comment, check.summary, check.title]) {
+      assert.ok(!text.includes('AbCdEfGh'), text)
+      assert.ok(!text.includes('u-42'), text)
+    }
+    assert.ok(comment.includes('in organization *** on tokens per min'), comment)
+  })
+
+  it('another failure gives a failed check, never a success', () => {
+    let check = failedCheck(job())
+    assert.equal(check.conclusion, 'failure')
+    assert.equal(check.title, 'The lite review failed')
+    assert.ok(!check.summary.includes('kento:failure'))
   })
 })

@@ -74,12 +74,16 @@ export interface RejectOutcome {
   dismissedReview: number | null
   /** Steps on GitHub that failed. The finding stays dismissed; the log says which. */
   failed: string[]
-  /** The finding became `fixed` or `stale` before its row was locked: the reject did nothing. */
+  /** The finding became `fixed` before its row was locked: the reject did nothing. */
   refusedStatus?: string
 }
 
-/** The statuses that refuse a `reject`: a push fixed the finding, or the pull request closed. */
-export const REJECT_REFUSED = new Set(['fixed', 'stale'])
+/**
+ * The statuses that refuse a `reject`: a push or a `resolve` fixed the finding. A `stale` finding
+ * (the reviews no longer see it, KNT-192, or its pull request closed and opened again) can still be
+ * a false positive: `reject` dismisses it, with its cause.
+ */
+export const REJECT_REFUSED = new Set(['fixed'])
 
 /** The short id of a finding, as the comments show it. */
 const shortIdOf = (key: string) => `#${key.slice(0, 6)}`
@@ -101,7 +105,7 @@ export async function applyReject(input: RejectInput): Promise<RejectOutcome> {
     throw new Error(`the finding could not be dismissed: ${change.outcome === 'invalid' ? change.reason : 'not found'}`)
   }
   outcome.changed = change.outcome === 'changed'
-  // A push fixed the finding, or the pull request closed, after the handler read it: nothing to do.
+  // A push or a `resolve` fixed the finding after the handler read it: nothing to do.
   if (REJECT_REFUSED.has(change.finding.status)) {
     outcome.refusedStatus = change.finding.status
     return outcome

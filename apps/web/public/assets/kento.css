@@ -3740,6 +3740,61 @@ a.finding-title:hover {
 .dash-subtitle:first-child {
   margin-top: 0;
 }
+/* KNT-189. "Live" beside the title of the queue while the stream keeps the card; "Retrying…" while it waits. */
+/* A change of state never wraps the head: the card under it does not move. */
+.dash-section-head:has(.live-state) {
+  flex-wrap: nowrap;
+}
+.dash-section-head:has(.live-state) > :not(.live-state) {
+  flex: none;
+}
+.live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 1 var(--font-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.live-state[hidden] {
+  display: none;
+}
+.live-state::before {
+  content: '';
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--matsu);
+}
+.live-state[data-state='reconnecting']::before {
+  background: none;
+  border: 2px dotted var(--nezumi);
+}
+/* KNT-189. "2 ready / 3 online" beside "Runners". */
+.runner-ready {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 20px var(--font-mono);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The count changed since the last card: a short wash, once. */
+  .runner-ready.is-changed {
+    animation: ready-changed 1.2s ease-out;
+  }
+}
+@keyframes ready-changed {
+  from {
+    background: var(--matsu-wash);
+    color: var(--matsu);
+  }
+}
 .dash-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4388,6 +4443,18 @@ a.finding-title:hover {
 .settings-content [id] {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
   scroll-margin-top: var(--space-4);
+}
+/* KNT-177. A link of the sidebar glides to its section. The viewport scrolls, so the rule is on
+   <html>, and only while settings.js holds .settings-glide after a click of the sidebar: a load of
+   /settings#section (the redirect of a save, a link from another page, a reload), Tab and the history
+   keep their jump. The bar at the top does not stay in view: the margin above keeps a heading clear
+   of the window edge. No motion when the person asks for less. Not under 900 px: there the list is
+   at the top of the page, and its mark follows the section chosen in it (KNT-168), which a glide past
+   the other sections would clear. */
+@media (prefers-reduced-motion: no-preference) and (width > 900px) {
+  html.settings-glide:has(.settings-content) {
+    scroll-behavior: smooth;
+  }
 }
 /* The two gauges side by side, the cost per provider under them. */
 .cap-facts {
