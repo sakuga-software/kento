@@ -447,7 +447,7 @@ test('a review in passes names what any pass checked: the security pass can name
   const fetch = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     const user: string = body.messages[1].content;
-    const pass = BASE_PASSES.find((p) => user.endsWith(`${p.focus}\n`));
+    const pass = BASE_PASSES.find((p) => user.includes(`${p.focus}\n`));
     const content = JSON.stringify(pass ? byPass[pass.id] : { verdicts: [] });
     return new Response(JSON.stringify({ model: body.model, choices: [{ message: { content } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
   }) as typeof globalThis.fetch;
