@@ -247,13 +247,19 @@ export function createAuth(kit: UiKit) {
     }
     if (viewer.kind !== 'signed') {
       // A session whose person has no org left ends here, and its cookie with it.
-      if (viewer.kind === 'gone') await auth!.store.deleteSession(viewer.sessionId)
+      if (viewer.kind === 'gone') {
+        await auth!.store.deleteSession(viewer.sessionId)
+        kit.streams.endSession(viewer.sessionId, 'session ended')
+      }
       let notice: SignInNotice | undefined = viewer.kind === 'anonymous' ? undefined : 'expired'
       let response = isGet ? toSignIn(path, notice) : new Response('Unauthorized', { status: 401 })
       return viewer.kind === 'anonymous' ? response : clearSessionCookie(response)
     }
     // The session moves to the org on screen, and stays there, so the org and the role match.
-    if (viewer.orgMoved) await auth!.store.setActiveOrg(viewer.signed.sessionId, viewer.signed.membership.org.id)
+    if (viewer.orgMoved) {
+      await auth!.store.setActiveOrg(viewer.signed.sessionId, viewer.signed.membership.org.id)
+      kit.streams.endSession(viewer.signed.sessionId, 'org switch')
+    }
     context.set(Signed, viewer.signed)
     context.set(Person, { sessionId: viewer.signed.sessionId, user: viewer.signed.user, signed: viewer.signed })
     return next()
@@ -408,6 +414,7 @@ export function createAuth(kit: UiKit) {
         // of its own (a random uuid), so this delete never touches it. A refused or failed sign-in
         // keeps the old session as it was, and a failure of the delete is logged, never a lost sign-in.
         if (previous) {
+          kit.streams.endSession(previous.sessionId, 'session ended')
           await auth.store.deleteSession(previous.sessionId).catch((error: unknown) => {
             log('warn', 'auth.previous_session_not_deleted', { error: errorMessage(error) })
           })
@@ -444,6 +451,8 @@ export function createAuth(kit: UiKit) {
         try {
           await auth!.auth.api.setActiveOrganization({ headers: context.headers, body: { organizationId: orgId } })
           log('info', 'auth.org_switched', { login: signed.user.login, org: orgId })
+          // KNT-189: the live card of the other tabs showed the org before.
+          kit.streams.endSession(signed.sessionId, 'org switch')
         } catch (error) {
           log('warn', 'auth.org_switch_failed', { login: signed.user.login, org: orgId, error: errorMessage(error) })
         }
@@ -457,9 +466,36 @@ export function createAuth(kit: UiKit) {
       if (!person) throw new Error('requireViewer did not run')
       log('info', 'auth.signed_out', { login: person.user.login })
       await auth!.store.deleteSession(person.sessionId)
+      // KNT-189 (Fable P2-2 of #53): the live card of the other tabs stops at once.
+      kit.streams.endSession(person.sessionId, 'sign-out')
       return clearSessionCookie(redirect(`${authRoutes.signIn.href()}?notice=signed_out`))
     }),
   }
 
-  return { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions }
+  /**
+   * KNT-189 (Fable P2-2 of #53). Whether the cookie of a stream still names the same session, valid,
+   * of a member of the same org: the read of every screen (Better Auth, then `readViewer`), with no
+   * change to the session. Null when the session cannot be read now (the database does not answer):
+   * the stream goes on, and the next check decides.
+   */
+  async function stillSigned(headers: Headers, sessionId: string, orgId: string): Promise<boolean | null> {
+    if (!auth) return false
+    try {
+      let found = await auth.auth.api.getSession({ headers, query: { disableCookieCache: true } })
+      if (!found || found.session.id !== sessionId) return false
+      let session: AuthSession = {
+        sessionId: found.session.id,
+        userId: found.user.id,
+        activeOrgId: activeOrgOf(found.session),
+        expiresAt: new Date(found.session.expiresAt).getTime(),
+      }
+      let viewer = await readViewer({ get: () => session, headers })
+      return viewer.kind === 'signed' && !viewer.orgMoved && viewer.signed.sessionId === sessionId && viewer.signed.membership.org.id === orgId
+    } catch (error) {
+      log('warn', 'auth.session_recheck_failed', { error: errorMessage(error) })
+      return null
+    }
+  }
+
+  return { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions, stillSigned }
 }

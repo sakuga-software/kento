@@ -74,6 +74,11 @@ export type StoredFinding = {
   loadedStatus: FindingStatus | null
   /** The head of the last review that found it. */
   lastSeenSha: string
+  /**
+   * KNT-192. The published reviews of the pull request since the last one that found it, which read
+   * the code (not the copies of REV-89). Absent: a finding that the database does not hold yet.
+   */
+  unseenReviews?: number
   githubCommentId: number | null
   githubThreadId: string | null
 }

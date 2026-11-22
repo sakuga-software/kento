@@ -1,7 +1,7 @@
 import { LEVELS, type Level } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
-import type { DashboardRunner, DashboardScreen, DayStats, FailedJob, FailureBanner, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
+import type { DashboardScreen, DayStats, FailedJob, FailureBanner, QueueCardView, QueueJob, QueueStall, RecentReview, RunnerCounts } from '../dashboard/store.ts'
 import { QUEUE_STALL_MINUTES } from '../publish/queued.ts'
 import { Button, buttonClass } from './controls.tsx'
 import { agoOrDate, agoShort, clock, duration, elapsed, hour, hourSeconds, plural, usdPrecise, weekday } from './format.ts'
@@ -12,9 +12,12 @@ import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { jobReason, reasonSentence, TechDetails, type Reason } from './reasons.tsx'
 import { countsText, runnerState, runnerStateLabel } from './runners.tsx'
 import { Shell, type PageFrame } from './shell.tsx'
-import { PRECISION_DAYS, PRECISION_MIN, type PrecisionReport } from '../findings/precision.ts'
+import { PRECISION_DAYS, PRECISION_MIN, PRECISION_WINDOWS, type PrecisionReport, type PrecisionWindow } from '../findings/precision.ts'
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
+import { TableChart } from './public/chart.tsx'
+import { LiveQueue, QUEUE_CARD_ID } from './public/live-queue.tsx'
+import { Score } from './score.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
@@ -100,8 +103,12 @@ export interface DashboardPageProps {
   serviceKey?: boolean
   /** The page of the installation of the App on GitHub, where an owner picks the repositories. */
   installationUrl?: string | null
-  /** REV-18. The precision of the org over 30 days; null without the Findings screen. */
+  /** REV-18. The precision of the org over 30 days (or `precisionDays`); null without the Findings screen. */
   precision?: PrecisionReport | null
+  /** KNT-191. The window of the precision, from `?precision=`. Default 30. */
+  precisionDays?: PrecisionWindow
+  /** KNT-191, Fable P2-2 of #65: false when the asset server cannot serve the charts. Default true. */
+  charts?: boolean
 }
 
 /** One step of the list "Getting started" (REV-26). */
@@ -270,6 +277,7 @@ export function weekMeanDuration(week: DayStats[]): number | null {
 export function DashboardPage(handle: Handle<DashboardPageProps>) {
   return () => {
     let { frame, screen, githubUrl, notice, serviceKey, installationUrl, precision } = handle.props
+    let precisionDays = handle.props.precisionDays ?? PRECISION_DAYS
     let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let org = frame.viewer?.org.name ?? ''
@@ -299,21 +307,21 @@ export function DashboardPage(handle: Handle<DashboardPageProps>) {
 
           <TodoSection screen={screen} admin={admin} csrf={csrf} githubUrl={githubUrl} />
 
-          <Kpis screen={screen} precision={precision ?? null} admin={admin} />
+          <Kpis screen={screen} precision={precision ?? null} precisionDays={precisionDays} admin={admin} />
 
           <WeekSection week={screen.week} />
 
           <div class="dash-main">
             <RecentSection recent={screen.recent} now={screen.now} org={org} />
             <div class="dash-side">
-              <QueueRunnersSection queue={screen.queue} runners={screen.runners} counts={screen.runnerCounts} now={screen.now} githubUrl={githubUrl} />
+              <QueueRunnersSection card={screen} githubUrl={githubUrl} orgId={frame.viewer?.org.id ?? ''} />
               <CostSection costs={screen.costs} caps={screen.caps} admin={admin} />
             </div>
           </div>
 
           <div class="dash-grid">
             <FailuresSection failures={screen.failures} now={screen.now} githubUrl={githubUrl} admin={admin} csrf={csrf} />
-            <DashPrecision precision={precision ?? null} org={org} />
+            <DashPrecision precision={precision ?? null} org={org} days={precisionDays} charts={handle.props.charts ?? true} />
           </div>
         </div>
         <script src={`/assets/dashboard.js?v=${encodeURIComponent(frame.assetVersion)}`} defer></script>
@@ -641,9 +649,9 @@ function FailureItem(handle: Handle<{ banner: FailureBanner; admin: boolean; csr
 }
 
 /** REV-91. Five numbers in one band: the reviews and failures of the week, the cost of the month, the precision, the queue. */
-function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null; admin: boolean }>) {
+function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionReport | null; precisionDays: PrecisionWindow; admin: boolean }>) {
   return () => {
-    let { screen, precision, admin } = handle.props
+    let { screen, precision, precisionDays, admin } = handle.props
     let today = screen.week.at(-1)
     let weekPublished = screen.week.reduce((sum, day) => sum + total(day), 0)
     let weekFailed = screen.week.reduce((sum, day) => sum + day.failed, 0)
@@ -694,7 +702,7 @@ function Kpis(handle: Handle<{ screen: DashboardScreen; precision: PrecisionRepo
           </span>
         </div>
         <div class="kpi">
-          <span class="kpi-label">Precision · {PRECISION_DAYS} d</span>
+          <span class="kpi-label">Precision · {precisionDays} d</span>
           {/* The share needs closed findings: a rate with none would divide by 0. */}
           {org && org.rate !== null && org.closed > 0 ? (
             <>
@@ -947,7 +955,8 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
                         {review.level}
                       </td>
                       <td class="num mono" data-label="Score">
-                        {review.score}/5
+                        {/* KNT-187: the score drawn as on the Repos screen. */}
+                        <Score value={review.score} />
                       </td>
                       <td class="num mono" data-label="Findings">
                         {review.findings}
@@ -1025,92 +1034,122 @@ function QueueItem(handle: Handle<{ job: QueueJob; now: Date; githubUrl: string 
   }
 }
 
-/** REV-91. The jobs running then waiting, and the runners, in one panel beside the last reviews. */
-function QueueRunnersSection(
-  handle: Handle<{ queue: DashboardScreen['queue']; runners: DashboardRunner[]; counts: RunnerCounts; now: Date; githubUrl: string }>,
-) {
+/** KNT-189. "2 ready / 3 online": the online runners that run no job, of the online ones. */
+export function readyText(counts: Pick<RunnerCounts, 'ready' | 'online'>): string {
+  return `${counts.ready} ready / ${counts.online} online`
+}
+
+/**
+ * REV-91. The jobs running then waiting, and the runners, in one panel beside the last reviews.
+ * KNT-189: `LiveQueue` keeps the card up to date in the browser (`data-live-queue`, and
+ * public/assets/dashboard.js keeps this section when it reads the page again).
+ */
+function QueueRunnersSection(handle: Handle<{ card: QueueCardView; githubUrl: string; orgId: string }>) {
   return () => {
-    let { queue, runners, counts, now, githubUrl } = handle.props
-    let total = counts.online + counts.late + counts.offline
-    let more = total - runners.length
+    let { card, githubUrl, orgId } = handle.props
     return (
-      <section class="dash-section" aria-labelledby="queue-title">
+      // data-org: a card of the stream for another org reloads the page (live-queue.tsx).
+      <section class="dash-section" aria-labelledby="queue-title" data-live-queue="" data-org={orgId}>
         <div class="dash-section-head">
           <h2 id="queue-title" class="section-title">
             Queue and runners
           </h2>
+          <LiveQueue />
           <a href={routes.runners.href()}>
             Runners<span class="visually-hidden">: manage the runners</span>
           </a>
         </div>
-        <div class="card dash-queue">
-          <h3 class="dash-subtitle">
-            In progress <span class="count">{queue.runningCount}</span>
-          </h3>
-          {queue.running.length === 0 ? (
-            <p class="hint">No job in progress.</p>
-          ) : (
-            <ul class="dash-jobs">
-              {queue.running.map((job) => (
-                <QueueItem job={job} now={now} githubUrl={githubUrl} />
-              ))}
-            </ul>
-          )}
-          <h3 class="dash-subtitle">
-            Waiting <span class="count">{queue.queuedCount}</span>
-          </h3>
-          {queue.queued.length === 0 ? (
-            <p class="hint">No job waiting.</p>
-          ) : (
-            <ul class="dash-jobs">
-              {queue.queued.map((job) => (
-                <QueueItem job={job} now={now} githubUrl={githubUrl} />
-              ))}
-            </ul>
-          )}
-          {queue.queuedCount > queue.queued.length ? <p class="hint">and {queue.queuedCount - queue.queued.length} more.</p> : null}
-          <section class="dash-runners" aria-labelledby="dash-runners-title">
-            <h3 id="dash-runners-title" class="dash-subtitle">
-              Runners
-            </h3>
-            {total === 0 ? (
-              <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
-            ) : (
-              <>
-                <p class="runner-counts">{countsText(counts)}</p>
-                {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
-                <ul class="dash-jobs">
-                  {runners.map((runner) => {
-                    let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
-                    let state = runnerState(seen, now)
-                    return (
-                      <li class="dash-job">
-                        <div class="dash-job-head">
-                          <span class="mono">{runner.name}</span>
-                          <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
-                          {runner.orgId === null ? <span class="tag">Runner of the service</span> : null}
-                        </div>
-                        <p class="hint">
-                          {runner.running === 0 ? 'No job in progress' : `${runner.running} ${plural(runner.running, 'job')} in progress`} · last
-                          signal{' '}
-                          {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'never'}
-                        </p>
-                      </li>
-                    )
-                  })}
-                </ul>
-                {more > 0 ? (
-                  <p class="hint">
-                    <a href={routes.runners.href()}>
-                      and {more} more<span class="visually-hidden"> on the Runners screen</span>
-                    </a>
-                  </p>
-                ) : null}
-              </>
-            )}
-          </section>
-        </div>
+        <QueueCard card={card} githubUrl={githubUrl} />
       </section>
+    )
+  }
+}
+
+/** KNT-189. The card of the queue and of the runners: the page renders it, and the live stream sends it again. */
+export function QueueCard(handle: Handle<{ card: QueueCardView; githubUrl: string }>) {
+  return () => {
+    let { card, githubUrl } = handle.props
+    let { queue, runners, runnerCounts: counts, now } = card
+    let total = counts.online + counts.late + counts.offline
+    let more = total - runners.length
+    return (
+      <div class="card dash-queue" id={QUEUE_CARD_ID}>
+        <h3 class="dash-subtitle">
+          In progress <span class="count">{queue.runningCount}</span>
+        </h3>
+        {queue.running.length === 0 ? (
+          <p class="hint">No job in progress.</p>
+        ) : (
+          <ul class="dash-jobs">
+            {queue.running.map((job) => (
+              <QueueItem job={job} now={now} githubUrl={githubUrl} />
+            ))}
+          </ul>
+        )}
+        <h3 class="dash-subtitle">
+          Waiting <span class="count">{queue.queuedCount}</span>
+        </h3>
+        {queue.queued.length === 0 ? (
+          <p class="hint">No job waiting.</p>
+        ) : (
+          <ul class="dash-jobs">
+            {queue.queued.map((job) => (
+              <QueueItem job={job} now={now} githubUrl={githubUrl} />
+            ))}
+          </ul>
+        )}
+        {queue.queuedCount > queue.queued.length ? <p class="hint">and {queue.queuedCount - queue.queued.length} more.</p> : null}
+        <section class="dash-runners" aria-labelledby="dash-runners-title">
+          <h3 id="dash-runners-title" class="dash-subtitle">
+            Runners
+            {total === 0 ? null : (
+              <span class="runner-ready" data-ready={String(counts.ready)} title="Online and with no job in progress: the next job starts at once.">
+                {readyText(counts)}
+              </span>
+            )}
+          </h3>
+          {total === 0 ? (
+            <p class="hint">No runner. The jobs wait in the queue. Create one in Runners.</p>
+          ) : (
+            <>
+              {/* KNT-189: "N online" alone would repeat the count beside the title. */}
+              {counts.late + counts.offline > 0 ? <p class="runner-counts">{countsText(counts)}</p> : null}
+              {/* REV-37: those that work first, then the first offline ones; the store bounds the list. */}
+              <ul class="dash-jobs">
+                {runners.map((runner) => {
+                  let seen = { revokedAt: null, lastSeenAt: runner.lastSeenAt }
+                  let state = runnerState(seen, now)
+                  return (
+                    <li class="dash-job">
+                      <div class="dash-job-head">
+                        <span class="mono">{runner.name}</span>
+                        <span class={`status status-${state}`}>{runnerStateLabel(seen, now)}</span>
+                        {runner.orgId === null ? <span class="tag">Runner of the service</span> : null}
+                      </div>
+                      <p class="hint">
+                        {runner.running > 0
+                          ? `${runner.running} ${plural(runner.running, 'job')} in progress`
+                          : runner.busy
+                            ? 'Busy with a job of another organization'
+                            : 'No job in progress'}{' '}
+                        · last signal{' '}
+                        {runner.lastSeenAt ? <time dateTime={runner.lastSeenAt.toISOString()}>{agoShort(runner.lastSeenAt, now)}</time> : 'never'}
+                      </p>
+                    </li>
+                  )
+                })}
+              </ul>
+              {more > 0 ? (
+                <p class="hint">
+                  <a href={routes.runners.href()}>
+                    and {more} more<span class="visually-hidden"> on the Runners screen</span>
+                  </a>
+                </p>
+              ) : null}
+            </>
+          )}
+        </section>
+      </div>
     )
   }
 }
@@ -1175,34 +1214,73 @@ function FailuresSection(handle: Handle<{ failures: FailedJob[]; now: Date; gith
   }
 }
 
-/** REV-18. The precision of the org over 30 days and of its repositories with the most closed findings. */
-function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: string }>) {
+/** KNT-191, KNT-195. The window of the precision of a query: 7, or 30 (the default) for none or any other value. */
+export function readPrecisionWindow(value: string | null): PrecisionWindow {
+  return value === '7' ? 7 : PRECISION_DAYS
+}
+
+/** The dashboard at a window of the precision, back at its section: 30 days has no query. */
+export function precisionHref(days: PrecisionWindow): string {
+  return `${routes.home.href()}${days === PRECISION_DAYS ? '' : `?precision=${days}`}#precision-title`
+}
+
+/**
+ * KNT-191. A short key of the numbers of the precision: public/assets/dashboard.js keeps the block,
+ * and its chart, while the key of the page that it reads again is the same.
+ */
+export function precisionKey(precision: PrecisionReport, days: number): string {
+  let text = [days, precision.org.fixed, precision.org.dismissed, ...precision.repos.map((r) => `${r.id}:${r.fixed}:${r.dismissed}`)].join('|')
+  let hash = 5381
+  for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0
+  return hash.toString(36)
+}
+
+/**
+ * REV-18. The precision of the org over 30 days (or 7, KNT-191) and of its repositories with the most
+ * closed findings: a chart in the browser (KNT-191), above the list that stays without JavaScript.
+ */
+function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: string; days: PrecisionWindow; charts: boolean }>) {
   return () => {
-    let { precision, org } = handle.props
+    let { precision, org, days, charts } = handle.props
     return (
       <section class="dash-section" aria-labelledby="precision-title">
-        <h2 id="precision-title" class="section-title">
-          Precision by repo
-        </h2>
+        <div class="dash-section-head">
+          <h2 id="precision-title" class="section-title">
+            Precision by repo
+          </h2>
+          <nav class="period-links precision-windows" aria-label="Window of the precision">
+            {PRECISION_WINDOWS.map((window) => (
+              <a href={precisionHref(window)} aria-current={window === days ? 'page' : undefined}>
+                {window} days
+              </a>
+            ))}
+          </nav>
+        </div>
         {!precision || precision.org.closed === 0 ? (
           <div class="empty">
             <p>
-              No closed finding over {PRECISION_DAYS} days. The share of the findings that a push fixes shows here from {PRECISION_MIN}{' '}
-              closed findings.
+              No closed finding over {days} days. The share of the findings that a push fixes shows here from {PRECISION_MIN} closed
+              findings.
             </p>
           </div>
         ) : (
-          <div class="card precision-card">
+          <div class="card precision-card" id="precision-block" data-keep={precisionKey(precision, days)}>
             <p class="precision-headline">
               <PrecisionValue precision={precision.org} large />
               <span class="hint">
-                over {PRECISION_DAYS} days, whole org · {precisionCounts(precision.org)}
+                over {days} days, whole org · {precisionCounts(precision.org)}
               </span>
             </p>
-            <ul class="precision-list">
-              {precision.repos.slice(0, 5).map((repo) => {
+            {charts ? <TableChart table="precision-list" kind="bars" unit="pct" tone="matsu" /> : null}
+            <ul class="precision-list" id="precision-list" data-series="Precision" aria-label={`Precision by repo, over ${days} days`}>
+              {precision.repos.map((repo) => {
                 return (
-                  <li class="precision-row">
+                  // data-label and data-value: what the chart reads (app/ui/public/chart-draw.ts).
+                  <li
+                    class="precision-row"
+                    data-label={shortName(repo.fullName, org)}
+                    data-value={repo.rate === null ? '' : String(Math.round(repo.rate * 1000) / 10)}
+                  >
                     <a class="precision-name" href={findingsHref({ view: 'closed', repoId: repo.id })} title={repo.fullName}>
                       {shortName(repo.fullName, org)}
                     </a>
@@ -1216,6 +1294,12 @@ function DashPrecision(handle: Handle<{ precision: PrecisionReport | null; org: 
                 )
               })}
             </ul>
+            {precision.repoCount > precision.repos.length ? (
+              <p class="hint">
+                and {precision.repoCount - precision.repos.length} more {plural(precision.repoCount - precision.repos.length, 'repo')} with fewer
+                closed findings.
+              </p>
+            ) : null}
             <p class="hint">
               <a href={routes.findings.href()}>See the findings and the precision by rule</a>
             </p>

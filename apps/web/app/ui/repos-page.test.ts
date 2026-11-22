@@ -28,6 +28,7 @@ function row(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Rep
     workflowCheckedAt: new Date('2026-10-28T11:58:00Z'),
     streak: 0,
     lastReview: null,
+    confidence: null,
     ...fields,
   }
 }
@@ -47,6 +48,7 @@ function setup(findings: FindingsScreenStore | null = null, orgs = [ORG, OTHER_O
         id: FRUITBACK, fullName: 'sakuga-software/fruitback', private: false, enabled: true, workflow: 'copy',
         workflowPath: '.github/workflows/sakuga-review.yml', streak: 3,
         lastReview: { prNumber: 677, score: 4, model: 'anthropic/claude-haiku-5.5', publishedAt: new Date('2026-10-28T11:00:00Z') },
+        confidence: { average: 3.2, reviews: 12 },
       }),
     ],
     [OTHER_ORG.id]: [row({ id: ELSEWHERE, fullName: 'orchard/app', enabled: true })],
@@ -143,16 +145,24 @@ describe('the Repos screen', () => {
     assert.match(html, new RegExp(`href="/findings\\?status=closed&amp;repo=${ORCHARD}"><span [^>]*class="precision-value precision-pending">n = 3 of 10`))
   })
 
-  it('shows each repository with its visibility, level, model and last review, in five columns (KNT-179, KNT-181)', async () => {
+  it('shows each repository with its visibility, level, model, last review and confidence, in six columns (KNT-179, KNT-181, KNT-183)', async () => {
     let { signIn, rows } = setup()
     let { html } = await signIn()
     assert.match(html, /<h1 class="page-title">Repos<\/h1>/)
     // KNT-179, KNT-181: no column "Reviews by" nor "Switch"; the last one has no visible name.
     assert.match(
       html,
-      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
+      /<thead><tr><th scope="col">Repo<\/th><th scope="col">Level<\/th><th scope="col">Model<\/th><th scope="col">Last review<\/th><th scope="col">Confidence 30 d<\/th><th scope="col">Precision 30 d<\/th><th scope="col"><span class="visually-hidden">Actions<\/span><\/th><\/tr><\/thead>/,
     )
     assert.doesNotMatch(html, /Reviews by|review\.yml@stable|copy of review\.yml|3\/20|set back to zero|class="switch/)
+    // KNT-183: the average of 30 days, drawn as the score of the dashboard (3 marks of the middle band),
+    // its number with one decimal, its count in the title; "–" with no review in the 30 days.
+    assert.match(
+      html,
+      /<td><span title="Average of 12 reviews over 30 days" class="score score-mid score-n3"><span aria-hidden="true" class="score-marks">(?:<span><\/span>){5}<\/span><span class="score-value">3\.2\/5<\/span><\/span><\/td>/,
+    )
+    let orchardRow = html.slice(html.indexOf(`id="repo-${ORCHARD}"`), html.indexOf('</tr>', html.indexOf(`id="repo-${ORCHARD}"`)))
+    assert.doesNotMatch(orchardRow, /class="score/)
     assert.match(html, /claude-haiku-5\.5/)
     assert.match(html, new RegExp(`href="/repos/${FRUITBACK}/pulls/677"`))
     // KNT-182: the last review on one line, its date after the score, the whole of it in the title.
@@ -206,7 +216,33 @@ describe('the Repos screen', () => {
     assert.match(member, /Read only<\/strong>/)
     assert.doesNotMatch(member, /\/enable"|\/disable"|data-confirm|action="\/repos\/check"|Manage the installation|repo-toggle\.js|notice-slot/)
     // KNT-147: an admin gets the live region of the notices on every load, empty with no notice.
-    assert.match(admin, /<div role="status" class="notice-slot"><\/div>/)
+    assert.match(admin, /<div role="status" class="notice-slot toast-region"><\/div>/)
+  })
+
+  it('KNT-185: "Read GitHub again" is a quiet button with the icon alone, named for a screen reader and the pointer', async () => {
+    let html = (await setup().signIn(OCTOCAT)).html
+    assert.match(
+      html,
+      /<form method="post" action="\/repos\/check">.*?<button type="submit" aria-label="Read GitHub again" title="Read GitHub again" data-busy="" class="button button-ghost button-icon"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg><\/button><\/form>/s,
+    )
+  })
+
+  it('KNT-184: says the result of an action in a toast, whose close link leaves the message out of the URL; an error stays a banner', async () => {
+    let { request, signIn } = setup()
+    let { cookie } = await signIn()
+    let html = await (await request('/repos?filter=enabled&q=fruit&done=checked', { cookie })).text()
+    let slot = /<div role="status" class="notice-slot toast-region">(.*?)<\/div><p aria-live/s.exec(html)![1]!
+    assert.match(slot, /^<div data-toast="done repo cancelled" class="toast"><svg[^>]*aria-hidden="true"[^>]*>.*?<\/svg><div class="toast-text"><p><strong>List up to date\.<\/strong>/s)
+    assert.match(
+      slot,
+      /<a href="\/repos\?filter=enabled&amp;q=fruit" aria-label="Close the message" title="Close" data-toast-close="" class="toast-close"><svg[^>]*aria-hidden="true"/,
+    )
+    assert.doesNotMatch(html, /banner-ok/)
+    assert.equal(html.match(/src="\/assets\/toast\.js\?v=1\.2\.3"/g)?.length, 1)
+
+    html = await (await request('/repos?done=check_failed', { cookie })).text()
+    assert.match(html, /<div role="alert" class="banner banner-alert">/)
+    assert.doesNotMatch(html, /class="toast"/)
   })
 
   it('enables a repository for an admin, with CSRF, and says what the next push does', async () => {
@@ -415,5 +451,11 @@ describe('the Repos screen', () => {
     let response = await request('/repos/check', { cookie, form: { _csrf: csrf } })
     assert.equal(response.headers.get('Location'), '/repos?done=checked')
     assert.deepEqual(checks, ['sakuga-software'])
+    // KNT-195: the form carries the list on screen, and the redirect comes back to it; a value that
+    // the list does not know is dropped.
+    let html = await (await request('/repos?filter=enabled&q=fruit&page=2', { cookie })).text()
+    assert.match(html, /<form method="post" action="\/repos\/check\?filter=enabled&amp;q=fruit&amp;page=2">/)
+    response = await request('/repos/check?filter=enabled&q=fruit&page=2&evil=1', { cookie, form: { _csrf: csrf } })
+    assert.equal(response.headers.get('Location'), '/repos?filter=enabled&q=fruit&page=2&done=checked')
   })
 })

@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { PAGE_NUMBER_MAX, pageWindow, readPageNumber } from './paging.ts'
+import { PAGE_NUMBER_MAX, PER_PAGE_MAX, PER_PAGE_MIN, pageWindow, readPageNumber, readPageSize } from './paging.ts'
 
 const read = (query: string) => readPageNumber(new URLSearchParams(query))
 
@@ -39,5 +39,19 @@ describe('the numbered pages of a list (KNT-146)', () => {
       let { offset } = pageWindow(PAGE_NUMBER_MAX, 120, limit)
       assert.ok(offset < 120, `${limit}: ${offset}`)
     }
+  })
+})
+
+describe('the size of a page (KNT-178)', () => {
+  it('reads ?per=n between 10 and 100, and gives null for a value that is not a whole number of 1 or more', () => {
+    let read = (per: string) => readPageSize(new URLSearchParams(per ? { per } : {}))
+    assert.equal(read('25'), 25)
+    assert.equal(read('10'), PER_PAGE_MIN)
+    assert.equal(read('3'), PER_PAGE_MIN)
+    assert.equal(read('100'), PER_PAGE_MAX)
+    assert.equal(read('999999'), PER_PAGE_MAX)
+    assert.equal(read('1000000'), PER_PAGE_MAX)
+    assert.equal(read('9'.repeat(400)), PER_PAGE_MAX, 'a number too long for a double is Infinity, the highest bound')
+    for (let value of ['', '0', '-5', '2.5', '1e2', 'abc', '025', ' 50', '0x20']) assert.equal(read(value), null, value)
   })
 })

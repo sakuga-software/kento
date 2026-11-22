@@ -78,6 +78,7 @@ function setup(head = HEAD1) {
         if (e.id === null) rows.push({ ...e.values, id: `row-${rows.length + 1}` })
         else Object.assign(rows.find((r) => r.id === e.id)!, e.values)
       }
+      return new Set(entries.flatMap((e) => (e.id ? [e.id] : [])))
     },
   }
   let warnings: string[] = []

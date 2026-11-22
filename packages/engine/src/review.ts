@@ -11,6 +11,7 @@ import { withoutMergeAdvice } from './risk.ts';
 import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
+import { publicLabels } from './labels.ts';
 import { inHistory } from './history.ts';
 import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
@@ -377,6 +378,9 @@ export function finishReview<F extends Finding>(
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
+  // KNT-196. No label of the pack (`E1`) in the published text: the public id of an open earlier
+  // finding, and no sentence on one that is not open.
+  if (publicLabels(answer, earlier)) log('labels of earlier findings written as their public ids, or removed');
   for (const f of linked.dropped) log(`finding dropped, it continues a finding that a person set aside and its file did not change: ${f.path}: ${f.title}`);
   // REV-100. A finding whose code did not change since the last reviewed commit is `seen`; the model
   // never sets it.
@@ -422,10 +426,14 @@ export function finishReview<F extends Finding>(
   const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
   for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
-  // REV-95. A finding near a rejected finding, on a file that did not change since the rejection. It
-  // goes before the score: a rejected defect does not lower it.
-  const rejectedAway = dropRejected(answer, rejected, (f) => anchor(f, lines));
-  for (const f of rejectedAway) log(`finding dropped, a person rejected it and its file did not change: ${f.path}: ${f.title}`);
+  // REV-95. A finding of a rejected defect, on a file that did not change since the rejection, or
+  // (KNT-197) that changed away from it. It goes before the score: a rejected defect does not lower it.
+  const rejectedDrops = dropRejected(answer, rejected, (f) => anchor(f, lines));
+  const rejectedAway = rejectedDrops.map((d) => d.finding);
+  for (const { finding: f, why } of rejectedDrops) {
+    const reason = why === 'unchanged' ? 'its file did not change' : 'its file did not change near it';
+    log(`finding dropped, a person rejected it and ${reason}: ${f.path}: ${f.title}`);
+  }
   // REV-99. A whole review (no incremental plan) whose findings all continue earlier findings keeps
   // at least the score of the last review at this level, when that head is in the history of this
   // one: the defect was counted then. A new defect, or a more severe one, lowers it as before.
