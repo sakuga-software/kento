@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './git.ts';
 import { generatedFile } from './pack.ts';
+import { SECTION_PROMPT_FILES } from './sections.ts';
 
 export { DIFF_HASH, REUSE_KEY } from '../../protocol/src/index.ts';
 
@@ -19,7 +20,7 @@ export { DIFF_HASH, REUSE_KEY } from '../../protocol/src/index.ts';
 export const REUSE_VERSION = 1;
 
 /** The prompts that a review reads. KNT-154: critical.md ends the pack of a critical change. */
-export const PROMPT_FILES = ['review.md', 'patch.md', 'critical.md'] as const;
+export const PROMPT_FILES = ['review.md', 'patch.md', 'critical.md', ...SECTION_PROMPT_FILES] as const;
 const PROMPT = PROMPT_FILES.map((file) => readFileSync(join(import.meta.dirname, '..', 'prompts', file), 'utf8')).join('\n');
 
 /**

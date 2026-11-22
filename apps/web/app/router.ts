@@ -13,10 +13,11 @@ import { requestLogger } from './request-logger.ts'
 import { createPullControllers, type PullsDependencies } from './pulls/controller.tsx'
 import type { AssignmentStore } from './assignment/store.ts'
 import type { RulesStore } from './rules/store.ts'
-import { authRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
+import { authRoutes, costRoutes, docsRoutes, fallbackRoutes, feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes, pullRoutes, routes, userRoutes } from './routes.ts'
 import { createOrganizationController, type OrganizationDependencies } from './organizations/controller.tsx'
 import { createMemberControllers, type MembersDependencies } from './members/controller.tsx'
 import { createFeedbackControllers, type FeedbackDependencies } from './feedback/controller.tsx'
+import { createCostControllers, type CostsDependencies } from './costs/controller.tsx'
 import { createRunnerController, type RunnerApiDependencies } from './runner/controller.ts'
 import type { RunnersAdminStore } from './runner/admin.ts'
 import { runnerRoutes } from './runner/routes.ts'
@@ -69,6 +70,8 @@ export interface AppDependencies {
   users?: UsersDependencies | null
   /** The answers about the reviews (REV-107). Without them, the screen answers 404. */
   feedback?: FeedbackDependencies | null
+  /** KNT-188. The Costs screen. Without it, the screen answers 404. */
+  costs?: CostsDependencies | null
   /** KNT-150. The members and the invitations. Without them, their screens answer 404. */
   members?: MembersDependencies | null
   /** KNT-150. The name and the installations of an org. Without them, the screen answers 404. */
@@ -132,6 +135,7 @@ export function createAppRouter(deps: AppDependencies) {
   router.map(pullRoutes, createPullControllers(ui.screens, deps.pulls ?? null))
   router.map(userRoutes, createUserControllers(ui.screens, deps.users ?? null))
   router.map(feedbackRoutes, createFeedbackControllers(ui.screens, deps.feedback ?? null))
+  router.map(costRoutes, createCostControllers(ui.screens, deps.costs ?? null))
   let members = createMemberControllers(ui.screens, deps.members ?? null)
   router.map(memberRoutes, members.members)
   router.map(invitationRoutes, members.invitations)
