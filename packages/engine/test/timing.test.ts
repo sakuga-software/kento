@@ -205,7 +205,7 @@ test('the check of a review in passes reads the steps of a race', async () => {
     const body = JSON.parse(String(init.body));
     const user: string = body.messages[1].content;
     users.push(user);
-    const pass = BASE_PASSES.find((p) => user.endsWith(`${p.focus}\n`));
+    const pass = BASE_PASSES.find((p) => user.includes(p.focus));
     const content = JSON.stringify(pass ? answer(pass.id === 'contracts' ? [traced] : []) : { verdicts: [{ index: 0, keep: true, reason: 'The steps hold.' }] });
     return new Response(JSON.stringify({ model: body.model, choices: [{ message: { content } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 } }));
   }) as typeof globalThis.fetch;

@@ -167,9 +167,9 @@ test('the net links a finding near a fixed finding only on its key: a case that 
 
 test('the prompt asks which change of the code makes an assertion fail, apart from "no test"', () => {
   const text = readFileSync(join(import.meta.dirname, '..', 'prompts', 'review.md'), 'utf8').replace(/\s+/g, ' ');
-  assert.match(text, /- tests: new non-trivial logic with no test, only if the repository has tests\. - what a test proves:/);
+  assert.match(text, /- tests: new non-trivial logic with no test, only when `CLAUDE\.md` or `AGENTS\.md` asks for tests\. - what a test proves:/);
   assert.match(text, /name the change of the code under test that makes its assertion fail/);
-  assert.match(text, /Only if the repository has tests: for a guard, a listener or a class that the diff adds, name the test that fails when it goes/);
+  assert.match(text, /Only when `CLAUDE\.md` or `AGENTS\.md` asks for tests: for a guard, a listener or a class that the diff adds, name the test that fails when it goes/);
   // The severity follows the impact, as § Severity says.
   assert.match(text, /a finding of category `test`: `major` when the behaviour that it means to check is on a path that users take, else `minor`/);
   assert.match(text, /A checker or a lint rule that misses a form of its target/);
