@@ -65,6 +65,9 @@ screen must follow, and the one of every pull request.
   script, the import map, with the nonce of the response (`app/ui/security-headers.ts`, the `csp()`
   middleware of Remix). Never an inline script or style of your own. A small script in
   `public/assets/` still fits a behaviour of a whole page (`progress.js`, `findings.js`).
+  `e2e/csp.spec.ts` (KNT-171) fails on any refusal of the policy, under Chromium and WebKit, on every
+  screen of `e2e/csp-screens.ts`: a new GET route goes there (or in its `NOT_SCREENS`, with why),
+  else `app/csp-screens.test.ts` fails.
 - **Forms keep working without JavaScript.** A script may apply a choice at once or reveal a
   control, never be the only way to submit.
 - **Every control passes the accessibility checks**:

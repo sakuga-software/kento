@@ -255,6 +255,58 @@ test.describe('the Repos screen', () => {
     }
   })
 
+  test('"Read GitHub again" is a quiet icon button, busy while it posts; its result comes in a toast (KNT-184, KNT-185)', async ({ page }) => {
+    let errors = watchConsole(page)
+    await signIn(page, 'octocat')
+    await page.goto('/repos?filter=enabled')
+    let check = page.getByRole('button', { name: 'Read GitHub again' })
+    await expect(check).toHaveAttribute('title', 'Read GitHub again')
+    await expect(check).toHaveText('')
+    let size = (await check.boundingBox())!
+    expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(32)
+
+    // The check takes its time: the button says it is busy, and its icon turns. Read in the page:
+    // after a click that posts, a locator reads the next page. (A second press: progress-script.test.ts.)
+    await page.route('**/repos/check?*', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      await route.continue()
+    })
+    let busy = new Promise<string>((resolve) => page.on('console', (message) => message.text().startsWith('busy ') && resolve(message.text())))
+    await page.evaluate(() =>
+      document.addEventListener('submit', () =>
+        setTimeout(() => {
+          let button = document.querySelector('[data-busy]')!
+          console.log(`busy ${button.getAttribute('aria-busy')} ${getComputedStyle(button.querySelector('svg')!).animationName}`)
+        }, 200),
+      ),
+    )
+    await check.click()
+    expect(await busy).toBe('busy true button-busy')
+    // The toast: in the live region, in the bottom right corner of the window, over the page.
+    let toast = page.getByRole('status').locator('.toast')
+    await expect(toast).toContainText('List up to date.')
+    // The message leaves the URL; the filter stays.
+    await expect(page).toHaveURL(/\/repos\?filter=enabled$/)
+    let box = (await toast.boundingBox())!
+    let viewport = page.viewportSize()!
+    expect(viewport.width - (box.x + box.width)).toBeLessThanOrEqual(32)
+    expect(viewport.height - (box.y + box.height)).toBeLessThanOrEqual(32)
+    expect(await toast.evaluate((el) => getComputedStyle(el.parentElement!).position)).toBe('fixed')
+    // It goes by itself after 8 s.
+    expect(await toast.evaluate((el) => getComputedStyle(el).animationName)).toBe('toast-in, toast-out')
+    expect(await toast.evaluate((el) => getComputedStyle(el).animationDelay)).toBe('0s, 8s')
+    await expectNoAxeViolations(page)
+    // Its close link removes it, with no load.
+    await page.evaluate(() => ((window as unknown as { kept: number }).kept = 1))
+    await toast.getByRole('link', { name: 'Close the message' }).click()
+    await expect(toast).toHaveCount(0)
+    expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
+    // A reload does not show it again.
+    await page.reload()
+    await expect(page.locator('.toast')).toHaveCount(0)
+    expect(errors).toEqual([])
+  })
+
   test('a repository name of 80 characters: the page does not scroll sideways, and "Disable" stays in view (REV-25)', async ({ page }) => {
     await signIn(page, 'octocat')
     await checkNow(page)
@@ -344,12 +396,24 @@ test.describe('the Repos screen', () => {
     await expect(dialog).toBeHidden()
 
     // Enter on "See the findings": the menu closes, then the page changes. Back, the menu is closed.
-    await trigger.focus()
-    await page.keyboard.press('ArrowDown')
-    await page.keyboard.press('ArrowDown')
-    await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
-    await page.keyboard.press('Enter')
-    await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+$/)
+    // KNT-178: orchard has a finding, so findings.js fits the size of the page to the window, with one
+    // replace of the URL that adds no entry to the history: Back still leads to the repos.
+    let sql = database()
+    try {
+      await sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        select id, 1, 'knt-178-repos', 'knt-178-repos', 'a.ts', 1, 'A finding for KNT-178', 'minor', 'bug', 80, 'open', ${'a'.repeat(40)}, ${'a'.repeat(40)}
+        from repos where github_repo_id = 7001 on conflict do nothing`
+      await trigger.focus()
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('ArrowDown')
+      await expect(menu.getByRole('menuitem', { name: 'See the findings' })).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page).toHaveURL(/\/findings\?repo=[0-9a-f-]+&per=\d+$/)
+    } finally {
+      await sql`delete from findings where fingerprint = 'knt-178-repos'`
+      await sql.end()
+    }
     await page.goBack()
     await hydrated(page)
     await expect(menuOf(page, 'orchard').trigger).toHaveAttribute('aria-expanded', 'false')
@@ -804,6 +868,18 @@ test.describe('the Repos screen without JavaScript', () => {
     await expect(page).toHaveURL(/[?&]done=enabled&repo=[0-9a-f-]+#repo-[0-9a-f-]+$/)
     await expect(page.getByRole('status').filter({ hasText: 'orchard is enabled.' })).toBeVisible()
     await expect(rowOf(page, 'orchard').getByRole('button', { name: 'Enable orchard' })).toHaveCount(0)
+  })
+
+  test('the toast of a result shows without a script, and its close link loads the page without it (KNT-184)', async ({ page }) => {
+    await signIn(page, 'octocat')
+    await page.goto('/repos?q=or&done=checked')
+    let toast = page.getByRole('status').locator('.toast')
+    await expect(toast).toContainText('List up to date.')
+    // No script to clean the URL: the close link does it.
+    await expect(page).toHaveURL(/done=checked/)
+    await toast.getByRole('link', { name: 'Close the message' }).click()
+    await expect(page).toHaveURL(/\/repos\?q=or$/)
+    await expect(page.locator('.toast')).toHaveCount(0)
   })
 
   test('the menu "…" of the last row opens upwards, inside the table (REV-91)', async ({ page, browser, baseURL }) => {

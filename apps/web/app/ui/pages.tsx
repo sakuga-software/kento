@@ -42,12 +42,12 @@ export function appInstallUrl(githubUrl: string, slug: string): string {
 /** The controllers of the screens (`pageRoutes`) and of the sign-in (`authRoutes`). */
 export function createUiControllers(deps: UiDependencies) {
   let kit = createKit(deps)
-  let { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions } = createAuth(kit)
+  let { sessionLayer, requireViewer, requirePerson, optionalViewer, signIn, frameActions, stillSigned } = createAuth(kit)
 
   let pages = createController(pageRoutes, {
     middleware: [securityHeaders(), ...sessionLayer, requireViewer],
     actions: {
-      ...dashboardActions(kit),
+      ...dashboardActions(kit, stillSigned),
       ...reposActions(kit),
       ...configActions(kit),
       ...findingsActions(kit),
@@ -133,6 +133,8 @@ export function createUiControllers(deps: UiDependencies) {
     now: kit.now,
     setActiveOrg: async (sessionId, orgId) => {
       await deps.auth?.store.setActiveOrg(sessionId, orgId)
+      // KNT-189: the live card of the other tabs showed the org before.
+      kit.streams.endSession(sessionId, 'org switch')
     },
     errorPage: kit.errorPage,
     redirect,

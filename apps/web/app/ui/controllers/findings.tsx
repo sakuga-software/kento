@@ -6,8 +6,18 @@ import { readStatusForm } from '../../findings/dismiss.ts'
 import type { FindingFacets, FindingScreenPage } from '../../findings/screen.ts'
 import { log } from '../../log.ts'
 import { pageRoutes } from '../../routes.ts'
-import { findingListQuery, FindingsPage, readFindingList, readFindingsNotice } from '../findings.tsx'
+import { findingListQuery, FindingsPage, NOTICE_PARAMS, readFindingList, readFindingsNotice, type FindingList } from '../findings.tsx'
 import { forbidden, isAdmin, PlaceholderPage, redirect, signedOf, type UiKit } from './kit.tsx'
+
+/**
+ * KNT-195. The query of the URL of the list, when the URL is not it: the list, as `findingListQuery`
+ * writes it, then the parameters of the notice as they came. Null when the URL is already that one.
+ */
+export function canonicalQuery(params: URLSearchParams, list: FindingList): string | null {
+  let target = findingListQuery(list)
+  for (let [name, value] of params) if (NOTICE_PARAMS.includes(name)) target.append(name, value)
+  return target.toString() === params.toString() ? null : target.toString()
+}
 
 /** What the tab "Precision" gets in place of the list: it shows neither. */
 const NO_PAGE: FindingScreenPage = {
@@ -31,13 +41,25 @@ export function findingsActions(kit: UiKit) {
       if (!findings) return context.render(<PlaceholderPage frame={page} section="findings" />)
       let orgId = signed.membership.org.id
       let list = readFindingList(context.url.searchParams)
+      // KNT-195. One URL for one screen: the form of the filters sends its empty fields, and a value the
+      // screen cannot read gives the default. Both go to the URL with only the values in use. The notice
+      // of a change of status rides along as it came.
+      let canonical = canonicalQuery(context.url.searchParams, list)
+      if (canonical !== null) return redirect(canonical ? `${pageRoutes.findings.href()}?${canonical}` : pageRoutes.findings.href())
       // The tab "Precision" shows no row and no filter: no query for them.
       let precisionTab = list.tab === 'precision'
       let [result, facets, precision] = await Promise.all([
-        precisionTab ? NO_PAGE : findings.store.list(orgId, list),
+        precisionTab ? NO_PAGE : findings.store.list(orgId, { ...list, limit: list.per ?? undefined }),
         precisionTab ? NO_FACETS : findings.store.facets(orgId),
         findings.store.precision(orgId),
       ])
+      // A page after the last one shows the last one (KNT-148): its URL says so, the notice kept. Only to
+      // a lower page of 1 or more: each redirect lowers the page, so a store that answers another page
+      // (or 0 for an empty list) cannot make it loop.
+      if (!precisionTab && result.page >= 1 && result.page < list.page) {
+        let last = canonicalQuery(context.url.searchParams, { ...list, page: result.page })!
+        return redirect(last ? `${pageRoutes.findings.href()}?${last}` : pageRoutes.findings.href())
+      }
       return context.render(
         <FindingsPage
           frame={page}
