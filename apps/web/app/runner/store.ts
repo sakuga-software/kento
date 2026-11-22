@@ -571,14 +571,19 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           where jobs.id = ${jobId}
           order by reviews.published_at desc nulls last
           limit 20`
-        let reversals = new Map<string, string>()
+        // The newest review that holds a finding decides: a later review without the reversal ends it.
+        let reversals = new Map<string, string | null>()
         for (let { result } of results) {
           for (let f of jsonOf<StoredReview>(result).findings ?? []) {
             let key = findingKey(f)
-            if (f.reverses && FINDING_KEY_PATTERN.test(f.reverses) && !reversals.has(key)) reversals.set(key, f.reverses)
+            if (reversals.has(key)) continue
+            reversals.set(key, f.reverses && FINDING_KEY_PATTERN.test(f.reverses) ? f.reverses : null)
           }
         }
-        findings = findings.map((f) => (reversals.has(f.key) ? { ...f, reverses: reversals.get(f.key)! } : f))
+        findings = findings.map((f) => {
+          let reverses = reversals.get(f.key)
+          return reverses ? { ...f, reverses } : f
+        })
       }
       return { findings, last: last && Number.isInteger(score) && score >= 1 && score <= 5 ? { head: last.head, score } : null }
     },

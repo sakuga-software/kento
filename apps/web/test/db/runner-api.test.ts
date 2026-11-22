@@ -924,6 +924,17 @@ describe('runner API', () => {
       await queueJob()
       let old = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
       assert.ok(!('reverses' in old.earlier.findings[0]), 'a runner of an earlier release refuses the key')
+      // A newer review that holds the same finding without the reversal ends it.
+      let [k] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'balanced', 'done', 28, ${HEAD}, 'main') returning id`
+      let later = review({ head: HEAD, score: 4, findings: [{ ...finding, ...reversing, fingerprint: '1111111111111111', blocking: false }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${k!.id}, ${repoId}, 28, ${HEAD}, 4, 'm', 0.01, ${JSON.stringify(later)}::jsonb, 558, now() + interval '1 minute')`
+      await queueJob()
+      let after = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.ok(!('reverses' in after.earlier.findings[0]), 'the newest review decides')
     })
 
     it('sends the head of the last review on GitHub, of any level, to a runner that reads it (REV-100)', async () => {
