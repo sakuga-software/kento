@@ -18,16 +18,16 @@ import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
 import { askForFeedback } from '../feedback/github.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
-import { claimRejectHint, createFindingsLedger, releaseRejectHint } from '../findings/ledger.ts'
+import { claimRejectHint, createFindingsLedger, markFixedByResolve, releaseRejectHint } from '../findings/ledger.ts'
 import { sweepReactions } from '../findings/reactions.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
 import { publishResolution, type ResolveHints } from '../resolve/publish.ts'
 import { pageRoutes } from '../routes.ts'
 import { ONLINE_SECONDS } from '../runner/admin.ts'
-import { failureComment } from './failure.ts'
+import { failedCheck, failureComment } from './failure.ts'
 import { createGitHub, GitHubError, type GitHub } from './github.ts'
-import { botReviewState, postReusedCheck, PR_ICONS_PATH, publishReview, publishUnchanged } from './publish.ts'
+import { botReviewState, checkName, hasCheck, postReusedCheck, PR_ICONS_PATH, publishReview, publishUnchanged } from './publish.ts'
 import type { StoredReview } from '../runner/store.ts'
 import { QUEUE_NOTICE_MAX_AGE, QUEUE_STALL_MINUTES, queuedComment, queuedMarker } from './queued.ts'
 
@@ -543,11 +543,43 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         let configUrl = deps.publicUrl ? new URL(pageRoutes.repoConfig.href({ id: row.repoId }), deps.publicUrl).toString() : null
         let body = failureComment({ ...row, commenter, configUrl })
         await github.rest('POST', `/repos/${row.fullName}/issues/${row.prNumber}/comments`, { body })
-        log('info', 'job.failure_noticed', { ...fields, command: row.commentId !== null })
+        let check = row.kind === 'review' ? await postFailedCheck(row, { ...row, commenter, configUrl }) : null
+        log('info', 'job.failure_noticed', { ...fields, command: row.commentId !== null, check })
       } catch (error) {
         // One try: the row is already marked.
         log('warn', 'job.failure_notice_failed', { ...fields, error: errorMessage(error).slice(0, 500) })
       }
+    }
+  }
+
+  /**
+   * KNT-161. The check run of a failed review, when its head has no check of Kentō: without it, the
+   * check stays missing or shows the review of an earlier head. A head that another review already
+   * checked keeps that check. Returns the conclusion posted, or null. A failure is logged only.
+   */
+  async function postFailedCheck(row: FailedJobRow, job: Parameters<typeof failedCheck>[0]): Promise<string | null> {
+    try {
+      let token = await deps.mintInstallationToken({
+        installationId: Number(row.installationId),
+        githubRepoId: Number(row.githubRepoId),
+        permissions: CHECK_PERMISSIONS,
+      })
+      let checks = createGitHub({ apiUrl: deps.apiUrl, token: token.token, fetch: deps.fetch })
+      let repo = `/repos/${row.fullName}`
+      if (await hasCheck(checks, repo, row.headSha, deps.botLogin)) return null
+      let check = failedCheck(job)
+      await checks.rest('POST', `${repo}/check-runs`, {
+        name: checkName(),
+        head_sha: row.headSha,
+        status: 'completed',
+        conclusion: check.conclusion,
+        details_url: `${(deps.webUrl ?? 'https://github.com').replace(/\/+$/, '')}/${row.fullName}/pull/${row.prNumber}`,
+        output: { title: check.title, summary: check.summary },
+      })
+      return check.conclusion
+    } catch (error) {
+      log('warn', 'job.failure_check_failed', { jobId: row.id, repo: row.fullName, pr: row.prNumber, error: errorMessage(error).slice(0, 500) })
+      return null
     }
   }
 
@@ -839,5 +871,6 @@ function resolveHints(sql: postgres.ISql, row: { githubRepoId: number | string; 
     },
     claim: (findingId) => claimRejectHint(sql, findingId),
     release: (findingId) => releaseRejectHint(sql, findingId),
+    markFixed: (findingId) => markFixedByResolve(sql, findingId),
   }
 }

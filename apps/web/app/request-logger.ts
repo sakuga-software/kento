@@ -22,6 +22,18 @@ export function requestLogger(): Middleware {
       }
       return response
     } catch (error) {
+      // KNT-189. The client left before the answer (a tab closed while the live card of the
+      // dashboard connects): the router throws the reason of the abort. Not a fault of the service.
+      if (context.request.signal.aborted && error === context.request.signal.reason) {
+        log('info', 'http.request', {
+          method: context.request.method,
+          path: pathname,
+          status: 499,
+          durationMs: Math.round(performance.now() - start),
+          aborted: true,
+        })
+        throw error
+      }
       log('error', 'http.request', {
         method: context.request.method,
         path: pathname,

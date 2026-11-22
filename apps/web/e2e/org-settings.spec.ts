@@ -18,6 +18,32 @@ function database() {
   return postgres(process.env.E2E_DATABASE_URL!, { max: 1, onnotice: () => {} })
 }
 
+/**
+ * KNT-177: waits for the end of a smooth scroll, when the page stays still for 300 ms and at least
+ * 5 frames: a time window, so that a runner that stalls for a few frames does not end it early.
+ */
+async function scrollSettled(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let last = -1
+        let still = 0
+        let since = performance.now()
+        let step = () => {
+          if (window.scrollY === last) still += 1
+          else {
+            still = 0
+            since = performance.now()
+          }
+          last = window.scrollY
+          if (still >= 5 && performance.now() - since >= 300) resolve()
+          else requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+      }),
+  )
+}
+
 /** orchard enabled with one review that cost 0,02 $ today; the org at the values of a new org. */
 async function reset(page: Page) {
   await page.goto('/repos')
@@ -203,6 +229,7 @@ test.describe('the settings of the org', () => {
       // The wheel over the sidebar scrolls the page: the sidebar does not hold it.
       let box = (await nav.boundingBox())!
       await page.mouse.move(box.x + 20, box.y + 20)
+      await scrollSettled(page)
       let before = await page.evaluate(() => window.scrollY)
       await page.mouse.wheel(0, 600)
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before)
@@ -236,6 +263,99 @@ test.describe('the settings of the org', () => {
     expect(overflow).toBeLessThanOrEqual(0)
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
+  })
+
+  test('a link of the sidebar glides to its section, on this page only, and jumps with reduced motion (KNT-177)', async ({ page }, info) => {
+    await signIn(page, 'octocat')
+    await page.goto('/settings')
+    let behavior = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)
+    // At rest the page scrolls at once: only a click of the sidebar glides (critique of #61, P1).
+    expect(await behavior()).toBe('auto')
+    // Under 900 px the list is at the top of the page and marks the section chosen in it (KNT-168): no glide there.
+    if (info.project.name === 'mobile') return
+    // The positions of the page at each scroll event, from the click to the end of the scroll: a
+    // jump gives one, a glide many. No count of frames: a slow runner can click late.
+    let record = () =>
+      page.evaluate(() => {
+        let seen: number[] = []
+        ;(window as unknown as { glide: number[] }).glide = seen
+        window.addEventListener('scroll', () => seen.push(Math.round(window.scrollY)), { passive: true })
+      })
+    let recorded = () => page.evaluate(() => [...new Set((window as unknown as { glide: number[] }).glide)])
+    await record()
+    await goToSettingsLink(page, 'Levels and models')
+    await expect.poll(async () => (await recorded()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    let seen = await recorded()
+    // Smooth: the page passes through positions between its start and its end.
+    expect(seen.length, `positions ${seen.join(',')}`).toBeGreaterThan(3)
+    // The heading lands near the top of the window, clear of its edge; the sidebar marks it.
+    let top = await page.locator('#defaults').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(8)
+    expect(top).toBeLessThan(40)
+    let nav = page.getByRole('navigation', { name: 'Sections of the settings' })
+    await expect(nav.getByRole('link', { name: 'Levels and models' })).toHaveAttribute('aria-current', 'location')
+
+    // Reduced motion: the same kind of link jumps at once.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await scrollSettled(page)
+    await record()
+    await goToSettingsLink(page, 'Trusted bots')
+    await expect.poll(async () => (await recorded()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    // A jump: one scroll event, at the end.
+    expect(await recorded()).toHaveLength(1)
+    top = await page.locator('#bots').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(8)
+    expect(top).toBeLessThan(40)
+
+    // Another page keeps the default scroll.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.goto('/repos')
+    expect(await behavior()).toBe('auto')
+  })
+
+  test('a load of /settings#section, a reload and Tab land at once: only the sidebar glides (KNT-177)', async ({ page }) => {
+    // The positions of each document at each scroll event, from its start.
+    await page.addInitScript(() => {
+      let seen: number[] = []
+      ;(window as unknown as { glide: number[] }).glide = seen
+      addEventListener('scroll', () => seen.push(Math.round(scrollY)), { passive: true })
+    })
+    let positions = () => page.evaluate(() => [...new Set((window as unknown as { glide: number[] }).glide)])
+    await signIn(page, 'octocat')
+    // A link from another page to a section far down, as the "No cap" link of the dashboard.
+    await page.goto('/repos')
+    await page.evaluate(() => {
+      let link = document.createElement('a')
+      link.href = '/settings#bots'
+      link.textContent = 'To the trusted bots'
+      document.querySelector('main')!.prepend(link)
+    })
+    await page.getByRole('link', { name: 'To the trusted bots' }).click()
+    await expect(page).toHaveURL(/\/settings#bots$/)
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump to #bots').toHaveLength(1)
+    let top = await page.locator('#bots').evaluate((el) => Math.round(el.getBoundingClientRect().top))
+    expect(top).toBeGreaterThanOrEqual(0)
+    expect(top).toBeLessThan(40)
+
+    // A reload comes back to the same place at once.
+    await page.reload()
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump at the reload').toHaveLength(1)
+
+    // Tab to a field far from the screen: the page follows the focus at once.
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await scrollSettled(page)
+    await page.evaluate(() => ((window as unknown as { glide: number[] }).glide.length = 0))
+    await page.locator('#bots textarea').focus()
+    await expect.poll(async () => (await positions()).length).toBeGreaterThan(0)
+    await scrollSettled(page)
+    expect(await positions(), 'one jump to the focused field').toHaveLength(1)
   })
 
   // KNT-164. On a phone the open list is part of the page, as a disclosure: it folds only on a link

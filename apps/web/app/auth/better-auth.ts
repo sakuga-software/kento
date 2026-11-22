@@ -169,7 +169,7 @@ export function createKentoAuth(options: KentoAuthOptions) {
         update: { before: async (account: Record<string, unknown>) => ({ data: withoutTokens(account) }) },
       },
       session: {
-        create: { before: (session: Record<string, unknown>) => beforeSessionCreate(store, session, signInScope.getStore(), now()) },
+        create: { before: (session: Record<string, unknown>) => beforeSessionCreate(store, session, signInScope.getStore(), now(), lookupRole) },
       },
     },
     plugins: [
@@ -279,12 +279,13 @@ export async function beforeSessionCreate(
   session: Record<string, unknown>,
   scope: SignInScope | undefined,
   now: number,
+  lookupRole: LookupRole,
 ): Promise<false | { data: Record<string, unknown> }> {
   let decision = scope?.decision
   if (decision?.kind !== 'allowed' || typeof session.userId !== 'string') return false
   let user = await store.findUser(session.userId)
   if (!user) return false
-  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed, now)
+  await saveSignInRoles(store, user, decision.roles, decision.unconfirmed, now, lookupRole)
   // The org on screen: the first org where GitHub counts the person as an admin, else the first one
   // from GitHub, else the first one of an invitation; always one where the person is a member once
   // the roles are saved (an org can go in between), else their first membership. None: no session.

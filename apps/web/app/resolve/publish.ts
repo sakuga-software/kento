@@ -35,6 +35,8 @@ export interface ResolveOutcome {
   toResolve: number
   /** REV-116. The hints of `reject` that this resolution posted. */
   hinted: number
+  /** KNT-192. The findings that this resolution marked `fixed`. */
+  fixed: number
 }
 
 /**
@@ -45,6 +47,11 @@ export interface ResolveHints extends HintClaims {
   /** The finding of the pull request whose first comment is `commentId`, or null: a thread of a person. */
   findingOf(commentId: number): Promise<string | null>
   docsUrl: string | null
+  /**
+   * KNT-192. Marks a finding `fixed` when the resolution confirms its fix: open or stale only. Returns
+   * whether its status changed.
+   */
+  markFixed?(findingId: string): Promise<boolean>
 }
 
 /**
@@ -63,7 +70,7 @@ export async function publishResolution(
   let { fullName, pr } = target
   let marker = markerResolve(payload.head)
   let at = `at commit \`${payload.head.slice(0, 9)}\``
-  let outcome: ResolveOutcome = { replied: 0, resolved: 0, toResolve: 0, hinted: 0 }
+  let outcome: ResolveOutcome = { replied: 0, resolved: 0, toResolve: 0, hinted: 0, fixed: 0 }
   let writers = new Map<string, boolean>()
 
   if (payload.held === 0) {
@@ -105,6 +112,17 @@ export async function publishResolution(
         : hintFailed
           ? `Kentō could not post the \`reject\` command in this thread. The thread stays open, and the next \`${mention('resolve')}\` command after a push tries again. To close it now, comment \`${mention('reject <cause>')}\` or resolve it.`
           : ''
+    // KNT-192. The finding of a bot thread that the code fixed is `fixed` in the ledger too, also when
+    // the App cannot resolve the thread: a finding that the reviews no longer see (`stale`) and that
+    // only `resolve` can confirm, or an open one fixed farther from its line than a review checks.
+    if (hints?.markFixed && verdict.verdict === 'fixed' && verdict.changed === true && opener.isBot) {
+      try {
+        let findingId = await hints.findingOf(opener.id)
+        if (findingId && (await hints.markFixed(findingId))) outcome.fixed++
+      } catch (error) {
+        warn('resolve.fixed_not_saved', { thread: thread.id, error: String(error).slice(0, 300) })
+      }
+    }
     let resolved = false
     if (close) {
       if (writer) {

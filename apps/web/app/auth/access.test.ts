@@ -1,7 +1,7 @@
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { orgRole } from './access.ts'
+import { orgAnswer, orgRole } from './access.ts'
 import type { GitHubRole, LookupRole } from './github.ts'
 import type { OrgRow } from './store.ts'
 import { fakeAuth } from './test-helpers.ts'
@@ -56,6 +56,13 @@ describe('the role of a person in an org of several installations', () => {
 
   it('throws when GitHub fails and no account gives a role: the answer is unknown, not "no access"', async () => {
     await assert.rejects(orgRole(lookup({ acme: 'error', 'acme-labs': null }).lookupRole, ORG, PERSON), /502/)
+  })
+
+  it('KNT-199: names the installations whose account gave the role', async () => {
+    assert.deepEqual(await orgAnswer(lookup({ acme: 'member', 'acme-labs': 'admin' }).lookupRole, ORG, PERSON), { role: 'admin', from: ['installation-2'] })
+    assert.deepEqual(await orgAnswer(lookup({ acme: 'member', 'acme-labs': 'member' }).lookupRole, ORG, PERSON), { role: 'member', from: ['installation-1', 'installation-2'] })
+    assert.deepEqual(await orgAnswer(lookup({ acme: 'member', 'acme-labs': 'error' }).lookupRole, ORG, PERSON), { role: 'member', from: ['installation-1'] })
+    assert.equal(await orgAnswer(lookup({}).lookupRole, ORG, PERSON), null)
   })
 })
 

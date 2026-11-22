@@ -27,6 +27,11 @@ export type MemberRefusal =
   | 'github_admin'
   /** GitHub does not say, now, that the person is an admin of an account of the org. */
   | 'not_github_admin'
+  /**
+   * KNT-199. The installations whose account GitHub counts the person an admin of left the org while
+   * GitHub was asked: the answer is about another org now.
+   */
+  | 'changed'
 
 export type MemberChange = { kind: 'role'; role: OrgRole } | { kind: 'remove' } | { kind: 'leave' }
 
