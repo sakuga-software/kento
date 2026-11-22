@@ -126,7 +126,7 @@ export function createMemberControllers(kit: ScreenKit, deps: MembersDependencie
         // the form again and again.
         let asked = await deps.store.askReclaim(org.id, signed.user.id)
         if (asked !== 'allowed') {
-          log('warn', 'members.reclaim_throttled', { login: signed.user.login, org: org.id, outcome: asked })
+          log('warn', asked === 'gone' ? 'members.reclaim_gone' : 'members.reclaim_throttled', { login: signed.user.login, org: org.id })
           return toMembers(asked === 'gone' ? 'not_found' : 'reclaim_wait')
         }
         let githubAdmin: boolean

@@ -36,9 +36,11 @@ screen must follow, and the one of every pull request.
   - It lives in an `app/**/public/` folder (`app/ui/public/row-menu.tsx`, `confirm.tsx`) and is
     wrapped in `clientEntry(import.meta.url, function Name(…))`. The asset server of Remix
     (`app/assets.ts`) compiles it when the browser asks: there is still no build step. A browser
-    module imports only `remix/component`, `@remix-run/ui/*`, another `public/` module, or a file
-    that `ALLOWED_FILES` of `app/assets.ts` lists (the routes, the controls, the icons). The asset
-    server refuses any other file of the server.
+    module imports only `remix/component`, `@remix-run/ui/*`, `chart.js` (the charts of the Costs
+    screen, KNT-188), another `public/` module, or a file that `ALLOWED_FILES` of `app/assets.ts`
+    lists (the routes, the controls, the icons). The asset server refuses any other file of the
+    server. A module that a component imports only with `import()` is not in the import map of the
+    page: import it statically.
   - The server renders the fallback without JavaScript (`<details>`, a link, a form, a native
     `<select>`), and the first render in the browser is the same markup, to hydrate it. The widget
     switches to the primitive in a `handle.queueTask()` of its setup, which runs only in the browser.
@@ -50,6 +52,9 @@ screen must follow, and the one of every pull request.
   - A closed popover is hidden by the browser, unless a class of `kento.css` sets `display`: give it
     a `:not(:popover-open) { display: none }` rule then. Give the hydrated markup its own classes: the
     structural rules of the fallback (`.row-menu > div`) would apply to it too.
+  - A new popover or menu panel joins the motion of KNT-186 in `kento.css` (a fade of 140 ms in and
+    80 ms out, in `prefers-reduced-motion: no-preference`): add its class to that block, and to
+    `e2e/motion.spec.ts`. A panel that stays drawn while it closes is made inert at once.
   - e2e: `hydrated(page)` (`e2e/helpers.ts`) waits for the runtime; test the widget with JavaScript
     and its fallback in a `test.use({ javaScriptEnabled: false })` block.
 - **Scripts.** The content security policy allows the scripts of the app (`'self'`) and one inline
