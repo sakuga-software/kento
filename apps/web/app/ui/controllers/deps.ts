@@ -67,6 +67,35 @@ export interface DashboardDependencies {
   readPullRequest: ReadPullRequest | null
   /** KENTO_PROVIDER_API_KEY is set: the list "Getting started" counts it as a provider (REV-26). */
   serviceKey?: boolean
+  /**
+   * KNT-191. The asset server can serve the charts (`chartsAvailable()` of app/assets.ts, the
+   * default). False: the precision by repo shows its list only.
+   */
+  charts?: boolean
+  /** KNT-189. The stream of the live card. The defaults suit the service; the tests make them short. */
+  live?: LiveOptions
+}
+
+/** KNT-189. The stream of the card "Queue and runners" (`/dashboard/live`). */
+export interface LiveOptions {
+  /** How often the card of an org is read again. Default LIVE_INTERVAL_MS (app/dashboard/live.ts). */
+  intervalMs?: number
+  /** The comment that keeps a quiet stream open through the proxies. Default 25 s. */
+  heartbeatMs?: number
+  /** A stream ends after this, and the browser opens another one: the session and the org are checked again. Default 2 min. */
+  maxMs?: number
+  /** The streams that one session may hold at once (its tabs). Default 4. */
+  perSession?: number
+  /** The streams of the whole service. Beyond, 503. Default 200. */
+  total?: number
+  /** How often a stream checks again that its session and its org are still valid. Default 20 s. */
+  recheckMs?: number
+  /** A stream whose client reads nothing for this long is cut. Default 5 s. */
+  stallMs?: number
+  /** The bytes that a stream holds for a client that reads slowly, before it counts as stalled. Default 64 KB. */
+  highWaterMark?: number
+  /** Aborts when the server shuts down: every stream ends. */
+  closing?: AbortSignal
 }
 
 /** The section "Providers and keys" of the settings (REV-11). */

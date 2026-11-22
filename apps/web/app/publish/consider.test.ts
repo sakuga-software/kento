@@ -69,6 +69,7 @@ function setup() {
     },
     async save(entries: LedgerEntry[]) {
       for (let e of entries) if (e.id === null) rows.push({ ...e.values, id: `row-${rows.length + 1}` })
+      return new Set(entries.flatMap((e) => (e.id ? [e.id] : [])))
     },
   }
   let publish = (review: ReviewPayload) => publishReview(github, target, review, { findings: ledger })

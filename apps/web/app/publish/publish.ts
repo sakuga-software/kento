@@ -235,6 +235,9 @@ export async function publishReview(
     }
   }
   let { matches, unmatched } = matchFindings(review.findings, stored, threads)
+  // KNT-151. A finding that the engine moved to « Not reviewed » (its premise is code that the review
+  // did not read) is not found again, and not fixed either: its open finding and its thread stay.
+  let movedAway = new Set(matchFindings(review.moved ?? [], unmatched, threads).matches.flatMap((m) => (m.stored ? [m.stored] : [])))
   let changedSince = filesChangedSince(github, repo, head)
   let linesChanged = changedSince.near
   // REV-99. A follower of a finding that a person dismissed or kept comes back only when the file of
@@ -296,11 +299,26 @@ export async function publishReview(
   // only once the review is on GitHub, so that a review that fails to post closes nothing.
   let fixed: StoredFinding[] = []
   let toClose: BotThread[] = []
+  // KNT-192. Open findings that UNSEEN_REVIEWS reviews in a row did not find, while pushes changed
+  // their file away from their line: `stale`, and a note in their thread.
+  let unseen: StoredFinding[] = []
+  let toNote: { finding: StoredFinding; thread: BotThread }[] = []
+  // KNT-192. A push review reads again only the files changed since the previous review on GitHub
+  // (REV-88), and carries the findings of that review for the others. A finding that a review left
+  // out is then not carried: a later review that did not read its file again cannot find it. Such a
+  // review is not a miss. The first review after the one that found the finding read its file, or
+  // carried the finding: a miss there is a real one.
+  let previousHead: Promise<string | null> | undefined
+  let readAgain = async (path: string) => {
+    previousHead ??= ledger?.previousHead?.() ?? Promise.resolve(null)
+    let since = await previousHead
+    return since !== null && (await changedSince(since, path)) === true
+  }
   let gone = 0
   // An error on one finding (the compare API) leaves it open and never stops the review.
   for (let s of unmatched) {
     // A stale finding of a reopened pull request is fixed the same way, and its thread closed.
-    if (s.status !== 'open' && s.status !== 'stale') continue
+    if ((s.status !== 'open' && s.status !== 'stale') || movedAway.has(s)) continue
     let thread = liveThread(s, threads)
     try {
       let changed = await linesChanged(s.lastSeenSha || undefined, s.path, s.line)
@@ -308,6 +326,15 @@ export async function publishReview(
       if (changed) {
         fixed.push(s)
         if (thread) toClose.push(thread)
+      } else if (
+        changed === false &&
+        s.status === 'open' &&
+        (s.unseenReviews ?? 0) + 1 >= UNSEEN_REVIEWS &&
+        (await readAgain(s.path)) &&
+        (await changedSince(s.lastSeenSha || undefined, s.path))
+      ) {
+        unseen.push(s)
+        if (thread) toNote.push({ finding: s, thread })
       }
     } catch (error) {
       warn('publish.thread_failed', { thread: thread?.id ?? null, finding: s.id, error: String(error) })
@@ -403,7 +430,8 @@ export async function publishReview(
       warn('publish.file_comment_refused', { path, error: String(error) })
     }
   }
-  if (ledger) await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted))
+  // The ids whose status the save wrote: a status that a person or a close changed meanwhile holds.
+  let written: ReadonlySet<string> = ledger ? await ledger.save(ledgerEntries(matches, fixed, unmatched, newThreads, head, reacted, unseen)) : new Set()
 
   // The caller marks the review as posted. A failure there must not skip the description, the
   // label and the check of a review that is already on GitHub.
@@ -429,6 +457,14 @@ export async function publishReview(
       }
       resolved++
     })
+  }
+
+  // KNT-192. The note in the thread of a finding that the last reviews no longer see. The thread
+  // stays open: `resolve` reads it against the code and can confirm the fix. Only for a finding that
+  // the save made `stale`: a person can dismiss it while the review is posted.
+  for (let { finding, thread } of toNote) {
+    if (finding.id === null || !written.has(finding.id)) continue
+    await step('unseen', () => github.rest('POST', `${repo}/pulls/${pr}/comments/${thread.commentId}/replies`, { body: unseenReply(head) }))
   }
 
   // REV-99. A finding that follows an earlier one is answered in the thread of that one, opened again
@@ -611,7 +647,7 @@ export function sameScoreLine(reusedFrom: string): string {
  * REV-89. Whether the check of Kentō is already on the head: a second try posts no second one. Only
  * a check of this App counts: the job "Sakuga Review" of the Action has the same name.
  */
-async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
+export async function hasCheck(checks: GitHub, repo: string, head: string, botLogin: string): Promise<boolean> {
   let slug = botLogin.replace(/\[bot\]$/, '')
   let name = checkName()
   let out: { check_runs?: { name: string; app?: { slug?: string } | null }[] } = await checks.rest(
@@ -783,6 +819,8 @@ export function ledgerEntries(
   head: string,
   /** The findings that a 👎 dismissed before this review, with the login of the person. */
   reacted: ReadonlyMap<StoredFinding, string> = new Map(),
+  /** KNT-192. The open findings that the last reviews no longer see: they become `stale`. */
+  unseen: readonly StoredFinding[] = [],
 ): LedgerEntry[] {
   let entries: LedgerEntry[] = []
   let opened: FindingEventDraft = { type: 'opened', actor: KENTO_ACTOR }
@@ -841,8 +879,18 @@ export function ledgerEntries(
       events: [...(id === null ? [opened] : []), { type: 'fixed', actor: KENTO_ACTOR }],
     })
   }
+  let unseenSet = new Set(unseen)
+  for (let s of unseen) {
+    if (fixedSet.has(s)) continue
+    let { id, ...values } = s
+    entries.push({
+      id,
+      values: { ...values, status: 'stale' },
+      events: [...(id === null ? [opened] : []), { type: 'stale', actor: KENTO_ACTOR }],
+    })
+  }
   for (let s of unmatched) {
-    if (fixedSet.has(s) || (s.id !== null && !reacted.has(s))) continue
+    if (fixedSet.has(s) || unseenSet.has(s) || (s.id !== null && !reacted.has(s))) continue
     let { id, ...values } = s
     entries.push({ id, values, events: [...(id === null ? [opened] : []), ...byReaction(s)] })
   }
@@ -877,6 +925,23 @@ function goneNote(gone: number, base: string, icons: Icons): string {
 
 // GitHub lists at most this many files in a comparison.
 const COMPARE_MAX_FILES = 300
+
+/**
+ * KNT-192. The reviews in a row that must miss an open finding, while pushes change its file away
+ * from its line, before Kentō says that it no longer sees it. One miss can be the model. A review
+ * that did not read the file again since the previous review is not a miss.
+ */
+export const UNSEEN_REVIEWS = 2
+
+/** KNT-192. The note in the thread of a finding that the last reviews no longer see. */
+export function unseenReply(head: string): string {
+  return (
+    `Kentō did not find this finding again in its last ${UNSEEN_REVIEWS} reviews, up to commit \`${head.slice(0, 9)}\`, ` +
+    'and pushes changed its file since, farther from its line than Kentō checks for a fix. It may be fixed elsewhere in the file. ' +
+    `\`${mention('resolve')}\` reads this thread against the code and can confirm it. The thread stays open until then. ` +
+    `If the finding is wrong, \`${mention('reject <cause>')}\` in this thread dismisses it.`
+  )
+}
 
 /**
  * KNT-160. A finding not found again is fixed only when the push changed a line this near to its

@@ -175,7 +175,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
       let finding = target.finding
       // The status of the finding first: it costs no call to GitHub.
       if (REJECT_REFUSED.has(finding.status)) {
-        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} ${closedText(finding.key, finding.status)}`)
+        return refuse(`reject: finding is ${finding.status}`, `@${message.commenter.login} ${closedText(finding.key)}`)
       }
       // As for the other commands: a pull request closed since the comment gets nothing.
       let open: { state?: string } = await github.rest('GET', `/repos/${fullName}/pulls/${message.prNumber}`)
@@ -208,7 +208,7 @@ export function createCommandHandler(deps: CommandHandlerDependencies): HandleCo
         throw error
       })
       if (result.refusedStatus) {
-        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} ${closedText(finding.key, result.refusedStatus)}`)
+        return refuse(`reject: finding is ${result.refusedStatus}`, `@${message.commenter.login} ${closedText(finding.key)}`)
       }
       // A redelivery or a second reject reacts again: GitHub keeps one reaction.
       if (result.failed.length) {
@@ -385,11 +385,14 @@ function targetProblemText(target: Exclude<RejectTarget, { kind: 'found' }>, com
  * not find it again after a push changed its file, near its line when GitHub gave the patch (publish.ts). Kentō does not know that the push
  * fixed it, so the reply does not say so.
  */
-export function closedText(key: string, status: string): string {
-  // What the publisher checked: not found again, and a change of its file (near its line when GitHub
-  // gave the patch). Not that the push fixed it.
-  let why = status === 'fixed' ? 'a later review did not find it again after a push changed its file' : 'it no longer applies to this PR (stale)'
-  return `The finding \`#${key.slice(0, 6)}\` is no longer open: ${why}. There is nothing to dismiss.`
+export function closedText(key: string): string {
+  // What the publisher or `resolve` checked: a change of its file (near its line for a review), and
+  // the review did not find it again, or the model read the thread against the code. Not that the
+  // push fixed it for sure. KNT-192: a `stale` finding is no longer refused.
+  return (
+    `The finding \`#${key.slice(0, 6)}\` is no longer open: it is fixed. A later review did not find it again after a push changed its file, ` +
+    `or \`${mention('resolve')}\` read its thread against the code. There is nothing to dismiss.`
+  )
 }
 
 /**

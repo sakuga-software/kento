@@ -138,6 +138,9 @@ export function fakeAuth(options: { orgs?: OrgRow[]; publicUrl?: string } = {}) 
         (m) => m.orgId === orgId && m.userId !== exceptUserId && m.role === 'owner' && new Date(m.checkedAt as Date).getTime() >= since.getTime(),
       )
     },
+    async activeInstallationIds(orgId) {
+      return orgs.find((org) => org.id === orgId)?.installations.map((i) => i.id) ?? []
+    },
     async membershipOf(userId, orgId) {
       let m = memberships.get(`${userId}/${orgId}`)
       return m ? { role: m.role, source: m.source } : null

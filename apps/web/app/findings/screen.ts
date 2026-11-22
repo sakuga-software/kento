@@ -9,7 +9,7 @@ import type postgres from 'postgres'
 import { toDate } from '../db/rows.ts'
 import { pageWindow } from '../paging.ts'
 import { precisionReport, reasonOf, reasonText, repoPrecisions, type Precision, type PrecisionReport } from './precision.ts'
-import { FINDING_STATUSES, PAGE_MAX, type FindingStatus } from './store.ts'
+import { PAGE_MAX, type FindingStatus } from './store.ts'
 
 /** The tabs of the screen: one status, the closed ones (every status but `open`), or all. */
 export const FINDING_VIEWS = ['open', 'fixed', 'dismissed', 'wontfix', 'stale', 'closed', 'all'] as const
@@ -74,6 +74,11 @@ export interface FindingRow {
    * code that an earlier review read, not critical, continuing no earlier finding. It does not block.
    */
   considered: boolean
+  /**
+   * KNT-192. A `stale` finding of an open pull request that the last reviews no longer see. Its thread
+   * stays open, so the tab "open" lists it, with a badge.
+   */
+  unseen: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -126,26 +131,54 @@ export function consideredSql(sql: postgres.Sql, table = 'findings') {
   )`
 }
 
+/**
+ * KNT-192. Whether a finding is `stale` because the last reviews no longer see it: its pull request is
+ * open (`pull_closures` holds a pull request while it is closed), and a review wrote a `stale` event
+ * for it that no close came after (the close of a pull request writes one with no review). Its thread
+ * is still open on GitHub. In `exists` form, so that Postgres starts from the side with fewer rows.
+ */
+export function unseenSql(sql: postgres.Sql, table = 'findings') {
+  let t = sql.unsafe(table)
+  return sql`(${t}.status = 'stale'
+    and not exists (select 1 from pull_closures c where c.repo_id = ${t}.repo_id and c.pr_number = ${t}.pr_number)
+    and exists (
+      select 1 from finding_events e
+      where e.finding_id = ${t}.id and e.type = 'stale' and e.review_id is not null
+        and not exists (
+          select 1 from finding_events l
+          where l.finding_id = e.finding_id and l.type = 'stale' and l.review_id is null and (l.created_at, l.id) > (e.created_at, e.id)
+        )
+    ))`
+}
+
 /** `%`, `_` and `\\` stand for themselves in a search. */
 function likePattern(search: string): string {
   return `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`
 }
 
-function statusesOf(view: FindingView): readonly FindingStatus[] {
-  if (view === 'all') return FINDING_STATUSES
-  if (view === 'closed') return FINDING_STATUSES.filter((s) => s !== 'open')
-  return [view]
+/**
+ * The findings of a tab. KNT-192: a finding that the last reviews no longer see (`unseen`, their ids)
+ * is `stale`, but its thread is open: it shows under "open", not under "stale" or "closed".
+ */
+function inViewSql(sql: postgres.Sql, view: FindingView, unseen: readonly string[]) {
+  if (view === 'all') return sql`true`
+  let isUnseen = sql`findings.id = any(${unseen as string[]}::uuid[])`
+  if (view === 'open') return sql`(findings.status = 'open' or ${isUnseen})`
+  if (view === 'closed') return sql`(findings.status <> 'open' and not ${isUnseen})`
+  if (view === 'stale') return sql`(findings.status = 'stale' and not ${isUnseen})`
+  return sql`findings.status = ${view}::finding_status`
 }
 
-type Row = Omit<FindingRow, 'githubCommentId' | 'createdAt' | 'updatedAt'> & {
+type Row = Omit<FindingRow, 'githubCommentId' | 'createdAt' | 'updatedAt' | 'unseen'> & {
   githubCommentId: number | string | null
   createdAt: Date | string
   updatedAt: Date | string
 }
 
-function toRow(row: Row): FindingRow {
+function toRow(row: Row, unseen: boolean): FindingRow {
   return {
     ...row,
+    unseen,
     githubCommentId: row.githubCommentId === null ? null : Number(row.githubCommentId),
     createdAt: toDate(row.createdAt),
     updatedAt: toDate(row.updatedAt),
@@ -178,7 +211,6 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
     ${author ? sql`and exists (select 1 from pull_authors where pull_authors.repo_id = findings.repo_id and pull_authors.pr_number = findings.pr_number and lower(pull_authors.login) = lower(${author}))` : sql``}
     ${days ? sql`and findings.created_at > now() - make_interval(days => ${days}::int)` : sql``}
     ${query.considered ? sql`and ${consideredSql(sql)}` : sql``}`
-  let inView = sql`findings.status = any(${[...statusesOf(view)]}::finding_status[])`
 
   // One snapshot (repeatable read) for the counts and the page: the range "26 to 50 of 50" matches
   // the rows, even while a review writes findings.
@@ -195,7 +227,19 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
       from findings
       join repos on repos.id = findings.repo_id
       where ${filters}`
-    let matching = Number(counts![view])
+    // KNT-192. The findings that the last reviews no longer see move from "stale" and "closed" to "open".
+    let unseen = (
+      await tx<{ id: string }[]>`
+        select findings.id from findings
+        join repos on repos.id = findings.repo_id
+        where ${filters} and ${unseenSql(sql)}`
+    ).map((r) => r.id)
+    let tabs = Object.fromEntries(FINDING_VIEWS.map((v) => [v, Number(counts![v])])) as Record<FindingView, number>
+    tabs.open += unseen.length
+    tabs.stale -= unseen.length
+    tabs.closed -= unseen.length
+    let inView = inViewSql(sql, view, unseen)
+    let matching = tabs[view]
     let { page, pages, offset } = pageWindow(query.page, matching, limit)
 
     // The ids of the page first: the skipped rows of a deep page cost an index read each, and the
@@ -220,9 +264,10 @@ export async function listFindingScreen(sql: postgres.Sql, orgId: string, query:
       left join rules on rules.id = findings.rule_id
       order by findings.created_at desc, findings.id desc`
 
+    let unseenSet = new Set(unseen)
     return {
-      rows: rows.map(toRow),
-      counts: Object.fromEntries(FINDING_VIEWS.map((v) => [v, Number(counts![v])])) as Record<FindingView, number>,
+      rows: rows.map((r) => toRow(r, unseenSet.has(r.id))),
+      counts: tabs,
       matching,
       offset,
       page,
@@ -250,8 +295,11 @@ export async function findingFacets(sql: postgres.Sql, orgId: string): Promise<F
 export interface FindingsScreenStore {
   list(orgId: string, query?: FindingQuery): Promise<FindingScreenPage>
   facets(orgId: string): Promise<FindingFacets>
-  /** REV-18. The precision of the org over 30 days, by repository and by rule, and the reasons of the dismissed findings. */
-  precision(orgId: string): Promise<PrecisionReport>
+  /**
+   * REV-18. The precision of the org over 30 days (or `days`, KNT-191), by repository and by rule,
+   * and the reasons of the dismissed findings.
+   */
+  precision(orgId: string, days?: number): Promise<PrecisionReport>
   /** The precision of some repositories of the org, by id. */
   repoPrecisions(orgId: string, repoIds: string[]): Promise<Map<string, Precision>>
 }
@@ -260,7 +308,7 @@ export function createFindingsScreenStore(sql: postgres.Sql): FindingsScreenStor
   return {
     list: (orgId, query) => listFindingScreen(sql, orgId, query),
     facets: (orgId) => findingFacets(sql, orgId),
-    precision: (orgId) => precisionReport(sql, orgId),
+    precision: (orgId, days) => precisionReport(sql, orgId, undefined, days),
     repoPrecisions: (orgId, repoIds) => repoPrecisions(sql, orgId, repoIds),
   }
 }

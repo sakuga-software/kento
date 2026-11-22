@@ -9,6 +9,9 @@ import { REASON_MAX } from './store.ts'
 
 /** The days of the window. */
 export const PRECISION_DAYS = 30
+/** KNT-191. The windows that the dashboard offers: 30 days (the default) or 7. */
+export const PRECISION_WINDOWS = [7, 30] as const
+export type PrecisionWindow = (typeof PRECISION_WINDOWS)[number]
 /** The closed findings under which a share would say nothing: the screen shows "n = 9 of 10". */
 export const PRECISION_MIN = 10
 
@@ -82,7 +85,7 @@ export function reasonText(value: string): string {
  * the ledger writes its events with `clock_timestamp()`, so two events of one finding do not share a
  * time.
  */
-function closedFindings(sql: postgres.Sql, orgId: string, repoIds?: string[]) {
+function closedFindings(sql: postgres.Sql, orgId: string, repoIds?: string[], days: number = PRECISION_DAYS) {
   return sql`
     select findings.repo_id, repos.full_name, findings.rule_id, rules.title as rule_title, rule_repos.full_name as rule_repo,
       findings.status, ${reasonOf(sql, 'findings.status_reason')} as status_reason
@@ -98,7 +101,7 @@ function closedFindings(sql: postgres.Sql, orgId: string, repoIds?: string[]) {
         select 1 from finding_events closing
         where closing.finding_id = findings.id
           and closing.type::text = findings.status::text
-          and closing.created_at >= now() - ${`${PRECISION_DAYS} days`}::interval
+          and closing.created_at >= now() - ${`${days} days`}::interval
           and not exists (
             select 1 from finding_events later
             where later.finding_id = findings.id and (later.created_at, later.id) > (closing.created_at, closing.id)
@@ -115,10 +118,13 @@ type GroupRow = {
   dismissed: string | number
 }
 
-/** The precision of an org, by repository and by rule, and the reasons of its dismissed findings. */
-export async function precisionReport(sql: postgres.Sql, orgId: string, limit = 8): Promise<PrecisionReport> {
+/**
+ * The precision of an org, by repository and by rule, and the reasons of its dismissed findings, over
+ * the last `days` days (KNT-191: 7 or 30 on the dashboard).
+ */
+export async function precisionReport(sql: postgres.Sql, orgId: string, limit = 8, days: number = PRECISION_DAYS): Promise<PrecisionReport> {
   let groups = await sql<GroupRow[]>`
-    with closed as materialized (${closedFindings(sql, orgId)})
+    with closed as materialized (${closedFindings(sql, orgId, undefined, days)})
     select 'org'::text as level, null::text as key, null::text as name, null::text as extra,
       count(*) filter (where status = 'fixed') as fixed, count(*) filter (where status = 'dismissed') as dismissed
     from closed

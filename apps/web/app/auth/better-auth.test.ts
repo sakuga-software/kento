@@ -11,7 +11,7 @@ describe('the hook before a session is written', () => {
   function allowed(): SignInScope {
     return {
       profile: OCTOCAT,
-      decision: { kind: 'allowed', roles: [{ org: ORG, role: 'admin' }], unconfirmed: [], invited: [] },
+      decision: { kind: 'allowed', roles: [{ org: ORG, role: 'admin', answer: { role: 'admin', from: ORG.installations.map((i) => i.id) } }], unconfirmed: [], invited: [] },
       clientIp: '203.0.113.5',
     }
   }
@@ -19,22 +19,22 @@ describe('the hook before a session is written', () => {
   it('writes no session outside of a sign-in, or for a sign-in that Kentō did not allow', async () => {
     let { deps } = fakeAuth()
     let session = { userId: 'user-1', token: 't' }
-    assert.equal(await beforeSessionCreate(deps.store, session, undefined, NOW), false)
-    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: null }, NOW), false)
-    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'refused' } }, NOW), false)
-    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'unknown' } }, NOW), false)
+    assert.equal(await beforeSessionCreate(deps.store, session, undefined, NOW, deps.lookupRole), false)
+    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: null }, NOW, deps.lookupRole), false)
+    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'refused' } }, NOW, deps.lookupRole), false)
+    assert.equal(await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'unknown' } }, NOW, deps.lookupRole), false)
     assert.equal(
-      await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [] } }, NOW),
+      await beforeSessionCreate(deps.store, session, { profile: OCTOCAT, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [] } }, NOW, deps.lookupRole),
       false,
       'no org to show',
     )
-    assert.equal(await beforeSessionCreate(deps.store, { userId: 'nobody', token: 't' }, allowed(), NOW), false, 'a user that is gone')
+    assert.equal(await beforeSessionCreate(deps.store, { userId: 'nobody', token: 't' }, allowed(), NOW, deps.lookupRole), false, 'a user that is gone')
   })
 
   it('saves the roles, and ends the session 7 days after the sign-in in the org of the decision', async () => {
     let auth = fakeAuth()
     auth.tables.users!.push({ id: 'user-2', githubId: CAMILLE.id, login: CAMILLE.login })
-    let result = await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, allowed(), NOW)
+    let result = await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, allowed(), NOW, auth.deps.lookupRole)
     assert.ok(result)
     assert.equal(result.data.activeOrganizationId, ORG.id)
     assert.equal((result.data.expiresAt as Date).getTime(), NOW + SESSION_TTL_MS)
@@ -48,7 +48,7 @@ describe('the hook before a session is written', () => {
     auth.tables.users!.push({ id: 'user-2', githubId: CAMILLE.id, login: CAMILLE.login })
     await auth.deps.store.saveMembership('user-2', OTHER_ORG.id, 'member', 'invitation')
     let scope: SignInScope = { profile: CAMILLE, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [OTHER_ORG] } }
-    let result = await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW)
+    let result = await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW, auth.deps.lookupRole)
     assert.ok(result)
     assert.equal(result.data.activeOrganizationId, OTHER_ORG.id)
   })
@@ -58,7 +58,7 @@ describe('the hook before a session is written', () => {
     auth.tables.users!.push({ id: 'user-2', githubId: CAMILLE.id, login: CAMILLE.login })
     // The invited org is gone (no membership any more), and GitHub gives no role: no org, no session.
     let scope: SignInScope = { profile: CAMILLE, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [OTHER_ORG] } }
-    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW), false)
+    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-2', token: 't' }, scope, NOW, auth.deps.lookupRole), false)
   })
 })
 
@@ -84,11 +84,11 @@ describe('KNT-150: a session with no org, for an invitation', () => {
     auth.tables.users!.push({ id: 'user-3', githubId: STRANGER.id, login: STRANGER.login })
     let scope: SignInScope = { profile: STRANGER, decision: { kind: 'allowed', roles: [], unconfirmed: [], invited: [], pending: 1 } }
     auth.invite(STRANGER, 1)
-    let written = await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now())
+    let written = await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now(), auth.deps.lookupRole)
     assert.ok(written)
     assert.equal(written.data.activeOrganizationId, null)
     // The invitation ended between the decision and the session: no session.
     auth.invite(STRANGER, 0)
-    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now()), false)
+    assert.equal(await beforeSessionCreate(auth.deps.store, { userId: 'user-3', token: 't' }, scope, Date.now(), auth.deps.lookupRole), false)
   })
 })
