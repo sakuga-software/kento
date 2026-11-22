@@ -77,7 +77,8 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
       '/repos': '/repos',
       '/repos/:id/config': `/repos/${seeded.repoId}/config`,
       '/repos/:id/pulls/:number': `/repos/${seeded.repoId}/pulls/${PULL_NUMBER}`,
-      '/findings': '/findings',
+      // KNT-178: without `per`, findings.js replaces the URL with the size that fits the window.
+      '/findings': '/findings?per=25',
       '/findings/:id': `/findings/${seeded.findings.A}`,
       '/runners': '/runners',
       '/costs': '/costs',
