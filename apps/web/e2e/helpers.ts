@@ -8,7 +8,9 @@ import { seedFakeOrg } from './pull-seed.ts'
  * Fails on any WCAG 2.2 A or AA violation that axe finds on the page. It waits first for the
  * transitions in progress (KNT-186: a list or a menu fades in for 140 ms), so that axe reads the
  * colours of the page at rest, not halfway through a fade. It does not wait for an animation that
- * has not started: the exit of a toast (KNT-184) starts after 8 s and then hides the toast.
+ * has not started: the exit of a toast (KNT-184) starts after 8 s and then hides the toast. It
+ * does not wait for a paused animation: a toast under the pointer stops its motion, and a paused
+ * animation never finishes.
  */
 export async function expectNoAxeViolations(page: Page) {
   await page.evaluate(() =>
@@ -17,7 +19,7 @@ export async function expectNoAxeViolations(page: Page) {
         .getAnimations()
         .filter((animation) => {
           let timing = animation.effect?.getComputedTiming()
-          return timing !== undefined && timing.endTime !== Infinity && timing.progress !== null
+          return animation.playState === 'running' && timing !== undefined && timing.endTime !== Infinity && timing.progress !== null
         })
         .map((animation) => animation.finished.catch(() => undefined)),
     ),

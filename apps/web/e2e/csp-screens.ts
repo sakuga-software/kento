@@ -26,6 +26,7 @@ export const SIGNED_OUT_SCREENS = ['/login', '/docs/commands', '/*path'] as cons
 /** The GET routes that render no screen of their own, and why. */
 export const NOT_SCREENS: Record<string, string> = {
   '/healthz': 'the JSON of the health check',
+  '/dashboard/live': 'the stream of server-sent events of the queue card of the dashboard',
   '/login/github': 'a redirect to GitHub',
   '/auth/github/callback': 'the return from GitHub, a redirect',
   '/docs/commandes': 'a permanent redirect to /docs/commands',
