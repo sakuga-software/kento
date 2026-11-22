@@ -11,6 +11,7 @@ export const SIGNED_IN_SCREENS = [
   '/findings',
   '/findings/:id',
   '/runners',
+  '/costs',
   '/settings',
   '/settings/members',
   '/settings/organization',
