@@ -10,6 +10,7 @@ import { withoutMergeAdvice } from './risk.ts';
 import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
+import { publicLabels } from './labels.ts';
 import { inHistory } from './history.ts';
 import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
@@ -339,6 +340,9 @@ export function finishReview<F extends Finding>(
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
+  // KNT-196. No label of the pack (`E1`) in the published text: the public id of an open earlier
+  // finding, and no sentence on one that is not open.
+  if (publicLabels(answer, earlier)) log('labels of earlier findings written as their public ids, or removed');
   for (const f of linked.dropped) log(`finding dropped, it continues a finding that a person set aside and its file did not change: ${f.path}: ${f.title}`);
   // REV-100. A finding whose code did not change since the last reviewed commit is `seen`; the model
   // never sets it.
