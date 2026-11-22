@@ -21,7 +21,7 @@ function finding(id: string, title: string): FindingRow {
   return {
     id, repoId: 'r', repo: 'sakuga-software/orchard', prNumber: 12, path: 'a.ts', line: 3, title, severity: 'major', category: 'bug',
     confidence: 80, status: 'open', statusReason: null, ruleId: null, ruleTitle: null, firstSeenSha: 'a'.repeat(40),
-    lastSeenSha: 'a'.repeat(40), githubCommentId: 900_001, considered: false, createdAt: new Date('2026-10-29T10:00:00Z'), updatedAt: new Date('2026-10-29T10:00:00Z'),
+    lastSeenSha: 'a'.repeat(40), githubCommentId: 900_001, considered: false, unseen: false, createdAt: new Date('2026-10-29T10:00:00Z'), updatedAt: new Date('2026-10-29T10:00:00Z'),
   }
 }
 
@@ -69,6 +69,17 @@ function setup(
   }
   return { request, signIn, calls, lists }
 }
+
+describe('a finding that the last reviews no longer see (KNT-192)', () => {
+  it('shows a stale finding of the tab "open" with the badge "Not seen in the last reviews", and only that one', async () => {
+    let rows = [finding(A, 'Key read with no expiry'), { ...finding(B, 'Error swallowed'), status: 'stale' as const, unseen: true }]
+    let { signIn } = setup(undefined, false, { rows })
+    let { html } = await signIn()
+    let tagged = [...html.matchAll(/<tr id="finding-([0-9a-f-]+)">[\s\S]*?<\/tr>/g)].filter((m) => m[0].includes('>Not seen in the last reviews</span>')).map((m) => m[1])
+    assert.deepEqual(tagged, [B])
+    assert.match(html, /title="The last reviews no longer find it, and pushes changed its file\. Its thread stays open: the resolve command can confirm the fix\."/)
+  })
+})
 
 describe('the findings to consider (REV-102)', () => {
   it('tags a finding that its last review lists "To consider", and only that one', async () => {

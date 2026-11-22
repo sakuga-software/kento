@@ -88,6 +88,7 @@ function setup() {
         if (!row) rows.push({ ...e.values, id: `row-${rows.length + 1}` })
         else Object.assign(row, e.values)
       }
+      return new Set(entries.flatMap((e) => (e.id ? [e.id] : [])))
     },
   }
   let publish = (review: ReviewPayload) => {
