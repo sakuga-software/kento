@@ -1,6 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
-import { feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
+import { costRoutes, feedbackRoutes, invitationRoutes, memberRoutes, organizationRoutes, pageRoutes as routes, userRoutes } from '../routes.ts'
 import { Button } from './controls.tsx'
 import { Document } from './document.tsx'
 import { LockIcon, Logo, MenuIcon, SignOutIcon } from './icons.tsx'
@@ -8,7 +8,7 @@ import type { Theme } from './theme.ts'
 import type { OrgRole } from '../db/schema.ts'
 
 /** The screens of the navigation, in its order. */
-export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'settings'
+export type Section = 'dashboard' | 'repos' | 'findings' | 'feedback' | 'runners' | 'costs' | 'settings'
 
 /**
  * `soon`: the screen is not there yet (REV-32). The bar names it, with "Soon" and no link. No link
@@ -20,6 +20,7 @@ const NAV: { key: Section; label: string; href: string; soon?: boolean }[] = [
   { key: 'findings', label: 'Findings', href: routes.findings.href() },
   { key: 'feedback', label: 'Feedback', href: feedbackRoutes.feedback.href() },
   { key: 'runners', label: 'Runners', href: routes.runners.href() },
+  { key: 'costs', label: 'Costs', href: costRoutes.costs.href() },
   { key: 'settings', label: 'Settings', href: routes.settings.href() },
 ]
 

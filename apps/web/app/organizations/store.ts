@@ -11,12 +11,14 @@
 //      `repos/store.ts` `saveCheck`);
 //   3. the rows of the orgs, in the order of their ids (the webhook locks its org next; a rule and an
 //      assignment rule of a repository lock the key of their org first, `rules/store.ts`,
-//      `assignment/store.ts`);
-//   4. the rows of the repositories, the memberships, the rules.
+//      `assignment/store.ts`; the count of a take-back locks the key of its org, `auth/asks.ts`
+//      `takeOrgAsk`);
+//   4. the rows of the repositories, the memberships, the rules, and the counts of `github_asks`
+//      whose scope is the org (a move that deletes the org deletes them).
 // Two transactions that take two of these locks take them in this order, and never wait on each other.
 import type postgres from 'postgres'
 
-import { MOVES_SCOPE, takeGitHubAsk } from '../auth/asks.ts'
+import { MOVES_SCOPE, takePersonAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { MembershipSource, OrgRole } from '../db/schema.ts'
 import { instance } from '../instance.ts'
@@ -170,7 +172,7 @@ export function createOrgsStore(sql: postgres.Sql, clock: { offsetMs(): number }
     },
 
     async askMove(userId) {
-      return takeGitHubAsk(sql, { userId, scope: MOVES_SCOPE, action: 'move', limit: MOVES_PER_MINUTE, windowMs: 60 * 1000, offsetMs: clock.offsetMs() })
+      return takePersonAsk(sql, { userId, scope: MOVES_SCOPE, action: 'move', limit: MOVES_PER_MINUTE, windowMs: 60 * 1000, offsetMs: clock.offsetMs() })
     },
 
     async activeInstallations(orgId) {
