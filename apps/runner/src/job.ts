@@ -417,9 +417,9 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
         id: t.id,
         verdict: v.verdict,
         reply: cut(v.reply, 10_000),
-        // KNT-197. The fix of a thread can be in another file: a file changed since the thread, whose
-        // diff the model read, counts as a change too.
-        changed: own === false && (others.get(t.id)?.length ?? 0) > 0 ? true : own,
+        // KNT-197. The fix of a thread can be in another file. When the model calls the thread fixed,
+        // a file changed since the thread, whose diff the model read, counts as a change too.
+        changed: own === false && v.verdict === 'fixed' && (others.get(t.id)?.length ?? 0) > 0 ? true : own,
       });
     }
     return {
