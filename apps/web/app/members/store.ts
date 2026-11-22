@@ -5,7 +5,7 @@
 import type postgres from 'postgres'
 
 import { canEdit, OWNER_ACTIVE_MS } from '../auth/access.ts'
-import { shortenGitHubAsk, takeGitHubAsk } from '../auth/asks.ts'
+import { shortenOrgAsk, takeOrgAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { InvitationRole, MembershipSource, OrgRole } from '../db/schema.ts'
 import { decideMemberChange, decideReclaim, INVITATION_TTL_MS, MAX_PENDING_INVITATIONS, RECLAIM_COOLDOWN_MS, RECLAIM_RETRY_MS, type MemberChange, type MemberFacts, type MemberRefusal } from './rules.ts'
@@ -67,7 +67,7 @@ export interface MembersStore {
   /**
    * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
    * and org, for every process of the service, on the clock of Postgres. `over`: the person asked
-   * within it; `gone`: the person is gone.
+   * within it; `gone`: the person, their membership or the org is gone, and nothing is written.
    */
   askReclaim(orgId: string, userId: string): Promise<'allowed' | 'over' | 'gone'>
   /** KNT-173. GitHub failed for the take-back: the person asks again after `RECLAIM_RETRY_MS`. */
@@ -253,11 +253,11 @@ export function createMembersStore(sql: postgres.Sql, clock: { offsetMs(): numbe
     },
 
     async askReclaim(orgId, userId) {
-      return takeGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
+      return takeOrgAsk(sql, { userId, orgId, action: 'reclaim', limit: 1, windowMs: RECLAIM_COOLDOWN_MS, offsetMs: clock.offsetMs() })
     },
 
     async reclaimFailed(orgId, userId) {
-      await shortenGitHubAsk(sql, { userId, scope: orgId, action: 'reclaim', windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS, offsetMs: clock.offsetMs() })
+      await shortenOrgAsk(sql, { userId, orgId, action: 'reclaim', windowMs: RECLAIM_COOLDOWN_MS, retryMs: RECLAIM_RETRY_MS, offsetMs: clock.offsetMs() })
     },
 
     async own(githubId) {
