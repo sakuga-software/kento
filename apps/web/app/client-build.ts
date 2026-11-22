@@ -33,9 +33,15 @@ export const BROWSER_TARGET = { chrome: '114', firefox: '125', safari: '17' } as
  *   icons, which a component that hydrates also makes. They import only `remix/routes` and
  *   `remix/component`.
  * - The packages `remix` (and its `@remix-run/component`, the runtime) and `@remix-run/ui`.
+ * - KNT-188: `chart.js`, for the charts of the Costs screen.
+ * An entry of `allowPackages` allows the folder of the package and of each package in its
+ * `dependencies`, at any depth (`createPackageRootPaths` of `@remix-run/assets`): with `chart.js`,
+ * also `@kurkle/color`. A bump that adds a dependency widens what the browser can read:
+ * `assets.test.ts` pins the dependencies of chart.js (Fable P2-3).
+ * A browser module that imports any other file of the server gets an error, never the file.
  */
 export const ALLOWED_FILES = ['app/**/public/**', 'app/routes.ts', 'app/ui/controls.tsx', 'app/ui/lucide.tsx']
-export const ALLOWED_PACKAGES = ['remix', '@remix-run/ui']
+export const ALLOWED_PACKAGES = ['remix', '@remix-run/ui', 'chart.js']
 export const DENIED_FILES = ['app/**/*.test.*']
 
 /** What scripts/build-client.ts writes in `manifest.json`. */

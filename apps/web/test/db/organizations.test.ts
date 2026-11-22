@@ -5,6 +5,7 @@ import { createKentoAuth, postgresAuthDatabase } from '../../app/auth/better-aut
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
 import { createAssignmentStore } from '../../app/assignment/store.ts'
 import { createWebhookStore } from '../../app/db/webhook-store.ts'
+import { createReposStore } from '../../app/repos/store.ts'
 import { createRulesStore } from '../../app/rules/store.ts'
 import type { OrgRole } from '../../app/db/schema.ts'
 import { createAuthStore } from '../../app/auth/store.ts'
@@ -13,6 +14,7 @@ import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
+import { MOVES_PER_MINUTE } from '../../app/organizations/rules.ts'
 import { createOrgsStore, type MoveChecks } from '../../app/organizations/store.ts'
 import { ROLE_TTL_MS } from '../../app/auth/access.ts'
 import { createAppRouter } from '../../app/router.ts'
@@ -33,10 +35,19 @@ describe('the name and the installations of an org', () => {
   let test: Awaited<ReturnType<typeof createTestDatabase>>
   let database: Database
   let store: MembersStore
+  /** The store of the organization screen of the router: a test replaces one of its methods. */
+  let orgsStore: ReturnType<typeof createOrgsStore>
   let router: ReturnType<typeof createAppRouter>
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let clock: { now: number }
+  /**
+   * The offset of the clock of the test from the real one: the limits of `auth/asks.ts` follow it, on
+   * the clock of Postgres, read a few milliseconds after the offset. A step past the end of a window
+   * goes `PAST_THE_WINDOW_MS` further, so those milliseconds never decide.
+   */
+  let testClock = { offsetMs: () => clock.now - Date.now() }
+  const PAST_THE_WINDOW_MS = 1000
   /** The accounts that GitHub says are a person (`User`), by login; GitHub failing for roles or types. */
   let people: Set<string>
   let gitHub = { calls: 0, failRoles: false, failTypes: false }
@@ -46,7 +57,8 @@ describe('the name and the installations of an org', () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 10 })
-    store = createMembersStore(database.sql)
+    // The limits of the questions to GitHub run on the clock of Postgres, moved as the clock of the test.
+    store = createMembersStore(database.sql, testClock)
     let realStore = createAuthStore(database.sql)
     // The session of a move switches orgs through this store; a test makes that switch fail.
     let authStore = {
@@ -82,6 +94,7 @@ describe('the name and the installations of an org', () => {
     let secret = 'a-session-secret-for-the-tests-0123456789'
     clock = { now: Date.now() }
     let auth = createKentoAuth({ database: postgresAuthDatabase(database.db), publicUrl: PUBLIC_URL, secret, github, store: authStore, lookupRole, now: () => clock.now })
+    orgsStore = createOrgsStore(database.sql, testClock)
     router = createAppRouter({
       checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
       version: '1.2.3',
@@ -89,7 +102,7 @@ describe('the name and the installations of an org', () => {
       webhook: disabledWebhook,
       // Every request of these tests comes with no socket, so they share one limit: a high one.
       auth: { publicUrl: PUBLIC_URL, sessionSecrets: [secret], auth, store: authStore, lookupRole, now: () => clock.now, signInLimit: 1000 },
-      organization: { store: createOrgsStore(database.sql), lookupRole, lookupAccountType },
+      organization: { store: orgsStore, lookupRole, lookupAccountType },
       members: {
         store,
         lookupRole,
@@ -358,14 +371,25 @@ describe('the name and the installations of an org', () => {
   })
 
   it('knows every table that carries an org: a new one must say whether it follows a moved repository', async () => {
-    let rows = await database.sql<{ table: string }[]>`
-      select table_name as table from information_schema.columns
-      where table_schema = 'public' and column_name = 'org_id' order by table_name`
+    // Every foreign key to orgs, whatever the name of its column, and the columns named org_id or
+    // scope (an org id with no foreign key, as github_asks.scope, can only be found by its name).
+    let rows = await database.sql<{ table: string; column: string }[]>`
+      select table_name as table, column_name as column from information_schema.columns
+      where table_schema = 'public' and column_name in ('org_id', 'scope')
+      union
+      select c.conrelid::regclass::text, a.attname::text from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any(c.conkey)
+      where c.contype = 'f' and c.confrelid = 'orgs'::regclass
+      order by 1, 2`
     // repos, rules and assignment_rules follow a moved installation (moveInstallation); the others
-    // belong to the org itself, and go with it when it is deleted. A new table with an org_id fails
-    // here until moveInstallation decides for it.
-    assert.deepEqual(rows.map((r) => r.table), [
-      'assignment_rules', 'installations', 'invitations', 'memberships', 'org_audit', 'providers', 'repos', 'rules', 'runner_registrations', 'runners',
+    // belong to the org itself, and go with it when it is deleted. github_asks holds the id of an org
+    // in its scope, with no foreign key: the move that deletes the org deletes its rows. A new table
+    // with an org_id, a scope or a foreign key to orgs fails here until moveInstallation decides for
+    // it. (accounts.scope is the scope of the GitHub sign-in, not an org. A deleted org sets
+    // sessions.active_organization_id to null: the next request moves the session to another org.)
+    assert.deepEqual(rows.map((r) => `${r.table}.${r.column}`), [
+      'accounts.scope', 'assignment_rules.org_id', 'github_asks.scope', 'installations.org_id', 'invitations.org_id', 'memberships.org_id', 'org_audit.org_id',
+      'providers.org_id', 'repos.org_id', 'rules.org_id', 'runner_registrations.org_id', 'runners.org_id', 'sessions.active_organization_id',
     ])
   })
 
@@ -503,6 +527,23 @@ describe('the name and the installations of an org', () => {
     await post(guest, '/settings/members/leave')
     await signIn('guest')
     assert.equal(await membership('guest', acme), null)
+  })
+
+  it('asks GitHub for at most MOVES_PER_MINUTE moves a minute per person, whatever the org', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    let path = `/settings/organization/installations/${installationId}/move`
+    // GitHub does not count octocat as an admin of acme-labs: each move asks once, and is refused.
+    for (let n = 0; n < MOVES_PER_MINUTE; n++) {
+      assert.equal((await post(owner, path, { to: 'new', name: 'Labs' })).headers.get('Location'), '/settings/organization?notice=not_github_admin')
+    }
+    gitHub.calls = 0
+    assert.equal((await post(owner, path, { to: 'new', name: 'Labs' })).headers.get('Location'), '/settings/organization?notice=move_wait')
+    assert.equal(gitHub.calls, 0)
+    // The next minute, GitHub is asked again.
+    clock.now += 60 * 1000 + PAST_THE_WINDOW_MS
+    assert.equal((await post(owner, path, { to: 'new', name: 'Labs' })).headers.get('Location'), '/settings/organization?notice=not_github_admin')
+    assert.equal(gitHub.calls, 1)
   })
 
   it('refuses a move when GitHub fails, for the role or the type of an account; nothing moves', async () => {
@@ -738,4 +779,199 @@ describe('the name and the installations of an org', () => {
       assert.deepEqual(await orgOf(table, `repo_id = '${repoId}'`).then((ids) => [...new Set(ids)]), [globex])
     })
   }
+
+  /**
+   * KNT-173. Starts a move and holds it after it moved the installation and its repositories, with
+   * the locks of the installation and of the orgs still taken: a lock of the table `rules` stops it
+   * at its update of the rules. `release` lets it end.
+   */
+  async function heldMove(input: Parameters<ReturnType<typeof createOrgsStore>['moveInstallation']>[0]) {
+    let release!: () => void
+    let held = new Promise<void>((resolve) => (release = resolve))
+    let locked = new Promise<void>((resolve) => {
+      void database.sql.begin(async (tx) => {
+        await tx`lock table rules in share mode`
+        resolve()
+        await held
+      })
+    })
+    await locked
+    let move = createOrgsStore(database.sql).moveInstallation(input)
+    // The move reaches its update of the rules, and waits there.
+    let waiting = async () => (await database.sql`select count(*)::int as n from pg_locks where not granted and relation = 'rules'::regclass`)[0]!.n > 0
+    for (let tries = 0; !(await waiting()) && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 20))
+    return { move, release }
+  }
+
+  it('a check of the repositories during a move writes them in the org where the installation went', async () => {
+    let actor = await ownerOfBoth()
+    let { installationId } = await secondInstallation()
+    let { move, release } = await heldMove({ fromOrgId: acme, installationId, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: false })
+    // The check read the installation in acme before the move.
+    let saved = createReposStore(database.sql).saveCheck(installationId, [
+      { githubRepoId: 5099, fullName: 'acme-labs/new-one', private: false, defaultBranch: 'main', workflow: { mode: 'none', path: null, ref: null } },
+    ])
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    release()
+    let [moved, checked] = await Promise.allSettled([move, saved])
+    assert.equal(moved.status, 'fulfilled', String((moved as PromiseRejectedResult).reason))
+    assert.equal(checked.status, 'fulfilled', String((checked as PromiseRejectedResult).reason))
+    assert.deepEqual(await orgOf('repos', `github_repo_id = 5099`), [globex])
+    assert.deepEqual(await orgOf('repos', `installation_id = '${installationId}'`).then((ids) => [...new Set(ids)]), [globex])
+  })
+
+  it('a new installation of an account whose last installation moves joins the org where it went', async () => {
+    let actor = await ownerOfBoth()
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    let { move, release } = await heldMove({ fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: true })
+    // The account of acme installs the App again while the move deletes acme.
+    let apply = createWebhookStore(database.db)
+    let reinstalled = apply({ type: 'upsert_installation', installation: { githubInstallationId: 99, githubAccountId: 1011, login: 'acme' }, repositories: [], suspended: false }, 'delivery-reinstall')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    release()
+    let [moved, webhook] = await Promise.allSettled([move, reinstalled])
+    assert.deepEqual(moved.status === 'fulfilled' ? moved.value : moved.reason, { ok: true, orgId: globex, deleted: true })
+    assert.equal(webhook.status, 'fulfilled', String((webhook as PromiseRejectedResult).reason))
+    assert.deepEqual(await orgOf('installations', `github_installation_id = 99`), [globex])
+  })
+
+  const checkedRepo = (githubRepoId: number, fullName: string) => ({
+    githubRepoId,
+    fullName,
+    private: false,
+    defaultBranch: 'main',
+    workflow: { mode: 'none' as const, path: null, ref: null },
+  })
+
+  it('a check of the repositories and a webhook that holds the org and writes one of them both end', async () => {
+    let [installation] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    await database.sql`insert into repos (org_id, installation_id, github_repo_id, full_name) values (${acme}, ${installation!.id}, 7001, 'acme/old')`
+    // The webhook, as upsertInstallation and upsertRepoRows: the org, then (later) the repository.
+    let go!: () => void
+    let gate = new Promise<void>((resolve) => (go = resolve))
+    let ready!: () => void
+    let holding = new Promise<void>((resolve) => (ready = resolve))
+    let webhook = database.sql.begin(async (tx) => {
+      await tx`update installations set updated_at = now() where github_installation_id = 11`
+      await tx`select id from orgs where id = ${acme} for update`
+      ready()
+      await gate
+      await tx`
+        insert into repos (org_id, installation_id, github_repo_id, full_name) values (${acme}, ${installation!.id}, 7001, 'acme/old')
+        on conflict (github_repo_id) do update set full_name = excluded.full_name, updated_at = now()`
+    })
+    await holding
+    // The check finds the existing repository and a new one.
+    let check = createReposStore(database.sql).saveCheck(installation!.id, [checkedRepo(7001, 'acme/old'), checkedRepo(7002, 'acme/new')])
+    let waiting = async () => (await database.sql`select count(*)::int as n from pg_locks where not granted and database = (select oid from pg_database where datname = current_database())`)[0]!.n > 0
+    for (let tries = 0; !(await waiting()) && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 20))
+    go()
+    let [written, checked] = await Promise.allSettled([webhook, check])
+    assert.equal(written.status, 'fulfilled', String((written as PromiseRejectedResult).reason))
+    assert.equal(checked.status, 'fulfilled', String((checked as PromiseRejectedResult).reason))
+    assert.deepEqual(await orgOf('repos', `github_repo_id in (7001, 7002)`), [acme, acme])
+  })
+
+  it('a check of an installation that is gone writes nothing', async () => {
+    await createReposStore(database.sql).saveCheck('00000000-0000-4000-8000-000000000000', [checkedRepo(7003, 'acme/lost')])
+    assert.equal((await database.sql`select count(*)::int as n from repos where github_repo_id = 7003`)[0]!.n, 0)
+  })
+
+  it('counts the moves per person whatever the org: an org that a move deletes does not take the count', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    // octocat moves the only installation of his org to a new org, again and again: each move deletes the org.
+    let name = 'acme'
+    for (let n = 0; n < MOVES_PER_MINUTE; n++) {
+      let [only] = await database.sql<{ id: string }[]>`select i.id from installations i join orgs o on o.id = i.org_id where o.name = ${name}`
+      let next = `Org ${n}`
+      let moved = await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: 'new', name: next, confirm: name })
+      assert.equal(moved.headers.get('Location'), '/settings/organization?notice=moved')
+      name = next
+    }
+    let [only] = await database.sql<{ id: string }[]>`select i.id from installations i join orgs o on o.id = i.org_id where o.name = ${name}`
+    gitHub.calls = 0
+    assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: 'new', name: 'One more', confirm: name })).headers.get('Location'), '/settings/organization?notice=move_wait')
+    assert.equal(gitHub.calls, 0)
+  })
+
+  it('gives the last slot of a limit to one request only, keeps each person apart, and answers gone for a person deleted', async () => {
+    await signIn('octocat')
+    await signIn('camille')
+    let [octocat, camille] = [await userId('octocat'), await userId('camille')]
+    let orgs = createOrgsStore(database.sql, testClock)
+    let moves = await Promise.all(Array.from({ length: MOVES_PER_MINUTE + 5 }, () => orgs.askMove(octocat)))
+    assert.equal(moves.filter((m) => m === 'allowed').length, MOVES_PER_MINUTE)
+    assert.equal(await orgs.askMove(camille), 'allowed')
+    let members = createMembersStore(database.sql, testClock)
+    let reclaims = await Promise.all(Array.from({ length: 5 }, () => members.askReclaim(acme, octocat)))
+    assert.deepEqual(reclaims.filter((r) => r === 'allowed').length, 1)
+    // The take-back of another org has its own count; it counts only for a member of the org.
+    assert.equal(await members.askReclaim(globex, octocat), 'gone')
+    await database.sql`insert into memberships (user_id, org_id, role, source) values (${octocat}, ${globex}, 'member', 'invitation')`
+    assert.equal(await members.askReclaim(globex, octocat), 'allowed')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${globex}`)[0]!.n, 1)
+    // A person deleted while a request was under way: no 500.
+    let [gone] = await database.sql<{ id: string }[]>`insert into users (github_id, login, email) values (99, 'gone', '99@users.github.invalid') returning id`
+    await database.sql`delete from users where id = ${gone!.id}`
+    assert.equal(await orgs.askMove(gone!.id), 'gone')
+  })
+
+  it('a move that deletes an org deletes the counts of the questions of that org', async () => {
+    roles.set('globex/octocat', 'admin')
+    let owner = (await signIn('octocat')).cookie!
+    let octocat = await userId('octocat')
+    assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, octocat), 'allowed')
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    assert.equal((await post(owner, `/settings/organization/installations/${only!.id}/move`, { to: globex, confirm: 'acme' })).headers.get('Location'), '/settings/organization?notice=moved')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
+  })
+
+  it('a take-back counted while a move deletes its org leaves no row, and asks nothing', async () => {
+    let actor = await ownerOfBoth()
+    let [only] = await database.sql<{ id: string }[]>`select id from installations where org_id = ${acme}`
+    let { move, release } = await heldMove({ fromOrgId: acme, installationId: only!.id, to: { orgId: globex }, actorUserId: actor, checks: await allAdmin(), deleteEmpty: true })
+    // The move holds the row of acme; the count of a take-back in acme waits for it.
+    let asked = createMembersStore(database.sql, testClock).askReclaim(acme, actor)
+    // The count reaches the lock of the org, and waits there (a row lock: the wait shows on the
+    // statement, not as a lock of the table).
+    let waiting = async () =>
+      (await database.sql`
+        select count(*)::int as n from pg_stat_activity
+        where datname = current_database() and wait_event_type = 'Lock' and query like '%insert into github_asks%'`)[0]!.n > 0
+    let reached = false
+    try {
+      for (let tries = 0; !(reached = await waiting()) && tries < 100; tries++) await new Promise((resolve) => setTimeout(resolve, 20))
+    } finally {
+      release()
+    }
+    assert.equal(reached, true, 'the count waits for the lock of the org')
+    assert.deepEqual(await move, { ok: true, orgId: globex, deleted: true })
+    assert.equal(await asked, 'gone')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where scope = ${acme}`)[0]!.n, 0)
+  })
+
+  it('a move whose count answers gone asks GitHub nothing, says not found, and logs organizations.move_gone', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let { installationId } = await secondInstallation()
+    let saved = orgsStore.askMove
+    orgsStore.askMove = async () => 'gone'
+    // A warn goes to stderr (app/log.ts).
+    let lines: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    try {
+      gitHub.calls = 0
+      let csrf = await csrfOf(owner)
+      process.stderr.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stderr.write
+      let response = await request(`/settings/organization/installations/${installationId}/move`, owner, { _csrf: csrf, to: 'new', name: 'Labs' })
+      process.stderr.write = stderr
+      assert.equal(response.headers.get('Location'), '/settings/organization?notice=not_found')
+      assert.equal(gitHub.calls, 0)
+    } finally {
+      process.stderr.write = stderr
+      orgsStore.askMove = saved
+    }
+    let events = lines.map((line) => JSON.parse(line) as { event: string }).map((line) => line.event)
+    assert.ok(events.includes('organizations.move_gone'), events.join(', '))
+    assert.ok(!events.includes('organizations.move_throttled'))
+  })
 })

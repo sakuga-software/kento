@@ -190,8 +190,8 @@ const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string
   },
   repos: {
     title: 'Repos',
-    lead: 'The repos of the installation, and where each one stands in its switch.',
-    empty: 'The list of the repos, their mode and their switch counter will show here.',
+    lead: 'The repos of the installation, and their reviews.',
+    empty: 'The list of the repos, their level and their last review will show here.',
   },
   findings: {
     title: 'Findings',
@@ -207,6 +207,11 @@ const PLACEHOLDERS: Record<Section, { title: string; lead: string; empty: string
     title: 'Runners',
     lead: 'The machines that do the reviews.',
     empty: 'The runners, their last signal and their jobs will show here.',
+  },
+  costs: {
+    title: 'Costs',
+    lead: 'What the reviews of the organization cost, and where.',
+    empty: 'The costs by day, repo, level and model will show here.',
   },
   settings: {
     title: 'Settings',

@@ -3,6 +3,7 @@
 // tests, the asset server of Remix compiles each TypeScript file when the browser asks for it. In
 // production (KNT-170), the service serves the bundles that scripts/build-client.ts built ahead of
 // time (app/client-build.ts): a few files, compressed, instead of some 70 modules.
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -35,16 +36,28 @@ function distOf(name: string, from = require): string {
 /** What the asset server says about a path that anybody can ask for: none of them is a fault of the service. */
 const NOT_SERVED = new Set(['FILE_NOT_FOUND', 'FILE_NOT_ALLOWED', 'FILE_NOT_SUPPORTED', 'FILE_OUTSIDE_MOUNTS', 'URL_NOT_SUPPORTED', 'URL_NOT_ALLOWED', 'URL_OUTSIDE_MOUNTS'])
 
+/** Where the asset server serves the files of the pnpm store: the allowed packages without a short mount. */
+const STORE_PATH = '/assets/__@remix/virtual-store/'
+
+/** The path of the request that the asset server is serving: `assetError` reads it (KNT-188). */
+const requestPath = new AsyncLocalStorage<string>()
+
 /**
  * The answer to a module that the asset server cannot serve. A path that does not exist, is not
- * allowed or is outside the mounts: 404, a warning (anybody can ask for any path). Any other
- * failure (a module that does not compile, an import outside the mounts): 500, an error, so that a
- * broken release shows in the logs.
+ * allowed or is outside the mounts: 404, a warning (anybody can ask for any path). A file of an
+ * allowed package of the pnpm store that is no browser module (KNT-188, Fable P2-1: the UMD and
+ * CommonJS builds and the `.d.ts` of chart.js do not compile): 404, a warning too; no page imports
+ * it, and `resolveCharts` checks at startup the modules that a page does import. Any other failure
+ * (a module of the app that does not compile, an import outside the mounts): 500, an error, so that
+ * a broken release shows in the logs.
  */
 export function assetError(error: unknown): Response {
   let code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : null
-  if (code && NOT_SERVED.has(code)) {
-    log('warn', 'assets.not_served', { code, error: errorMessage(error) })
+  // Repeated slashes reach the same file (`/assets//__@remix/…`): the prefix is compared without them (Fable re-check).
+  let path = requestPath.getStore()?.replace(/\/{2,}/g, '/')
+  let ofPackage = path !== undefined && path.startsWith(STORE_PATH)
+  if ((code && NOT_SERVED.has(code)) || ofPackage) {
+    log('warn', 'assets.not_served', { code, ...(ofPackage ? { path } : {}), error: errorMessage(error) })
     return new Response('Not Found', { status: 404 })
   }
   log('error', 'assets.compile_failed', { code, error: errorMessage(error) })
@@ -63,6 +76,10 @@ const MOUNTS = {
   rp: distOf('@remix-run/route-pattern', fromRemix),
   fr: distOf('@remix-run/fetch-router', fromRemix),
   ui: distOf('@remix-run/ui'),
+  // KNT-188: no mount for chart.js. The asset server serves it from its own mount of the pnpm store
+  // (`/assets/__@remix/virtual-store/…`): with a mount of `chart.js/dist`, the import map put the
+  // scope of its `@kurkle/color` under the store and its chunk under the mount, and the browser could
+  // not resolve it.
 }
 
 export { ALLOWED_FILES }
@@ -179,6 +196,38 @@ export function bootScript(): BootScript | null {
   return BOOT_SCRIPT
 }
 
+/** KNT-188. The component of the charts, with Chart.js under it. */
+export const CHART = 'app/costs/public/cost-chart.tsx'
+
+/**
+ * KNT-188, Fable P2-2. True when the service can serve the charts. With the bundles: the bundle of
+ * the chart component, which holds Chart.js. With the asset server: the module of the charts and the
+ * import map of their graph (Chart.js). A page renders a chart only then; else it renders its tables
+ * alone, as without JavaScript, and the log says why. Without this, a release whose build cannot
+ * resolve Chart.js failed the render of the whole page, tables included.
+ */
+export async function resolveCharts(server: Pick<typeof assets, 'getHref' | 'getImportMap'>, build: ClientBuild | null = null): Promise<boolean> {
+  try {
+    if (build) {
+      bundleOf(build, CHART)
+      return true
+    }
+    await server.getHref(CHART)
+    await server.getImportMap([CHART])
+    return true
+  } catch (error) {
+    log('error', 'startup.assets_unavailable', { module: CHART, error: errorMessage(error) })
+    return false
+  }
+}
+
+const CHARTS = await resolveCharts(assets, CLIENT_BUILD)
+
+/** Whether the pages can render their charts (see `resolveCharts`). */
+export function chartsAvailable(): boolean {
+  return CHARTS
+}
+
 /**
  * Serves the browser modules under `/assets/`; anything else goes on. With the bundles, only them
  * (/assets/js/): the asset server then compiles nothing on request.
@@ -187,7 +236,7 @@ export function clientAssets(build: ClientBuild | null = CLIENT_BUILD): Middlewa
   return async (context, next) => {
     if (!context.url.pathname.startsWith('/assets/')) return next()
     if (build) return (await serveClientFile(build, context.request, context.url.pathname)) ?? next()
-    let response = await assets.fetch(context.request)
+    let response = await requestPath.run(context.url.pathname, () => assets.fetch(context.request))
     if (!response) return next()
     // As every file of the app: the browser runs a module only as the type that the server says.
     let headers = new Headers(response.headers)

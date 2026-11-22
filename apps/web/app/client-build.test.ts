@@ -10,7 +10,7 @@ import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
 import { buildClient, clientEntryModules, forbiddenInputs } from '../scripts/build-client.ts'
-import { BOOT, createClientEntries, loadClientBuild, resolveBootScript, RUNTIME } from './assets.ts'
+import { BOOT, CHART, createClientEntries, loadClientBuild, resolveBootScript, resolveCharts, RUNTIME } from './assets.ts'
 import { bundleOf, readClientBuild, ROOT_DIR, serveClientFile, sourceOf, type ClientBuild } from './client-build.ts'
 
 /** Runs `body` with the lines that the service writes on stderr, and returns them. */
@@ -78,6 +78,24 @@ describe('the bundles of the browser modules (KNT-170)', () => {
       assert.deepEqual(entry.importMap, { imports: {} })
       let boot = await resolveBootScript({ getHref: async () => assert.fail('the asset server is not asked') }, build)
       assert.deepEqual(boot, { href: '/assets/js/boot.@B.js', runtime: '/assets/js/runtime.@R.js' })
+    } finally {
+      build.cleanup()
+    }
+  })
+
+  it('renders the charts with the bundles only when the build holds the chart component (KNT-188)', async () => {
+    let build = fakeBuild()
+    let server = { getHref: async () => assert.fail('the asset server is not asked'), getImportMap: async () => assert.fail('the asset server is not asked') }
+    let withCharts: ClientBuild = { ...build, manifest: { ...build.manifest, entries: { ...build.manifest.entries, [CHART]: { file: 'a.@AAA.js', imports: [] } } } }
+    try {
+      let answers: boolean[] = []
+      let lines = await stderrOf(async () => {
+        answers.push(await resolveCharts(server, build))
+        answers.push(await resolveCharts(server, withCharts))
+      })
+      assert.deepEqual(answers, [false, true])
+      assert.equal(lines.length, 1)
+      assert.match(lines[0]!, /startup\.assets_unavailable/)
     } finally {
       build.cleanup()
     }
@@ -193,7 +211,7 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     }
   })
 
-  it('keeps the rule of the asset server: a bundle holds only the browser modules, the routes, the controls, the icons and the runtime packages', () => {
+  it('keeps the rule of the asset server: a bundle holds only the browser modules, the routes, the controls, the icons, the runtime packages and Chart.js', () => {
     let allowed = [
       'app/ui/public/row-menu.tsx',
       'app/routes.ts',
@@ -202,6 +220,8 @@ describe('the bundles of the browser modules (KNT-170)', () => {
       '../../node_modules/.pnpm/remix@3.2.0/node_modules/remix/dist/component.js',
       '../../node_modules/.pnpm/remix@3.2.0/node_modules/@remix-run/component/dist/lib/vdom.js',
       '../../node_modules/.pnpm/@remix-run+ui@0.13.1/node_modules/@remix-run/ui/dist/menu.js',
+      '../../node_modules/.pnpm/chart.js@4.6.1/node_modules/chart.js/dist/chart.js',
+      '../../node_modules/.pnpm/@kurkle+color@0.3.4/node_modules/@kurkle/color/dist/color.esm.js',
     ]
     let refused = [
       'app/db/schema.ts',
@@ -219,7 +239,7 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     try {
       let manifest = await buildClient(dir)
       let modules = clientEntryModules()
-      assert.ok(modules.includes('app/ui/public/row-menu.tsx') && modules.includes('app/ui/public/confirm.tsx'), modules.join(', '))
+      assert.ok(modules.includes('app/ui/public/row-menu.tsx') && modules.includes('app/ui/public/confirm.tsx') && modules.includes('app/costs/public/cost-chart.tsx'), modules.join(', '))
       assert.ok(!modules.some((module) => module.includes('.test.')))
       assert.deepEqual(Object.keys(manifest.entries).sort(), [BOOT, RUNTIME, ...modules].sort())
       for (let file of manifest.files) {
@@ -229,7 +249,7 @@ describe('the bundles of the browser modules (KNT-170)', () => {
         assert.deepEqual(gunzipSync(readFileSync(path.join(dir, `${file}.gz`))), plain, file)
         let text = plain.toString('utf8')
         // Bundled: no import of a bare package or of the asset server, no source map, no test.
-        assert.ok(!/from\s*["'](?:remix|@remix-run)\//.test(text) && !text.includes('/assets/app/') && !text.includes('sourceMappingURL'), file)
+        assert.ok(!/from\s*["'](?:remix\/|@remix-run\/|chart\.js|@kurkle\/)/.test(text) && !text.includes('/assets/app/') && !text.includes('sourceMappingURL'), file)
       }
       // One copy of the runtime of remix/component: the components share the chunks of the runtime.
       let runtime = manifest.entries[RUNTIME]!

@@ -8,14 +8,14 @@
 // minified, named by the hash of its content, and written again compressed with brotli (quality 11)
 // and gzip (level 9). manifest.json maps each source module to its file and its chunks.
 // The image runs it (Dockerfile), and so does the e2e before it starts the server.
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib'
 
 import { build, type Metafile } from 'esbuild'
 
-import { ALLOWED_FILES, BROWSER_TARGET, CLIENT_DIR, DENIED_FILES, ROOT_DIR, type ClientManifest } from '../app/client-build.ts'
+import { ALLOWED_FILES, ALLOWED_PACKAGES, BROWSER_TARGET, CLIENT_DIR, DENIED_FILES, ROOT_DIR, type ClientManifest } from '../app/client-build.ts'
 
 /** The module of every page, and the runtime that it loads. */
 const ALWAYS = ['app/ui/public/boot.ts', 'app/ui/public/runtime.ts']
@@ -35,15 +35,31 @@ export function clientEntryModules(): string[] {
     .sort()
 }
 
+/** The `dependencies` of a package that apps/web installs. */
+function dependenciesOf(name: string): string[] {
+  for (let dir = ROOT_DIR; ; dir = path.dirname(dir)) {
+    let file = path.join(dir, 'node_modules', name, 'package.json')
+    if (existsSync(file)) return Object.keys((JSON.parse(readFileSync(file, 'utf8')) as { dependencies?: Record<string, string> }).dependencies ?? {})
+    if (path.dirname(dir) === dir) throw new Error(`${name} is not installed`)
+  }
+}
+
+/**
+ * The packages that a bundle can hold: `ALLOWED_PACKAGES` and their own dependencies (the
+ * `@remix-run/*` packages of remix, `@kurkle/color` of chart.js). `assets.test.ts` pins the
+ * dependencies of chart.js.
+ */
+const BUNDLED_PACKAGES = new Set(ALLOWED_PACKAGES.flatMap((name) => [name, ...dependenciesOf(name)]))
+
 /**
  * The inputs of a build that the browser may not get: a file of the app outside `ALLOWED_FILES` (or
- * a test), or a package other than remix, its own `@remix-run/*` packages and `@remix-run/ui`.
- * esbuild bundles whatever a module imports; this keeps the rule of the asset server.
+ * a test), or a package outside `BUNDLED_PACKAGES`. esbuild bundles whatever a module imports; this
+ * keeps the rule of the asset server.
  */
 export function forbiddenInputs(inputs: string[]): string[] {
   return inputs.filter((input) => {
     let packageName = input.match(/(?:^|\/)node_modules\/((?:@[^/]+\/)?[^/]+)\//g)?.at(-1)?.replace(/^\/?node_modules\//, '').replace(/\/$/, '')
-    if (packageName) return packageName !== 'remix' && !packageName.startsWith('@remix-run/')
+    if (packageName) return !BUNDLED_PACKAGES.has(packageName)
     if (DENIED_FILES.some((pattern) => path.matchesGlob(input, pattern))) return true
     return !ALLOWED_FILES.some((pattern) => path.matchesGlob(input, pattern))
   })

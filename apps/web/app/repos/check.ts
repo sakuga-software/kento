@@ -122,7 +122,7 @@ export function createRepoCheck(deps: RepoCheckDependencies): RepoCheck {
       }
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker))
-    await deps.store.saveCheck({ orgId: org.id, installationId: installation.id }, checked)
+    await deps.store.saveCheck(installation.id, checked)
     log('info', 'repos.checked', { org: org.name, installation: installation.login, repos: checked.length, failed, durationMs: now() - start })
     return { repos: checked.length, failed }
   }
