@@ -43,6 +43,23 @@ async function seed() {
   }
 }
 
+/** Closes one more finding of the repo now: the precision over 30 days changes. */
+async function closeOne(status: 'fixed' | 'dismissed') {
+  let sql = database()
+  try {
+    let [finding] = await sql<{ id: string }[]>`
+      insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence,
+        status, status_reason, first_seen_sha, last_seen_sha, created_at)
+      values ((select id from repos where github_repo_id = ${REPO.id}), 1, 'e2e-more', 'e2e-more', 'a.ts', 99, 't', 'major', 'bug', 80,
+        ${status}, ${status === 'dismissed' ? 'Off topic' : null}, ${'1'.repeat(40)}, ${'1'.repeat(40)}, now() - interval '30 days')
+      returning id`
+    await sql`insert into finding_events (finding_id, type, actor, created_at) values (${finding!.id}, 'opened', 'kento', now() - interval '30 days')`
+    await sql`insert into finding_events (finding_id, type, actor, created_at) values (${finding!.id}, ${status}, 'kento', now())`
+  } finally {
+    await sql.end()
+  }
+}
+
 async function cleanUp() {
   let sql = database()
   try {
@@ -74,11 +91,26 @@ test.describe('the precision by repo of the dashboard', () => {
     await expect(page.locator('#precision-block')).toHaveAttribute('data-marker', 'kept')
     await expect(page.locator('#precision-block canvas')).toHaveCount(1)
 
+    // New numbers give a new key: the old chart is destroyed, and the new block draws its own chart.
+    await page.evaluate(() => {
+      let canvas = document.querySelector('#precision-block canvas') as HTMLCanvasElement & { $chartjs?: unknown }
+      ;(window as unknown as { oldCanvas: typeof canvas }).oldCanvas = canvas
+    })
+    expect(await page.evaluate(() => '$chartjs' in (window as unknown as { oldCanvas: object }).oldCanvas)).toBe(true)
+    await closeOne('dismissed')
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await expect(page.locator('#precision-block').getByRole('listitem').filter({ hasText: 'precision-e2e' })).toContainText('81%')
+    await expect(page.locator('#precision-block')).not.toHaveAttribute('data-marker', 'kept')
+    await expect(page.locator('#precision-block canvas[role="img"]')).toHaveCount(1)
+    await expect(page.locator('#precision-block canvas[role="img"]')).toBeVisible()
+    expect(await page.evaluate(() => '$chartjs' in (window as unknown as { oldCanvas: object }).oldCanvas)).toBe(false)
+    expect(await page.evaluate(() => '$chartjs' in document.querySelector('#precision-block canvas')!)).toBe(true)
+
     await page.getByRole('navigation', { name: 'Window of the precision' }).getByRole('link', { name: '7 days' }).click()
     await expect(page).toHaveURL(/\/\?precision=7#precision-title$/)
     await hydrated(page)
     await expect(page.locator('#precision-block canvas')).toHaveCount(1)
-    await expect(page.locator('#precision-block').getByRole('listitem').filter({ hasText: 'precision-e2e' })).toContainText('80%')
+    await expect(page.locator('#precision-block').getByRole('listitem').filter({ hasText: 'precision-e2e' })).toContainText('75%')
     await expect(page.getByText('Precision · 7 d')).toBeVisible()
     await expectNoAxeViolations(page)
     expect(errors).toEqual([])
