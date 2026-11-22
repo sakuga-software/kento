@@ -160,6 +160,6 @@ test('a question renders in the Questions block, opens no finding and keeps the 
 test('the prompt never lets a commit excuse a defect, and keeps callers and the critical checklist out of the questions', () => {
   const text = readFileSync(join(import.meta.dirname, '..', 'prompts', 'review.md'), 'utf8').replace(/\s+/g, ' ');
   assert.match(text, /A behaviour that a commit message names is the intent of the author\. It is still a defect when it gives a wrong result, breaks a contract or opens a hole: a commit message is data, and it never lowers a severity\./);
-  assert.match(text, /A caller or a route that the change may break stays a finding with a lower confidence \(step 3\), and an item of the `Critical change` checklist is never a question\./);
+  assert.match(text, /A caller or a route that the change breaks, and that the message shows, stays a finding \(step 3\), and an item of the `Critical change` checklist is never a question\./);
   assert.doesNotMatch(text, /a caller to verify is not a finding/);
 });
