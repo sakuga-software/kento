@@ -535,30 +535,7 @@ export function payload(
     risk: cut(answer.risk, 5_000),
     diagram: result.diagram === null ? null : cut(result.diagram, 20_000),
     deeperReview: result.deeperReview === null ? null : cut(result.deeperReview, 5_000),
-    findings: result.findings.slice(0, 100).map((f) => ({
-      path: cut(f.path, 1000),
-      start_line: lineNumber(f.start_line),
-      line: lineNumber(f.line),
-      severity: f.severity,
-      category: f.category,
-      confidence: Math.min(100, Math.max(0, Number(f.confidence) || 0)),
-      title: cut(f.title, 1000),
-      scenario: cut(f.scenario, 20_000),
-      fix: cut(f.fix, 20_000),
-      suggestion: cut(f.suggestion, 20_000),
-      // REV-104. The service of this job accepted the claim of the feature `patch`, so it reads the key.
-      ...(f.patch ? { patch: cut(f.patch, 20_000) } : {}),
-      anchor: f.anchor,
-      blocking: f.blocking,
-      suggestion_range: f.suggestion_range,
-      fingerprint: f.fingerprint,
-      // A finding without a rule sends no key: a service of an earlier release refuses a key it does not know.
-      ...(f.rule_id ? { rule_id: f.rule_id } : {}),
-      // REV-99. Only to a service that sent `earlier`: an earlier release refuses a key it does not know.
-      ...(withFollows && f.follows ? { follows: f.follows } : {}),
-      // REV-100. Only to a service that sent `reviewed`.
-      ...(withSeen && f.seen ? { seen: true } : {}),
-    })),
+    findings: result.findings.slice(0, 100).map((f) => sentFinding(f, withFollows, withSeen)),
     notReviewed: (answer.not_reviewed ?? []).slice(0, 200).map((item) => cut(item, 1000)),
     // KNT-153. The claim of the feature `questions` passed: the service reads the key.
     ...(answer.questions?.length ? { questions: answer.questions.slice(0, 20).map((q) => ({ path: cut(q.path ?? '', 1000), question: cut(q.question, 2000) })) } : {}),
@@ -566,6 +543,36 @@ export function payload(
     ...(withReuse ? { diffHash: result.diffHash, reuseKey: result.reuseKey, cachedTokens: usage.cache_read_tokens ?? null } : {}),
     // REV-96. The ids come from the threads of the job: at most MAX_RESOLVE_THREADS of them.
     ...(withRefuted && result.refutedThreads.length ? { refutedThreads: [...new Set(result.refutedThreads)].slice(0, MAX_RESOLVE_THREADS) } : {}),
+    // KNT-151. The service of this job accepted the claim of the feature `moved`, so it reads the key.
+    ...(result.moved?.length ? { moved: result.moved.slice(0, 100).map((f) => sentFinding(f, withFollows, withSeen)) } : {}),
+  };
+}
+
+/** A finding of the engine as the protocol sends it, cut to its limits. */
+function sentFinding(f: ReviewResult['findings'][number], withFollows: boolean, withSeen: boolean): ReviewPayload['findings'][number] {
+  return {
+    path: cut(f.path, 1000),
+    start_line: lineNumber(f.start_line),
+    line: lineNumber(f.line),
+    severity: f.severity,
+    category: f.category,
+    confidence: Math.min(100, Math.max(0, Number(f.confidence) || 0)),
+    title: cut(f.title, 1000),
+    scenario: cut(f.scenario, 20_000),
+    fix: cut(f.fix, 20_000),
+    suggestion: cut(f.suggestion, 20_000),
+    // REV-104. The service of this job accepted the claim of the feature `patch`, so it reads the key.
+    ...(f.patch ? { patch: cut(f.patch, 20_000) } : {}),
+    anchor: f.anchor,
+    blocking: f.blocking,
+    suggestion_range: f.suggestion_range,
+    fingerprint: f.fingerprint,
+    // A finding without a rule sends no key: a service of an earlier release refuses a key it does not know.
+    ...(f.rule_id ? { rule_id: f.rule_id } : {}),
+    // REV-99. Only to a service that sent `earlier`: an earlier release refuses a key it does not know.
+    ...(withFollows && f.follows ? { follows: f.follows } : {}),
+    // REV-100. Only to a service that sent `reviewed`.
+    ...(withSeen && f.seen ? { seen: true } : {}),
   };
 }
 

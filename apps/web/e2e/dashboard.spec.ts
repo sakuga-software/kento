@@ -137,6 +137,10 @@ test.describe('the dashboard', () => {
     let recent = page.getByRole('region', { name: 'Latest reviews' })
     await expect(recent.getByRole('link', { name: 'dash-e2e #41' })).toBeVisible()
     await expect(recent.getByText('Comment', { exact: true })).toBeVisible()
+    // KNT-187: the score of each review drawn with its five marks, its number beside them.
+    let score = recent.locator('.dash-reviews tbody tr').first().locator('.score')
+    await expect(score.locator('.score-value')).toHaveText(/^[1-5]\/5$/)
+    await expect(score.locator('.score-marks > span')).toHaveCount(5)
     await expectNoAxeViolations(page)
 
     await banner.getByRole('button', { name: /Run again at balanced/ }).click()

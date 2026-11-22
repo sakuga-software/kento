@@ -27,17 +27,33 @@
       try {
         const response = await fetch(url.href, { headers: { Accept: 'text/html' }, credentials: 'same-origin' })
         if (!response.ok || response.redirected) return
-        const next = new DOMParser().parseFromString(await response.text(), 'text/html').getElementById('dashboard-live')
+        const doc = new DOMParser().parseFromString(await response.text(), 'text/html')
+        const next = doc.getElementById('dashboard-live')
         if (next) {
+          // KNT-191. A block with a component (the chart of the precision) carries `data-keep`, a key
+          // of its numbers: with the same key the block stays, with its chart; else the old one is
+          // disposed and the runtime hydrates the new one (app/ui/public/runtime.ts).
+          const kept = new Map([...live.querySelectorAll('[data-keep][id]')].map((block) => [block.id, block]))
           // KNT-189. The section of the queue holds the live card (app/ui/public/live-queue.tsx): it
           // stays, so that its stream goes on. Its card takes the one just read, unless the stream is live.
-          const kept = live.querySelector('[data-live-queue]')
+          const keptQueue = live.querySelector('[data-live-queue]')
           live.replaceChildren(...next.childNodes)
-          const fresh = kept && live.querySelector('[data-live-queue]')
-          if (fresh) {
-            const card = fresh.querySelector('#dash-queue-card')
-            if (kept.dataset.liveState !== 'live' && card) kept.querySelector('#dash-queue-card')?.replaceWith(card)
-            fresh.replaceWith(kept)
+          for (const fresh of live.querySelectorAll('[data-keep][id]')) {
+            const old = kept.get(fresh.id)
+            kept.delete(fresh.id)
+            if (old && old.dataset.keep === fresh.dataset.keep) {
+              fresh.replaceWith(old)
+              continue
+            }
+            if (old) document.dispatchEvent(new CustomEvent('kento:dispose', { detail: { root: old } }))
+            document.dispatchEvent(new CustomEvent('kento:hydrate', { detail: { root: fresh, source: doc } }))
+          }
+          for (const gone of kept.values()) document.dispatchEvent(new CustomEvent('kento:dispose', { detail: { root: gone } }))
+          const freshQueue = keptQueue && live.querySelector('[data-live-queue]')
+          if (freshQueue) {
+            const card = freshQueue.querySelector('#dash-queue-card')
+            if (keptQueue.dataset.liveState !== 'live' && card) keptQueue.querySelector('#dash-queue-card')?.replaceWith(card)
+            freshQueue.replaceWith(keptQueue)
           }
           stampNow()
           age()
