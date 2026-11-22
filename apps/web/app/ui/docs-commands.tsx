@@ -91,7 +91,8 @@ function commands(): Command[] {
       now: (
         <>
           Kentō reads up to {MAX_RESOLVE_THREADS} open threads, within {MAX_RESOLVE_PACK_BYTES / 1000} KB, with the code of the last commit.
-          It answers in each thread, and resolves those that the code fixes. The other threads wait: the summary says so, and a new command
+          It answers in each thread, and resolves those that the code fixes: their findings become <code>fixed</code>, also those that the
+          reviews no longer see (<code>stale</code>), and the precision counts them. The other threads wait: the summary says so, and a new command
           reads them. Written as a reply in a thread, the command does not run: Kentō reacts 😕 and replies at once that it goes in the
           conversation, where it reads the open threads, that one among them, within the limits above. In a thread, Kentō reads only{' '}
           <code>reject</code> and <code>feedback</code>.
@@ -115,7 +116,9 @@ function commands(): Command[] {
           The finding becomes <code>dismissed</code> with its cause. When the finding has a thread, Kentō replies in it and resolves it. If
           Kentō cannot resolve it, its reply says so, and a person resolves it. If the last review requested changes and no blocking finding
           stays open, Kentō dismisses that request. The id is the one in the list of findings, at the end of the description of the PR. In a
-          thread, an id is optional: it must be the id of the finding of that thread, and Kentō refuses the id of another finding.
+          thread, an id is optional: it must be the id of the finding of that thread, and Kentō refuses the id of another finding. A finding
+          that the reviews no longer see (<code>stale</code>) can be dismissed too. Kentō refuses a finding that is already{' '}
+          <code>fixed</code>.
         </>
       ),
       next: (

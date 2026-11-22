@@ -61,9 +61,12 @@ export interface MembersStore {
   cancel(orgId: string, actorUserId: string, invitationId: string): Promise<'canceled' | 'not_found' | 'not_admin'>
   /**
    * KNT-150. A person whom GitHub says, now, is an admin of an account of the org takes the owner
-   * role (`decideReclaim`). `githubAdmin`: the answer of GitHub, asked by the caller.
+   * role (`decideReclaim`). `adminOf`: the installations whose account GitHub counts the person an
+   * admin of, asked by the caller before the lock. KNT-199: under the lock, at least one of them must
+   * still be an active installation of the org; when none is (a move took it away in between), the
+   * refusal is `changed`.
    */
-  reclaim(orgId: string, userId: string, githubAdmin: boolean): Promise<ChangeOutcome>
+  reclaim(orgId: string, userId: string, adminOf: string[]): Promise<ChangeOutcome>
   /**
    * KNT-173. Counts a question to GitHub for the take-back, once per `RECLAIM_COOLDOWN_MS` per person
    * and org, for every process of the service, on the clock of Postgres. `over`: the person asked
@@ -240,10 +243,17 @@ export function createMembersStore(sql: postgres.Sql, clock: { offsetMs(): numbe
       })
     },
 
-    async reclaim(orgId, userId, githubAdmin) {
+    async reclaim(orgId, userId, adminOf) {
       return locked(orgId, async (tx) => {
         let actor = await memberOf(tx, orgId, userId)
-        let refusal = decideReclaim(actor, githubAdmin)
+        // A move of an installation takes the lock of its org first: the installations read here
+        // are the ones of the org until this transaction ends.
+        if (actor && adminOf.length > 0) {
+          let [still] = await tx<{ n: number }[]>`
+            select count(*)::int as n from installations where org_id = ${orgId} and suspended_at is null and id in ${tx(adminOf)}`
+          if (still!.n === 0) return { ok: false, reason: 'changed' } as const
+        }
+        let refusal = decideReclaim(actor, adminOf.length > 0)
         if (refusal) return { ok: false, reason: refusal } as const
         // GitHub said admin: the membership is GitHub's from now on, checked as every other one.
         await tx`update memberships set role = 'owner', source = 'github', checked_at = now() where id = ${actor!.id}`

@@ -33,6 +33,9 @@ export default defineConfig({
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } } },
     { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 }, hasTouch: true } },
+    // KNT-171: the content security policy under WebKit, the engine of Safari. Only that file: the
+    // other ones are written for Chromium.
+    { name: 'webkit', testMatch: /csp\.spec\.ts$/, use: { ...devices['Desktop Safari'], viewport: { width: 1440, height: 900 } } },
   ],
   webServer: [
     {

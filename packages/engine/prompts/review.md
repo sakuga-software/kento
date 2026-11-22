@@ -11,10 +11,12 @@ The user message holds the conventions of the repository (`CLAUDE.md`,
 file shows the whole function around the change. An `Imports` section follows
 the diff: the import statements of each changed file at the head, whole, with
 their line numbers. A `Context` section can follow it: unchanged code from
-other files, with line numbers. It holds the definitions of names that the
-change uses, the migration or schema of each SQL name that the change writes,
-and at some levels the callers of the functions and routes that the change
-modifies. A SQL name (a constraint, an index) that the
+other files, with line numbers. It holds the definitions of the functions that
+the change calls and of the names that it uses, the schema and the migrations of
+each table that the change reads or writes, the migration or schema of each SQL
+name that the change writes, the routes that a changed test requests, and at
+some levels the callers of the functions and routes that the change modifies.
+A SQL name (a constraint, an index) that the
 `Context` section lists as absent exists in no other file of the repository,
 in the diff or outside it: the change depends on a migration that is not in the
 repository yet. If that gives a `major` defect, report it as a finding with

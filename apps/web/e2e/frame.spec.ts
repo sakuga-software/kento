@@ -7,7 +7,7 @@ import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 const SCREENS = [
   { path: '/', title: 'Dashboard' },
   { path: '/repos', title: 'Repos' },
-  { path: '/findings', title: 'Findings' },
+  { path: '/findings?per=25', title: 'Findings' },
   { path: '/feedback', title: 'Feedback' },
   { path: '/runners', title: 'Runners' },
   { path: '/settings', title: 'Settings' },
@@ -72,7 +72,7 @@ test.describe('the frame of the screens', () => {
     // No "Apply" button with JavaScript: the click was enough.
     await expect(section.getByRole('button', { name: 'Apply' })).toBeHidden()
 
-    await page.goto('/findings')
+    await page.goto('/findings?per=25')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'sumi')
     await page.goto('/users/octocat')
     await expect(page.getByRole('group', { name: 'Theme of this browser' }).getByRole('radio', { name: 'Sumi' })).toBeChecked()
@@ -190,20 +190,20 @@ test.describe('a tap during the page transition (KNT-172)', () => {
   }
 
   test('a tap right after a navigation reaches its target, while the transition still runs', async ({ page }, testInfo) => {
-    await goDuringTransition(page, '/findings')
+    await goDuringTransition(page, '/findings?per=25')
     await tapDuringTransition(page, page.getByRole('link', { name: 'Precision', exact: true }), testInfo.project.name === 'mobile')
     await expect(page).toHaveURL(/view=precision/)
   })
 
   test('a tap on the logo, an SVG in its link, leads home', async ({ page }, testInfo) => {
-    await goDuringTransition(page, '/findings')
+    await goDuringTransition(page, '/findings?per=25')
     await tapDuringTransition(page, page.getByRole('link', { name: 'Kentō, dashboard' }), testInfo.project.name === 'mobile')
     await expect(page).toHaveURL(/\/$/)
   })
 
   test('a tap on a field during the transition gives it the focus', async ({ page }, testInfo) => {
     await withFinding(async () => {
-      await goDuringTransition(page, '/findings')
+      await goDuringTransition(page, '/findings?per=25')
       let search = page.locator('#findings-q')
       await tapDuringTransition(page, search, testInfo.project.name === 'mobile')
       await expect(search).toBeFocused()
@@ -214,7 +214,7 @@ test.describe('a tap during the page transition (KNT-172)', () => {
 
   test('a tap on a checkbox checks it once: no second click undoes it', async ({ page }, testInfo) => {
     await withFinding(async () => {
-      await goDuringTransition(page, '/findings')
+      await goDuringTransition(page, '/findings?per=25')
       let check = page.getByRole('checkbox', { name: 'Select "A finding for KNT-172"' })
       await tapDuringTransition(page, check, testInfo.project.name === 'mobile')
       await expect(check).toBeChecked()
@@ -225,7 +225,7 @@ test.describe('a tap during the page transition (KNT-172)', () => {
 
   test('a Ctrl or Cmd click during the transition opens the link in a new tab, and the page stays', async ({ page, context }, testInfo) => {
     test.skip(testInfo.project.name === 'mobile', 'a mouse with a modifier key')
-    await goDuringTransition(page, '/findings')
+    await goDuringTransition(page, '/findings?per=25')
     let opened = context.waitForEvent('page')
     await page.keyboard.down('ControlOrMeta')
     await tapDuringTransition(page, page.getByRole('link', { name: 'Precision', exact: true }), false)
@@ -233,12 +233,12 @@ test.describe('a tap during the page transition (KNT-172)', () => {
     let tab = await opened
     await tab.waitForLoadState()
     expect(tab.url()).toMatch(/view=precision/)
-    expect(new URL(page.url()).search).toBe('')
+    expect(new URL(page.url()).search).toBe('?per=25')
     await tab.close()
   })
 
   test('the page still has its transition, and none under reduced motion', async ({ page }) => {
-    await page.evaluate(() => (location.href = '/findings'))
+    await page.evaluate(() => (location.href = '/findings?per=25'))
     await expect(page.getByRole('heading', { level: 1, name: 'Findings' })).toBeVisible()
     await expect.poll(() => page.evaluate(() => (window as unknown as { transition: string }).transition)).not.toBe('none')
     await page.emulateMedia({ reducedMotion: 'reduce' })

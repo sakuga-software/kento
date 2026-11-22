@@ -112,14 +112,20 @@ describe('findings store', () => {
     assert.deepEqual((await listFindingEvents(database.sql, { orgId: otherOrgId, findingId: id })).items, [])
   })
 
-  it('REV-94: with keepDismissed, a finding fixed or stale, read under the lock, is not dismissed', async () => {
-    for (let status of ['fixed', 'stale']) {
-      let id = await insertFinding({ repoId, prNumber: 77, title: `race ${status}`, status })
-      let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'octocat', source: 'command', keepDismissed: true })
-      assert.equal(change.outcome, 'unchanged')
-      assert.equal(change.outcome === 'unchanged' && change.finding.status, status)
-      assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 0)
-    }
+  it('REV-94: with keepDismissed, a fixed finding, read under the lock, is not dismissed', async () => {
+    let id = await insertFinding({ repoId, prNumber: 77, title: 'race fixed', status: 'fixed' })
+    let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'octocat', source: 'command', keepDismissed: true })
+    assert.equal(change.outcome, 'unchanged')
+    assert.equal(change.outcome === 'unchanged' && change.finding.status, 'fixed')
+    assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 0)
+  })
+
+  it('KNT-192: with keepDismissed, a stale finding is dismissed: the reviews no longer see it, and it can be a false positive', async () => {
+    let id = await insertFinding({ repoId, prNumber: 77, title: 'race stale', status: 'stale' })
+    let change = await setFindingStatus(database.sql, { orgId, findingId: id, status: 'dismissed', reason: 'false positive', actor: 'octocat', source: 'command', keepDismissed: true })
+    assert.equal(change.outcome, 'changed')
+    assert.equal(change.outcome === 'changed' && change.finding.status, 'dismissed')
+    assert.equal((await listFindingEvents(database.sql, { orgId, findingId: id })).items.length, 1)
   })
 
   it('refuses a reason on a finding that no person dismissed', async () => {

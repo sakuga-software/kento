@@ -29,6 +29,7 @@ export const MEMBER_NOTICES = {
   same_role: { tone: 'info', text: 'The person already has this role.' },
   github_admin: { tone: 'alert', text: 'GitHub counts this person as an admin of the account: an owner from an invitation does not demote them.' },
   not_github_admin: { tone: 'alert', text: 'GitHub does not count you now as an admin of an account of this organization.' },
+  changed: { tone: 'alert', text: 'The installations of the organization changed while Kentō asked GitHub. Try again in a minute.' },
   reclaimed: { tone: 'ok', text: 'You are an owner of the organization again.' },
   reclaim_wait: { tone: 'info', text: 'Kentō asked GitHub less than a minute ago. Try again in a minute.' },
   too_many: { tone: 'alert', text: 'The organization has 50 pending invitations: cancel some before you invite again.' },

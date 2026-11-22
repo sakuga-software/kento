@@ -518,6 +518,38 @@ summary.button::-webkit-details-marker {
   height: 32px;
   padding: 0 var(--space-3);
 }
+/* KNT-185. A button with its icon alone, square at the height of the controls; its name is in
+   aria-label and title. Quiet: the muted ink of a hint, the ink on hover. */
+.button-icon {
+  --button-fg: var(--ink-muted);
+  width: var(--control-h);
+  padding: 0;
+}
+.button-icon:hover {
+  --button-fg: var(--ink);
+}
+.button-icon svg {
+  width: 18px;
+  height: 18px;
+}
+/* A button with data-busy while its form posts (progress.js): its icon turns, but not under
+   reduced motion. */
+.button[aria-busy='true'] {
+  cursor: progress;
+}
+.button[aria-busy='true'] svg {
+  animation: button-busy 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .button[aria-busy='true'] svg {
+    animation: none;
+  }
+}
+@keyframes button-busy {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .button-large {
   height: var(--control-h-touch);
   padding: 0 var(--space-5);
@@ -1250,6 +1282,104 @@ button.org-menu-item:hover {
 .banner-info svg {
   color: var(--ai);
 }
+/* KNT-184. The toast of an action that went well (app/ui/toast.tsx): in the bottom right corner of
+   the window, over the page, in the live region of the page. It goes after 8 s, and waits while the
+   pointer or the focus is on it. With reduced motion it neither slides nor fades: it goes at once. */
+.toast-region {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: 60;
+  display: grid;
+  gap: var(--space-2);
+  width: min(380px, calc(100vw - 2 * var(--space-4)));
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--matsu);
+  border-radius: var(--radius-lg);
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  pointer-events: auto;
+  animation:
+    toast-in 180ms ease-out,
+    toast-out 200ms ease-in 8s forwards;
+}
+.toast:hover,
+.toast:focus-within {
+  animation-play-state: paused;
+}
+.toast > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--matsu);
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.toast-text p {
+  margin: 0;
+}
+.toast-text strong {
+  font-weight: 600;
+}
+/* The close link: 32 px to press, its icon of 16 px. */
+.toast-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: -7px -4px -7px 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+}
+.toast-close:hover {
+  background: var(--paper-sunken);
+  color: var(--ink);
+}
+.toast-close svg {
+  width: 16px;
+  height: 16px;
+}
+/* It slides in, with no fade: its text keeps its contrast from the first frame. */
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+  }
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: toast-out 1ms linear 8s forwards;
+  }
+}
+@media (max-width: 760px) {
+  .toast-region {
+    right: var(--space-4);
+    bottom: var(--space-4);
+    left: var(--space-4);
+    width: auto;
+  }
+}
+
 /* "Read only", on its own line, then what a member can do. */
 .banner-title {
   display: block;
@@ -1529,6 +1659,58 @@ a.repo-name {
 .repo-name svg {
   color: var(--ink-muted);
 }
+/* KNT-183, KNT-187. A confidence score (app/ui/score.tsx): five marks filled up to the score, in the
+   colour of its band, then the number in ink. The box gives the count (score-n0 to score-n5) and the
+   band. The number carries the value; the marks only repeat it (aria-hidden), so an empty mark is
+   pale, to stand apart from a filled one. */
+.score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  --score-mark: var(--matsu);
+}
+.score-mid {
+  --score-mark: var(--kuchiba);
+}
+.score-low {
+  --score-mark: var(--shu);
+}
+.score-marks {
+  display: inline-flex;
+  gap: 2px;
+}
+.score-marks > span {
+  width: 6px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--line);
+}
+.score-n1 .score-marks > :nth-child(-n + 1),
+.score-n2 .score-marks > :nth-child(-n + 2),
+.score-n3 .score-marks > :nth-child(-n + 3),
+.score-n4 .score-marks > :nth-child(-n + 4),
+.score-n5 .score-marks > :nth-child(-n + 5) {
+  background: var(--score-mark);
+}
+.score-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Windows High Contrast drops the backgrounds: the filled marks keep a colour of the system. */
+@media (forced-colors: active) {
+  .score-marks > span {
+    background: GrayText;
+  }
+  .score-n1 .score-marks > :nth-child(-n + 1),
+  .score-n2 .score-marks > :nth-child(-n + 2),
+  .score-n3 .score-marks > :nth-child(-n + 3),
+  .score-n4 .score-marks > :nth-child(-n + 4),
+  .score-n5 .score-marks > :nth-child(-n + 5) {
+    background: CanvasText;
+  }
+}
+
 /* KNT-182. The last review on one line. In the table the column takes the width of the line, and the
    table scrolls sideways before it cuts a text that the keyboard could not read. On a card (under
    760 px, below), the link stays whole and only the date can shrink. */
@@ -1694,6 +1876,9 @@ a.repo-name {
     content: 'Last review';
   }
   .repos-table td:nth-child(5)::before {
+    content: 'Confidence 30 d';
+  }
+  .repos-table td:nth-child(6)::before {
     content: 'Precision 30 d';
   }
   /* KNT-182: the last review takes the width of the card, so that its line is seldom cut; then the
@@ -3555,11 +3740,74 @@ a.finding-title:hover {
 .dash-subtitle:first-child {
   margin-top: 0;
 }
+/* KNT-189. "Live" beside the title of the queue while the stream keeps the card; "Retrying…" while it waits. */
+/* A change of state never wraps the head: the card under it does not move. */
+.dash-section-head:has(.live-state) {
+  flex-wrap: nowrap;
+}
+.dash-section-head:has(.live-state) > :not(.live-state) {
+  flex: none;
+}
+.live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-right: auto;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 1 var(--font-ui);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.live-state[hidden] {
+  display: none;
+}
+.live-state::before {
+  content: '';
+  flex: none;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--matsu);
+}
+.live-state[data-state='reconnecting']::before {
+  background: none;
+  border: 2px dotted var(--nezumi);
+}
+/* KNT-189. "2 ready / 3 online" beside "Runners". */
+.runner-ready {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font: 400 var(--text-xs) / 20px var(--font-mono);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The count changed since the last card: a short wash, once. */
+  .runner-ready.is-changed {
+    animation: ready-changed 1.2s ease-out;
+  }
+}
+@keyframes ready-changed {
+  from {
+    background: var(--matsu-wash);
+    color: var(--matsu);
+  }
+}
+/* KNT-191: one card a row, the whole width: room for the failures and the chart of the precision. */
 .dash-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
+}
+/* The windows of the precision, in the head of its section. */
+.period-links.precision-windows {
+  margin-bottom: 0;
+}
+.precision-card .chart-box {
+  margin-bottom: var(--space-4);
 }
 
 /* "To do": one row per thing to do, a mark and a word, what happened, then the actions. */
@@ -4203,6 +4451,18 @@ a.finding-title:hover {
 .settings-content [id] {
   /* Less than the gap between the cards: the card above is out of view, and the tab marks the right one. */
   scroll-margin-top: var(--space-4);
+}
+/* KNT-177. A link of the sidebar glides to its section. The viewport scrolls, so the rule is on
+   <html>, and only while settings.js holds .settings-glide after a click of the sidebar: a load of
+   /settings#section (the redirect of a save, a link from another page, a reload), Tab and the history
+   keep their jump. The bar at the top does not stay in view: the margin above keeps a heading clear
+   of the window edge. No motion when the person asks for less. Not under 900 px: there the list is
+   at the top of the page, and its mark follows the section chosen in it (KNT-168), which a glide past
+   the other sections would clear. */
+@media (prefers-reduced-motion: no-preference) and (width > 900px) {
+  html.settings-glide:has(.settings-content) {
+    scroll-behavior: smooth;
+  }
 }
 /* The two gauges side by side, the cost per provider under them. */
 .cap-facts {
@@ -5519,14 +5779,15 @@ a.sheet-title {
   }
 }
 
-/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. */
-.cost-periods {
+/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. The
+   chart boxes (`.chart-box`, app/ui/public/chart.tsx) also serve the precision of the dashboard (KNT-191). */
+.period-links {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-6);
 }
-.cost-periods a {
+.period-links a {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: 999px;
@@ -5535,10 +5796,10 @@ a.sheet-title {
   line-height: var(--leading-sm);
   text-decoration: none;
 }
-.cost-periods a:hover {
+.period-links a:hover {
   border-color: var(--ink);
 }
-.cost-periods a[aria-current='page'] {
+.period-links a[aria-current='page'] {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--paper-raised);
@@ -5567,16 +5828,16 @@ a.sheet-title {
 .cost-grid .cost-section {
   margin-bottom: 0;
 }
-.cost-chart {
+.chart-box {
   position: relative;
   height: 260px;
   margin-top: var(--space-4);
 }
-.cost-chart[hidden] {
+.chart-box[hidden] {
   display: none;
 }
-/* One bar per row: the chart grows with its rows (draw.ts sets --rows). */
-.cost-chart[data-kind='bars'] {
+/* One bar per row: the chart grows with its rows (chart-draw.ts sets --rows). */
+.chart-box[data-kind='bars'] {
   height: calc(var(--rows, 4) * 30px + 36px);
 }
 .chart-data {

@@ -837,7 +837,8 @@ export const findingEvents = pgTable(
     reason: text('reason'),
     /**
      * REV-94. Where the change of a person came from: `command` for `@kento-review reject` on
-     * GitHub. Null for the other events: a screen of Kentō, a 👎, a review.
+     * GitHub. KNT-192: `resolve` for a fix that `@kento-review resolve` confirmed. Null for the
+     * other events: a screen of Kentō, a 👎, a review.
      */
     source: text('source'),
     createdAt: createdAt(),
