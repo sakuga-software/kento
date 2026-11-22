@@ -19,7 +19,7 @@ import { react, type Reaction } from '../commands/handler.ts'
 import { jsonOf } from '../db/rows.ts'
 import { askForFeedback } from '../feedback/github.ts'
 import { PUBLISH_MAX_AGE } from '../db/webhook-store.ts'
-import { claimRejectHint, createFindingsLedger, releaseRejectHint } from '../findings/ledger.ts'
+import { claimRejectHint, createFindingsLedger, markFixedByResolve, releaseRejectHint } from '../findings/ledger.ts'
 import { sweepReactions } from '../findings/reactions.ts'
 import type { MintInstallationToken, TokenPermissions } from '../github/installation-token.ts'
 import { errorMessage, log } from '../log.ts'
@@ -891,5 +891,6 @@ function resolveHints(sql: postgres.ISql, row: { githubRepoId: number | string; 
     },
     claim: (findingId) => claimRejectHint(sql, findingId),
     release: (findingId) => releaseRejectHint(sql, findingId),
+    markFixed: (findingId) => markFixedByResolve(sql, findingId),
   }
 }

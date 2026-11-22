@@ -91,7 +91,7 @@ test('a member sees the findings to consider, filters them, and reads why one do
   await signIn(page, 'camille')
   let ids = await seed()
 
-  await page.goto('/findings')
+  await page.goto('/findings?per=25')
   let considered = page.getByRole('row', { name: new RegExp(TITLE_CONSIDERED.slice(0, 20)) })
   let blocking = page.getByRole('row', { name: new RegExp(TITLE_BLOCKING) })
   await expect(considered.getByText('To consider', { exact: true })).toBeVisible()
@@ -117,7 +117,7 @@ test('a member sees the findings to consider, filters them, and reads why one do
   await expect(page.getByText('To consider')).toHaveCount(0)
 
   // "Clear the filters" gives every finding back.
-  await page.goto('/findings?type=to-consider')
+  await page.goto('/findings?type=to-consider&per=25')
   await page.getByRole('link', { name: 'Clear the filters' }).first().click()
   await expect(page.getByRole('rowheader')).toHaveCount(2)
   expect(errors).toEqual([])

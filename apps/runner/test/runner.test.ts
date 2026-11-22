@@ -502,14 +502,14 @@ test('redact removes GitHub tokens, runner tokens and URL credentials that the r
 // --- resolve ---------------------------------------------------------------------------------
 
 /** A model that answers `resolve`: `fixed` for each thread of the pack, and records the packs. */
-function stubResolveModel() {
+function stubResolveModel(verdict = 'fixed') {
   const packs: string[] = [];
   const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
     const pack: string = body.messages[1].content;
     packs.push(pack);
     const ids = [...pack.matchAll(/^## Thread (\S+)$/gm)].map((m) => m[1]!);
-    const threads = ids.map((id) => ({ id, verdict: 'fixed', reply: `Fixed (${id}).` }));
+    const threads = ids.map((id) => ({ id, verdict, reply: `Fixed (${id}).` }));
     return new Response(
       JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify({ threads }) } }], usage: { prompt_tokens: 20, completion_tokens: 8, cost: 0.003 } }),
     );
@@ -568,6 +568,33 @@ test('a resolve job: the pack of the threads, one model call, and whether each f
   );
   assert.deepEqual(readdirSync(join(root, 'work')), [], 'the clone is removed after the job');
   assertNoSecretInLogs();
+});
+
+test('KNT-197: the fix of a thread can be in another file: the pack shows it, and the thread counts as changed', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel();
+  const first = git(source, 'rev-list', '--max-parents=0', 'pr');
+  // A thread on a file that the push did not change; the push changed sum.ts.
+  const thread = { id: 'PRRT_caller', path: 'caller.ts', line: 1, comments: [{ id: 300, author: 'sakuga-review', isBot: true, body: 'The caller trusts sum.', commit: first }] };
+  const outcome = await runJob(job({ kind: 'resolve', resolve: { threads: [thread], open: 1, waiting: 1 } }), deps(api, model.fetch, RUNNER_KEY));
+
+  assert.equal(outcome, 'done');
+  assert.match(model.packs[0]!, /### The other files changed since the thread opened\n\n#### `sum\.ts`/);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'resolved');
+  if (result.outcome !== 'resolved') return;
+  assert.deepEqual(result.resolve.threads.map((t) => [t.id, t.verdict, t.changed]), [['PRRT_caller', 'fixed', true]]);
+});
+
+test('KNT-197: a thread that stays open does not count as changed for a change in another file', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel('open');
+  const first = git(source, 'rev-list', '--max-parents=0', 'pr');
+  const thread = { id: 'PRRT_caller', path: 'caller.ts', line: 1, comments: [{ id: 301, author: 'sakuga-review', isBot: true, body: 'The caller trusts sum.', commit: first }] };
+  await runJob(job({ kind: 'resolve', resolve: { threads: [thread], open: 1, waiting: 1 } }), deps(api, model.fetch, RUNNER_KEY));
+  const result = results[0]!;
+  assert.ok(result.outcome === 'resolved');
+  assert.deepEqual(result.resolve.threads.map((t) => [t.id, t.verdict, t.changed]), [['PRRT_caller', 'open', false]]);
 });
 
 test('a resolve job with no thread to answer clones nothing and calls no model', async () => {

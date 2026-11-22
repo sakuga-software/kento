@@ -168,3 +168,71 @@ describe('the Findings screen list', () => {
     assert.deepEqual([...facets.rules].map((r) => ({ ...r })), [{ id: ruleId, title: 'No any', repo: 'sakuga-software/sakuga-review' }])
   })
 })
+
+describe('KNT-192: a stale finding that the last reviews no longer see', () => {
+  let test: Awaited<ReturnType<typeof createTestDatabase>>
+  let database: Database
+  let orgId: string
+
+  before(async () => {
+    test = await createTestDatabase()
+    await runMigrations(test.url)
+    database = createDatabase(test.url)
+    let sql = database.sql
+    orgId = await insertOrg(sql, 'sakuga-software', 1, 11)
+    let [repo] = await sql<{ id: string }[]>`
+      insert into repos (org_id, installation_id, github_repo_id, full_name, enabled)
+      values (${orgId}, (select id from installations where org_id = ${orgId} order by created_at limit 1), 3001, 'sakuga-software/sakuga-review', true)
+      returning id`
+    let repoId = repo!.id
+    let [job] = await sql<{ id: string }[]>`
+      insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'lite', 7, ${HEAD}, 'main') returning id`
+    let [review] = await sql<{ id: string }[]>`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, result)
+      values (${job!.id}, ${repoId}, 7, ${HEAD}, 4, 'm', '{}'::jsonb) returning id`
+    // pull request 7: unseen (a review made it stale), stale by a close (no review), open.
+    // pull request 8: unseen, then the pull request closed.
+    let insert = async (pr: number, key: string, title: string, status: string, staleBy: string | null | undefined) => {
+      let [row] = await sql<{ id: string }[]>`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status,
+          first_seen_sha, last_seen_sha)
+        values (${repoId}, ${pr}, ${key}, ${key}, 'src/a.ts', 1, ${title}, 'major', 'bug', 80, ${status}::finding_status, ${HEAD}, ${HEAD})
+        returning id`
+      if (staleBy !== undefined) {
+        await sql`insert into finding_events (finding_id, review_id, type, actor) values (${row!.id}, ${staleBy}, 'stale', 'kento')`
+      }
+    }
+    await insert(7, 'u1', 'Unseen', 'stale', review!.id)
+    await insert(7, 'c1', 'Closed pull request', 'stale', null)
+    await insert(7, 'o1', 'Open', 'open', undefined)
+    await insert(8, 'u2', 'Unseen then closed', 'stale', review!.id)
+    await sql`insert into pull_closures (repo_id, pr_number, closed_at) values (${repoId}, 8, now())`
+  })
+
+  after(async () => {
+    await database?.close()
+    await test?.drop()
+  })
+
+  it('lists it under "open", flagged unseen, and not under "stale" or "closed"', async () => {
+    let open = await listFindingScreen(database.sql, orgId)
+    assert.deepEqual(open.counts, { open: 2, fixed: 0, dismissed: 0, wontfix: 0, stale: 2, closed: 2, all: 4 })
+    assert.deepEqual(open.rows.map((r) => [r.title, r.status, r.unseen]).sort(), [
+      ['Open', 'open', false],
+      ['Unseen', 'stale', true],
+    ])
+    let stale = await listFindingScreen(database.sql, orgId, { view: 'stale' })
+    assert.deepEqual(stale.rows.map((r) => [r.title, r.unseen]).sort(), [
+      ['Closed pull request', false],
+      ['Unseen then closed', false],
+    ])
+    let closed = await listFindingScreen(database.sql, orgId, { view: 'closed' })
+    assert.deepEqual(closed.rows.map((r) => r.title).sort(), ['Closed pull request', 'Unseen then closed'])
+  })
+
+  it('lists it under "open" again when the pull request opens again', async () => {
+    await database.sql`delete from pull_closures where pr_number = 8`
+    let open = await listFindingScreen(database.sql, orgId)
+    assert.deepEqual(open.rows.map((r) => r.title).sort(), ['Open', 'Unseen', 'Unseen then closed'])
+  })
+})

@@ -11,7 +11,7 @@ import {
   type KentoAuth,
 } from '../../app/auth/better-auth.ts'
 import type { GitHubOAuth, GitHubProfile, GitHubRole } from '../../app/auth/github.ts'
-import { OWNER_ACTIVE_MS, saveGitHubRole } from '../../app/auth/access.ts'
+import { OWNER_ACTIVE_MS, saveGitHubRole, type GitHubAnswer } from '../../app/auth/access.ts'
 import { createAuthStore, type AuthStore } from '../../app/auth/store.ts'
 import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
@@ -96,6 +96,12 @@ describe('the sign-in and the sessions in Postgres', () => {
     return { callback, cookie: pair }
   }
 
+
+  /** KNT-199. GitHub's answer `role`, given by every active installation of the org. */
+  async function everyInstallation(orgId: string, role: GitHubRole): Promise<GitHubAnswer> {
+    let rows = await database.sql<{ id: string }[]>`select id from installations where org_id = ${orgId} and suspended_at is null`
+    return { role, from: rows.map((r) => r.id) }
+  }
   it('creates the user and its account, a session under the hash of its token, and no token of GitHub', async () => {
     let orgId = await insertOrgRow(database.sql, 'acme', 11)
     roles.set('acme/octocat', 'admin')
@@ -293,7 +299,7 @@ describe('the sign-in and the sessions in Postgres', () => {
     assert.equal(await store.saveMembership(user!.id, acme, 'member', 'github'), 'admin')
     assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
     // The check of a GitHub admin in between gives the role of the invitation, not its own.
-    assert.equal(await saveGitHubRole(store, user!.id, acme, 'member', 'admin', Date.now()), 'admin')
+    assert.equal(await saveGitHubRole(store, user!.id, acme, 'member', await everyInstallation(acme, 'admin'), Date.now()), 'admin')
     assert.deepEqual(await row(), { role: 'admin', source: 'invitation' })
   })
 
@@ -361,7 +367,7 @@ describe('the sign-in and the sessions in Postgres', () => {
     await store.saveMembership(owner, acme, 'owner', 'github')
     assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
     // A second GitHub admin is an admin while the owner is active.
-    assert.equal(await saveGitHubRole(store, admin, acme, null, 'admin', now), 'admin')
+    assert.equal(await saveGitHubRole(store, admin, acme, null, await everyInstallation(acme, 'admin'), now), 'admin')
     // The owner was last checked 31 days ago and never signed in since: a ghost.
     await database.sql`update memberships set checked_at = now() - interval '31 days' where user_id = ${owner}`
     assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), false)
@@ -369,7 +375,7 @@ describe('the sign-in and the sessions in Postgres', () => {
     await database.sql`update users set last_sign_in_at = now() - interval '1 day' where id = ${owner}`
     assert.equal(await store.hasOwner(acme, new Date(now - OWNER_ACTIVE_MS)), true)
     await database.sql`update users set last_sign_in_at = now() - interval '40 days' where id = ${owner}`
-    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', now), 'owner')
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', await everyInstallation(acme, 'admin'), now), 'owner')
     let rows = await database.sql`select role from memberships order by role`
     assert.deepEqual(rows.map((r) => r.role), ['owner', 'owner'])
   })
@@ -394,7 +400,8 @@ describe('the sign-in and the sessions in Postgres', () => {
         ),
     }
     let now = Date.now()
-    let roles_ = await Promise.all([saveGitHubRole(slow, first, acme, null, 'admin', now), saveGitHubRole(slow, second, acme, null, 'admin', now)])
+    let answer = await everyInstallation(acme, 'admin')
+    let roles_ = await Promise.all([saveGitHubRole(slow, first, acme, null, answer, now), saveGitHubRole(slow, second, acme, null, answer, now)])
     assert.deepEqual(roles_.sort(), ['admin', 'owner'])
     let [count] = await database.sql<{ n: number }[]>`select count(*)::int as n from memberships where role = 'owner'`
     assert.equal(count!.n, 1)
@@ -425,7 +432,7 @@ describe('the sign-in and the sessions in Postgres', () => {
     // The transaction of the lock rolled the write back.
     assert.equal((await database.sql`select role from memberships`)[0]!.role, 'admin')
     // And the lock is free for the next check.
-    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', 'admin', Date.now()), 'owner')
+    assert.equal(await saveGitHubRole(store, admin, acme, 'admin', await everyInstallation(acme, 'admin'), Date.now()), 'owner')
   })
 
   it('KNT-150: two checks of the same GitHub admin at the same time keep the org with an owner', async () => {
@@ -433,12 +440,13 @@ describe('the sign-in and the sessions in Postgres', () => {
     let admin = await insertUser(211, 'twice')
     await store.saveMembership(admin, acme, 'admin', 'github')
     let now = Date.now()
+    let answer = await everyInstallation(acme, 'admin')
     // Both requests read `admin` before the lock; each one takes the lock in turn.
-    let roles_ = await Promise.all([saveGitHubRole(store, admin, acme, 'admin', 'admin', now), saveGitHubRole(store, admin, acme, 'admin', 'admin', now)])
+    let roles_ = await Promise.all([saveGitHubRole(store, admin, acme, 'admin', answer, now), saveGitHubRole(store, admin, acme, 'admin', answer, now)])
     assert.deepEqual(roles_, ['owner', 'owner'])
     assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
     // Three at the same time: still the owner.
-    await Promise.all([1, 2, 3].map(() => saveGitHubRole(store, admin, acme, 'admin', 'admin', now)))
+    await Promise.all([1, 2, 3].map(() => saveGitHubRole(store, admin, acme, 'admin', answer, now)))
     assert.equal((await database.sql`select role from memberships`)[0]!.role, 'owner')
   })
 

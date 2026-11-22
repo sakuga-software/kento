@@ -13,23 +13,67 @@ export function cut(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n${TRUNCATED}` : text;
 }
 
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
-const DETAILS_BLOCK = /<details>[\s\S]*?<\/details>/g;
-const MEDIA_TAG = /<(img|a|picture|source)\b[^>]*>/g;
+/**
+ * Removes each span from `open` to the first `close` after it, in one scan: a regular expression such
+ * as `<!--[\s\S]*?-->` reads the rest of the text from each opener, and a long text of openers with
+ * no closer makes it quadratic. An opener with no closer stays, as with that expression.
+ */
+function removeSpans(text: string, open: string, close: string): string {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const start = text.indexOf(open, pos);
+    if (start < 0) break;
+    const end = text.indexOf(close, start + open.length);
+    if (end < 0) break;
+    out += text.slice(pos, start);
+    pos = end + close.length;
+  }
+  return out + text.slice(pos);
+}
+
+const MEDIA_NAME = /^<(img|a|picture|source)\b/;
+
+/** Removes each `<img …>`, `<a …>`, `<picture …>` and `<source …>` tag, in one scan. */
+function removeMediaTags(text: string): string {
+  let out = '';
+  let pos = 0;
+  let from = 0;
+  for (;;) {
+    const lt = text.indexOf('<', from);
+    if (lt < 0) break;
+    // The longest name, `<picture`, and the character after it.
+    if (!MEDIA_NAME.test(text.slice(lt, lt + 9))) {
+      from = lt + 1;
+      continue;
+    }
+    const gt = text.indexOf('>', lt);
+    if (gt < 0) break;
+    out += text.slice(pos, lt);
+    pos = from = gt + 1;
+  }
+  return out + text.slice(pos);
+}
 
 /** A removal can join the text around it into a new match: `<!<!---->-- x -->`. Repeat until the text is stable. */
-function removeAll(text: string, pattern: RegExp): string {
+function removeAll(text: string, remove: (text: string) => string): string {
   let current = text;
   for (let previous = ''; previous !== current;) {
     previous = current;
-    current = current.replace(pattern, '');
+    current = remove(current);
   }
   return current;
 }
 
 export const cleanBody = (body: string) =>
   cut(
-    removeAll(removeAll(removeAll(body, HTML_COMMENT), DETAILS_BLOCK), MEDIA_TAG)
+    removeAll(
+      removeAll(
+        removeAll(body, (t) => removeSpans(t, '<!--', '-->')),
+        (t) => removeSpans(t, '<details>', '</details>'),
+      ),
+      removeMediaTags,
+    )
       .trim(),
     MAX_THREAD_COMMENT_CHARS,
   );
