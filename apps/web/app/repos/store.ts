@@ -9,6 +9,9 @@ import type { DetectedWorkflow, WorkflowMode } from './workflow.ts'
 /** The reviews that Kentō must publish in a row, with no failure and no double publication, before review.yml goes. */
 export const SWITCH_TARGET = 20
 
+/** KNT-183. The days of the average confidence score of a repository, as the precision (PRECISION_DAYS). */
+export const CONFIDENCE_DAYS = 30
+
 /** One row of the Repos screen. */
 export interface RepoView {
   id: string
@@ -30,6 +33,11 @@ export interface RepoView {
   streak: number
   /** The last review that Kentō published on GitHub. */
   lastReview: { prNumber: number; score: number; model: string; publishedAt: Date } | null
+  /**
+   * KNT-183. The average confidence score of the reviews that Kentō published on GitHub in the last
+   * `CONFIDENCE_DAYS` days, and their number; null when there was none.
+   */
+  confidence: { average: number; reviews: number } | null
 }
 
 /** What GitHub says about a repository of the installation, at a check of the Repos screen. */
@@ -108,7 +116,7 @@ export interface ReposStore {
 // Postgres reads a uuid in any case: an id in upper case finds the row too.
 const UUID = new RegExp(LOWER_UUID.source, 'i')
 
-type Row = Omit<RepoView, 'githubRepoId' | 'streak' | 'lastReview' | 'workflowCheckedAt'> & {
+type Row = Omit<RepoView, 'githubRepoId' | 'streak' | 'lastReview' | 'workflowCheckedAt' | 'confidence'> & {
   githubRepoId: string
   streak: string | number
   workflowCheckedAt: Date | string | null
@@ -116,6 +124,8 @@ type Row = Omit<RepoView, 'githubRepoId' | 'streak' | 'lastReview' | 'workflowCh
   lastScore: number | null
   lastModel: string | null
   lastPublishedAt: Date | string | null
+  confidenceAverage: number | string | null
+  confidenceReviews: number | string
 }
 
 /** `%`, `_` and `\\` stand for themselves in a search. */
@@ -190,7 +200,8 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             page.workflow_checked_at as "workflowCheckedAt",
             coalesce(recent.streak, 0) as streak,
             recent.last_pr as "lastPr", recent.last_score as "lastScore", recent.last_model as "lastModel",
-            recent.last_published_at as "lastPublishedAt"
+            recent.last_published_at as "lastPublishedAt",
+            confidence.average as "confidenceAverage", confidence.reviews as "confidenceReviews"
           from page
           left join lateral (
             -- The last one, and of two at the same instant the same one at every load (id desc).
@@ -240,11 +251,18 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
             from (select 1) one
             left join last on true
           ) recent on true
+          left join lateral (
+            -- KNT-183. The published reviews of the last CONFIDENCE_DAYS days, by the index on
+            -- (repo_id, published_at).
+            select avg(score)::float8 as average, count(*) as reviews from reviews
+            where reviews.repo_id = page.id and reviews.github_review_id is not null
+              and reviews.published_at >= now() - make_interval(days => ${CONFIDENCE_DAYS}::int)
+          ) confidence on true
         `
         return { rows, counts: counts!, page, pages, offset }
       })
       return {
-        rows: rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, ...row }) => ({
+        rows: rows.map(({ lastPr, lastScore, lastModel, lastPublishedAt, confidenceAverage, confidenceReviews, ...row }) => ({
           ...row,
           githubRepoId: Number(row.githubRepoId),
           streak: Number(row.streak),
@@ -252,6 +270,10 @@ export function createReposStore(sql: postgres.Sql): ReposStore {
           lastReview:
             lastPr !== null && lastScore !== null && lastModel !== null && lastPublishedAt !== null
               ? { prNumber: lastPr, score: lastScore, model: lastModel, publishedAt: toDate(lastPublishedAt) }
+              : null,
+          confidence:
+            confidenceAverage !== null && Number(confidenceReviews) > 0
+              ? { average: Number(confidenceAverage), reviews: Number(confidenceReviews) }
               : null,
         })),
         counts: {

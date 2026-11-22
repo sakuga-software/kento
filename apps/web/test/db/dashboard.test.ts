@@ -504,10 +504,10 @@ describe('the dashboard of an org', () => {
       await sql`insert into runners (name, token_hash, last_seen_at) values ('em-service', 'hash-service', null)`
       let screen = await store.screen(org)
       // shared-01 online, late-one late, 27 ci runners and the service runner never seen offline.
-      assert.deepEqual(screen.runnerCounts, { online: 1, late: 1, offline: 28 })
+      assert.deepEqual(screen.runnerCounts, { online: 1, late: 1, offline: 28, ready: 1 })
       // The same states as the screen: runnerState() of each runner of the list gives its group.
       let { runnerState } = await import('../../app/ui/runners.tsx')
-      let byScreen = { online: 0, late: 0, offline: 0 }
+      let byScreen = { online: 0, late: 0, offline: 0, ready: 1 }
       let all = await sql<{ lastSeenAt: Date | string | null }[]>`
         select last_seen_at as "lastSeenAt" from runners where (org_id = ${org} or org_id is null) and revoked_at is null`
       for (let row of all) {
@@ -533,11 +533,46 @@ describe('the dashboard of an org', () => {
         from generate_series(1, 12) g`
       await sql`insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'late-one', 'hash-late', now() - interval '10 minutes')`
       let screen = await store.screen(org)
-      assert.deepEqual(screen.runnerCounts, { online: 13, late: 1, offline: 0 })
+      assert.deepEqual(screen.runnerCounts, { online: 13, late: 1, offline: 0, ready: 13 })
       assert.equal(screen.runners.length, 10)
       assert.equal(screen.runners[0]!.name, 'late-one')
     } finally {
       await sql`delete from runners where name like 'up-%' or name = 'late-one'`
+    }
+  })
+
+  it('counts as ready the online runners with no job of any org, and reads the same card alone (KNT-189)', async () => {
+    let sql = database.sql
+    try {
+      let [own] = await sql<{ id: string }[]>`
+        insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'busy-own', 'hash-busy-own', now()) returning id`
+      let [service] = await sql<{ id: string }[]>`
+        insert into runners (name, token_hash, last_seen_at) values ('svc-busy', 'hash-svc-busy', now()) returning id`
+      await sql`insert into runners (name, token_hash, last_seen_at) values ('svc-idle', 'hash-svc-idle', now() - interval '5 seconds')`
+      await sql`insert into runners (org_id, name, token_hash, last_seen_at) values (${org}, 'late-idle', 'hash-late-idle', now() - interval '10 minutes')`
+      await sql`insert into runners (org_id, name, token_hash, last_seen_at, revoked_at) values (${org}, 'gone', 'hash-gone', now(), now())`
+      await job({ state: 'running', runnerId: own!.id, startedAgo: '1 minute', pr: 41 })
+      // A runner of the service runs a job of another org: it is not ready, and the card names neither the job nor its org.
+      await job({ state: 'running', runnerId: service!.id, startedAgo: '1 minute', repoId: otherRepo, pr: 42 })
+
+      let screen = await store.screen(org)
+      // Online: shared-01, busy-own, svc-busy, svc-idle. Ready: shared-01 and svc-idle. not-mine is of the other org.
+      assert.deepEqual(screen.runnerCounts, { online: 4, late: 1, offline: 0, ready: 2 })
+      let byName = new Map(screen.runners.map((r) => [r.name, [r.running, r.busy]]))
+      assert.deepEqual(byName.get('busy-own'), [1, true])
+      assert.deepEqual(byName.get('svc-busy'), [0, true])
+      assert.deepEqual(byName.get('svc-idle'), [0, false])
+      assert.deepEqual(byName.get('shared-01'), [0, false])
+      assert.equal(byName.has('not-mine'), false)
+
+      let card = await store.queueCard(org)
+      assert.deepEqual(card.runnerCounts, screen.runnerCounts)
+      assert.deepEqual(card.runners, screen.runners)
+      assert.deepEqual(card.queue, screen.queue)
+      assert.deepEqual(card.queue.running.map((j) => `${j.repo}#${j.prNumber}`), ['sakuga-software/app#41'])
+    } finally {
+      await sql`delete from jobs`
+      await sql`delete from runners where name in ('busy-own', 'svc-busy', 'svc-idle', 'late-idle', 'gone')`
     }
   })
 })

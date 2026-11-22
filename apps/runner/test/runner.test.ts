@@ -501,14 +501,14 @@ test('redact removes GitHub tokens, runner tokens and URL credentials that the r
 // --- resolve ---------------------------------------------------------------------------------
 
 /** A model that answers `resolve`: `fixed` for each thread of the pack, and records the packs. */
-function stubResolveModel() {
+function stubResolveModel(verdict = 'fixed') {
   const packs: string[] = [];
   const stub = (async (_url: string, init: RequestInit): Promise<Response> => {
     const body = JSON.parse(String(init.body));
     const pack: string = body.messages[1].content;
     packs.push(pack);
     const ids = [...pack.matchAll(/^## Thread (\S+)$/gm)].map((m) => m[1]!);
-    const threads = ids.map((id) => ({ id, verdict: 'fixed', reply: `Fixed (${id}).` }));
+    const threads = ids.map((id) => ({ id, verdict, reply: `Fixed (${id}).` }));
     return new Response(
       JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify({ threads }) } }], usage: { prompt_tokens: 20, completion_tokens: 8, cost: 0.003 } }),
     );
@@ -569,6 +569,33 @@ test('a resolve job: the pack of the threads, one model call, and whether each f
   assertNoSecretInLogs();
 });
 
+test('KNT-197: the fix of a thread can be in another file: the pack shows it, and the thread counts as changed', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel();
+  const first = git(source, 'rev-list', '--max-parents=0', 'pr');
+  // A thread on a file that the push did not change; the push changed sum.ts.
+  const thread = { id: 'PRRT_caller', path: 'caller.ts', line: 1, comments: [{ id: 300, author: 'sakuga-review', isBot: true, body: 'The caller trusts sum.', commit: first }] };
+  const outcome = await runJob(job({ kind: 'resolve', resolve: { threads: [thread], open: 1, waiting: 1 } }), deps(api, model.fetch, RUNNER_KEY));
+
+  assert.equal(outcome, 'done');
+  assert.match(model.packs[0]!, /### The other files changed since the thread opened\n\n#### `sum\.ts`/);
+  const result = results[0]!;
+  assert.equal(result.outcome, 'resolved');
+  if (result.outcome !== 'resolved') return;
+  assert.deepEqual(result.resolve.threads.map((t) => [t.id, t.verdict, t.changed]), [['PRRT_caller', 'fixed', true]]);
+});
+
+test('KNT-197: a thread that stays open does not count as changed for a change in another file', async () => {
+  const { api, results } = fakeApi();
+  const model = stubResolveModel('open');
+  const first = git(source, 'rev-list', '--max-parents=0', 'pr');
+  const thread = { id: 'PRRT_caller', path: 'caller.ts', line: 1, comments: [{ id: 301, author: 'sakuga-review', isBot: true, body: 'The caller trusts sum.', commit: first }] };
+  await runJob(job({ kind: 'resolve', resolve: { threads: [thread], open: 1, waiting: 1 } }), deps(api, model.fetch, RUNNER_KEY));
+  const result = results[0]!;
+  assert.ok(result.outcome === 'resolved');
+  assert.deepEqual(result.resolve.threads.map((t) => [t.id, t.verdict, t.changed]), [['PRRT_caller', 'open', false]]);
+});
+
 test('a resolve job with no thread to answer clones nothing and calls no model', async () => {
   const { api, results } = fakeApi();
   const model = stubResolveModel();
@@ -596,7 +623,7 @@ test('the runner claims both kinds of job', async () => {
     },
   };
   await runLoop(api, deps(fake.api, stubModel().fetch, RUNNER_KEY), stop.signal);
-  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'], ownProvider: 'openrouter' });
+  assert.deepEqual(claims[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved'], ownProvider: 'openrouter' });
 });
 
 // --- providers (REV-11) ------------------------------------------------------------------------
@@ -754,7 +781,7 @@ test('the loop says what it can read and which provider it holds', async () => {
   };
   const model = stubModel();
   await runLoop(api, { ...deps(fakeApi().api, model.fetch), config: { workDir: join(root, 'work'), provider: { kind: 'ollama', baseUrl: undefined, apiKey: null, own: 'ollama' } } }, controller.signal);
-  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions'], ownProvider: 'ollama' });
+  assert.deepEqual(bodies[0], { hasProviderKey: true, kinds: ['review', 'resolve'], features: ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved'], ownProvider: 'ollama' });
 });
 
 // --- models of the config of the repository (REV-12) -------------------------------------------
@@ -934,6 +961,24 @@ test('a review job with an answered thread: the pack holds the reply, and a refu
   const old = fakeApi();
   await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(old.api, model));
   assert.ok(old.results[0]!.outcome === 'done' && !('refutedThreads' in old.results[0]!.review));
+});
+
+test('a finding that the engine moved to « Not reviewed » goes to the service in `moved`, not in `findings` (KNT-151)', async () => {
+  const { api, results } = fakeApi();
+  const model = (async (_url: string, init: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init.body));
+    const content = { ...answer(), confidence_score: 4, findings: [{ ...answer().findings[0]!, confidence: 75, scenario: 'The definition of sum is not in the pack, so it may subtract.' }] };
+    return new Response(JSON.stringify({ model: body.model, provider: 'Stub', choices: [{ message: { content: JSON.stringify(content) } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0042 } }));
+  }) as typeof globalThis.fetch;
+  await runJob(job({ provider: { kind: 'openrouter', apiKey: SERVICE_KEY } }), deps(api, model));
+  const result = results[0]!;
+  assert.ok(result.outcome === 'done');
+  if (result.outcome !== 'done') return;
+  assert.deepEqual(result.review.findings, []);
+  assert.equal(result.review.moved?.length, 1);
+  assert.equal(result.review.moved![0]!.title, 'Subtraction');
+  assert.match(result.review.moved![0]!.fingerprint ?? '', /^[0-9a-f]{16}$/);
+  assert.ok(parseResultRequest(JSON.parse(JSON.stringify(result))).ok, 'the result is the protocol');
 });
 
 test('the patch of a finding without a suggestion goes to the service (REV-104)', async () => {

@@ -141,7 +141,9 @@ test('the same review without the rejection posts the P1, and the score falls to
 test('a rejection whose file changed since keeps the finding: the change can bring the defect back', async () => {
   const { result, calls } = await review(answer([finding()], 4), [rejection(earlier)]);
   assert.equal(result.findings.length, 1);
-  assert.match(calls[0]!.pack, /- The file changed since the rejection: Yes\./);
+  assert.match(calls[0]!.pack, /- The file changed since the rejection: Yes, near its line \(line 6 before the change\)\./);
+  // KNT-197. It came back: it cites the rejection.
+  assert.match(result.findings[0]!.scenario, /Kentō set this defect aside before\. A person marked "The port is not validated" dismissed/);
 });
 
 test('a rejection whose commit is not in the history keeps the finding', async () => {

@@ -52,8 +52,22 @@
     toggle.setAttribute('aria-expanded', String(open))
   }
   toggle?.addEventListener('click', () => setOpen(toggle.getAttribute('aria-expanded') !== 'true'))
+  // KNT-177. A link of the sidebar glides to its section (kento.css, .settings-glide): the class holds
+  // for the scroll of this click only, until its end, or 1 s where `scrollend` does not exist.
+  const root = document.documentElement
+  let glideEnd = 0
+  const endGlide = () => {
+    clearTimeout(glideEnd)
+    root.classList.remove('settings-glide')
+  }
+  window.addEventListener('scrollend', endGlide)
   nav?.querySelector('.settings-nav-list')?.addEventListener('click', (event) => {
-    if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
+    if (!(event.target instanceof Element && event.target.closest('a'))) return
+    setOpen(false)
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    root.classList.add('settings-glide')
+    clearTimeout(glideEnd)
+    glideEnd = setTimeout(endGlide, 1000)
   })
   // KNT-164. The open list is part of the page, as a disclosure: only a link or Escape folds it.
   // Folding it when the focus leaves it, or on a tap outside, moved the field under it off the

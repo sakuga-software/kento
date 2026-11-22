@@ -15,6 +15,23 @@ export function readPageNumber(query: URLSearchParams): number {
   return Math.min(Number(value), PAGE_NUMBER_MAX)
 }
 
+/** KNT-178. The fewest and the most rows of a page that `?per=` asks for. */
+export const PER_PAGE_MIN = 10
+export const PER_PAGE_MAX = 100
+
+/**
+ * The rows of a page in the query of a list: `?per=n`. A whole number in decimal digits, with no sign
+ * and no leading zero, is a size: under PER_PAGE_MIN it reads as PER_PAGE_MIN, over PER_PAGE_MAX as
+ * PER_PAGE_MAX. Anything else (missing, `0`, `-5`, `2.5`, `abc`) gives null: the list takes its own
+ * size.
+ */
+export function readPageSize(query: URLSearchParams): number | null {
+  let value = query.get('per') ?? ''
+  if (!/^[1-9][0-9]*$/.test(value)) return null
+  // A number of any length: `Number` of 400 digits is Infinity, which reads as PER_PAGE_MAX.
+  return Math.min(PER_PAGE_MAX, Math.max(PER_PAGE_MIN, Number(value)))
+}
+
 /** The page that a list shows, from the page asked for and the rows that match. */
 export interface PageWindow {
   /** The page on screen, from 1: the one asked for, or the last one. */

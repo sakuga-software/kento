@@ -1,12 +1,12 @@
 // KNT-188. The Costs screen: what the reviews and resolutions of the org cost over a period, by day,
 // repository, level and model, and the most expensive ones. The server renders every number as a
-// table; in the browser, `CostChart` draws a chart from each table and folds the table under
+// table; in the browser, `TableChart` draws a chart from each table and folds the table under
 // "Show the data". Without JavaScript the tables are the page.
 import type { Handle } from 'remix/component'
 
 import { COST_PERIODS, PERIOD_LABELS, periodQuery, previousLabel, type CostPeriod } from '../costs/period.ts'
 import type { CostReport, CostShare } from '../costs/store.ts'
-import { CostChart } from '../costs/public/cost-chart.tsx'
+import { TableChart } from './public/chart.tsx'
 import { costRoutes, pageRoutes as routes, pullRoutes } from '../routes.ts'
 import { count, plural, usdPrecise } from './format.ts'
 import { Shell, type PageFrame } from './shell.tsx'
@@ -57,7 +57,7 @@ export function CostsPage(handle: Handle<{ frame: PageFrame; report: CostReport;
         title="Costs"
         lead="What the reviews and resolutions of the organization cost, by day, repo, level and model. Days are UTC days, as for the cap."
       >
-        <nav class="cost-periods" aria-label="Period, in UTC days">
+        <nav class="period-links" aria-label="Period, in UTC days">
           {COST_PERIODS.map((key) => (
             <a href={periodHref(key)} aria-current={key === period ? 'page' : undefined}>
               {PERIOD_LABELS[key]}
@@ -177,7 +177,7 @@ function DaysSection(handle: Handle<{ report: CostReport; charts: boolean }>) {
         <h2 id="cost-days-title" class="section-title">
           Cost per day
         </h2>
-        {charts ? <CostChart table="cost-days-table" kind="days" /> : null}
+        {charts ? <TableChart table="cost-days-table" kind="days" /> : null}
         <details class="chart-data" open>
           {/* A name of its own in the list of the controls of a screen reader (Fable P3). */}
           <summary>
@@ -241,7 +241,7 @@ function SharesSection(
         <h2 id={`cost-${id}-title`} class="section-title">
           {title}
         </h2>
-        {charts ? <CostChart table={table} kind="bars" /> : null}
+        {charts ? <TableChart table={table} kind="bars" /> : null}
         <details class="chart-data" open>
           <summary>
             Show the data<span class="visually-hidden">: cost {title.toLowerCase()}</span>

@@ -5,11 +5,13 @@ import { changedFiles, criticality, criticalSection, namesChecks, areasText, typ
 import { anchor, answerSchema, toConsider, changedLines, deeperReview, diagram, hunkLines, isBlocking, score, shownPatch, suggestionRange, verdict, type Answer, type ChangedLines, type CriticalReview, type Finding, type HunkLines, type Usage } from './findings.ts';
 import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
+import { moveUnreadPremises } from './premise.ts';
 import { splitNonFindings } from './nonfindings.ts';
 import { withoutMergeAdvice } from './risk.ts';
 import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
+import { publicLabels } from './labels.ts';
 import { inHistory } from './history.ts';
 import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
@@ -139,6 +141,11 @@ export type ReviewResult = {
   contextHash: string;
   /** REV-117. The call that linked the findings to the rules and to the earlier findings (link.ts). */
   link: LinkReport;
+  /**
+   * KNT-151. The findings moved to « Not reviewed » (premise.ts), with their anchor and fingerprint:
+   * the service matches them to its open findings and leaves their threads open, never `fixed`.
+   */
+  moved?: ReviewedFinding[];
   /** KNT-154. The change is critical, and whether the review named what it checked; null otherwise. */
   critical: CriticalReview | null;
 };
@@ -339,6 +346,9 @@ export function finishReview<F extends Finding>(
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));
+  // KNT-196. No label of the pack (`E1`) in the published text: the public id of an open earlier
+  // finding, and no sentence on one that is not open.
+  if (publicLabels(answer, earlier)) log('labels of earlier findings written as their public ids, or removed');
   for (const f of linked.dropped) log(`finding dropped, it continues a finding that a person set aside and its file did not change: ${f.path}: ${f.title}`);
   // REV-100. A finding whose code did not change since the last reviewed commit is `seen`; the model
   // never sets it.
@@ -348,6 +358,10 @@ export function finishReview<F extends Finding>(
   });
   // A rewording of an earlier finding, or a new finding to consider (REV-100), is no new defect.
   const isVariant = (f: F) => !isNewDefect(f, earlier);
+  // KNT-151. A finding whose premise is code that the review did not read goes to « Not reviewed ».
+  // Before the merge of REV-88: a moved finding is no new defect, so the floor of the score holds.
+  const moved = moveUnreadPremises(answer);
+  for (const f of moved) log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
   // REV-88. The findings of the last review on the files not read again, the settled findings
   // dropped, and the score kept without a new finding.
   let settledAgain: F[] = [];
@@ -362,6 +376,12 @@ export function finishReview<F extends Finding>(
     if (merged.floored) {
       log(`score kept at ${merged.floored.kept} by the floor: the model said ${merged.floored.model} with no new finding on ${delta?.files.length ?? 0} files read again`);
     }
+    // KNT-151. A finding carried from the last review goes through the same check (Kentō on #44): the
+    // same defect is not a finding in one review and « Not reviewed » in the next.
+    for (const f of moveUnreadPremises(answer)) {
+      moved.push(f);
+      log(`finding moved to not reviewed, its premise is code that the review did not read: ${f.path}: ${f.title}`);
+    }
   }
   // KNT-153. The findings that an incremental review carries from the last review go through the
   // same filter: a review of an earlier release kept its non-findings. The filter gives the same
@@ -374,10 +394,14 @@ export function finishReview<F extends Finding>(
   const refutedThreads = refutedThreadIds(answer, threads);
   const answeredAway = dropRefuted(answer, threads, (f) => anchor(f, lines));
   for (const f of answeredAway) log(`finding dropped, a reply refuted it in its thread and its file did not change: ${f.path}: ${f.title}`);
-  // REV-95. A finding near a rejected finding, on a file that did not change since the rejection. It
-  // goes before the score: a rejected defect does not lower it.
-  const rejectedAway = dropRejected(answer, rejected, (f) => anchor(f, lines));
-  for (const f of rejectedAway) log(`finding dropped, a person rejected it and its file did not change: ${f.path}: ${f.title}`);
+  // REV-95. A finding of a rejected defect, on a file that did not change since the rejection, or
+  // (KNT-197) that changed away from it. It goes before the score: a rejected defect does not lower it.
+  const rejectedDrops = dropRejected(answer, rejected, (f) => anchor(f, lines));
+  const rejectedAway = rejectedDrops.map((d) => d.finding);
+  for (const { finding: f, why } of rejectedDrops) {
+    const reason = why === 'unchanged' ? 'its file did not change' : 'its file did not change near it';
+    log(`finding dropped, a person rejected it and ${reason}: ${f.path}: ${f.title}`);
+  }
   // REV-99. A whole review (no incremental plan) whose findings all continue earlier findings keeps
   // at least the score of the last review at this level, when that head is in the history of this
   // one: the defect was counted then. A new defect, or a more severe one, lowers it as before.
@@ -392,6 +416,7 @@ export function finishReview<F extends Finding>(
       log(`score kept at ${last.score} by the floor: the model said ${said}, and each of its ${answer.findings.length} findings continues an earlier finding`);
     }
   }
+  const reviewed = (f: F) => ({ ...f, anchor: anchor(f, lines), blocking: isBlocking(f, lines), suggestion_range: null, fingerprint: fingerprint(f, fileAt(f.path)) });
   const findings = answer.findings.map(({ patch: given, ...f }) => {
     const range = anchor(f, lines) === f.line ? suggestionRange(f, hunks) : null;
     // REV-104. An applicable suggestion wins over the patch.
@@ -437,6 +462,7 @@ export function finishReview<F extends Finding>(
     seenSince: seen?.since ?? null,
     contextHash,
     link,
+    moved: moved.map(({ patch: _patch, ...f }) => reviewed(f as F)) as (ReviewedFinding & F)[],
     critical,
   };
 }

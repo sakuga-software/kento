@@ -15,6 +15,7 @@ export type FindingEventType = (typeof FINDING_EVENT_TYPES)[number]
 /** The actor of the changes that Kentō makes by itself. A person is their GitHub login. */
 export const KENTO_ACTOR = 'kento'
 
+
 /** The rows of a page when the caller gives no limit. */
 export const PAGE_SIZE = 50
 /** The most rows of a page. */
@@ -225,7 +226,8 @@ export async function setFindingStatus(
     source?: 'command'
     /**
      * REV-94. A finding already dismissed stays as it is, with its first reason, and a finding that a
-     * push fixed or a close made stale stays too: `unchanged`. A `wontfix` finding does become
+     * push fixed stays too: `unchanged`. A `stale` one becomes `dismissed` (KNT-192): the reviews no
+     * longer see it, and it can still be a false positive. A `wontfix` finding does become
      * `dismissed`: `reject` says that it is a false positive, which is more than "accepted as is",
      * and its events keep both decisions. The status is read under the lock of
      * the row, so a push that fixed the finding after the caller read it is not undone.
@@ -247,7 +249,7 @@ export async function setFindingStatus(
       for update of findings`
     if (!current) return null
     if (current.status === input.status && current.statusReason === reason) return false
-    if (input.keepDismissed && (current.status === 'dismissed' || current.status === 'fixed' || current.status === 'stale')) return false
+    if (input.keepDismissed && (current.status === 'dismissed' || current.status === 'fixed')) return false
     await tx`
       update findings set status = ${input.status}, status_reason = ${reason}, updated_at = now()
       where id = ${input.findingId}`

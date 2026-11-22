@@ -37,6 +37,34 @@
   for (const box of boxes) box.addEventListener('change', update)
   update()
 
+  // KNT-178. A page of as many rows as the window holds: on a load without `per`, the size that fits
+  // the height of the window, 10 to 100, and the page that keeps the first row on screen. One replace
+  // of the URL: the next load has `per` and changes nothing. Without JavaScript, 25. frame.js keeps the
+  // size for the session and puts it in the links to the list, so that only the first visit replaces.
+  const table = document.querySelector('table.findings-table[data-offset]')
+  const url = new URL(location.href)
+  const rows = table ? [...table.tBodies[0].rows] : []
+  const sizes = window.kentoFindingsPer
+  if (table && sizes && rows.length > 0 && !url.searchParams.has('per')) {
+    // The mean from one row to the next: on a phone a row is a card, with its gap; a title on two
+    // lines does not count more than its share.
+    const top = (row) => row.getBoundingClientRect().top
+    const step = rows.length > 1 ? (top(rows.at(-1)) - top(rows[0])) / (rows.length - 1) : rows[0].offsetHeight
+    const per = step > 0 ? Math.min(100, Math.max(10, Math.floor(window.innerHeight / step))) : 25
+    sizes.keep(per)
+    if (per !== 25) {
+      const page = Math.floor((Number(table.dataset.offset) || 0) / per) + 1
+      // The parameters after `per`, as the server writes them: `data-after` of the table.
+      const next = sizes.withPer(url, per, (table.dataset.after ?? '').split(' '), page)
+      // The page leaves: nothing that is typed or checked now would reach the next one. No fade for a
+      // page that replaces itself.
+      document.body.inert = true
+      table.closest('.table-wrap')?.setAttribute('aria-busy', 'true')
+      window.addEventListener('pageswap', (event) => event.viewTransition?.skipTransition(), { once: true })
+      location.replace(next.href)
+    }
+  }
+
   const filters = document.querySelector('form.findings-filters')
   filters?.addEventListener('change', (event) => {
     // KNT-165: a select of the filters is a component in the browser; its hidden input sends `change`.
