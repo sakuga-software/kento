@@ -5,18 +5,24 @@
 // The order of the locks, everywhere an installation, its org or its repositories are written:
 //   1. the advisory locks of the owners of the orgs, in the order of their ids (the members screen,
 //      the checks of GitHub and the moves);
-//   2. the row of the installation (the webhook updates it first, `upsertInstallation`);
+//   2. the row of the installation (the webhook updates it first, `upsertInstallation`; a new
+//      installation of the same account locks the earlier one, `insertInstallation`; the check of
+//      the repositories locks its key, then the key of its org, before it writes a repository,
+//      `repos/store.ts` `saveCheck`);
 //   3. the rows of the orgs, in the order of their ids (the webhook locks its org next; a rule and an
 //      assignment rule of a repository lock the key of their org first, `rules/store.ts`,
-//      `assignment/store.ts`);
-//   4. the rows of the repositories, the memberships, the rules.
+//      `assignment/store.ts`; the count of a take-back locks the key of its org, `auth/asks.ts`
+//      `takeOrgAsk`);
+//   4. the rows of the repositories, the memberships, the rules, and the counts of `github_asks`
+//      whose scope is the org (a move that deletes the org deletes them).
 // Two transactions that take two of these locks take them in this order, and never wait on each other.
 import type postgres from 'postgres'
 
+import { MOVES_SCOPE, takePersonAsk } from '../auth/asks.ts'
 import { orgLockKey } from '../auth/store.ts'
 import type { MembershipSource, OrgRole } from '../db/schema.ts'
 import { instance } from '../instance.ts'
-import { decideMove, slugOf, type MoveTarget, type OrgRefusal } from './rules.ts'
+import { decideMove, MOVES_PER_MINUTE, slugOf, type MoveTarget, type OrgRefusal } from './rules.ts'
 
 export interface OrgInstallationView {
   id: string
@@ -58,6 +64,12 @@ export interface OrgsStore {
   view(orgId: string): Promise<OrgView | null>
   /** The orgs where the person is an owner, other than `exceptOrgId`, by name. */
   ownedOrgs(userId: string, exceptOrgId: string): Promise<{ id: string; name: string }[]>
+  /**
+   * KNT-173. Counts a move of a person, at most `MOVES_PER_MINUTE` a minute whatever the org, for
+   * every process of the service, on the clock of Postgres. `over`: over the limit, and the move
+   * must not ask GitHub; `gone`: the person is gone.
+   */
+  askMove(userId: string): Promise<'allowed' | 'over' | 'gone'>
   /** The active installations of an org, for the questions to GitHub before a move into it. */
   activeInstallations(orgId: string): Promise<OrgInstallationView[]>
   rename(orgId: string, actorUserId: string, name: string): Promise<OrgChangeOutcome>
@@ -89,7 +101,8 @@ interface LockedInstallation {
   suspended: boolean
 }
 
-export function createOrgsStore(sql: postgres.Sql): OrgsStore {
+/** `clock`: the offset of the clock of the limits (`auth/asks.ts`); the tests move it. */
+export function createOrgsStore(sql: postgres.Sql, clock: { offsetMs(): number } = { offsetMs: () => 0 }): OrgsStore {
   async function roleIn(tx: postgres.Sql, orgId: string, userId: string): Promise<OrgRole | null> {
     let [row] = await tx<{ role: OrgRole }[]>`select role from memberships where org_id = ${orgId} and user_id = ${userId} for update`
     return row?.role ?? null
@@ -156,6 +169,10 @@ export function createOrgsStore(sql: postgres.Sql): OrgsStore {
           and exists (select 1 from installations s where s.org_id = o.id and s.suspended_at is null)
         order by lower(o.name), o.id
       `
+    },
+
+    async askMove(userId) {
+      return takePersonAsk(sql, { userId, scope: MOVES_SCOPE, action: 'move', limit: MOVES_PER_MINUTE, windowMs: 60 * 1000, offsetMs: clock.offsetMs() })
     },
 
     async activeInstallations(orgId) {
@@ -273,6 +290,8 @@ export function createOrgsStore(sql: postgres.Sql): OrgsStore {
             ...took,
           })
           await tx`delete from orgs where id = ${fromOrgId}`
+          // The counts of the questions of the org go with it (`github_asks` has no key to the org).
+          await tx`delete from github_asks where scope = ${fromOrgId}`
           deleted = true
         }
         return { ok: true, orgId: destination, deleted }

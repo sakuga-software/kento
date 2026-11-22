@@ -10,7 +10,7 @@ import { cookiesOf, SESSION_COOKIE } from '../../app/auth/test-helpers.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
-import { RECLAIM_COOLDOWN_MS } from '../../app/members/rules.ts'
+import { RECLAIM_COOLDOWN_MS, RECLAIM_RETRY_MS } from '../../app/members/rules.ts'
 import { createMembersStore, type MembersStore } from '../../app/members/store.ts'
 import { createAppRouter } from '../../app/router.ts'
 import { createTestDatabase, insertOrg } from './helpers.ts'
@@ -34,14 +34,22 @@ describe('the members and the invitations of an org', () => {
   let profile: GitHubProfile
   let roles: Map<string, GitHubRole | null>
   let clock: { now: number }
+  /**
+   * The offset of the clock of the test from the real one: the limits of `auth/asks.ts` follow it, on
+   * the clock of Postgres, read a few milliseconds after the offset. A step past the end of a window
+   * goes `PAST_THE_WINDOW_MS` further, so those milliseconds never decide.
+   */
+  let testClock = { offsetMs: () => clock.now - Date.now() }
+  const PAST_THE_WINDOW_MS = 1000
   /** The questions to GitHub of `lookupRole`, and a GitHub that fails. */
-  let gitHub = { calls: 0, fail: false }
+  let gitHub = { calls: 0, fail: false, accounts: [] as string[] }
 
   before(async () => {
     test = await createTestDatabase()
     await runMigrations(test.url)
     database = createDatabase(test.url, { max: 3 })
-    store = createMembersStore(database.sql)
+    // The limits of the questions to GitHub run on the clock of Postgres, moved as the clock of the test.
+    store = createMembersStore(database.sql, testClock)
     let authStore = createAuthStore(database.sql)
     let github: GitHubOAuth = {
       clientId: 'Iv1.test',
@@ -58,6 +66,7 @@ describe('the members and the invitations of an org', () => {
     }
     let lookupRole = async (installation: { login: string }, person: { login: string }) => {
       gitHub.calls++
+      gitHub.accounts.push(installation.login)
       if (gitHub.fail) throw new Error('GitHub answered 502')
       return roles.get(`${installation.login}/${person.login}`) ?? null
     }
@@ -100,7 +109,7 @@ describe('the members and the invitations of an org', () => {
       ['globex/other', 'admin'],
     ])
     clock.now = Date.now()
-    gitHub = { calls: 0, fail: false }
+    gitHub = { calls: 0, fail: false, accounts: [] }
   })
 
   function request(path: string, cookie?: string | null, form?: Record<string, string>) {
@@ -409,13 +418,13 @@ describe('the members and the invitations of an org', () => {
     assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
     // GitHub fails: no answer is no admin. The role stays as it is.
     await database.sql`update memberships set role = 'admin' where id = ${octocat.id}`
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     gitHub.fail = true
     assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
     gitHub.fail = false
     assert.equal((await membership('octocat', acme))!.role, 'admin')
     // And octocat, demoted on GitHub in between, cannot either.
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     roles.set('acme/octocat', 'member')
     assert.equal((await post(owner, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
     assert.equal((await membership('octocat', acme))!.role, 'admin')
@@ -443,9 +452,93 @@ describe('the members and the invitations of an org', () => {
     assert.equal(gitHub.calls, 1)
     assert.match(await (await request('/settings/members?notice=reclaim_wait', camille)).text(), /Kentō asked GitHub less than a minute ago/)
     // A minute later, GitHub is asked again.
-    clock.now += RECLAIM_COOLDOWN_MS
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
     await request('/settings/members/reclaim', camille, { _csrf: csrf })
     assert.equal(gitHub.calls, 2)
+  })
+
+  it('the limit of the take-back holds for every process, and a failure of GitHub costs only a short wait', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'camille'`
+    // Another process of the service counted a question of camille a moment ago: this one asks nothing.
+    assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, user!.id), 'allowed')
+    gitHub.calls = 0
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
+    assert.equal(gitHub.calls, 0)
+    // A minute later GitHub fails: camille asks again after RECLAIM_RETRY_MS, not after a minute.
+    clock.now += RECLAIM_COOLDOWN_MS + PAST_THE_WINDOW_MS
+    gitHub.fail = true
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
+    gitHub.fail = false
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=reclaim_wait')
+    clock.now += RECLAIM_RETRY_MS + PAST_THE_WINDOW_MS
+    gitHub.calls = 0
+    assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=not_github_admin')
+    assert.equal(gitHub.calls, 1)
+  })
+
+  it('answers github_failed when GitHub fails, even when the shorter wait cannot be saved', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let saved = store.reclaimFailed
+    store.reclaimFailed = async () => {
+      throw new Error('the database refused the update')
+    }
+    try {
+      gitHub.fail = true
+      assert.equal((await post(camille, '/settings/members/reclaim')).headers.get('Location'), '/settings/members?notice=github_failed')
+    } finally {
+      gitHub.fail = false
+      store.reclaimFailed = saved
+    }
+  })
+
+  it('counts the take-back of the org of the session, whatever the form names, and asks GitHub about that org only', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let csrf = await csrfOf(camille)
+    gitHub.accounts = []
+    let other = { orgId: globex, org: globex, org_id: globex, scope: globex }
+    let response = await request(`/settings/members/reclaim?${new URLSearchParams(other)}`, camille, { _csrf: csrf, ...other })
+    assert.equal(response.headers.get('Location'), '/settings/members?notice=not_github_admin')
+    let rows = await database.sql`select scope from github_asks`
+    assert.deepEqual(rows.map((r) => r.scope), [acme])
+    assert.deepEqual(gitHub.accounts, ['acme'])
+  })
+
+  it('a count that answers gone asks GitHub nothing, says not found, and logs members.reclaim_gone', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let saved = store.askReclaim
+    store.askReclaim = async () => 'gone'
+    // A warn goes to stderr (app/log.ts).
+    let lines: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    try {
+      gitHub.calls = 0
+      let csrf = await csrfOf(camille)
+      process.stderr.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stderr.write
+      let response = await request('/settings/members/reclaim', camille, { _csrf: csrf })
+      process.stderr.write = stderr
+      assert.equal(response.headers.get('Location'), '/settings/members?notice=not_found')
+      assert.equal(gitHub.calls, 0)
+    } finally {
+      process.stderr.write = stderr
+      store.askReclaim = saved
+    }
+    let events = lines.map((line) => JSON.parse(line) as { event: string }).map((line) => line.event)
+    assert.ok(events.includes('members.reclaim_gone'), events.join(', '))
+    assert.ok(!events.includes('members.reclaim_throttled'))
+  })
+
+  it('a person removed from the org before the take-back is counted is not counted, and GitHub is not asked', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'member')
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'guest'`
+    await post(owner, `/settings/members/${guest.membership.id}/remove`)
+    assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, user!.id), 'gone')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where user_id = ${user!.id}`)[0]!.n, 0)
   })
 
   it('a GitHub admin who joined from an invitation takes the owner role; an owner from an invitation then neither demotes nor removes them', async () => {

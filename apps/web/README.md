@@ -37,6 +37,14 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   JavaScript, each one stays the `<details>` of the server. Every select of the screens (KNT-165,
   `public/select.tsx`) is the select of `@remix-run/ui` in the browser, and the native `<select>`
   without JavaScript.
+- `app/ui/costs.tsx`, `app/costs/` (KNT-188): the Costs screen, `/costs`. Every member of the org
+  reads it. What the reviews and resolutions of the org cost over a period (`?period=` this month,
+  the default; `last-month`, `30d`, `90d`), against the period before: by UTC day, repo, level and
+  model, the most expensive runs, and for this month the projection and the cap. Each breakdown is a
+  table of the server; in the browser `app/costs/public/cost-chart.tsx` draws its chart with
+  [Chart.js](https://www.chartjs.org) 4 (MIT; served by the asset server, from the pnpm store, with
+  its `@kurkle/color`) and folds the table under "Show the data". The tile "Cost of the month" of the
+  dashboard opens it.
 - The theme (Paper, Sumi, Device) is the cookie `kento_theme` of the browser. The user sets it on
   their own screen, `/users/:login` (KNT-142); every page, the sign-in page too, renders in it.
 - `app/ui/runners.tsx` and `app/runner/admin.ts`: the Runners screen (REV-10). The runners of the
@@ -92,7 +100,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   overrides the admin of GitHub: an owner from an invitation does not demote a person whom GitHub
   counts as an admin of an account of the org, and that person can always take the owner role
   back ("Take the owner role", after Kentō asks GitHub again, at most once a minute per person and
-  org). A GitHub admin who joined from an invitation takes it too: their membership then becomes
+  org, counted in `github_asks` for every process, on the clock of Postgres; after a failure of
+  GitHub, again after 10 s). A GitHub admin who joined from an invitation takes it too: their membership then becomes
   one from GitHub. Each change writes a row of `org_audit` (actor, action, target, roles before and
   after, and what else it did in `detail`), which stays when the org goes; so does an end of a
   membership by GitHub (`github_removed`, actor `(GitHub)`). At most 50 pending invitations per
@@ -119,9 +128,12 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   deleted with its members, pending invitations, settings, providers, runners and org rules; one
   that still holds a suspended installation stays, and nobody reaches it until one of its accounts
   comes back. A rename, a move and a deletion write their rows of `org_audit` (`rename`, `move_out`,
-  `move_in`, `delete` with what it took). The order of the locks is written once, at the top of
-  `app/organizations/store.ts`: the webhook, the saves of rules and the moves take them in that
-  order. A provider of another org never matches a job (`runner/store.ts`): a repository whose
+  `move_in`, `delete` with what it took). A person moves at most 10 installations a minute,
+  whatever the org (`github_asks`, on the clock of Postgres): each move asks GitHub. The order of
+  the locks is written once, at the top of `app/organizations/store.ts`: the installation, then the
+  key or the row of its org, then the repositories. The webhook (a new installation of an account
+  locks the earlier one), the check of the repositories (the key of the org before it writes a
+  repository), the saves of rules and the moves take them in that order. A provider of another org never matches a job (`runner/store.ts`): a repository whose
   config names a provider of the org it left gets the key of the service until its Config names a
   provider of its new org.
 - Invitations (`invitations`): by GitHub id, 7 days, one pending per account and org. The person

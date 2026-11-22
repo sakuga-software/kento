@@ -1039,6 +1039,9 @@ summary.button::-webkit-details-marker {
 /* KNT-150. The menu of the org: the box opens the list of the orgs of the person, with their role. */
 .org-menu {
   position: relative;
+  /* KNT-186: no gap. Open, the content of the <details> is a second item of the flex box of
+     .bar-org, and its gap made the menu 8 px wider than the box, so the list ended past it. */
+  gap: 0;
 }
 .org-menu > summary {
   gap: var(--space-2);
@@ -1069,8 +1072,11 @@ summary.button::-webkit-details-marker {
   right: 0;
   display: grid;
   gap: var(--space-1);
+  /* KNT-186: as wide as its content, never narrower than the box that opens it, and its right edge
+     on the right edge of the box. */
   width: max-content;
-  min-width: 240px;
+  min-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   max-width: min(320px, calc(100vw - 2 * var(--space-4)));
   padding: var(--space-2);
   border: 1px solid var(--line);
@@ -1080,6 +1086,9 @@ summary.button::-webkit-details-marker {
 }
 .org-menu-panel ul {
   display: grid;
+  /* KNT-186: one column that may shrink, so that a long name is cut with an ellipsis instead of
+     pushing the items out of the menu and the page sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;
@@ -1511,7 +1520,6 @@ a.repo-name {
   text-overflow: ellipsis;
 }
 .repo-name svg,
-.repo-visibility svg,
 .row-menu > div > a svg,
 .row-menu .confirm > summary svg {
   flex: none;
@@ -1521,14 +1529,15 @@ a.repo-name {
 .repo-name svg {
   color: var(--ink-muted);
 }
-.repo-visibility {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
+/* KNT-182. The last review on one line. In the table the column takes the width of the line, and the
+   table scrolls sideways before it cuts a text that the keyboard could not read. On a card (under
+   760 px, below), the link stays whole and only the date can shrink. */
+.repo-last-review {
+  white-space: nowrap;
 }
-.repo-visibility svg {
-  width: 14px;
-  height: 14px;
+/* KNT-179: the row whose menu "…" offers "Remove review.yml". */
+.row-ready {
+  margin-right: var(--space-2);
 }
 .tag svg {
   flex: none;
@@ -1627,69 +1636,6 @@ a.repo-name {
   background: var(--ai-wash);
 }
 
-.switch {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.switch-count {
-  min-width: 4ch;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-}
-.switch-bar {
-  appearance: none;
-  width: 72px;
-  height: 6px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--paper-sunken);
-  overflow: hidden;
-}
-.switch-bar::-webkit-progress-bar {
-  background: var(--paper-sunken);
-  border-radius: var(--radius-pill);
-}
-.switch-bar::-webkit-progress-value {
-  background: var(--ai);
-  border-radius: var(--radius-pill);
-}
-.switch-bar::-moz-progress-bar {
-  background: var(--ai);
-  border-radius: var(--radius-pill);
-}
-.switch-done::-webkit-progress-value {
-  background: var(--matsu);
-}
-.switch-done::-moz-progress-bar {
-  background: var(--matsu);
-}
-
-.repos-notes {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--space-4);
-  margin-top: var(--space-6);
-}
-.note h2 {
-  margin-bottom: var(--space-3);
-  font-size: var(--text-md);
-  line-height: var(--leading-md);
-}
-.note ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding-left: var(--space-5);
-  color: var(--ink-soft);
-}
-.note code {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
 /* Under 760 px a row of the table becomes a card: each cell under its column name. */
 @media (max-width: 760px) {
   .table-wrap {
@@ -1739,22 +1685,34 @@ a.repo-name {
   }
   /* REV-36. The names of the columns of Repos come from here, not from an attribute on each of its cells. */
   .repos-table td:nth-child(2)::before {
-    content: 'Reviews by';
-  }
-  .repos-table td:nth-child(3)::before {
     content: 'Level';
   }
-  .repos-table td:nth-child(4)::before {
+  .repos-table td:nth-child(3)::before {
     content: 'Model';
   }
-  .repos-table td:nth-child(5)::before {
-    content: 'Switch';
-  }
-  .repos-table td:nth-child(6)::before {
+  .repos-table td:nth-child(4)::before {
     content: 'Last review';
   }
-  .repos-table td:nth-child(7)::before {
+  .repos-table td:nth-child(5)::before {
     content: 'Precision 30 d';
+  }
+  /* KNT-182: the last review takes the width of the card, so that its line is seldom cut; then the
+     date shrinks, with an ellipsis, and the link stays whole. */
+  .repos-table td:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+  .repo-last-review {
+    display: flex;
+    gap: var(--space-1);
+    max-width: 100%;
+  }
+  .repo-last-review > a {
+    flex: none;
+  }
+  .repo-last-review > .hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .table tbody th,
   .table .row-action {
@@ -1996,34 +1954,6 @@ html:not([data-hydrated]) .table-wrap tbody tr:nth-last-child(-n + 2):not(:nth-c
     max-width: calc(100vw - 4 * var(--space-4));
   }
 }
-.repos-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin: var(--space-4) 0 var(--space-6);
-  color: var(--ink-muted);
-  font-size: var(--text-sm);
-}
-.repos-legend .tag {
-  margin-left: var(--space-2);
-}
-.repos-howto > summary {
-  font-weight: 600;
-  cursor: pointer;
-}
-.repos-howto[open] > summary {
-  margin-bottom: var(--space-4);
-}
-.repos-howto .repos-notes {
-  margin: 0;
-}
-.repos-howto .note {
-  padding: 0;
-  border: 0;
-  box-shadow: none;
-}
-
 /* ---------------------------------------------------------------- The Findings screen (REV-18, redesigned in REV-91) */
 
 /* The tabs of a screen at the right of its title: "List", "Precision". */
@@ -2524,6 +2454,19 @@ a.finding-title:hover {
   .org-menu-link {
     min-height: 44px;
   }
+  /* KNT-186: the box of the org sits on the left of the bar, and a list aligned on its right edge
+     went past the left of the screen. Here the list hangs from the bar, the width of the screen less
+     its gutters: .bar is its containing block. */
+  .org-menu {
+    position: static;
+  }
+  .org-menu-panel {
+    left: var(--space-4);
+    right: var(--space-4);
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
   .bar-nav li {
     border-bottom: 1px solid var(--line);
   }
@@ -2678,6 +2621,69 @@ a.finding-title:hover {
   * {
     transition: none !important;
   }
+}
+
+/* KNT-186. The lists of the selects, the menus "…", the confirmations and the menu of the orgs open
+   in 140 ms and close in 80 ms: they fade and travel 4 px. A transition takes the duration of the
+   state it goes to: the closed rules say 80 ms, the open ones 140 ms (a click right after Escape is
+   not held up by a long close). A popover that closes keeps its box and its place in the top layer
+   for that time (`allow-discrete` on display and overlay; Chromium, WebKit has no `overlay`), then
+   hides. The menu of the orgs, a <details>, stays drawn while it closes (content-visibility), but
+   inert: no click and no focus reaches it then. Nothing moves under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .select-popover,
+  .row-menu-popover,
+  .confirm-popover {
+    transition:
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease),
+      display 80ms allow-discrete,
+      overlay 80ms allow-discrete;
+  }
+  .select-popover:popover-open,
+  .row-menu-popover:popover-open,
+  .confirm-popover:popover-open {
+    transition-duration: 140ms;
+  }
+  .select-popover:not(:popover-open),
+  .row-menu-popover:not(:popover-open),
+  .confirm-popover:not(:popover-open) {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+  @starting-style {
+    .select-popover:popover-open,
+    .row-menu-popover:popover-open,
+    .confirm-popover:popover-open {
+      opacity: 0;
+      translate: 0 -4px;
+    }
+  }
+  .org-menu::details-content {
+    transition: content-visibility 80ms allow-discrete;
+  }
+  .org-menu-panel {
+    transition:
+      opacity 80ms var(--ease),
+      translate 80ms var(--ease);
+  }
+  .org-menu[open] .org-menu-panel {
+    transition-duration: 140ms;
+  }
+  @starting-style {
+    .org-menu[open] .org-menu-panel {
+      opacity: 0;
+      translate: 0 -4px;
+    }
+  }
+}
+/* KNT-186, critique P2-1. A menu of the orgs that closes is out of reach at once, with or without
+   motion: a click goes to the page under it, and Tab to the next control of the bar. */
+.org-menu:not([open]) .org-menu-panel {
+  opacity: 0;
+  translate: 0 -4px;
+  pointer-events: none;
+  interactivity: inert;
 }
 
 /* ---------------------------------------------------------------- Shared parts: sections, tags, states, fields (REV-10) */
@@ -5469,4 +5475,153 @@ a.sheet-title {
 .installation-move form {
   max-width: 28rem;
   margin-top: var(--space-3);
+}
+
+/*
+ * KNT-188. A tile of "At a glance" that opens a screen: its label is the link, stretched over the
+ * tile; a link inside the tile stays above it.
+ */
+.kpi-linked {
+  position: relative;
+}
+.kpi-linked:hover {
+  background: var(--paper-sunken);
+}
+.kpi-link {
+  color: inherit;
+  text-decoration: none;
+}
+.kpi-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.kpi-linked:hover .kpi-link {
+  text-decoration: underline;
+}
+/* A link inside the tile, and the amount (to select it with the mouse), stay above the stretched link. */
+.kpi-linked a:not(.kpi-link),
+.kpi-linked .kpi-value {
+  position: relative;
+  z-index: 1;
+}
+/* The focus ring goes round the whole tile, the area that the link covers (Fable P3). */
+.kpi-link:focus-visible {
+  outline: none;
+}
+.kpi-linked:has(.kpi-link:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+@media (forced-colors: active) {
+  .kpi-linked:has(.kpi-link:focus-visible) {
+    outline-color: Highlight;
+  }
+}
+
+/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. */
+.cost-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+.cost-periods a {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: var(--leading-sm);
+  text-decoration: none;
+}
+.cost-periods a:hover {
+  border-color: var(--ink);
+}
+.cost-periods a[aria-current='page'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper-raised);
+}
+.dash-kpis.cost-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: var(--space-6);
+}
+.cost-kpis .cost-unknown {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--line);
+}
+.cost-section {
+  min-width: 0;
+  margin-bottom: var(--space-6);
+}
+.cost-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+  margin-bottom: var(--space-6);
+}
+.cost-grid .cost-section {
+  margin-bottom: 0;
+}
+.cost-chart {
+  position: relative;
+  height: 260px;
+  margin-top: var(--space-4);
+}
+.cost-chart[hidden] {
+  display: none;
+}
+/* One bar per row: the chart grows with its rows (draw.ts sets --rows). */
+.cost-chart[data-kind='bars'] {
+  height: calc(var(--rows, 4) * 30px + 36px);
+}
+.chart-data {
+  margin-top: var(--space-4);
+}
+.chart-data > summary {
+  width: fit-content;
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.cost-scroll {
+  overflow-x: auto;
+}
+/* The most expensive runs: one line per run, the table scrolls on a narrow screen. */
+.cost-scroll .cost-table {
+  min-width: 600px;
+}
+.cost-scroll .cost-table :is(th, td) {
+  white-space: nowrap;
+}
+.cost-table th.mono {
+  font-family: var(--font-mono);
+}
+.cost-empty {
+  margin-bottom: var(--space-6);
+}
+@media (max-width: 1100px) {
+  .cost-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dash-kpis.cost-kpis .kpi:nth-child(4) {
+    border-left: 1px solid var(--line);
+    border-top: 0;
+  }
+}
+@media (max-width: 760px) {
+  .dash-kpis.cost-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-kpis.cost-kpis .kpi:nth-child(4) {
+    border-left: 1px solid var(--line);
+    border-top: 1px solid var(--line);
+  }
+  .cost-kpis .cost-unknown {
+    padding: var(--space-3) var(--space-4);
+  }
 }

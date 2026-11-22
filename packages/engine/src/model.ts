@@ -5,6 +5,7 @@ import { ANSWER_SCHEMA, withPatch, type Answer, type Usage } from './findings.ts
 import type { LevelConfig } from './levels.ts';
 import type { ProviderKind } from '../../protocol/src/index.ts';
 import { ADAPTERS, defaultBaseUrl, ProviderError, RATE_LIMIT_TEXT, RateLimitError, rateLimited, refusedKey, UsageLimitError, usageLimited, type MessagePart, type Schema } from './providers.ts';
+import { FINAL_INSTRUCTION, sectionNotes } from './sections.ts';
 import { TOOLS_NOTE, type RepoTools } from './tools.ts';
 
 export { OPENROUTER_BASE_URL, type MessagePart, type Schema } from './providers.ts';
@@ -108,15 +109,18 @@ export async function askJson<T>(
     const until = resetAt ? `, until ${resetAt}` : '';
     throw new RateLimitError(`no model gave a usable answer: every model ${RATE_LIMIT_TEXT} (${status}${until}): ${lastError.message}`, status, resetAt);
   }
-  throw new ProviderError(`no model gave a usable answer: ${lastError}`, status);
+  // KNT-161. Not every model got a short rate limit: the service queues a job again only when each one
+  // did. The phrase of a rate limit leaves the text, so the order of the models changes nothing.
+  throw new ProviderError(`no model gave a usable answer: ${String(lastError).replaceAll(RATE_LIMIT_TEXT, 'answered with a rate limit')}`, status);
 }
 
 /**
  * The review call. `pack`: the text of the pack, or its parts (buildPack). `schema`: the answer
  * schema for the sections of the pack (answerSchema).
  * `focus`: the angle of a pass (REV-20); none for a review in one pass. `tools`: the tools of REV-68;
- * none for the pack alone. The focus and the note of the tools go at the end of the user message,
- * after the pack: the system prompt and the pack stay the same for every pass (REV-113). A level
+ * none for the pack alone. The notes of the sections that the pack holds (KNT-110), the focus, the
+ * note of the tools and the last instruction go at the end of the user message, after the pack: the
+ * system prompt and the pack stay the same for every pass (REV-113). A level
  * with `patch` (REV-104) gets prompts/patch.md and a `patch` in each finding of the schema.
  */
 export async function askModel(
@@ -130,9 +134,9 @@ export async function askModel(
 ): Promise<Reply> {
   const patchNote = config.patch ? PATCH_NOTE : undefined;
   const asked = config.patch ? withPatch(schema) : schema;
-  const notes = [focus, tools ? TOOLS_NOTE : undefined].filter(Boolean).join('\n\n');
   const parts: MessagePart[] = typeof pack === 'string' ? [{ text: pack }] : [...pack];
-  if (notes) parts.push({ text: `\n\n${notes}\n` });
+  const notes = [...sectionNotes(parts, client.prompts), focus, tools ? TOOLS_NOTE : undefined, FINAL_INSTRUCTION].filter(Boolean).join('\n\n');
+  parts.push({ text: `\n\n${notes}\n` });
   const reply = await askJson<Answer>(client, config, 'review.md', parts, { name: 'review', schema: asked }, patchNote, tools, onStart);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;

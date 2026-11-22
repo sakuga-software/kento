@@ -1,6 +1,7 @@
 // The findings of a review: the answer schema, the lines that a finding anchors on, the score and the verdict.
 import { createHash } from 'node:crypto';
 import type { CheckResult, Checked, Criticality } from './critical.ts';
+import type { Step } from './timing.ts';
 import { areasText } from './critical.ts';
 import { git } from './git.ts';
 import { CATEGORIES, SEVERITIES, type Category, type CostSource, type Level, type Severity } from '../../protocol/src/index.ts';
@@ -46,6 +47,11 @@ export type Finding = {
    * on the pull request (seen.ts). The engine sets it; the model never gives it.
    */
   seen?: boolean;
+  /**
+   * KNT-152. For a race, an order of events or a timeout: the steps that the runtime allows, each
+   * with its file and line. Empty for any other finding. A finding of an earlier release has none.
+   */
+  interleaving?: Step[];
 };
 export type Answer = {
   confidence_score: number;
@@ -73,7 +79,15 @@ export type Answer = {
    * the score is capped. The engine sets it; the model never gives it.
    */
   critical?: CriticalReview | null;
+  /**
+   * KNT-153. What the review asks the author to confirm or to check: no defect, no thread, no block,
+   * and no weight in the score. An answer of an earlier release has none.
+   */
+  questions?: Question[];
 };
+
+/** KNT-153. A question of a review: the file it is about, and the question. */
+export type Question = { path: string; question: string };
 
 /**
  * KNT-154. A critical change and its review: `checked`, whether the review named a verified path and
@@ -152,8 +166,18 @@ const FINDING_SCHEMA = {
     scenario: { type: 'string' },
     fix: { type: 'string' },
     suggestion: { type: 'string' },
+    // KNT-152. Empty for a finding that is not about a race, an order or a timeout.
+    interleaving: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { path: { type: 'string' }, line: { type: 'integer' }, step: { type: 'string' } },
+        required: ['path', 'line', 'step'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion'],
+  required: ['path', 'start_line', 'line', 'severity', 'category', 'confidence', 'title', 'scenario', 'fix', 'suggestion', 'interleaving'],
   additionalProperties: false,
 };
 
@@ -206,6 +230,16 @@ export const ANSWER_SCHEMA = {
       required: ['recommended', 'reason'],
       additionalProperties: false,
     },
+    // KNT-153. A request to confirm, a product choice or a caller to check: not a finding.
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { path: { type: 'string' }, question: { type: 'string' } },
+        required: ['path', 'question'],
+        additionalProperties: false,
+      },
+    },
     // KNT-154. Empty lists when the pack holds no Critical change section.
     checked: {
       type: 'object',
@@ -214,7 +248,7 @@ export const ANSWER_SCHEMA = {
       additionalProperties: false,
     },
   },
-  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'checked'],
+  required: ['confidence_score', 'risk', 'summary', 'diagram', 'findings', 'not_reviewed', 'deeper_review', 'checked', 'questions'],
   additionalProperties: false,
 };
 

@@ -407,3 +407,14 @@ test('KNT-161. a job carries a fallback provider, and a review says that it answ
   assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), fellBack: { from: 'service', resetAt: null } } }).ok);
   assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), fellBack: { from: id, resetAt: 'tomorrow' } } }).ok, false);
 });
+
+test('a review may carry its questions, with the feature questions (KNT-153)', () => {
+  assert.ok(FEATURES.includes('questions'));
+  const done = (questions: unknown) => ({ outcome: 'done', attempt: 1, review: { ...review(), questions } });
+  assert.equal(parseResultRequest(done([{ path: 'a.ts', question: 'Does every caller still get a 200?' }])).ok, true);
+  assert.equal(parseResultRequest(done([])).ok, true);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: review() }).ok, true, 'no question: no key');
+  assert.equal(parseResultRequest(done([{ path: 'a.ts' }])).ok, false);
+  assert.equal(parseResultRequest(done([{ path: 'a.ts', question: 'x'.repeat(2001) }])).ok, false);
+  assert.equal(parseResultRequest(done(Array.from({ length: 21 }, () => ({ path: '', question: 'Q?' })))).ok, false);
+});
