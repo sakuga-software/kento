@@ -151,6 +151,7 @@ function repo(fields: Partial<RepoView> & Pick<RepoView, 'id' | 'fullName'>): Re
     workflowCheckedAt: minutesAgo(4),
     streak: 0,
     lastReview: null,
+    confidence: null,
     ...fields,
   }
 }

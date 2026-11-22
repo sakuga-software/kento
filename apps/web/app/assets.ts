@@ -196,8 +196,8 @@ export function bootScript(): BootScript | null {
   return BOOT_SCRIPT
 }
 
-/** KNT-188. The component of the charts, with Chart.js under it. */
-export const CHART = 'app/costs/public/cost-chart.tsx'
+/** KNT-188, KNT-191. The component of the charts, with Chart.js under it. */
+export const CHART = 'app/ui/public/chart.tsx'
 
 /**
  * KNT-188, Fable P2-2. True when the service can serve the charts. With the bundles: the bundle of

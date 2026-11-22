@@ -19,7 +19,9 @@ export type LevelConfig = {
   maxPrice: { prompt: number; completion: number };
   /**
    * The code around the change that the pack holds (see buildContext): `full` adds the callers of
-   * the changed code, `definitions` only the definitions that the change uses and the SQL names.
+   * the changed code, `definitions` only the definitions: of the functions that the change calls and
+   * the names that it uses, of the tables that it reads or writes, of the SQL names that it writes,
+   * and the routes that a changed test requests (KNT-151).
    */
   context: ContextKind;
   /**

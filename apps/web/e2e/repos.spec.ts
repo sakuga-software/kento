@@ -66,7 +66,7 @@ test.describe('the Repos screen', () => {
 
       let orchard = rowOf(page, 'orchard')
       // KNT-179, KNT-181: no column "Reviews by" nor "Switch". KNT-194: no notes on the switch.
-      await expect(page.getByRole('columnheader')).toHaveText(['Repo', 'Level', 'Model', 'Last review', 'Precision 30 d', 'Actions'])
+      await expect(page.getByRole('columnheader')).toHaveText(['Repo', 'Level', 'Model', 'Last review', 'Confidence 30 d', 'Precision 30 d', 'Actions'])
       await expect(page.getByText('How the switch from review.yml to Kentō works')).toHaveCount(0)
       // KNT-180: the visibility is the icon left of the name; a screen reader hears its word.
       await expect(orchard.getByRole('rowheader')).toHaveAccessibleName(/^orchard\s*, (private|public)$/)
@@ -165,6 +165,12 @@ test.describe('the Repos screen', () => {
       await expect(orchard.getByRole('link', { name: '#20 · 4/5' })).toBeVisible()
       // The row says it beside its "…" (critique P2-1).
       await expect(orchard.locator('.row-action').getByText('review.yml can go')).toBeVisible()
+      // KNT-183: the average confidence of the 30 days, drawn with its marks, the count in its title.
+      let confidence = orchard.locator('.score')
+      await expect(confidence).toHaveAttribute('title', 'Average of 20 reviews over 30 days')
+      await expect(confidence.locator('.score-value')).toHaveText('4.0/5')
+      await expect(confidence).toHaveClass(/\bscore-high\b.*\bscore-n4\b/)
+      await expect(confidence.locator('.score-marks')).toHaveAttribute('aria-hidden', 'true')
       await hydrated(page)
       let { trigger, menu } = menuOf(page, 'orchard')
       await trigger.click()
@@ -623,7 +629,7 @@ test.describe('the Repos screen', () => {
       await expect(page.getByRole('status').filter({ hasText: 'zz-18 is enabled.' })).toBeAttached()
       row = rowOf(page, 'zz-18')
       // KNT-181: no tag "Kentō" any more; an enabled repository has no "Kentō not enabled" under its precision.
-      await expect(row.locator('td').nth(3)).toHaveText('–')
+      await expect(row.locator('td').nth(4)).toHaveText('–')
       await expect(row.getByRole('button', { name: 'Enable zz-18' })).toHaveCount(0)
       expect(await page.evaluate(() => (window as unknown as { kept?: number }).kept)).toBe(1)
       // The row keeps its place until the next load, marked; the page does not scroll.
@@ -639,7 +645,7 @@ test.describe('the Repos screen', () => {
       await page.goto('/repos?filter=disabled&q=zz-')
       await rowOf(page, 'zz-05').getByRole('button', { name: 'Enable zz-05' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'zz-05 is enabled.' })).toBeAttached()
-      await expect(rowOf(page, 'zz-05').locator('td').nth(3)).toHaveText('–')
+      await expect(rowOf(page, 'zz-05').locator('td').nth(4)).toHaveText('–')
       await expect(menuOf(page, 'zz-05').trigger).toBeFocused()
 
       // Saved, but its row cannot be read (the network goes after the change): no message of a
@@ -778,7 +784,7 @@ test.describe('the Repos screen', () => {
       await expect(page.locator('.notice-slot')).toContainText('pc-51 is enabled.')
       await expect(page.locator('.pager')).toHaveCount(0)
       await expect(page.getByText('The list changed.')).toBeVisible()
-      await expect(rowOf(page, 'pc-51').locator('td').nth(3)).toHaveText('–')
+      await expect(rowOf(page, 'pc-51').locator('td').nth(4)).toHaveText('–')
     } finally {
       await sql`delete from repos where github_repo_id between 893001 and 893051`
       await sql.end()
@@ -839,8 +845,9 @@ test.describe('the Repos screen', () => {
     // Under 760 px each other cell keeps its label, "Precision 30 d" included for a repo without Kentō.
     if (page.viewportSize()!.width <= 760) {
       let gh = rowOf(page, 'garden')
-      expect(await gh.locator('td').nth(3).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
-      await expect(gh.locator('td').nth(3)).toContainText('Kentō not enabled')
+      expect(await gh.locator('td').nth(3).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Confidence 30 d"')
+      expect(await gh.locator('td').nth(4).evaluate((cell) => getComputedStyle(cell, '::before').content)).toBe('"Precision 30 d"')
+      await expect(gh.locator('td').nth(4)).toContainText('Kentō not enabled')
     }
     let { trigger, menu } = menuOf(page, 'orchard')
     await trigger.click()

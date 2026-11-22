@@ -239,7 +239,7 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     try {
       let manifest = await buildClient(dir)
       let modules = clientEntryModules()
-      assert.ok(modules.includes('app/ui/public/row-menu.tsx') && modules.includes('app/ui/public/confirm.tsx') && modules.includes('app/costs/public/cost-chart.tsx'), modules.join(', '))
+      assert.ok(modules.includes('app/ui/public/row-menu.tsx') && modules.includes('app/ui/public/confirm.tsx') && modules.includes('app/ui/public/chart.tsx'), modules.join(', '))
       assert.ok(!modules.some((module) => module.includes('.test.')))
       assert.deepEqual(Object.keys(manifest.entries).sort(), [BOOT, RUNTIME, ...modules].sort())
       for (let file of manifest.files) {
