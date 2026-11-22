@@ -80,6 +80,7 @@ test.describe('the content security policy holds on every screen (KNT-171)', () 
       '/findings': '/findings',
       '/findings/:id': `/findings/${seeded.findings.A}`,
       '/runners': '/runners',
+      '/costs': '/costs',
       '/settings': '/settings',
       '/settings/members': '/settings/members',
       '/settings/organization': '/settings/organization',
