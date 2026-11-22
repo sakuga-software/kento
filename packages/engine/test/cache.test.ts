@@ -15,6 +15,7 @@ import { MAX_PACK_MARKS, requestTokens, userContent } from '../src/providers.ts'
 import { prepareReview } from '../src/review.ts';
 import { RepoTools, TOOL_BUDGETS } from '../src/tools.ts';
 import { blockEvents, endEvents, messageResponse, startEvents as startEventsOf } from './sse.ts';
+import { FINAL_INSTRUCTION } from '../src/sections.ts';
 
 const quiet = () => {};
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
@@ -136,12 +137,13 @@ describe('the prefix of the prompt cache', () => {
     const rule = { id: 'r1', scope: 'repo' as const, title: 'Money in cents', text: 'No float for money.', paths: [], severityFloor: null };
     const result = await reviewPullRequest({ repoDir: shop, base: heads[shop]!.base, head: heads[shop]!.first, level: 'balanced', config, kind: 'anthropic', apiKey: 'k', fetch, log: quiet, rules: [rule] });
     const content = bodies[0].messages[0].content;
-    assert.equal(content.length, 2);
+    assert.equal(content.length, 3);
     assert.match(content[0].text, /^## CLAUDE\.md\n\n# Shop/);
     assert.match(content[1].text, /^# Pull request [0-9a-f]{9}\.\.\.[0-9a-f]{9}\n\n## Commits[\s\S]*## Rules[\s\S]*## Diff[\s\S]*## Imports[\s\S]*## Context/);
-    assert.deepEqual(content.map((c: any) => c.cache_control ?? null), [{ type: 'ephemeral', ttl: '1h' }, null]);
-    // Only the place of the docs changes: the blocks hold the whole pack, and nothing else.
-    assert.equal(content.map((c: any) => c.text).join(''), result.pack);
+    assert.deepEqual(content.map((c: any) => c.cache_control ?? null), [{ type: 'ephemeral', ttl: '1h' }, null, null]);
+    // Only the place of the docs changes: the blocks hold the whole pack, then the last instruction (KNT-110).
+    assert.equal(content.slice(0, 2).map((c: any) => c.text).join(''), result.pack);
+    assert.equal(content[2].text, `\n\n${FINAL_INSTRUCTION}\n`);
     assertValidMarks(bodies[0]);
   });
 

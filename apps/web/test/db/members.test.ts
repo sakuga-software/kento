@@ -42,7 +42,7 @@ describe('the members and the invitations of an org', () => {
   let testClock = { offsetMs: () => clock.now - Date.now() }
   const PAST_THE_WINDOW_MS = 1000
   /** The questions to GitHub of `lookupRole`, and a GitHub that fails. */
-  let gitHub = { calls: 0, fail: false }
+  let gitHub = { calls: 0, fail: false, accounts: [] as string[] }
 
   before(async () => {
     test = await createTestDatabase()
@@ -66,6 +66,7 @@ describe('the members and the invitations of an org', () => {
     }
     let lookupRole = async (installation: { login: string }, person: { login: string }) => {
       gitHub.calls++
+      gitHub.accounts.push(installation.login)
       if (gitHub.fail) throw new Error('GitHub answered 502')
       return roles.get(`${installation.login}/${person.login}`) ?? null
     }
@@ -108,7 +109,7 @@ describe('the members and the invitations of an org', () => {
       ['globex/other', 'admin'],
     ])
     clock.now = Date.now()
-    gitHub = { calls: 0, fail: false }
+    gitHub = { calls: 0, fail: false, accounts: [] }
   })
 
   function request(path: string, cookie?: string | null, form?: Record<string, string>) {
@@ -491,6 +492,53 @@ describe('the members and the invitations of an org', () => {
       gitHub.fail = false
       store.reclaimFailed = saved
     }
+  })
+
+  it('counts the take-back of the org of the session, whatever the form names, and asks GitHub about that org only', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let csrf = await csrfOf(camille)
+    gitHub.accounts = []
+    let other = { orgId: globex, org: globex, org_id: globex, scope: globex }
+    let response = await request(`/settings/members/reclaim?${new URLSearchParams(other)}`, camille, { _csrf: csrf, ...other })
+    assert.equal(response.headers.get('Location'), '/settings/members?notice=not_github_admin')
+    let rows = await database.sql`select scope from github_asks`
+    assert.deepEqual(rows.map((r) => r.scope), [acme])
+    assert.deepEqual(gitHub.accounts, ['acme'])
+  })
+
+  it('a count that answers gone asks GitHub nothing, says not found, and logs members.reclaim_gone', async () => {
+    await signIn('octocat')
+    let camille = (await signIn('camille')).cookie!
+    let saved = store.askReclaim
+    store.askReclaim = async () => 'gone'
+    // A warn goes to stderr (app/log.ts).
+    let lines: string[] = []
+    let stderr = process.stderr.write.bind(process.stderr)
+    try {
+      gitHub.calls = 0
+      let csrf = await csrfOf(camille)
+      process.stderr.write = ((chunk: unknown) => lines.push(String(chunk)) > 0) as typeof process.stderr.write
+      let response = await request('/settings/members/reclaim', camille, { _csrf: csrf })
+      process.stderr.write = stderr
+      assert.equal(response.headers.get('Location'), '/settings/members?notice=not_found')
+      assert.equal(gitHub.calls, 0)
+    } finally {
+      process.stderr.write = stderr
+      store.askReclaim = saved
+    }
+    let events = lines.map((line) => JSON.parse(line) as { event: string }).map((line) => line.event)
+    assert.ok(events.includes('members.reclaim_gone'), events.join(', '))
+    assert.ok(!events.includes('members.reclaim_throttled'))
+  })
+
+  it('a person removed from the org before the take-back is counted is not counted, and GitHub is not asked', async () => {
+    let owner = (await signIn('octocat')).cookie!
+    let guest = await invitedGuest(owner, 'member')
+    let [user] = await database.sql<{ id: string }[]>`select id from users where login = 'guest'`
+    await post(owner, `/settings/members/${guest.membership.id}/remove`)
+    assert.equal(await createMembersStore(database.sql, testClock).askReclaim(acme, user!.id), 'gone')
+    assert.equal((await database.sql`select count(*)::int as n from github_asks where user_id = ${user!.id}`)[0]!.n, 0)
   })
 
   it('a GitHub admin who joined from an invitation takes the owner role; an owner from an invitation then neither demotes nor removes them', async () => {
