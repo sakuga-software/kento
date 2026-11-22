@@ -42,9 +42,188 @@ export class ProviderError extends Error {
   }
 }
 
+/**
+ * KNT-161. The provider refused the call on a usage limit of the key: a quota, spent credits, a spend
+ * limit, or a limit that ends more than RATE_LIMIT_MAX_MS away. The other models of the same key get
+ * the same refusal. `resetAt`: when the provider says that the limit ends (ISO 8601, UTC), or null
+ * when it does not say.
+ */
+export class UsageLimitError extends ProviderError {
+  override name = 'UsageLimitError';
+  readonly kind = 'usage' as const;
+  readonly resetAt: string | null;
+  constructor(message: string, status: number | null, resetAt: string | null) {
+    super(message, status);
+    this.resetAt = resetAt;
+  }
+}
+
+/**
+ * KNT-161. The provider refused the call on a short rate limit: a 429 with no words of a usage limit,
+ * that ends within RATE_LIMIT_MAX_MS or does not say when. Such a limit is often per model or per
+ * upstream host, so the next model of the level is tried. When every model gets one, the service
+ * queues the job again after `resetAt`.
+ */
+export class RateLimitError extends ProviderError {
+  override name = 'RateLimitError';
+  readonly kind = 'rate' as const;
+  readonly resetAt: string | null;
+  constructor(message: string, status: number | null, resetAt: string | null) {
+    super(message, status);
+    this.resetAt = resetAt;
+  }
+}
+
 /** Whether the provider refused the key: the call can never work until an admin replaces it. */
 export function refusedKey(error: unknown): boolean {
-  return error instanceof ProviderError && (error.status === 401 || error.status === 403);
+  return (
+    error instanceof ProviderError &&
+    !(error instanceof UsageLimitError) &&
+    !(error instanceof RateLimitError) &&
+    (error.status === 401 || error.status === 403)
+  );
+}
+
+/** KNT-161. Whether the call failed on a usage limit of the provider. */
+export function usageLimited(error: unknown): error is UsageLimitError {
+  return error instanceof UsageLimitError;
+}
+
+/** KNT-161. Whether the call failed on a short rate limit of the provider. */
+export function rateLimited(error: unknown): error is RateLimitError {
+  return error instanceof RateLimitError;
+}
+
+/** KNT-161. A limit that ends later than this is a usage limit: a retry of the job would fail too. */
+export const RATE_LIMIT_MAX_MS = 10 * 60_000;
+
+/** KNT-161. The words of an error body that name a usage limit of the key, whatever its status. */
+const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit/i;
+/** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
+const RATE_WORDS = /rate[ _-]?limit/i;
+
+/**
+ * KNT-161. The texts of the errors of a limit: the service finds them in the reason of a failed job
+ * (`limitOfReason`). Keep them as they are: a runner of one release talks to a service of the next.
+ */
+export const USAGE_LIMIT_TEXT = 'refused the call on a usage limit';
+export const RATE_LIMIT_TEXT = 'refused the call on a rate limit';
+
+/** KNT-161. A limit of the provider: `usage` stops the review, `rate` queues the job again. */
+export type ProviderLimit = { kind: 'usage' | 'rate'; resetAt: string | null };
+
+/**
+ * KNT-161. Whether an error answer of a provider is a limit, and when it ends. A usage limit: a 402,
+ * a 4xx whose body names a quota, credits, a spend limit or a key limit, or a limit that ends more
+ * than RATE_LIMIT_MAX_MS away. A rate limit: another 429, or a 4xx (not a 403) that names a rate
+ * limit. Null for another error. A 401 is never a limit.
+ */
+export function limitOf(status: number, text: string, headers?: Headers, now: number = Date.now()): ProviderLimit | null {
+  // A 401 is a key that the provider does not know, whatever its words: an admin must replace it.
+  if (status < 400 || status > 499 || status === 401) return null;
+  const usage = status === 402 || USAGE_WORDS.test(text);
+  const rate = status === 429 || (status !== 403 && RATE_WORDS.test(text));
+  if (!usage && !rate) return null;
+  const resetAt = resetOf(text, headers, now);
+  const far = resetAt !== null && Date.parse(resetAt) - now > RATE_LIMIT_MAX_MS;
+  return { kind: usage || far ? 'usage' : 'rate', resetAt };
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * A reset time as ISO 8601 at UTC, rounded up to the second. Null when it is not after `now`, or when
+ * it is more than 90 days away: a reset header read in the wrong unit gives such a time.
+ */
+function resetIso(ms: number, now: number): string | null {
+  if (!Number.isFinite(ms) || ms <= now || ms > now + 90 * DAY_MS) return null;
+  return new Date(Math.ceil(ms / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/** A number of a reset header: seconds from now when small, else seconds or milliseconds since the epoch. */
+function epochMs(value: number, now: number): number {
+  if (value < 1e7) return now + value * 1000;
+  return value < 1e11 ? value * 1000 : value;
+}
+
+/** A duration of the OpenAI reset headers (`1s`, `6m0s`, `250ms`, `1h2m`), in milliseconds, or null. */
+function durationMs(value: string): number | null {
+  const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m(?!s))?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/.exec(value);
+  if (!value || !match) return null;
+  const [, h = '0', m = '0', s = '0', ms = '0'] = match;
+  return ((Number(h) * 60 + Number(m)) * 60 + Number(s)) * 1000 + Number(ms);
+}
+
+/** The value of a reset header in milliseconds since the epoch: a number, a duration or a date. */
+function headerMs(value: string, now: number): number {
+  const text = value.trim();
+  if (/^\d+(?:\.\d+)?$/.test(text)) return epochMs(Number(text), now);
+  const duration = durationMs(text);
+  return duration !== null ? now + duration : Date.parse(text);
+}
+
+/** The latest of the times of `values` that is a reset (`resetIso`), or null. */
+function latestReset(values: number[], now: number): string | null {
+  const resets = values.map((value) => resetIso(value, now)).filter((reset): reset is string => reset !== null);
+  return resets.length ? resets.sort().at(-1)! : null;
+}
+
+const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})/.source;
+
+/**
+ * When a limit ends, from the fields that say it, in this order: the sentence of Anthropic
+ * (« You will regain access on 2026-12-01 at 00:00 UTC »), `retry-after` (seconds, decimals
+ * included, or an HTTP date), the reset headers of Anthropic, of OpenRouter and of OpenAI, then a
+ * date-time of the body that follows a reset word (« until », « reset », « try again »), then the
+ * `X-RateLimit-Reset` that OpenRouter puts in the body. A time in the past, or more than 90 days
+ * away, is skipped. Null when none says it. Any other date of the body is not read.
+ */
+function resetOf(text: string, headers: Headers | undefined, now: number): string | null {
+  const spoken = /regain access on (\d{4}-\d{2}-\d{2}) at (\d{2}:\d{2})(?::\d{2})? UTC/.exec(text);
+  const fromSpoken = spoken ? resetIso(Date.parse(`${spoken[1]}T${spoken[2]}:00Z`), now) : null;
+  if (fromSpoken) return fromSpoken;
+  const after = headers?.get('retry-after')?.trim();
+  if (after) {
+    const reset = resetIso(/^\d+(?:\.\d+)?$/.test(after) ? now + Number(after) * 1000 : Date.parse(after), now);
+    if (reset) return reset;
+  }
+  const names = [
+    'anthropic-ratelimit-requests-reset',
+    'anthropic-ratelimit-tokens-reset',
+    'anthropic-ratelimit-input-tokens-reset',
+    'anthropic-ratelimit-output-tokens-reset',
+    'x-ratelimit-reset',
+    'x-ratelimit-reset-requests',
+    'x-ratelimit-reset-tokens',
+  ];
+  const fromHeaders = latestReset(names.flatMap((name) => {
+    const value = headers?.get(name);
+    return value ? [headerMs(value, now)] : [];
+  }), now);
+  if (fromHeaders) return fromHeaders;
+  const near = new RegExp(`(?:regain access|resets?|until|try again|retry)\\D{0,40}?(${ISO_TIME})`, 'i').exec(text);
+  const fromBody = near ? resetIso(Date.parse(near[1]!), now) : null;
+  if (fromBody) return fromBody;
+  const window = /"X-RateLimit-Reset"\s*:\s*"?(\d+)/i.exec(text);
+  return window ? resetIso(epochMs(Number(window[1]), now), now) : null;
+}
+
+/**
+ * KNT-161. The limit that the reason of a failed job names, or null for another failure: the text of
+ * UsageLimitError or of RateLimitError, or, from a runner of an earlier release, « <provider>
+ * answered <status>: <body> » with a body that is a limit (`limitOf`).
+ */
+export function limitOfReason(reason: string | null, now: number = Date.now()): ProviderLimit | null {
+  if (!reason) return null;
+  for (const [text, kind] of [[USAGE_LIMIT_TEXT, 'usage'], [RATE_LIMIT_TEXT, 'rate']] as const) {
+    if (!reason.includes(text)) continue;
+    const until = /until (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)/.exec(reason);
+    return { kind, resetAt: until ? until[1]! : null };
+  }
+  const answered = / answered (\d{3}): /.exec(reason);
+  if (!answered) return null;
+  // The body of the provider follows the status: the reset time is in it, if anywhere.
+  return limitOf(Number(answered[1]), reason.slice(answered.index + answered[0].length), undefined, now);
 }
 
 export type Schema = { name: string; schema: object };
@@ -108,6 +287,13 @@ function endpoint(base: string, path: string): string {
 
 async function refused(response: Response, name: string): Promise<ProviderError> {
   const text = (await response.text().catch(() => '')).slice(0, 300);
+  const limit = limitOf(response.status, text, response.headers);
+  if (limit) {
+    const until = limit.resetAt ? `, until ${limit.resetAt}` : '';
+    const Limit = limit.kind === 'usage' ? UsageLimitError : RateLimitError;
+    const words = limit.kind === 'usage' ? USAGE_LIMIT_TEXT : RATE_LIMIT_TEXT;
+    return new Limit(`${name} ${words} (${response.status}${until}): ${text}`, response.status, limit.resetAt);
+  }
   return new ProviderError(`${name} answered ${response.status}: ${text}`, response.status);
 }
 
@@ -382,6 +568,7 @@ async function runAgain(call: Call, signal: AbortSignal, started: number, thinki
     return await runAnthropic(call, signal, started, false, thinking);
   } catch (error) {
     if (!(error instanceof ProviderError)) throw error;
+    if (error instanceof UsageLimitError || error instanceof RateLimitError) throw error;
     throw new ProviderError(`${error.message} (in the request without thinking, after ${cause})`, error.status);
   }
 }

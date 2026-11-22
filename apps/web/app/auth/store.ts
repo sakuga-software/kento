@@ -60,6 +60,8 @@ export interface AuthStore {
    * checked, or who signed in, at `since` or after.
    */
   hasOwner(orgId: string, since: Date, exceptUserId?: string): Promise<boolean>
+  /** KNT-199. The ids of the installations of an org that are not suspended, as stored now. */
+  activeInstallationIds(orgId: string): Promise<string[]>
   /** KNT-150. The role and the source of a membership, as stored. */
   membershipOf(userId: string, orgId: string): Promise<{ role: OrgRole; source: MembershipSource } | null>
   /** KNT-150. Runs `work` in one transaction that holds the lock of the owners of the org. */
@@ -151,6 +153,11 @@ export function createAuthStore(sql: postgres.Sql, locked: string | null = null)
         where u.github_id = ${githubId} and m.source = 'invitation'
       `
       return readOrgs(sql, rows.map((r) => r.orgId))
+    },
+
+    async activeInstallationIds(orgId) {
+      let rows = await sql<{ id: string }[]>`select id from installations where org_id = ${orgId} and suspended_at is null`
+      return rows.map((r) => r.id)
     },
 
     async membershipOf(userId, orgId) {

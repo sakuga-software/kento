@@ -10,7 +10,7 @@ import { precisionOf } from '../findings/precision.ts'
 import type { FindingsScreenStore } from '../findings/screen.ts'
 import { EMPTY_REPORT, fakeFindingsScreenStore } from '../findings/test-helpers.ts'
 import { createAppRouter } from '../router.ts'
-import { capState, failureText, setupSteps, stallText, weekMeanDuration } from './dashboard.tsx'
+import { capState, failureText, precisionHref, precisionKey, readPrecisionWindow, setupSteps, stallText, weekMeanDuration } from './dashboard.tsx'
 import { runnerState } from './runners.tsx'
 
 const COOKIE = SESSION_COOKIE
@@ -48,15 +48,16 @@ function banner(overrides: Partial<FailureBanner> = {}): FailureBanner {
 
 /** The runners of the default screen. */
 function runnersOf(): DashboardScreen['runners'] {
-  return [{ id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 }]
+  return [{ id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true }]
 }
 
 /** The counts that the store reads in SQL, from the runners of a screen. */
 function countRunners(runners: DashboardScreen['runners']): DashboardScreen['runnerCounts'] {
-  let counts = { online: 0, late: 0, offline: 0 }
+  let counts = { online: 0, late: 0, offline: 0, ready: 0 }
   for (let runner of runners) {
     let state = runnerState({ revokedAt: null, lastSeenAt: runner.lastSeenAt }, NOW)
     if (state !== 'revoked') counts[state]++
+    if (state === 'online' && !runner.busy) counts.ready++
   }
   return counts
 }
@@ -129,6 +130,7 @@ function setup(
   github: PullRequestNow | Error | null = { open: true, headSha: HEAD },
   serviceKey = false,
   findings: FindingsScreenStore | null = null,
+  charts?: boolean,
 ) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, OCTOCAT, 'admin')
@@ -140,6 +142,9 @@ function setup(
     async screen(orgId) {
       reads.push(orgId)
       return view
+    },
+    async queueCard() {
+      return { now: view.now, queue: view.queue, runners: view.runners, runnerCounts: view.runnerCounts }
     },
     async retryTarget(_orgId, jobId) {
       return jobId === JOB_ID ? { installationId: 42, githubRepoId: 7, fullName: 'sakuga-software/orchard', prNumber: 128, headSha: HEAD } : null
@@ -169,7 +174,7 @@ function setup(
     commit: null,
     webhook: disabledWebhook,
     auth: auth.deps,
-    dashboard: { store, githubUrl: 'https://github.com', readPullRequest, serviceKey },
+    dashboard: { store, githubUrl: 'https://github.com', readPullRequest, serviceKey, charts },
     findings: findings ? { store: findings, githubUrl: 'https://github.com' } : null,
   })
 
@@ -263,14 +268,14 @@ describe('the list "Getting started" (REV-26)', () => {
   it('marks each step from what the org has, and the first review as waiting while a job is in the queue', () => {
     let view = fresh({
       setup: { published: false, suspended: false, enabledRepos: 1, providers: 2, serviceRunners: 1, pendingRegistrations: 0 },
-      runners: [{ id: 'r', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0 }],
+      runners: [{ id: 'r', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: false }],
       queue: { running: [], queued: [], runningCount: 0, queuedCount: 1 },
     })
     assert.deepEqual(states(view), ['app:done', 'provider:done', 'runner:done', 'repo:done', 'review:wait'])
   })
 
   it('says that a runner is on its way when it is registered but silent, or when a token waits for it', () => {
-    let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0 }] })
+    let silent = fresh({ runners: [{ id: 'r', name: 'old', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3_600_000), running: 0, busy: false }] })
     assert.equal(states(silent)?.[2], 'runner:wait')
     let token = fresh({ setup: { published: false, suspended: false, enabledRepos: 0, providers: 0, serviceRunners: 1, pendingRegistrations: 1 } })
     assert.equal(states(token)?.[2], 'runner:wait')
@@ -327,7 +332,7 @@ describe('"To do" and the band of numbers (REV-91)', () => {
     let { signIn } = setup(
       screen({
         banner: null,
-        runners: [{ id: 'run9', name: 'runner-laptop', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0 }],
+        runners: [{ id: 'run9', name: 'runner-laptop', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 47 * 60_000), running: 0, busy: false }],
       }),
     )
     let { html } = await signIn(OCTOCAT)
@@ -345,14 +350,14 @@ describe('"To do" and the band of numbers (REV-91)', () => {
   })
 
   it('counts the silent runners that the bounded list leaves out, with no empty names (REV-91)', async () => {
-    let { signIn } = setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 4 } }))
+    let { signIn } = setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 4, ready: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let todo = html.slice(html.indexOf('id="todo-title"'), html.indexOf('</section>', html.indexOf('id="todo-runners"')))
     assert.match(todo, /<h3 id="todo-runners" class="todo-title">5 runners give no signal<\/h3>/)
     assert.match(todo, /<p class="hint">A runner is online again at its next signal\.<\/p>/)
     // Each row is a region named by its title, inside an item of the list.
     assert.match(html, /<li><section aria-labelledby="todo-runners" class="todo">/)
-    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0 } })).signIn(OCTOCAT)).html
+    let one = (await setup(screen({ banner: null, workflowRepos: [], runners: [], runnerCounts: { online: 0, late: 1, offline: 0, ready: 0 } })).signIn(OCTOCAT)).html
     assert.match(one, /1 runner gives no signal/)
   })
 
@@ -427,7 +432,11 @@ describe('the dashboard', () => {
     assert.match(html, /unknown cost/)
     assert.match(html, /Published reviews · 7 days/)
     assert.match(html, /Changes requested/)
-    assert.match(html, /2\/5/)
+    // KNT-187: the score of a review drawn with its marks, in the band of a low score, and its number.
+    assert.match(
+      html,
+      /<td data-label="Score" class="num mono"><span class="score score-low score-n2"><span aria-hidden="true" class="score-marks">(?:<span><\/span>){5}<\/span><span class="score-value">2\/5<\/span><\/span><\/td>/,
+    )
     assert.match(html, /Alert threshold reached/)
     assert.match(html, /2 reviews or resolutions of the month with no known/)
     assert.match(html, /On <span class="mono">runner-1<\/span>/)
@@ -512,10 +521,10 @@ describe('the dashboard', () => {
     let { signIn } = setup(
       screen({
         runners: [
-          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1 },
-          { id: 'run2', name: 'runner-0', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0 },
+          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true },
+          { id: 'run2', name: 'runner-0', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 3 * 86_400_000), running: 0, busy: false },
         ],
-        runnerCounts: { online: 1, late: 0, offline: 23 },
+        runnerCounts: { online: 1, late: 0, offline: 23, ready: 0 },
       }),
     )
     let { html } = await signIn(OCTOCAT)
@@ -526,10 +535,31 @@ describe('the dashboard', () => {
     assert.match(section, /<a href="\/runners">and 22 more<span class="visually-hidden"> on the Runners screen<\/span><\/a>/)
   })
 
+  it('says how many runners are ready beside "Runners", and which runner of the service is busy elsewhere (KNT-189)', async () => {
+    let { signIn } = setup(
+      screen({
+        runners: [
+          { id: 'run1', name: 'runner-1', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 1, busy: true },
+          { id: 'run2', name: 'runner-2', orgId: ORG.id, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: false },
+          { id: 'run3', name: 'shared-02', orgId: null, lastSeenAt: new Date(NOW.getTime() - 5_000), running: 0, busy: true },
+        ],
+      }),
+    )
+    let { html } = await signIn(OCTOCAT)
+    let section = html.slice(html.indexOf('aria-labelledby="queue-title"'))
+    assert.match(section, /data-ready="1"[^>]*class="runner-ready">1 ready \/ 3 online<\/span>/)
+    // "3 online" alone would repeat the count beside the title.
+    assert.doesNotMatch(section, /class="runner-counts"/)
+    assert.match(section, /shared-02.*?Busy with a job of another organization/s)
+    // The live state of the browser: hidden in the HTML of the server.
+    assert.match(section, /<span[^>]*class="live-state"[^>]*hidden[^>]*>|<span[^>]*hidden[^>]*class="live-state"/)
+    assert.match(section, /data-live-queue/)
+  })
+
   it('says that jobs wait with no runner online, since when, and what to do (REV-52)', async () => {
     let since = new Date(NOW.getTime() - 14 * 60_000)
     let lastSeen = new Date(NOW.getTime() - 2 * 3_600_000)
-    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
+    let { signIn } = setup(screen({ runners: [], runnerCounts: { online: 0, late: 0, offline: 1, ready: 0 }, stall: { count: 2, since, lastRunnerSeenAt: lastSeen, serviceKeyJobs: 0, serviceRunnersOnline: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /2 jobs have waited in the queue for more than 10 min \(the oldest for 14 min\)/)
@@ -567,7 +597,7 @@ describe('the dashboard', () => {
     // With no runner online, the cause stays the missing runner.
     assert.match(stallText({ count: 2, since, lastRunnerSeenAt: null, serviceKeyJobs: 2, serviceRunnersOnline: 0 }, 0, NOW).cause, /^No runner ever called Kentō/)
 
-    let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
+    let { signIn } = setup(screen({ runnerCounts: { online: 1, late: 0, offline: 0, ready: 0 }, stall: { count: 2, since, lastRunnerSeenAt: NOW, serviceKeyJobs: 2, serviceRunnersOnline: 0 } }))
     let { html } = await signIn(OCTOCAT)
     let section = html.slice(html.indexOf('id="todo-stall"'), html.indexOf('</li>', html.indexOf('id="todo-stall"')))
     assert.match(section, /These jobs have no provider: they wait for a runner with an OpenRouter key\./)
@@ -730,5 +760,91 @@ describe('the dashboard', () => {
       let response = await request(`/jobs/${JOB_ID}/retry`, { cookie, form: { _csrf: csrf, level: 'lite' } })
       assert.equal(response.headers.get('Location'), `/?notice=${notice}`)
     }
+  })
+})
+
+describe('the precision of the dashboard by window (KNT-191)', () => {
+  /** A Findings store that records the window of each read. */
+  function windowed() {
+    let windows: (number | undefined)[] = []
+    let report = {
+      ...EMPTY_REPORT,
+      org: precisionOf(41, 9),
+      repos: [
+        { ...precisionOf(30, 5), id: 'r1', fullName: 'sakuga-software/orchard' },
+        { ...precisionOf(3, 2), id: 'r2', fullName: 'sakuga-software/dojo' },
+      ],
+      repoCount: 3,
+    }
+    let store: FindingsScreenStore = {
+      ...fakeFindingsScreenStore().store,
+      async precision(_orgId, days) {
+        windows.push(days)
+        return report
+      },
+    }
+    return { store, windows, report }
+  }
+
+  it('reads 30 days by default and 7 days from ?precision=7, and sends any other value back to the URL without it', async () => {
+    let findings = windowed()
+    let { signIn, request } = setup(screen(), undefined, undefined, false, findings.store)
+    let { cookie, html } = await signIn(OCTOCAT)
+    assert.deepEqual(findings.windows, [30])
+    assert.match(html, /Precision · 30 d/)
+
+    let seven = await (await request('/?precision=7', { cookie })).text()
+    assert.deepEqual(findings.windows, [30, 7])
+    assert.match(seven, /Precision · 7 d/)
+    assert.match(seven, /over 7 days, whole org/)
+    assert.match(seven, /<a href="\/\?precision=7#precision-title" aria-current="page">7 days<\/a>/)
+    assert.match(seven, /<a href="\/#precision-title">30 days<\/a>/)
+
+    for (let [asked, location] of [
+      ['30', '/'],
+      ['14', '/'],
+      ['14&notice=retried', '/?notice=retried'],
+    ] as const) {
+      let response = await request(`/?precision=${asked}`, { cookie })
+      assert.equal(response.status, 303, asked)
+      assert.equal(response.headers.get('Location'), location)
+    }
+    assert.deepEqual(findings.windows, [30, 7])
+  })
+
+  it('renders the list that the chart reads, with a hidden chart box and the key of its numbers', async () => {
+    let findings = windowed()
+    let { html } = await setup(screen(), undefined, undefined, false, findings.store).signIn(OCTOCAT)
+    let block = html.slice(html.indexOf('id="precision-block"') - 80)
+    assert.match(block, new RegExp(`data-keep="${precisionKey(findings.report, 30)}"`))
+    // The attributes in any order (Kentō #34df04).
+    assert.match(block, /<div(?=[^>]*\sdata-kind="bars")(?=[^>]*\shidden[\s>])(?=[^>]*\sclass="chart-box")[^>]*>/)
+    assert.match(block, /<ul[^>]*id="precision-list"[^>]*>/)
+    // A share with enough closed findings has its value; one under the minimum has none (no bar).
+    // The attributes in any order (Kentō #13de56).
+    assert.match(block, /<li(?=[^>]*\sdata-label="orchard")(?=[^>]*\sdata-value="85\.7")[^>]*>/)
+    assert.match(block, /<li(?=[^>]*\sdata-label="dojo")(?=[^>]*\sdata-value="")[^>]*>/)
+    assert.match(block, /and 1 more repo with fewer closed findings/)
+  })
+
+  it('shows the list alone when the asset server cannot serve the charts (Fable P2-2 of #65)', async () => {
+    let findings = windowed()
+    let { html } = await setup(screen(), undefined, undefined, false, findings.store, false).signIn(OCTOCAT)
+    assert.doesNotMatch(html, /chart-box|importmap/)
+    assert.match(html, /<ul[^>]*id="precision-list"/)
+    assert.match(html, /orchard/)
+  })
+
+  it('reads a window, makes its link, and changes its key when a number changes', () => {
+    assert.equal(readPrecisionWindow(null), 30)
+    assert.equal(readPrecisionWindow('7'), 7)
+    assert.equal(readPrecisionWindow('07'), 30)
+    assert.equal(precisionHref(30), '/#precision-title')
+    assert.equal(precisionHref(7), '/?precision=7#precision-title')
+    let report = { ...EMPTY_REPORT, org: precisionOf(41, 9), repos: [{ ...precisionOf(30, 5), id: 'r1', fullName: 'a/b' }] }
+    let key = precisionKey(report, 30)
+    assert.equal(precisionKey(report, 30), key)
+    assert.notEqual(precisionKey(report, 7), key)
+    assert.notEqual(precisionKey({ ...report, repos: [{ ...precisionOf(31, 5), id: 'r1', fullName: 'a/b' }] }, 30), key)
   })
 })
