@@ -125,6 +125,11 @@ export interface DashboardRunner {
   lastSeenAt: Date | null
   /** The jobs of the org that it runs now. */
   running: number
+  /**
+   * KNT-189. It runs a job now, of any org: a runner of the service can run the job of another org.
+   * Only this flag crosses: never the job, its repository or its org.
+   */
+  busy: boolean
 }
 
 /** The runners in service of the org and of the service, by state, all of them (REV-37). */
@@ -132,7 +137,12 @@ export interface RunnerCounts {
   online: number
   late: number
   offline: number
+  /** KNT-189. The online runners that run no job, of any org: the next job can start at once. */
+  ready: number
 }
+
+/** KNT-189. The card "Queue and runners", that the dashboard reads again every few seconds (app/dashboard/live.ts). */
+export type QueueCardView = Pick<DashboardScreen, 'now' | 'queue' | 'runners' | 'runnerCounts'>
 
 /**
  * REV-26. What the list "Getting started" reads, until the first review of the org is published:
@@ -202,6 +212,8 @@ export interface RetryTarget {
 /** What the dashboard reads, and its writes: "Run again" and "Hide". Every query is for one org. */
 export interface DashboardStore {
   screen(orgId: string): Promise<DashboardScreen>
+  /** KNT-189. Only the card "Queue and runners": three queries, for the live card. */
+  queueCard(orgId: string): Promise<QueueCardView>
   /** The pull request of a failed review job of the org. Null: no such job. */
   retryTarget(orgId: string, jobId: string): Promise<RetryTarget | null>
   /**
@@ -472,9 +484,11 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
         orgId: string | null
         lastSeenAt: Date | string | null
         running: string
+        busy: boolean
         online: string
         late: string
         offline: string
+        ready: string
       }[]
     >`
       with seen as (
@@ -485,7 +499,9 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
             when runners.last_seen_at >= now() - ${`${ONLINE_SECONDS} seconds`}::interval then 'online'
             when runners.last_seen_at >= now() - ${`${OFFLINE_SECONDS} seconds`}::interval then 'late'
             else 'offline'
-          end as state
+          end as state,
+          -- KNT-189. A job of any org: a runner of the service that runs one is not ready either.
+          exists (select 1 from jobs where jobs.runner_id = runners.id and jobs.state = 'running') as busy
         from runners
         where (runners.org_id = ${orgId} or runners.org_id is null) and runners.revoked_at is null
       ),
@@ -498,11 +514,12 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
           ) as n,
           count(*) filter (where state = 'online') over () as online,
           count(*) filter (where state = 'late') over () as late,
-          count(*) filter (where state = 'offline') over () as offline
+          count(*) filter (where state = 'offline') over () as offline,
+          count(*) filter (where state = 'online' and not busy) over () as ready
         from seen
       )
       select ranked.id, ranked.name, ranked.org_id as "orgId", ranked.last_seen_at as "lastSeenAt",
-        ranked.online, ranked.late, ranked.offline,
+        ranked.busy, ranked.online, ranked.late, ranked.offline, ranked.ready,
         (select count(*) from jobs join repos on repos.id = jobs.repo_id
           where jobs.runner_id = ranked.id and jobs.state = 'running' and repos.org_id = ${orgId}) as running
       from ranked
@@ -510,12 +527,17 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
       order by case ranked.state when 'late' then 0 when 'online' then 1 else 2 end, ranked.n`
     let first = rows[0]
     return {
-      list: rows.map(({ online: _online, late: _late, offline: _offline, ...row }) => ({
+      list: rows.map(({ online: _online, late: _late, offline: _offline, ready: _ready, ...row }) => ({
         ...row,
         lastSeenAt: toDate(row.lastSeenAt),
         running: Number(row.running),
       })),
-      counts: { online: Number(first?.online ?? 0), late: Number(first?.late ?? 0), offline: Number(first?.offline ?? 0) },
+      counts: {
+        online: Number(first?.online ?? 0),
+        late: Number(first?.late ?? 0),
+        offline: Number(first?.offline ?? 0),
+        ready: Number(first?.ready ?? 0),
+      },
     }
   }
 
@@ -599,6 +621,12 @@ export function createDashboardStore({ sql, db }: Pick<Database, 'sql' | 'db'>):
   }
 
   return {
+    async queueCard(orgId) {
+      let [clock] = await sql<{ now: Date | string }[]>`select now() as now`
+      let [queueView, runnerViews] = await Promise.all([queue(orgId), runners(orgId)])
+      return { now: toDate(clock!.now), queue: queueView, runners: runnerViews.list, runnerCounts: runnerViews.counts }
+    },
+
     async screen(orgId) {
       let [clock] = await sql<{ now: Date | string }[]>`select now() as now`
       let failed = await failures(orgId)
