@@ -9,6 +9,8 @@
   let bar = null
   let pending = 0
   let watchdog = 0
+  /** KNT-185: the button with `data-busy` whose form posts. */
+  let busy = null
 
   const stop = () => {
     clearTimeout(pending)
@@ -16,6 +18,8 @@
     pending = 0
     bar?.remove()
     bar = null
+    busy?.removeAttribute('aria-busy')
+    busy = null
   }
 
   const show = () => {
@@ -53,13 +57,25 @@
     })
   })
 
+  // KNT-185. A submit button with `data-busy` is marked busy while its form posts (aria-busy; kento.css
+  // turns its icon). A second press waits for the page.
   document.addEventListener('submit', (event) => {
     const form = event.target
     if (!(form instanceof HTMLFormElement) || form.method === 'dialog') return
     const target = event.submitter?.getAttribute('formtarget') ?? form.target
     if (target && target !== '_self') return
+    const button = event.submitter?.hasAttribute('data-busy') ? event.submitter : null
+    if (button && button === busy) {
+      event.preventDefault()
+      return
+    }
     setTimeout(() => {
-      if (!event.defaultPrevented) start()
+      if (event.defaultPrevented) return
+      if (button) {
+        busy = button
+        button.setAttribute('aria-busy', 'true')
+      }
+      start()
     })
   })
 
