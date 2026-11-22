@@ -3795,11 +3795,19 @@ a.finding-title:hover {
     color: var(--matsu);
   }
 }
+/* KNT-191: one card a row, the whole width: room for the failures and the chart of the precision. */
 .dash-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
   align-items: start;
+}
+/* The windows of the precision, in the head of its section. */
+.period-links.precision-windows {
+  margin-bottom: 0;
+}
+.precision-card .chart-box {
+  margin-bottom: var(--space-4);
 }
 
 /* "To do": one row per thing to do, a mark and a word, what happened, then the actions. */
@@ -5771,14 +5779,15 @@ a.sheet-title {
   }
 }
 
-/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. */
-.cost-periods {
+/* KNT-188. The Costs screen: the periods, four numbers, a chart per breakdown above its table. The
+   chart boxes (`.chart-box`, app/ui/public/chart.tsx) also serve the precision of the dashboard (KNT-191). */
+.period-links {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-6);
 }
-.cost-periods a {
+.period-links a {
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: 999px;
@@ -5787,10 +5796,10 @@ a.sheet-title {
   line-height: var(--leading-sm);
   text-decoration: none;
 }
-.cost-periods a:hover {
+.period-links a:hover {
   border-color: var(--ink);
 }
-.cost-periods a[aria-current='page'] {
+.period-links a[aria-current='page'] {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--paper-raised);
@@ -5819,16 +5828,16 @@ a.sheet-title {
 .cost-grid .cost-section {
   margin-bottom: 0;
 }
-.cost-chart {
+.chart-box {
   position: relative;
   height: 260px;
   margin-top: var(--space-4);
 }
-.cost-chart[hidden] {
+.chart-box[hidden] {
   display: none;
 }
-/* One bar per row: the chart grows with its rows (draw.ts sets --rows). */
-.cost-chart[data-kind='bars'] {
+/* One bar per row: the chart grows with its rows (chart-draw.ts sets --rows). */
+.chart-box[data-kind='bars'] {
   height: calc(var(--rows, 4) * 30px + 36px);
 }
 .chart-data {
