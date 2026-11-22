@@ -12,6 +12,7 @@ import { askModel } from '../src/model.ts';
 import { LEVELS } from '../src/levels.ts';
 import { RepoTools, TOOL_BUDGETS, TOOLS_NOTE } from '../src/tools.ts';
 import { messageResponse } from './sse.ts';
+import { FINAL_INSTRUCTION } from '../src/sections.ts';
 
 const SCHEMA = { name: 'probe', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false } };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
@@ -233,7 +234,7 @@ describe('a review call with tools', () => {
     await askModel({ apiKey: 'k', fetch, log: quiet }, levelConfig('lite'), 'the pack', 'FOCUS', new RepoTools(root, head, TOOL_BUDGETS.lite));
     const system: string = calls[0].messages[0].content;
     assert.ok(!system.includes('FOCUS') && !system.includes(TOOLS_NOTE), 'the system prompt stays the same for every pass');
-    assert.equal(calls[0].messages[1].content[0].text, `the pack\n\nFOCUS\n\n${TOOLS_NOTE}\n`);
+    assert.equal(calls[0].messages[1].content[0].text, `the pack\n\nFOCUS\n\n${TOOLS_NOTE}\n\n${FINAL_INSTRUCTION}\n`);
   });
 });
 
