@@ -263,3 +263,28 @@ test('a file dropped from the pack leaves room: the narrowed test files show the
     rmSync(big, { recursive: true, force: true });
   }
 });
+
+test('a workflow whose name reads as a test file shows whole, past the limit of whole tests', () => {
+  const big = mkdtempSync(join(tmpdir(), 'engine-proves-workflow-'));
+  const g = (...args: string[]) => execFileSync('git', args, { cwd: big, encoding: 'utf8' }).trim();
+  g('init', '-q', '-b', 'main');
+  g('config', 'user.email', 'test@example.com');
+  g('config', 'user.name', 'Test');
+  const steps = Array.from({ length: Math.ceil(MAX_TEST_HUNK_BYTES / 20) }, (_, i) => `      - run: echo step ${i}`);
+  const workflow = (last: string) => ['name: E2E', 'on: pull_request', 'jobs:', '  e2e:', '    runs-on: ubuntu-latest', '    steps:', ...steps, `      - run: ${last}`, ''].join('\n');
+  mkdirSync(join(big, '.github/workflows'), { recursive: true });
+  writeFileSync(join(big, '.github/workflows/e2e.test.yml'), workflow('echo done'));
+  g('add', '.');
+  g('commit', '-q', '-m', 'base');
+  const from = g('rev-parse', 'HEAD');
+  writeFileSync(join(big, '.github/workflows/e2e.test.yml'), workflow('echo finished'));
+  g('commit', '-q', '-am', 'change');
+  const to = g('rev-parse', 'HEAD');
+  try {
+    const { pack } = buildPack(big, from, to, 'definitions');
+    assert.match(pack, /\n name: E2E\n on: pull_request\n/, 'the top of the workflow, far from the change');
+    assert.match(pack, /\+ {6}- run: echo finished\n/);
+  } finally {
+    rmSync(big, { recursive: true, force: true });
+  }
+});
