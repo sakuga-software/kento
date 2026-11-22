@@ -7,6 +7,7 @@ import { git } from './git.ts';
 import { checkMissingNames } from './imports.ts';
 import { splitNonFindings } from './nonfindings.ts';
 import { withoutMergeAdvice } from './risk.ts';
+import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
 import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
 import { inHistory } from './history.ts';
@@ -330,6 +331,11 @@ export function finishReview<F extends Finding>(
   // becomes a question. After the rules: a rule's severity floor can make a finding major, and then
   // it stays (applyRule).
   answer = withoutNonFindings(answer, log);
+  // KNT-152. A race with no traced steps, or a timing claim with no number, becomes a question. After
+  // the rules too: a rule's floor of `critical` keeps the finding.
+  const timing = splitUntracedTiming(answer, (p) => fileAt(p) !== null);
+  answer = timing.answer;
+  for (const f of timing.asked) log(`finding moved to the questions, it traces no interleaving or gives no number: ${f.path}: ${f.title}`);
   // REV-99. Each finding that continues an earlier finding names it; one that continues a dismissed
   // or kept finding whose file did not change goes.
   const linked = linkEarlier(answer, earlier, (f) => anchor(f, lines));

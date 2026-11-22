@@ -215,7 +215,7 @@ function passesModel(byPass: Record<string, Answer>) {
   const fetch = (async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     const user: string = body.messages[1].content;
-    const pass = [SECURITY, CONTRACTS].find((p) => user.endsWith(`${p.focus}\n`));
+    const pass = [SECURITY, CONTRACTS].find((p) => user.includes(`${p.focus}\n`));
     const content = JSON.stringify(pass ? byPass[pass.id] : { verdicts: [] });
     return new Response(JSON.stringify({ model: body.model, provider: 'Fake', choices: [{ message: { content } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.001 } }));
   }) as typeof globalThis.fetch;
