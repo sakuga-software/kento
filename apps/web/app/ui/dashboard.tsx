@@ -16,6 +16,7 @@ import { PRECISION_DAYS, PRECISION_MIN, type PrecisionReport } from '../findings
 import { findingsHref } from './findings.tsx'
 import { PrecisionValue, precisionCounts, shortName } from './precision.tsx'
 import { LiveQueue, QUEUE_CARD_ID } from './public/live-queue.tsx'
+import { Score } from './score.tsx'
 
 /** The page asks the server again this often, while it is on screen (public/assets/dashboard.js). */
 export const REFRESH_SECONDS = 10
@@ -948,7 +949,8 @@ function RecentSection(handle: Handle<{ recent: RecentReview[]; now: Date; org: 
                         {review.level}
                       </td>
                       <td class="num mono" data-label="Score">
-                        {review.score}/5
+                        {/* KNT-187: the score drawn as on the Repos screen. */}
+                        <Score value={review.score} />
                       </td>
                       <td class="num mono" data-label="Findings">
                         {review.findings}
