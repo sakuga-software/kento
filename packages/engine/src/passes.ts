@@ -94,7 +94,7 @@ export async function reviewInPasses(
   options: { passConfig: LevelConfig; verifyConfig: LevelConfig; passes?: readonly Pass[] },
 ): Promise<PassesResult> {
   const passes = options.passes ?? BASE_PASSES;
-  const prepared = prepareReview(input, options.passConfig);
+  const prepared = prepareReview(input, options.passConfig, passes.map((pass) => pass.focus));
   // REV-68. One budget for the review: the passes share it.
   const tools = reviewTools(input, options.passConfig);
   const schema = packSchema(prepared);
