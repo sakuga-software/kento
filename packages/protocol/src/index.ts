@@ -111,11 +111,14 @@ export const isProviderKind = (value: unknown): value is ProviderKind => isOneOf
  *   because their premise is code that the review did not read (KNT-151). The service matches them
  *   to its open findings and leaves those open: a moved finding is never `fixed`. A service of an
  *   earlier release refuses the claim of this feature, and so never receives the field.
+ * - `fallback-provider`: `models` can carry `fallbackProvider` (KNT-161), a second provider of `providers`
+ *   and its model, that takes over when the first provider refuses the call on its usage limit. A
+ *   review that it answered carries `fellBack`.
  * - `reverses`: a finding of the result can carry `reverses`, the key of the earlier finding whose
  *   fix it asks to undo (KNT-167). A service of an earlier release refuses the claim of this
  *   feature, and so never receives the field.
  */
-export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved', 'reverses'] as const;
+export const FEATURES = ['providers', 'models', 'rules', 'threads', 'reuse', 'rejected', 'delta', 'rejected-severity', 'earlier', 'reviewed', 'refuted', 'patch', 'questions', 'moved', 'fallback-provider', 'reverses'] as const;
 export type Feature = (typeof FEATURES)[number];
 
 /** Where the cost of a call comes from: the provider, the price table, a free local model, or nowhere (0). */
@@ -209,7 +212,16 @@ export type JobProvider = { id: string; kind: ProviderKind; apiKey: string | nul
  * takes over when the call of `model` fails. They replace the models of the provider for the level;
  * the other settings of the level (reasoning, limits, context) stay.
  */
-export type JobModels = { provider: string; model: string; fallback: string | null };
+export type JobModels = {
+  provider: string;
+  model: string;
+  fallback: string | null;
+  /**
+   * KNT-161, with the feature `fallback-provider`: another provider of `providers` (its `id`) and its
+   * model, called when `provider` refuses the call on its usage limit. Absent or null: none.
+   */
+  fallbackProvider?: { provider: string; model: string } | null;
+};
 
 /** A job carries at most this many rules. */
 export const MAX_JOB_RULES = 50;
@@ -423,6 +435,9 @@ const jobBase = {
       provider: str({ min: 1, max: 36, pattern: PROVIDER_ID }),
       model: str({ min: 1, max: 200, pattern: MODEL_ID }),
       fallback: nullable(str({ min: 1, max: 200, pattern: MODEL_ID })),
+      fallbackProvider: optional(
+        nullable(obj({ provider: str({ min: 1, max: 36, pattern: PROVIDER_ID }), model: str({ min: 1, max: 200, pattern: MODEL_ID }) })),
+      ),
     }),
   ),
   rules: optional(arr(jobRule, { max: MAX_JOB_RULES })),
@@ -659,6 +674,12 @@ export type ReviewPayload = {
    * are not findings of the review; the service only keeps their open findings open.
    */
   moved?: ReviewFinding[];
+  /**
+   * KNT-161, when the job carried `models.fallbackProvider` and that provider answered: `from` is the
+   * provider of the job (`models.provider`) that refused the call on its usage limit, `resetAt` the end
+   * of that limit when the provider gave it.
+   */
+  fellBack?: { from: string; resetAt: string | null };
 };
 
 /**
@@ -688,6 +709,8 @@ export type ResolvePayload = {
   waiting: number;
   held: number;
   threads: { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reply: string; changed: boolean | null }[];
+  /** KNT-161. As `ReviewPayload.fellBack`: the fallback provider answered the resolution. */
+  fellBack?: { from: string; resetAt: string | null };
 };
 
 /**
@@ -727,6 +750,7 @@ const review = obj({
   refutedThreads: optional(arr(str({ min: 1, max: 100 }), { max: MAX_RESOLVE_THREADS })),
   questions: optional(arr(obj({ path: text(1000), question: text(2000) }), { max: 20 })),
   moved: optional(arr(finding, { max: 100 })),
+  fellBack: optional(obj({ from: str({ min: 1, max: 36, pattern: PROVIDER_ID }), resetAt: nullable(isoDate) })),
 });
 const resultRequest = tagged('outcome', {
   done: obj({ outcome: oneOf(['done'] as const), attempt, review }),
@@ -749,6 +773,7 @@ const resultRequest = tagged('outcome', {
         obj({ id: str({ min: 1, max: 100 }), verdict: oneOf(THREAD_VERDICTS), reply: text(10_000), changed: nullable(bool) }),
         { max: MAX_RESOLVE_THREADS },
       ),
+      fellBack: optional(obj({ from: str({ min: 1, max: 36, pattern: PROVIDER_ID }), resetAt: nullable(isoDate) })),
     }),
   }),
   unchanged: obj({

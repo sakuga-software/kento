@@ -20,6 +20,7 @@ import type { RuleView } from '../rules/store.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Button, Choice, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { EffectiveLine } from './effective.tsx'
+import { FallbackProviderFields } from './fallback-provider.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine as sharedVersionLine } from './form-fields.tsx'
 import { moneyInput, usd, when } from './format.ts'
@@ -259,12 +260,18 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
     let field: ConfigField = `models.${level}`
     let mine = ctx.form?.field === field ? ctx.form : null
     let errors = mine?.errors ?? {}
-    let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
+    let first = firstInvalid(errors, ['provider', 'model', 'fallback', 'fallbackProvider', 'fallbackProviderModel'])
     let current = value.value
     let effective = effectiveLevel(level, value, providers)
     // Nothing chosen, in the repository or the org: the form shows what runs, the "Default" provider.
-    let shown = value.source === 'kento' ? { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback } : current
-    let values = mine?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
+    let shown: LevelModels = value.source === 'kento' ? { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback } : current
+    let values = mine?.values ?? {
+      provider: shown.provider,
+      model: shown.model,
+      fallback: shown.fallback ?? '',
+      fallbackProvider: shown.fallbackProvider?.provider ?? '',
+      fallbackProviderModel: shown.fallbackProvider?.model ?? '',
+    }
     let id = `level-${level}`
     let providerId = `${id}-provider`
     let modelId = `${id}-model`
@@ -345,6 +352,7 @@ function LevelCard(handle: Handle<{ level: Level; value: Resolved<LevelModels>; 
                 />
                 <FieldMessage id={fallbackId} error={errors.fallback} hint="Another model of the same provider. Leave it empty for none." />
               </div>
+              <FallbackProviderFields id={id} providers={providers.filter((p) => p.id !== selected)} values={values} errors={errors} first={first} />
               {value.source === 'kento' && effective.origin === 'default' ? (
                 <p class="hint">"Set here" fixes this choice for the repo, and the level no longer follows the "Default" provider.</p>
               ) : null}

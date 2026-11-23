@@ -7,6 +7,7 @@ import {
   mergeBase,
   ProviderError,
   providerLevelConfig,
+  usageLimited,
   type LevelConfig,
   RESOLVE_SCHEMA,
   resolvePack,
@@ -184,8 +185,18 @@ export async function runJob(job: Job, deps: JobDependencies): Promise<JobOutcom
   }
 }
 
-/** The provider that a job calls: its kind, its key, its URL and the configuration of the level. */
-export type Model = { kind: ProviderKind; apiKey: string | undefined; baseUrl: string | undefined; config: LevelConfig };
+/**
+ * The provider that a job calls: its kind, its key, its URL and the configuration of the level.
+ * `fellBack` (KNT-161): this is the fallback provider, and the provider of the job refused the call
+ * on its usage limit.
+ */
+export type Model = {
+  kind: ProviderKind;
+  apiKey: string | undefined;
+  baseUrl: string | undefined;
+  config: LevelConfig;
+  fellBack?: { from: string; resetAt: string | null };
+};
 
 /**
  * The provider of a job. The runner's own key or server first, when it is of the kind that the job
@@ -217,12 +228,32 @@ export function chooseModel(job: Job, own: JobDependencies['config']['provider']
   return { kind: 'openrouter', apiKey, baseUrl: own.own === 'openrouter' ? own.baseUrl : undefined, config: providerLevelConfig(job.level, 'openrouter', chosen) };
 }
 
+/**
+ * KNT-161. The fallback provider of a job (`models.fallbackProvider`), with its model, or null: none
+ * set, not in `providers`, or a provider that this runner cannot call (no key in the job, and not its
+ * own kind). The runner's own key or server first, as for the provider of the job.
+ */
+export function chooseFallback(job: Job, own: JobDependencies['config']['provider']): Model | null {
+  const chosen = job.models?.fallbackProvider;
+  if (!chosen || job.providers === undefined) return null;
+  const wanted = job.providers.find((p) => p.id === chosen.provider);
+  if (!wanted) return null;
+  const config = providerLevelConfig(job.level, wanted.kind, [chosen.model]);
+  if (own.own === wanted.kind) return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
+  if (wanted.apiKey === null) return null;
+  return { kind: wanted.kind, apiKey: wanted.apiKey, baseUrl: wanted.baseUrl ?? undefined, config };
+}
+
 type Checkout = Awaited<ReturnType<typeof clonePullRequest>>;
 type Workspace = { checkout: Checkout; env: Record<string, string>; model: Model; fetch: typeof fetch };
 
 /** Clones the pull request, runs `work` in its checkout with the git environment, and removes it. */
 async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSignal, work: (ws: Workspace) => Promise<T>): Promise<T> {
   const model = chooseModel(job, deps.config.provider);
+  const fallback = chooseFallback(job, deps.config.provider);
+  if (job.models?.fallbackProvider && !fallback) {
+    log('warn', 'job.fallback_provider_unusable', { jobId: job.id, provider: job.models.fallbackProvider.provider });
+  }
 
   await mkdir(deps.config.workDir, { recursive: true });
   const cloneUrl = deps.cloneUrl?.(job) ?? job.repo.cloneUrl;
@@ -248,11 +279,36 @@ async function withCheckout<T>(job: Job, deps: JobDependencies, signal: AbortSig
     // A cancelled job stops its model call, so it costs nothing more.
     const fetch = ((url: string, init: RequestInit = {}) =>
       modelFetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal })) as typeof globalThis.fetch;
-    const ws = { checkout, env, model, fetch };
-    return await withEnvironment(env, () => work(ws));
+    const run = (chosen: Model) => withEnvironment(env, () => work({ checkout, env, model: chosen, fetch }));
+    try {
+      return await run(model);
+    } catch (error) {
+      // KNT-161. The provider of the job refused the call on its usage limit: its other models would
+      // be refused too. The fallback provider of the level takes over, once.
+      if (!usageLimited(error) || !fallback || signal.aborted) throw error;
+      const from = job.models!.provider;
+      const to = job.models!.fallbackProvider!.provider;
+      log('warn', 'job.provider_usage_limit', { jobId: job.id, from, to, resetAt: error.resetAt });
+      try {
+        return await run({ ...fallback, fellBack: { from, resetAt: error.resetAt } });
+      } catch (second) {
+        if (signal.aborted) throw second;
+        throw fallbackFailure(second, from, to);
+      }
+    }
   } finally {
     await checkout.remove();
   }
+}
+
+/**
+ * KNT-161. The error of a run on the fallback provider that failed, whatever the error. The service
+ * reads `providerStatus` as a state of the provider of the job: a failure of the fallback provider
+ * must not mark it, so a plain error carries no status. Its text names both providers, and keeps the
+ * text of a limit when the fallback refused on its own.
+ */
+export function fallbackFailure(error: unknown, from: string, to: string): Error {
+  return new Error(`the fallback provider ${to} failed after a usage limit of the provider ${from}: ${errorMessage(error)}`);
 }
 
 /**
@@ -346,7 +402,11 @@ async function reviewJob(job: Extract<Job, { kind: 'review' }>, deps: JobDepende
       });
     }
     if (result.link.status === 'failed') log('warn', 'job.link_failed', { jobId: job.id, error: result.link.error ?? null });
-    const sent = payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined);
+    const sent = {
+      ...payload(result, job.providers !== undefined, readsReuse, job.earlier !== undefined, job.reviewed !== undefined, job.threads !== undefined),
+      // KNT-161. Only after a fallback, which only a job with `models.fallbackProvider` has: a service that reads it.
+      ...(model.fellBack ? { fellBack: model.fellBack } : {}),
+    };
     // A service that sends `delta` reads it in the result.
     return reuse?.delta && result.delta ? { ...sent, delta: { since: result.delta.since, files: result.delta.files.length } } : sent;
   });
@@ -433,6 +493,8 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
       completionTokens: usage.completion_tokens ?? null,
       held: held.length,
       threads: verdicts,
+      // KNT-161. As a review: only after a fallback, which only a service that reads it can cause.
+      ...(model.fellBack ? { fellBack: model.fellBack } : {}),
     };
   });
 }

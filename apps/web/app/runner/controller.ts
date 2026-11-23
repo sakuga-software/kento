@@ -29,7 +29,7 @@ import { errorMessage, log } from '../log.ts'
 import { createGitHub, type GitHub } from '../publish/github.ts'
 import { providerAad, type SecretBox } from '../providers/secrets.ts'
 import { KIND_LABELS } from '../providers/form.ts'
-import { idFormHelp, jobModels, jobModelsChosen, SERVICE_PROVIDER, type LevelModels } from '../repo-config/model.ts'
+import { idFormHelp, jobModels, jobModelsChosen, SERVICE_PROVIDER, type FallbackProvider, type LevelModels } from '../repo-config/model.ts'
 import { readAnsweredThreads, readResolveInput, THREADS_PERMISSIONS } from '../resolve/threads.ts'
 import { runnerRoutes } from './routes.ts'
 import type { ClaimedJob, RunnerRow, RunnerStore } from './store.ts'
@@ -104,6 +104,8 @@ interface Keys {
   provider: Job['provider']
   providers: JobProvider[] | undefined
   keyFromService: boolean
+  /** KNT-161. The fallback provider of the config that the job carries in `providers`, or null. */
+  fallback?: FallbackProvider | null
 }
 
 export function createRunnerController(deps: RunnerApiDependencies) {
@@ -278,6 +280,53 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     }
   }
 
+  /**
+   * KNT-161. Adds the fallback provider of the config of the job to `providers`, under the rules of
+   * the provider of the job: a provider of the org of the job only; its key only to a trusted runner
+   * of that org or of the service that does not hold this kind itself, and never for a key held by
+   * the runners of the org unless this runner holds the kind. Else the job goes without a fallback,
+   * and the log says why. Only for a runner that reads `fallback-provider` and `models`, and only
+   * when the job carries `models`: without them, the key would leave the service for nothing.
+   */
+  async function withFallbackKey(job: ClaimedJob, claim: Claim, keys: Keys): Promise<Keys> {
+    let configured = jobModels(job.config)
+    let chosen = configured?.fallbackProvider ?? null
+    if (!configured || !chosen) return keys
+    let { runner, ownProvider, ownKey, secrets, body } = claim
+    let skip = (reason: string): Keys => {
+      log('warn', 'job.fallback_provider_not_sent', { jobId: job.id, runnerId: runner.id, provider: chosen.provider, reason })
+      return { ...keys, fallback: null }
+    }
+    if (!(body.features?.includes('fallback-provider') ?? false)) return skip('runner does not read the fallback provider')
+    if (!keys.providers) return skip('runner does not read the providers')
+    // The fallback provider goes in `models`: a job that goes without `models` never uses its key
+    // (jobResponse sends `models` only to a runner that reads it, with its provider in `providers`).
+    if (!(body.features?.includes('models') ?? false)) return skip('runner does not read the models of the config')
+    if (!carriesProvider(configured, keys.providers.map((p) => p.id))) return skip('the job does not carry the provider of the config')
+    if (keys.providers.length >= 4) return skip('the job carries 4 providers already')
+    if (keys.providers.some((p) => p.id === chosen.provider)) return skip('it is the provider of the job')
+    if (chosen.provider === SERVICE_PROVIDER) {
+      // The OpenRouter key of the service: the same rule as for a job of the service (REV-130).
+      let serviceKey = job.runnerTrusted && job.runnerOrgId === null && !ownKey && deps.providerApiKey ? deps.providerApiKey : null
+      if (!serviceKey && ownProvider !== 'openrouter') return skip('the key of the service goes only to a trusted runner of the service')
+      return { ...keys, providers: [...keys.providers, { id: SERVICE_PROVIDER, kind: 'openrouter', apiKey: ownProvider === 'openrouter' ? null : serviceKey, baseUrl: null, models: [] }], fallback: chosen }
+    }
+    let p = await deps.store.jobOrgProvider(job.id, chosen.provider)
+    if (!p) return skip('the org has no such provider')
+    let apiKey: string | null = null
+    if (p.kind !== ownProvider) {
+      if (p.runnerHeld) return skip(`the key of the provider "${p.label}" is on the runners of the org, and this runner does not hold it`)
+      if (job.runnerOrgId !== null && job.runnerOrgId !== p.orgId) return skip(`the provider "${p.label}" is not of the org of the runner`)
+      if (!job.runnerTrusted || !secrets || !p.keyCiphertext) return skip(`the provider "${p.label}" needs a trusted runner`)
+      try {
+        apiKey = secrets.decrypt(p.keyCiphertext, providerAad(p))
+      } catch (cause) {
+        return skip(`the key of the provider "${p.label}" cannot be decrypted: ${errorMessage(cause)}`)
+      }
+    }
+    return { ...keys, providers: [...keys.providers, { id: p.id, kind: p.kind, apiKey, baseUrl: p.baseUrl, models: [] }], fallback: chosen }
+  }
+
   /** The job as the runner reads it, with the logs of what it carries and what it leaves out. */
   function jobResponse(job: ClaimedJob, claim: Claim, prepared: Prepared, keys: Keys): Response {
     let { runner, body } = claim
@@ -304,7 +353,10 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     // would fail the job; it runs the models of the engine instead, and the log says why.
     // KNT-139. The values of Kentō are not a choice: with a default provider of the org, the job
     // runs the models of that provider, and no warning is necessary.
-    let models = jobModels(job.config)
+    // KNT-161. The fallback provider goes only with its provider in `providers` (withFallbackKey).
+    let configured = jobModels(job.config)
+    let models: LevelModels | null = configured ? { provider: configured.provider, model: configured.model, fallback: configured.fallback } : null
+    if (models && keys.fallback) models.fallbackProvider = keys.fallback
     let wantsModels = body.features?.includes('models') ?? false
     let reachable = carriesProvider(models, providers?.map((p) => p.id))
     if (models && jobModelsChosen(job.config) && (!wantsModels || !reachable)) {
@@ -445,7 +497,7 @@ export function createRunnerController(deps: RunnerApiDependencies) {
           if (!prepared) continue
           let keys = await prepareJobKey(job, claim)
           if (!keys) continue
-          return jobResponse(job, claim, prepared, keys)
+          return jobResponse(job, claim, prepared, await withFallbackKey(job, claim, keys))
         }
         return new Response(null, { status: 204 })
       },

@@ -182,3 +182,45 @@ describe('the JSON of postgres.js', () => {
     assert.deepEqual(readOverrides('not json'), {})
   })
 })
+
+describe('the fallback provider of a level (KNT-161)', () => {
+  const ANTHROPIC = '11111111-1111-4111-8111-111111111111'
+  const OTHER = '22222222-2222-4222-8222-222222222222'
+  const providers = [
+    { id: 'service', kind: 'openrouter' as const },
+    { id: ANTHROPIC, kind: 'anthropic' as const },
+  ]
+  const base = { provider: ANTHROPIC, model: 'claude-sonnet-5-5', fallback: '' }
+
+  it('reads a fallback provider and its model, and none when both are empty', () => {
+    assert.deepEqual(readModelsForm(form({ ...base, fallbackProvider: 'service', fallbackProviderModel: 'anthropic/claude-sonnet-5.5' }), providers), {
+      ok: true,
+      value: { provider: ANTHROPIC, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: 'service', model: 'anthropic/claude-sonnet-5.5' } },
+    })
+    assert.deepEqual(readModelsForm(form({ ...base, fallbackProvider: '', fallbackProviderModel: '' }), providers), {
+      ok: true,
+      value: { provider: ANTHROPIC, model: 'claude-sonnet-5-5', fallback: null },
+    })
+  })
+
+  it('refuses the provider of the level, a provider of no org, a missing model, a model of the wrong form, a model without provider', () => {
+    let errors = (values: Record<string, string>) => {
+      let out = readModelsForm(form({ ...base, ...values }), providers)
+      return out.ok ? {} : out.errors
+    }
+    assert.match(errors({ fallbackProvider: ANTHROPIC, fallbackProviderModel: 'claude-opus-5-5' }).fallbackProvider!, /another provider than the one of the level/)
+    assert.match(errors({ fallbackProvider: OTHER, fallbackProviderModel: 'm' }).fallbackProvider!, /provider of the organization/)
+    assert.match(errors({ fallbackProvider: 'service', fallbackProviderModel: '' }).fallbackProviderModel!, /Enter the model/)
+    assert.ok(errors({ fallbackProvider: 'service', fallbackProviderModel: 'claude-sonnet-5-5' }).fallbackProviderModel, 'OpenRouter wants the vendor in the id')
+    assert.match(errors({ fallbackProvider: '', fallbackProviderModel: 'm' }).fallbackProvider!, /Choose the provider of this model/)
+  })
+
+  it('keeps a fallback provider of the database, and drops a wrong one or the provider of the level alone', () => {
+    let level = { provider: ANTHROPIC, model: 'claude-sonnet-5-5', fallback: null }
+    let read = (fallbackProvider: unknown) => readOverrides({ models: { heavy: { ...level, fallbackProvider } } }).models?.heavy
+    assert.deepEqual(read({ provider: 'service', model: 'anthropic/claude-opus-5.5' }), { ...level, fallbackProvider: { provider: 'service', model: 'anthropic/claude-opus-5.5' } })
+    assert.deepEqual(read({ provider: 'service', model: 'not a model' }), level)
+    assert.deepEqual(read({ provider: ANTHROPIC, model: 'claude-opus-5-5' }), level)
+    assert.deepEqual(read(null), level)
+  })
+})

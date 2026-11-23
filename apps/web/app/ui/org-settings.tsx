@@ -14,6 +14,7 @@ import type { ProviderOption } from '../repo-config/providers.ts'
 import { pageRoutes as routes } from '../routes.ts'
 import { Button, Choice, Input, Select, Textarea, buttonClass } from './controls.tsx'
 import { EffectiveLine } from './effective.tsx'
+import { FallbackProviderFields } from './fallback-provider.tsx'
 import { FormErrors, firstInvalid, focusIf, radioFocus } from './form-errors.tsx'
 import { describedBy, FieldMessage, ResetForm, VersionFields, versionLine } from './form-fields.tsx'
 import { agoOrDate, moneyInput, plural, usd, when } from './format.ts'
@@ -421,10 +422,16 @@ function LevelDefault(
   return () => {
     let { level, value, set, effective, providers, admin, csrf, version, form } = handle.props
     let errors = form?.errors ?? {}
-    let first = firstInvalid(errors, ['provider', 'model', 'fallback'])
+    let first = firstInvalid(errors, ['provider', 'model', 'fallback', 'fallbackProvider', 'fallbackProviderModel'])
     // A level without a choice shows what runs today: the "Default" provider and its models.
-    let shown = set ? value : { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback }
-    let values = form?.values ?? { provider: shown.provider, model: shown.model, fallback: shown.fallback ?? '' }
+    let shown: LevelModels = set ? value : { provider: effective.provider.id, model: effective.model ?? '', fallback: effective.fallback }
+    let values = form?.values ?? {
+      provider: shown.provider,
+      model: shown.model,
+      fallback: shown.fallback ?? '',
+      fallbackProvider: shown.fallbackProvider?.provider ?? '',
+      fallbackProviderModel: shown.fallbackProvider?.model ?? '',
+    }
     let id = `org-${level}`
     let selected = values.provider ?? ''
     return (
@@ -500,6 +507,7 @@ function LevelDefault(
                   />
                   <FieldMessage id={`${id}-fallback`} error={errors.fallback} hint="Leave it empty for no fallback." />
                 </div>
+                <FallbackProviderFields id={id} providers={providers.filter((p) => p.id !== selected)} values={values} errors={errors} first={first} />
               </div>
               {set ? null : (
                 <p class="hint">
