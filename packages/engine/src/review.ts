@@ -22,7 +22,7 @@ import { buildPack, type Coverage } from './pack.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
-import { earlierSection, mergeDelta, planDelta, type Delta, type DeltaPlan } from './delta.ts';
+import { broughtByMerges, earlierSection, mergeDelta, planDelta, type Delta, type DeltaPlan } from './delta.ts';
 import { diffHash, reuseKey } from './reuse.ts';
 import { RepoTools, type ToolUse } from './tools.ts';
 
@@ -261,12 +261,22 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // in the history of this one. A force-push or a rebase reads the whole pull request again.
   // No file of the pull request changed since then, and yet the key differs (a rule, a reply, a doc
   // or the context changed): the change is not in the diff, so the review reads the whole pull request.
-  const planned = input.delta ? planDelta(input.repoDir, base, input.head, input.delta.since) : null;
+  // KNT-158. The merges since the last reviewed head, read once (Kentō on #48): the plan of REV-88
+  // and the zones of REV-100 read them, from the same head most of the time.
+  const broughtSince = new Map<string, Set<string> | null>();
+  const brought = (since: string) => {
+    if (!broughtSince.has(since)) broughtSince.set(since, broughtByMerges(input.repoDir, since, input.head));
+    return broughtSince.get(since)!;
+  };
+  const planned = input.delta ? planDelta(input.repoDir, base, input.head, input.delta.since, brought(input.delta.since)) : null;
   const delta = planned && planned.files.length > 0 ? planned : null;
   // REV-100. The zones that changed since the last reviewed commit, for a whole review: an
   // incremental one (REV-88) shows only them already. Out of the reuse key, as the earlier findings.
-  const seen = seenCode(input.repoDir, input.reviewed, input.head);
   const lines = changedLines(input.repoDir, base, input.head);
+  // KNT-158. After a merge of the base branch, the zones that changed since the last review are those
+  // of the pull request only: the lines that the base brought are no change to look at first.
+  const merged = input.reviewed ? brought(input.reviewed) : null;
+  const seen = seenCode(input.repoDir, input.reviewed, input.head, merged?.size ? lines : undefined);
   const unkeyed = earlierFindings.section + (delta ? '' : changedZonesSection(seen, [...lines.keys()]));
   // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
   // same input gets the same key.

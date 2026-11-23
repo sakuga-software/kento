@@ -38,6 +38,33 @@ function oneLine(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
+/** KNT-158. The most groups, and the most references of a group, that the note of classes lists. */
+const MAX_CLASSES = 4;
+const MAX_CLASS_REFS = 4;
+
+/** The note on the defects that earlier reviews found more than once on the same code, or ''. */
+function classesNote(held: readonly HeldEarlier[]): string {
+  // A finding that a person set aside is no defect. A group holds the findings of one file whose titles
+  // share NET_SHARED_WORDS words of their subject with its first one: the same kind of defect. Their
+  // lines are those of older heads, so they do not count.
+  const groups: HeldEarlier[][] = [];
+  for (const e of held.filter((h) => h.status !== 'dismissed' && h.status !== 'wontfix')) {
+    const group = groups.find((g) => g[0]!.path === e.path && sharedWords(g[0]!.title, e.title) >= NET_SHARED_WORDS);
+    if (group) group.push(e);
+    else groups.push([e]);
+  }
+  const repeated = groups.filter((g) => g.length >= 2).slice(0, MAX_CLASSES);
+  if (!repeated.length) return '';
+  const refs = (g: HeldEarlier[]) => g.slice(0, MAX_CLASS_REFS).map((e) => e.ref).join(', ') + (g.length > MAX_CLASS_REFS ? ` and ${g.length - MAX_CLASS_REFS} more` : '');
+  return (
+    '\n### Defects found more than once on the same code\n\n' +
+    repeated.map((g) => `- ${refs(g)} · \`${oneLine(g[0]!.path, 120)}\` · "${oneLine(g[0]!.title, 120)}"\n`).join('') +
+    '\nEach line is a defect that earlier reviews found again in another form on the same code. A finding of yours that ' +
+    'follows one of them is not one more case: name the root cause that lets every form through, and give in `fix` the fix ' +
+    'of the whole class (for example a parser in place of one more pattern), not of this form only.\n'
+  );
+}
+
 /**
  * The section of the pack, and the earlier findings that it holds, in the order given (the service
  * sends the open ones first, then the newest). It stops before MAX_EARLIER_BYTES.
@@ -67,6 +94,16 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     size += row.length;
   }
   if (!held.length) return { section: '', held };
+  // KNT-158. Two earlier findings of one kind on the same code: a third one is a class of defect. On a
+  // hand-written scanner, three holes came one per review, three pushes in a row, and the fix of the
+  // class (a parser) closed them all. The note fits with the rows in the room that the note of
+  // KNT-156 leaves: the last rows give it their place.
+  let classes = classesNote(held);
+  while (held.length > 1 && size + classes.length > limit) {
+    size -= rows.pop()!.length;
+    held.pop();
+    classes = classesNote(held);
+  }
   // KNT-156. A fix of an earlier finding can break the case next to it: the fix of a name declared
   // twice took the last declaration, and a value with a type of the same name was no longer read.
   const probe = probeNote(probed(held));
@@ -78,9 +115,12 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     'Each defect counts once. When a finding of yours is one of them again (the same defect in other words, at its line ' +
     'or near it, or the part of it that a fix left), say in the scenario what the code still does wrong since. Do not report again a ' +
     '`fixed` finding that the code no longer has, nor a `dismissed` or `wontfix` finding whose file did not change since. ' +
+    'When a finding of yours is another form of an earlier one (another input that the same code lets through), name in ' +
+    'the scenario the root cause that lets every form through, and give in `fix` the fix of the whole class, not of this ' +
+    'form only. ' +
     'A finding that follows an earlier one, no more severe, does not lower `confidence_score` again: that defect was already ' +
     'counted. A more severe one is a new fact, and lowers it.\n\n';
-  return { section: `${intro}${rows.join('')}${probe}\n`, held };
+  return { section: `${intro}${rows.join('')}${classes}${probe}\n`, held };
 }
 
 /** KNT-156. The most references that the note of the neighbour cases names. */
