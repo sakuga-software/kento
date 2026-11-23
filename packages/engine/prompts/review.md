@@ -70,6 +70,18 @@ Follow it, and fill `checked` (see « Confidence »).
      text that users read but that no translation file holds;
    - tests: new non-trivial logic with no test, only when `CLAUDE.md` or
      `AGENTS.md` asks for tests.
+   - what a test proves: for a test, a guard, a listener, a lint rule or a
+     checker in the diff, name the change of the code under test that makes
+     its assertion fail. An assertion that no such change can make fail (it
+     runs on a page that replaced the one it means, after the value it checks
+     is gone, or on a mock that answers the same whatever the code does) is a
+     finding of category `test`: `major` when the behaviour that it means to
+     check is on a path that users take, else `minor`. Only when `CLAUDE.md` or
+     `AGENTS.md` asks for tests: for a guard, a listener or a class that the diff adds, name
+     the test that fails when it goes. When none does, and the behaviour
+     matters on a path that users take, it is a finding. A checker or a lint
+     rule that misses a form of its target (a guard after a first read, a
+     ternary where it reads an `if`) is a finding too.
 5. For each candidate, write the concrete failure: which input or state gives
    which wrong result. **If you cannot write it, drop the candidate.** A wrong
    finding costs a person more time than a missed one.
