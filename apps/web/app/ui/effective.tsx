@@ -43,6 +43,12 @@ function EffectiveFacts(handle: Handle<{ effective: EffectiveLevel; scope: 'org'
         ) : effective.model ? (
           ', no fallback'
         ) : null}
+        {effective.fallbackProvider ? (
+          <>
+            ; on a usage limit, {effective.fallbackProvider.provider ? <strong>{providerLine(effective.fallbackProvider.provider)}</strong> : 'a provider that the organization no longer has'}{' '}
+            <span class="mono">{effective.fallbackProvider.model}</span>
+          </>
+        ) : null}
         <span class="hint"> · {originText(effective, scope, source)}</span>
         {effective.configured ? (
           <span class="hint">

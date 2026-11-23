@@ -486,6 +486,24 @@ describe('publication of a review', () => {
     assert.match(fake.state.reviews[0]!.body, /<sub>Assignment: without the list of the files of the PR, Kentō could not test rules 1, 3 \(paths\)\.<\/sub>/)
   })
 
+  it('KNT-161. names only the providers of the org of the repository in the note of a fallback (critique P3-6)', async () => {
+    let [own] = await database.sql<{ id: string }[]>`
+      insert into providers (id, org_id, kind, label, runner_held)
+      values (gen_random_uuid(), (select org_id from repos where id = ${repoId}), 'openrouter', 'Acme OpenRouter', true) returning id`
+    let [other] = await database.sql<{ id: string }[]>`insert into orgs (name, slug) values ('other-org', 'other-org') returning id`
+    let [foreign] = await database.sql<{ id: string }[]>`
+      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${other!.id}, 'anthropic', 'Label of another org', true) returning id`
+    let config = { repoConfigVersion: 3, source: 'repo', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null, fallbackProvider: { provider: own!.id, model: 'm' } } }
+    // A runner names a provider of another org as the one that refused.
+    await runJob(HEAD1, review({ fellBack: { from: foreign!.id, resetAt: null } }), config)
+    await publisher.stop()
+    let body = fake.state.reviews[0]!.body
+    assert.ok(body.includes('The provider "the provider of the level" refused the call on its usage limit: the fallback provider "Acme OpenRouter" of this level answered.'), body)
+    assert.ok(!body.includes('Label of another org'), body)
+    await database.sql`delete from providers where id in (${own!.id}, ${foreign!.id})`
+    await database.sql`delete from orgs where id = ${other!.id}`
+  })
+
   it('says nothing of an assignment for the review of a job without one', async () => {
     await runJob(HEAD1, review())
     await publisher.stop()

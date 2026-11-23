@@ -13,7 +13,7 @@ import { HINT_MARKER, namesReject, postRejectHint, type HintClaims } from '../co
 import { resolveReviewThread } from '../github/graphql.ts'
 import { mention } from '../instance.ts'
 import type { GitHub } from '../publish/github.ts'
-import { BY } from '../publish/publish.ts'
+import { BY, fellBackNote, type FellBack } from '../publish/publish.ts'
 import { plural } from '../ui/format.ts'
 import { readOpenThreads, type OpenThread } from './threads.ts'
 
@@ -26,6 +26,8 @@ export interface ResolveTarget {
   webUrl: string
   /** REV-106. The icons of the summary; `text` when absent. */
   icons?: Icons
+  /** KNT-161. The providers when the fallback provider answered: the summary says which one did. */
+  fellBack?: FellBack | null
 }
 
 export interface ResolveOutcome {
@@ -184,6 +186,7 @@ export async function publishResolution(
         : []),
       `<sub>${costLine(payload.level, usage, BY)}</sub>`,
       '',
+      ...(target.fellBack ? [fellBackNote(target.fellBack).trim(), ''] : []),
       marker,
     ].join('\n'),
   })

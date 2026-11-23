@@ -838,6 +838,26 @@ describe('commands in the comments of a pull request', () => {
         assert.equal(fake.repliesTo(personAnswered).length, 0)
       })
 
+      it('18e. KNT-161: a resolution that the fallback provider answered says which provider answered in its summary (critique P2-2)', async () => {
+        await say('@kento-review resolve')
+        let { job, token } = await claimWith({ hasProviderKey: true, kinds: ['resolve'] })
+        assert.ok(job)
+        let [second] = await database.sql<{ id: string }[]>`
+          insert into providers (id, org_id, kind, label, runner_held)
+          values (gen_random_uuid(), (select org_id from repos limit 1), 'openrouter', 'Second', true) returning id`
+        let config = { repoConfigVersion: 3, source: 'repo', models: { provider: 'service', model: 'anthropic/claude-haiku-5.5', fallback: null, fallbackProvider: { provider: second!.id, model: 'm' } } }
+        await database.sql`update jobs set config = ${JSON.stringify(config)}::jsonb where id = ${job.id}`
+        let result = { ...resolved(), fellBack: { from: 'service', resetAt: '2026-12-01T00:00:00Z' } }
+        let stored = await call(`/api/runner/jobs/${job.id}/result`, token, { outcome: 'resolved', attempt: job.attempt, resolve: result })
+        assert.equal(stored.status, 204)
+        await publisher().publishPending()
+        let summary = fake.state.issueComments.at(-1)!.body
+        assert.ok(
+          summary.includes('The provider "OpenRouter (key of the service)" refused the call on its usage limit until 2026-12-01 00:00 UTC: the fallback provider "Second" of this level answered.'),
+          summary,
+        )
+      })
+
       it('19. without `contents: write`, the replies say that a person can resolve, and the threads stay open', async () => {
         fake.state.readOnly.add('contents')
         await say('@kento-review resolve')

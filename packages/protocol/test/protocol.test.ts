@@ -394,6 +394,20 @@ test('a review may carry the answered threads that the model called refuted, wit
   assert.equal(parseResultRequest(done('PRRT_kwDO71')).ok, false);
 });
 
+test('KNT-161. a job carries a fallback provider, and a review says that it answered', () => {
+  assert.ok(parseClaimRequest({ hasProviderKey: true, features: ['providers', 'models', 'fallback-provider'], ownProvider: null }).ok);
+  const id = '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11';
+  const models = { provider: 'service', model: 'anthropic/claude-sonnet-5.5', fallback: null, fallbackProvider: { provider: id, model: 'claude-sonnet-5-5' } };
+  assert.deepEqual(parseJob({ ...job(), models }), { ok: true, value: { ...job(), models } });
+  assert.ok(parseJob({ ...job(), models: { ...models, fallbackProvider: null } }).ok);
+  assert.equal(parseJob({ ...job(), models: { ...models, fallbackProvider: { provider: 'anthropic', model: 'm' } } }).ok, false);
+  assert.equal(parseJob({ ...job(), models: { ...models, fallbackProvider: { provider: id } } }).ok, false);
+  const fellBack = { from: id, resetAt: '2026-12-01T00:00:00Z' };
+  assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), fellBack } }).ok);
+  assert.ok(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), fellBack: { from: 'service', resetAt: null } } }).ok);
+  assert.equal(parseResultRequest({ outcome: 'done', attempt: 1, review: { ...review(), fellBack: { from: id, resetAt: 'tomorrow' } } }).ok, false);
+});
+
 test('a review may carry its questions, with the feature questions (KNT-153)', () => {
   assert.ok(FEATURES.includes('questions'));
   const done = (questions: unknown) => ({ outcome: 'done', attempt: 1, review: { ...review(), questions } });
