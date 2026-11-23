@@ -34,13 +34,17 @@ screen must follow, and the one of every pull request.
   `@remix-run/ui` (pinned to the version that matches the `remix` of the repo), styled by `kento.css`.
   Each one is a component that hydrates (KNT-163):
   - It lives in an `app/**/public/` folder (`app/ui/public/row-menu.tsx`, `confirm.tsx`) and is
-    wrapped in `clientEntry(import.meta.url, function Name(…))`. The asset server of Remix
-    (`app/assets.ts`) compiles it when the browser asks: there is still no build step. A browser
+    wrapped in `clientEntry(import.meta.url, function Name(…))`. In development the asset server of
+    Remix (`app/assets.ts`) compiles it when the browser asks; in production it is in the bundles of
+    `pnpm build:client` (KNT-170, `scripts/build-client.ts`), which finds it by its `clientEntry`:
+    nothing to register. The e2e run on the bundles (`playwright.config.ts` builds them). A browser
     module imports only `remix/component`, `@remix-run/ui/*`, `chart.js` (the charts of the Costs
-    screen, KNT-188), another `public/` module, or a file that `ALLOWED_FILES` of `app/assets.ts`
-    lists (the routes, the controls, the icons). The asset server refuses any other file of the
-    server. A module that a component imports only with `import()` is not in the import map of the
-    page: import it statically.
+    screen, KNT-188), another `public/` module, or a file that `ALLOWED_FILES` of
+    `app/client-build.ts` lists (the routes, the controls, the icons). The asset server refuses any
+    other file of the server, and the build stops on one. A package that a browser module imports
+    goes in `ALLOWED_PACKAGES` of `app/client-build.ts`, which both read. A module that a component
+    imports only with `import()` is not in the import map of the page in development: import it
+    statically.
   - The server renders the fallback without JavaScript (`<details>`, a link, a form, a native
     `<select>`), and the first render in the browser is the same markup, to hydrate it. The widget
     switches to the primitive in a `handle.queueTask()` of its setup, which runs only in the browser.
