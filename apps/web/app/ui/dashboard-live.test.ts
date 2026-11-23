@@ -102,11 +102,17 @@ async function textOf(response: Response, until: RegExp, withinMs = 5_000): Prom
   let started = Date.now()
   let reader = response.body!.pipeThrough(new TextDecoderStream()).getReader()
   let text = ''
-  let timer = setTimeout(() => void reader.cancel(), withinMs)
+  // A flag, not the time: a timer counts from the time of the event loop, which can be older than
+  // `started`, so it can fire before `withinMs` by Date.now() (CI of #81).
+  let timedOut = false
+  let timer = setTimeout(() => {
+    timedOut = true
+    void reader.cancel()
+  }, withinMs)
   try {
     for (;;) {
       let { value, done } = await reader.read()
-      if (done) return { text, done: Date.now() - started < withinMs, ms: Date.now() - started }
+      if (done) return { text, done: !timedOut, ms: Date.now() - started }
       text += value
       if (until.test(text)) {
         await reader.cancel()
