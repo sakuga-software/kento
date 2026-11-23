@@ -95,6 +95,10 @@ describe('the compressed copies of public/assets/ (KNT-202)', () => {
       assert.ok(varyOf(response).includes('accept-encoding'), JSON.stringify(headers))
       assert.deepEqual(Buffer.from(await response.arrayBuffer()), CSS)
     }
+    // The path that staticFiles() serves, with repeated slashes: the same copy.
+    let slashes = await get('//assets/kento.css', { 'Accept-Encoding': 'br' })
+    assert.equal(slashes.headers.get('Content-Encoding'), 'br')
+    assert.deepEqual(await decoded(slashes), CSS)
     // The scripts of the screens too.
     let script = await get('/assets/settings.js', { 'Accept-Encoding': 'br' })
     assert.equal(script.headers.get('Content-Encoding'), 'br')

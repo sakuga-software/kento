@@ -258,7 +258,8 @@ export function clientAssets(build: ClientBuild | null = CLIENT_BUILD): Middlewa
  */
 export function publicCopies(cacheControl: string, build: ClientBuild | null = CLIENT_BUILD): Middleware {
   return async (context, next) => {
-    let file = context.url.pathname.slice(1)
+    // The path that staticFiles() reads: the pathname without its leading slashes.
+    let file = context.url.pathname.replace(/^\/+/, '')
     if (!build?.publicFiles.has(file)) return next()
     let response = (await servePublicCopy(build, context.request, file, cacheControl)) ?? (await next())
     let headers = new Headers(response.headers)
