@@ -135,9 +135,9 @@ export const RUNTIME = 'app/ui/public/runtime.ts'
 
 /**
  * What `render({ assets })` reads for each component that hydrates.
- * - With the bundles (production): the URL of its bundle, and a module preload for the runtime and
- *   for every chunk that they import, a handful of links, so that the browser asks for all of them
- *   at once. No import map: a bundle imports its chunks by their URL.
+ * - With the bundles (production): the URL of its bundle, and a module preload for the runtime, for
+ *   its bundle and for every chunk that they import, a handful of links, so that the browser asks for
+ *   all of them at once. No import map: a bundle imports its chunks by their URL.
  * - With the asset server: its URL, and an import map that also resolves the runtime (boot.ts
  *   imports it only on such a page, so that a page without a component carries no import map). No
  *   module preload: 40 preload links would cost 2 KB of HTML on each page.
@@ -148,7 +148,7 @@ export function createClientEntries(build: ClientBuild | null) {
       if (build) {
         let own = bundleOf(build, entry)
         let runtime = bundleOf(build, RUNTIME)
-        return { href: own.href, importMap: { imports: {} }, preloads: [...new Set([runtime.href, ...runtime.preloads, ...own.preloads])] }
+        return { href: own.href, importMap: { imports: {} }, preloads: [...new Set([runtime.href, ...runtime.preloads, own.href, ...own.preloads])] }
       }
       return moduleEntry(entry)
     },
