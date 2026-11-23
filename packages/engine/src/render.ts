@@ -17,6 +17,7 @@ import {
 } from './findings.ts';
 import type { Level } from '../../protocol/src/index.ts';
 import { levelCost } from './levels.ts';
+import { shownRisk } from './risk.ts';
 
 // The markers that the next review reads back in the comments and the description.
 export const MARKER_SUMMARY = '<!-- sakuga-review:summary -->';
@@ -250,8 +251,9 @@ function reviewHead(answer: Answer, lines: Anchors, raised: boolean, icons: Icon
 export function reviewBody(answer: Answer, lines: Anchors, level: Level, usage: Usage, poster?: Poster, raised = false): string {
   const head = reviewHead(answer, lines, raised, poster?.icons ?? 'emoji');
   const deeper = deeperReview(answer, level);
+  const risk = shownRisk(answer.risk, answer.findings.filter((f) => isBlocking(f, lines)).length);
   return (
-    `${MARKER_SUMMARY}\n**Confidence score: ${score(answer, lines)}/5** · ${head} · ${answer.risk}\n\n` +
+    `${MARKER_SUMMARY}\n**Confidence score: ${score(answer, lines)}/5** · ${head} · ${risk}\n\n` +
     (deeper ? `${deeperReviewNote(deeper, poster)}\n\n` : '') +
     `<sub>${costLine(level, usage, poster?.by)} · The summary, the diagram and the list of findings are at the end of the PR description.</sub>`
   );
@@ -294,7 +296,8 @@ export function descriptionBlock(
   },
 ): string {
   const icons = context.poster?.icons ?? 'emoji';
-  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · ${scoreTitle(score(answer, lines), icons)}</h2>`, '', answer.risk, ''];
+  const risk = shownRisk(answer.risk, answer.findings.filter((f) => isBlocking(f, lines)).length);
+  const out = [BLOCK_START, '', '---', '', `<h2>${context.poster?.by ?? ACTION.name} · ${scoreTitle(score(answer, lines), icons)}</h2>`, '', risk, ''];
   const deeper = deeperReview(answer, context.level);
   if (deeper) out.push(deeperReviewNote(deeper, context.poster), '');
   const item = ({ finding: f, url }: Link, i: number) => {
@@ -352,7 +355,7 @@ export function descriptionBlock(
   out.push('</details>', '');
   const flow = diagram(answer);
   if (flow) out.push('<details><summary>Diagram</summary>', '', '```mermaid', "%%{init: {'theme': 'neutral'}}%%", flow, '```', '</details>', '');
-  const notReviewed = [...skipped, ...answer.not_reviewed.filter((n) => !skipped.includes(n))];
+  const notReviewed = notReviewedLines(skipped, answer.not_reviewed);
   if (notReviewed.length) out.push('<details><summary>Not reviewed</summary>', '', ...notReviewed.map((n) => `- ${n}`), '', '</details>', '');
   if (context.delta) {
     const files =
@@ -378,6 +381,53 @@ export function descriptionBlock(
   if (context.poster && context.docsUrl) out.push(commandsLine(context.poster, context.docsUrl), '');
   out.push(`<!-- sakuga-review:count ${context.count} -->`, BLOCK_END);
   return out.join('\n');
+}
+
+/**
+ * The path and the reason of a « Not reviewed » line (`path: reason`, `path (reason)`, `path - reason`),
+ * or null. A loop, not a regular expression: the line is text of the model, and a pattern with two
+ * runs of spaces backtracks for a time that grows with the square of its length.
+ */
+function pathAndReason(text: string): { path: string; reason: string } | null {
+  const i = text.startsWith('`') ? 1 : 0;
+  let j = i;
+  while (j < text.length && !' \t\n\r:`()'.includes(text[j]!)) j++;
+  if (j === i) return null;
+  const path = text.slice(i, j);
+  if (text[j] === '`') j++;
+  let k = j;
+  while (k < text.length && (text[k] === ' ' || text[k] === '\t')) k++;
+  if (text[k] === ':' || text[k] === '(') return { path, reason: text.slice(k + 1).trim() };
+  if (k > j && '-–—'.includes(text[k] ?? 'x') && text[k + 1] === ' ') return { path, reason: text.slice(k + 2).trim() };
+  return null;
+}
+
+/**
+ * KNT-158. The « Not reviewed » lines: those of the pack, then those of the model, keyed on the path
+ * and the reason. Two lines merge only when one reason starts with the other, as `a.json: generated
+ * or binary file` and `a.json (generated)`: two findings moved to « Not reviewed » on one file, or a
+ * file cut by the pack that also has a moved finding, keep a line each. Empty lines go.
+ */
+// The reasons that the pack writes (pack.ts, rules.ts), as `words` gives them.
+const PACK_REASONS = new Set(['generated or binary file', 'more than 1000 changed lines', 'removed to fit in the maximum size of the review']);
+
+export function notReviewedLines(skipped: readonly string[], model: readonly string[]): string[] {
+  const kept: { path: string; reason: string; text: string }[] = [];
+  const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  for (const line of [...skipped, ...model]) {
+    const text = String(line ?? '').trim();
+    if (!text) continue;
+    const split = pathAndReason(text);
+    const path = split && /[./]/.test(split.path) ? split.path.replace(/^\/+/, '') : '';
+    const reason = words(path ? split!.reason : text);
+    // A reason of the pack and the short form that the model gives of it merge; two reasons of the
+    // model merge only when they are the same (« The total » and « The total is wrong » stay apart).
+    const variant = (a: string, b: string) => PACK_REASONS.has(a) && b !== '' && a.startsWith(b);
+    const same = kept.find((k) => k.path === path && (k.reason === reason || variant(k.reason, reason) || variant(reason, k.reason)));
+    if (same) continue;
+    kept.push({ path, reason, text });
+  }
+  return kept.map((k) => k.text);
 }
 
 /** The body of the pull request with the block of the review at its end, in place of the earlier one. */
