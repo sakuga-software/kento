@@ -331,6 +331,9 @@ test.describe('the dashboard', () => {
       // real wait of the card is longer than this difference.
       expect(tries[1]! - tries[0]!).toBeGreaterThanOrEqual(1_000)
     } finally {
+      // A test that failed before release(): the held try goes on. Its route.continue() can fail
+      // on a page that closes, and that error must not hide the first one.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
       release()
     }
   })
