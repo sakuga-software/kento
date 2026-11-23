@@ -10,6 +10,7 @@ import {
   MAX_EARLIER_FINDINGS,
   MAX_SETTLED,
   parseEarlierFinding,
+  UUID,
   parseReviewFinding,
   parseSettledFinding,
   REUSE_KEY,
@@ -36,6 +37,7 @@ import { log } from '../log.ts'
 import { leftOutReason, sendablePaths } from '../rules/model.ts'
 import { sendableRejected, type RejectedRow } from './rejected.ts'
 import { refusalMessage } from '../providers/store.ts'
+import { jobModels } from '../repo-config/model.ts'
 
 /** A runner, as an authenticated call sees it. */
 export interface RunnerRow {
@@ -161,6 +163,21 @@ async function markValid(tx: postgres.TransactionSql, jobId: string, providerId:
 }
 
 /**
+ * KNT-161. The fallback provider answered the job: the costs go to it (`readCosts` reads
+ * `jobs.provider_id`), not to the provider of the job, which only refused. Null for the key of the
+ * service, or for a provider that is not of the org of the job.
+ */
+async function chargeFallback(tx: postgres.TransactionSql, jobId: string, config: unknown) {
+  let to = jobModels(config)?.fallbackProvider?.provider ?? null
+  await tx`
+    update jobs set provider_id = (
+      select p.id from providers p
+      join repos on repos.org_id = p.org_id
+      where repos.id = jobs.repo_id and p.id::text = ${to})
+    where id = ${jobId}`
+}
+
+/**
  * The key of the provider is still the one that the claim of the job gave: an admin did not replace
  * it since. The answer to an old key says nothing about the new one.
  */
@@ -205,6 +222,11 @@ export interface RunnerStore {
    * to this job, as a rule disabled during its run.
    */
   jobRules(jobId: string): Promise<JobRule[]>
+  /**
+   * KNT-161. The provider `providerId` of the org of the job `jobId`, or null when the org has no
+   * such provider: a provider of another org is never found.
+   */
+  jobOrgProvider(jobId: string, providerId: string): Promise<ClaimedProvider | null>
   /**
    * REV-95. The findings of the pull request of a review job that a person set aside (`dismissed`,
    * `wontfix`), the most recently changed first, MAX_REJECTED_FINDINGS at most.
@@ -462,6 +484,18 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
       return options.severity ? sent : sent.map(({ severity: _severity, ...rest }) => rest)
     },
 
+    async jobOrgProvider(jobId, providerId) {
+      if (!UUID.test(providerId)) return null
+      let [row] = await sql<ClaimedProvider[]>`
+        select p.id, p.org_id as "orgId", p.kind, p.label, p.base_url as "baseUrl", p.key_ciphertext as "keyCiphertext",
+          p.runner_held as "runnerHeld", p.models
+        from jobs
+        join repos on repos.id = jobs.repo_id
+        join providers p on p.org_id = repos.org_id
+        where jobs.id = ${jobId} and p.id = ${providerId}::uuid`
+      return row ?? null
+    },
+
     async jobRules(jobId) {
       let rows = await sql<JobRule[]>`
         select rules.id, case when rules.repo_id is null then 'org' else 'repo' end as scope,
@@ -594,10 +628,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         // The lock of the job orders this write with the sweep of the expired leases and with a
         // cancel: the first one to commit wins, and the other one sees its state.
         let [job] = await tx<
-          { state: string; holds: boolean; kind: JobKind; repoId: string; prNumber: number; headSha: string; providerId: string | null }[]
+          { state: string; holds: boolean; kind: JobKind; repoId: string; prNumber: number; headSha: string; providerId: string | null; config: unknown }[]
         >`
           select state, (runner_id is not distinct from ${runnerId} and attempts = ${attempt}) as holds,
-            kind, repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha", provider_id as "providerId"
+            kind, repo_id as "repoId", pr_number as "prNumber", head_sha as "headSha", provider_id as "providerId", config
           from jobs where id = ${jobId}
           for update`
         if (!job) return 'not_found' as const
@@ -656,7 +690,9 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           let { resolve } = result
           if (job.kind !== 'resolve') return 'wrong_kind' as const
           if (resolve.head !== job.headSha) return 'wrong_head' as const
-          await markValid(tx, jobId, job.providerId, resolve.model !== null)
+          // KNT-161. As a review: a resolution that the fallback provider answered.
+          await markValid(tx, jobId, job.providerId, resolve.model !== null && !resolve.fellBack)
+          if (resolve.fellBack) await chargeFallback(tx, jobId, job.config)
           await tx`
             insert into resolutions (job_id, repo_id, pr_number, head_sha, model, cost_usd, result)
             values (${jobId}, ${job.repoId}, ${job.prNumber}, ${job.headSha}, ${resolve.model},
@@ -728,7 +764,9 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         let { review } = result
         if (job.kind !== 'review') return 'wrong_kind' as const
         if (review.head !== job.headSha) return 'wrong_head' as const
-        await markValid(tx, jobId, job.providerId, true)
+        // KNT-161. A review that the fallback provider answered says nothing of the key of the job's provider.
+        await markValid(tx, jobId, job.providerId, !review.fellBack)
+        if (review.fellBack) await chargeFallback(tx, jobId, job.config)
         review = { ...review, findings: await citedRules(tx, jobId, review.findings) }
         await tx`
           insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result)
