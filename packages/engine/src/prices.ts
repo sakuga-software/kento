@@ -44,6 +44,21 @@ export function priceOf(kind: ProviderKind, model: string): Price | null {
   return null;
 }
 
+/**
+ * KNT-201. The lowest `longContext.threshold` of these models, in prompt tokens, or null when none of
+ * them has one. The models of a level read the same pack, so the lowest threshold sets its size.
+ * OpenRouter bills the price of the provider that it routes to: a model `anthropic/<name>` has the
+ * threshold of its Anthropic id (`anthropic/claude-haiku-5.5` is `claude-haiku-5-5`).
+ */
+export function longContextThreshold(kind: ProviderKind, models: readonly string[]): number | null {
+  const thresholds = models.flatMap((model) => {
+    const id = kind === 'openrouter' && model.startsWith('anthropic/') ? model.slice('anthropic/'.length).replaceAll('.', '-') : model;
+    const threshold = kind === 'anthropic' || id !== model ? ANTHROPIC[id]?.longContext?.threshold : undefined;
+    return threshold === undefined ? [] : [threshold];
+  });
+  return thresholds.length ? Math.min(...thresholds) : null;
+}
+
 /** Whether a call to this model has a known cost: the provider gives it, the table has it, or it is free. */
 export function costKnown(kind: ProviderKind, model: string): boolean {
   return kind === 'openrouter' || kind === 'ollama' || priceOf(kind, model) !== null;

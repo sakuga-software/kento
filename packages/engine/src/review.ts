@@ -10,15 +10,16 @@ import { splitNonFindings } from './nonfindings.ts';
 import { withoutMergeAdvice } from './risk.ts';
 import { splitUntracedTiming } from './timing.ts';
 import type { JobEarlier, Level, RejectedFinding } from '../../protocol/src/index.ts';
-import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, type HeldEarlier } from './earlier.ts';
+import { earlierFindingsSection, followedBy, isNewDefect, linkEarlier, MAX_EARLIER_SECTION_BYTES, type HeldEarlier } from './earlier.ts';
 import { publicLabels } from './labels.ts';
 import { inHistory } from './history.ts';
-import { changedZonesSection, isSeen, seenCode, type SeenCode } from './seen.ts';
+import { changedZonesSection, isSeen, MAX_CHANGED_ZONES_SECTION_BYTES, seenCode, type SeenCode } from './seen.ts';
 import { levelConfig, type LevelConfig } from './levels.ts';
-import { askModel, type MessagePart, type ModelClient } from './model.ts';
+import { askModel, reviewCallBytes, type MessagePart, type ModelClient } from './model.ts';
 import { linkFindings, NO_LINK, withLinkUsage, type LinkReport } from './link.ts';
 import { applyCoverage } from './coverage.ts';
-import { buildPack, type Coverage } from './pack.ts';
+import { buildPack, BYTES_PER_TOKEN, MAX_PACK_BYTES, type Coverage } from './pack.ts';
+import { longContextThreshold } from './prices.ts';
 import type { OpenThread } from './resolve.ts';
 import { dropRejected, rejectedSection, type HeldRejection } from './rejected.ts';
 import { applyRule, type PackedRule, type Rule } from './rules.ts';
@@ -248,7 +249,11 @@ export type PreparedReview = {
   checkContext: CheckContext | null;
 };
 
-export function prepareReview(input: ReviewInput, config: LevelConfig): PreparedReview {
+/**
+ * `focuses`: the focus of each pass of a review in passes (REV-20), which ends the user message: the
+ * size of the pack counts the longest one (KNT-201).
+ */
+export function prepareReview(input: ReviewInput, config: LevelConfig, focuses: readonly string[] = []): PreparedReview {
   const base = mergeBase(input.repoDir, input.base, input.head);
   const answered = answeredSection(input.repoDir, input.head, input.threads ?? []);
   // REV-95. The rejected findings follow the answered threads, in the same place of the pack (and so
@@ -277,15 +282,29 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // of the pull request only: the lines that the base brought are no change to look at first.
   const merged = input.reviewed ? brought(input.reviewed) : null;
   const seen = seenCode(input.repoDir, input.reviewed, input.head, merged?.size ? lines : undefined);
-  const unkeyed = earlierFindings.section + (delta ? '' : changedZonesSection(seen, [...lines.keys()]));
+  const zones = delta ? '' : changedZonesSection(seen, [...lines.keys()]);
+  const unkeyed = earlierFindings.section + zones;
+  // KNT-154. The whole pull request decides whether the change is critical, an incremental review
+  // too. Its checklist ends the pack: the system prompt stays the same for every review (REV-113).
+  // The diff decides it, so the reuse key of the diff covers it.
+  const changed = changedFiles(input.repoDir, base, input.head);
+  const critical = criticality(changed);
+  const checkContext = critical ? criticalCheckContext(input.repoDir, input.head, changed, critical) : null;
+  const checklist = critical ? criticalSection(critical, input.prompts) : '';
+  // KNT-201. The unkeyed sections count at their largest size: their text changes at every review,
+  // and the budget of the diff must not change with it (REV-99).
+  const unkeyedBound = (earlierFindings.section ? MAX_EARLIER_SECTION_BYTES : 0) + (zones ? MAX_CHANGED_ZONES_SECTION_BYTES : 0);
+  const fit = { config, focuses, sections, checklist, unkeyed, unkeyedBound, schema: answerSchema({ threads: answered.held.length > 0 }) };
   // REV-89. The key reads the pack of the whole pull request, incremental or not: a head with the
   // same input gets the same key.
-  const whole = buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed);
+  const whole = packWithin(input, fit, (maxBytes) => buildPack(input.repoDir, base, input.head, config.context, input.rules, sections, undefined, unkeyed, maxBytes));
   const key = reuseKey({ packBody: whole.body, level: input.level, provider: input.kind ?? 'openrouter', models: config.models, toolsAt: config.tools ? input.head : null });
   const earlier = input.delta ? earlierSection(input.delta, delta, new Set(earlierFindings.held.map((e) => e.key))) : '';
   const built =
     delta || earlier
-      ? buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed)
+      ? packWithin(input, fit, (maxBytes) =>
+          buildPack(input.repoDir, delta ? delta.since : base, input.head, config.context, input.rules, sections + earlier, delta?.files, unkeyed, maxBytes),
+        )
       : whole;
   const { skipped, rules, contextHash } = built;
   // KNT-166. An incremental pack reads only the files that changed since the last review. A file of
@@ -295,13 +314,6 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
   // « Not reviewed » lists the same files as the summary and the cap: those of the whole pull request
   // that this incremental pack did not read again.
   const skippedAll = delta ? [...skipped, ...whole.skipped.filter((s) => coverage.cut.concat(coverage.large).some((p) => s.startsWith(`${p}: `)) && !skipped.includes(s))] : skipped;
-  // KNT-154. The whole pull request decides whether the change is critical, an incremental review
-  // too. Its checklist ends the pack: the system prompt stays the same for every review (REV-113).
-  // The diff decides it, so the reuse key of the diff covers it.
-  const changed = changedFiles(input.repoDir, base, input.head);
-  const critical = criticality(changed);
-  const checkContext = critical ? criticalCheckContext(input.repoDir, input.head, changed, critical) : null;
-  const checklist = critical ? criticalSection(critical, input.prompts) : '';
   const pack = built.pack + checklist;
   const parts = checklist ? [...built.parts, { text: checklist }] : built.parts;
   return {
@@ -324,6 +336,53 @@ export function prepareReview(input: ReviewInput, config: LevelConfig): Prepared
     critical,
     checkContext,
   };
+}
+
+type Packed = ReturnType<typeof buildPack>;
+type Fit = { config: LevelConfig; focuses: readonly string[]; sections: string; checklist: string; unkeyed: string; unkeyedBound: number; schema: object };
+
+// KNT-201. The builds of the pack that packWithin tries, at most.
+const MAX_PACK_BUILDS = 4;
+const stderr = (message: string) => process.stderr.write(`${message}\n`);
+
+/**
+ * KNT-201. The pack of `build` (buildPack with a budget), so that the whole review call stays under
+ * the long-context threshold of the models of the level, when one of them has one (prices.ts). The
+ * call counts as sent: the system prompt, the schema, the pack, the checklist and the notes at the
+ * end (reviewCallBytes), at BYTES_PER_TOKEN. With no threshold, the pack has the budget that it had
+ * before, MAX_PACK_BYTES. A smaller budget cuts the same files in the same order, earlier.
+ *
+ * The first budget leaves out what the call holds around the pack. The pack can still pass it by its
+ * headings and its « Not reviewed » lines, which its budget does not count: the next build takes the
+ * excess off its budget, and half again. A call that cannot fit keeps the pack of MAX_PACK_BYTES.
+ */
+function packWithin(input: ReviewInput, fit: Fit, build: (maxBytes: number) => Packed): Packed {
+  const threshold = longContextThreshold(input.kind ?? 'openrouter', fit.config.models);
+  if (threshold === null) return build(MAX_PACK_BYTES);
+  const cap = Math.floor(threshold * BYTES_PER_TOKEN);
+  const callBytes = (parts: readonly MessagePart[]) => reviewCallBytes(input, fit.config, [...parts, { text: fit.checklist }], fit.schema, fit.focuses);
+  const total = (packed: Packed) => callBytes(packed.parts) + packed.pack.length - fit.unkeyed.length + fit.unkeyedBound + fit.checklist.length;
+  // Before the first build, the notes of the sections read the sections that the pack will hold.
+  let maxBytes = Math.min(MAX_PACK_BYTES, cap - callBytes([{ text: fit.sections + fit.unkeyed }]) - fit.unkeyedBound - fit.checklist.length);
+  // The call cannot fit: its parts around the pack leave no room for a diff (Kentō #60f17e), the
+  // budget drops every file, or the builds end over the threshold (Kentō #849742). A call over the
+  // threshold pays the higher price for every token, so the review reads the pack of MAX_PACK_BYTES.
+  const unfit = () => {
+    const full = build(MAX_PACK_BYTES);
+    (input.log ?? stderr)(`the review call passes the long-context threshold of ${threshold} tokens by about ${Math.ceil((total(full) - cap) / BYTES_PER_TOKEN)} tokens`);
+    return full;
+  };
+  if (maxBytes <= 0) return unfit();
+  for (let builds = 1; ; builds++) {
+    const packed = build(maxBytes);
+    if (packed.read === 0 && packed.coverage.cut.length > 0) return unfit();
+    const excess = total(packed) - cap;
+    if (excess <= 0) return packed;
+    // Each file that the next build drops adds its line to « Not reviewed »: half again of the excess
+    // goes too, or the builds come nearer the threshold by smaller and smaller steps.
+    maxBytes = Math.min(maxBytes, packed.pack.length - fit.unkeyed.length) - Math.ceil(excess * 1.5);
+    if (builds === MAX_PACK_BUILDS || maxBytes <= 0) return unfit();
+  }
 }
 
 // The most bytes of a critical file at the head that a check of a route or a library reads.
