@@ -303,19 +303,33 @@ test.describe('the dashboard', () => {
 
   test('the live card waits out a server that restarts (503 and Retry-After), then is "Live" again (Fable P2-1)', async ({ page }) => {
     await seed()
-    let answered = 0
+    /** The time of each request of the stream, on the clock of the test. */
+    let tries: number[] = []
+    // KNT-200: the try after the 503 waits here until the test saw "Retrying…". Without this hold,
+    // the card is "Retrying…" for 1 s only, and the page load and hydration can take longer.
+    let release!: () => void
+    let released = new Promise<void>((resolve) => (release = resolve))
     await page.route('**/dashboard/live', async (route) => {
-      answered += 1
-      if (answered === 1) return route.fulfill({ status: 503, headers: { 'Retry-After': '1', 'Content-Type': 'text/plain' }, body: 'Service Unavailable' })
+      tries.push(Date.now())
+      if (tries.length === 1) return route.fulfill({ status: 503, headers: { 'Retry-After': '1', 'Content-Type': 'text/plain' }, body: 'Service Unavailable' })
+      await released
       return route.continue()
     })
-    await page.goto('/')
-    await hydrated(page)
-    let queue = page.getByRole('region', { name: 'Queue and runners' })
-    await expect(queue.getByRole('status')).toHaveText('Retrying…')
-    // A 503 is a wait, never the end: the next try comes after the second that it asked for.
-    await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 6_000 })
-    expect(answered).toBeGreaterThanOrEqual(2)
+    try {
+      await page.goto('/')
+      await hydrated(page)
+      let queue = page.getByRole('region', { name: 'Queue and runners' })
+      await expect(queue.getByRole('status')).toHaveText('Retrying…')
+      release()
+      // A 503 is a wait, never the end: the next try comes after the second that it asked for.
+      await expect(queue.getByRole('status')).toHaveText('Live', { timeout: 6_000 })
+      expect(tries.length).toBeGreaterThanOrEqual(2)
+      // The second try came after the second of Retry-After. The 503 left after tries[0], so the
+      // real wait of the card is longer than this difference.
+      expect(tries[1]! - tries[0]!).toBeGreaterThanOrEqual(1_000)
+    } finally {
+      release()
+    }
   })
 
   test('a changed ready count gets a short wash, and none with reduced motion (KNT-189)', async ({ page }) => {
