@@ -10,6 +10,7 @@ import { isOneOf, UUID, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
 import { readJobAssignment, type JobAssignment } from '../assignment/model.ts'
+import { countsSql, rankColumnsSql, rankOf, type RankRow, type ReviewRank } from '../db/review-count.ts'
 import { toDate } from '../db/rows.ts'
 import { cursorAt, decodeCursor, encodeCursor, FINDING_STATUSES, setFindingStatus, type FindingStatus, type Page, type PersonStatus, type StatusChange } from '../findings/store.ts'
 import { readFindingDetail, readFindingHistory, type FindingDetail, type HistoryEvent } from './finding.ts'
@@ -33,7 +34,8 @@ export interface PullTarget {
 /** A review of the pull request: a column of the sheet. */
 export interface PullReview {
   id: string
-  number: number
+  /** KNT-175. R{n}, a copy ("same as R2") or not published: db/review-count.ts. */
+  rank: ReviewRank
   level: Level
   headSha: string
   model: string
@@ -90,8 +92,9 @@ export interface PullSummary {
   /** The head of the last job of the pull request, and its base branch. */
   headSha: string
   baseRef: string | null
+  /** KNT-175. The reviews that count (db/review-count.ts), as the request for feedback counts them. */
   reviews: number
-  /** The scores of the two last reviews, newest first. */
+  /** The scores of the two last reviews that count, newest first: R{reviews} and R{reviews - 1}. */
   lastScores: number[]
   /** The cost of the reviews and of the resolutions of the pull request. Null when none has a cost. */
   costUsd: number | null
@@ -167,9 +170,10 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
       >`
         select repos.full_name as "fullName", installations.github_installation_id::text as "installationId",
           repos.github_repo_id::text as "githubRepoId", last_job.head_sha as "headSha", last_job.base_ref as "baseRef",
-          (select count(*)::int from reviews where repo_id = repos.id and pr_number = ${prNumber}) as reviews,
+          (select count(*)::int from reviews where repo_id = repos.id and pr_number = ${prNumber}
+            and ${sql.unsafe(countsSql())}) as reviews,
           (select array_agg(score) from (
-            select score from reviews where repo_id = repos.id and pr_number = ${prNumber}
+            select score from reviews where repo_id = repos.id and pr_number = ${prNumber} and ${sql.unsafe(countsSql())}
             order by created_at desc, id desc limit 2) s) as "lastScores",
           (select sum(cost_usd)::text from reviews where repo_id = repos.id and pr_number = ${prNumber}) as "reviewsCost",
           (select sum(cost_usd)::text from resolutions where repo_id = repos.id and pr_number = ${prNumber}) as "resolutionsCost"
@@ -230,15 +234,14 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
       let statuses = (page.statuses ?? []).filter((s) => FINDING_STATUSES.includes(s))
 
       // One review more than the page: the review before the first column, for `moved` and the cursor.
-      let reviews = await sql<(Omit<PullReview, 'costUsd'> & { costUsd: string | null; cursorAt: string })[]>`
+      let reviews = await sql<(Omit<PullReview, 'costUsd' | 'rank'> & RankRow & { costUsd: string | null; cursorAt: string })[]>`
         select r.id, r.head_sha as "headSha", r.model, r.score, r.cost_usd::text as "costUsd", j.level,
           coalesce(jsonb_array_length(r.result->'findings'), 0)::int as findings,
           r.result->>'verdict' as verdict, r.result->>'summary' as summary,
           (extract(epoch from (j.finished_at - j.started_at)) * 1000)::float8 as "durationMs",
           r.created_at as "createdAt", r.published_at as "publishedAt",
           ${sql.unsafe(cursorAt('r.created_at'))} as "cursorAt",
-          (select count(*)::int from reviews e
-            where e.repo_id = r.repo_id and e.pr_number = r.pr_number and (e.created_at, e.id) <= (r.created_at, r.id)) as number
+          ${sql.unsafe(rankColumnsSql('r'))}
         from reviews r
         join jobs j on j.id = r.job_id
         where r.repo_id = ${repoId} and r.pr_number = ${prNumber}
@@ -251,7 +254,7 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
       let olderCursor = beforeRow && oldestShown ? encodeCursor({ at: oldestShown.cursorAt, id: oldestShown.id }) : null
       let toReview = (r: (typeof reviews)[number]): PullReview => ({
         id: r.id,
-        number: r.number,
+        rank: rankOf(r),
         level: r.level,
         headSha: r.headSha,
         model: r.model,
@@ -310,8 +313,8 @@ export function createPullsStore(sql: postgres.Sql): PullsStore {
       }
       let cells = sheetCells({
         rows,
-        columns: columns.map((c) => ({ id: c.id, number: c.number, at: at(c) })),
-        before: beforeRow ? { id: beforeRow.id, number: beforeRow.number, at: at(beforeRow) } : null,
+        columns: columns.map((c) => ({ id: c.id, at: at(c) })),
+        before: beforeRow ? { id: beforeRow.id, at: at(beforeRow) } : null,
         results,
         events,
       })

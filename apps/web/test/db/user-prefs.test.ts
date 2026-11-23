@@ -177,9 +177,9 @@ describe('the preferences of a user and their screen', () => {
           job = { id: command!.id, pr: first.pr }
         }
         await sql`
-          insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at, created_at)
+          insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at, created_at)
           values (${job.id}, ${reviewId}, ${job.pr}, ${headSha(job.pr)}, ${3 + i}, 'm', 0.01,
-            ${JSON.stringify({ verdict: i === 0 ? 'COMMENT' : 'APPROVE', findings: [] })}::text::jsonb,
+            ${JSON.stringify({ verdict: i === 0 ? 'COMMENT' : 'APPROVE', findings: [] })}::text::jsonb, ${first.pr * 100 + i},
             now() - ${`${10 - i} minutes`}::interval, now() - ${`${10 - i} minutes`}::interval)`
       }
     }

@@ -5,10 +5,10 @@ import { sheetCells, type ResultFinding, type SheetColumn, type SheetEvent, type
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 9, 30, 10, minutes))
 const columns: SheetColumn[] = [
-  { id: 'r1', number: 1, at: at(0) },
-  { id: 'r2', number: 2, at: at(10) },
-  { id: 'r3', number: 3, at: at(20) },
-  { id: 'r4', number: 4, at: at(30) },
+  { id: 'r1', at: at(0) },
+  { id: 'r2', at: at(10) },
+  { id: 'r3', at: at(20) },
+  { id: 'r4', at: at(30) },
 ]
 const rows: SheetRow[] = [
   { id: 'A', fingerprint: 'fa', key: 'ka' },

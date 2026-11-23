@@ -2,6 +2,7 @@ import { isOneOf, LEVELS, type Level } from '@kento-review/protocol'
 import type { Handle } from 'remix/component'
 
 import { assignmentLine } from '../assignment/model.ts'
+import { rankLabel, type ReviewRank } from '../db/review-count.ts'
 import { FINDING_STATUSES, type FindingStatus } from '../findings/store.ts'
 import type { PullHeader } from '../pulls/github.ts'
 import { CELL_LABELS, STATUS_LABELS, type Cell } from '../pulls/sheet.ts'
@@ -59,7 +60,10 @@ export function pullUrl(githubUrl: string, fullName: string, prNumber: number): 
 
 const short = (sha: string) => sha.slice(0, 7)
 
-/** "4/5, +1 since R3": the last score and how it moved since the review before. */
+/**
+ * "4/5, +1 since R3": the score of the last review that counts and how it moved since the one before
+ * (KNT-175: `lastScores` and `reviews` read the same rule, so the review before is R{reviews - 1}).
+ */
 export function scoreProgress(summary: Pick<PullSummary, 'lastScores' | 'reviews'>): { value: string; change: string | null } {
   let [last, previous] = summary.lastScores
   if (last === undefined) return { value: '—', change: null }
@@ -256,7 +260,7 @@ function LastReview(handle: Handle<{ review: PullReview; now: Date }>) {
         )}
         <div class="pull-last-body">
           <h2 id="last-title" class="pull-last-title">
-            Last review, R{review.number}
+            {review.rank.kind === 'unpublished' ? 'Last review' : `Last review, ${rankLabel(review.rank)}`}
           </h2>
           <p class="pull-last-facts mono">
             {review.level} · {modelName(review.model)} · {short(review.headSha)} ·{' '}
@@ -267,7 +271,7 @@ function LastReview(handle: Handle<{ review: PullReview; now: Date }>) {
             </time>
           </p>
           {sentence ? <p class="pull-last-summary">{sentence}</p> : null}
-          {review.publishedAt ? null : <p class="status status-stale">Not published</p>}
+          {review.rank.kind === 'unpublished' ? <p class="status status-stale">Not published</p> : null}
         </div>
         {/* The design shows a seal per pass (security, data, logic, rules, check); no level runs passes yet. */}
         <p class="pull-passes hint">One pass per review. The separate passes do not run yet.</p>
@@ -398,7 +402,18 @@ function StatusFilter(handle: Handle<{ summary: PullSummary; query: PullQuery }>
 
 /** The name of a column, for its header and for the label of each cell on a phone. */
 function columnLabel(review: PullReview): string {
-  return `R${review.number} · ${short(review.headSha)}`
+  return `${rankLabel(review.rank)} · ${short(review.headSha)}`
+}
+
+/**
+ * KNT-175. "R1 to R4": the first and the last review of the page that count. A copy or a review that is
+ * not published has no R number; a page with none of them says nothing.
+ */
+export function columnsRange(columns: readonly { rank: ReviewRank }[]): string | null {
+  let numbers = columns.flatMap((c) => (c.rank.kind === 'counted' ? [c.rank.number] : []))
+  if (!numbers.length) return null
+  let [first, last] = [numbers[0]!, numbers.at(-1)!]
+  return first === last ? `R${first}` : `R${first} to R${last}`
 }
 
 function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; query: PullQuery; now: Date }>) {
@@ -430,14 +445,18 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
                     class="sheet-col"
                     title={`${short(review.headSha)} · ${clock(review.createdAt)} · ${review.score}/5 · ${review.costUsd === null ? 'unknown cost' : usdPrecise(review.costUsd)} · ${review.findings} ${plural(review.findings, 'finding')}`}
                   >
-                    <span class="sheet-col-name">R{review.number}</span>
+                    {/* KNT-175. A review not published has no R number: its badge takes the place of the name. */}
+                    {review.rank.kind === 'unpublished' ? (
+                      <span class="status status-stale">Not published</span>
+                    ) : (
+                      <span class={`sheet-col-name${review.rank.kind === 'copy' ? ' sheet-col-copy' : ''}`}>{rankLabel(review.rank)}</span>
+                    )}
                     <span class="sheet-col-level">{LEVEL_SHORT[review.level]}</span>
                     <span class="visually-hidden">
                       {' '}
                       {review.level}, {short(review.headSha)}, {agoOrDate(review.createdAt, now)}, {review.score}/5,{' '}
                       {review.costUsd === null ? 'unknown cost' : usdPrecise(review.costUsd)}, {review.findings} {plural(review.findings, 'finding')}
                     </span>
-                    {review.publishedAt ? null : <span class="status status-stale">Not published</span>}
                   </th>
                 ))}
                 {active ? (
@@ -497,7 +516,8 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
         <nav class="pager" aria-label="Pages of the sheet">
           {query.reviews ? <a href={pullHref(repoId, prNumber, { statuses: query.statuses })}>Most recent reviews</a> : <span />}
           <p class="pager-range">
-            {sheet.rows.length} {plural(sheet.rows.length, 'finding')} · R{sheet.columns[0]?.number ?? '?'} to R{sheet.columns.at(-1)?.number ?? '?'}
+            {sheet.rows.length} {plural(sheet.rows.length, 'finding')}
+            {columnsRange(sheet.columns) ? ` · ${columnsRange(sheet.columns)}` : ''}
           </p>
           <span class="pager-links">
             {sheet.olderCursor ? (

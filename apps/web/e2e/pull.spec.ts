@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import postgres from 'postgres'
 
 import { replyText } from '../app/findings/dismiss.ts'
-import { PULL_NUMBER, PULL_REPO, seedPull } from './pull-seed.ts'
+import { PULL_NUMBER, PULL_REPO, PULL_REVIEW_IDS, seedPull } from './pull-seed.ts'
 import { expectNoAxeViolations, signIn, watchConsole } from './helpers.ts'
 
 // The end-to-end test of REV-17 on orchard #142 (e2e/pull-seed.ts): four reviews, a finding moved
@@ -190,9 +190,9 @@ test('an admin re-runs the review in heavy: a column R5 waits, then shows the pu
     jobId = job!.id
     await sql`update jobs set state = 'done', started_at = now(), finished_at = now() where id = ${jobId}`
     await sql`
-      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at)
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
       values (${jobId}, ${repoId}, ${PULL_NUMBER}, ${'d'.repeat(40)}, 5, 'claude-opus-4-1', 0.39,
-        ${JSON.stringify({ findings: [] })}::text::jsonb, now())`
+        ${JSON.stringify({ findings: [] })}::text::jsonb, ${PULL_REVIEW_IDS + 4}, now())`
     await page.reload()
     await expect(sheet.getByRole('columnheader', { name: /R5/ })).toContainText('5/5')
     await expect(page.getByText(/R5 queued…/)).toHaveCount(0)
