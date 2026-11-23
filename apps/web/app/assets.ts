@@ -1,18 +1,14 @@
 // KNT-163. The browser modules of the screens: the components that hydrate (`clientEntry`), the
-// runtime that hydrates them, and the boot module that loads it. In development and in the unit
-// tests, the asset server of Remix compiles each TypeScript file when the browser asks for it. In
-// production (KNT-170), the service serves the bundles that scripts/build-client.ts built ahead of
-// time (app/client-build.ts): a few files, compressed, instead of some 70 modules.
+// runtime that hydrates them, and the boot module that loads it. The asset server of Remix compiles
+// each TypeScript file when the browser asks for it: there is no build step.
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { createAssetServer, type ScriptEntry } from 'remix/assets'
-import { Vary } from 'remix/headers'
+import { createAssetServer } from 'remix/assets'
 import type { Middleware } from 'remix/router'
 
-import { ALLOWED_FILES, ALLOWED_PACKAGES, BROWSER_TARGET, bundleOf, CLIENT_DIR, DENIED_FILES, PUBLIC_DIR, readClientBuild, serveClientFile, servePublicCopy, type ClientBuild } from './client-build.ts'
 import { errorMessage, log } from './log.ts'
 
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -83,15 +79,29 @@ const MOUNTS = {
   // not resolve it.
 }
 
-export { ALLOWED_FILES }
+/**
+ * What the browser can download. This is a security boundary: anybody can ask for these files.
+ * - `app/**\/public/**`: the browser modules, each one next to the screen that uses it.
+ * - `routes.ts`, `controls.tsx` and `lucide.tsx`: the URLs of the screens, the controls and the
+ *   icons, which a component that hydrates also makes. They import only `remix/routes` and
+ *   `remix/component`.
+ * - The packages `remix` (and its `@remix-run/component`, the runtime) and `@remix-run/ui`.
+ * - KNT-188: `chart.js`, for the charts of the Costs screen.
+ * An entry of `allowPackages` allows the folder of the package and of each package in its
+ * `dependencies`, at any depth (`createPackageRootPaths` of `@remix-run/assets`): with `chart.js`,
+ * also `@kurkle/color`. A bump that adds a dependency widens what the browser can read:
+ * `assets.test.ts` pins the dependencies of chart.js (Fable P2-3).
+ * A browser module that imports any other file of the server gets an error, never the file.
+ */
+export const ALLOWED_FILES = ['app/**/public/**', 'app/routes.ts', 'app/ui/controls.tsx', 'app/ui/lucide.tsx']
 
 export const assets = createAssetServer({
   basePath: '/assets',
   rootDir: ROOT_DIR,
   mounts: MOUNTS,
   allowFiles: ALLOWED_FILES,
-  allowPackages: ALLOWED_PACKAGES,
-  denyFiles: DENIED_FILES,
+  allowPackages: ['remix', '@remix-run/ui', 'chart.js'],
+  denyFiles: ['app/**/*.test.*'],
   // Production: minified, and each URL carries the hash of its content (cached for a year).
   // Elsewhere: stable URLs, checked again on each load.
   minify: !isDevelopment,
@@ -99,38 +109,10 @@ export const assets = createAssetServer({
   watch: isDevelopment,
   sourceMaps: isDevelopment ? 'external' : undefined,
   // The popover API (Baseline 2024) is the newest part of the platform that the components use.
-  target: BROWSER_TARGET,
+  target: { chrome: '114', firefox: '125', safari: '17' },
   scripts: { define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') } },
   onError: assetError,
 })
-
-/**
- * The bundles of production, read once at startup. Missing in production (an image built without
- * scripts/build-client.ts): an error in the logs, and the asset server serves the modules one by one,
- * as in development, so that the screens still work.
- */
-export function loadClientBuild(production = isProduction, dir = CLIENT_DIR, publicDir = PUBLIC_DIR): ClientBuild | null {
-  if (!production) return null
-  let build = readClientBuild(dir, publicDir)
-  if (!build) {
-    log('error', 'startup.client_build_missing', { dir })
-    return null
-  }
-  if ('missing' in build) {
-    log('error', 'startup.client_build_incomplete', { dir, missing: build.missing })
-    return null
-  }
-  if ('invalid' in build) {
-    log('error', 'startup.client_build_invalid', { dir, error: build.invalid })
-    return null
-  }
-  // KNT-202. The bundles still serve; these files of public/ go out plain, uncompressed.
-  if (build.stale.length > 0) log('error', 'startup.client_build_stale', { dir, files: build.stale })
-  return build
-}
-
-/** The build read at startup: null outside production, or when it cannot serve. */
-export const CLIENT_BUILD = loadClientBuild()
 
 /** The module of every page (see its comment). */
 export const BOOT = 'app/ui/public/boot.ts'
@@ -138,33 +120,19 @@ export const BOOT = 'app/ui/public/boot.ts'
 export const RUNTIME = 'app/ui/public/runtime.ts'
 
 /**
- * What `render({ assets })` reads for each component that hydrates.
- * - With the bundles (production): the URL of its bundle, and a module preload for the runtime, for
- *   its bundle and for every chunk that they import, a handful of links, so that the browser asks for
- *   all of them at once. No import map: a bundle imports its chunks by their URL.
- * - With the asset server: its URL, and an import map that also resolves the runtime (boot.ts
- *   imports it only on such a page, so that a page without a component carries no import map). No
- *   module preload: 40 preload links would cost 2 KB of HTML on each page.
+ * What `render({ assets })` reads for each component that hydrates: its URL, an import map that also
+ * resolves the runtime (boot.ts imports it only on such a page, so that a page without a component
+ * carries no import map), and a module preload for each module of the component and of the runtime.
+ * Without the preloads, the browser finds the imports of a module only after it downloads that
+ * module, one level at a time (KNT-202: about 1000 ms to hydrate a page on a slow network, 410 to
+ * 470 ms with them). The links cost about 10 KB of HTML, which `compression()` makes small.
  */
-export function createClientEntries(build: ClientBuild | null) {
-  return {
-    async getScriptEntry(entry: string): Promise<ScriptEntry> {
-      if (build) {
-        let own = bundleOf(build, entry)
-        let runtime = bundleOf(build, RUNTIME)
-        return { href: own.href, importMap: { imports: {} }, preloads: [...new Set([runtime.href, ...runtime.preloads, own.href, ...own.preloads])] }
-      }
-      return moduleEntry(entry)
-    },
-  }
-}
-
-export const clientEntries = createClientEntries(CLIENT_BUILD)
-
-/** The entry of a component from the asset server. */
-async function moduleEntry(entry: string) {
-  let { href } = await assets.getScriptEntry(entry)
-  return { href, importMap: await assets.getImportMap([entry, RUNTIME]), preloads: [] }
+export const clientEntries = {
+  async getScriptEntry(entry: string) {
+    let { href } = await assets.getScriptEntry(entry)
+    let modules = [entry, RUNTIME]
+    return { href, importMap: await assets.getImportMap(modules), preloads: await assets.getPreloads(modules) }
+  },
 }
 
 /** The URLs of boot.ts and of the runtime that it loads. */
@@ -178,9 +146,8 @@ export interface BootScript {
  * missing from the image): the error is logged, and the pages go without their components, as
  * without JavaScript; the service still starts (Kentō #5d5d55).
  */
-export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>, build: ClientBuild | null = null): Promise<BootScript | null> {
+export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>): Promise<BootScript | null> {
   try {
-    if (build) return { href: bundleOf(build, BOOT).href, runtime: bundleOf(build, RUNTIME).href }
     return { href: await server.getHref(BOOT), runtime: await server.getHref(RUNTIME) }
   } catch (error) {
     log('error', 'startup.assets_unavailable', { error: errorMessage(error) })
@@ -193,7 +160,7 @@ export async function resolveBootScript(server: Pick<typeof assets, 'getHref'>, 
  * changes, and with one (production) the files do not change while the process runs (`watch` is
  * off). Every page, a 404 included, gets the same value, with no request needed first.
  */
-const BOOT_SCRIPT = await resolveBootScript(assets, CLIENT_BUILD)
+const BOOT_SCRIPT = await resolveBootScript(assets)
 
 /** The URLs of boot.ts and of the runtime, for `<Document>`. Null: no component hydrates. */
 export function bootScript(): BootScript | null {
@@ -204,18 +171,13 @@ export function bootScript(): BootScript | null {
 export const CHART = 'app/ui/public/chart.tsx'
 
 /**
- * KNT-188, Fable P2-2. True when the service can serve the charts. With the bundles: the bundle of
- * the chart component, which holds Chart.js. With the asset server: the module of the charts and the
- * import map of their graph (Chart.js). A page renders a chart only then; else it renders its tables
+ * KNT-188, Fable P2-2. True when the asset server can serve the charts: their module and the import
+ * map of their graph (Chart.js). A page renders a chart only then; else it renders its tables
  * alone, as without JavaScript, and the log says why. Without this, a release whose build cannot
  * resolve Chart.js failed the render of the whole page, tables included.
  */
-export async function resolveCharts(server: Pick<typeof assets, 'getHref' | 'getImportMap'>, build: ClientBuild | null = null): Promise<boolean> {
+export async function resolveCharts(server: Pick<typeof assets, 'getHref' | 'getImportMap'>): Promise<boolean> {
   try {
-    if (build) {
-      bundleOf(build, CHART)
-      return true
-    }
     await server.getHref(CHART)
     await server.getImportMap([CHART])
     return true
@@ -225,47 +187,22 @@ export async function resolveCharts(server: Pick<typeof assets, 'getHref' | 'get
   }
 }
 
-const CHARTS = await resolveCharts(assets, CLIENT_BUILD)
+const CHARTS = await resolveCharts(assets)
 
 /** Whether the pages can render their charts (see `resolveCharts`). */
 export function chartsAvailable(): boolean {
   return CHARTS
 }
 
-/**
- * Serves the browser modules under `/assets/`; anything else goes on. With the bundles, only them
- * (/assets/js/): the asset server then compiles nothing on request.
- */
-export function clientAssets(build: ClientBuild | null = CLIENT_BUILD): Middleware {
+/** Serves the browser modules under `/assets/`; anything else goes on. */
+export function clientAssets(): Middleware {
   return async (context, next) => {
     if (!context.url.pathname.startsWith('/assets/')) return next()
-    if (build) return (await serveClientFile(build, context.request, context.url.pathname)) ?? next()
     let response = await requestPath.run(context.url.pathname, () => assets.fetch(context.request))
     if (!response) return next()
     // As every file of the app: the browser runs a module only as the type that the server says.
     let headers = new Headers(response.headers)
     headers.set('X-Content-Type-Options', 'nosniff')
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
-  }
-}
-
-/**
- * KNT-202. Serves the compressed copy of a file of public/ that the build compressed, as the browser
- * accepts (`servePublicCopy`); else the next middleware (`staticFiles()`) serves the plain file. Either
- * answer carries `Vary: Accept-Encoding`, so that a cache keeps the copies apart. Any other path goes
- * on untouched: the fonts (already compressed), the small icons, and every path without a build
- * (development, the unit tests).
- */
-export function publicCopies(cacheControl: string, build: ClientBuild | null = CLIENT_BUILD): Middleware {
-  return async (context, next) => {
-    // The path that staticFiles() reads: the pathname without its leading slashes.
-    let file = context.url.pathname.replace(/^\/+/, '')
-    if (!build?.publicFiles.has(file)) return next()
-    let response = (await servePublicCopy(build, context.request, file, cacheControl)) ?? (await next())
-    let headers = new Headers(response.headers)
-    let vary = Vary.from(headers.get('Vary'))
-    vary.add('Accept-Encoding')
-    headers.set('Vary', vary.toString())
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
 }

@@ -6,8 +6,7 @@ runner sends (REV-5, `app/publish/`), and the screens of milestone M3 (REV-8 and
 
 - [Remix 3](https://github.com/remix-run/remix): `remix/router` (fetch-router), `remix/component`,
   `remix/node-fetch-server`. Node 26 or later runs the TypeScript source with `remix/node-tsx`;
-  the server has no build step. The browser has one (KNT-170): `pnpm build:client` bundles its
-  modules into `build/client/` before the service starts in production.
+  there is no build step.
 - Postgres with [drizzle](https://orm.drizzle.team): schema in `app/db/schema.ts`, SQL migrations in
   `drizzle/`, applied at startup.
 
@@ -30,19 +29,14 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   of GitHub, no inline style, and one inline script: the import map, with the nonce of the response.
 - `app/assets.ts` (KNT-163): the asset server of Remix. It compiles the browser modules of
   `app/**/public/` and the packages `remix` and `@remix-run/ui` when the browser asks for them, under
-  `/assets/app/…` and short names (`/assets/c/…`, `/assets/ui/…`), in development and in the unit
-  tests. In production (KNT-170), `scripts/build-client.ts` (`pnpm build:client`, run by the image
-  and before the e2e) bundles them with esbuild into a few files of `build/client/`, minified, named
-  by the hash of their content, with their brotli and gzip copies; `app/client-build.ts` serves them
-  under `/assets/js/`, cached a year, and the page preloads the ones it needs. Without that folder,
-  the service logs `startup.client_build_missing` and falls back on the asset server. The same build
-  (KNT-202) writes the brotli and gzip copies of the text files of `public/assets/` of 1 KB or more
-  (`kento.css`, the scripts of the screens, the large icons) under `build/client/public/`, with the
-  hash of each plain file: the service sends the copy that the browser accepts, with `Vary:
-  Accept-Encoding` and an ETag of its own, and the plain file to a range request or to a browser that
-  accepts neither. A file changed since the build goes out plain (`startup.client_build_stale`). The
-  HTML pages are compressed on each request (`compression()` of Remix, brotli at quality 5, gzip);
-  the stream of the live card, the fonts and the JSON of the machines are not. `public/boot.ts` is the module of
+  `/assets/app/…` and short names (`/assets/c/…`, `/assets/ui/…`); with `NODE_ENV=production`,
+  minified, with the hash of the content in each URL, cached a year. There is no build step: each
+  module is compiled at its first request and kept in memory. A page with a component preloads every
+  module of the component and of the runtime (`<link rel="modulepreload">`, from `getPreloads()`), so
+  that the browser asks for all of them at once. `compressed()` of `app/router.ts` (KNT-202,
+  `compression()` of Remix) compresses on each request the HTML pages, `kento.css`, the scripts of
+  `public/assets/` and the modules, with brotli at quality 5 or gzip; the stream of the live card, the
+  JSON of the machines, the fonts and the byte ranges go out as they are. `public/boot.ts` is the module of
   every page; it loads `public/runtime.ts` (the runtime of `remix/component`, `run()`) only on a page
   with a component to hydrate: the menu "…" of the Repos screen (`public/row-menu.tsx`) and the
   confirmations (`public/confirm.tsx`), on the menu and the popover of `@remix-run/ui`. Without
@@ -54,9 +48,8 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   the default; `last-month`, `30d`, `90d`), against the period before: by UTC day, repo, level and
   model, the most expensive runs, and for this month the projection and the cap. Each breakdown is a
   table of the server; in the browser `app/ui/public/chart.tsx` draws its chart with
-  [Chart.js](https://www.chartjs.org) 4 (MIT, with its `@kurkle/color`: in the bundles of
-  `pnpm build:client` in production, from the pnpm store by the asset server in development) and
-  folds the table under "Show the data". The tile "Cost of the month" of the
+  [Chart.js](https://www.chartjs.org) 4 (MIT; served by the asset server, from the pnpm store, with
+  its `@kurkle/color`) and folds the table under "Show the data". The tile "Cost of the month" of the
   dashboard opens it.
 - The precision by repo of the dashboard (KNT-191): over 30 days or 7 (`?precision=7`), the same
   chart component draws it above its list (`app/ui/public/chart.tsx`, from the `data-value` of each

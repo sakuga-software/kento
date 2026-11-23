@@ -1,50 +1,35 @@
-// KNT-202. The stylesheet and the scripts of public/assets/ go out as the copy that the browser
-// accepts (brotli, gzip, or the plain file), made by the build; the HTML pages are compressed on each
-// request; a range and the fonts are answered as before. The stream of the live card stays plain:
-// app/ui/dashboard-live.test.ts.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import * as path from 'node:path'
+// KNT-202. compressed() compresses the HTML pages, the files of public/assets/ and the browser
+// modules on each request, as the browser accepts. A font, a byte range of it and the JSON of the
+// machines go out as before. The stream of the live card stays plain: app/ui/dashboard-live.test.ts.
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 
 import * as assert from 'remix/assert'
-import { after, before, describe, it } from 'remix/test'
+import { describe, it } from 'remix/test'
 
-import { compressPublicFiles } from '../scripts/build-client.ts'
+import { bootScript } from './assets.ts'
 import { fakeAuth } from './auth/test-helpers.ts'
-import { PUBLIC_DIR, readClientBuild, type ClientBuild } from './client-build.ts'
 import { disabledWebhook } from './github/test-helpers.ts'
 import { createAppRouter } from './router.ts'
 
-const CSS = readFileSync(path.join(PUBLIC_DIR, 'assets/kento.css'))
+const PUBLIC = (file: string) => readFileSync(fileURLToPath(new URL(`../public/${file}`, import.meta.url)))
+const CSS = PUBLIC('assets/kento.css')
 const FONT = 'assets/fonts/archivo-latin-wght-normal.woff2'
 const BROWSER = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
 
-let dir = ''
-let build: ClientBuild
-
-before(() => {
-  // The build of the copies of the real public/, as scripts/build-client.ts writes it, without the bundles.
-  dir = mkdtempSync(path.join(tmpdir(), 'kento-public-'))
-  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ entries: {}, files: [], public: compressPublicFiles(dir) }))
-  build = readClientBuild(dir) as ClientBuild
-})
-
-after(() => rmSync(dir, { recursive: true, force: true }))
-
-function router(clientBuild: ClientBuild | null = build) {
+function router() {
   return createAppRouter({
     checkDatabase: async () => ({ status: 'ok', latencyMs: 1, migrations: 1 }),
     version: '1.2.3',
     commit: null,
     webhook: disabledWebhook,
     auth: fakeAuth().deps,
-    clientBuild,
   })
 }
 
-function get(path: string, headers: Record<string, string> = {}, clientBuild?: ClientBuild | null) {
-  return router(clientBuild).fetch(new Request(`http://localhost${path}`, { headers }))
+function get(path: string, headers: Record<string, string> = {}, method = 'GET') {
+  return router().fetch(new Request(`http://localhost${path}`, { headers, method }))
 }
 
 /** The body of an answer, decoded as its Content-Encoding says. */
@@ -62,8 +47,8 @@ function varyOf(response: Response): string[] {
   return (response.headers.get('Vary') ?? '').split(',').map((name) => name.trim().toLowerCase())
 }
 
-describe('the compressed copies of public/assets/ (KNT-202)', () => {
-  it('serves the brotli copy of kento.css to a browser that accepts brotli, and gzip to one that accepts gzip only', async () => {
+describe('the compression of the files of public/assets/ (KNT-202)', () => {
+  it('sends kento.css with brotli to a browser that accepts brotli, and with gzip to one that accepts gzip only', async () => {
     let cases: [string, string, number][] = [
       ['gzip, deflate, br, zstd', 'br', 30_000],
       ['br;q=1, gzip;q=0.5', 'br', 30_000],
@@ -76,18 +61,17 @@ describe('the compressed copies of public/assets/ (KNT-202)', () => {
       assert.equal(response.headers.get('Content-Encoding'), encoding, accept)
       assert.equal(response.headers.get('Content-Type'), 'text/css; charset=utf-8')
       assert.ok(varyOf(response).includes('accept-encoding'), accept)
-      assert.equal(response.headers.get('Cache-Control'), 'no-cache')
       assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff')
-      assert.equal(response.headers.get('Accept-Ranges'), null)
-      let length = Number(response.headers.get('Content-Length'))
-      assert.ok(length > 0 && length < under, `${accept}: ${length} B`)
-      let body = await decoded(response)
-      assert.deepEqual(body, CSS, accept)
+      assert.equal(response.headers.get('Content-Length'), null)
+      let body = Buffer.from(await response.arrayBuffer())
+      assert.ok(body.byteLength < under, `${accept}: ${body.byteLength} B`)
+      assert.deepEqual(encoding === 'br' ? brotliDecompressSync(body) : gunzipSync(body), CSS, accept)
     }
   })
 
-  it('serves the plain file, with Vary, to a browser that accepts neither', async () => {
-    for (let headers of [{}, { 'Accept-Encoding': 'identity' }, { 'Accept-Encoding': 'br;q=0, gzip;q=0' }, { 'Accept-Encoding': 'deflate' }] as Record<string, string>[]) {
+  it('sends the plain file, with Vary, to a browser that accepts neither', async () => {
+    // `deflate` and `zstd` alone: compression() of remix 3.2.0 answers them 406, compressed() does not.
+    for (let headers of [{}, { 'Accept-Encoding': 'identity' }, { 'Accept-Encoding': 'deflate' }, { 'Accept-Encoding': 'zstd' }] as Record<string, string>[]) {
       let response = await get('/assets/kento.css', headers)
       assert.equal(response.status, 200, JSON.stringify(headers))
       assert.equal(response.headers.get('Content-Encoding'), null)
@@ -95,53 +79,42 @@ describe('the compressed copies of public/assets/ (KNT-202)', () => {
       assert.ok(varyOf(response).includes('accept-encoding'), JSON.stringify(headers))
       assert.deepEqual(Buffer.from(await response.arrayBuffer()), CSS)
     }
-    // The path that staticFiles() serves, with repeated slashes: the same copy.
-    let slashes = await get('//assets/kento.css', { 'Accept-Encoding': 'br' })
-    assert.equal(slashes.headers.get('Content-Encoding'), 'br')
-    assert.deepEqual(await decoded(slashes), CSS)
-    // The scripts of the screens too.
+  })
+
+  it('compresses the scripts of the screens, and leaves a script under 1 KB plain', async () => {
     let script = await get('/assets/settings.js', { 'Accept-Encoding': 'br' })
     assert.equal(script.headers.get('Content-Encoding'), 'br')
     assert.match(script.headers.get('Content-Type') ?? '', /^text\/javascript/)
-    assert.deepEqual(await decoded(script), readFileSync(path.join(PUBLIC_DIR, 'assets/settings.js')))
+    assert.deepEqual(await decoded(script), PUBLIC('assets/settings.js'))
+    let theme = await get('/assets/theme.js', { 'Accept-Encoding': 'br' })
+    assert.ok(PUBLIC('assets/theme.js').byteLength < 1024)
+    assert.equal(theme.headers.get('Content-Encoding'), null)
   })
 
-  it('gives each copy its own ETag, and answers 304 only for the copy that the browser holds', async () => {
-    let tags = new Map<string, string>()
-    for (let accept of ['br', 'gzip', 'identity']) {
-      let response = await get('/assets/kento.css', { 'Accept-Encoding': accept })
-      tags.set(accept, response.headers.get('ETag')!)
-      assert.ok(tags.get(accept), accept)
-    }
-    assert.equal(new Set(tags.values()).size, 3, [...tags.values()].join(' '))
-
-    let again = await get('/assets/kento.css', { 'Accept-Encoding': 'br', 'If-None-Match': tags.get('br')! })
+  it('answers 304 to the ETag of the compressed copy, and the plain file to its own', async () => {
+    let first = await get('/assets/kento.css', { 'Accept-Encoding': 'br' })
+    let tag = first.headers.get('ETag')
+    assert.match(tag ?? '', /^W\//)
+    let again = await get('/assets/kento.css', { 'Accept-Encoding': 'br', 'If-None-Match': tag! })
     assert.equal(again.status, 304)
-    assert.equal(again.headers.get('ETag'), tags.get('br'))
-    assert.ok(varyOf(again).includes('accept-encoding'))
     assert.equal(await again.text(), '')
-    // The browser holds the brotli copy and now accepts gzip only: the gzip copy, whole.
-    let other = await get('/assets/kento.css', { 'Accept-Encoding': 'gzip', 'If-None-Match': tags.get('br')! })
-    assert.equal(other.status, 200)
-    assert.equal(other.headers.get('Content-Encoding'), 'gzip')
-    // And the plain file keeps its own conditional request.
-    let plain = await get('/assets/kento.css', { 'If-None-Match': tags.get('identity')! })
-    assert.equal(plain.status, 304)
+    let plain = await get('/assets/kento.css')
+    let plainAgain = await get('/assets/kento.css', { 'If-None-Match': plain.headers.get('ETag')! })
+    assert.equal(plainAgain.status, 304)
   })
 
-  it('answers a HEAD with the headers of the copy and no body', async () => {
-    let response = await router().fetch(new Request('http://localhost/assets/kento.css', { method: 'HEAD', headers: { 'Accept-Encoding': 'br' } }))
+  it('answers a HEAD with the headers of the compressed answer and no body', async () => {
+    let response = await get('/assets/kento.css', { 'Accept-Encoding': 'br' }, 'HEAD')
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('Content-Encoding'), 'br')
-    assert.equal(response.headers.get('Content-Length'), String(readFileSync(path.join(dir, 'public/assets/kento.css.br')).byteLength))
+    assert.equal(response.headers.get('Content-Length'), null)
     assert.equal(await response.text(), '')
   })
 
-  it('answers a range as before: kento.css whole and plain, a font in part', async () => {
+  it('answers a range of kento.css with the whole file, and a range of a font in part, plain', async () => {
     let css = await get('/assets/kento.css', { 'Accept-Encoding': 'br', Range: 'bytes=0-99' })
     assert.equal(css.status, 200)
-    assert.equal(css.headers.get('Content-Encoding'), null)
-    assert.deepEqual(Buffer.from(await css.arrayBuffer()), CSS)
+    assert.deepEqual(await decoded(css), CSS)
 
     let font = await get(`/${FONT}`, { 'Accept-Encoding': 'br', Range: 'bytes=0-99' })
     assert.equal(font.status, 206)
@@ -149,24 +122,24 @@ describe('the compressed copies of public/assets/ (KNT-202)', () => {
     assert.equal(font.headers.get('Accept-Ranges'), 'bytes')
     assert.match(font.headers.get('Content-Range') ?? '', /^bytes 0-99\/\d+$/)
     assert.equal((await font.arrayBuffer()).byteLength, 100)
-    // A font and a small icon have no copy: as before, with no Vary.
-    for (let file of [FONT, 'assets/favicon.svg']) {
-      let whole = await get(`/${file}`, { 'Accept-Encoding': 'br' })
-      assert.equal(whole.status, 200, file)
-      assert.equal(whole.headers.get('Content-Encoding'), null, file)
-      assert.deepEqual(Buffer.from(await whole.arrayBuffer()), readFileSync(path.join(PUBLIC_DIR, file)), file)
-    }
-    assert.ok(!build.publicFiles.has(FONT) && !build.publicFiles.has('assets/favicon.svg'))
+    let whole = await get(`/${FONT}`, { 'Accept-Encoding': 'br' })
+    assert.equal(whole.headers.get('Content-Encoding'), null)
+    assert.deepEqual(Buffer.from(await whole.arrayBuffer()), PUBLIC(FONT))
   })
+})
 
-  it('serves the plain file of a file changed since the build, and every file plain without a build', async () => {
-    let stale: ClientBuild = { ...build, publicFiles: new Set([...build.publicFiles].filter((file) => file !== 'assets/kento.css')), stale: ['assets/kento.css'] }
-    for (let clientBuild of [stale, null]) {
-      let response = await get('/assets/kento.css', { 'Accept-Encoding': 'br' }, clientBuild)
-      assert.equal(response.status, 200)
-      assert.equal(response.headers.get('Content-Encoding'), null)
-      assert.deepEqual(Buffer.from(await response.arrayBuffer()), CSS)
-    }
+describe('the compression of the browser modules (KNT-202)', () => {
+  it('sends a module of the asset server with brotli, and its source when decoded', async () => {
+    let boot = bootScript()
+    assert.ok(boot)
+    let plain = await get(boot.runtime)
+    let response = await get(boot.runtime, { 'Accept-Encoding': 'gzip, deflate, br, zstd' })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('Content-Encoding'), 'br')
+    assert.match(response.headers.get('Content-Type') ?? '', /javascript/)
+    assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff')
+    assert.ok(varyOf(response).includes('accept-encoding'))
+    assert.deepEqual(await decoded(response), Buffer.from(await plain.arrayBuffer()))
   })
 })
 

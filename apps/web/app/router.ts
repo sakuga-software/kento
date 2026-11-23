@@ -1,13 +1,14 @@
+import { fileURLToPath } from 'node:url'
 import { constants } from 'node:zlib'
 
+import { AcceptEncoding, Vary } from 'remix/headers'
 import { compression } from 'remix/middleware/compression'
 import { render } from 'remix/middleware/render'
 import { staticFiles } from 'remix/middleware/static'
-import { createRouter, type RouterContext } from 'remix/router'
+import { createRouter, type Middleware, type RouterContext } from 'remix/router'
 
 import { createController } from './actions/controller.ts'
-import { CLIENT_BUILD, clientAssets, clientEntries, publicCopies } from './assets.ts'
-import { PUBLIC_DIR, type ClientBuild } from './client-build.ts'
+import { clientAssets, clientEntries } from './assets.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { legacyQueryRedirect } from './legacy-urls.ts'
@@ -35,30 +36,56 @@ import {
   type ReposDependencies,
 } from './ui/pages.tsx'
 
-/**
- * The cache of the files of public/ and of their compressed copies. In production, the URL of the
- * stylesheet and of the scripts carries the release (`?v=`), and the fonts never change under one name.
- */
-const STATIC_CACHE_CONTROL = process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache'
+/** The stylesheet, the fonts and the one script of the screens, under `/assets/`. */
+const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url))
 
 /**
- * KNT-202. The quality of brotli for the HTML, compressed on each request. On a page of 10 KB, 5
- * costs about 0.1 ms of CPU and gives 3.1 KB; 11, the default of node:zlib, costs about 6 ms for
- * 2.7 KB. The files of public/ are compressed once, at quality 11, by the build.
+ * KNT-202. The quality of brotli for the responses that `compressed()` compresses on each request.
+ * 11, the default of node:zlib, costs about 195 ms of CPU for the 167 KB of chart.js and 130 ms for
+ * kento.css; 5 costs about 4 ms and 2 ms, for a body 10 to 15 % larger.
  */
-export const HTML_BROTLI_QUALITY = 5
+const BROTLI_QUALITY = 5
+
+/** KNT-202. The encodings of `compressed()`: every browser accepts both. */
+const ENCODINGS: ('br' | 'gzip')[] = ['br', 'gzip']
+
+/** KNT-202. The media types that `compressed()` compresses. */
+const COMPRESSED_TYPES = new Set(['text/html', 'text/css', 'text/javascript', 'application/javascript', 'image/svg+xml'])
 
 /**
- * KNT-202. Compresses the HTML pages only. The files of public/ and the bundles come compressed by the
- * build; the stream of the live card (`text/event-stream`) stays plain, so that each event goes out at
- * once; the JSON of the runners and of the webhook stays as it was.
+ * KNT-202. Compresses the HTML pages, the files of public/assets/ and the browser modules, with
+ * brotli or gzip, as the browser accepts. These responses stay as they are:
+ * - the stream of the live card (`text/event-stream`), so that each event goes out at once;
+ * - the JSON of the runners and of the webhook;
+ * - the fonts, which are compressed already, and a byte range (`compression()` skips both).
  */
-export function htmlCompression() {
-  return compression({
-    filterMediaType: (mediaType) => mediaType === 'text/html',
-    encodings: ['br', 'gzip'],
-    brotli: { params: { [constants.BROTLI_PARAM_QUALITY]: HTML_BROTLI_QUALITY } },
+export function compressed(): Middleware {
+  let compress = compression({
+    filterMediaType: (mediaType) => COMPRESSED_TYPES.has(mediaType),
+    encodings: ENCODINGS,
+    brotli: { params: { [constants.BROTLI_PARAM_QUALITY]: BROTLI_QUALITY } },
   })
+  return async (context, next) => {
+    if (acceptsOneOf(context.request, ENCODINGS)) return compress(context, next)
+    // compression() of remix 3.2.0 answers 406 when the header names none of ENCODINGS and not
+    // `identity` (`Accept-Encoding: zstd`). RFC 9110 accepts `identity` unless the header refuses it.
+    let response = await next()
+    let mediaType = response.headers.get('Content-Type')?.split(';')[0]?.trim() ?? ''
+    if (!COMPRESSED_TYPES.has(mediaType)) return response
+    let headers = new Headers(response.headers)
+    let vary = Vary.from(headers.get('Vary'))
+    vary.add('Accept-Encoding')
+    headers.set('Vary', vary.toString())
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  }
+}
+
+/** True when the request has no `Accept-Encoding`, or when it accepts one of `encodings`. */
+function acceptsOneOf(request: Request, encodings: string[]): boolean {
+  let header = request.headers.get('Accept-Encoding')
+  if (header === null) return true
+  let accept = AcceptEncoding.from(header)
+  return accept.encodings.length === 0 || accept.getPreferred(encodings) !== null
 }
 
 /** What the routes need from the outside. Tests pass fakes. */
@@ -101,8 +128,6 @@ export interface AppDependencies {
   members?: MembersDependencies | null
   /** KNT-150. The name and the installations of an org. Without them, the screen answers 404. */
   organization?: OrganizationDependencies | null
-  /** KNT-202. The build of the browser files. Default: the one read at startup (none outside production). */
-  clientBuild?: ClientBuild | null
 }
 
 /**
@@ -122,7 +147,6 @@ export function isPageRequest(request: Request, url: URL): boolean {
 }
 
 export function createAppRouter(deps: AppDependencies) {
-  let build = deps.clientBuild === undefined ? CLIENT_BUILD : deps.clientBuild
   // The 404 page needs the session and the frame of the screens: its own router, with their middleware.
   let fallback = createRouter({ middleware: [render({ assets: clientEntries })] })
   let router = createRouter({
@@ -132,12 +156,15 @@ export function createAppRouter(deps: AppDependencies) {
         : new Response(`Not Found: ${context.url.pathname}`, { status: 404 }),
     middleware: [
       requestLogger(),
-      htmlCompression(),
-      // KNT-202: the stylesheet and the scripts of the screens, compressed by the build.
-      publicCopies(STATIC_CACHE_CONTROL, build),
-      staticFiles(PUBLIC_DIR, { filter: (path) => path.startsWith('assets/'), cacheControl: STATIC_CACHE_CONTROL }),
+      compressed(),
+      staticFiles(PUBLIC_DIR, {
+        filter: (path) => path.startsWith('assets/'),
+        // In production, the URL of the stylesheet and of the script carries the release (`?v=`),
+        // and the fonts never change under one name.
+        cacheControl: process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache',
+      }),
       // KNT-163: the browser modules (`/assets/app/…`, `/assets/npm/…`), compiled on request.
-      clientAssets(build),
+      clientAssets(),
       render({ assets: clientEntries }),
       legacyQueryRedirect(),
     ],

@@ -1,4 +1,2 @@
 test-results/
-# KNT-170: the bundles of the browser modules (pnpm build:client).
-build/
 playwright-report/
