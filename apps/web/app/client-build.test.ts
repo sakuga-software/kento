@@ -69,12 +69,12 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     }
   })
 
-  it('preloads the runtime and every chunk of the page once, with no import map; boot.ts and the runtime come from the build', async () => {
+  it('preloads the runtime, the bundle of the component and every chunk of the page once, with no import map; boot.ts and the runtime come from the build', async () => {
     let build = fakeBuild()
     try {
       let entry = await createClientEntries(build).getScriptEntry(`${pathToFileURL(path.join(ROOT_DIR, 'app/ui/public/a.tsx')).href}#A`)
       assert.equal(entry.href, '/assets/js/a.@AAA.js')
-      assert.deepEqual(entry.preloads, ['/assets/js/runtime.@R.js', '/assets/js/chunk.@C.js', '/assets/js/chunk.@D.js'])
+      assert.deepEqual(entry.preloads, ['/assets/js/runtime.@R.js', '/assets/js/chunk.@C.js', '/assets/js/chunk.@D.js', '/assets/js/a.@AAA.js'])
       assert.deepEqual(entry.importMap, { imports: {} })
       let boot = await resolveBootScript({ getHref: async () => assert.fail('the asset server is not asked') }, build)
       assert.deepEqual(boot, { href: '/assets/js/boot.@B.js', runtime: '/assets/js/runtime.@R.js' })

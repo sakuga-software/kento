@@ -33,12 +33,14 @@ test('a page with components loads its bundles, compressed and preloaded, and hy
   expect(html).not.toContain('type="importmap"')
   let preloads = [...html.matchAll(/<link[^>]*rel="modulepreload"[^>]*href="([^"]+)"/g)].map((match) => match[1]!)
   expect(preloads.length).toBeGreaterThan(0)
-  expect(preloads.length).toBeLessThanOrEqual(6)
+  expect(new Set(preloads).size).toBe(preloads.length)
   for (let href of preloads) expect(href).toMatch(/^\/assets\/js\/[a-z-]+\.@[A-Z0-9]+\.js$/)
 
   // Every module of the page is a bundle, compressed (Chromium accepts brotli), kept a year.
   let bundles = modules.filter((module) => module.url.startsWith('/assets/js/'))
   expect(bundles.length).toBeGreaterThan(0)
+  // Each preload is a bundle that the page loads: no link is wasted.
+  for (let href of preloads) expect(bundles.map((module) => module.url), href).toContain(href)
   expect(modules.filter((module) => !module.url.startsWith('/assets/js/') && !/^\/assets\/[a-z-]+\.js$/.test(module.url))).toEqual([])
   for (let module of bundles) {
     expect(module.encoding).toBe('br')
