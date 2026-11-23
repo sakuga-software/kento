@@ -303,6 +303,9 @@ test.describe('the dashboard', () => {
 
   test('the live card waits out a server that restarts (503 and Retry-After), then is "Live" again (Fable P2-1)', async ({ page }) => {
     await seed()
+    // KNT-200: the sign-in of beforeEach ends on the dashboard, and that page opens its own stream.
+    // Without this navigation, the 503 can go to that page, and the page of the test goes "Live" at once.
+    await page.goto('about:blank')
     /** The time of each request of the stream, on the clock of the test. */
     let tries: number[] = []
     // KNT-200: the try after the 503 waits here until the test saw "Retrying…". Without this hold,
