@@ -4,6 +4,7 @@
 import { isLevel, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
+import { countsSql } from '../db/review-count.ts'
 import { toDate } from '../db/rows.ts'
 import { CANCEL_REASON } from '../db/webhook-store.ts'
 import { listFindingScreen, type FindingView } from '../findings/screen.ts'
@@ -33,7 +34,7 @@ export interface ReviewedPull {
   prNumber: number
   /** `closed`: the last job of the pull request was cancelled by its close. */
   state: 'open' | 'closed'
-  /** The reviews of Kentō published on the pull request. */
+  /** KNT-175. The reviews of Kentō on the pull request that count (db/review-count.ts): no copy. */
   reviews: number
   findings: { open: number; fixed: number; dismissed: number; wontfix: number; stale: number }
   /** The verdict and the score of the last published review. */
@@ -137,11 +138,20 @@ export function createUsersStore(sql: postgres.Sql): UsersStore {
           join repos on repos.id = pull_authors.repo_id
           where pull_authors.github_id = ${githubId} and repos.org_id = ${orgId}
         ),
+        -- KNT-175. A pull request with a review on GitHub. Its count is the rule of db/review-count.ts,
+        -- as on its own screen and in the request for feedback: a copy (REV-89) does not count.
+        -- The date, the verdict and the score are those of the last review on GitHub, a copy included:
+        -- a copy is the review of a newer head, and it has the score and the verdict of its source,
+        -- the last review that counts.
         reviewed as (
-          select mine.repo_id, mine.pr_number, mine.full_name, count(*) as reviews, max(reviews.published_at) as last_review_at
+          select mine.repo_id, mine.pr_number, mine.full_name,
+            count(*) filter (where ${sql.unsafe(countsSql())}) as reviews, max(reviews.published_at) as last_review_at
           from mine
-          join reviews on reviews.repo_id = mine.repo_id and reviews.pr_number = mine.pr_number and reviews.published_at is not null
+          join reviews on reviews.repo_id = mine.repo_id and reviews.pr_number = mine.pr_number and reviews.github_review_id is not null
           group by mine.repo_id, mine.pr_number, mine.full_name
+          -- A pull request whose reviews on GitHub are all copies (the retention removed their source)
+          -- has no review that counts: it is not listed, rather than listed with 0.
+          having count(*) filter (where ${sql.unsafe(countsSql())}) > 0
         ),
         page as (
           select reviewed.*, count(*) over () as total from reviewed
@@ -157,8 +167,8 @@ export function createUsersStore(sql: postgres.Sql): UsersStore {
         from page
         cross join lateral (
           select reviews.result->>'verdict' as verdict, reviews.score from reviews
-          where reviews.repo_id = page.repo_id and reviews.pr_number = page.pr_number and reviews.published_at is not null
-          order by reviews.published_at desc limit 1
+          where reviews.repo_id = page.repo_id and reviews.pr_number = page.pr_number and reviews.github_review_id is not null
+          order by reviews.published_at desc, reviews.created_at desc limit 1
         ) last
         left join lateral (
           select jobs.state, jobs.failure_reason from jobs

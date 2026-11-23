@@ -5,6 +5,7 @@ import { findingKey, toConsider } from '@kento-review/engine/findings'
 import { UUID, type Level } from '@kento-review/protocol'
 import type postgres from 'postgres'
 
+import { rankColumnsSql, rankOf, type RankRow, type ReviewRank } from '../db/review-count.ts'
 import { toDate } from '../db/rows.ts'
 import type { MintInstallationToken } from '../github/installation-token.ts'
 import { decodeCursor, encodeCursor, cursorAt, type FindingEventType, type FindingStatus, type Page } from '../findings/store.ts'
@@ -40,7 +41,8 @@ export interface FindingDetail {
    */
   review: {
     id: string
-    number: number
+    /** KNT-175. R{n}, a copy or not published: db/review-count.ts. */
+    rank: ReviewRank
     level: Level
     model: string
     headSha: string
@@ -56,8 +58,8 @@ export interface HistoryEvent {
   type: FindingEventType
   actor: string
   reason: string | null
-  /** The R number of the review that wrote it, or null for a person or the sweep. */
-  review: number | null
+  /** The rank of the review that wrote it (R{n}, a copy, not published), or null for a person or the sweep. */
+  review: ReviewRank | null
   createdAt: Date
 }
 
@@ -124,10 +126,8 @@ export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: st
 
   let review: FindingDetail['review'] = null
   if (row.lastReviewId) {
-    let [r] = await sql<{ id: string; number: number; level: Level; model: string; headSha: string }[]>`
-      select r.id, j.level, r.model, r.head_sha as "headSha",
-        (select count(*)::int from reviews e
-          where e.repo_id = r.repo_id and e.pr_number = r.pr_number and (e.created_at, e.id) <= (r.created_at, r.id)) as number
+    let [r] = await sql<({ id: string; level: Level; model: string; headSha: string } & RankRow)[]>`
+      select r.id, j.level, r.model, r.head_sha as "headSha", ${sql.unsafe(rankColumnsSql('r'))}
       from reviews r join jobs j on j.id = r.job_id
       where r.id = ${row.lastReviewId}`
     // The finding in the result of that review only: its fingerprint, else its key.
@@ -153,7 +153,7 @@ export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: st
       found.find((f) => row.fingerprint !== '' && f.fingerprint === row.fingerprint) ??
       found.find((f) => typeof f.path === 'string' && typeof f.title === 'string' && findingKey({ path: f.path, title: f.title } as never) === row.key)
     let considered = consideredOf(found, row)
-    if (r) review = { ...r, scenario: text(hit?.scenario), fix: text(hit?.fix), suggestion: text(hit?.suggestion), considered }
+    if (r) review = { id: r.id, rank: rankOf(r), level: r.level, model: r.model, headSha: r.headSha, scenario: text(hit?.scenario), fix: text(hit?.fix), suggestion: text(hit?.suggestion), considered }
   }
 
   return {
@@ -182,18 +182,17 @@ export async function readFindingDetail(sql: postgres.Sql, orgId: string, id: st
   }
 }
 
-/** A page of the history of a finding of the org, oldest first, with the R number of each review. */
+/** A page of the history of a finding of the org, oldest first, with the rank of each review. */
 export async function readFindingHistory(
   sql: postgres.Sql,
   input: { orgId: string; findingId: string; cursor?: string | null },
 ): Promise<Page<HistoryEvent>> {
   if (!UUID.test(input.findingId)) return { items: [], nextCursor: null }
   let cursor = decodeCursor(input.cursor)
-  let rows = await sql<(HistoryEvent & { cursorAt: string })[]>`
+  let rows = await sql<(Omit<HistoryEvent, 'review'> & RankRow & { reviewId: string | null; cursorAt: string })[]>`
     select e.id, e.type, e.actor, e.reason, e.created_at as "createdAt",
       ${sql.unsafe(cursorAt('e.created_at'))} as "cursorAt",
-      case when r.id is null then null else (select count(*)::int from reviews x
-        where x.repo_id = r.repo_id and x.pr_number = r.pr_number and (x.created_at, x.id) <= (r.created_at, r.id)) end as review
+      r.id as "reviewId", ${sql.unsafe(rankColumnsSql('r'))}
     from finding_events e
     join findings f on f.id = e.finding_id
     join repos on repos.id = f.repo_id
@@ -205,7 +204,14 @@ export async function readFindingHistory(
   let kept = rows.slice(0, HISTORY_PAGE)
   let last = kept.at(-1)
   return {
-    items: kept.map((r) => ({ id: r.id, type: r.type, actor: r.actor, reason: r.reason, review: r.review, createdAt: toDate(r.createdAt) })),
+    items: kept.map((r) => ({
+      id: r.id,
+      type: r.type,
+      actor: r.actor,
+      reason: r.reason,
+      review: r.reviewId === null ? null : rankOf(r),
+      createdAt: toDate(r.createdAt),
+    })),
     nextCursor: rows.length > HISTORY_PAGE && last ? encodeCursor({ at: last.cursorAt, id: last.id }) : null,
   }
 }

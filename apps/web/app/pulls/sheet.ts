@@ -15,8 +15,6 @@ import type { FindingEventType, FindingStatus } from '../findings/store.ts'
 /** A review of the pull request: a column of the sheet. */
 export interface SheetColumn {
   id: string
-  /** R1 is the first review of the pull request. */
-  number: number
   /** When the review changed its findings: its publication, or its result when it is not published. */
   at: Date
 }
