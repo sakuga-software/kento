@@ -330,7 +330,7 @@ describe('the screen of a pull request', () => {
     let { request, signIn } = setup({ columns: 'mixed', summary: { reviews: 2, lastScores: [3, 3] } })
     let html = await (await request(PATH, await signIn())).text()
     let headers = [...html.matchAll(/<th scope="col"[^>]* class="sheet-col">(.*?)<\/th>/gs)].map((m) => m[1]!.replace(/<span class="visually-hidden">.*?<\/span>/s, '').replace(/<[^>]+>/g, '|').replace(/\|+/g, '|'))
-    assert.deepEqual(headers, ['|R1|lite|', '|same as R1|lite|', '|lite|Not published|', '|R2|lite|'])
+    assert.deepEqual(headers, ['|R1|lite|', '|same as R1|lite|', '|Not published|lite|', '|R2|lite|'])
     assert.match(html, /<dt>Reviews<\/dt><dd>2<\/dd>/)
     assert.match(html, /Run R3…/)
     assert.match(html, /unchanged since R1/)

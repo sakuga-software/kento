@@ -445,7 +445,10 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
                     class="sheet-col"
                     title={`${short(review.headSha)} · ${clock(review.createdAt)} · ${review.score}/5 · ${review.costUsd === null ? 'unknown cost' : usdPrecise(review.costUsd)} · ${review.findings} ${plural(review.findings, 'finding')}`}
                   >
-                    {review.rank.kind === 'unpublished' ? null : (
+                    {/* KNT-175. A review not published has no R number: its badge takes the place of the name. */}
+                    {review.rank.kind === 'unpublished' ? (
+                      <span class="status status-stale">Not published</span>
+                    ) : (
                       <span class={`sheet-col-name${review.rank.kind === 'copy' ? ' sheet-col-copy' : ''}`}>{rankLabel(review.rank)}</span>
                     )}
                     <span class="sheet-col-level">{LEVEL_SHORT[review.level]}</span>
@@ -454,7 +457,6 @@ function SheetTable(handle: Handle<{ summary: PullSummary; sheet: PullSheet; que
                       {review.level}, {short(review.headSha)}, {agoOrDate(review.createdAt, now)}, {review.score}/5,{' '}
                       {review.costUsd === null ? 'unknown cost' : usdPrecise(review.costUsd)}, {review.findings} {plural(review.findings, 'finding')}
                     </span>
-                    {review.rank.kind === 'unpublished' ? <span class="status status-stale">Not published</span> : null}
                   </th>
                 ))}
                 {active ? (
