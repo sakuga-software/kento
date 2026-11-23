@@ -51,11 +51,34 @@ function code(value: unknown): string {
 
 const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** The line (from 1) of the first key `key` of a JSON text at or after line `from`, or null. */
-function keyLine(lines: readonly string[], key: string, from = 0): number | null {
+const indent = (line: string) => line.length - line.trimStart().length;
+
+/**
+ * The index of the line of the key `key` of the object that opens at line `start` of a JSON text, or
+ * null: only a key of that object, at the depth of its own keys (Kentō #739a4e: the first match of a
+ * name could be a key of another table, or a key of a column object such as `name`). A text on one
+ * line gives null.
+ */
+function childKey(lines: readonly string[], start: number | null, key: string): number | null {
+  if (start === null || !lines[start]?.trimEnd().endsWith('{')) return null;
+  const outer = indent(lines[start]!);
+  const inner = lines[start + 1] === undefined ? -1 : indent(lines[start + 1]!);
+  if (inner <= outer) return null;
   const quoted = `${JSON.stringify(key)}:`;
-  for (let i = from; i < lines.length; i++) if (lines[i]!.includes(quoted)) return i + 1;
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim() && indent(line) <= outer) return null;
+    if (indent(line) === inner && line.trimStart().startsWith(quoted)) return i;
+  }
   return null;
+}
+
+/** The line (from 1) of a table of a snapshot, or of a column of that table, in the text at the head. */
+function snapshotLines(lines: readonly string[]): { table: (name: string) => number | null; column: (table: string, col: string) => number | null } {
+  const tables = childKey(lines, 0, 'tables');
+  const table = (name: string) => childKey(lines, tables, name);
+  const plus = (i: number | null) => (i === null ? null : i + 1);
+  return { table: (name) => plus(table(name)), column: (t, col) => plus(childKey(lines, childKey(lines, table(t), 'columns'), col)) };
 }
 
 const at = (line: number | null) => (line ? ` (line ${line})` : '');
@@ -84,14 +107,15 @@ export function snapshotChanges(before: Snapshot | null, after: Snapshot, lines:
   const renamedTableTo = new Set(tableRenames.map(([, to]) => to));
   const renamedColumnFrom = new Set(columnRenames.map((r) => `${r.fromTable}.${r.from}`));
   const renamedColumnTo = new Set(columnRenames.map((r) => `${r.table}.${r.to}`));
-  const tableLine = (name: string) => keyLine(lines, name);
+  const where = snapshotLines(lines);
+  const tableLine = where.table;
   for (const name of Object.keys(now)) if (!old[name] && !renamedTableTo.has(name)) out.push(`table added: ${code(name)}${at(tableLine(name))}`);
   for (const name of Object.keys(old)) if (!now[name] && !renamedTableFrom.has(name)) out.push(`table removed: ${code(name)}`);
   for (const [name, table] of Object.entries(now)) {
     const was = old[name]?.columns;
     if (!was) continue;
-    const from = tableLine(name) ?? 0;
-    const colLine = (col: string) => at(keyLine(lines, col, from));
+    const from = tableLine(name);
+    const colLine = (col: string) => at(where.column(name, col));
     const cols = table.columns ?? {};
     for (const col of Object.keys(cols)) {
       const b = cols[col]!;
@@ -105,11 +129,11 @@ export function snapshotChanges(before: Snapshot | null, after: Snapshot, lines:
       if (JSON.stringify(a.default) !== JSON.stringify(b.default))
         out.push(`column default changed: ${code(`${name}.${col}`)} ${code(JSON.stringify(a.default) ?? 'none')} → ${code(JSON.stringify(b.default) ?? 'none')}${colLine(col)}`);
     }
-    for (const col of Object.keys(was)) if (!cols[col] && !renamedColumnFrom.has(`${name}.${col}`)) out.push(`column removed: ${code(`${name}.${col}`)}${at(from || null)}`);
+    for (const col of Object.keys(was)) if (!cols[col] && !renamedColumnFrom.has(`${name}.${col}`)) out.push(`column removed: ${code(`${name}.${col}`)}${at(from)}`);
   }
   // Drizzle records the renames that the person chose when the schema was generated.
   for (const [from, to] of tableRenames) out.push(`table renamed: ${code(from)} → ${code(to)}${at(tableLine(to))}`);
-  for (const r of columnRenames) out.push(`column renamed: ${code(`${r.fromTable}.${r.from}`)} → ${code(`${r.table}.${r.to}`)}${at(keyLine(lines, r.to, tableLine(r.table) ?? 0))}`);
+  for (const r of columnRenames) out.push(`column renamed: ${code(`${r.fromTable}.${r.from}`)} → ${code(`${r.table}.${r.to}`)}${at(where.column(r.table, r.to))}`);
   return out;
 }
 

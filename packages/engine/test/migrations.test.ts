@@ -261,3 +261,23 @@ test('a name of the repository cannot write markup into the pack', () => {
   assert.doesNotMatch(changes[0]!, /\n/);
   assert.equal((changes[0]!.match(/`/g) ?? []).length, 2, 'one code span');
 });
+
+test('the line of a table or a column is the key of that object, not the first text that matches (Kentō #739a4e)', () => {
+  const before = { tables: { members: { name: 'members', columns: { id: { type: 'uuid' }, role: { type: 'text' } } } } };
+  // A column named `name` (the table has a key `name` too), and a table named as a column of another.
+  const after = {
+    tables: {
+      members: { name: 'members', columns: { id: { type: 'uuid' }, role: { type: 'text' }, name: { type: 'text' } } },
+      role: { name: 'role', columns: { id: { type: 'uuid' } } },
+    },
+  };
+  const text = JSON.stringify(after, null, 2);
+  const lines = text.split('\n');
+  const lineOf = (match: (line: string, i: number) => boolean) => lines.findIndex(match) + 1;
+  const columnsAt = lineOf((l) => l.includes('"columns": {'));
+  const nameColumn = lineOf((l, i) => i >= columnsAt && l.trimStart().startsWith('"name": {'));
+  const roleTable = lineOf((l) => l === '    "role": {');
+  assert.deepEqual(snapshotChanges(before, after, lines), [`table added: \`role\` (line ${roleTable})`, `column added: \`members.name\` (\`text\`) (line ${nameColumn})`]);
+  // A text on one line gives no line rather than a wrong one.
+  assert.deepEqual(snapshotChanges(before, after, [JSON.stringify(after)]), ['table added: `role`', 'column added: `members.name` (`text`)']);
+});
