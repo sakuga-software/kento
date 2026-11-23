@@ -140,6 +140,9 @@ export function createUsersStore(sql: postgres.Sql): UsersStore {
         ),
         -- KNT-175. A pull request with a review on GitHub. Its count is the rule of db/review-count.ts,
         -- as on its own screen and in the request for feedback: a copy (REV-89) does not count.
+        -- The date, the verdict and the score are those of the last review on GitHub, a copy included:
+        -- a copy is the review of a newer head, and it has the score and the verdict of its source,
+        -- the last review that counts.
         reviewed as (
           select mine.repo_id, mine.pr_number, mine.full_name,
             count(*) filter (where ${sql.unsafe(countsSql())}) as reviews, max(reviews.published_at) as last_review_at

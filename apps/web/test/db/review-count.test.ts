@@ -137,6 +137,24 @@ describe('the count and the numbers of the reviews of a pull request (KNT-175)',
     assert.equal(pull!.score, 4)
   })
 
+  it('dates a pull request by its last review on GitHub, a copy included, with the score of the review it copies', async () => {
+    let sql = database.sql
+    let [job] = await sql<{ id: string }[]>`
+      insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref)
+      values (${repoId}, 'review', 'lite', 'done', ${PR}, ${sha('9')}, 'main') returning id`
+    let copy = { verdict: 'COMMENT', findings: [], reusedFrom: { reviewId: reviews[4]!, head: PLAN[4].head, githubReviewId: 503 } }
+    let [row] = await sql<{ publishedAt: Date }[]>`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+      values (${job!.id}, ${repoId}, ${PR}, ${sha('9')}, 4, 'm', 0, ${JSON.stringify(copy)}::text::jsonb, 503, now())
+      returning published_at as "publishedAt"`
+    let screen = (await createUsersStore(sql).screen(orgId, AUTHOR.login))!
+    await sql`delete from jobs where id = ${job!.id}`
+    let [pull] = screen.pulls.rows
+    assert.equal(pull!.reviews, 3, 'the copy does not count')
+    assert.equal(pull!.score, 4, 'the score of R3, which the copy carries')
+    assert.equal(pull!.lastReviewAt.getTime(), new Date(row!.publishedAt).getTime())
+  })
+
   it('lists no pull request whose only review never reached GitHub', async () => {
     let sql = database.sql
     let [job] = await sql<{ id: string }[]>`
