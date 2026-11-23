@@ -15,7 +15,7 @@
 // finding near one of them, on its file, with a word of its title, is linked to it too. The service then answers in the thread of the
 // earlier finding instead of opening a new one, and the score counts the defect once.
 import { NEAR_THREAD_LINES } from './answered.ts';
-import { findingKey, toConsider, type Answer, type Finding } from './findings.ts';
+import { findingKey, reversesAFix, toConsider, type Answer, type Finding } from './findings.ts';
 import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
 import { MAX_EARLIER_FINDINGS, SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
@@ -77,7 +77,8 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
   let size = 0;
   // KNT-156. The note of the neighbour cases names only open findings: its room is kept before the
   // rows, so that it never takes the place of a row (Kentō #e95c92).
-  const limit = MAX_EARLIER_BYTES - (earlier.some((e) => e.status === 'open') ? PROBE_RESERVE : 0);
+  const limit =
+    MAX_EARLIER_BYTES - (earlier.some((e) => e.status === 'open') ? PROBE_RESERVE : 0) - (earlier.some((e) => e.status === 'fixed') ? REVERSAL_NOTE.length : 0);
   const changedOf = new Map<string, boolean | null>();
   for (const e of earlier) {
     const path = e.path.replace(/^\/+/, '');
@@ -108,7 +109,7 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
   }
   // KNT-156. A fix of an earlier finding can break the case next to it: the fix of a name declared
   // twice took the last declaration, and a value with a type of the same name was no longer read.
-  const probe = probeNote(probed(held));
+  const probe = probeNote(probed(held)) + (held.some((e) => e.status === 'fixed') ? REVERSAL_NOTE : '');
   const intro =
     '## Earlier findings\n\n' +
     'The findings that earlier reviews of this pull request reported, with their status: `open` (still in the code at ' +
@@ -150,6 +151,15 @@ function probeNote(refs: readonly string[]): string {
     'that it changed. A fix that breaks one of them is a new finding, at the line of the fix.\n'
   );
 }
+
+/**
+ * KNT-167. A review asked for a fix, then for its opposite: the author could follow neither. With a
+ * `fixed` finding in the section, the review reads its fix before it reports the opposite.
+ */
+const REVERSAL_NOTE =
+  '\nBefore you report a change that undoes the fix of a `fixed` finding of this list (the opposite change at the same ' +
+  'place), read the code at the head near its line. Report it only when the fix is wrong. Then start the scenario with ' +
+  'the title of that finding, in quotes, never its reference, and say why it was wrong. Such a finding does not block alone.\n';
 
 /** The room of the longest note: every reference at its longest. */
 const PROBE_RESERVE = probeNote(Array.from({ length: MAX_EARLIER_FINDINGS }, () => `E${MAX_EARLIER_FINDINGS}`)).length;
@@ -198,7 +208,17 @@ export function linkEarlier<F extends Finding>(
   const byRef = new Map(held.map((h) => [h.ref, h]));
   let byModel = 0;
   let byNet = 0;
-  const findings: F[] = (answer.findings as F[]).map((f: F) => {
+  // KNT-167. `reverses` names a fixed earlier finding by its reference: it becomes its key. Any other
+  // value goes.
+  // It holds only on the file of that finding, and only when the finding is no more severe: a worse
+  // defect that a fix opened is a new fact, and blocks (the rule of `followedBy`).
+  const reversing = (f: F): F => {
+    const named = typeof f.reverses === 'string' ? byRef.get(f.reverses.trim().toUpperCase()) : undefined;
+    const { reverses: _given, ...rest } = f;
+    const holds = named?.status === 'fixed' && clean(named.path) === clean(f.path) && rank(f) <= rank(named);
+    return (holds ? { ...rest, reverses: named.key } : rest) as F;
+  };
+  const findings: F[] = (answer.findings as F[]).map(reversing).map((f: F) => {
     const named = typeof f.follows === 'string' ? byRef.get(f.follows.trim().toUpperCase()) : undefined;
     if (named) {
       byModel++;
@@ -208,7 +228,9 @@ export function linkEarlier<F extends Finding>(
     const lines = [f.line, anchorOf(f)].filter((l): l is number => l !== null);
     const distance = (h: HeldEarlier) => Math.min(...lines.map((l) => Math.abs(l - h.line)));
     const near = held
-      .filter((h) => clean(h.path) === clean(f.path) && h.category === f.category && rank(f) <= rank(h))
+      // KNT-167. A finding that reverses an earlier finding is not that defect again, unless it has its
+      // very key (the same path and title): then it is the defect back, and no reversal.
+      .filter((h) => clean(h.path) === clean(f.path) && h.category === f.category && rank(f) <= rank(h) && (h.key !== f.reverses || h.key === findingKey(f)))
       // KNT-156. A fixed finding follows only on its key: a finding near it in other words is most
       // often a case that the fix broke, a new defect.
       .filter((h) => h.key === findingKey(f) || (h.status !== 'fixed' && sharedWords(f.title, h.title) >= NET_SHARED_WORDS && distance(h) <= NEAR_THREAD_LINES))
@@ -222,7 +244,21 @@ export function linkEarlier<F extends Finding>(
     return e !== null && (e.status === 'dismissed' || e.status === 'wontfix') && e.changed === false;
   };
   const dropped = findings.filter(settledAway);
-  answer.findings = findings.filter((f) => !settledAway(f));
+  // KNT-167. A finding that follows an earlier finding repeats its defect: it does not reverse that
+  // finding's fix too, even when the net linked it after the link call (Kentō #66919e).
+  answer.findings = findings
+    .filter((f) => !settledAway(f))
+    .map((f) => {
+      if (f.reverses && f.reverses === f.follows) {
+        const { reverses: _same, ...rest } = f;
+        return rest as F;
+      }
+      // KNT-167. A finding that follows a reversing earlier finding, no more severe, keeps its reversal:
+      // the link call decides it again on each review, and a miss would block the PR again.
+      const followed = followedBy(f, held);
+      if (!f.reverses && followed?.reverses && followed.reverses !== f.follows) return { ...f, reverses: followed.reverses } as F;
+      return f;
+    });
   return { dropped, byModel, byNet };
 }
 
@@ -231,5 +267,6 @@ export function linkEarlier<F extends Finding>(
  * finding to consider (on code already read, not critical) does not lower it either.
  */
 export function isNewDefect<F extends Finding>(f: F, held: readonly HeldEarlier[]): boolean {
-  return followedBy(f, held) === null && !toConsider(f);
+  // KNT-167. A finding that asks to undo the fix of an earlier finding does not lower the score alone.
+  return followedBy(f, held) === null && !toConsider(f) && !reversesAFix(f);
 }
