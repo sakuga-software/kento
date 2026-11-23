@@ -569,10 +569,12 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           from jobs
           join reviews on reviews.repo_id = jobs.repo_id and reviews.pr_number = jobs.pr_number
             and reviews.github_review_id is not null
+            and reviews.result->>'level' = jobs.level::text
           where jobs.id = ${jobId}
           order by reviews.published_at desc nulls last
           limit 20`
-        // The newest review that holds a finding decides: a later review without the reversal ends it.
+        // At the level of the job, as `last` (Kentō #816bf7): a review of another level neither gives
+        // nor ends a reversal. The newest review that holds a finding decides: a later review without the reversal ends it.
         let reversals = new Map<string, string | null>()
         for (let { result } of results) {
           for (let f of jsonOf<StoredReview>(result).findings ?? []) {

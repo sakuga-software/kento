@@ -924,6 +924,17 @@ describe('runner API', () => {
       await queueJob()
       let old = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
       assert.ok(!('reverses' in old.earlier.findings[0]), 'a runner of an earlier release refuses the key')
+      // A newer review of another level, without the reversal, does not end it (Kentō #816bf7).
+      let [h] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'heavy', 'done', 28, ${HEAD}, 'main') returning id`
+      let heavy = review({ level: 'heavy', head: HEAD, score: 4, findings: [{ ...finding, ...reversing, fingerprint: '1111111111111111', blocking: true }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${h!.id}, ${repoId}, 28, ${HEAD}, 4, 'm', 0.01, ${JSON.stringify(heavy)}::jsonb, 559, now() + interval '30 seconds')`
+      await queueJob()
+      let other = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.equal(other.earlier.findings[0].reverses, 'c7f3ec000000', 'another level does not decide')
       // A newer review that holds the same finding without the reversal ends it.
       let [k] = await database.sql<{ id: string }[]>`
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
