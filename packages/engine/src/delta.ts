@@ -52,17 +52,42 @@ function changedPaths(repo: string, range: string): Set<string> {
 }
 
 /**
+ * KNT-158. The files that the merges since `since` brought from their other parents (a merge of the
+ * base branch). Null when git cannot read that history (a shallow clone without the first parent).
+ */
+export function broughtByMerges(repo: string, since: string, head: string): Set<string> | null {
+  try {
+    const merges = git(repo, 'rev-list', '--merges', `${since}..${head}`).split('\n').filter(Boolean);
+    return new Set(merges.flatMap((m) => [...changedPaths(repo, `${m}^1..${m}`)]));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The files to read again: the files that changed since the last reviewed head and that are files of
  * the pull request, at the head (`base...head`) or at that head (`base...since`: a change that the
  * pull request reverted since). A merge of the base branch brings changes to other files: those stay
- * out. Null when the last reviewed head is not in the history of the head (a force-push, a rebase):
- * the review reads the whole pull request.
+ * out. Null when the last reviewed head is not in the history of the head (a force-push, a rebase),
+ * or when a merge since then brought changes to a file of the pull request: the review reads the
+ * whole pull request.
  */
-export function planDelta(repo: string, base: string, head: string, since: string): DeltaPlan | null {
+export function planDelta(
+  repo: string,
+  base: string,
+  head: string,
+  since: string,
+  /** The result of `broughtByMerges(repo, since, head)`, when the caller has it already. */
+  brought: Set<string> | null = broughtByMerges(repo, since, head),
+): DeltaPlan | null {
   if (since === head || !isAncestor(repo, since, head)) return null;
   const now = changedPaths(repo, `${base}...${head}`);
   const then = changedPaths(repo, `${base}...${since}`);
   const files = [...changedPaths(repo, `${since}..${head}`)].filter((p) => now.has(p) || then.has(p)).sort();
+  // KNT-158. A merge since then that brought changes to a file of the pull request (a merge of the
+  // base branch that touched it): the diff since that head holds the lines of the base too, and the
+  // review judged them. Only the diff from the merge base holds the change of the pull request alone.
+  if (brought === null || files.some((p) => brought.has(p))) return null;
   return { since, files, pullFiles: [...now].sort() };
 }
 

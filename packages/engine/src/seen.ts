@@ -25,7 +25,17 @@ export const MAX_CHANGED_ZONES_BYTES = 6_000;
  */
 export type SeenCode = { since: string; changed: Map<string, Set<number>>; existed: (path: string) => boolean };
 
-export function seenCode(repo: string, since: string | null | undefined, head: string): SeenCode | null {
+export function seenCode(
+  repo: string,
+  since: string | null | undefined,
+  head: string,
+  /**
+   * KNT-158. The lines that the pull request itself changes at the head (from the merge base). After a
+   * merge of the base branch, a line that the base brought is no change of the pull request: only
+   * the changed lines that the pull request holds count.
+   */
+  own?: ReadonlyMap<string, ReadonlySet<number>>,
+): SeenCode | null {
   if (!since || !inHistory(repo, since, head)) return null;
   const changed = new Map<string, Set<number>>();
   // The paths come from `-z`, one diff per path: git quotes a path that is not ASCII in the header of
@@ -43,6 +53,7 @@ export function seenCode(repo: string, since: string | null | undefined, head: s
       if (count === 0) lines.add(start).add(start + 1);
       for (let n = start; n < start + count; n++) lines.add(n);
     }
+    if (own) for (const n of [...lines]) if (!own.get(path)?.has(n)) lines.delete(n);
   }
   const atSince = new Set(git(repo, 'ls-tree', '-r', '-z', '--name-only', since).split('\0').filter(Boolean));
   return { since, changed, existed: (p) => atSince.has(p) };

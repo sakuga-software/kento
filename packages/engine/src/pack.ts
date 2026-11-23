@@ -28,7 +28,8 @@ const WHOLE_FILE_CONTEXT = 100_000;
  * The schema, the migrations and the storage come last: on a large pull request, the defects and the
  * code that refutes a wrong finding were there.
  */
-export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, core: 5 } as const;
+// KNT-158. A file that the commits name comes after the source, never after the core.
+export const TRIM_RANK = { generated: 0, docs: 1, tests: 2, ui: 3, source: 4, named: 4.5, core: 5 } as const;
 // A build output or a generated file: minified, a source map, a fixture, the snapshots and the journal
 // of Drizzle (`drizzle/meta/0029_snapshot.json`: about 3 900 generated lines).
 const GENERATED_LIKE = /\.min\.(js|css)$|\.map$|(^|\/)(fixtures?|__fixtures__|testdata)\/|(^|\/)drizzle\/(migrations\/)?meta\/|(^|\/)_journal\.json$/;
@@ -57,6 +58,62 @@ export function trimRank(path: string, diff = ''): number {
   if (CORE_FILE.test(path)) return TRIM_RANK.core;
   if (UI_FILE.test(path)) return TRIM_RANK.ui;
   return TRIM_RANK.source;
+}
+
+// KNT-158. The trailers of a commit message name people and tools, not files (`Co-Authored-By: Claude`).
+const TRAILER = /^[A-Za-z-]+-by:.*$|^(?:Co-Authored-By|Signed-off-by|Reviewed-by|Acked-by|Cc|Refs|Closes):.*$/gim;
+
+/**
+ * KNT-158. The changed files that the commit messages name, trailers left out: by path, by file name
+ * of 6 characters or more, or by a stem of 6 characters or more that is no plain word (`no-raw-sql`,
+ * `webhookStore`, `0029_installations`; not `github` or `webhook`). The pack cuts them after the
+ * source, never after the core.
+ */
+export function namedFiles(message: string, paths: readonly string[]): Set<string> {
+  const text = message.replace(TRAILER, '').toLowerCase();
+  const has = (word: string) => new RegExp(`(^|[^\\w.-])${escapeRegExp(word.toLowerCase())}($|[^\\w-])`).test(text);
+  return new Set(
+    paths.filter((path) => {
+      const name = path.split('/').pop()!;
+      const stem = name.replace(/(\.(test|spec))?\.[^.]+$/, '');
+      const word = /^[a-z]+$/.test(stem);
+      return has(path) || (name.length >= 6 && /\./.test(name) && has(name)) || (stem.length >= 6 && !word && has(stem));
+    }),
+  );
+}
+
+/** KNT-158. The changed files that `.gitattributes` marks `linguist-generated` at the head. */
+function linguistGenerated(repo: string, head: string, paths: readonly string[]): Set<string> {
+  if (!paths.length) return new Set();
+  try {
+    const out = git(repo, 'check-attr', `--source=${head}`, '-z', 'linguist-generated', '--', ...paths).split('\0');
+    const generated = new Set<string>();
+    for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === 'set' || out[i + 2] === 'true') generated.add(out[i]!);
+    return generated;
+  } catch {
+    return new Set();
+  }
+}
+
+// KNT-158. The languages where the whitespace at the start and the end of a line means nothing. Not
+// Python, YAML, a Makefile, Haml or Pug: their indent is their structure.
+const WHITESPACE_FREE = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts|css|scss|less|html|htm|vue|svelte|json|md|mdx|java|kt|c|h|cc|cpp|hpp|cs|go|rs|php|swift|sql)$/i;
+
+/**
+ * KNT-158. Whether the `-U0` diff of a file only moves lines left or right: the same lines, trimmed,
+ * come out as go in. A space inside a line (a string) counts as a change.
+ */
+export function onlyIndent(path: string, diff: string): boolean {
+  if (!WHITESPACE_FREE.test(path)) return false;
+  const removed: string[] = [];
+  const added: string[] = [];
+  for (const row of diff.split('\n')) {
+    if (row.startsWith('---') || row.startsWith('+++')) continue;
+    if (row.startsWith('-') && row.slice(1).trim()) removed.push(row.slice(1).trim());
+    if (row.startsWith('+') && row.slice(1).trim()) added.push(row.slice(1).trim());
+  }
+  if (!added.length && !removed.length) return false;
+  return removed.sort().join('\n') === added.sort().join('\n');
 }
 
 /**
@@ -863,6 +920,18 @@ export function buildPack(
   const rankOf = new Map([...hunks].map(([path, diff]) => [path, trimRank(path, diff)]));
   const testOnly = changes.every(({ path }) => SKIP.test(path) || TEST_FILE.test(path) || E2E_FILE.test(path) || FIXTURE.test(path));
   if (testOnly) for (const [path, r] of rankOf) if (r === TRIM_RANK.tests || FIXTURE.test(path)) rankOf.set(path, TRIM_RANK.source);
+  // KNT-158. Over the budget only: a file that `.gitattributes` marks generated, or whose change only
+  // moves lines left or right, goes first; a file that the commits name comes after the source.
+  if (size() > budget) {
+    const message = git(repo, 'log', '--format=%s%n%b', `${base}..${head}`);
+    const named = namedFiles(message, [...hunks.keys()]);
+    const generated = linguistGenerated(repo, head, [...hunks.keys()]);
+    for (const path of hunks.keys()) {
+      const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+      if (generated.has(path) || onlyIndent(path, git(repo, 'diff', '-U0', `${base}...${head}`, '--', ...paths))) rankOf.set(path, TRIM_RANK.generated);
+      else if (named.has(path) && rankOf.get(path)! < TRIM_RANK.named) rankOf.set(path, TRIM_RANK.named);
+    }
+  }
   const rank = (path: string) => rankOf.get(path) ?? trimRank(path);
   const byRank = (ranks: number[]) =>
     [...hunks]
@@ -881,7 +950,7 @@ export function buildPack(
     if (size() <= diffBudget) break;
     drop(path);
   }
-  for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+  for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.named, TRIM_RANK.core])) {
     if (size() <= diffBudget) break;
     if (WORKFLOW_FILE.test(path) || TEST_FILE.test(path)) continue;
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
@@ -892,7 +961,7 @@ export function buildPack(
       narrowed.push(path);
     }
   }
-  for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.core])) {
+  for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.named, TRIM_RANK.core])) {
     if (size() <= diffBudget) break;
     drop(path);
   }
