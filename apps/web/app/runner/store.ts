@@ -596,7 +596,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         }
         let reversalOf = (f: EarlierFinding) => {
           let fingerprint = fingerprints.get(f)
-          return fingerprint !== undefined && byFingerprint.has(fingerprint) ? byFingerprint.get(fingerprint) : byKey.get(f.key)
+          // The key only when no review of the window holds a fingerprint (a runner of an earlier
+          // release): else an unseen fingerprint is another finding (Kentō #789ec7).
+          if (fingerprint !== undefined && byFingerprint.has(fingerprint)) return byFingerprint.get(fingerprint)
+          return byFingerprint.size ? undefined : byKey.get(f.key)
         }
         // Only to a finding still in the code (open or stale): a fixed or set-aside finding is no
         // reversal that a later finding can follow (Kentō #f32318).

@@ -945,6 +945,21 @@ describe('runner API', () => {
       let twins = twin.earlier.findings.filter((f: { key: string }) => f.key === findingKey({ ...finding, ...reversing }))
       assert.equal(twins.length, 2)
       assert.deepEqual(twins.map((f: { line: number; reverses?: string }) => [f.line, f.reverses ?? null]).sort(), [[3, 'c7f3ec000000'], [9, null]])
+      // A review of an earlier runner holds the same path and title with no fingerprint: the key does
+      // not give its reversal to a finding of another fingerprint (Kentō #789ec7).
+      let [o] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let { fingerprint: _none, ...bare } = { ...finding, ...reversing, fingerprint: undefined }
+      let older = review({ head: PREVIOUS, score: 4, findings: [{ ...bare, blocking: false, reverses: 'c7f3ec000000' }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${o!.id}, ${repoId}, 28, ${PREVIOUS}, 4, 'm', 0.01, ${JSON.stringify(older)}::jsonb, 560, now() - interval '1 minute')`
+      await queueJob()
+      let mixed = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      let pair = mixed.earlier.findings.filter((f: { key: string }) => f.key === findingKey({ ...finding, ...reversing }))
+      assert.deepEqual(pair.map((f: { line: number; reverses?: string }) => [f.line, f.reverses ?? null]).sort(), [[3, 'c7f3ec000000'], [9, null]])
+      await database.sql`delete from reviews where github_review_id = 560`
       await database.sql`delete from findings where repo_id = ${repoId} and fingerprint = '2222222222222222'`
       // A reversing finding that is fixed now carries no reversal (Kentō #f32318).
       await database.sql`update findings set status = 'fixed' where repo_id = ${repoId} and pr_number = 28`
