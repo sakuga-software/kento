@@ -182,6 +182,8 @@ test('the note of the neighbour cases fits in the size of the section', () => {
   const body = section.slice(section.indexOf('- E1 '));
   assert.ok(body.length <= MAX_EARLIER_BYTES + 2, `${body.length} bytes`);
   assert.match(section, /The file of E1, E2, E3, E4, E5, E6, E7, E8, E9, E10 and \d+ more changed since/);
+  // With the note of the classes of KNT-158: both fit.
+  assert.match(section, /### Defects found more than once on the same code/);
   assert.ok(held.length > 10);
 });
 
