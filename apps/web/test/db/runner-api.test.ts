@@ -935,6 +935,12 @@ describe('runner API', () => {
       await queueJob()
       let other = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
       assert.equal(other.earlier.findings[0].reverses, 'c7f3ec000000', 'another level does not decide')
+      // A reversing finding that is fixed now carries no reversal (Kentō #f32318).
+      await database.sql`update findings set status = 'fixed' where repo_id = ${repoId} and pr_number = 28`
+      await queueJob()
+      let fixed = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.ok(!('reverses' in fixed.earlier.findings[0]), 'a fixed finding keeps no reversal')
+      await database.sql`update findings set status = 'open' where repo_id = ${repoId} and pr_number = 28`
       // A newer review that holds the same finding without the reversal ends it.
       let [k] = await database.sql<{ id: string }[]>`
         insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)

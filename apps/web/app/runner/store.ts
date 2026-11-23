@@ -583,8 +583,10 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
             reversals.set(key, f.reverses && FINDING_KEY_PATTERN.test(f.reverses) ? f.reverses : null)
           }
         }
+        // Only to a finding still in the code (open or stale): a fixed or set-aside finding is no
+        // reversal that a later finding can follow (Kentō #f32318).
         findings = findings.map((f) => {
-          let reverses = reversals.get(f.key)
+          let reverses = f.status === 'open' || f.status === 'stale' ? reversals.get(f.key) : undefined
           return reverses ? { ...f, reverses } : f
         })
       }
