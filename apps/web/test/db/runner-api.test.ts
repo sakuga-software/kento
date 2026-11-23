@@ -935,6 +935,17 @@ describe('runner API', () => {
       await queueJob()
       let other = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
       assert.equal(other.earlier.findings[0].reverses, 'c7f3ec000000', 'another level does not decide')
+      // Another finding of the same path and title, of another fingerprint, gets no reversal of the
+      // first one (Kentō #6663f0).
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '2222222222222222', ${findingKey({ ...finding, ...reversing })}, ${reversing.path}, 9, ${reversing.title}, 'major', 'bug', 90, 'open', ${PREVIOUS}, ${PREVIOUS})`
+      await queueJob()
+      let twin = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      let twins = twin.earlier.findings.filter((f: { key: string }) => f.key === findingKey({ ...finding, ...reversing }))
+      assert.equal(twins.length, 2)
+      assert.deepEqual(twins.map((f: { line: number; reverses?: string }) => [f.line, f.reverses ?? null]).sort(), [[3, 'c7f3ec000000'], [9, null]])
+      await database.sql`delete from findings where repo_id = ${repoId} and fingerprint = '2222222222222222'`
       // A reversing finding that is fixed now carries no reversal (Kentō #f32318).
       await database.sql`update findings set status = 'fixed' where repo_id = ${repoId} and pr_number = 28`
       await queueJob()

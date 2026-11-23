@@ -538,8 +538,8 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
     },
 
     async jobEarlier(jobId, options = { reverses: false }) {
-      let rows = await sql<(Omit<EarlierFinding, 'reason'> & { reason: string | null })[]>`
-        select findings.key, findings.path, findings.line, findings.title, findings.severity, findings.category,
+      let rows = await sql<(Omit<EarlierFinding, 'reason'> & { reason: string | null; fingerprint: string })[]>`
+        select findings.fingerprint, findings.key, findings.path, findings.line, findings.title, findings.severity, findings.category,
           findings.status::text as status, findings.status_reason as reason, findings.last_seen_sha as commit
         from jobs
         join findings on findings.repo_id = jobs.repo_id and findings.pr_number = jobs.pr_number
@@ -547,8 +547,15 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
         order by findings.status in ('open', 'stale') desc, findings.updated_at desc, findings.id
         limit ${MAX_EARLIER_FINDINGS}`
       // A row that the protocol would refuse would fail the claim: it stays out, and the log says so.
+      // The fingerprint of each row stays out of the job (the protocol has no such key of an earlier
+      // finding); KNT-167 reads it to find the reversal of that very finding.
+      let fingerprints = new Map<EarlierFinding, string>()
       let findings = rows
-        .map((r) => ({ ...r, title: r.title.slice(0, 1000), line: Math.max(0, r.line), reason: r.reason === null ? null : r.reason.slice(0, 500) }))
+        .map(({ fingerprint, ...r }) => {
+          let row = { ...r, title: r.title.slice(0, 1000), line: Math.max(0, r.line), reason: r.reason === null ? null : r.reason.slice(0, 500) }
+          fingerprints.set(row, fingerprint)
+          return row
+        })
         .filter((r) => parseEarlierFinding(r).ok)
       if (findings.length < rows.length) log('warn', 'job.earlier_findings_dropped', { jobId, dropped: rows.length - findings.length })
       let [last] = await sql<{ head: string; result: unknown }[]>`
@@ -575,18 +582,26 @@ export function createRunnerStore(sql: postgres.Sql): RunnerStore {
           limit 20`
         // At the level of the job, as `last` (Kentō #816bf7): a review of another level neither gives
         // nor ends a reversal. The newest review that holds a finding decides: a later review without the reversal ends it.
-        let reversals = new Map<string, string | null>()
+        // By the fingerprint of the finding, which the row of the finding keeps up to date; by its key
+        // only for a stored finding with no fingerprint (Kentō #6663f0: two findings of one path and
+        // title share a key).
+        let byFingerprint = new Map<string, string | null>()
+        let byKey = new Map<string, string | null>()
         for (let { result } of results) {
           for (let f of jsonOf<StoredReview>(result).findings ?? []) {
-            let key = findingKey(f)
-            if (reversals.has(key)) continue
-            reversals.set(key, f.reverses && FINDING_KEY_PATTERN.test(f.reverses) ? f.reverses : null)
+            let reverses = f.reverses && FINDING_KEY_PATTERN.test(f.reverses) ? f.reverses : null
+            if (f.fingerprint && !byFingerprint.has(f.fingerprint)) byFingerprint.set(f.fingerprint, reverses)
+            else if (!f.fingerprint && !byKey.has(findingKey(f))) byKey.set(findingKey(f), reverses)
           }
+        }
+        let reversalOf = (f: EarlierFinding) => {
+          let fingerprint = fingerprints.get(f)
+          return fingerprint !== undefined && byFingerprint.has(fingerprint) ? byFingerprint.get(fingerprint) : byKey.get(f.key)
         }
         // Only to a finding still in the code (open or stale): a fixed or set-aside finding is no
         // reversal that a later finding can follow (Kentō #f32318).
         findings = findings.map((f) => {
-          let reverses = f.status === 'open' || f.status === 'stale' ? reversals.get(f.key) : undefined
+          let reverses = f.status === 'open' || f.status === 'stale' ? reversalOf(f) : undefined
           return reverses ? { ...f, reverses } : f
         })
       }
