@@ -281,3 +281,19 @@ test('the line of a table or a column is the key of that object, not the first t
   // A text on one line gives no line rather than a wrong one.
   assert.deepEqual(snapshotChanges(before, after, [JSON.stringify(after)]), ['table added: `role`', 'column added: `members.name` (`text`)']);
 });
+
+test('the section of the migrations counts in the budget of the diff, under a smaller budget too (KNT-201)', () => {
+  const tags = Array.from({ length: 35 }, (_, i) => `${String(i).padStart(4, '0')}_${'m'.repeat(150)}${i}`);
+  const sources = (n: number) => Object.fromEntries(Array.from({ length: 4 }, (_, f) => [`src/s${f}.ts`, Array.from({ length: 120 }, (_, i) => `export const v${i} = ${n + i}; // ${'x'.repeat(80)}`).join('\n')]));
+  const r = twoCommits({ 'drizzle/meta/_journal.json': journal(...tags.slice(0, 1)), ...sources(0) }, { 'drizzle/meta/_journal.json': journal(...tags), ...sources(1) });
+  try {
+    const maxBytes = 88_000;
+    const { pack } = buildPack(r.dir, r.from, r.to, 'definitions', [], '', undefined, '', maxBytes);
+    const section = pack.slice(pack.indexOf('\n## Migrations: journal and snapshots'));
+    const diff = pack.slice(pack.indexOf('## Diff'), pack.indexOf('```\n', pack.indexOf('```diff')) + 4);
+    assert.ok(section.length > 10_000, `a section of ${section.length} bytes`);
+    assert.ok(diff.length + section.length <= maxBytes, `${diff.length} + ${section.length} bytes`);
+  } finally {
+    r.done();
+  }
+});
