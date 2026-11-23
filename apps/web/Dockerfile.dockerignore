@@ -10,6 +10,7 @@
 !apps/web/app/**
 !apps/web/drizzle/**
 !apps/web/public/**
+!apps/web/scripts/build-client.ts
 !packages/protocol/package.json
 !packages/protocol/src/**
 !packages/engine/package.json
