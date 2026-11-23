@@ -881,6 +881,8 @@ export function buildPack(
   contextHash: string;
   /** KNT-166. What the pack read of the changed files: the review says it, and its score follows it. */
   coverage: Coverage;
+  /** KNT-201. The number of changed files whose diff the pack holds. */
+  read: number;
 } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
@@ -1068,5 +1070,5 @@ export function buildPack(
   const large = changes.map((c) => c.path).filter((path) => !SKIP.test(path) && !reviewed.includes(path));
   const logic = [...cut, ...large].filter((path) => rank(path) !== TRIM_RANK.generated && rank(path) !== TRIM_RANK.docs);
   const coverage: Coverage = { files: changes.length, cut, large, narrowed: narrowedNote, logic, core: logic.filter((path) => rank(path) === TRIM_RANK.core) };
-  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage };
+  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage, read: hunks.size };
 }

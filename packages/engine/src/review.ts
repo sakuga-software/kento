@@ -354,7 +354,7 @@ const stderr = (message: string) => process.stderr.write(`${message}\n`);
  *
  * The first budget leaves out what the call holds around the pack. The pack can still pass it by its
  * headings and its « Not reviewed » lines, which its budget does not count: the next build takes the
- * excess off its budget.
+ * excess off its budget, and half again. A call that cannot fit keeps the pack of MAX_PACK_BYTES.
  */
 function packWithin(input: ReviewInput, fit: Fit, build: (maxBytes: number) => Packed): Packed {
   const threshold = longContextThreshold(input.kind ?? 'openrouter', fit.config.models);
@@ -364,25 +364,24 @@ function packWithin(input: ReviewInput, fit: Fit, build: (maxBytes: number) => P
   const total = (packed: Packed) => callBytes(packed.parts) + packed.pack.length - fit.unkeyed.length + fit.unkeyedBound + fit.checklist.length;
   // Before the first build, the notes of the sections read the sections that the pack will hold.
   let maxBytes = Math.min(MAX_PACK_BYTES, cap - callBytes([{ text: fit.sections + fit.unkeyed }]) - fit.unkeyedBound - fit.checklist.length);
-  const over = (excess: number) =>
-    (input.log ?? stderr)(`the review call passes the long-context threshold of ${threshold} tokens by about ${Math.ceil(excess / BYTES_PER_TOKEN)} tokens`);
-  // A budget of 0 or less holds no diff: a review of nothing costs less, and is no review. The pack
-  // keeps MAX_PACK_BYTES, as with no threshold (Kentō #60f17e).
-  if (maxBytes <= 0) {
-    over(-maxBytes);
-    return build(MAX_PACK_BYTES);
-  }
-  let packed = build(maxBytes);
+  // The call cannot fit: its parts around the pack leave no room for a diff (Kentō #60f17e), the
+  // budget drops every file, or the builds end over the threshold (Kentō #849742). A call over the
+  // threshold pays the higher price for every token, so the review reads the pack of MAX_PACK_BYTES.
+  const unfit = () => {
+    const full = build(MAX_PACK_BYTES);
+    (input.log ?? stderr)(`the review call passes the long-context threshold of ${threshold} tokens by about ${Math.ceil((total(full) - cap) / BYTES_PER_TOKEN)} tokens`);
+    return full;
+  };
+  if (maxBytes <= 0) return unfit();
   for (let builds = 1; ; builds++) {
+    const packed = build(maxBytes);
+    if (packed.read === 0 && packed.coverage.cut.length > 0) return unfit();
     const excess = total(packed) - cap;
     if (excess <= 0) return packed;
-    const next = Math.min(maxBytes, packed.pack.length - fit.unkeyed.length) - excess;
-    if (builds === MAX_PACK_BUILDS || next <= 0) {
-      over(excess);
-      return packed;
-    }
-    maxBytes = next;
-    packed = build(maxBytes);
+    // Each file that the next build drops adds its line to « Not reviewed »: half again of the excess
+    // goes too, or the builds come nearer the threshold by smaller and smaller steps.
+    maxBytes = Math.min(maxBytes, packed.pack.length - fit.unkeyed.length) - Math.ceil(excess * 1.5);
+    if (builds === MAX_PACK_BUILDS || maxBytes <= 0) return unfit();
   }
 }
 

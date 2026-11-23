@@ -204,3 +204,14 @@ test('a call whose parts around the pack leave no room for a diff keeps the pack
   assert.equal(prepared.pack, buildPack(repo, base, head, 'definitions').pack);
   assert.match(logs.join('\n'), /passes the long-context threshold of 100000 tokens/);
 });
+
+test('a budget that drops every file of the change keeps the pack of MAX_PACK_BYTES, and says so', () => {
+  const logs: string[] = [];
+  // A system prompt that leaves about 3 KB for the pack: the budget drops every file.
+  const room = 3_000;
+  const around = reviewCallBytes({ prompts: { 'review.md': '' } }, haiku, [{ text: '' }], answerSchema({ threads: false }));
+  const prompts = { 'review.md': 'x'.repeat(Math.floor(CAP) - around - room) };
+  const prepared = prepareReview({ apiKey: undefined, kind: 'anthropic', prompts, repoDir: repo, base, head, level: 'lite', config: haiku, log: (m) => logs.push(m) }, haiku);
+  assert.equal(prepared.pack, buildPack(repo, base, head, 'definitions').pack);
+  assert.match(logs.join('\n'), /passes the long-context threshold of 100000 tokens/);
+});
