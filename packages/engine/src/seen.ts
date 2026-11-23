@@ -17,6 +17,8 @@ import type { Finding } from './findings.ts';
 export const SEEN_MARGIN = 5;
 /** The section of the changed zones holds at most this many bytes. */
 export const MAX_CHANGED_ZONES_BYTES = 6_000;
+/** KNT-201. The most bytes of the whole section: the rows, and 1 KB for its intro and its last lines (a test checks it). */
+export const MAX_CHANGED_ZONES_SECTION_BYTES = MAX_CHANGED_ZONES_BYTES + 1_000;
 
 /**
  * What changed since the last reviewed commit: the lines of each file at the head that the diff

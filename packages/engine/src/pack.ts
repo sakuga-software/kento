@@ -2,12 +2,22 @@
 import { createHash } from 'node:crypto';
 import { git } from './git.ts';
 import { importsSection } from './imports.ts';
+import { isMigrationMeta, migrationSection } from './migrations.ts';
 import type { ContextKind } from './levels.ts';
 import type { MessagePart } from './providers.ts';
 import { rulesForPaths, rulesSection, type PackedRule, type Rule } from './rules.ts';
 
-// The pack that the model reads, at most. A larger pull request loses its largest files first.
-const MAX_PACK_BYTES = 240_000;
+/** The pack that the model reads, at most. A larger pull request loses its files of least value first. */
+export const MAX_PACK_BYTES = 240_000;
+/**
+ * KNT-201. The bytes of a prompt that one token holds, at the least: packWithin (review.ts) keeps a
+ * call under a threshold of tokens with it. The engine has no tokenizer. On the bench of #44 at
+ * `lite`, the two largest pull requests sent 105,000 and 106,000 prompt tokens, in calls of 260 KB at
+ * most (a pack of 240 KB and its headings, the system prompt and the schema): 2.45 bytes a token at
+ * most. The largest of the others, rebuilt offline at the same commit, sends a call of 242 KB and
+ * fewer tokens than those two: 2.3 bytes a token at least. 2.2 is below both.
+ */
+export const BYTES_PER_TOKEN = 2.2;
 const MAX_FILE_CHANGED_LINES = 1000;
 const MAX_DOC_LINES = 400;
 const MAX_CONTEXT_BYTES = 60_000;
@@ -858,6 +868,11 @@ export function buildPack(
    * (MAX_EARLIER_BYTES, and MAX_CHANGED_ZONES_BYTES of REV-100).
    */
   unkeyed = '',
+  /**
+   * KNT-201. The budget of the pack, MAX_PACK_BYTES at most. A smaller budget cuts the same files in
+   * the same order, earlier (packWithin in review.ts).
+   */
+  maxBytes = MAX_PACK_BYTES,
 ): {
   pack: string;
   parts: MessagePart[];
@@ -867,6 +882,8 @@ export function buildPack(
   contextHash: string;
   /** KNT-166. What the pack read of the changed files: the review says it, and its score follows it. */
   coverage: Coverage;
+  /** KNT-201. The number of changed files whose diff the pack holds. */
+  read: number;
 } {
   const reviewed: string[] = [];
   const skipped: string[] = [];
@@ -877,13 +894,20 @@ export function buildPack(
   // A rule covers a file of the change, even one that the pack leaves out, and the old path of a rename.
   const touched = changes.flatMap(({ path, from }) => (from ? [from, path] : [path]));
   const { section: rulesText, packed, skipped: rulesSkipped } = rulesSection(rulesForPaths(rules, touched));
+  // KNT-155. The journal and the snapshots of the migrations go to their own section, not to the diff.
+  const meta: string[] = [];
   for (const { added, removed, path, from } of changes) {
-    if (SKIP.test(path)) skipped.push(`${path}: generated or binary file`);
+    if (isMigrationMeta(path)) meta.push(path);
+    else if (SKIP.test(path)) skipped.push(`${path}: generated or binary file`);
     else if (added !== '-' && Number(added) + Number(removed) > MAX_FILE_CHANGED_LINES)
       skipped.push(`${path}: more than ${MAX_FILE_CHANGED_LINES} changed lines`);
     else reviewed.push(path);
     if (from) renamedFrom.set(path, from);
   }
+
+  const migrations = migrationSection(repo, base, head, meta);
+  // A file that the section cannot hold goes to « Not reviewed » with its reason, never as generated.
+  skipped.push(...migrations.skipped);
 
   const hunks = new Map<string, string>();
   for (const path of reviewed) {
@@ -910,7 +934,7 @@ export function buildPack(
   const importsSize = [...importsOf.values()].reduce((sum, text) => sum + text.length, 0);
 
   const commits = git(repo, 'log', '--format=- %h %s', `${base}..${head}`);
-  const budget = MAX_PACK_BYTES - docs.length - rulesText.length - answered.length - commits.length - importsSize - 2000;
+  const budget = Math.min(maxBytes, MAX_PACK_BYTES) - docs.length - rulesText.length - answered.length - commits.length - importsSize - migrations.section.length - 2000;
   const size = () => [...hunks.values()].reduce((sum, hunk) => sum + hunk.length, 0);
   // KNT-151. On a large pull request, the diff would fill the budget and leave the context no room:
   // the context reads first, up to CONTEXT_RESERVE, and the diff fits in what is left.
@@ -1041,11 +1065,11 @@ export function buildPack(
   // review 3 times in 49. A cache mark after them would cost more than it saves.
   const parts: MessagePart[] = [
     { text: docs, cache: '1h' },
-    { text: header + notReviewed + rulesText + answered + unkeyed + diff + importsPart + contextPart },
+    { text: header + notReviewed + rulesText + answered + unkeyed + diff + migrations.section + importsPart + contextPart },
   ];
   // REV-89. `body`: the pack without its heads and its commits, which a merge of the base branch
   // changes, and without `unkeyed`. The reuse key reads it (reuse.ts), in the order of REV-89.
-  const body = notReviewed + docs + rulesText + answered + diff + importsPart + contextPart;
+  const body = notReviewed + docs + rulesText + answered + diff + migrations.section + importsPart + contextPart;
   // REV-113. A short hash of the rules, the imports and the context: the logs of the runner tell how
   // often a review of a pull request holds the same ones as the last review.
   const contextHash = createHash('sha256').update(rulesText + importsPart + contextPart).digest('hex').slice(0, 12);
@@ -1054,5 +1078,5 @@ export function buildPack(
   const large = changes.map((c) => c.path).filter((path) => !SKIP.test(path) && !reviewed.includes(path));
   const logic = [...cut, ...large].filter((path) => rank(path) !== TRIM_RANK.generated && rank(path) !== TRIM_RANK.docs);
   const coverage: Coverage = { files: changes.length, cut, large, narrowed: narrowedNote, logic, core: logic.filter((path) => rank(path) === TRIM_RANK.core) };
-  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage };
+  return { pack: parts.map((part) => part.text).join(''), parts, skipped: [...skipped, ...rulesSkipped], rules: packed, body, contextHash, coverage, read: hunks.size };
 }

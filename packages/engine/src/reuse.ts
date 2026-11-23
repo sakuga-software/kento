@@ -26,7 +26,9 @@ const PROMPT = PROMPT_FILES.map((file) => readFileSync(join(import.meta.dirname,
 /**
  * The hash of the changed files that a review reads, from `git diff --raw base...head`: for each
  * file, its status, its old and new blob, its path and the old path of a rename. A generated or
- * binary file (pack.ts) is not in the hash: the review does not read it.
+ * binary file (pack.ts) is not in the hash. That holds for the journal and the snapshots under
+ * `drizzle/migrations/meta/` too, though the review reads them in their own section (KNT-155): the
+ * hash goes to the logs only, and the reuse key reads the pack itself.
  */
 export function diffHash(repoDir: string, base: string, head: string): string {
   const fields = git(repoDir, 'diff', '--raw', '-z', '--no-abbrev', `${base}...${head}`).split('\0');
