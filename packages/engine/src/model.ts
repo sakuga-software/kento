@@ -33,6 +33,12 @@ export type Reply = { answer: Answer; usage: Usage };
 
 const stderr = (message: string) => process.stderr.write(`${message}\n`);
 
+/** The system prompt of a call: the file of `prompts/` (or the text that `client.prompts` gives), then `addition`. */
+function systemPrompt(client: Pick<ModelClient, 'prompts'>, promptFile: string, addition?: string): string {
+  const file = client.prompts?.[promptFile] ?? readFileSync(join(PROMPTS, promptFile), 'utf8');
+  return addition ? `${file.trimEnd()}\n\n${addition}\n` : file;
+}
+
 /**
  * The answer of the first model of the level that gives one. `promptFile` is a file of `prompts/`;
  * `promptAddition`, when given, goes at the end of it. It must be the same for every review of a
@@ -51,8 +57,7 @@ export async function askJson<T>(
   tools?: RepoTools,
   onStart?: () => void,
 ): Promise<{ answer: T; usage: Usage }> {
-  const file = client.prompts?.[promptFile] ?? readFileSync(join(PROMPTS, promptFile), 'utf8');
-  const prompt = promptAddition ? `${file.trimEnd()}\n\n${promptAddition}\n` : file;
+  const prompt = systemPrompt(client, promptFile, promptAddition);
   const kind = client.kind ?? 'openrouter';
   const baseUrl = client.baseUrl ?? defaultBaseUrl(kind);
   if (!baseUrl) throw new ProviderError(`the provider ${kind} needs a base URL`);
@@ -132,12 +137,32 @@ export async function askModel(
   onStart?: () => void,
   schema: object = ANSWER_SCHEMA,
 ): Promise<Reply> {
-  const patchNote = config.patch ? PATCH_NOTE : undefined;
-  const asked = config.patch ? withPatch(schema) : schema;
   const parts: MessagePart[] = typeof pack === 'string' ? [{ text: pack }] : [...pack];
-  const notes = [...sectionNotes(parts, client.prompts), focus, tools ? TOOLS_NOTE : undefined, FINAL_INSTRUCTION].filter(Boolean).join('\n\n');
-  parts.push({ text: `\n\n${notes}\n` });
-  const reply = await askJson<Answer>(client, config, 'review.md', parts, { name: 'review', schema: asked }, patchNote, tools, onStart);
+  parts.push({ text: reviewNotes(client, parts, focus, tools !== undefined) });
+  const patchNote = config.patch ? PATCH_NOTE : undefined;
+  const reply = await askJson<Answer>(client, config, 'review.md', parts, { name: 'review', schema: reviewSchema(config, schema) }, patchNote, tools, onStart);
   reply.answer.findings = (reply.answer.findings ?? []).filter((f) => f && typeof f.path === 'string' && f.path);
   return reply;
+}
+
+/** The end of the user message of a review call, after the pack (askModel). */
+function reviewNotes(client: Pick<ModelClient, 'prompts'>, parts: readonly MessagePart[], focus: string | undefined, tools: boolean): string {
+  const notes = [...sectionNotes(parts, client.prompts), focus, tools ? TOOLS_NOTE : undefined, FINAL_INSTRUCTION].filter(Boolean).join('\n\n');
+  return `\n\n${notes}\n`;
+}
+
+/** The answer schema of a review call: with a `patch` in each finding at a level with `patch` (REV-104). */
+function reviewSchema(config: LevelConfig, schema: object): object {
+  return config.patch ? withPatch(schema) : schema;
+}
+
+/**
+ * KNT-201. The bytes of a review call around its pack (askModel): the system prompt, the answer
+ * schema and the notes at the end of the user message. `parts` is the pack; the notes of its
+ * sections follow it. `focuses`: the focus of each pass; the longest one counts.
+ */
+export function reviewCallBytes(client: Pick<ModelClient, 'prompts'>, config: LevelConfig, parts: readonly MessagePart[], schema: object, focuses: readonly string[] = []): number {
+  const focus = focuses.reduce<string | undefined>((longest, f) => (f.length > (longest?.length ?? -1) ? f : longest), undefined);
+  const system = systemPrompt(client, 'review.md', config.patch ? PATCH_NOTE : undefined);
+  return system.length + JSON.stringify(reviewSchema(config, schema)).length + reviewNotes(client, parts, focus, config.tools !== undefined).length;
 }
