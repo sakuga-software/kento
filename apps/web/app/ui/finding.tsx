@@ -1,5 +1,6 @@
 import type { Handle, RemixNode } from 'remix/component'
 
+import { rankLabel } from '../db/review-count.ts'
 import type { FindingEventType, Page } from '../findings/store.ts'
 import type { CodeExcerpt, CodeRead, FindingDetail, HistoryEvent } from '../pulls/finding.ts'
 import { STATUS_LABELS } from '../pulls/sheet.ts'
@@ -101,7 +102,7 @@ export function FindingPage(handle: Handle<FindingPageProps>) {
           </div>
           <div>
             <dt>Model</dt>
-            <dd>{review ? `${review.model} (R${review.number}, ${review.level})` : 'unknown'}</dd>
+            <dd>{review ? `${review.model} (${rankLabel(review.rank)}, ${review.level})` : 'unknown'}</dd>
           </div>
           <div>
             <dt>Check</dt>
@@ -181,7 +182,7 @@ export function FindingPage(handle: Handle<FindingPageProps>) {
                   <span class={`cell cell-${event.type === 'opened' ? 'posted' : event.type === 'stale' ? 'absent' : event.type}`}>{EVENT_LABELS[event.type]}</span>
                   <span>
                     {event.actor === 'kento' ? 'Kentō' : `@${event.actor}`}
-                    {event.review === null ? '' : ` · R${event.review}`}
+                    {event.review === null ? '' : ` · ${rankLabel(event.review)}`}
                     {event.reason ? ` · "${event.reason}"` : ''}
                   </span>
                   <time class="hint" dateTime={event.createdAt.toISOString()} title={clock(event.createdAt)}>

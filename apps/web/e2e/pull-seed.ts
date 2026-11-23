@@ -15,6 +15,8 @@ import { FAKE_ORG } from './fake-github.ts'
 
 export const PULL_REPO = { githubRepoId: 7001, fullName: 'sakuga-software/orchard' }
 export const PULL_NUMBER = 142
+/** The GitHub review of R1; R2 to R4 follow. A review on GitHub has one: the screen counts it (KNT-175). */
+export const PULL_REVIEW_IDS = 914100
 
 type Seeded = { orgId: string; repoId: string; findings: Record<'A' | 'B' | 'C' | 'D', string>; reviews: string[] }
 
@@ -91,15 +93,16 @@ export async function seedPull(sql: postgres.Sql, now = Date.now()): Promise<See
     { level: 'lite', head: 'd'.repeat(40), at: 10, score: 4, cost: 0.0039, model: 'claude-haiku-4-5', found: [['A', 47]] },
   ] as const
   let reviews: string[] = []
-  for (let p of plan) {
+  for (let [i, p] of plan.entries()) {
     let [job] = await sql<{ id: string }[]>`
       insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref, created_at, started_at, finished_at, attempts)
       values (${repoId}, 'review', ${p.level}, 'done', ${PULL_NUMBER}, ${p.head}, 'main', ${minutes(p.at + 3)}, ${minutes(p.at + 2)}, ${minutes(p.at)}, 1)
       returning id`
     let result = { level: p.level, head: p.head, score: p.score, findings: p.found.map(([n, line]) => resultFinding(n, line)) }
     let [review] = await sql<{ id: string }[]>`
-      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at, created_at)
-      values (${job!.id}, ${repoId}, ${PULL_NUMBER}, ${p.head}, ${p.score}, ${p.model}, ${p.cost}, ${JSON.stringify(result)}::text::jsonb, ${minutes(p.at)}, ${minutes(p.at + 1)})
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at, created_at)
+      values (${job!.id}, ${repoId}, ${PULL_NUMBER}, ${p.head}, ${p.score}, ${p.model}, ${p.cost}, ${JSON.stringify(result)}::text::jsonb,
+        ${PULL_REVIEW_IDS + i}, ${minutes(p.at)}, ${minutes(p.at + 1)})
       returning id`
     reviews.push(review!.id)
   }

@@ -5141,6 +5141,12 @@ a.finding-title:hover {
   display: block;
   font-family: var(--font-mono);
 }
+/* KNT-175. A copy of an earlier review: "same as R2", with no R number of its own. */
+.sheet-col-name.sheet-col-copy {
+  color: var(--ink-muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
 .sheet-col-active .status {
   margin-top: var(--space-1);
 }

@@ -7,6 +7,7 @@ import { disabledWebhook } from '../github/test-helpers.ts'
 import type { CodeRead, FindingDetail } from '../pulls/finding.ts'
 import type { PullRequestNow } from '../dashboard/github.ts'
 import type { PullHeader } from '../pulls/github.ts'
+import type { ReviewRank } from '../db/review-count.ts'
 import { jobDuration, type PullSheet, type PullsStore, type PullSummary } from '../pulls/store.ts'
 import { createAppRouter } from '../router.ts'
 import { DISMISS_REASONS, replyText } from '../findings/dismiss.ts'
@@ -33,10 +34,11 @@ function summary(overrides: Partial<PullSummary> = {}): PullSummary {
   }
 }
 
-function sheet(): PullSheet {
-  let review = (n: number, line: string) => ({
+/** The columns of `sheet()`: R1 and R2; `mixed` (KNT-175): R1, a copy of R1, a review not published, then R2. */
+function sheet(columns: 'plain' | 'mixed' = 'plain'): PullSheet {
+  let review = (n: number, line: string, rank: ReviewRank = { kind: 'counted', number: n }) => ({
     id: `r${n}`,
-    number: n,
+    rank,
     level: 'lite' as const,
     headSha: line.repeat(40),
     model: 'm',
@@ -49,8 +51,10 @@ function sheet(): PullSheet {
     summary: n === 2 ? 'Two findings stay open, one of them a P1 on the expiry of the tokens. The rest is fixed.\n\nDetails below.' : null,
     durationMs: 160_000,
   })
+  let copy = { ...review(3, 'c', { kind: 'copy', of: 1, head: 'a'.repeat(40) }), id: 'copy' }
+  let unpublished = { ...review(4, 'e', { kind: 'unpublished' }), id: 'unpublished' }
   return {
-    columns: [review(1, 'a'), review(2, 'b')],
+    columns: columns === 'mixed' ? [review(1, 'a'), copy, unpublished, review(2, 'b')] : [review(1, 'a'), review(2, 'b')],
     rows: [
       {
         finding: {
@@ -67,6 +71,12 @@ function sheet(): PullSheet {
         },
         cells: [
           { state: 'posted', carried: false, line: 42 },
+          ...(columns === 'mixed'
+            ? [
+                { state: 'found' as const, carried: false, line: 42 },
+                { state: 'found' as const, carried: false, line: 42 },
+              ]
+            : []),
           { state: 'moved', carried: false, line: 47 },
         ],
       },
@@ -95,11 +105,11 @@ function detail(status: FindingDetail['status'] = 'dismissed', considered = fals
     firstSeenSha: 'a'.repeat(40),
     lastSeenSha: 'd'.repeat(40),
     githubCommentId: 914201,
-    review: { id: 'r4', number: 4, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'A stolen token stays valid.', fix: 'Add exp.', suggestion: '', considered },
+    review: { id: 'r4', rank: { kind: 'counted', number: 4 }, level: 'lite', model: 'claude-haiku-4-5', headSha: 'd'.repeat(40), scenario: 'A stolen token stays valid.', fix: 'Add exp.', suggestion: '', considered },
   }
 }
 
-function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error; considered?: boolean } = {}) {
+function setup(options: { columns?: 'plain' | 'mixed'; summary?: Partial<PullSummary>; assignment?: PullSummary['assignment']; levelOrigin?: PullSummary['levelOrigin']; header?: PullHeader | Error | null; found?: boolean; badCursor?: boolean; code?: CodeRead | Error | null; unchanged?: boolean; reply?: Error | null; status?: FindingDetail['status']; github?: PullRequestNow | Error; considered?: boolean } = {}) {
   let auth = fakeAuth({ orgs: [ORG] })
   auth.setRole(ORG, OCTOCAT, 'admin')
   auth.setRole(ORG, CAMILLE, 'member')
@@ -110,11 +120,11 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
   let store: PullsStore = {
     async summary(orgId, repoId, prNumber) {
       asked.push(`${orgId} ${repoId} ${prNumber}`)
-      return options.found === false ? null : summary({ assignment: options.assignment ?? null, levelOrigin: options.levelOrigin ?? null })
+      return options.found === false ? null : summary({ assignment: options.assignment ?? null, levelOrigin: options.levelOrigin ?? null, ...options.summary })
     },
     async sheet(_target, page) {
       if (options.badCursor && page.reviewsCursor) throw new InvalidCursorError()
-      return sheet()
+      return sheet(options.columns)
     },
     async finding(orgId, id) {
       asked.push(`finding ${orgId} ${id}`)
@@ -137,7 +147,8 @@ function setup(options: { assignment?: PullSummary['assignment']; levelOrigin?: 
       if (cursor === 'bad') throw new InvalidCursorError()
       return {
         items: [
-          { id: 'e1', type: 'opened', actor: 'kento', reason: null, review: 1, createdAt: NOW },
+          { id: 'e1', type: 'opened', actor: 'kento', reason: null, review: { kind: 'counted', number: 1 }, createdAt: NOW },
+          { id: 'e3', type: 'opened', actor: 'kento', reason: null, review: { kind: 'copy', of: 1, head: 'a'.repeat(40) }, createdAt: NOW },
           { id: 'e2', type: 'dismissed', actor: 'camille', reason: 'False positive', review: null, createdAt: NOW },
         ],
         nextCursor: 'next',
@@ -314,6 +325,21 @@ describe('the screen of a pull request', () => {
     assert.equal(response.headers.get('Location'), `${PATH}?status=open&before=old`)
   })
 
+  it('gives a copy and a review not published no R number of their own: "same as R1", "Not published" (KNT-175)', async () => {
+    // R1, a copy of R1, a review not published, R2: the store counts two reviews (db/review-count.ts).
+    let { request, signIn } = setup({ columns: 'mixed', summary: { reviews: 2, lastScores: [3, 3] } })
+    let html = await (await request(PATH, await signIn())).text()
+    let headers = [...html.matchAll(/<th scope="col"[^>]* class="sheet-col">(.*?)<\/th>/gs)].map((m) => m[1]!.replace(/<span class="visually-hidden">.*?<\/span>/s, '').replace(/<[^>]+>/g, '|').replace(/\|+/g, '|'))
+    assert.deepEqual(headers, ['|R1|lite|', '|same as R1|lite|', '|lite|Not published|', '|R2|lite|'])
+    assert.match(html, /<dt>Reviews<\/dt><dd>2<\/dd>/)
+    assert.match(html, /Run R3…/)
+    assert.match(html, /unchanged since R1/)
+    assert.match(html, /data-label="same as R1 · ccccccc"/)
+    assert.match(html, /data-label="not published · eeeeeee"/)
+    assert.match(html, /1 finding · R1 to R2/)
+    assert.doesNotMatch(html, /R4|R5/)
+  })
+
   it('starts again at the first page for a cursor that it cannot read', async () => {
     let { request, signIn } = setup({ badCursor: true })
     let response = await request(`${PATH}?before=nope&status=open`, await signIn())
@@ -338,6 +364,8 @@ describe('the detail of a finding', () => {
     assert.match(html, /class="code-line code-line-hit"><span aria-hidden="true" class="code-number">47<\/span><code>  return \{ token \}/)
     assert.match(html, /@camille · (&quot;|")False positive(&quot;|")/)
     assert.match(html, /Kentō · R1/)
+    // KNT-175: an event of a copy names the review that it copies.
+    assert.match(html, /Kentō · same as R1/)
     assert.match(html, /href="https:\/\/github\.com\/sakuga-software\/orchard\/pull\/142#discussion_r914201"/)
     assert.match(html, /href="\/findings\/33333333-3333-4333-8333-333333333333\?history=next"/)
     assert.match(html, /href="\/repos\/22222222-2222-4222-8222-222222222222\/pulls\/142"/)

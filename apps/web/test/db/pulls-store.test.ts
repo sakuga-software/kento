@@ -6,6 +6,7 @@ import { after, before, describe, it } from 'remix/test'
 import { PULL_NUMBER, seedPull } from '../../e2e/pull-seed.ts'
 import { createDatabase, type Database } from '../../app/db/client.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
+import { rankLabel } from '../../app/db/review-count.ts'
 import { COLUMNS_PAGE, createPullsStore, type PullSheet } from '../../app/pulls/store.ts'
 import { createTestDatabase } from './helpers.ts'
 
@@ -55,7 +56,7 @@ describe('pulls store', () => {
     let summary = (await store.summary(seeded.orgId, seeded.repoId, PULL_NUMBER))!
     let sheet = await store.sheet(summary.target, {})
     assert.deepEqual(
-      sheet.columns.map((c) => `R${c.number} ${c.level} ${c.score} ${c.findings}`),
+      sheet.columns.map((c) => `${rankLabel(c.rank)} ${c.level} ${c.score} ${c.findings}`),
       ['R1 lite 2 3', 'R2 balanced 3 3', 'R3 heavy 4 2', 'R4 lite 4 1'],
     )
     assert.deepEqual(grid(sheet), {
@@ -122,8 +123,8 @@ describe('pulls store', () => {
     assert.equal(moved.title, 'The session token never expires')
     assert.equal(moved.line, 47)
     assert.deepEqual(
-      moved.review && { number: moved.review.number, level: moved.review.level, model: moved.review.model, scenario: moved.review.scenario, fix: moved.review.fix },
-      { number: 4, level: 'lite', model: 'claude-haiku-4-5', scenario: 'Scenario of A.', fix: 'Fix of A.' },
+      moved.review && { rank: rankLabel(moved.review.rank), level: moved.review.level, model: moved.review.model, scenario: moved.review.scenario, fix: moved.review.fix },
+      { rank: 'R4', level: 'lite', model: 'claude-haiku-4-5', scenario: 'Scenario of A.', fix: 'Fix of A.' },
     )
     assert.equal(moved.rule, null)
     assert.equal(moved.githubCommentId, 914201)
@@ -135,8 +136,8 @@ describe('pulls store', () => {
     let store = createPullsStore(database.sql)
     let history = await store.history(seeded.orgId, seeded.findings.C, null)
     assert.deepEqual(
-      history.items.map((e) => `${e.type} ${e.actor} ${e.review ?? '-'} ${e.reason ?? ''}`.trim()),
-      ['opened kento 1', 'dismissed camille - False positive'],
+      history.items.map((e) => `${e.type} ${e.actor} ${e.review ? rankLabel(e.review) : '-'} ${e.reason ?? ''}`.trim()),
+      ['opened kento R1', 'dismissed camille - False positive'],
     )
     assert.ok(history.items[0]!.createdAt instanceof Date)
     for (let n = 0; n < 25; n++) {
@@ -158,18 +159,19 @@ describe('pulls store', () => {
         insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref)
         select repo_id, kind, level, 'done', pr_number, head_sha, base_ref from jobs where id = ${job!.id} returning id`
       await database.sql`
-        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, published_at, created_at)
-        select ${copy!.id}, repo_id, pr_number, head_sha, score, model, cost_usd, result, now() + ${`${n} seconds`}::interval, now() + ${`${n} seconds`}::interval
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at, created_at)
+        select ${copy!.id}, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id + 10 + ${n},
+          now() + ${`${n} seconds`}::interval, now() + ${`${n} seconds`}::interval
         from reviews where id = ${seeded.reviews[3]!}`
     }
     let summary = (await store.summary(seeded.orgId, seeded.repoId, PULL_NUMBER))!
     assert.equal(summary.reviews, 10)
     let newest = await store.sheet(summary.target, {})
     assert.equal(newest.columns.length, COLUMNS_PAGE)
-    assert.deepEqual(newest.columns.map((c) => c.number), [5, 6, 7, 8, 9, 10])
+    assert.deepEqual(newest.columns.map((c) => rankLabel(c.rank)), ['R5', 'R6', 'R7', 'R8', 'R9', 'R10'])
     assert.ok(newest.olderCursor)
     let older = await store.sheet(summary.target, { reviewsCursor: newest.olderCursor })
-    assert.deepEqual(older.columns.map((c) => c.number), [1, 2, 3, 4])
+    assert.deepEqual(older.columns.map((c) => rankLabel(c.rank)), ['R1', 'R2', 'R3', 'R4'])
     assert.equal(older.olderCursor, null)
 
     // R4 is the review before the newest page: A found at 47 by R4 and by R5 is not moved.
