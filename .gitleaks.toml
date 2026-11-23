@@ -17,4 +17,7 @@ regexes = [
   '''^kento_rt_wrong$''',
   # packages/protocol/test/protocol.test.ts: the key of a finding, which is no secret.
   '''^(abcdef012345|ABCDEF012345)$''',
+  # packages/engine/test/proves.test.ts at 75ef4f8: the key of an earlier finding, which is no
+  # secret. The test now builds a key of one letter; the history keeps the first value.
+  '''^0123456789ab$''',
 ]

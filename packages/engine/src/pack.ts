@@ -11,6 +11,8 @@ const MAX_PACK_BYTES = 240_000;
 const MAX_FILE_CHANGED_LINES = 1000;
 const MAX_DOC_LINES = 400;
 const MAX_CONTEXT_BYTES = 60_000;
+/** KNT-156. The most bytes of the whole tests of one changed test file; over it, three lines of context. */
+export const MAX_TEST_HUNK_BYTES = 40_000;
 // KNT-151. The room that the context keeps on a large pull request, at most: 12 % of the pack.
 const CONTEXT_RESERVE = 28_800;
 
@@ -21,6 +23,8 @@ export const generatedFile = (path: string): boolean => SKIP.test(path);
 const TEST_FILE = /\.test\.|\.spec\.|(^|\/)(tests?|__tests__)\//;
 // A GitHub workflow or a composite action, which the diff shows whole.
 const WORKFLOW_FILE = /^\.github\/(workflows\/[^/]+|actions\/.+\/action)\.ya?ml$/;
+// KNT-156. A test file that can go back to three lines of context. A workflow always shows whole.
+const narrowableTest = (path: string): boolean => TEST_FILE.test(path) && !WORKFLOW_FILE.test(path);
 const WHOLE_FILE_CONTEXT = 100_000;
 
 /**
@@ -885,8 +889,10 @@ export function buildPack(
   for (const path of reviewed) {
     const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
     // KNT-151. A workflow is one file of steps that read each other: its diff shows it whole.
-    const context = WORKFLOW_FILE.test(path) ? `-U${WHOLE_FILE_CONTEXT}` : TEST_FILE.test(path) ? '-U3' : '-W';
-    hunks.set(path, git(repo, 'diff', context, `${base}...${head}`, '--', ...paths));
+    hunks.set(path, git(repo, 'diff', WORKFLOW_FILE.test(path) ? `-U${WHOLE_FILE_CONTEXT}` : '-W', `${base}...${head}`, '--', ...paths));
+    // KNT-156. A changed test shows its whole test, so that the review can read the assertion. A test
+    // file whose whole tests pass MAX_TEST_HUNK_BYTES shows three lines of context, as before.
+    if (narrowableTest(path) && hunks.get(path)!.length > MAX_TEST_HUNK_BYTES) hunks.set(path, git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths));
   }
 
   let docs = '';
@@ -938,17 +944,33 @@ export function buildPack(
       .filter(([path]) => ranks.includes(rank(path)))
       .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1].length - a[1].length)
       .map(([path]) => path);
-  const cut: string[] = [];
+  let cut: string[] = [];
   const narrowed: string[] = [];
   const whole = new Map<string, string>();
+  const dropped = new Map<string, string>();
+  const removed = (path: string) => `${path}: removed to fit in the maximum size of the review`;
   const drop = (path: string) => {
-    skipped.push(`${path}: removed to fit in the maximum size of the review`);
+    skipped.push(removed(path));
     cut.push(path);
+    dropped.set(path, hunks.get(path)!);
     hunks.delete(path);
   };
   for (const path of byRank([TRIM_RANK.generated, TRIM_RANK.docs])) {
     if (size() <= diffBudget) break;
     drop(path);
+  }
+  // KNT-156. A test file shows its whole tests: over the budget, it goes back to three lines of
+  // context before a source file loses its functions, the largest first. The loop below gives the
+  // whole tests back when a drop leaves room, after the source files.
+  for (const path of [...hunks.keys()].filter(narrowableTest).sort((a, b) => hunks.get(b)!.length - hunks.get(a)!.length)) {
+    if (size() <= diffBudget) break;
+    const paths = renamedFrom.has(path) ? [renamedFrom.get(path)!, path] : [path];
+    const smaller = git(repo, 'diff', '-U3', `${base}...${head}`, '--', ...paths);
+    if (smaller.length < hunks.get(path)!.length) {
+      whole.set(path, hunks.get(path)!);
+      hunks.set(path, smaller);
+      narrowed.push(path);
+    }
   }
   for (const path of byRank([TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.named, TRIM_RANK.core])) {
     if (size() <= diffBudget) break;
@@ -961,9 +983,24 @@ export function buildPack(
       narrowed.push(path);
     }
   }
+  const logicDrops: string[] = [];
   for (const path of byRank([TRIM_RANK.tests, TRIM_RANK.ui, TRIM_RANK.source, TRIM_RANK.named, TRIM_RANK.core])) {
     if (size() <= diffBudget) break;
     drop(path);
+    logicDrops.push(path);
+  }
+  // KNT-156. A large file dropped last can leave room for the files dropped before it: they come
+  // back, the most valuable and then the smallest first (Kentō #0b630a: five test files went for a
+  // source file that could not fit anyway).
+  const back = new Set<string>();
+  for (const path of logicDrops.slice(0, -1).sort((a, b) => rank(b) - rank(a) || dropped.get(a)!.length - dropped.get(b)!.length)) {
+    if (size() + dropped.get(path)!.length > diffBudget) continue;
+    hunks.set(path, dropped.get(path)!);
+    back.add(path);
+  }
+  if (back.size) {
+    cut = cut.filter((path) => !back.has(path));
+    for (const path of back) skipped.splice(skipped.indexOf(removed(path)), 1);
   }
   // The drops can leave room: the core files get their whole functions back first, the smallest first.
   for (const path of narrowed.filter((p) => hunks.has(p)).sort((a, b) => rank(b) - rank(a) || whole.get(a)!.length - whole.get(b)!.length)) {
@@ -975,8 +1012,8 @@ export function buildPack(
   const header = `# Pull request ${base.slice(0, 9)}...${head.slice(0, 9)}\n\n## Commits\n\n${commits}\n`;
   const notReviewed = skipped.length ? `## Not reviewed\n\n${skipped.map((s) => `- ${s}\n`).join('')}\n` : '';
   const diff =
-    '## Diff\n\nEach hunk of a source file shows the whole function around the change. ' +
-    'A test file shows three lines of context. A workflow file shows whole.' +
+    '## Diff\n\nEach hunk shows the whole function around the change, the whole test for a test file. ' +
+    'A test file with very long tests shows three lines of context. A workflow file shows whole.' +
     (narrowedNote.length ? ` To fit in the size of the review, these files show three lines of context only: ${narrowedNote.map((p) => `\`${p}\``).join(', ')}.` : '') +
     '\n\n```diff\n' +
     reviewed.map((path) => hunks.get(path) ?? '').join('') +

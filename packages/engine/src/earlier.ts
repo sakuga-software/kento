@@ -18,7 +18,7 @@ import { NEAR_THREAD_LINES } from './answered.ts';
 import { findingKey, toConsider, type Answer, type Finding } from './findings.ts';
 import { fileChangedSince } from './history.ts';
 import { wordsOf } from './rejected.ts';
-import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
+import { MAX_EARLIER_FINDINGS, SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
 
 /** The pack holds at most this many bytes of earlier findings. */
 export const MAX_EARLIER_BYTES = 16_000;
@@ -73,6 +73,9 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
   const held: HeldEarlier[] = [];
   const rows: string[] = [];
   let size = 0;
+  // KNT-156. The note of the neighbour cases names only open findings: its room is kept before the
+  // rows, so that it never takes the place of a row (Kentō #e95c92).
+  const limit = MAX_EARLIER_BYTES - (earlier.some((e) => e.status === 'open') ? PROBE_RESERVE : 0);
   const changedOf = new Map<string, boolean | null>();
   for (const e of earlier) {
     const path = e.path.replace(/^\/+/, '');
@@ -85,7 +88,7 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     const row =
       `- ${ref} · \`${oneLine(path, 300)}:${e.line}\` · ${PRIORITY[e.severity]} ${e.category} · ${e.status} · ` +
       `"${oneLine(e.title, 200)}" · file changed since: ${since}${cause}\n`;
-    if (size + row.length > MAX_EARLIER_BYTES) break;
+    if (size + row.length > limit) break;
     held.push({ ...e, ref, changed });
     rows.push(row);
     size += row.length;
@@ -93,14 +96,17 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
   if (!held.length) return { section: '', held };
   // KNT-158. Two earlier findings of one kind on the same code: a third one is a class of defect. On a
   // hand-written scanner, three holes came one per review, three pushes in a row, and the fix of the
-  // class (a parser) closed them all. The note fits in MAX_EARLIER_BYTES with the rows: the last rows
-  // give it their place.
+  // class (a parser) closed them all. The note fits with the rows in the room that the note of
+  // KNT-156 leaves: the last rows give it their place.
   let classes = classesNote(held);
-  while (held.length > 1 && size + classes.length > MAX_EARLIER_BYTES) {
+  while (held.length > 1 && size + classes.length > limit) {
     size -= rows.pop()!.length;
     held.pop();
     classes = classesNote(held);
   }
+  // KNT-156. A fix of an earlier finding can break the case next to it: the fix of a name declared
+  // twice took the last declaration, and a value with a type of the same name was no longer read.
+  const probe = probeNote(probed(held));
   const intro =
     '## Earlier findings\n\n' +
     'The findings that earlier reviews of this pull request reported, with their status: `open` (still in the code at ' +
@@ -114,8 +120,37 @@ export function earlierFindingsSection(repo: string, head: string, earlier: read
     'form only. ' +
     'A finding that follows an earlier one, no more severe, does not lower `confidence_score` again: that defect was already ' +
     'counted. A more severe one is a new fact, and lowers it.\n\n';
-  return { section: `${intro}${rows.join('')}${classes}\n`, held };
+  return { section: `${intro}${rows.join('')}${classes}${probe}\n`, held };
 }
+
+/** KNT-156. The most references that the note of the neighbour cases names. */
+const MAX_PROBE_REFS = 10;
+
+/**
+ * KNT-156. The findings whose fix this review can see: open, and their file changed since the last
+ * review that reported them (or that history is unknown). The review that finds one fixed is the one
+ * to check its fix; the next ones see it `fixed`, and the note does not come back.
+ */
+function probed(held: readonly HeldEarlier[]): string[] {
+  return held.filter((e) => e.status === 'open' && e.changed !== false).map((e) => e.ref);
+}
+
+/** KNT-156. The note that asks to check the cases next to a fix, or '' with no reference. */
+function probeNote(refs: readonly string[]): string {
+  if (!refs.length) return '';
+  const one = refs.length === 1;
+  const named = refs.length > MAX_PROBE_REFS ? `${refs.slice(0, MAX_PROBE_REFS).join(', ')} and ${refs.length - MAX_PROBE_REFS} more` : refs.join(', ');
+  return (
+    `\nThe file of ${named} changed since the last review that reported ${one ? 'it' : 'them'}. When the code at the head ` +
+    `no longer has ${one ? 'that defect' : 'one of these defects'}, read the code at the head near ${one ? 'its line' : 'the line of each'}, ` +
+    'and check the cases next to the fix that the fix can break: a type and a value of the same name, an import and a ' +
+    'local name, the first and the last definition, an empty value and a missing one, the other branch of the condition ' +
+    'that it changed. A fix that breaks one of them is a new finding, at the line of the fix.\n'
+  );
+}
+
+/** The room of the longest note: every reference at its longest. */
+const PROBE_RESERVE = probeNote(Array.from({ length: MAX_EARLIER_FINDINGS }, () => `E${MAX_EARLIER_FINDINGS}`)).length;
 
 /**
  * The net needs two words of the subject in both titles: one word such as `error` or `request` is
@@ -146,7 +181,7 @@ export function followedBy<F extends Finding>(f: F, held: readonly HeldEarlier[]
  *   of that finding. A reference that names no earlier finding is removed.
  * - The net: a finding without `follows`, on the file of an earlier finding, of its category and no
  *   more severe, with its key, or at most NEAR_THREAD_LINES lines from its line with NET_SHARED_WORDS
- *   words of its title, follows it. The nearest one wins.
+ *   words of its title, follows it (a `fixed` finding: on its key only). The nearest one wins.
  * - A finding that follows a `dismissed` or `wontfix` finding whose file did not change goes, unless
  *   it is more severe (REV-95: without a new fact, a rejected defect does not come back).
  *
@@ -172,7 +207,9 @@ export function linkEarlier<F extends Finding>(
     const distance = (h: HeldEarlier) => Math.min(...lines.map((l) => Math.abs(l - h.line)));
     const near = held
       .filter((h) => clean(h.path) === clean(f.path) && h.category === f.category && rank(f) <= rank(h))
-      .filter((h) => h.key === findingKey(f) || (sharedWords(f.title, h.title) >= NET_SHARED_WORDS && distance(h) <= NEAR_THREAD_LINES))
+      // KNT-156. A fixed finding follows only on its key: a finding near it in other words is most
+      // often a case that the fix broke, a new defect.
+      .filter((h) => h.key === findingKey(f) || (h.status !== 'fixed' && sharedWords(f.title, h.title) >= NET_SHARED_WORDS && distance(h) <= NEAR_THREAD_LINES))
       .sort((a, b) => Number(b.key === findingKey(f)) - Number(a.key === findingKey(f)) || distance(a) - distance(b))[0];
     if (!near) return rest as F;
     byNet++;
