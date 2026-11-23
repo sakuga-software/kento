@@ -25,7 +25,8 @@ test('a member sees "Read only" on every screen', async ({ page }) => {
 
   for (let path of ['/', '/repos', '/settings']) {
     await page.goto(path)
-    await expect(page.getByRole('status')).toContainText('Read only You are a member of sakuga-software')
+    // The live card of the dashboard is a status too (KNT-189).
+    await expect(page.getByRole('status').filter({ hasText: 'Read only' })).toContainText('Read only You are a member of sakuga-software')
     await expect(page.locator('.page-actions')).toHaveCount(0)
   }
   await expect(page.locator('.who').locator('visible=true')).toContainText('Member')
