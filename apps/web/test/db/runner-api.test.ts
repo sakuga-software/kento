@@ -770,6 +770,24 @@ describe('runner API', () => {
       assert.ok(!('patch' in old.reuse.delta.findings[0]), 'a runner of an earlier release refuses the key')
     })
 
+    it('sends the reversal of a carried finding only to a runner that claims the feature reverses (KNT-167)', async () => {
+      let [j] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let result = review({ head: PREVIOUS, score: 4, findings: [{ ...finding, fingerprint: '1111111111111111', blocking: false, reverses: 'c7f3ec000000' }], reuseKey: KEY })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${j!.id}, ${repoId}, 28, ${PREVIOUS}, 4, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 555, now())`
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta', 'reverses'] })).json()
+      assert.ok(parseJob(raw).ok)
+      assert.equal(raw.reuse.delta.findings[0].reverses, 'c7f3ec000000', 'the carried reversal stays non-blocking in the runner')
+      await queueJob()
+      let old = await (await claim(runner.token, { hasProviderKey: true, features: ['reuse', 'delta'] })).json()
+      assert.ok(!('reverses' in old.reuse.delta.findings[0]), 'a runner of an earlier release refuses the key')
+    })
+
     it('takes the delta from the review of the level of the job, even when a review of another level is later', async () => {
       for (let [level, score, at] of [['lite', 3, '1 second'], ['heavy', 5, '2 seconds']] as const) {
         let [j] = await database.sql<{ id: string }[]>`
@@ -883,6 +901,83 @@ describe('runner API', () => {
         insert into jobs (repo_id, level, pr_number, head_sha, base_ref) values (${repoId}, 'heavy', 28, ${HEAD}, 'main')`
       let heavy: Job = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
       assert.ok(heavy.kind === 'review' && heavy.earlier?.findings.length === 3 && heavy.earlier.last === null)
+    })
+
+    it('sends the reversal that a review found with its earlier finding, to a runner that claims reverses (KNT-167)', async () => {
+      await database.sql`delete from findings where repo_id = ${repoId}`
+      let reversing = { path: 'app/auth/sign-in.ts', title: 'Delete the old session only after a success' }
+      let [j] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'balanced', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let result = review({ head: PREVIOUS, score: 4, findings: [{ ...finding, ...reversing, fingerprint: '1111111111111111', blocking: false, reverses: 'c7f3ec000000' }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${j!.id}, ${repoId}, 28, ${PREVIOUS}, 4, 'm', 0.01, ${JSON.stringify(result)}::jsonb, 557, now())`
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '1111111111111111', ${findingKey({ ...finding, ...reversing })}, ${reversing.path}, 3, ${reversing.title}, 'major', 'bug', 90, 'open', ${PREVIOUS}, ${PREVIOUS})`
+      let runner = await register()
+      await queueJob()
+      let raw = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.ok(parseJob(raw).ok)
+      assert.equal(raw.earlier.findings[0].reverses, 'c7f3ec000000')
+      await queueJob()
+      let old = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier'] })).json()
+      assert.ok(!('reverses' in old.earlier.findings[0]), 'a runner of an earlier release refuses the key')
+      // A newer review of another level, without the reversal, does not end it (Kentō #816bf7).
+      let [h] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'heavy', 'done', 28, ${HEAD}, 'main') returning id`
+      let heavy = review({ level: 'heavy', head: HEAD, score: 4, findings: [{ ...finding, ...reversing, fingerprint: '1111111111111111', blocking: true }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${h!.id}, ${repoId}, 28, ${HEAD}, 4, 'm', 0.01, ${JSON.stringify(heavy)}::jsonb, 559, now() + interval '30 seconds')`
+      await queueJob()
+      let other = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.equal(other.earlier.findings[0].reverses, 'c7f3ec000000', 'another level does not decide')
+      // Another finding of the same path and title, of another fingerprint, gets no reversal of the
+      // first one (Kentō #6663f0).
+      await database.sql`
+        insert into findings (repo_id, pr_number, fingerprint, key, path, line, title, severity, category, confidence, status, first_seen_sha, last_seen_sha)
+        values (${repoId}, 28, '2222222222222222', ${findingKey({ ...finding, ...reversing })}, ${reversing.path}, 9, ${reversing.title}, 'major', 'bug', 90, 'open', ${PREVIOUS}, ${PREVIOUS})`
+      await queueJob()
+      let twin = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      let twins = twin.earlier.findings.filter((f: { key: string }) => f.key === findingKey({ ...finding, ...reversing }))
+      assert.equal(twins.length, 2)
+      assert.deepEqual(twins.map((f: { line: number; reverses?: string }) => [f.line, f.reverses ?? null]).sort(), [[3, 'c7f3ec000000'], [9, null]])
+      // A review of an earlier runner holds the same path and title with no fingerprint: the key does
+      // not give its reversal to a finding of another fingerprint (Kentō #789ec7).
+      let [o] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'lite', 'done', 28, ${PREVIOUS}, 'main') returning id`
+      let { fingerprint: _none, ...bare } = { ...finding, ...reversing, fingerprint: undefined }
+      let older = review({ head: PREVIOUS, score: 4, findings: [{ ...bare, blocking: false, reverses: 'c7f3ec000000' }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${o!.id}, ${repoId}, 28, ${PREVIOUS}, 4, 'm', 0.01, ${JSON.stringify(older)}::jsonb, 560, now() - interval '1 minute')`
+      await queueJob()
+      let mixed = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      let pair = mixed.earlier.findings.filter((f: { key: string }) => f.key === findingKey({ ...finding, ...reversing }))
+      assert.deepEqual(pair.map((f: { line: number; reverses?: string }) => [f.line, f.reverses ?? null]).sort(), [[3, 'c7f3ec000000'], [9, null]])
+      await database.sql`delete from reviews where github_review_id = 560`
+      await database.sql`delete from findings where repo_id = ${repoId} and fingerprint = '2222222222222222'`
+      // A reversing finding that is fixed now carries no reversal (Kentō #f32318).
+      await database.sql`update findings set status = 'fixed' where repo_id = ${repoId} and pr_number = 28`
+      await queueJob()
+      let fixed = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.ok(!('reverses' in fixed.earlier.findings[0]), 'a fixed finding keeps no reversal')
+      await database.sql`update findings set status = 'open' where repo_id = ${repoId} and pr_number = 28`
+      // A newer review that holds the same finding without the reversal ends it.
+      let [k] = await database.sql<{ id: string }[]>`
+        insert into jobs (repo_id, level, state, pr_number, head_sha, base_ref)
+        values (${repoId}, 'balanced', 'done', 28, ${HEAD}, 'main') returning id`
+      let later = review({ head: HEAD, score: 4, findings: [{ ...finding, ...reversing, fingerprint: '1111111111111111', blocking: false }] })
+      await database.sql`
+        insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+        values (${k!.id}, ${repoId}, 28, ${HEAD}, 4, 'm', 0.01, ${JSON.stringify(later)}::jsonb, 558, now() + interval '1 minute')`
+      await queueJob()
+      let after = await (await claim(runner.token, { hasProviderKey: true, features: ['earlier', 'reverses'] })).json()
+      assert.ok(!('reverses' in after.earlier.findings[0]), 'the newest review decides')
     })
 
     it('sends the head of the last review on GitHub, of any level, to a runner that reads it (REV-100)', async () => {

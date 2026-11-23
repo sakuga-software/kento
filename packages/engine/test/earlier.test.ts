@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 import type { EarlierFinding, JobEarlier } from '../../protocol/src/index.ts';
-import { earlierFindingsSection, linkEarlier } from '../src/earlier.ts';
+import { earlierFindingsSection, linkEarlier, MAX_EARLIER_BYTES } from '../src/earlier.ts';
 import { findingKey, type Answer, type Finding } from '../src/findings.ts';
 import { buildPack } from '../src/pack.ts';
 import { reviewPullRequest } from '../src/index.ts';
@@ -274,7 +274,10 @@ test('the section stops at its size', () => {
   const many = Array.from({ length: 100 }, (_, i) => earlier(finding(BILLING, i + 1, `${'A very long finding, '.repeat(9)} ${i}`), 'fixed'));
   const { section, held } = earlierFindingsSection(repo, pushed, many);
   assert.ok(held.length < 100 && held.length > 10);
-  assert.ok(section.length < 17_000);
+  // The rows and the notes (KNT-156, 158, 167) count in MAX_EARLIER_BYTES; the fixed text of the intro does not.
+  const body = section.slice(section.indexOf('- E1 '));
+  assert.ok(body.length <= MAX_EARLIER_BYTES + 2, `${body.length} bytes`);
+  assert.match(section, /undoes the fix of a `fixed` finding of this list/);
 });
 
 test('an incremental review (REV-88) counts a rewording as known: the floor of the last review stays', async () => {

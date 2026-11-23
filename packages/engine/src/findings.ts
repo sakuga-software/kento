@@ -43,6 +43,12 @@ export type Finding = {
    */
   follows?: string | null;
   /**
+   * KNT-167. The earlier `fixed` finding whose fix this finding asks to undo: the link call gives the
+   * reference of the pack (`E1`), the engine replaces it with the key of that finding, or removes it
+   * (earlier.ts). Such a finding does not block alone, unless it is critical.
+   */
+  reverses?: string | null;
+  /**
    * REV-100. The code of the finding did not change since the last commit that a review of Kentō read
    * on the pull request (seen.ts). The engine sets it; the model never gives it.
    */
@@ -319,6 +325,15 @@ export function toConsider(finding: Finding): boolean {
 }
 
 /**
+ * KNT-167. A finding that asks to undo the fix of an earlier finding of the pull request, not
+ * critical: Kentō changed its mind. It does not block alone, and does not lower the score alone
+ * (earlier.ts): the author cannot follow both findings. A critical one blocks as before.
+ */
+export function reversesAFix(finding: Finding): boolean {
+  return Boolean(finding.reverses) && finding.severity !== 'critical';
+}
+
+/**
  * A finding blocks only on a line that the pull request changes: the bench saw the model block a
  * clean pull request for code that the pull request did not touch. REV-100: a finding to consider
  * never blocks.
@@ -326,6 +341,7 @@ export function toConsider(finding: Finding): boolean {
 export function isBlocking(finding: Finding, lines: Anchors): boolean {
   return (
     !toConsider(finding) &&
+    !reversesAFix(finding) &&
     BLOCKING_SEVERITIES.has(finding.severity) &&
     finding.confidence >= BLOCKING_CONFIDENCE &&
     anchor(finding, lines) !== null

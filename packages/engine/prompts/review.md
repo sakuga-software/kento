@@ -34,6 +34,14 @@ Some sections appear only when an earlier review read this pull request:
 `Answered threads`, `Rejected findings`, `Earlier findings` and `Changed since
 the last review`. When the message holds one, its end says how to read it.
 
+Before you report a change that undoes the fix of a `fixed` earlier finding
+(the opposite change at the same place), read the code at the head near its
+line. Report it only when the fix is wrong. Then start the scenario with the
+title of that finding, in quotes, never its reference, and say why it was
+wrong: the author followed it, and a review that
+asks for a fix and then its opposite blocks the pull request for good. Such a
+finding does not block alone and does not lower `confidence_score` alone.
+
 A `Critical change` section can end the message: the engine found that the
 pull request touches authentication, access control, CI, secrets, webhooks,
 payments or a migration of data. It lists the files and gives a checklist.

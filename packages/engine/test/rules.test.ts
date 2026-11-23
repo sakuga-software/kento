@@ -173,7 +173,7 @@ test('a review sends the rules whose paths the diff touches, and a finding of a 
   assert.equal(links[0].model, 'anthropic/claude-haiku-5.5');
   assert.equal(links[0].reasoning.effort, 'low');
   assert.match(links[0].messages.at(-1).content, /"ref": "R1"/);
-  assert.deepEqual(result.link, { status: 'done', rules: 1, follows: 0, usage: result.link.usage });
+  assert.deepEqual(result.link, { status: 'done', rules: 1, follows: 0, reverses: 0, usage: result.link.usage });
   assert.equal(result.usage.cost, 0.0105, 'the cost of the link call counts in the review');
   assert.equal(result.usage.prompt_tokens, 2);
   // The fingerprint reads the rule of the link, not the title.

@@ -12,7 +12,7 @@ import { askJson, type ModelClient } from './model.ts';
 import type { PackedRule } from './rules.ts';
 
 /** The answer of the link call: for a finding of the list, the reference of a rule and of an earlier finding, or null. */
-export type Link = { finding: number; rule_id: string | null; follows: string | null };
+export type Link = { finding: number; rule_id: string | null; follows: string | null; reverses?: string | null };
 
 const REFERENCE = { anyOf: [{ type: 'string' }, { type: 'null' }] };
 
@@ -23,8 +23,8 @@ export const LINK_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { finding: { type: 'integer' }, rule_id: REFERENCE, follows: REFERENCE },
-        required: ['finding', 'rule_id', 'follows'],
+        properties: { finding: { type: 'integer' }, rule_id: REFERENCE, follows: REFERENCE, reverses: REFERENCE },
+        required: ['finding', 'rule_id', 'follows', 'reverses'],
         additionalProperties: false,
       },
     },
@@ -38,9 +38,9 @@ export const LINK_SCHEMA = {
  * no finding, and no call went out. `failed`: the findings have no link. `rules` and `follows`: the
  * links of the answer whose finding and reference exist.
  */
-export type LinkReport = { status: 'done' | 'failed' | 'none'; rules: number; follows: number; usage: Usage | null; error?: string };
+export type LinkReport = { status: 'done' | 'failed' | 'none'; rules: number; follows: number; reverses?: number; usage: Usage | null; error?: string };
 
-export const NO_LINK: LinkReport = { status: 'none', rules: 0, follows: 0, usage: null };
+export const NO_LINK: LinkReport = { status: 'none', rules: 0, follows: 0, reverses: 0, usage: null };
 
 // A link is a short answer with no thinking: one minute is enough, and a slow call must not hold the review.
 const LINK_TIMEOUT_MS = 60_000;
@@ -75,7 +75,7 @@ function oneLine(text: string, max: number): string {
 export function linkMessage(findings: readonly Finding[], rules: readonly PackedRule[], earlier: readonly HeldEarlier[]): string {
   const list = findings.map((f, index) => ({ index, path: f.path, line: f.line, category: f.category, title: f.title, scenario: oneLine(f.scenario, 600) }));
   const ruleList = rules.map((r) => ({ ref: r.ref, title: r.title, paths: r.paths, text: oneLine(r.text, 1_500) }));
-  const earlierList = earlier.map((e) => ({ ref: e.ref, path: e.path, line: e.line, category: e.category, title: oneLine(e.title, 200) }));
+  const earlierList = earlier.map((e) => ({ ref: e.ref, path: e.path, line: e.line, category: e.category, status: e.status, title: oneLine(e.title, 200) }));
   return (
     `# Findings\n\n${JSON.stringify(list, null, 2)}\n\n` +
     `# Rules\n\n${JSON.stringify(ruleList, null, 2)}\n\n` +
@@ -97,7 +97,7 @@ export async function linkFindings<F extends Finding>(
   rules: readonly PackedRule[],
   earlier: readonly HeldEarlier[],
 ): Promise<{ findings: F[]; report: LinkReport }> {
-  const plain = findings.map(({ rule_id: _rule, follows: _follows, ...rest }) => rest as F);
+  const plain = findings.map(({ rule_id: _rule, follows: _follows, reverses: _reverses, ...rest }) => rest as F);
   if (plain.length === 0 || (rules.length === 0 && earlier.length === 0)) return { findings: plain, report: NO_LINK };
   const log = client.log ?? ((message: string) => process.stderr.write(`${message}\n`));
   let links: unknown;
@@ -115,10 +115,13 @@ export async function linkFindings<F extends Finding>(
   }
   const ruleRefs = new Map(rules.map((r) => [r.ref.toUpperCase(), r.ref]));
   const earlierRefs = new Map(earlier.map((e) => [e.ref.toUpperCase(), e.ref]));
+  // KNT-167. Only a fixed finding has a fix to undo.
+  const fixedRefs = new Map(earlier.filter((e) => e.status === 'fixed').map((e) => [e.ref.toUpperCase(), e.ref]));
   const refOf = (refs: Map<string, string>, value: unknown) => (typeof value === 'string' ? refs.get(value.trim().toUpperCase()) : undefined);
   const linked = plain.map((f) => ({ ...f }) as F);
   const ruled = new Set<number>();
   const followed = new Set<number>();
+  const reversed = new Set<number>();
   for (const link of Array.isArray(links) ? (links as Partial<Link>[]) : []) {
     const index = link?.finding;
     if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= linked.length) continue;
@@ -132,8 +135,13 @@ export async function linkFindings<F extends Finding>(
       followed.add(index);
       linked[index]!.follows = follows;
     }
+    const reverses = refOf(fixedRefs, link.reverses);
+    if (reverses && !reversed.has(index) && reverses !== linked[index]!.follows) {
+      reversed.add(index);
+      linked[index]!.reverses = reverses;
+    }
   }
-  return { findings: linked, report: { status: 'done', rules: ruled.size, follows: followed.size, usage } };
+  return { findings: linked, report: { status: 'done', rules: ruled.size, follows: followed.size, reverses: reversed.size, usage } };
 }
 
 /**
