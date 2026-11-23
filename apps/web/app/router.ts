@@ -1,11 +1,13 @@
-import { fileURLToPath } from 'node:url'
+import { constants } from 'node:zlib'
 
+import { compression } from 'remix/middleware/compression'
 import { render } from 'remix/middleware/render'
 import { staticFiles } from 'remix/middleware/static'
 import { createRouter, type RouterContext } from 'remix/router'
 
 import { createController } from './actions/controller.ts'
-import { clientAssets, clientEntries } from './assets.ts'
+import { CLIENT_BUILD, clientAssets, clientEntries, publicCopies } from './assets.ts'
+import { PUBLIC_DIR, type ClientBuild } from './client-build.ts'
 import type { CheckDatabase } from './db/health.ts'
 import type { WebhookDependencies } from './github/webhook.ts'
 import { legacyQueryRedirect } from './legacy-urls.ts'
@@ -33,8 +35,31 @@ import {
   type ReposDependencies,
 } from './ui/pages.tsx'
 
-/** The stylesheet, the fonts and the one script of the screens, under `/assets/`. */
-const PUBLIC_DIR = fileURLToPath(new URL('../public', import.meta.url))
+/**
+ * The cache of the files of public/ and of their compressed copies. In production, the URL of the
+ * stylesheet and of the scripts carries the release (`?v=`), and the fonts never change under one name.
+ */
+const STATIC_CACHE_CONTROL = process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache'
+
+/**
+ * KNT-202. The quality of brotli for the HTML, compressed on each request. On a page of 10 KB, 5
+ * costs about 0.1 ms of CPU and gives 3.1 KB; 11, the default of node:zlib, costs about 6 ms for
+ * 2.7 KB. The files of public/ are compressed once, at quality 11, by the build.
+ */
+export const HTML_BROTLI_QUALITY = 5
+
+/**
+ * KNT-202. Compresses the HTML pages only. The files of public/ and the bundles come compressed by the
+ * build; the stream of the live card (`text/event-stream`) stays plain, so that each event goes out at
+ * once; the JSON of the runners and of the webhook stays as it was.
+ */
+export function htmlCompression() {
+  return compression({
+    filterMediaType: (mediaType) => mediaType === 'text/html',
+    encodings: ['br', 'gzip'],
+    brotli: { params: { [constants.BROTLI_PARAM_QUALITY]: HTML_BROTLI_QUALITY } },
+  })
+}
 
 /** What the routes need from the outside. Tests pass fakes. */
 export interface AppDependencies {
@@ -76,6 +101,8 @@ export interface AppDependencies {
   members?: MembersDependencies | null
   /** KNT-150. The name and the installations of an org. Without them, the screen answers 404. */
   organization?: OrganizationDependencies | null
+  /** KNT-202. The build of the browser files. Default: the one read at startup (none outside production). */
+  clientBuild?: ClientBuild | null
 }
 
 /**
@@ -95,6 +122,7 @@ export function isPageRequest(request: Request, url: URL): boolean {
 }
 
 export function createAppRouter(deps: AppDependencies) {
+  let build = deps.clientBuild === undefined ? CLIENT_BUILD : deps.clientBuild
   // The 404 page needs the session and the frame of the screens: its own router, with their middleware.
   let fallback = createRouter({ middleware: [render({ assets: clientEntries })] })
   let router = createRouter({
@@ -104,14 +132,12 @@ export function createAppRouter(deps: AppDependencies) {
         : new Response(`Not Found: ${context.url.pathname}`, { status: 404 }),
     middleware: [
       requestLogger(),
-      staticFiles(PUBLIC_DIR, {
-        filter: (path) => path.startsWith('assets/'),
-        // In production, the URL of the stylesheet and of the script carries the release (`?v=`),
-        // and the fonts never change under one name.
-        cacheControl: process.env.NODE_ENV === 'production' ? 'public, max-age=31536000, immutable' : 'no-cache',
-      }),
+      htmlCompression(),
+      // KNT-202: the stylesheet and the scripts of the screens, compressed by the build.
+      publicCopies(STATIC_CACHE_CONTROL, build),
+      staticFiles(PUBLIC_DIR, { filter: (path) => path.startsWith('assets/'), cacheControl: STATIC_CACHE_CONTROL }),
       // KNT-163: the browser modules (`/assets/app/…`, `/assets/npm/…`), compiled on request.
-      clientAssets(),
+      clientAssets(build),
       render({ assets: clientEntries }),
       legacyQueryRedirect(),
     ],

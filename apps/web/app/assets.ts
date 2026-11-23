@@ -9,9 +9,10 @@ import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createAssetServer, type ScriptEntry } from 'remix/assets'
+import { Vary } from 'remix/headers'
 import type { Middleware } from 'remix/router'
 
-import { ALLOWED_FILES, ALLOWED_PACKAGES, BROWSER_TARGET, bundleOf, CLIENT_DIR, DENIED_FILES, readClientBuild, serveClientFile, type ClientBuild } from './client-build.ts'
+import { ALLOWED_FILES, ALLOWED_PACKAGES, BROWSER_TARGET, bundleOf, CLIENT_DIR, DENIED_FILES, PUBLIC_DIR, readClientBuild, serveClientFile, servePublicCopy, type ClientBuild } from './client-build.ts'
 import { errorMessage, log } from './log.ts'
 
 const isDevelopment = process.env.NODE_ENV === 'development'
@@ -108,9 +109,9 @@ export const assets = createAssetServer({
  * scripts/build-client.ts): an error in the logs, and the asset server serves the modules one by one,
  * as in development, so that the screens still work.
  */
-export function loadClientBuild(production = isProduction, dir = CLIENT_DIR): ClientBuild | null {
+export function loadClientBuild(production = isProduction, dir = CLIENT_DIR, publicDir = PUBLIC_DIR): ClientBuild | null {
   if (!production) return null
-  let build = readClientBuild(dir)
+  let build = readClientBuild(dir, publicDir)
   if (!build) {
     log('error', 'startup.client_build_missing', { dir })
     return null
@@ -123,10 +124,13 @@ export function loadClientBuild(production = isProduction, dir = CLIENT_DIR): Cl
     log('error', 'startup.client_build_invalid', { dir, error: build.invalid })
     return null
   }
+  // KNT-202. The bundles still serve; these files of public/ go out plain, uncompressed.
+  if (build.stale.length > 0) log('error', 'startup.client_build_stale', { dir, files: build.stale })
   return build
 }
 
-const CLIENT_BUILD = loadClientBuild()
+/** The build read at startup: null outside production, or when it cannot serve. */
+export const CLIENT_BUILD = loadClientBuild()
 
 /** The module of every page (see its comment). */
 export const BOOT = 'app/ui/public/boot.ts'
@@ -241,6 +245,26 @@ export function clientAssets(build: ClientBuild | null = CLIENT_BUILD): Middlewa
     // As every file of the app: the browser runs a module only as the type that the server says.
     let headers = new Headers(response.headers)
     headers.set('X-Content-Type-Options', 'nosniff')
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+  }
+}
+
+/**
+ * KNT-202. Serves the compressed copy of a file of public/ that the build compressed, as the browser
+ * accepts (`servePublicCopy`); else the next middleware (`staticFiles()`) serves the plain file. Either
+ * answer carries `Vary: Accept-Encoding`, so that a cache keeps the copies apart. Any other path goes
+ * on untouched: the fonts (already compressed), the small icons, and every path without a build
+ * (development, the unit tests).
+ */
+export function publicCopies(cacheControl: string, build: ClientBuild | null = CLIENT_BUILD): Middleware {
+  return async (context, next) => {
+    let file = context.url.pathname.slice(1)
+    if (!build?.publicFiles.has(file)) return next()
+    let response = (await servePublicCopy(build, context.request, file, cacheControl)) ?? (await next())
+    let headers = new Headers(response.headers)
+    let vary = Vary.from(headers.get('Vary'))
+    vary.add('Accept-Encoding')
+    headers.set('Vary', vary.toString())
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
 }

@@ -32,7 +32,7 @@ RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store 
     pnpm install --frozen-lockfile --prod --filter @kento-review/web...
 
 # KNT-170. The bundles of the browser modules, minified, named by their hash, with their brotli and
-# gzip copies. esbuild is a dev dependency: this stage installs all the dependencies of apps/web
+# gzip copies, and the copies of the stylesheet and of the scripts of public/assets/ (KNT-202). esbuild is a dev dependency: this stage installs all the dependencies of apps/web
 # (pnpm replaces the production-only node_modules of `deps`, with no prompt), and the image keeps
 # only its output, build/client.
 FROM deps AS client
@@ -42,6 +42,8 @@ RUN --mount=type=cache,id=${PNPM_CACHE_ID},target=/root/.local/share/pnpm/store 
 COPY apps/web/tsconfig.json ./apps/web/
 COPY apps/web/app ./apps/web/app
 COPY apps/web/scripts/build-client.ts ./apps/web/scripts/
+# KNT-202: the build also writes the brotli and gzip copies of the text files of public/assets/.
+COPY apps/web/public ./apps/web/public
 RUN cd apps/web && node --import remix/node-tsx scripts/build-client.ts
 
 FROM ${NODE_IMAGE}

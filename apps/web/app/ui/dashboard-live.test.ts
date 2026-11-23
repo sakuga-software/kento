@@ -59,8 +59,8 @@ function setup(live: LiveOptions = {}, failing = false) {
     dashboard: { store, githubUrl: 'https://github.com', readPullRequest: null, live: { intervalMs: 20, ...live } },
   })
 
-  function request(path: string, cookie?: string | null, form?: Record<string, string>) {
-    let headers = new Headers({ Accept: form ? 'text/html' : 'text/event-stream' })
+  function request(path: string, cookie?: string | null, form?: Record<string, string>, extra: Record<string, string> = {}) {
+    let headers = new Headers({ Accept: form ? 'text/html' : 'text/event-stream', ...extra })
     if (cookie) headers.set('Cookie', cookie)
     let init: RequestInit = form ? { method: 'POST', headers, body: new URLSearchParams(form) } : { headers }
     return router.fetch(new Request(new URL(path, 'http://localhost'), init))
@@ -169,6 +169,17 @@ describe('the live card of the dashboard (KNT-189)', () => {
       cards.every((org) => org === ORG.id),
       `the store read only the org of the membership: ${cards.join(', ')}`,
     )
+  })
+
+  it('sends the stream plain to a browser that accepts brotli and gzip, each event at once (KNT-202)', async () => {
+    let { request, signIn } = setup()
+    let cookie = await signIn(OCTOCAT)
+    let response = await request('/dashboard/live', cookie, undefined, { 'Accept-Encoding': 'gzip, deflate, br, zstd' })
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('Content-Type'), 'text/event-stream; charset=utf-8')
+    assert.equal(response.headers.get('Content-Encoding'), null)
+    let [event] = await eventsOf(response, 1)
+    assert.equal(event?.type, 'queue')
   })
 
   it('holds a few streams per session, asks the fifth to wait (429 with Retry-After), and frees a place when a stream closes', async () => {

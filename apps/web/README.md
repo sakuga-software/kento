@@ -35,7 +35,14 @@ Server-rendered HTML in English (REV-114), with `remix/component`, small scripts
   and before the e2e) bundles them with esbuild into a few files of `build/client/`, minified, named
   by the hash of their content, with their brotli and gzip copies; `app/client-build.ts` serves them
   under `/assets/js/`, cached a year, and the page preloads the ones it needs. Without that folder,
-  the service logs `startup.client_build_missing` and falls back on the asset server. `public/boot.ts` is the module of
+  the service logs `startup.client_build_missing` and falls back on the asset server. The same build
+  (KNT-202) writes the brotli and gzip copies of the text files of `public/assets/` of 1 KB or more
+  (`kento.css`, the scripts of the screens, the large icons) under `build/client/public/`, with the
+  hash of each plain file: the service sends the copy that the browser accepts, with `Vary:
+  Accept-Encoding` and an ETag of its own, and the plain file to a range request or to a browser that
+  accepts neither. A file changed since the build goes out plain (`startup.client_build_stale`). The
+  HTML pages are compressed on each request (`compression()` of Remix, brotli at quality 5, gzip);
+  the stream of the live card, the fonts and the JSON of the machines are not. `public/boot.ts` is the module of
   every page; it loads `public/runtime.ts` (the runtime of `remix/component`, `run()`) only on a page
   with a component to hydrate: the menu "…" of the Repos screen (`public/row-menu.tsx`) and the
   confirmations (`public/confirm.tsx`), on the menu and the popover of `@remix-run/ui`. Without

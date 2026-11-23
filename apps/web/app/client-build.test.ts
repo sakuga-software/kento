@@ -1,6 +1,6 @@
 // KNT-170. The bundles of the browser modules: scripts/build-client.ts builds them, and the service
 // serves them compressed under /assets/js/, a file of the build and nothing else.
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,9 +9,9 @@ import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { buildClient, clientEntryModules, forbiddenInputs } from '../scripts/build-client.ts'
+import { buildClient, clientEntryModules, compressPublicFiles, forbiddenInputs } from '../scripts/build-client.ts'
 import { BOOT, CHART, createClientEntries, loadClientBuild, resolveBootScript, resolveCharts, RUNTIME } from './assets.ts'
-import { bundleOf, readClientBuild, ROOT_DIR, serveClientFile, sourceOf, type ClientBuild } from './client-build.ts'
+import { bundleOf, PUBLIC_DIR, readClientBuild, ROOT_DIR, serveClientFile, servePublicCopy, sha256, sourceOf, type ClientBuild } from './client-build.ts'
 
 /** Runs `body` with the lines that the service writes on stderr, and returns them. */
 async function stderrOf(body: () => Promise<void> | void): Promise<string[]> {
@@ -39,11 +39,35 @@ function fakeBuild(): ClientBuild & { cleanup: () => void } {
       [BOOT]: { file: 'boot.@B.js', imports: [] },
     },
     files: ['a.@AAA.js', 'boot.@B.js', 'chunk.@C.js', 'chunk.@D.js', 'runtime.@R.js'],
+    public: {},
   }))
   for (let file of ['boot.@B.js', 'chunk.@C.js', 'chunk.@D.js', 'runtime.@R.js']) {
     for (let suffix of ['', '.br', '.gz']) writeFileSync(path.join(dir, file + suffix), file)
   }
   return { ...(readClientBuild(dir) as ClientBuild), cleanup: () => rmSync(dir, { recursive: true, force: true }) }
+}
+
+const HASH = 'a'.repeat(64)
+
+/**
+ * KNT-202. A build of one file of public/, kento.css, in folders of its own: its brotli and gzip
+ * copies have the same size and the same time, so that only their encoding tells their ETags apart.
+ */
+function fakePublicBuild(): ClientBuild & { publicDir: string; cleanup: () => void } {
+  let dir = mkdtempSync(path.join(tmpdir(), 'kento-client-'))
+  let publicDir = mkdtempSync(path.join(tmpdir(), 'kento-public-'))
+  mkdirSync(path.join(publicDir, 'assets'))
+  mkdirSync(path.join(dir, 'public/assets'), { recursive: true })
+  writeFileSync(path.join(publicDir, 'assets/kento.css'), 'body{}')
+  let time = new Date('2026-11-23T10:00:00Z')
+  for (let [suffix, body] of [['.br', 'BROTLI'], ['.gz', 'GZIP!!']]) {
+    let file = path.join(dir, `public/assets/kento.css${suffix}`)
+    writeFileSync(file, body!)
+    utimesSync(file, time, time)
+  }
+  writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ entries: {}, files: [], public: { 'assets/kento.css': sha256(Buffer.from('body{}')) } }))
+  let build = readClientBuild(dir, publicDir) as ClientBuild
+  return { ...build, publicDir, cleanup: () => [dir, publicDir].forEach((folder) => rmSync(folder, { recursive: true, force: true })) }
 }
 
 function get(path: string, headers: Record<string, string> = {}, method = 'GET') {
@@ -158,6 +182,68 @@ describe('the bundles of the browser modules (KNT-170)', () => {
     }
   })
 
+  it('serves the copy of a file of public/ that the browser accepts, with an ETag of its own (KNT-202)', async () => {
+    let build = fakePublicBuild()
+    try {
+      assert.deepEqual([...build.publicFiles], ['assets/kento.css'])
+      let br = (await servePublicCopy(build, get('/assets/kento.css', { 'Accept-Encoding': 'br, gzip' }), 'assets/kento.css', 'no-cache'))!
+      let gzip = (await servePublicCopy(build, get('/assets/kento.css', { 'Accept-Encoding': 'gzip' }), 'assets/kento.css', 'no-cache'))!
+      assert.deepEqual([await br.text(), br.headers.get('Content-Encoding')], ['BROTLI', 'br'])
+      assert.deepEqual([await gzip.text(), gzip.headers.get('Content-Encoding')], ['GZIP!!', 'gzip'])
+      // Same size, same time: the encoding alone keeps the ETags apart.
+      assert.match(br.headers.get('ETag') ?? '', /^"br-6-\d+"$/)
+      assert.match(gzip.headers.get('ETag') ?? '', /^"gzip-6-\d+"$/)
+      let cross = (await servePublicCopy(build, get('/assets/kento.css', { 'Accept-Encoding': 'gzip', 'If-None-Match': br.headers.get('ETag')! }), 'assets/kento.css', 'no-cache'))!
+      assert.equal(cross.status, 200)
+      let same = (await servePublicCopy(build, get('/assets/kento.css', { 'Accept-Encoding': 'br', 'If-None-Match': br.headers.get('ETag')! }), 'assets/kento.css', 'no-cache'))!
+      assert.equal(same.status, 304)
+      // The plain file answers: no copy accepted, a range, a method other than GET and HEAD, a file with no copy.
+      for (let [request, file] of [
+        [get('/assets/kento.css', { 'Accept-Encoding': 'identity' }), 'assets/kento.css'],
+        [get('/assets/kento.css', { 'Accept-Encoding': 'br', Range: 'bytes=0-1' }), 'assets/kento.css'],
+        [get('/assets/kento.css', { 'Accept-Encoding': 'br' }, 'POST'), 'assets/kento.css'],
+        [get('/assets/theme.js', { 'Accept-Encoding': 'br' }), 'assets/theme.js'],
+      ] as [Request, string][]) {
+        assert.equal(await servePublicCopy(build, request, file, 'no-cache'), null, `${request.method} ${file} ${JSON.stringify([...request.headers])}`)
+      }
+      // A copy gone since startup: an error, and the plain file answers.
+      rmSync(path.join(build.dir, 'public/assets/kento.css.br'))
+      let gone: Response | null = new Response()
+      let lines = await stderrOf(async () => {
+        gone = await servePublicCopy(build, get('/assets/kento.css', { 'Accept-Encoding': 'br' }), 'assets/kento.css', 'no-cache')
+      })
+      assert.equal(gone, null)
+      assert.equal(JSON.parse(lines[0]!).event, 'assets.public_copy_unreadable')
+    } finally {
+      build.cleanup()
+    }
+  })
+
+  it('serves no copy of a file of public/ that changed since the build, and says so at startup (KNT-202)', async () => {
+    let build = fakePublicBuild()
+    try {
+      writeFileSync(path.join(build.publicDir, 'assets/kento.css'), 'body{color:red}')
+      let read = readClientBuild(build.dir, build.publicDir) as ClientBuild
+      assert.deepEqual([[...read.publicFiles], read.stale], [[], ['assets/kento.css']])
+      assert.equal(await servePublicCopy(read, get('/assets/kento.css', { 'Accept-Encoding': 'br' }), 'assets/kento.css', 'no-cache'), null)
+      // The service still starts with its bundles, and the log names the stale files.
+      let loaded: ClientBuild | null = null
+      let lines = await stderrOf(() => {
+        loaded = loadClientBuild(true, build.dir, build.publicDir)
+      })
+      assert.ok(loaded)
+      let line = JSON.parse(lines[0]!)
+      assert.deepEqual([line.level, line.event, line.files], ['error', 'startup.client_build_stale', ['assets/kento.css']])
+      rmSync(path.join(build.publicDir, 'assets/kento.css'))
+      assert.deepEqual((readClientBuild(build.dir, build.publicDir) as ClientBuild).stale, ['assets/kento.css'])
+      // A copy missing from the build: the build is refused, as for a bundle.
+      rmSync(path.join(build.dir, 'public/assets/kento.css.gz'))
+      assert.deepEqual(readClientBuild(build.dir, build.publicDir), { missing: ['public/assets/kento.css.gz'] })
+    } finally {
+      build.cleanup()
+    }
+  })
+
   it('reads no build outside production, and logs an error in production when there is none', async () => {
     let empty = mkdtempSync(path.join(tmpdir(), 'kento-client-'))
     try {
@@ -192,6 +278,14 @@ describe('the bundles of the browser modules (KNT-170)', () => {
           [{ entries: {}, files: ['sub/a.js'] }, 'a wrong file name: sub/a.js'],
           [{ entries: {}, files: ['manifest.json'] }, 'a wrong file name: manifest.json'],
           [{ entries: {}, files: ['..js'] }, 'a wrong file name: ..js'],
+          // KNT-202: the files of public/, by a path under assets/, with the hash of the plain file.
+          [{ entries: {}, files: [] }, 'no public files'],
+          [{ entries: {}, files: [], public: [] }, 'no public files'],
+          [{ entries: {}, files: [], public: { 'assets/../secret.css': HASH } }, 'a wrong public file: assets/../secret.css'],
+          [{ entries: {}, files: [], public: { '../assets/a.css': HASH } }, 'a wrong public file: ../assets/a.css'],
+          [{ entries: {}, files: [], public: { 'app/config.ts': HASH } }, 'a wrong public file: app/config.ts'],
+          [{ entries: {}, files: [], public: { assets: HASH } }, 'a wrong public file: assets'],
+          [{ entries: {}, files: [], public: { 'assets/a.css': 'abc' } }, 'a wrong hash: assets/a.css'],
         ]
         for (let [manifest, problem] of shapes) {
           writeFileSync(path.join(partial.dir, 'manifest.json'), JSON.stringify(manifest))
@@ -256,6 +350,24 @@ describe('the bundles of the browser modules (KNT-170)', () => {
       for (let module of modules) {
         for (let chunk of runtime.imports) assert.ok(manifest.entries[module]!.imports.includes(chunk), `${module} imports ${chunk}`)
       }
+      // KNT-202: the text files of public/assets/ of 1 KB or more, with their copies; no font, no small icon.
+      let copies = Object.keys(manifest.public)
+      assert.ok(copies.includes('assets/kento.css') && copies.includes('assets/settings.js') && copies.includes('assets/pr/security.v2.svg'), copies.join(', '))
+      assert.ok(!copies.some((file) => file.endsWith('.woff2')) && !copies.includes('assets/favicon.svg') && !copies.includes('assets/theme.js'), copies.join(', '))
+      for (let file of copies) {
+        let plain = readFileSync(path.join(PUBLIC_DIR, file))
+        assert.equal(manifest.public[file], sha256(plain), file)
+        assert.deepEqual(brotliDecompressSync(readFileSync(path.join(dir, 'public', `${file}.br`))), plain, file)
+        assert.deepEqual(gunzipSync(readFileSync(path.join(dir, 'public', `${file}.gz`))), plain, file)
+      }
+      let alone = mkdtempSync(path.join(tmpdir(), 'kento-public-'))
+      try {
+        assert.deepEqual(compressPublicFiles(alone), manifest.public)
+      } finally {
+        rmSync(alone, { recursive: true, force: true })
+      }
+      let read = readClientBuild(dir) as ClientBuild
+      assert.deepEqual([read.publicFiles.size, read.stale], [copies.length, []])
       // Built twice from the same source: the same names (the cache of the browsers holds).
       let again = await buildClient(dir)
       assert.deepEqual(again, manifest)
