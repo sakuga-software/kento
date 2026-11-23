@@ -53,3 +53,37 @@ test('a page with components loads its bundles, compressed and preloaded, and hy
   }
   expect(errors).toEqual([])
 })
+
+// KNT-202. The stylesheet, the scripts of the screens and the HTML reach the browser compressed: the
+// copies of the build for the files of public/assets/, brotli on each request for the pages.
+test('the stylesheet, the scripts of the screens and the page come compressed', async ({ page }) => {
+  let errors = watchConsole(page)
+  let files: { url: string; type: string; encoding: string | undefined; vary: string | undefined }[] = []
+  page.on('response', async (response) => {
+    let url = new URL(response.url())
+    let headers = await response.allHeaders()
+    files.push({ url: url.pathname, type: response.request().resourceType(), encoding: headers['content-encoding'], vary: headers['vary'] })
+  })
+  await signIn(page, 'octocat')
+  await page.goto('/repos')
+  await hydrated(page)
+
+  let document = files.findLast((file) => file.type === 'document' && file.url === '/repos')
+  expect(document?.encoding).toBe('br')
+  expect(document?.vary?.toLowerCase()).toContain('accept-encoding')
+  let css = files.find((file) => file.url === '/assets/kento.css')
+  expect(css?.encoding).toBe('br')
+  expect(css?.vary?.toLowerCase()).toContain('accept-encoding')
+  let scripts = files.filter((file) => /^\/assets\/[a-z-]+\.js$/.test(file.url))
+  expect(scripts.length).toBeGreaterThan(0)
+  // theme.js is under 1 KB: it has no copy and comes plain.
+  for (let script of scripts) expect(script.encoding, script.url).toBe(script.url === '/assets/theme.js' ? undefined : 'br')
+
+  // A client that accepts gzip only, then none.
+  let gzip = await page.request.get('/assets/kento.css', { headers: { 'Accept-Encoding': 'gzip' } })
+  expect(gzip.headers()['content-encoding']).toBe('gzip')
+  let plain = await page.request.get('/assets/kento.css', { headers: { 'Accept-Encoding': 'identity' } })
+  expect(plain.headers()['content-encoding']).toBeUndefined()
+  expect((await plain.body()).byteLength).toBeGreaterThan(100_000)
+  expect(errors).toEqual([])
+})
