@@ -196,3 +196,11 @@ test('the « Not reviewed » lines of the files that the pack drops count in the
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a call whose parts around the pack leave no room for a diff keeps the pack of MAX_PACK_BYTES, and says so', () => {
+  const logs: string[] = [];
+  const prompts = { 'review.md': 'Review the pull request.\n'.repeat(10_000) };
+  const prepared = prepareReview({ apiKey: undefined, kind: 'anthropic', prompts, repoDir: repo, base, head, level: 'lite', config: haiku, log: (m) => logs.push(m) }, haiku);
+  assert.equal(prepared.pack, buildPack(repo, base, head, 'definitions').pack);
+  assert.match(logs.join('\n'), /passes the long-context threshold of 100000 tokens/);
+});

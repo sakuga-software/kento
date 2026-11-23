@@ -364,15 +364,24 @@ function packWithin(input: ReviewInput, fit: Fit, build: (maxBytes: number) => P
   const total = (packed: Packed) => callBytes(packed.parts) + packed.pack.length - fit.unkeyed.length + fit.unkeyedBound + fit.checklist.length;
   // Before the first build, the notes of the sections read the sections that the pack will hold.
   let maxBytes = Math.min(MAX_PACK_BYTES, cap - callBytes([{ text: fit.sections + fit.unkeyed }]) - fit.unkeyedBound - fit.checklist.length);
+  const over = (excess: number) =>
+    (input.log ?? stderr)(`the review call passes the long-context threshold of ${threshold} tokens by about ${Math.ceil(excess / BYTES_PER_TOKEN)} tokens`);
+  // A budget of 0 or less holds no diff: a review of nothing costs less, and is no review. The pack
+  // keeps MAX_PACK_BYTES, as with no threshold (Kentō #60f17e).
+  if (maxBytes <= 0) {
+    over(-maxBytes);
+    return build(MAX_PACK_BYTES);
+  }
   let packed = build(maxBytes);
   for (let builds = 1; ; builds++) {
     const excess = total(packed) - cap;
     if (excess <= 0) return packed;
-    if (builds === MAX_PACK_BUILDS) {
-      (input.log ?? stderr)(`the review call passes the long-context threshold of ${threshold} tokens by about ${Math.ceil(excess / BYTES_PER_TOKEN)} tokens`);
+    const next = Math.min(maxBytes, packed.pack.length - fit.unkeyed.length) - excess;
+    if (builds === MAX_PACK_BUILDS || next <= 0) {
+      over(excess);
       return packed;
     }
-    maxBytes = Math.min(maxBytes, packed.pack.length - fit.unkeyed.length) - excess;
+    maxBytes = next;
     packed = build(maxBytes);
   }
 }
