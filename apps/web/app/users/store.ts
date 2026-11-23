@@ -149,6 +149,9 @@ export function createUsersStore(sql: postgres.Sql): UsersStore {
           from mine
           join reviews on reviews.repo_id = mine.repo_id and reviews.pr_number = mine.pr_number and reviews.github_review_id is not null
           group by mine.repo_id, mine.pr_number, mine.full_name
+          -- A pull request whose reviews on GitHub are all copies (the retention removed their source)
+          -- has no review that counts: it is not listed, rather than listed with 0.
+          having count(*) filter (where ${sql.unsafe(countsSql())}) > 0
         ),
         page as (
           select reviewed.*, count(*) over () as total from reviewed

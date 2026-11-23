@@ -155,6 +155,22 @@ describe('the count and the numbers of the reviews of a pull request (KNT-175)',
     assert.equal(pull!.lastReviewAt.getTime(), new Date(row!.publishedAt).getTime())
   })
 
+  it('lists no pull request whose only review on GitHub is a copy, once the retention removed its source', async () => {
+    let sql = database.sql
+    let [job] = await sql<{ id: string }[]>`
+      insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref)
+      values (${repoId}, 'review', 'lite', 'done', ${PR + 2}, ${sha('a')}, 'main') returning id`
+    let copy = { verdict: 'COMMENT', findings: [], reusedFrom: { reviewId: '00000000-0000-4000-8000-000000000001', head: sha('b'), githubReviewId: 777 } }
+    await sql`
+      insert into reviews (job_id, repo_id, pr_number, head_sha, score, model, cost_usd, result, github_review_id, published_at)
+      values (${job!.id}, ${repoId}, ${PR + 2}, ${sha('a')}, 3, 'm', 0, ${JSON.stringify(copy)}::text::jsonb, 777, now())`
+    await sql`insert into pull_authors (repo_id, pr_number, github_id, login) values (${repoId}, ${PR + 2}, ${AUTHOR.githubId}, ${AUTHOR.login})`
+    let screen = (await createUsersStore(sql).screen(orgId, AUTHOR.login))!
+    await sql`delete from jobs where id = ${job!.id}`
+    assert.deepEqual(screen.pulls.rows.map((r) => `${r.prNumber}: ${r.reviews}`), [`${PR}: 3`])
+    assert.equal(screen.pulls.total, 1)
+  })
+
   it('lists no pull request whose only review never reached GitHub', async () => {
     let sql = database.sql
     let [job] = await sql<{ id: string }[]>`
