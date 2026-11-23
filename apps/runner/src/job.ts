@@ -492,6 +492,8 @@ async function resolveJob(job: Extract<Job, { kind: 'resolve' }>, deps: JobDepen
       completionTokens: usage.completion_tokens ?? null,
       held: held.length,
       threads: verdicts,
+      // KNT-161. As a review: only after a fallback, which only a service that reads it can cause.
+      ...(model.fellBack ? { fellBack: model.fellBack } : {}),
     };
   });
 }

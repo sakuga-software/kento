@@ -130,6 +130,25 @@ describe('comment of a failed job', () => {
     )
   })
 
+  it('14. KNT-161: a failure of the fallback provider names both providers by their labels, not by masked ids (critique P2-5)', async () => {
+    let [first] = await database.sql<{ id: string }[]>`
+      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'anthropic', 'Acme Anthropic', true) returning id`
+    let [second] = await database.sql<{ id: string }[]>`
+      insert into providers (id, org_id, kind, label, runner_held) values (gen_random_uuid(), ${orgId}, 'openrouter', 'Acme OpenRouter', true) returning id`
+    let reason =
+      `the fallback provider ${second!.id} failed after a usage limit of the provider ${first!.id}: ` +
+      'no model gave a usable answer: OpenRouter refused the call on a usage limit (403): {"error":{"message":"Key limit exceeded"}}'
+    let id = await failedJob({ reason })
+    await publisher().publishPending()
+    let body = failureComments()[0]!.body
+    assert.ok(body.includes('the fallback provider "Acme OpenRouter" failed after a usage limit of the provider "Acme Anthropic":'), body)
+    assert.ok(body.includes('The fallback provider of this level failed too'), body)
+    assert.ok(!body.includes('set its fallback provider'), body)
+    assert.ok(fake.state.checkRuns[0]!.output.summary.includes('"Acme OpenRouter"'))
+    let [row] = await database.sql<{ failure_reason: string }[]>`select failure_reason from jobs where id = ${id}`
+    assert.ok(row!.failure_reason.includes(second!.id), 'the stored reason keeps the ids, for the logs')
+  })
+
   it('12. KNT-161: a head that already has a check of Kentō keeps it, and a failed resolve posts no check', async () => {
     fake.state.checkRuns.push({ name: checkName(), head_sha: HEAD, conclusion: 'success', output: { title: 'Confidence score: 5/5', summary: '' }, token: 't' })
     await failedJob({ level: 'heavy' })

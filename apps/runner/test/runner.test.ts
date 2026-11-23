@@ -1303,3 +1303,34 @@ test('KNT-161. a short rate limit of the fallback provider: the reason reads as 
   const wait = Date.parse(limit!.resetAt ?? '') - before;
   assert.ok(wait > 30_000 && wait <= 42_000, `the reset of the fallback, about 40 s away: ${limit!.resetAt}`);
 });
+
+test('KNT-161. a resolve job falls back like a review, and its result says that the fallback answered (critique P2-2)', async () => {
+  const { api, results } = fakeApi();
+  const resolveModel = stubResolveModel();
+  const stub = (async (url: string, init: RequestInit): Promise<Response> =>
+    String(url).includes('anthropic') ? anthropicUsageLimit() : resolveModel.fetch(url, init)) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob({ ...resolveJob([{ id: 'PRRT_at_head', commit: head }]), providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models } as Job, deps(api, stub));
+  assert.equal(outcome, 'done');
+  const result = results[0]!;
+  if (result.outcome !== 'resolved') return assert.fail('the job resolves');
+  assert.deepEqual(result.resolve.fellBack, { from: PROVIDER_ID, resetAt: `${RESET_DAY}T00:00:00Z` });
+  assert.equal(result.resolve.model, 'anthropic/claude-sonnet-5.5');
+  assert.equal(resolveModel.packs.length, 1);
+});
+
+test('KNT-161. a failure of the fallback run that is not a ProviderError names both providers at the call site too (critique P3-1)', async () => {
+  const { api, results } = fakeApi();
+  const stub = (async (url: string): Promise<Response> => {
+    if (String(url).includes('anthropic')) return anthropicUsageLimit();
+    // A value whose text cannot be read: the call fails with a TypeError, not a ProviderError.
+    throw { toString: () => { throw new TypeError('the error of the fallback cannot be read'); } };
+  }) as typeof globalThis.fetch;
+  const models = { provider: PROVIDER_ID, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: FALLBACK_ID, model: 'anthropic/claude-sonnet-5.5' } };
+  const outcome = await runJob(job({ providers: [anthropicProvider(ANTHROPIC_KEY), openRouterFallback(OPENROUTER_KEY)], models }), deps(api, stub));
+  assert.equal(outcome, 'failed');
+  const result = results[0]!;
+  if (result.outcome !== 'failed') return assert.fail('the job fails');
+  assert.equal(result.providerStatus, null);
+  assert.equal(result.reason, `the fallback provider ${FALLBACK_ID} failed after a usage limit of the provider ${PROVIDER_ID}: the error of the fallback cannot be read`);
+});

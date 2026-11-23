@@ -285,11 +285,13 @@ export function createRunnerController(deps: RunnerApiDependencies) {
    * the provider of the job: a provider of the org of the job only; its key only to a trusted runner
    * of that org or of the service that does not hold this kind itself, and never for a key held by
    * the runners of the org unless this runner holds the kind. Else the job goes without a fallback,
-   * and the log says why. Only for a runner that reads `fallback-provider`.
+   * and the log says why. Only for a runner that reads `fallback-provider` and `models`, and only
+   * when the job carries `models`: without them, the key would leave the service for nothing.
    */
   async function withFallbackKey(job: ClaimedJob, claim: Claim, keys: Keys): Promise<Keys> {
-    let chosen = jobModels(job.config)?.fallbackProvider ?? null
-    if (!chosen) return keys
+    let configured = jobModels(job.config)
+    let chosen = configured?.fallbackProvider ?? null
+    if (!configured || !chosen) return keys
     let { runner, ownProvider, ownKey, secrets, body } = claim
     let skip = (reason: string): Keys => {
       log('warn', 'job.fallback_provider_not_sent', { jobId: job.id, runnerId: runner.id, provider: chosen.provider, reason })
@@ -297,6 +299,10 @@ export function createRunnerController(deps: RunnerApiDependencies) {
     }
     if (!(body.features?.includes('fallback-provider') ?? false)) return skip('runner does not read the fallback provider')
     if (!keys.providers) return skip('runner does not read the providers')
+    // The fallback provider goes in `models`: a job that goes without `models` never uses its key
+    // (jobResponse sends `models` only to a runner that reads it, with its provider in `providers`).
+    if (!(body.features?.includes('models') ?? false)) return skip('runner does not read the models of the config')
+    if (!carriesProvider(configured, keys.providers.map((p) => p.id))) return skip('the job does not carry the provider of the config')
     if (keys.providers.length >= 4) return skip('the job carries 4 providers already')
     if (keys.providers.some((p) => p.id === chosen.provider)) return skip('it is the provider of the job')
     if (chosen.provider === SERVICE_PROVIDER) {

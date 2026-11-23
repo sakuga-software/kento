@@ -5,6 +5,7 @@ import * as assert from 'remix/assert'
 import { after, before, beforeEach, describe, it } from 'remix/test'
 
 import { createDatabase, type Database } from '../../app/db/client.ts'
+import { readOrgCosts } from '../../app/db/costs.ts'
 import { runMigrations } from '../../app/db/migrate.ts'
 import { disabledWebhook } from '../../app/github/test-helpers.ts'
 import { createSecretBox, type SecretBox } from '../../app/providers/secrets.ts'
@@ -472,6 +473,96 @@ describe('providers and their encrypted keys', () => {
       assert.equal(state!.lastOkAt, null)
       let [row] = await database.sql<{ result: { fellBack?: unknown } }[]>`select result from reviews where job_id = ${jobId}`
       assert.deepEqual(row!.result.fellBack, fellBack)
+    })
+
+    it('KNT-161. the cost of a review that the fallback provider answered goes to the fallback provider (critique P2-1)', async () => {
+      let first = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'First', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let second = await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Second', baseUrl: null, apiKey: 'sk-or-second-0123456789', models: {} })
+      let jobId = await queueWithConfig({ repoConfigVersion: 3, source: 'repo', models: { provider: first.id, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: second.id, model: 'm' } } })
+      let token = await runner({ trusted: true })
+      let { job } = await claim(token, { ...NEW_RUNNER, features: ['providers', 'models', 'fallback-provider'] })
+      let fellBack = { from: first.id, resetAt: null }
+      let stored = await call(`/api/runner/jobs/${jobId}/result`, token, { outcome: 'done', attempt: job!.attempt, review: review({ fellBack, costUsd: 1.25 }) })
+      assert.equal(stored.status, 204)
+      let costs = await readOrgCosts(database.db, orgId)
+      assert.deepEqual(costs.monthByProvider.map((c) => [c.label, c.usd]), [['Second', 1.25]], 'the provider of the job only refused: it cost nothing')
+    })
+
+    it('KNT-161. a resolution that the fallback provider answered marks nothing on the provider of the job, and its cost goes to the fallback (critique P2-2)', async () => {
+      let first = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'First', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let second = await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Second', baseUrl: null, apiKey: 'sk-or-second-0123456789', models: {} })
+      await database.sql`update providers set refused_at = now() - interval '1 hour', refused_status = 401, refused_message = 'invalid x-api-key' where id = ${first.id}`
+      await runner({ trusted: true })
+      let [r] = await database.sql<{ id: string }[]>`select id from runners limit 1`
+      let config = { repoConfigVersion: 3, source: 'repo', models: { provider: first.id, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: second.id, model: 'm' } } }
+      let resolveJob = async () => {
+        let [row] = await database.sql<{ id: string }[]>`
+          insert into jobs (repo_id, kind, level, state, pr_number, head_sha, base_ref, runner_id, attempts, provider_id, config, started_at, lease_expires_at)
+          values (${repoId}, 'resolve', 'lite', 'running', 28, ${HEAD}, 'main', ${r!.id}, 1, ${first.id}, ${JSON.stringify(config)}::jsonb, now(), now() + interval '2 minutes')
+          returning id`
+        return row!.id
+      }
+      let resolve = { level: 'lite' as const, head: HEAD, model: 'anthropic/claude-sonnet-5.5', provider: null, costUsd: 0.5, promptTokens: 10, completionTokens: 5, open: 1, waiting: 0, held: 1, threads: [] }
+      let runnerStore = createRunnerStore(database.sql)
+      assert.equal(await runnerStore.storeResult(await resolveJob(), r!.id, 1, { outcome: 'resolved', resolve: { ...resolve, fellBack: { from: first.id, resetAt: null } } }), 'stored')
+      let [state] = (await store.list(orgId)).filter((p) => p.id === first.id)
+      assert.equal(state!.lastOkAt, null, 'the provider of the job did not answer')
+      assert.ok(state!.refusedAt, 'its refusal stays on the screen')
+      assert.deepEqual((await readOrgCosts(database.db, orgId)).monthByProvider.map((c) => [c.label, c.usd]), [['Second', 0.5]])
+
+      // Without a fallback, the provider of the job answered: it works again.
+      assert.equal(await runnerStore.storeResult(await resolveJob(), r!.id, 1, { outcome: 'resolved', resolve }), 'stored')
+      let [after] = (await store.list(orgId)).filter((p) => p.id === first.id)
+      assert.ok(after!.lastOkAt)
+      assert.equal(after!.refusedAt, null)
+    })
+
+    it('KNT-161. the key of the fallback provider does not leave with a job that goes without `models` (critique P2-3)', async () => {
+      let first = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'First', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let second = await store.add({ orgId, userId: null, kind: 'openrouter', label: 'Second', baseUrl: null, apiKey: 'sk-or-second-0123456789', models: {} })
+      let config = { repoConfigVersion: 3, source: 'repo', models: { provider: first.id, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: second.id, model: 'm' } } }
+      // A runner that reads `fallback-provider` but not `models`.
+      await queueWithConfig(config)
+      let noModels = await claim(await runner({ trusted: true }), { ...NEW_RUNNER, features: ['providers', 'fallback-provider'] })
+      assert.deepEqual(noModels.job!.providers!.map((p) => p.id), [first.id])
+      assert.ok(!JSON.stringify(noModels.job).includes('sk-or-second'))
+
+      // An admin removed the provider of the config: the job runs on the key of the service, without `models`.
+      await database.sql`delete from jobs`
+      await queueWithConfig(config)
+      await database.sql`delete from providers where id = ${first.id}`
+      let gone = await claim(await runner({ orgId: null, trusted: true }), { ...NEW_RUNNER, features: ['providers', 'models', 'fallback-provider'] })
+      assert.ok(gone.job, 'the job runs')
+      assert.equal('models' in gone.job!, false)
+      assert.deepEqual(gone.job!.providers!.map((p) => p.id), ['service'])
+      assert.ok(!JSON.stringify(gone.job).includes('sk-or-second'))
+    })
+
+    it('KNT-161. a trusted runner of the service never gets a fallback provider of another org (critique P2-4, the org join of jobOrgProvider)', async () => {
+      let first = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'First', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let other = await store.add({ orgId: otherOrgId, userId: null, kind: 'openrouter', label: 'Other org', baseUrl: null, apiKey: 'sk-or-other-0123456789', models: {} })
+      await queueWithConfig({ repoConfigVersion: 3, source: 'repo', models: { provider: first.id, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: other.id, model: 'm' } } })
+      // A runner of the service has no org: the join on the org of the job is the only guard.
+      let { job } = await claim(await runner({ orgId: null, trusted: true }), { ...NEW_RUNNER, features: ['providers', 'models', 'fallback-provider'] })
+      assert.deepEqual(job!.providers!.map((p) => p.id), [first.id])
+      assert.ok(!JSON.stringify(job).includes('sk-or-other'))
+      assert.ok(!('fallbackProvider' in job!.models!))
+    })
+
+    it('KNT-161. the key of the service as a fallback goes only to a trusted runner of the service (critique P2-4, REV-130)', async () => {
+      let first = await store.add({ orgId, userId: null, kind: 'anthropic', label: 'First', baseUrl: null, apiKey: ANTHROPIC_KEY, models: {} })
+      let config = { repoConfigVersion: 3, source: 'repo', models: { provider: first.id, model: 'claude-sonnet-5-5', fallback: null, fallbackProvider: { provider: 'service', model: 'anthropic/claude-sonnet-5.5' } } }
+      let features = ['providers', 'models', 'fallback-provider']
+      await queueWithConfig(config)
+      let ofOrg = await claim(await runner({ trusted: true }), { ...NEW_RUNNER, features })
+      assert.deepEqual(ofOrg.job!.providers!.map((p) => p.id), [first.id], 'a trusted runner of an org never gets the key of the service')
+      assert.ok(!JSON.stringify(ofOrg.job).includes('sk-or-service-key'))
+
+      await database.sql`delete from jobs`
+      await queueWithConfig(config)
+      let ofService = await claim(await runner({ orgId: null, trusted: true }), { ...NEW_RUNNER, features })
+      assert.deepEqual(ofService.job!.providers!.map((p) => [p.id, p.apiKey]), [[first.id, ANTHROPIC_KEY], ['service', 'sk-or-service-key']])
+      assert.deepEqual(ofService.job!.models!.fallbackProvider, { provider: 'service', model: 'anthropic/claude-sonnet-5.5' })
     })
 
     it('a config that chose "service" runs on the key of the service, even with a default provider', async () => {

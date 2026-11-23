@@ -99,6 +99,9 @@ type EndedCommand = {
   installationId: string | number
 }
 
+/** KNT-161. The text of `fallbackFailure` (apps/runner/src/job.ts): the ids of the fallback provider and of the provider of the job. */
+const FALLBACK_FAILURE = /the fallback provider (\S+) failed after a usage limit of the provider (\S+):/
+
 /** A job that failed after its last attempt: the publisher tells its pull request why, once. */
 type FailedJobRow = {
   id: string
@@ -173,6 +176,8 @@ type PendingResolution = {
   installationId: string | number
   suspended: boolean
   commentId: string | number | null
+  repoId: string
+  jobConfig: unknown
 }
 
 export interface Publisher {
@@ -397,7 +402,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
       select taken.id, taken.job_id as "jobId", taken.pr_number as "prNumber", taken.head_sha as "headSha",
         taken.result, repos.full_name as "fullName", repos.github_repo_id as "githubRepoId",
         installations.github_installation_id as "installationId", installations.suspended_at is not null as suspended,
-        jobs.github_comment_id as "commentId"
+        jobs.github_comment_id as "commentId", jobs.repo_id as "repoId", jobs.config as "jobConfig"
       from taken
       join jobs on jobs.id = taken.job_id
       join repos on repos.id = jobs.repo_id
@@ -443,7 +448,7 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
         let outcome = await publishResolution(
           github,
           writer,
-          { fullName: row.fullName, pr: row.prNumber, webUrl, icons },
+          { fullName: row.fullName, pr: row.prNumber, webUrl, icons, fellBack: await fellBackOf(row, payload) },
           payload,
           (event, extra) => log('warn', event, { ...fields, ...extra }),
           resolveHints(connection, row, docsUrl),
@@ -543,9 +548,10 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
           }
         }
         let configUrl = deps.publicUrl ? new URL(pageRoutes.repoConfig.href({ id: row.repoId }), deps.publicUrl).toString() : null
-        let body = failureComment({ ...row, commenter, configUrl })
+        let failureReason = await namedProviders(row.repoId, row.failureReason)
+        let body = failureComment({ ...row, failureReason, commenter, configUrl })
         await github.rest('POST', `/repos/${row.fullName}/issues/${row.prNumber}/comments`, { body })
-        let check = row.kind === 'review' ? await postFailedCheck(row, { ...row, commenter, configUrl }) : null
+        let check = row.kind === 'review' ? await postFailedCheck(row, { ...row, failureReason, commenter, configUrl }) : null
         log('info', 'job.failure_noticed', { ...fields, command: row.commentId !== null, check })
       } catch (error) {
         // One try: the row is already marked.
@@ -586,10 +592,34 @@ export function createPublisher(deps: PublisherDependencies): Publisher {
   }
 
   /**
-   * KNT-161. The labels of the provider of the job and of its fallback provider, when the fallback
-   * answered the review. Only providers of the org of the repository; `service` is the key of the service.
+   * KNT-161. The reason of a failed run on the fallback provider, with the labels of its two
+   * providers in place of their ids: the comment masks an id as a secret, and an id tells a reader
+   * nothing. The text is the one of `fallbackFailure` (apps/runner/src/job.ts). Only providers of
+   * the org of the repository; the stored reason keeps the ids, for the logs.
    */
-  async function fellBackOf(row: { repoId: string; jobConfig: unknown }, review: ReviewPayload): Promise<FellBack | null> {
+  async function namedProviders(repoId: string, reason: string | null): Promise<string | null> {
+    let named = reason ? FALLBACK_FAILURE.exec(reason) : null
+    if (!reason || !named) return reason
+    let [, to, from] = named as unknown as [string, string, string]
+    let ids = [to, from].filter((id) => UUID.test(id))
+    let rows = ids.length
+      ? await deps.sql<{ id: string; label: string }[]>`
+          select id, label from providers
+          where id = any(${ids}::uuid[]) and org_id = (select org_id from repos where id = ${repoId})`
+      : []
+    // A provider that the org does not have (removed since, or of another org) reads « of the level ».
+    let label = (id: string) => {
+      let text = id === SERVICE_PROVIDER ? 'OpenRouter (key of the service)' : rows.find((r) => r.id === id)?.label
+      return text ? `"${text.replace(/[`"\r\n]/g, ' ').trim().slice(0, 80)}"` : 'of the level'
+    }
+    return reason.replace(named[0], `the fallback provider ${label(to)} failed after a usage limit of the provider ${label(from)}:`)
+  }
+
+  /**
+   * KNT-161. The labels of the provider of the job and of its fallback provider, when the fallback
+   * answered the review or the resolution. Only providers of the org of the repository; `service` is the key of the service.
+   */
+  async function fellBackOf(row: { repoId: string; jobConfig: unknown }, review: Pick<ReviewPayload, 'fellBack'>): Promise<FellBack | null> {
     if (!review.fellBack) return null
     let to = jobModels(row.jobConfig)?.fallbackProvider?.provider ?? null
     let ids = [review.fellBack.from, to].filter((id): id is string => id !== null && UUID.test(id))

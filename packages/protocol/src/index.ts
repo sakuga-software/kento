@@ -693,6 +693,8 @@ export type ResolvePayload = {
   waiting: number;
   held: number;
   threads: { id: string; verdict: (typeof THREAD_VERDICTS)[number]; reply: string; changed: boolean | null }[];
+  /** KNT-161. As `ReviewPayload.fellBack`: the fallback provider answered the resolution. */
+  fellBack?: { from: string; resetAt: string | null };
 };
 
 /**
@@ -755,6 +757,7 @@ const resultRequest = tagged('outcome', {
         obj({ id: str({ min: 1, max: 100 }), verdict: oneOf(THREAD_VERDICTS), reply: text(10_000), changed: nullable(bool) }),
         { max: MAX_RESOLVE_THREADS },
       ),
+      fellBack: optional(obj({ from: str({ min: 1, max: 36, pattern: PROVIDER_ID }), resetAt: nullable(isoDate) })),
     }),
   }),
   unchanged: obj({

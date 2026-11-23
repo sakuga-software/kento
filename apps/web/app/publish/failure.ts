@@ -72,7 +72,10 @@ export function failureComment(job: FailedJob): string {
     let until = resetAt ? ` until ${utcText(resetAt)}` : ''
     let refusal = limit.kind === 'usage' ? `on its usage limit${until}` : 'on its rate limit, at each attempt'
     let retry = `To run it again${resetAt ? ' after that time' : ''}: \`${command}\`.`
-    if (job.configUrl) retry += ` To use another provider for this level, change its provider or set its fallback provider in the [config of the repo](${job.configUrl}).`
+    // KNT-161. The fallback provider ran and failed too (the text of the runner): it is set already.
+    let fellBack = /the fallback provider .+? failed after a usage limit of the provider /.test(job.failureReason ?? '')
+    if (job.configUrl && fellBack) retry += ` The fallback provider of this level failed too: to use other providers, change them in the [config of the repo](${job.configUrl}).`
+    else if (job.configUrl) retry += ` To use another provider for this level, change its provider or set its fallback provider in the [config of the repo](${job.configUrl}).`
     return [
       `**Kentō · ${what} did not happen** at commit \`${job.headSha.slice(0, 9)}\``,
       `${commenter}The \`${job.level}\` ${what} of this commit did not happen: the model provider refused the call ${refusal}. ` +
