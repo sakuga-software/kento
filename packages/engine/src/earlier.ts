@@ -22,6 +22,8 @@ import { SEVERITIES, type EarlierFinding } from '../../protocol/src/index.ts';
 
 /** The pack holds at most this many bytes of earlier findings. */
 export const MAX_EARLIER_BYTES = 16_000;
+/** KNT-201. The most bytes of the whole section: the rows, and 4 KB for its intro and its notes (a test checks it). */
+export const MAX_EARLIER_SECTION_BYTES = MAX_EARLIER_BYTES + 4_000;
 
 /**
  * An earlier finding of the pack: `ref` is what the link call cites in `follows` (`E1`), `changed`
