@@ -3,8 +3,7 @@
 An org of Kentō can add its own providers of models (Anthropic, OpenRouter, a server with the API of
 OpenAI, Ollama) on the screen "Settings · Providers and keys". A preset (KNT-204,
 `packages/engine/src/presets.ts`) is a server with the API of OpenAI at a known URL: it changes
-nothing below. This page is the threat model of
-their keys. The generation and the rotation of the master key are in
+nothing below. This page is the threat model of their keys. The generation and the rotation of the master key are in
 [SECURITY.md](../SECURITY.md#the-master-key).
 
 ## What is protected

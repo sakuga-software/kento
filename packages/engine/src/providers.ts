@@ -889,7 +889,8 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let out = await response.json();
   let input = count(out.usage?.prompt_tokens) ?? 0;
   let output = count(out.usage?.completion_tokens) ?? 0;
-  let cacheRead = count(out.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
+  // The cached tokens of the calls, or undefined when no call gave them.
+  let cacheRead = count(out.usage?.prompt_tokens_details?.cached_tokens);
   let content: string = out.choices?.[0]?.message?.content ?? '';
   let answer: T;
   try {
@@ -903,14 +904,15 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
     out = await again.json();
     input += count(out.usage?.prompt_tokens) ?? 0;
     output += count(out.usage?.completion_tokens) ?? 0;
-    cacheRead += count(out.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
+    const cachedAgain = count(out.usage?.prompt_tokens_details?.cached_tokens);
+    if (cachedAgain !== undefined) cacheRead = (cacheRead ?? 0) + cachedAgain;
     content = out.choices?.[0]?.message?.content ?? '';
     answer = parseObject<T>(content, name);
   }
   const model: string = typeof out.model === 'string' && out.model ? out.model : call.model;
-  const cached = count(out.usage?.prompt_tokens_details?.cached_tokens);
-  // `prompt_tokens` counts the cached tokens too: the table prices them apart.
-  const read = Math.min(cacheRead, input);
+  // `prompt_tokens` counts the cached tokens too: the table prices them apart. KNT-204: the usage
+  // gives the same count as the cost, for all the calls, as it does for `prompt_tokens`.
+  const read = cacheRead === undefined ? undefined : Math.min(cacheRead, input);
   return {
     answer,
     usage: {
@@ -918,9 +920,9 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
       ...(preset ? { provider: preset.name } : {}),
       prompt_tokens: input,
       completion_tokens: output,
-      // REV-89. The cached tokens of the last call, when the server gives them.
-      ...(cached !== undefined ? { cache_read_tokens: cached } : {}),
-      ...priced('openai_compatible', model, { input: input - read, output, cacheRead: read }, out.usage?.cost, call.baseUrl, call.model),
+      // REV-89. The cached tokens, when the server gives them.
+      ...(read !== undefined ? { cache_read_tokens: read } : {}),
+      ...priced('openai_compatible', model, { input: input - (read ?? 0), output, cacheRead: read ?? 0 }, out.usage?.cost, call.baseUrl, call.model),
     },
   };
 }

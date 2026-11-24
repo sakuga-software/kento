@@ -58,6 +58,30 @@ test('KNT-204. a preset call: the URL of the preset, the schema, the name of the
   assert.equal(usage.cost_source, 'table');
 });
 
+test('KNT-204. after a second call, the usage gives the cached tokens of both calls, as the cost counts them', async () => {
+  const { done, calls } = callPreset('groq', 'balanced', [
+    () => json({ model: 'openai/gpt-oss-120b', choices: [{ message: { content: 'not JSON' } }], usage: { prompt_tokens: 100_000, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 30_000 } } }),
+    answer('openai/gpt-oss-120b', { prompt_tokens: 100_000, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 90_000 } }),
+  ]);
+  const { usage } = await done;
+  assert.equal(calls.length, 2);
+  assert.equal(usage.prompt_tokens, 200_000);
+  assert.equal(usage.cache_read_tokens, 120_000);
+  // 80,000 × 0.15 + 120,000 × 0.075 + 20 × 0.6 = 21,012 millionths of a dollar.
+  assert.equal(usage.cost, 0.021012);
+});
+
+test('KNT-204. a server that answers more cached tokens than prompt tokens: the usage and the cost cap them alike', async () => {
+  const { done } = callPreset('groq', 'lite', [answer('openai/gpt-oss-20b', { prompt_tokens: 100, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 500 } })]);
+  const { usage } = await done;
+  assert.equal(usage.cache_read_tokens, 100);
+});
+
+test('KNT-204. a server that gives no cached tokens gives no cache_read_tokens', async () => {
+  const { done } = callPreset('groq', 'lite', [answer('openai/gpt-oss-20b', { prompt_tokens: 100, completion_tokens: 0 })]);
+  assert.equal((await done).usage.cache_read_tokens, undefined);
+});
+
 test('KNT-204. a server that answers the dated id of an alias keeps the price of the id it was asked for', async () => {
   const { done } = callPreset('cerebras', 'lite', [answer('gpt-oss-120b-2026-01-01', { prompt_tokens: 1_000_000, completion_tokens: 0 })]);
   const { usage } = await done;
