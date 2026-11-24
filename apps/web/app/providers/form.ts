@@ -36,17 +36,23 @@ export interface ProviderInput {
 
 /**
  * A base URL that the service or a runner may call: HTTPS with a host, no user or password in it,
- * no query, no fragment. Ollama may be HTTP: it runs on the network of a runner.
+ * no query, no fragment. Ollama may be HTTP: it runs on the network of a runner. KNT-205: so may a
+ * server of the API of OpenAI that the runner holds (LM Studio, vLLM, llama.cpp). The service never
+ * calls such a URL: "Test" calls HTTPS only, and the runner calls its own PROVIDER_BASE_URL.
  */
-export function checkBaseUrl(kind: ProviderKind, value: string): string | null {
+export function checkBaseUrl(kind: ProviderKind, value: string, runnerHeld = false): string | null {
   let url: URL
   try {
     url = new URL(value)
   } catch {
     return 'A full URL, for example https://llm.example.com/v1.'
   }
-  let schemes = kind === 'ollama' ? ['https:', 'http:'] : ['https:']
-  if (!schemes.includes(url.protocol)) return kind === 'ollama' ? 'A URL with http:// or https://.' : 'A URL with https://. The key goes in a header.'
+  let local = kind === 'ollama' || (kind === 'openai_compatible' && runnerHeld)
+  if (url.protocol === 'http:' && kind === 'openai_compatible' && !runnerHeld) {
+    return 'A URL with https://. HTTP only for a server on the network of a runner: tick "The key stays on the runner".'
+  }
+  let schemes = local ? ['https:', 'http:'] : ['https:']
+  if (!schemes.includes(url.protocol)) return local ? 'A URL with http:// or https://.' : 'A URL with https://. The key goes in a header.'
   if (url.username || url.password) return 'No user name or password in the URL. The key goes in its own field.'
   if (url.search || url.hash) return 'No query string and no fragment.'
   if (value.length > 300) return '300 characters at most.'
@@ -78,7 +84,7 @@ export function readProviderForm(form: FormData | undefined): {
   if (kindValue !== kind) errors.kind = 'Choose the type of provider.'
   if (label.length < 1 || label.length > 60) errors.label = 'A name of 1 to 60 characters.'
   if (baseUrl) {
-    let problem = checkBaseUrl(kind, baseUrl)
+    let problem = checkBaseUrl(kind, baseUrl, runnerHeld)
     if (problem) errors.baseUrl = problem
   } else if (kind === 'openai_compatible') {
     errors.baseUrl = 'An OpenAI-compatible server needs its URL.'

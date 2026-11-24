@@ -392,6 +392,43 @@ describe('the section "Providers and keys"', () => {
     assert.doesNotMatch(html, /role="status"/)
     assert.doesNotMatch(html, /<script>/)
   })
+
+  it('KNT-205. a local server of the picker fills its URL, keeps the key on the runner, and says the diff stays on its network', async () => {
+    let { request, signIn } = setup([], { secretsConfigured: true })
+    let { cookie, csrf } = await signIn(OCTOCAT)
+    let html = await (await request('/settings?preset=vllm', { cookie })).text()
+    assert.match(html, /<option value="vllm" selected>vLLM, on a server of a runner<\/option>/)
+    assert.match(html, /id="provider-baseUrl"[^>]*value="http:\/\/localhost:8000\/v1"|value="http:\/\/localhost:8000\/v1"[^>]*id="provider-baseUrl"/)
+    assert.match(html, /name="runnerHeld"[^>]*checked/)
+    assert.match(html, /The diff of each review stays on the network of the runner\./)
+    assert.match(html, /--enable-auto-tool-choice/)
+    assert.deepEqual(autofocused(html), ['provider-baseUrl'])
+    // Added over HTTP: the notice names the variables of the runner, and no "Test".
+    let added = await request('/settings/providers', {
+      cookie,
+      form: { _csrf: csrf, kind: 'openai_compatible', label: 'vLLM', baseUrl: 'http://gpu.lan:8000/v1', runnerHeld: 'on', models_lite: 'q', models_balanced: 'q', models_heavy: 'q' },
+    })
+    assert.match(added.headers.get('Location') ?? '', /^\/settings\?notice=added_local#provider-/)
+    let notice = await (await request('/settings?notice=added_local', { cookie })).text()
+    assert.match(notice, /PROVIDER_KIND=openai_compatible and the URL of the server in PROVIDER_BASE_URL/)
+    // The same URL with a key for the service: refused.
+    let kept = await request('/settings/providers', {
+      cookie,
+      form: { _csrf: csrf, kind: 'openai_compatible', label: 'vLLM', baseUrl: 'http://gpu.lan:8000/v1', apiKey: KEY, models_lite: 'q', models_balanced: 'q', models_heavy: 'q' },
+    })
+    assert.equal(kept.status, 422)
+    assert.match(await kept.text(), /HTTP only for a server on the network of a runner/)
+  })
+
+  it('KNT-205. a local server in the list: "Server of the runner", and no price warning', async () => {
+    let local = provider({ kind: 'openai_compatible', runnerHeld: true, baseUrl: 'http://gpu.lan:1234/v1', keyLast4: null, models: { lite: ['qwen3-coder-30b'] } })
+    let { request, signIn } = setup([local])
+    let { cookie } = await signIn(OCTOCAT)
+    let html = await (await request('/settings', { cookie })).text()
+    assert.match(html, /Server of the runner/)
+    assert.match(html, /on the runner \(PROVIDER_API_KEY\), if its server asks for one/)
+    assert.doesNotMatch(html, /no price: not counted in the cap/)
+  })
 })
 
 describe('the sidebar of the settings (KNT-149)', () => {

@@ -769,6 +769,23 @@ test('the configuration of a provider: Ollama may be HTTP, the others must be HT
   assert.throws(() => loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_API_KEY: 'k' }), /PROVIDER_BASE_URL is required/);
 });
 
+test('KNT-205. a local server of the API of OpenAI: HTTP, no key, and the runner holds it as its own', () => {
+  const env = { KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible' };
+  const lmStudio = loadConfig({ ...env, PROVIDER_BASE_URL: 'http://host.docker.internal:1234/v1' });
+  assert.deepEqual(lmStudio.provider, { kind: 'openai_compatible', baseUrl: 'http://host.docker.internal:1234/v1', apiKey: null, own: 'openai_compatible' });
+  // vLLM with "--api-key": the key goes to the server of the runner.
+  const vllm = loadConfig({ ...env, PROVIDER_BASE_URL: 'http://gpu.lan:8000/v1', PROVIDER_API_KEY: 'local-key' });
+  assert.equal(vllm.provider.own, 'openai_compatible');
+  assert.equal(vllm.provider.apiKey, 'local-key');
+  // An HTTPS URL with no key is no local server: the runner holds no provider, as before.
+  assert.equal(loadConfig({ ...env, PROVIDER_BASE_URL: 'https://llm.example.com/v1' }).provider.own, null);
+  assert.throws(() => loadConfig({ ...env, PROVIDER_BASE_URL: 'ftp://gpu.lan/v1' }), /PROVIDER_BASE_URL must be an http:\/\/ or https:\/\/ URL/);
+  // The job of a provider that the runner holds: the runner calls its own server, with no key.
+  const held = job({ providers: [{ id: PROVIDER_ID, kind: 'openai_compatible', apiKey: null, baseUrl: 'http://localhost:1234/v1', models: ['qwen3-coder-30b'] }] });
+  const model = chooseModel(held, lmStudio.provider);
+  assert.deepEqual({ kind: model.kind, apiKey: model.apiKey, baseUrl: model.baseUrl }, { kind: 'openai_compatible', apiKey: undefined, baseUrl: 'http://host.docker.internal:1234/v1' });
+});
+
 test('the loop says what it can read and which provider it holds', async () => {
   const bodies: unknown[] = [];
   const controller = new AbortController();

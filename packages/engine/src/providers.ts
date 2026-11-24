@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
-import { presetOf } from './presets.ts';
+import { onRunnerNetwork, presetOf } from './presets.ts';
 import { costFromTable, type Tokens } from './prices.ts';
 import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
@@ -341,7 +341,8 @@ function count(value: unknown): number | undefined {
  */
 function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown, baseUrl?: string, asked?: string): { cost: number; cost_source: CostSource } {
   if (typeof given === 'number' && Number.isFinite(given) && given >= 0) return { cost: given, cost_source: 'provider' };
-  if (kind === 'ollama') return { cost: 0, cost_source: 'free' };
+  // KNT-205. Ollama, or a local server of the API of OpenAI: a machine of the runner.
+  if (onRunnerNetwork(kind, baseUrl)) return { cost: 0, cost_source: 'free' };
   const fromTable = costFromTable(kind, model, tokens, baseUrl) ?? (asked && asked !== model ? costFromTable(kind, asked, tokens, baseUrl) : null);
   return fromTable === null ? { cost: 0, cost_source: 'unknown' } : { cost: fromTable, cost_source: 'table' };
 }
