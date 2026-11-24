@@ -405,7 +405,7 @@ describe('the section "Providers and keys"', () => {
     assert.match(html, new RegExp(`<option value="${preset.id}" selected[^>]*>`))
     assert.match(html, /<option value="openai_compatible" selected/)
     assert.match(html, new RegExp(`id="provider-label" name="label" value="${preset.name}"`))
-    assert.match(html, new RegExp(`name="baseUrl" value="${preset.baseUrl.replaceAll('.', '\\.')}"`))
+    assert.ok(html.includes(`name="baseUrl" value="${preset.baseUrl}"`))
     assert.ok(html.includes(`value="${preset.models.heavy.join(', ')}"`))
     assert.ok(html.includes(`href="${preset.keysUrl}"`), 'the link to the page of the keys')
     assert.ok(html.includes(`href="${preset.data.url}"`), 'the source of the data terms')
@@ -454,9 +454,13 @@ describe('the section "Providers and keys"', () => {
     let html = await (await request('/settings', { cookie })).text()
     assert.match(html, new RegExp(`<h3 class="provider-name">Ours</h3><span class="tag">${preset.name}</span>`))
     assert.ok(html.includes(`New ${preset.name} key`))
-    let row = (name: string) => new RegExp(`${name.replaceAll('.', '\\.')}</span>(<span class="tag tag-warn">no price)?`).exec(html)
-    assert.equal(row(model)?.[1], undefined, 'a model of the preset has its price')
-    assert.ok(row('my-own-model')?.[1], 'another model has none')
+    let warned = (name: string) => {
+      let at = html.indexOf(`${name}</span>`)
+      assert.ok(at >= 0, name)
+      return html.startsWith('<span class="tag tag-warn">no price', at + name.length + '</span>'.length)
+    }
+    assert.equal(warned(model), false, 'a model of the preset has its price')
+    assert.equal(warned('my-own-model'), true, 'another model has none')
   })
 
   it('says nothing that the URL writes, only a known notice', async () => {
