@@ -12,9 +12,10 @@ keeps the form as before. The list of the providers and the Config screen of a r
 preset of a provider by its base URL, so a provider added before this release gets it too. The
 models of the presets have dated prices, so their cost counts in the cost limit.
 
-The runner calls a preset with the field of its answer cap (`max_completion_tokens` at OpenAI and
-xAI) and no more answer tokens than its model takes. It reads more limits of the providers
-(KNT-161): the codes of OpenAI (`credit_balance_exhausted`, `organization_spend_limit_exceeded`…),
+The runner calls a preset through the OpenAI-compatible adapter of the engine
+(`packages/engine/src/providers.ts`; no file of `apps/runner` changes). On the base URL of a preset,
+the adapter sends the field of its answer cap (`max_completion_tokens` at OpenAI and xAI) and no
+more answer tokens than its model takes. It reads more limits of the providers (KNT-161): the codes of OpenAI (`credit_balance_exhausted`, `organization_spend_limit_exceeded`…),
 the spend limit of Groq (a 400, which no longer gets a second call), the `retryDelay` of Gemini, and
 a « quota » of a minute, which is a rate limit and no longer stops the review.
 
