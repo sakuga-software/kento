@@ -204,11 +204,12 @@ export type Model = {
  * job to a runner by the kind of its provider only. For a server of the API of OpenAI, a local
  * server of the runner (an `http://` URL) serves only a provider on the network of a runner, and a
  * cloud server (`https://`) only a cloud provider: else the call would go to the wrong server, and
- * a cloud call would count 0.
+ * a cloud call would count 0. A missing URL on either side tells no side: no match.
  */
 function ownServes(own: JobDependencies['config']['provider'], wanted: { kind: ProviderKind; baseUrl: string | null }): boolean {
   if (own.own !== wanted.kind) return false;
-  if (wanted.kind !== 'openai_compatible' || !wanted.baseUrl || !own.baseUrl) return true;
+  if (wanted.kind !== 'openai_compatible') return true;
+  if (!wanted.baseUrl || !own.baseUrl) return false;
   return onRunnerNetwork(wanted.kind, own.baseUrl) === onRunnerNetwork(wanted.kind, wanted.baseUrl);
 }
 
@@ -228,7 +229,11 @@ export function chooseModel(job: Job, own: JobDependencies['config']['provider']
       return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
     }
     if (wanted.apiKey === null && own.own === wanted.kind) {
-      const side = onRunnerNetwork(wanted.kind, wanted.baseUrl) ? 'a server on the network of a runner (http://)' : 'a cloud server (https://)';
+      const side = !wanted.baseUrl
+        ? 'a server with no base URL'
+        : onRunnerNetwork(wanted.kind, wanted.baseUrl)
+          ? 'a server on the network of a runner (http://)'
+          : 'a cloud server (https://)';
       throw new Error(`the provider ${wanted.id} is ${side}, and PROVIDER_BASE_URL of this runner is not: give the job to a runner with a PROVIDER_BASE_URL of the same kind`);
     }
     if (wanted.apiKey === null) {

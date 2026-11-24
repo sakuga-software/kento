@@ -800,6 +800,8 @@ test('KNT-205. a local server of the runner never serves a cloud provider, and a
   // A trusted runner with a local server: the key of the job goes to the cloud URL of the job.
   const kept = chooseModel(job({ providers: [{ ...heldCloud, apiKey: 'gsk-service' }] }), local);
   assert.deepEqual({ apiKey: kept.apiKey, baseUrl: kept.baseUrl }, { apiKey: 'gsk-service', baseUrl: 'https://api.groq.com/openai/v1' });
+  // A provider with no base URL tells no side: the own server never serves it.
+  assert.throws(() => chooseModel(job({ providers: [{ ...heldLocal, baseUrl: null }] }), local), /is a server with no base URL/);
   // A fallback on the other side: none, as a fallback that the runner cannot call (logged by runJob).
   const FALLBACK = '6a0e3c1b-5d2f-4e8a-9b7c-1d2e3f4a5b6c';
   const models = { provider: PROVIDER_ID, model: 'qwen3-coder-30b', fallback: null, fallbackProvider: { provider: FALLBACK, model: 'openai/gpt-oss-120b' } };
