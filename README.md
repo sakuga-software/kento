@@ -121,6 +121,8 @@ the cost limit. "Other OpenAI-compatible server" is the form with nothing filled
 | Fireworks AI | `https://api.fireworks.ai/inference/v1` | GLM-5.3 Flash · GLM-5.3 · Kimi K3.1 Pro |
 | DeepInfra | `https://api.deepinfra.com/v1/openai` | DeepSeek V4.1 Flash · GLM-5.3 · DeepSeek V4 Pro |
 | Cerebras | `https://api.cerebras.ai/v1` | gpt-oss-120b at each level |
+| Azure OpenAI | `https://{resource}.openai.azure.com/openai/v1` | GPT-6 Luna · GPT-6.1 Terra · GPT-6 Sol, as deployments of the same name |
+| Amazon Bedrock (Claude) | `https://bedrock-runtime.{region}.amazonaws.com/anthropic` | Claude Haiku 5.5 · Sonnet 5.5 · Opus 5.5, global profiles |
 
 The exact ids, the fallback models, the sources and the day of each check are in
 [`packages/engine/src/presets.ts`](packages/engine/src/presets.ts), and the prices in
@@ -128,6 +130,12 @@ The exact ids, the fallback models, the sources and the day of each check are in
 say that it takes tool calls and answers in a JSON schema. DeepSeek is not there: its API answers in
 JSON, not in a JSON schema. The form shows the data terms of the provider that you choose: the diff
 of each review goes to it.
+
+Azure OpenAI and Amazon Bedrock have one URL for each resource or AWS Region: replace `{resource}` or
+`{region}`. Azure takes the key of the resource; Bedrock takes a long-term Bedrock API key (an IAM
+user: limit it to these models and give it an end date), and Claude on Bedrock is a provider of the
+type Anthropic. Google Vertex AI takes only OAuth tokens that end after an hour, so it has no preset:
+use Gemini, or Claude through Anthropic or Bedrock.
 
 The model has no tool. The engine sends the diff with the whole function around each change, the
 `CLAUDE.md` and `AGENTS.md` of the head commit (up to 400 lines each), and the code outside the diff

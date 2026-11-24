@@ -394,7 +394,11 @@ describe('the section "Providers and keys"', () => {
     assert.match(pickerForm?.[1] ?? '', /method="get"/)
     assert.match(pickerForm?.[1] ?? '', /action="\/settings"/)
     let picker = pickerForm?.[2] ?? ''
-    for (let preset of PROVIDER_PRESETS) assert.match(picker, new RegExp(`<option value="${preset.id}"[^>]*>${preset.name}</option>`))
+    for (let preset of PROVIDER_PRESETS) {
+      // KNT-206: a name can hold parentheses, "Amazon Bedrock (Claude)".
+      let name = preset.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      assert.match(picker, new RegExp(`<option value="${preset.id}"[^>]*>${name}</option>`))
+    }
     assert.match(picker, /<option value="other"[^>]*>Other OpenAI-compatible server<\/option>/)
     assert.ok(page.indexOf('preset-picker') < page.indexOf('id="provider-kind"'), 'the provider comes before the form')
     assert.match(picker, /<option value="anthropic" selected[^>]*>Anthropic<\/option>/, 'with no choice, the picker shows the type of the form')

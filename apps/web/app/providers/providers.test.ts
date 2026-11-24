@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
-import { PROVIDER_PRESETS, RESERVED_PRESET_IDS } from '@kento-review/engine/presets'
+import { fillBaseUrl, PROVIDER_PRESETS, RESERVED_PRESET_IDS } from '@kento-review/engine/presets'
 
 import { checkBaseUrl, readKeyForm, readProviderForm } from './form.ts'
 import { choiceById, choiceOf, choiceValues, PROVIDER_CHOICES, presetName } from './presets.ts'
@@ -300,12 +300,15 @@ describe('the presets of "Add a provider" (KNT-204)', () => {
   it('fills the form from a preset, and the form reads it back as a valid OpenAI-compatible provider', () => {
     for (let preset of PROVIDER_PRESETS) {
       let values = choiceValues(choiceById(preset.id)!, false)
-      assert.equal(values.kind, 'openai_compatible')
+      // KNT-206: Claude on Bedrock is of the kind Anthropic.
+      assert.equal(values.kind, preset.kind)
       assert.equal(values.label, preset.name)
       assert.equal(values.baseUrl, preset.baseUrl)
       assert.equal(values.models.heavy, preset.models.heavy.join(', '))
+      // KNT-206: the admin replaces the placeholder of a cloud (enterprise.test.ts tests the refusal).
+      let baseUrl = fillBaseUrl(values.baseUrl, { resource: 'contoso-ai', region: 'eu-west-3' })
       let read = readProviderForm(
-        form({ kind: values.kind, label: values.label, baseUrl: values.baseUrl, apiKey: KEY, models_lite: values.models.lite, models_balanced: values.models.balanced, models_heavy: values.models.heavy }),
+        form({ kind: values.kind, label: values.label, baseUrl, apiKey: KEY, models_lite: values.models.lite, models_balanced: values.models.balanced, models_heavy: values.models.heavy }),
       )
       assert.deepEqual(read.errors, {}, preset.id)
       assert.deepEqual(read.input?.models, { lite: [...preset.models.lite], balanced: [...preset.models.balanced], heavy: [...preset.models.heavy] })
@@ -343,7 +346,10 @@ describe('the presets of "Add a provider" (KNT-204)', () => {
   })
 
   it('tests a preset on the path of its list of models', () => {
-    for (let preset of PROVIDER_PRESETS) assert.equal(probeUrl('openai_compatible', `${preset.baseUrl}/`), `${preset.baseUrl}${preset.modelsPath}`)
+    // KNT-206: Bedrock has no list of models (enterprise.test.ts).
+    for (let preset of PROVIDER_PRESETS.filter((p) => p.kind === 'openai_compatible')) {
+      assert.equal(probeUrl('openai_compatible', `${preset.baseUrl}/`), `${preset.baseUrl}${preset.modelsPath}`)
+    }
     assert.equal(probeUrl('openai_compatible', 'https://llm.example.com/v1/'), 'https://llm.example.com/v1/models')
   })
 })

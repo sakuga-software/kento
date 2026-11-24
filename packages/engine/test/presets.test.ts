@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { LEVELS, MODEL_ID } from '../../protocol/src/index.ts';
-import { hostOf, normalBaseUrl, presetById, presetOf, PROVIDER_PRESETS, RESERVED_PRESET_IDS } from '../src/presets.ts';
-import { costKnown, HOST_PRICES, priceOf } from '../src/prices.ts';
+import { fillBaseUrl, hostOf, normalBaseUrl, placeholdersOf, presetById, presetOf, PROVIDER_PRESETS, RESERVED_PRESET_IDS } from '../src/presets.ts';
+import { costKnown, HOST_PRICES, PRESET_PRICES, priceOf } from '../src/prices.ts';
+
+/** KNT-206. Values for the placeholders of a base URL. */
+const FILLED = { resource: 'contoso-ai', region: 'eu-west-3' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -15,13 +18,16 @@ test('KNT-204. each preset: a stable id, an HTTPS base URL with no slash at the 
   for (const preset of PROVIDER_PRESETS) {
     assert.match(preset.id, /^[a-z][a-z0-9-]{1,30}$/, preset.id);
     assert.ok(!(RESERVED_PRESET_IDS as readonly string[]).includes(preset.id), `${preset.id} is a word of the picker`);
-    assert.equal(preset.kind, 'openai_compatible', preset.id);
+    // KNT-206: Amazon Bedrock serves Claude with the Messages API of Anthropic.
+    assert.ok(preset.kind === 'openai_compatible' || preset.kind === 'anthropic', preset.id);
     assert.ok(preset.name.length > 0 && preset.name.length <= 60, preset.id);
     assert.ok(preset.baseUrl.startsWith('https://'), preset.id);
     assert.equal(normalBaseUrl(preset.baseUrl), preset.baseUrl, `${preset.id}: the base URL is written in its normal form`);
     assert.ok(preset.baseUrl.length <= 300, preset.id);
     assert.ok(preset.keysUrl.startsWith('https://'), preset.id);
-    assert.match(preset.modelsPath, /^\/[a-z/]+$/, preset.id);
+    // KNT-206: no path when the provider has no call that tests a key for free; a note says it.
+    if (preset.modelsPath === null) assert.ok(preset.testNote, preset.id);
+    else assert.match(preset.modelsPath, /^\/[a-z/]+$/, preset.id);
     for (const source of [preset.modelsSource, preset.data]) {
       assert.ok(source.url.startsWith('https://'), preset.id);
       assert.match(source.checked, DAY, preset.id);
@@ -43,16 +49,22 @@ test('KNT-204. each preset: a stable id, an HTTPS base URL with no slash at the 
 
 test('KNT-204. each model of a preset has a dated price, found by the host of its base URL', () => {
   for (const preset of PROVIDER_PRESETS) {
-    const host = hostOf(preset.baseUrl)!;
-    assert.ok(Object.hasOwn(HOST_PRICES, host), `${preset.id}: prices for ${host}`);
-    assert.match(HOST_PRICES[host]!.checked, DAY);
-    assert.ok(HOST_PRICES[host]!.url.startsWith('https://'));
+    // KNT-206. A preset with a placeholder has its prices by its id; the Bedrock ids of Claude have
+    // the prices of Anthropic.
+    const baseUrl = fillBaseUrl(preset.baseUrl, FILLED);
+    const host = hostOf(baseUrl)!;
+    const table = placeholdersOf(preset.baseUrl).length > 0 ? PRESET_PRICES[preset.id] : HOST_PRICES[host];
+    if (preset.kind === 'openai_compatible') {
+      assert.ok(table, `${preset.id}: prices for ${host}`);
+      assert.match(table.checked, DAY);
+      assert.ok(table.url.startsWith('https://'));
+    }
     for (const level of LEVELS) {
       for (const model of preset.models[level]) {
-        const price = priceOf('openai_compatible', model, preset.baseUrl);
+        const price = priceOf(preset.kind, model, baseUrl);
         assert.ok(price, `${preset.id}: a price for ${model}`);
         assert.ok(price.input > 0 && price.output > 0 && price.cacheRead <= price.input, `${preset.id} ${model}`);
-        assert.ok(costKnown('openai_compatible', model, `${preset.baseUrl}/`), `${preset.id} ${model}: a slash at the end changes nothing`);
+        assert.ok(costKnown(preset.kind, model, `${baseUrl}/`), `${preset.id} ${model}: a slash at the end changes nothing`);
       }
     }
   }
