@@ -315,7 +315,10 @@ test('an admin adds a provider from a preset with the keyboard, and the list nam
     await page.keyboard.press('ArrowDown')
     let list = page.getByRole('listbox', { name: 'Provider' })
     await expect(list).toBeFocused()
-    await list.getByRole('option', { name: 'Mistral', exact: true }).press('Enter')
+    // Typeahead in the list, then Enter.
+    await page.keyboard.type('Mis')
+    await expect(list.getByRole('option', { name: 'Mistral', exact: true })).toHaveAttribute('data-highlighted', 'true')
+    await page.keyboard.press('Enter')
     await expect(picker).toBeFocused()
     await expect(picker).toContainText('Mistral')
     await page.keyboard.press('Tab')
@@ -343,7 +346,8 @@ test('an admin adds a provider from a preset with the keyboard, and the list nam
     await expect(page.getByText('Provider added.')).toBeVisible()
     let card = page.locator('.provider', { hasText: label })
     await expect(card.locator('.tag').first()).toHaveText('Mistral')
-    await expect(card.getByText('mistral-large-4', { exact: true })).toBeVisible()
+    // balanced, as the preset gave it, and heavy, as the admin left it.
+    await expect(card.getByText('mistral-large-4', { exact: true })).toHaveCount(2)
     await expect(card.getByText('no price: not counted in the cap')).toHaveCount(0)
     let [row] = await db<{ kind: string; base_url: string; models: Record<string, string[]> }[]>`
       select kind, base_url, models from providers where org_id = ${org!.id} and label = ${label}`
