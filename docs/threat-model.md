@@ -67,7 +67,10 @@ flowchart LR
 - **The runners call the URL of a provider** (and an Ollama server on a private network) as the
   admin wrote it: the runner is the org's own machine, or a runner of the service that only runs
   public providers in practice. An operator who wants it closed can refuse private addresses on
-  the network of the service runners.
+  the network of the service runners. KNT-205: a local server of the API of OpenAI (LM Studio,
+  vLLM, llama.cpp) has an `http://` URL. The form takes it only with "The key stays on the
+  runner", the service never stores a key for it, and the runner calls its own
+  `PROVIDER_BASE_URL`, never the URL of the form.
 - **Memory of the `web` process**: a key is decrypted in memory for the time of a claim or a test.
   A dump of the process memory can show it.
 - **A key given with a job lives on the runner** for that job (environment of the process). A job

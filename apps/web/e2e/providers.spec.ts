@@ -359,3 +359,49 @@ test('an admin adds a provider from a preset with the keyboard, and the list nam
     await db.end()
   }
 })
+
+// KNT-205. A local server of the picker: LM Studio, vLLM or llama.cpp on the network of a runner.
+test('an admin adds a vLLM server of a runner from the picker: an HTTP URL, no key, no price warning (KNT-205)', async ({ page }, testInfo) => {
+  let errors = watchConsole(page)
+  let label = `vLLM of the office ${testInfo.project.name}`
+  let db = sql()
+  let [org] = await db<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
+  try {
+    await signIn(page, 'octocat')
+    await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
+    await db`delete from providers where org_id = ${org!.id}`
+
+    await page.goto('/settings#new-provider')
+    await hydrated(page)
+    let form = page.locator('#new-provider')
+    await chooseOption(form, 'Provider', 'vllm')
+    await form.getByRole('button', { name: 'Fill in the form' }).click()
+    form = page.locator('#new-provider')
+    let url = form.getByLabel('Server URL')
+    await expect(url).toHaveValue('http://localhost:8000/v1')
+    await expect(url).toBeFocused()
+    await expect(form.getByRole('checkbox', { name: /The key stays on the runner/ })).toBeChecked()
+    await expect(form.getByText('The diff of each review stays on the network of the runner.')).toBeVisible()
+    await expect(form.getByText(/--enable-auto-tool-choice/)).toBeVisible()
+    await expectNoAxeViolations(page)
+
+    await form.getByLabel('Name').fill(label)
+    await url.fill('http://gpu.lan:8000/v1')
+    for (let level of ['lite', 'balanced', 'heavy']) await form.getByLabel(level, { exact: true }).fill('qwen3-coder-30b')
+    await form.getByRole('button', { name: 'Add the provider' }).click()
+
+    await expect(page.getByText(/PROVIDER_KIND=openai_compatible and the URL of the server in PROVIDER_BASE_URL/)).toBeVisible()
+    let item = page.locator('.provider', { hasText: label })
+    await expect(item).toContainText('Server of the runner')
+    await expect(item).toContainText('http://gpu.lan:8000/v1')
+    await expect(item).not.toContainText('no price')
+    let rows = await db<{ kind: string; runnerHeld: boolean; keyCiphertext: unknown }[]>`
+      select kind, runner_held as "runnerHeld", key_ciphertext as "keyCiphertext" from providers where org_id = ${org!.id}`
+    expect(rows).toEqual([{ kind: 'openai_compatible', runnerHeld: true, keyCiphertext: null }])
+    await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
+  } finally {
+    await db`delete from providers where org_id = ${org!.id}`
+    await db.end()
+  }
+})

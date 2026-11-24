@@ -142,6 +142,7 @@ Which jobs a runner takes depends on the provider of the job, which the organiza
 | A provider whose key the service holds | The runner has its own key of that kind (`PROVIDER_KIND` and `PROVIDER_API_KEY`), or it is trusted. |
 | A provider with "The key stays on the runner" | The runner has `PROVIDER_KIND` of that kind and its key. Trust does not help: the service has no key. |
 | Ollama | The runner has `PROVIDER_KIND=ollama`. |
+| LM Studio, vLLM or llama.cpp on the network of the runner | The runner has `PROVIDER_KIND=openai_compatible` and the `http://` URL of the server. |
 
 A job that no runner can take stays in the queue. It does not fail.
 
@@ -153,10 +154,10 @@ Change `PROVIDER_KIND`, `PROVIDER_BASE_URL` and `PROVIDER_API_KEY` in the comman
 | --- | --- | --- |
 | `openrouter` | empty or `https://openrouter.ai/api/v1` | an OpenRouter key |
 | `anthropic` | empty (`https://api.anthropic.com`) | an Anthropic key |
-| `openai_compatible` | required, `https://…` | the key of that server |
+| `openai_compatible` | required, `https://…`, or `http://…` for a [local server](#lm-studio-vllm-or-llamacpp-on-the-network-of-the-runner) | the key of that server; none for a local server that asks for none |
 | `ollama` | see [Ollama](#ollama-on-the-machine-of-the-runner) | none |
 
-`PROVIDER_BASE_URL` must be HTTPS, except for Ollama. The organization needs a provider of the same
+`PROVIDER_BASE_URL` must be HTTPS, except for Ollama and a local server of the API of OpenAI. The organization needs a provider of the same
 kind in **Settings → Providers and keys**, set "Default" or chosen for a level in the Config of
 a repository. Tick "The key stays on the runner" there so that the service never stores the key.
 
@@ -195,6 +196,45 @@ shows the model and `"costUsd":0`:
 ```json
 {"level":"info","event":"job.finished",…,"outcome":"done","durationMs":332,"score":2,"model":"qwen3","costUsd":0}
 ```
+
+## LM Studio, vLLM or llama.cpp on the network of the runner
+
+These servers speak the API of OpenAI. As with Ollama, the model runs on your machine or on your
+network: the service never calls the server, and the review shows a cost of 0. The runner calls it
+at its own `PROVIDER_BASE_URL`.
+
+1. Start the server so that it answers with a JSON schema and takes tool calls:
+
+   | Server | Default URL | Start it with |
+   | --- | --- | --- |
+   | [LM Studio](https://lmstudio.ai/docs/developer/openai-compat) | `http://localhost:1234/v1` | `lms server start --bind 0.0.0.0`, and a model with native tool use (Qwen, Llama 3.1, Mistral) |
+   | [vLLM](https://docs.vllm.ai/en/latest/features/tool_calling/) | `http://localhost:8000/v1` | `vllm serve <model> --enable-auto-tool-choice --tool-call-parser <parser of the model>` |
+   | [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) | `http://localhost:9931/v1` | `llama-server -m <model.gguf> --jinja --host 0.0.0.0` |
+
+   `--bind 0.0.0.0` and `--host 0.0.0.0` make the server listen on more than the loopback, for a
+   runner in a container or on another machine. Without `--enable-auto-tool-choice`, vLLM takes no
+   tool calls.
+2. In Kentō, **Settings → Add a provider**, choose **LM Studio**, **vLLM** or **llama.cpp server**
+   in **Provider**, then **Fill in the form**. The form keeps the key on the runner, and fills the
+   name and the default URL. Name the models that the server loaded, for each level.
+3. Start the runner with these lines in place of the three `PROVIDER_` lines of the command:
+
+   ```sh
+     -e PROVIDER_KIND=openai_compatible \
+     -e PROVIDER_BASE_URL=http://host.docker.internal:1234/v1 \
+   ```
+
+   Add `-e PROVIDER_API_KEY=…` only when the server asks for a key (`--api-key` of vLLM and of
+   llama.cpp, "Require Authentication" of LM Studio). Over `http://`, the key crosses the network
+   in clear: keep the server on the machine of the runner or on a network that you trust.
+   `host.docker.internal` works as for [Ollama](#ollama-on-the-machine-of-the-runner).
+
+The service gives the runner the jobs of every provider of the organization that is
+`openai_compatible` with "The key stays on the runner". The runner calls its own server only for a
+provider with an `http://` URL. A job of a cloud provider (`https://`) fails with a message that
+names the provider, and a runner with a cloud key fails a job of a local server the same way: no
+call goes to the wrong server. An `https://` URL with no key is no local server: the runner then
+holds no provider of its own, as before.
 
 ## Update the runner
 
@@ -296,7 +336,7 @@ Remove the container and the volume, then register again with a new token, as in
 | --- | --- |
 | `startup.config_invalid` with `KENTO_URL must be an https:// URL` | `KENTO_URL` is missing, or is not `https://`. |
 | `startup.config_invalid` with `PROVIDER_KIND must be one of openrouter, anthropic, openai_compatible, ollama` | A typo in `PROVIDER_KIND`. |
-| `startup.config_invalid` with `PROVIDER_BASE_URL must be an https:// URL` | An `http://` URL for a provider other than Ollama. |
+| `startup.config_invalid` with `PROVIDER_BASE_URL must be an https:// URL` | An `http://` URL for a provider other than Ollama and `openai_compatible`. |
 | `startup.config_invalid` with `KENTO_RUNNER_LABELS must be at most 20 labels…` | A label with a space or another character. |
 | `runner.stopped` with `no runner token in /var/lib/kento-runner/runner.json, and KENTO_REGISTRATION_TOKEN is not set: …` | The volume is new or missing, and the command has no registration token. Create a token and use its command. |
 
@@ -369,8 +409,8 @@ labels and the trust, whatever `KENTO_RUNNER_NAME` and `KENTO_RUNNER_LABELS` say
 | `KENTO_RUNNER_NAME` | no | host name | Letters, digits, dots, dashes or underscores. |
 | `KENTO_RUNNER_LABELS` | no | | Up to 20 labels, separated by commas. |
 | `PROVIDER_KIND` | no | `openrouter` | `openrouter`, `anthropic`, `openai_compatible` or `ollama`. |
-| `PROVIDER_BASE_URL` | no | the URL of the kind | HTTPS, except for Ollama. Required with `openai_compatible`. |
-| `PROVIDER_API_KEY` | no | | The key of the runner. Ollama needs none. |
+| `PROVIDER_BASE_URL` | no | the URL of the kind | HTTPS, except for Ollama and a local server (`openai_compatible` on `http://`). Required with `openai_compatible`. |
+| `PROVIDER_API_KEY` | no | | The key of the runner. Ollama needs none, nor a local server that asks for none. |
 | `KENTO_STATE_DIR` | no | `/var/lib/kento-runner` | Holds `runner.json`. |
 | `KENTO_WORK_DIR` | no | `/tmp/kento-runner` | Where the jobs clone. |
 

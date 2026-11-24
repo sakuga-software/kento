@@ -287,10 +287,11 @@ describe('the presets of "Add a provider" (KNT-204)', () => {
     return data
   }
 
-  it('offers each preset, then the types with their own API, then "Other OpenAI-compatible server"', () => {
+  it('offers each preset, then the types with their own API and the local servers, then "Other OpenAI-compatible server"', () => {
     let ids = PROVIDER_CHOICES.map((choice) => choice.id)
     assert.deepEqual(ids.slice(0, PROVIDER_PRESETS.length), PROVIDER_PRESETS.map((preset) => preset.id))
-    assert.deepEqual(ids.slice(PROVIDER_PRESETS.length), ['anthropic', 'openrouter', 'ollama', 'other'])
+    // KNT-205: LM Studio, vLLM and llama.cpp after Ollama.
+    assert.deepEqual(ids.slice(PROVIDER_PRESETS.length), ['anthropic', 'openrouter', 'ollama', 'lm-studio', 'vllm', 'llama-cpp', 'other'])
     assert.equal(new Set(ids).size, ids.length)
     for (let preset of PROVIDER_PRESETS) assert.ok(!(RESERVED_PRESET_IDS as readonly string[]).includes(preset.id), preset.id)
     assert.equal(choiceById('constructor'), null)

@@ -1,8 +1,9 @@
 // The prices of the models whose provider does not give the cost of a call, and the cost of a call
-// from its tokens. OpenRouter gives the cost in its answer; Ollama runs on a machine of the runner and
-// costs nothing. A model that is not here costs 0, and the review says that its cost is not known.
+// from its tokens. OpenRouter gives the cost in its answer; Ollama, and a local server of the API of
+// OpenAI (KNT-205), run on a machine of the runner and cost nothing. A model that is not here costs
+// 0, and the review says that its cost is not known.
 import type { ProviderKind } from '../../protocol/src/index.ts';
-import { hostOf, presetOf } from './presets.ts';
+import { hostOf, onRunnerNetwork, presetOf } from './presets.ts';
 
 /** Dollars a million tokens. */
 export type Price = {
@@ -54,6 +55,23 @@ function openAiPrice(input: number, output: number, cacheRead: number = input): 
 function longOpenAiPrice(threshold: number, input: number, output: number, cacheRead: number, inputTimes: number, outputTimes: number): Price {
   const above = openAiPrice(input * inputTimes, output * outputTimes, cacheRead * inputTimes);
   return { ...openAiPrice(input, output, cacheRead), longContext: { threshold, above } };
+}
+
+/**
+ * KNT-205. Dollars for one euro: the reference rate of the European Central Bank on 2026-11-24
+ * (https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml). The clouds of Europe give their
+ * prices in euros, before tax; Kentō counts in dollars.
+ */
+export const EUR_USD = 1.0963;
+
+/** KNT-205. A price in euros a million tokens, in dollars, rounded to the ten-thousandth. */
+function eur(euros: number): number {
+  return Math.round(euros * EUR_USD * 10_000) / 10_000;
+}
+
+/** KNT-205. openAiPrice, from prices in euros. */
+function openAiPriceEur(input: number, output: number, cacheRead: number = input): Price {
+  return openAiPrice(eur(input), eur(output), eur(cacheRead));
 }
 
 /**
@@ -162,6 +180,33 @@ export const HOST_PRICES: Readonly<Record<string, { url: string; checked: string
       'qwen-3.8-27b': openAiPrice(0.99, 1.49),
     },
   },
+  // KNT-205. In euros before tax. The page refuses robots: these prices are its copy of 2026-11-16
+  // on the Wayback Machine. A cached price for three models only; the others have none.
+  'api.scaleway.ai': {
+    url: 'https://www.scaleway.com/en/pricing/model-as-a-service/',
+    checked: '2026-11-16',
+    models: {
+      'deepseek-v4-flash-0731': openAiPriceEur(0.4, 0.8, 0.08),
+      'mistral-small-3.2-24b-instruct-2506': openAiPriceEur(0.15, 0.35),
+      'deepseek-v4.1-flash-1017': openAiPriceEur(0.6, 1.8, 0.12),
+      'qwen3.6-35b-a3b': openAiPriceEur(0.25, 1.5),
+      'glm-5.3': openAiPriceEur(1.8, 5.5),
+      'qwen3.5-397b-a17b': openAiPriceEur(0.6, 3.6),
+    },
+  },
+  // KNT-205. In euros, from the page of each model of the catalog. No cached price.
+  'oai.endpoints.kepler.ai.cloud.ovh.net': {
+    url: 'https://www.ovhcloud.com/en-ie/public-cloud/ai-endpoints/catalog/',
+    checked: '2026-11-24',
+    models: {
+      'gpt-oss-20b': openAiPriceEur(0.04, 0.15),
+      'Mistral-Small-3.2-24B-Instruct-2506': openAiPriceEur(0.09, 0.28),
+      'qwen3.6-35b-a3b': openAiPriceEur(0.17, 1.15),
+      'gpt-oss-120b': openAiPriceEur(0.08, 0.4),
+      'Qwen3.5-397B-A17B': openAiPriceEur(0.6, 3.6),
+      'DeepSeek-V4.1-Flash-1017': openAiPriceEur(0.27, 1.08),
+    },
+  },
 };
 
 /**
@@ -265,9 +310,12 @@ export function longContextThreshold(kind: ProviderKind, models: readonly string
   return thresholds.length ? Math.min(...thresholds) : null;
 }
 
-/** Whether a call to this model has a known cost: the provider gives it, the table has it, or it is free. */
+/**
+ * Whether a call to this model has a known cost: the provider gives it, the table has it, or it is
+ * free (a server on the network of a runner, KNT-205).
+ */
 export function costKnown(kind: ProviderKind, model: string, baseUrl?: string | null): boolean {
-  return kind === 'openrouter' || kind === 'ollama' || priceOf(kind, model, baseUrl) !== null;
+  return kind === 'openrouter' || onRunnerNetwork(kind, baseUrl) || priceOf(kind, model, baseUrl) !== null;
 }
 
 /**

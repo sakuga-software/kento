@@ -1,7 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { defaultModels } from '@kento-review/engine/levels'
-import { placeholdersOf } from '@kento-review/engine/presets'
+import { onRunnerNetwork, placeholdersOf } from '@kento-review/engine/presets'
 import { costKnown } from '@kento-review/engine/prices'
 import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
@@ -35,6 +35,11 @@ export const PROVIDER_NOTICES = {
   // No "Test" for these two: the service has no key, and cannot reach the server of a runner.
   added_runner: { tone: 'ok', text: 'Provider added. Its key stays on the runner, and the first job of a runner that has it tells whether it works.' },
   added_ollama: { tone: 'ok', text: 'Provider added. Its server is on the network of a runner. The first job of a runner with PROVIDER_KIND=ollama tells whether it answers.' },
+  // KNT-205. LM Studio, vLLM, llama.cpp: a server of the API of OpenAI on the network of a runner.
+  added_local: {
+    tone: 'ok',
+    text: 'Provider added. Its server is on the network of a runner. The first job of a runner with PROVIDER_KIND=openai_compatible and the URL of the server in PROVIDER_BASE_URL tells whether it answers.',
+  },
   replaced: { tone: 'ok', text: 'Key replaced. Kentō no longer keeps the old key.' },
   default: { tone: 'ok', text: 'This provider is now "Default". The levels with no chosen provider use it.' },
   removed: { tone: 'info', text: 'Provider removed, with its key.' },
@@ -416,7 +421,7 @@ function ProviderItem(
                 </time>
               </>
             ) : (
-              state === 'runner' && provider.kind === 'ollama' ? 'Server of the runner' : STATE_TEXT[state]
+              state === 'runner' && onRunnerNetwork(provider.kind, provider.baseUrl) ? 'Server of the runner' : STATE_TEXT[state]
             )}
           </span>
         </div>
@@ -431,6 +436,8 @@ function ProviderItem(
                 </span>
               ) : provider.kind === 'ollama' ? (
                 'none, server of the runner'
+              ) : onRunnerNetwork(provider.kind, provider.baseUrl) ? (
+                'on the runner (PROVIDER_API_KEY), if its server asks for one'
               ) : (
                 'on the runner (PROVIDER_API_KEY)'
               )}
@@ -565,6 +572,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
     // KNT-204. The picker shows the choice that the form holds: after an error too, by its URL.
     let choice = form ? choiceOf(values) : (chosen ?? choiceOf(values))
     let preset = choice.preset
+    let local = choice.local ?? null
     let errors = form?.errors ?? {}
     let first = firstInvalid(errors, PROVIDER_FIELDS)
     // A key in error with the key field disabled (no KENTO_SECRETS_KEY): the way out is the box below it.
@@ -572,7 +580,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
     // After a choice, the first field that is still to fill takes the focus: the key, or the URL of
     // Ollama or of a cloud with a placeholder (KNT-206), or the name of another server. The URL has
     // no fragment, so that `autofocus` works.
-    let urlToFill = choice.kind === 'ollama' || placeholdersOf(values.baseUrl).length > 0
+    let urlToFill = choice.kind === 'ollama' || local !== null || placeholdersOf(values.baseUrl).length > 0
     let next: ProviderField | null =
       first ?? (chosen === null ? null : urlToFill ? 'baseUrl' : values.label === '' ? 'label' : secretsConfigured ? 'apiKey' : null)
     let field = (name: ProviderField) => ({
@@ -628,6 +636,15 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               </a>
               , read on <time dateTime={preset.data.checked}>{preset.data.checked}</time>.
             </p>
+          ) : local ? (
+            // KNT-205. A local server: the diff stays on the network of the runner.
+            <p class="hint preset-data">
+              <strong>The diff of each review stays on the network of the runner.</strong> {local.setup}{' '}
+              <a href={local.docs.url} rel="noreferrer" target="_blank">
+                Its docs<span class="visually-hidden"> (new tab)</span>
+              </a>
+              , read on <time dateTime={local.docs.checked}>{local.docs.checked}</time>.
+            </p>
           ) : null}
         </form>
         <form method="post" action={routes.providerAdd.href()} noValidate autoComplete="off">
@@ -674,7 +691,11 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               Server URL
             </label>
             <Input class="mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
-            {message('baseUrl', preset?.baseUrlHint ?? 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
+            {message(
+              'baseUrl',
+              preset?.baseUrlHint ??
+                'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for a server on the network of a runner (Ollama, LM Studio, vLLM, llama.cpp).',
+            )}
           </div>
           <div class="field">
             <label class="field-label" for="provider-apiKey">

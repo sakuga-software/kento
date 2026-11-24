@@ -11,7 +11,7 @@ import { ApiError, createApi, UnauthorizedError } from '../src/api.ts';
 import { clonePullRequest, gitEnvironment, isTransientGitError } from '../src/clone.ts';
 import { ConfigError, loadConfig } from '../src/config.ts';
 import { limitOfReason } from '@kento-review/engine/providers';
-import { chooseModel, fallbackFailure, runJob } from '../src/job.ts';
+import { chooseFallback, chooseModel, fallbackFailure, runJob } from '../src/job.ts';
 import { output, redact } from '../src/log.ts';
 import { runLoop, runnerToken } from '../src/runner.ts';
 
@@ -767,6 +767,47 @@ test('the configuration of a provider: Ollama may be HTTP, the others must be HT
   assert.equal(loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'anthropic', PROVIDER_API_KEY: 'sk-ant-x' }).provider.own, 'anthropic');
   assert.throws(() => loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'anthropic', PROVIDER_BASE_URL: 'http://proxy.lan' }), /PROVIDER_BASE_URL must be an https:\/\/ URL/);
   assert.throws(() => loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_API_KEY: 'k' }), /PROVIDER_BASE_URL is required/);
+});
+
+test('KNT-205. a local server of the API of OpenAI: HTTP, no key, and the runner holds it as its own', () => {
+  const env = { KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible' };
+  const lmStudio = loadConfig({ ...env, PROVIDER_BASE_URL: 'http://host.docker.internal:1234/v1' });
+  assert.deepEqual(lmStudio.provider, { kind: 'openai_compatible', baseUrl: 'http://host.docker.internal:1234/v1', apiKey: null, own: 'openai_compatible' });
+  // vLLM with "--api-key": the key goes to the server of the runner.
+  const vllm = loadConfig({ ...env, PROVIDER_BASE_URL: 'http://gpu.lan:8000/v1', PROVIDER_API_KEY: 'local-key' });
+  assert.equal(vllm.provider.own, 'openai_compatible');
+  assert.equal(vllm.provider.apiKey, 'local-key');
+  // An HTTPS URL with no key is no local server: the runner holds no provider, as before.
+  assert.equal(loadConfig({ ...env, PROVIDER_BASE_URL: 'https://llm.example.com/v1' }).provider.own, null);
+  assert.throws(() => loadConfig({ ...env, PROVIDER_BASE_URL: 'ftp://gpu.lan/v1' }), /PROVIDER_BASE_URL must be an http:\/\/ or https:\/\/ URL/);
+  // The job of a provider that the runner holds: the runner calls its own server, with no key.
+  const held = job({ providers: [{ id: PROVIDER_ID, kind: 'openai_compatible', apiKey: null, baseUrl: 'http://localhost:1234/v1', models: ['qwen3-coder-30b'] }] });
+  const model = chooseModel(held, lmStudio.provider);
+  assert.deepEqual({ kind: model.kind, apiKey: model.apiKey, baseUrl: model.baseUrl }, { kind: 'openai_compatible', apiKey: undefined, baseUrl: 'http://host.docker.internal:1234/v1' });
+});
+
+test('KNT-205. a local server of the runner never serves a cloud provider, and a cloud key never a local server', () => {
+  const local = loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_BASE_URL: 'http://gpu.lan:8000/v1' }).provider;
+  const cloud = loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_BASE_URL: 'https://api.groq.com/openai/v1', PROVIDER_API_KEY: 'gsk-runner' }).provider;
+  const heldCloud = { id: PROVIDER_ID, kind: 'openai_compatible' as const, apiKey: null, baseUrl: 'https://api.groq.com/openai/v1', models: ['openai/gpt-oss-120b'] };
+  const heldLocal = { id: PROVIDER_ID, kind: 'openai_compatible' as const, apiKey: null, baseUrl: 'http://localhost:8000/v1', models: ['qwen3-coder-30b'] };
+  // Each side serves its own.
+  assert.equal(chooseModel(job({ providers: [heldLocal] }), local).baseUrl, 'http://gpu.lan:8000/v1');
+  assert.equal(chooseModel(job({ providers: [heldCloud] }), cloud).apiKey, 'gsk-runner');
+  // The other side: a clear error, never a call to the wrong server.
+  assert.throws(() => chooseModel(job({ providers: [heldCloud] }), local), /is a cloud server \(https:\/\/\), and PROVIDER_BASE_URL of this runner is not/);
+  assert.throws(() => chooseModel(job({ providers: [heldLocal] }), cloud), /is a server on the network of a runner \(http:\/\/\)/);
+  // A trusted runner with a local server: the key of the job goes to the cloud URL of the job.
+  const kept = chooseModel(job({ providers: [{ ...heldCloud, apiKey: 'gsk-service' }] }), local);
+  assert.deepEqual({ apiKey: kept.apiKey, baseUrl: kept.baseUrl }, { apiKey: 'gsk-service', baseUrl: 'https://api.groq.com/openai/v1' });
+  // A provider with no base URL tells no side: the own server never serves it.
+  assert.throws(() => chooseModel(job({ providers: [{ ...heldLocal, baseUrl: null }] }), local), /is a server with no base URL/);
+  // A fallback on the other side: none, as a fallback that the runner cannot call (logged by runJob).
+  const FALLBACK = '6a0e3c1b-5d2f-4e8a-9b7c-1d2e3f4a5b6c';
+  const models = { provider: PROVIDER_ID, model: 'qwen3-coder-30b', fallback: null, fallbackProvider: { provider: FALLBACK, model: 'openai/gpt-oss-120b' } };
+  const withFallback = job({ models, providers: [heldLocal, { ...heldCloud, id: FALLBACK }] });
+  assert.equal(chooseFallback(withFallback, local), null);
+  assert.equal(chooseFallback(withFallback, cloud)?.apiKey, 'gsk-runner');
 });
 
 test('the loop says what it can read and which provider it holds', async () => {

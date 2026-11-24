@@ -231,7 +231,8 @@ can go a little over the limit.
 - **The diff goes to the model provider.** Choose a provider whose retention and training terms
   suit the code that you review. "Add a provider" shows the terms of each known provider, with
   their source and the day they were read. With OpenRouter, Kentō asks for providers that keep nothing and
-  train on nothing. With Ollama, the code stays on the network of the runner.
+  train on nothing. With Ollama, LM Studio, vLLM or llama.cpp, the code stays on the network of the
+  runner.
 - **The prompts and the replies of the bot are in English.**
 - **The threat model has known gaps**, listed in [docs/threat-model.md](docs/threat-model.md#what-is-not-covered).
 

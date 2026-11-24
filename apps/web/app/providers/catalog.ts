@@ -1,3 +1,5 @@
+import { onRunnerNetwork } from '@kento-review/engine/presets'
+
 import { serviceOption, type ProviderCatalog, type ProviderOption } from '../repo-config/providers.ts'
 import { providerState } from '../ui/settings.tsx'
 import { KIND_LABELS } from './form.ts'
@@ -46,7 +48,8 @@ export function createConfigProviders(store: ProvidersStore, options: { serviceK
 }
 
 /** "key on the runner", "server of the runner" or "key encrypted by the service". */
-export function keyFrom(provider: Pick<ProviderView, 'runnerHeld' | 'kind'>): string {
-  if (provider.kind === 'ollama') return 'server of the runner'
+export function keyFrom(provider: Pick<ProviderView, 'runnerHeld' | 'kind' | 'baseUrl'>): string {
+  // KNT-205. Ollama, or a server of the API of OpenAI on the network of a runner.
+  if (onRunnerNetwork(provider.kind, provider.baseUrl)) return 'server of the runner'
   return provider.runnerHeld ? 'key on the runner' : 'key encrypted by the service'
 }

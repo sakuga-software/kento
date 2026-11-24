@@ -4,6 +4,7 @@ import { createAction } from 'remix/router'
 
 import { canEdit } from '../../auth/access.ts'
 
+import { onRunnerNetwork } from '@kento-review/engine/presets'
 import { UUID, type Level } from '@kento-review/protocol'
 
 import { log } from '../../log.ts'
@@ -220,7 +221,8 @@ export function settingsActions(kit: UiKit) {
         runnerHeld: added.runnerHeld,
         isDefault: added.isDefault,
       })
-      return toSettings(added.kind === 'ollama' ? 'added_ollama' : added.runnerHeld ? 'added_runner' : 'added', added.id)
+      let notice: ProviderNotice = added.kind === 'ollama' ? 'added_ollama' : onRunnerNetwork(added.kind, added.baseUrl) ? 'added_local' : added.runnerHeld ? 'added_runner' : 'added'
+      return toSettings(notice, added.id)
     }),
 
     // The answer of a test is the page itself, with the message of the probe: it never goes
