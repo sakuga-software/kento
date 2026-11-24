@@ -5,7 +5,7 @@ import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
 import { presetOf } from './presets.ts';
-import { costFromTable, type Tokens } from './prices.ts';
+import { bedrockClaude, costFromTable, type Tokens } from './prices.ts';
 import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
 /** The API of OpenRouter. A caller can give another base with the same API, for example a proxy. */
@@ -101,8 +101,10 @@ export const RATE_LIMIT_MAX_MS = 10 * 60_000;
 /**
  * KNT-161. The words of an error body that name a usage limit of the key, whatever its status.
  * KNT-204: `blocked_api_access` is the code of Groq at the spend limit of the org (a 400).
+ * KNT-206: `quota` is a word. The 429 of Azure OpenAI names a rate limit and links to
+ * aka.ms/oai/quotaincrease; `insufficient_quota` of OpenAI keeps it.
  */
-const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit|blocked_api_access/i;
+const USAGE_WORDS = /usage limits?\b|(?<![a-z])quotas?(?![a-z])|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit|blocked_api_access/i;
 /** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
 const RATE_WORDS = /rate[ _-]?limit/i;
 
@@ -177,7 +179,7 @@ const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{
 /**
  * When a limit ends, from the fields that say it, in this order: the sentence of Anthropic
  * (« You will regain access on 2026-12-01 at 00:00 UTC »), `retry-after` (seconds, decimals
- * included, or an HTTP date), the reset headers of Anthropic, of OpenRouter and of OpenAI, then a
+ * included, or an HTTP date), `retry-after-ms` (KNT-206), the reset headers of Anthropic, of OpenRouter and of OpenAI, then a
  * date-time of the body that follows a reset word (« until », « reset », « try again »), then the
  * `X-RateLimit-Reset` that OpenRouter puts in the body. A time in the past, or more than 90 days
  * away, is skipped. Null when none says it. Any other date of the body is not read.
@@ -189,6 +191,12 @@ function resetOf(text: string, headers: Headers | undefined, now: number): strin
   const after = headers?.get('retry-after')?.trim();
   if (after) {
     const reset = resetIso(/^\d+(?:\.\d+)?$/.test(after) ? now + Number(after) * 1000 : Date.parse(after), now);
+    if (reset) return reset;
+  }
+  // KNT-206. Azure OpenAI gives the wait in milliseconds too.
+  const afterMs = headers?.get('retry-after-ms')?.trim();
+  if (afterMs && /^\d+(?:\.\d+)?$/.test(afterMs)) {
+    const reset = resetIso(now + Number(afterMs), now);
     if (reset) return reset;
   }
   const names = [
@@ -448,10 +456,11 @@ async function callOpenRouter<T>(call: Call): Promise<Called<T>> {
  * `max_tokens` (32,000 tokens) with no JSON that parses. Such a call asks the same model once more
  * with this `thinking`. On the bench of REV-108, the cut requests had 1,700 to 7,800 thinking
  * tokens: the answer text took the rest. The second request gave an answer 5 times in 7.
- * Opus 5.5 and Sonnet 5.5 refuse `disabled` (400): they get no second request.
+ * Opus 5.5 and Sonnet 5.5 refuse `disabled` (400): they get no second request. KNT-206: an id of
+ * Amazon Bedrock (`global.anthropic.claude-haiku-5-5`) is the same model.
  */
 export function thinkingOff(model: string): { type: 'disabled' } | null {
-  return model.startsWith('claude-haiku-5-5') ? { type: 'disabled' } : null;
+  return (bedrockClaude(model)?.id ?? model).startsWith('claude-haiku-5-5') ? { type: 'disabled' } : null;
 }
 
 /**
@@ -663,7 +672,9 @@ async function runAnthropic(call: Call, signal: AbortSignal, started: number, st
     // The output tokens of a stopped request come only at its end: the cost does not count them.
     const request = requestTokens(message.usage);
     for (const key of Object.keys(request) as (keyof Required<Tokens>)[]) run.tokens[key] += request[key];
-    const cost = costFromTable('anthropic', run.model, request);
+    // KNT-206. Bedrock bills the inference profile of the request (`eu.` costs 10 % more than
+    // `global.`), whatever id the answer names.
+    const cost = costFromTable('anthropic', bedrockClaude(call.model) ? call.model : run.model, request);
     run.cost = run.cost === null || cost === null ? null : run.cost + cost;
     const thought = count(message.usage.output_tokens_details?.thinking_tokens);
     if (thought !== undefined) run.tokens.thinking = (run.tokens.thinking ?? 0) + thought;

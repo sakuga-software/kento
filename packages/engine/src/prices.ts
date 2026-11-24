@@ -2,7 +2,7 @@
 // from its tokens. OpenRouter gives the cost in its answer; Ollama runs on a machine of the runner and
 // costs nothing. A model that is not here costs 0, and the review says that its cost is not known.
 import type { ProviderKind } from '../../protocol/src/index.ts';
-import { hostOf } from './presets.ts';
+import { hostOf, presetOf } from './presets.ts';
 
 /** Dollars a million tokens. */
 export type Price = {
@@ -85,15 +85,82 @@ export const HOST_PRICES: Readonly<Record<string, { url: string; checked: string
 };
 
 /**
+ * KNT-206. The prices of the presets with a placeholder in their base URL (one host for each
+ * resource), by the id of the preset. Azure OpenAI: the Global Standard deployments, short context,
+ * from the Azure Retail Prices API (US East 2). A Data Zone deployment costs 10 % more, and the
+ * request does not say which type the deployment is.
+ */
+export const PRESET_PRICES: Readonly<Record<string, { url: string; checked: string; models: Readonly<Record<string, Price>> }>> = {
+  'azure-openai': {
+    url: 'https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/',
+    checked: '2026-11-24',
+    models: {
+      'gpt-6-luna': openAiPrice(0.1, 0.5, 0.01),
+      'gpt-6.1-terra': openAiPrice(1, 5, 0.05),
+      'gpt-6-sol': openAiPrice(2, 10, 0.2),
+    },
+  },
+};
+
+/** KNT-206. The geographies of Bedrock whose inference profile costs 10 % more than `global.`. */
+const BEDROCK_GEOS = ['us', 'us-gov', 'eu', 'apac', 'jp', 'au', 'ca'] as const;
+
+/**
+ * KNT-206. The Anthropic id of a model id of Amazon Bedrock (`global.anthropic.claude-opus-5-5`,
+ * `eu.anthropic.claude-haiku-5-5`, `anthropic.claude-sonnet-5-5`), and whether its inference profile
+ * is of a geography: that one costs 10 % more. Null for an id that is not of Bedrock.
+ */
+export function bedrockClaude(model: string): { id: string; regional: boolean } | null {
+  const match = /^(?:([a-z]+(?:-gov)?)\.)?anthropic\.(claude-[a-z0-9-]+?)(?:-v\d+(?::\d+)?)?$/.exec(model);
+  if (!match) return null;
+  const geo = match[1];
+  if (geo !== undefined && geo !== 'global' && !(BEDROCK_GEOS as readonly string[]).includes(geo)) return null;
+  return { id: match[2]!, regional: geo !== undefined && geo !== 'global' };
+}
+
+/** KNT-206. A price times `factor`, its long context included. */
+function scaled(price: Price, factor: number): Price {
+  const times = (p: Omit<Price, 'longContext'>) => ({
+    input: p.input * factor,
+    output: p.output * factor,
+    cacheRead: p.cacheRead * factor,
+    cacheWrite: p.cacheWrite * factor,
+    cacheWrite1h: p.cacheWrite1h * factor,
+  });
+  return { ...times(price), ...(price.longContext ? { longContext: { threshold: price.longContext.threshold, above: times(price.longContext.above) } } : {}) };
+}
+
+/**
+ * KNT-206. The price of a model of Anthropic: its own id, or an id of Amazon Bedrock. The global
+ * profiles of Bedrock cost the prices of Anthropic, and a geography 10 % more (AWS Price List,
+ * AmazonBedrockFoundationModels, published 2026-11-23).
+ */
+function anthropicPrice(model: string): Price | null {
+  if (Object.hasOwn(ANTHROPIC, model)) return ANTHROPIC[model]!;
+  const bedrock = bedrockClaude(model);
+  if (!bedrock || !Object.hasOwn(ANTHROPIC, bedrock.id)) return null;
+  return bedrock.regional ? scaled(ANTHROPIC[bedrock.id]!, 1.1) : ANTHROPIC[bedrock.id]!;
+}
+
+/**
  * The price of a model at a provider, or null when the table does not know it. A server of the API
- * of OpenAI has a price only on the host of a preset (`baseUrl`).
+ * of OpenAI has a price only on the host of a preset (`baseUrl`). KNT-206: or on a base URL of a
+ * preset with a placeholder, where a dated id (`gpt-6-sol-2026-09-22`, as Azure answers) has the
+ * price of its model.
  */
 export function priceOf(kind: ProviderKind, model: string, baseUrl?: string | null): Price | null {
-  if (kind === 'anthropic') return Object.hasOwn(ANTHROPIC, model) ? ANTHROPIC[model]! : null;
+  if (kind === 'anthropic') return anthropicPrice(model);
   if (kind !== 'openai_compatible') return null;
   const host = hostOf(baseUrl);
-  const table = host !== null && Object.hasOwn(HOST_PRICES, host) ? HOST_PRICES[host]!.models : null;
-  return table && Object.hasOwn(table, model) ? table[model]! : null;
+  if (host !== null && Object.hasOwn(HOST_PRICES, host)) {
+    const table = HOST_PRICES[host]!.models;
+    return Object.hasOwn(table, model) ? table[model]! : null;
+  }
+  const preset = presetOf(kind, baseUrl);
+  if (!preset || !Object.hasOwn(PRESET_PRICES, preset.id)) return null;
+  const table = PRESET_PRICES[preset.id]!.models;
+  const id = Object.hasOwn(table, model) ? model : model.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+  return Object.hasOwn(table, id) ? table[id]! : null;
 }
 
 /**
@@ -104,7 +171,13 @@ export function priceOf(kind: ProviderKind, model: string, baseUrl?: string | nu
  */
 export function longContextThreshold(kind: ProviderKind, models: readonly string[]): number | null {
   const thresholds = models.flatMap((model) => {
-    const id = kind === 'openrouter' && model.startsWith('anthropic/') ? model.slice('anthropic/'.length).replaceAll('.', '-') : model;
+    // KNT-206. An id of Amazon Bedrock has the threshold of its Anthropic id.
+    const id =
+      kind === 'openrouter' && model.startsWith('anthropic/')
+        ? model.slice('anthropic/'.length).replaceAll('.', '-')
+        : kind === 'anthropic'
+          ? (bedrockClaude(model)?.id ?? model)
+          : model;
     const threshold = kind === 'anthropic' || id !== model ? ANTHROPIC[id]?.longContext?.threshold : undefined;
     return threshold === undefined ? [] : [threshold];
   });
