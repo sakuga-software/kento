@@ -31,6 +31,17 @@ describe('the presets of the clouds on the form "Add a provider"', () => {
     assert.equal(choiceOf(read.values).id, 'azure-openai')
   })
 
+  it('refuses the placeholder for a key that stays on the runner too: the form is the only way to store a URL', () => {
+    for (let [kind, baseUrl, placeholder] of [
+      ['openai_compatible', 'https://{resource}.openai.azure.com/openai/v1', '{resource}'],
+      ['anthropic', 'https://bedrock-runtime.{region}.amazonaws.com/anthropic', '{region}'],
+    ] as const) {
+      let read = readProviderForm(form({ kind, label: 'Cloud', baseUrl, runnerHeld: 'on', models_lite: 'm', models_balanced: 'm', models_heavy: 'm' }))
+      assert.equal(read.input, null, kind)
+      assert.equal(read.errors.baseUrl, `Replace ${placeholder} in the URL.`)
+    }
+  })
+
   it('takes the URL of a resource, and the picker names Azure for it', () => {
     let values = choiceValues(choiceById('azure-openai')!, false)
     let read = readProviderForm(
