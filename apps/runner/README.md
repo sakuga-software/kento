@@ -229,9 +229,12 @@ at its own `PROVIDER_BASE_URL`.
    in clear: keep the server on the machine of the runner or on a network that you trust.
    `host.docker.internal` works as for [Ollama](#ollama-on-the-machine-of-the-runner).
 
-The runner takes the jobs of every provider of the organization that is `openai_compatible` with
-"The key stays on the runner", and calls its own server for each. An `https://` URL with no key is
-no local server: the runner then holds no provider of its own, as before.
+The service gives the runner the jobs of every provider of the organization that is
+`openai_compatible` with "The key stays on the runner". The runner calls its own server only for a
+provider with an `http://` URL. A job of a cloud provider (`https://`) fails with a message that
+names the provider, and a runner with a cloud key fails a job of a local server the same way: no
+call goes to the wrong server. An `https://` URL with no key is no local server: the runner then
+holds no provider of its own, as before.
 
 ## Update the runner
 

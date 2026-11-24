@@ -786,6 +786,22 @@ test('KNT-205. a local server of the API of OpenAI: HTTP, no key, and the runner
   assert.deepEqual({ kind: model.kind, apiKey: model.apiKey, baseUrl: model.baseUrl }, { kind: 'openai_compatible', apiKey: undefined, baseUrl: 'http://host.docker.internal:1234/v1' });
 });
 
+test('KNT-205. a local server of the runner never serves a cloud provider, and a cloud key never a local server', () => {
+  const local = loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_BASE_URL: 'http://gpu.lan:8000/v1' }).provider;
+  const cloud = loadConfig({ KENTO_URL: 'https://review.sakuga.dev', PROVIDER_KIND: 'openai_compatible', PROVIDER_BASE_URL: 'https://api.groq.com/openai/v1', PROVIDER_API_KEY: 'gsk-runner' }).provider;
+  const heldCloud = { id: PROVIDER_ID, kind: 'openai_compatible' as const, apiKey: null, baseUrl: 'https://api.groq.com/openai/v1', models: ['openai/gpt-oss-120b'] };
+  const heldLocal = { id: PROVIDER_ID, kind: 'openai_compatible' as const, apiKey: null, baseUrl: 'http://localhost:8000/v1', models: ['qwen3-coder-30b'] };
+  // Each side serves its own.
+  assert.equal(chooseModel(job({ providers: [heldLocal] }), local).baseUrl, 'http://gpu.lan:8000/v1');
+  assert.equal(chooseModel(job({ providers: [heldCloud] }), cloud).apiKey, 'gsk-runner');
+  // The other side: a clear error, never a call to the wrong server.
+  assert.throws(() => chooseModel(job({ providers: [heldCloud] }), local), /is a cloud server \(https:\/\/\), and PROVIDER_BASE_URL of this runner is not/);
+  assert.throws(() => chooseModel(job({ providers: [heldLocal] }), cloud), /is a server on the network of a runner \(http:\/\/\)/);
+  // A trusted runner with a local server: the key of the job goes to the cloud URL of the job.
+  const kept = chooseModel(job({ providers: [{ ...heldCloud, apiKey: 'gsk-service' }] }), local);
+  assert.deepEqual({ apiKey: kept.apiKey, baseUrl: kept.baseUrl }, { apiKey: 'gsk-service', baseUrl: 'https://api.groq.com/openai/v1' });
+});
+
 test('the loop says what it can read and which provider it holds', async () => {
   const bodies: unknown[] = [];
   const controller = new AbortController();

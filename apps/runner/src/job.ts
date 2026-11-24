@@ -16,6 +16,7 @@ import {
   type ReviewResult,
   type ThreadVerdict,
 } from '@kento-review/engine';
+import { onRunnerNetwork } from '@kento-review/engine/presets';
 import {
   HEARTBEAT_SECONDS,
   MAX_RESOLVE_THREADS,
@@ -199,6 +200,19 @@ export type Model = {
 };
 
 /**
+ * KNT-205. Whether the runner's own provider can serve the provider of the job. The service gives a
+ * job to a runner by the kind of its provider only. For a server of the API of OpenAI, a local
+ * server of the runner (an `http://` URL) serves only a provider on the network of a runner, and a
+ * cloud server (`https://`) only a cloud provider: else the call would go to the wrong server, and
+ * a cloud call would count 0.
+ */
+function ownServes(own: JobDependencies['config']['provider'], wanted: { kind: ProviderKind; baseUrl: string | null }): boolean {
+  if (own.own !== wanted.kind) return false;
+  if (wanted.kind !== 'openai_compatible' || !wanted.baseUrl || !own.baseUrl) return true;
+  return onRunnerNetwork(wanted.kind, own.baseUrl) === onRunnerNetwork(wanted.kind, wanted.baseUrl);
+}
+
+/**
  * The provider of a job. The runner's own key or server first, when it is of the kind that the job
  * names: with it, the service never sees a key. Else the key that the service gave with the job,
  * which only a trusted runner gets.
@@ -210,8 +224,12 @@ export function chooseModel(job: Job, own: JobDependencies['config']['provider']
     const wanted = job.models ? job.providers.find((p) => p.id === job.models!.provider) : job.providers[0];
     if (!wanted) throw new Error(job.models ? `the provider ${job.models.provider} that the config chose is not in the job` : 'the job names no provider');
     const config = providerLevelConfig(job.level, wanted.kind, chosen ?? wanted.models);
-    if (own.own === wanted.kind) {
+    if (ownServes(own, wanted)) {
       return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
+    }
+    if (wanted.apiKey === null && own.own === wanted.kind) {
+      const side = onRunnerNetwork(wanted.kind, wanted.baseUrl) ? 'a server on the network of a runner (http://)' : 'a cloud server (https://)';
+      throw new Error(`the provider ${wanted.id} is ${side}, and PROVIDER_BASE_URL of this runner is not: give the job to a runner with a PROVIDER_BASE_URL of the same kind`);
     }
     if (wanted.apiKey === null) {
       throw new Error(`no model key: the job needs a ${wanted.kind} provider on the runner (PROVIDER_KIND and PROVIDER_API_KEY), or a trusted runner`);
@@ -239,7 +257,7 @@ export function chooseFallback(job: Job, own: JobDependencies['config']['provide
   const wanted = job.providers.find((p) => p.id === chosen.provider);
   if (!wanted) return null;
   const config = providerLevelConfig(job.level, wanted.kind, [chosen.model]);
-  if (own.own === wanted.kind) return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
+  if (ownServes(own, wanted)) return { kind: wanted.kind, apiKey: own.apiKey ?? undefined, baseUrl: own.baseUrl ?? wanted.baseUrl ?? undefined, config };
   if (wanted.apiKey === null) return null;
   return { kind: wanted.kind, apiKey: wanted.apiKey, baseUrl: wanted.baseUrl ?? undefined, config };
 }
