@@ -1,6 +1,5 @@
 ---
 "@kento-review/web": patch
-"@kento-review/runner": patch
 ---
 
 **Presets of the clouds of Europe and of the local servers** (KNT-205). "Add a provider" offers
