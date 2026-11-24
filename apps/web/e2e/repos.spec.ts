@@ -438,7 +438,7 @@ test.describe('the Repos screen', () => {
     }
     for (let step of ['menu', 'confirmation'] as const) {
       let held: Route[] = []
-      await page.route(/\/assets\/js\/runtime\./, (route) => void held.push(route))
+      await page.route(/\/assets\/app\/ui\/public\/runtime\./, (route) => void held.push(route))
       await page.goto('/repos')
       let row = rowOf(page, 'orchard')
       await row.locator('.row-menu > summary').click()
@@ -446,7 +446,7 @@ test.describe('the Repos screen', () => {
       await expect.poll(() => held.length).toBeGreaterThan(0)
       await expect(page.locator('html')).not.toHaveAttribute('data-hydrated', '')
       for (let route of held) await route.continue()
-      await page.unroute(/\/assets\/js\/runtime\./)
+      await page.unroute(/\/assets\/app\/ui\/public\/runtime\./)
       await hydrated(page)
       if (step === 'menu') {
         await expect(menuOf(page, 'orchard').menu).toBeVisible()

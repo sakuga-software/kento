@@ -1,6 +1,8 @@
 // REV-18. The Findings screen of an org with 300 repositories and 100 000 findings, against Postgres:
 // one page of 25 rows (KNT-148), the filters in SQL, the counts of the tabs in one more query.
 // Another org holds as many findings: they must cost the screen nothing.
+import { brotliCompressSync, constants } from 'node:zlib'
+
 import postgres from 'postgres'
 import * as assert from 'remix/assert'
 import { after, before, describe, it } from 'remix/test'
@@ -27,9 +29,14 @@ const MAX_LIST_MS = 100
 const MAX_LIST_FULL_READS = 4
 /**
  * The budget of the HTML of one page of 25 rows (KNT-148): it weighs 72 to 74 KB, about 1.5 KB a
- * row. 80 KB leaves room for a few hundred bytes more a row, not for a row twice as heavy.
+ * row. 80 KB leaves room for a few hundred bytes more a row, not for a row twice as heavy. The
+ * `modulepreload` links of the components (KNT-202) are a cost of the page, not of its rows: the
+ * budget does not count them, and MAX_COMPRESSED_BYTES limits the page with them.
  */
 const MAX_BYTES = 80_000
+/** KNT-202. The page as it crosses the network: whole, with brotli at the quality of `compressed()`. */
+const MAX_COMPRESSED_BYTES = 20_000
+const MODULE_PRELOAD = /<link[^>]*rel="modulepreload"[^>]*>/g
 const FINDINGS = 100_000
 
 describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleString('en')} findings`, () => {
@@ -138,7 +145,9 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     let started = performance.now()
     let response = await router.fetch(new Request(`http://localhost${path}`, { headers: { Cookie: cookie } }))
     let html = await response.text()
-    return { status: response.status, html, bytes: Buffer.byteLength(html), ms: performance.now() - started }
+    let ms = performance.now() - started
+    let bytes = Buffer.byteLength(html.replace(MODULE_PRELOAD, ''))
+    return { status: response.status, html, bytes, ms }
   }
 
   it(`answers /findings in under ${MAX_MS} ms (or ${MAX_FULL_READS} full reads) with under ${MAX_BYTES / 1000} KB of HTML, page after page and filter after filter`, async () => {
@@ -168,11 +177,13 @@ describe(`the Findings screen with 300 repositories and ${FINDINGS.toLocaleStrin
     ]) {
       let limit = await budget()
       let { best, result } = await timed(() => load(path), limit.ms)
-      let line = `${path}: ${best.toFixed(1)} ms for a budget of ${limit.ms.toFixed(0)} ms (a full read: ${limit.fullRead.toFixed(1)} ms), ${(result.bytes / 1000).toFixed(1)} KB`
+      let compressed = brotliCompressSync(result.html, { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } }).byteLength
+      let line = `${path}: ${best.toFixed(1)} ms for a budget of ${limit.ms.toFixed(0)} ms (a full read: ${limit.fullRead.toFixed(1)} ms), ${(result.bytes / 1000).toFixed(1)} KB, ${(Buffer.byteLength(result.html) / 1000).toFixed(1)} KB with the preloads, ${(compressed / 1000).toFixed(1)} KB compressed`
       report.push(line)
       assert.equal(result.status, 200, path)
       assert.ok(best < limit.ms, line)
       assert.ok(result.bytes < MAX_BYTES, `${path}: ${result.bytes} bytes`)
+      assert.ok(compressed < MAX_COMPRESSED_BYTES, `${path}: ${compressed} bytes compressed`)
     }
     if (process.env.KENTO_VOLUME_REPORT) console.log(report.join('\n'))
   })

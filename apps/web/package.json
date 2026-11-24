@@ -8,7 +8,6 @@
   "scripts": {
     "dev": "NODE_ENV=development node --watch --import remix/node-tsx server.ts",
     "start": "NODE_ENV=production node --import remix/node-tsx server.ts",
-    "build:client": "node --import remix/node-tsx scripts/build-client.ts",
     "db:generate": "drizzle-kit generate",
     "lint": "oxlint --deny-warnings app test e2e scripts server.ts drizzle.config.ts playwright.config.ts",
     "typecheck": "tsc --noEmit",
@@ -37,7 +36,6 @@
     "@playwright/test": "1.65.0",
     "@types/node": "26.6.6",
     "drizzle-kit": "0.31.11",
-    "esbuild": "0.28.2",
     "oxlint": "1.93.0",
     "typescript": "7.0.2"
   }
