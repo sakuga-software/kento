@@ -1,10 +1,11 @@
-import type { Handle } from 'remix/component'
+import type { Handle, RemixNode } from 'remix/component'
 
 import { defaultModels } from '@kento-review/engine/levels'
 import { costKnown } from '@kento-review/engine/prices'
 import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import { KIND_LABELS, type ProviderField, type ProviderFormValues } from '../providers/form.ts'
+import { choiceOf, choiceValues, PROVIDER_CHOICES, presetName, type ProviderChoice } from '../providers/presets.ts'
 import type { ProviderView } from '../providers/store.ts'
 import { memberRoutes, organizationRoutes, pageRoutes as routes } from '../routes.ts'
 import { Confirm } from './confirm.tsx'
@@ -69,6 +70,8 @@ export interface SettingsPageProps {
   serviceKey: boolean
   notice?: { kind: ProviderNotice; detail?: string | null } | null
   form?: { values: ProviderFormValues; errors: Partial<Record<ProviderField, string>> } | null
+  /** KNT-204. The choice of the picker of "Add a provider" (`?preset=`): the form opens, filled from it. */
+  chosen?: ProviderChoice | null
   /** The provider whose "Replace the key" failed, with its message. */
   keyError?: { id: string; message: string } | null
   /** REV-19. The rules of the org. Null: the service has no rules. */
@@ -77,7 +80,7 @@ export interface SettingsPageProps {
 
 export function SettingsPage(handle: Handle<SettingsPageProps>) {
   return () => {
-    let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, keyError, rules } = handle.props
+    let { frame, providers, org, now, secretsConfigured, serviceKey, notice, form, chosen, keyError, rules } = handle.props
     let admin = frame.viewer?.canEdit === true
     let csrf = frame.csrfToken ?? ''
     let refused = (providers ?? []).filter((p) => providerState(p) === 'refused')
@@ -213,7 +216,7 @@ export function SettingsPage(handle: Handle<SettingsPageProps>) {
           </section>
         ) : null}
 
-        {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} secretsConfigured={secretsConfigured} /> : null}
+        {admin && providers ? <NewProviderForm csrf={csrf} form={form ?? null} chosen={chosen ?? null} secretsConfigured={secretsConfigured} /> : null}
         {providers && back ? <SectionsLink section="providers" label={back['providers'] ?? ''} /> : null}
           </div>
         </div>
@@ -396,7 +399,7 @@ function ProviderItem(
       <li class={`provider provider-${state}`} id={`provider-${id}`} tabIndex={-1}>
         <div class="provider-head">
           <h3 class="provider-name">{provider.label}</h3>
-          <span class="tag">{KIND_LABELS[provider.kind]}</span>
+          <span class="tag">{presetName(provider) ?? KIND_LABELS[provider.kind]}</span>
           {provider.isDefault ? <span class="tag tag-ok">Default</span> : null}
           <span class={`status ${STATE_CLASS[state]}`}>
             {state === 'refused' ? (
@@ -445,7 +448,7 @@ function ProviderItem(
                   {models.map((model) => (
                     <span class="model">
                       <span class="mono">{model}</span>
-                      {costKnown(provider.kind, model) ? null : <span class="tag tag-warn">no price: not counted in the cap</span>}
+                      {costKnown(provider.kind, model, provider.baseUrl) ? null : <span class="tag tag-warn">no price: not counted in the cap</span>}
                     </span>
                   ))}
                 </dd>
@@ -500,7 +503,7 @@ function ProviderItem(
                   {keyError ? <FormErrors errors={{ apiKey: keyError }} /> : null}
                   <div class="field">
                     <label class="field-label" for={`key-${id}`}>
-                      New {KIND_LABELS[provider.kind]} key
+                      New {presetName(provider) ?? KIND_LABELS[provider.kind]} key
                     </label>
                     <Input
                       class="mono"
@@ -547,26 +550,34 @@ function ProviderItem(
   }
 }
 
-function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps['form']; secretsConfigured: boolean }>) {
+function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps['form']; chosen: ProviderChoice | null; secretsConfigured: boolean }>) {
   return () => {
-    let { csrf, form, secretsConfigured } = handle.props
-    let values: ProviderFormValues = form?.values ?? {
-      kind: 'anthropic',
-      label: '',
-      baseUrl: '',
-      runnerHeld: !secretsConfigured,
-      models: { lite: '', balanced: '', heavy: '' },
-    }
+    let { csrf, form, chosen, secretsConfigured } = handle.props
+    let values: ProviderFormValues = form?.values ??
+      (chosen ? choiceValues(chosen, !secretsConfigured) : null) ?? {
+        kind: 'anthropic',
+        label: '',
+        baseUrl: '',
+        runnerHeld: !secretsConfigured,
+        models: { lite: '', balanced: '', heavy: '' },
+      }
+    // KNT-204. The picker shows the choice that the form holds: after an error too, by its URL.
+    let choice = form ? choiceOf(values) : (chosen ?? choiceOf(values))
+    let preset = choice.preset
     let errors = form?.errors ?? {}
     let first = firstInvalid(errors, PROVIDER_FIELDS)
     // A key in error with the key field disabled (no KENTO_SECRETS_KEY): the way out is the box below it.
     let focusRunnerHeld = first === 'apiKey' && !secretsConfigured
+    // After a choice, the first field that is still to fill takes the focus: the key, or the URL of
+    // Ollama, or the name of another server. The URL has no fragment, so that `autofocus` works.
+    let next: ProviderField | null =
+      first ?? (chosen === null ? null : choice.kind === 'ollama' ? 'baseUrl' : values.label === '' ? 'label' : secretsConfigured ? 'apiKey' : null)
     let field = (name: ProviderField) => ({
-      ...(focusRunnerHeld ? {} : focusIf(first, name)),
+      ...(focusRunnerHeld ? {} : focusIf(next, name)),
       'aria-invalid': errors[name] ? ('true' as const) : undefined,
       'aria-describedby': errors[name] ? `provider-${name}-error` : `provider-${name}-hint`,
     })
-    let message = (name: ProviderField, hint: string) =>
+    let message = (name: ProviderField, hint: RemixNode) =>
       errors[name] ? (
         <p class="field-error" id={`provider-${name}-error`}>
           {errors[name]}
@@ -576,15 +587,46 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
           {hint}
         </p>
       )
+    let open = (form && Object.keys(form.errors).length > 0) || chosen !== null
     return (
-      // Folded until it is asked for (REV-29): open after a form with errors, or when the URL names
-      // #new-provider (public/assets/settings.js).
+      // Folded until it is asked for (REV-29): open after a form with errors, after a choice of the
+      // picker, or when the URL names #new-provider (public/assets/settings.js).
       <section class="new-provider" id="new-provider" aria-labelledby="new-provider-title" tabIndex={-1}>
-        <details class="new-provider-toggle" open={form && Object.keys(form.errors).length > 0 ? true : undefined}>
+        <details class="new-provider-toggle" open={open ? true : undefined}>
           <summary class={buttonClass()}>
             <span id="new-provider-title">Add a provider</span>
           </summary>
           <div class="card new-provider-card">
+        {/* KNT-204. The provider first: a GET form, so the choice works without JavaScript. */}
+        <form class="preset-picker" method="get" action={routes.settings.href()}>
+          <div class="field">
+            <label class="field-label" for="provider-preset">
+              Provider
+            </label>
+            <div class="preset-row">
+              <Select id="provider-preset" name="preset" aria-describedby="provider-preset-hint">
+                {PROVIDER_CHOICES.map((option) => (
+                  <option value={option.id} selected={option.id === choice.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <Button type="submit">Fill in the form</Button>
+            </div>
+            <p class="field-hint" id="provider-preset-hint">
+              A known provider fills the name, the URL and the models of each level. You can change each one before you add it.
+            </p>
+          </div>
+          {preset ? (
+            <p class="hint preset-data">
+              <strong>The diff of each review goes to {preset.name}.</strong> {preset.data.note}{' '}
+              <a href={preset.data.url} rel="noreferrer" target="_blank">
+                Their terms<span class="visually-hidden"> (new tab)</span>
+              </a>
+              , read on <time dateTime={preset.data.checked}>{preset.data.checked}</time>.
+            </p>
+          ) : null}
+        </form>
         <form method="post" action={routes.providerAdd.href()} noValidate autoComplete="off">
           <input type="hidden" name="_csrf" value={csrf} />
           <FormErrors errors={errors} />
@@ -645,7 +687,20 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               disabled={!secretsConfigured ? true : undefined}
               {...field('apiKey')}
             />
-            {message('apiKey', 'Encrypted when it arrives. It never comes back to the browser.')}
+            {message(
+              'apiKey',
+              preset ? (
+                <>
+                  Create one on{' '}
+                  <a href={preset.keysUrl} rel="noreferrer" target="_blank">
+                    the page of the {preset.name} keys<span class="visually-hidden"> (new tab)</span>
+                  </a>
+                  . Encrypted when it arrives. It never comes back to the browser.
+                </>
+              ) : (
+                'Encrypted when it arrives. It never comes back to the browser.'
+              ),
+            )}
           </div>
           <Choice
             type="checkbox"

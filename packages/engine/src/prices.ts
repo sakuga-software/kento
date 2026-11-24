@@ -2,6 +2,7 @@
 // from its tokens. OpenRouter gives the cost in its answer; Ollama runs on a machine of the runner and
 // costs nothing. A model that is not here costs 0, and the review says that its cost is not known.
 import type { ProviderKind } from '../../protocol/src/index.ts';
+import { hostOf } from './presets.ts';
 
 /** Dollars a million tokens. */
 export type Price = {
@@ -38,10 +39,61 @@ const ANTHROPIC: Record<string, Price> = {
   'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25, cacheWrite1h: 2 },
 };
 
-/** The price of a model at a provider, or null when the table does not know it. */
-export function priceOf(kind: ProviderKind, model: string): Price | null {
-  if (kind === 'anthropic') return ANTHROPIC[model] ?? null;
-  return null;
+/**
+ * KNT-204. A price of a server of the API of OpenAI: no cache write costs more than the input, and a
+ * token read from the cache costs `cacheRead` (the input when the provider has no cache price).
+ */
+function openAiPrice(input: number, output: number, cacheRead: number = input): Price {
+  return { input, output, cacheRead, cacheWrite: input, cacheWrite1h: input };
+}
+
+/**
+ * KNT-204. The prices of the models of the presets (presets.ts), by the host of the base URL, then
+ * by the id of the model. Each host gives the page of its prices and the day it was read.
+ */
+export const HOST_PRICES: Readonly<Record<string, { url: string; checked: string; models: Readonly<Record<string, Price>> }>> = {
+  'api.groq.com': {
+    url: 'https://console.groq.com/docs/model/openai/gpt-oss-120b',
+    checked: '2026-11-24',
+    models: {
+      'openai/gpt-oss-20b': openAiPrice(0.075, 0.3, 0.037),
+      'openai/gpt-oss-120b': openAiPrice(0.15, 0.6, 0.075),
+    },
+  },
+  // The list prices: DeepInfra sells some models below them for a time.
+  'api.deepinfra.com': {
+    url: 'https://deepinfra.com/pricing',
+    checked: '2026-11-24',
+    models: {
+      'deepseek-ai/DeepSeek-V4.1-Flash-1017': openAiPrice(0.2, 0.6, 0.006),
+      'zai-org/GLM-5.3-Flash': openAiPrice(0.15, 0.5, 0.03),
+      'zai-org/GLM-5.3': openAiPrice(0.9, 4, 0.2),
+      'Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo': openAiPrice(0.3, 1, 0.1),
+      'deepseek-ai/DeepSeek-V4-Pro': openAiPrice(1.3, 2.6, 0.1),
+      'moonshotai/Kimi-K3': openAiPrice(2.85, 14.25, 0.285),
+    },
+  },
+  // No discount on a token read from the cache.
+  'api.cerebras.ai': {
+    url: 'https://inference-docs.cerebras.ai/models/openai-oss',
+    checked: '2026-11-24',
+    models: {
+      'gpt-oss-120b': openAiPrice(0.35, 0.75),
+      'qwen-3.8-27b': openAiPrice(0.99, 1.49),
+    },
+  },
+};
+
+/**
+ * The price of a model at a provider, or null when the table does not know it. A server of the API
+ * of OpenAI has a price only on the host of a preset (`baseUrl`).
+ */
+export function priceOf(kind: ProviderKind, model: string, baseUrl?: string | null): Price | null {
+  if (kind === 'anthropic') return Object.hasOwn(ANTHROPIC, model) ? ANTHROPIC[model]! : null;
+  if (kind !== 'openai_compatible') return null;
+  const host = hostOf(baseUrl);
+  const table = host !== null && Object.hasOwn(HOST_PRICES, host) ? HOST_PRICES[host]!.models : null;
+  return table && Object.hasOwn(table, model) ? table[model]! : null;
 }
 
 /**
@@ -60,8 +112,8 @@ export function longContextThreshold(kind: ProviderKind, models: readonly string
 }
 
 /** Whether a call to this model has a known cost: the provider gives it, the table has it, or it is free. */
-export function costKnown(kind: ProviderKind, model: string): boolean {
-  return kind === 'openrouter' || kind === 'ollama' || priceOf(kind, model) !== null;
+export function costKnown(kind: ProviderKind, model: string, baseUrl?: string | null): boolean {
+  return kind === 'openrouter' || kind === 'ollama' || priceOf(kind, model, baseUrl) !== null;
 }
 
 /**
@@ -74,8 +126,8 @@ export type Tokens = { input: number; output: number; cacheRead?: number; cacheW
  * The cost of one request in dollars, from the table. Null when the table does not know the model.
  * Price each request alone: the tier above `longContext.threshold` reads the prompt of one request.
  */
-export function costFromTable(kind: ProviderKind, model: string, tokens: Tokens): number | null {
-  const price = priceOf(kind, model);
+export function costFromTable(kind: ProviderKind, model: string, tokens: Tokens, baseUrl?: string | null): number | null {
+  const price = priceOf(kind, model, baseUrl);
   if (!price) return null;
   const write1h = tokens.cacheWrite1h ?? 0;
   const prompt = tokens.input + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0) + write1h;

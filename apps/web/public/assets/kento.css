@@ -3460,6 +3460,25 @@ a.finding-title:hover {
 .model-field + .model-field {
   margin-top: var(--space-2);
 }
+/* KNT-204. The picker of "Add a provider": the provider, then its button, above the form. */
+.preset-picker {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.preset-row .select-box {
+  flex: 0 1 320px;
+  min-width: 0;
+}
+.preset-data {
+  margin: 0;
+}
 /* REV-28. What each type of provider needs, all listed: right whatever the choice, without JavaScript. */
 .kind-hints {
   margin: 0;

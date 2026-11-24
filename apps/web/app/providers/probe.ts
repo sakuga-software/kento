@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
 
+import { presetOf } from '@kento-review/engine/presets'
 import { defaultBaseUrl } from '@kento-review/engine/providers'
 import type { ProviderKind } from '@kento-review/protocol'
 
@@ -96,7 +97,8 @@ export function probeUrl(kind: ProviderKind, baseUrl: string | null): string | n
     case 'anthropic':
       return `${base}/v1/models`
     case 'openai_compatible':
-      return `${base}/models`
+      // KNT-204. A preset names the path of its list of models.
+      return `${base}${presetOf(kind, base)?.modelsPath ?? '/models'}`
     case 'ollama':
       // The server is on the network of a runner: the service cannot reach it.
       return null

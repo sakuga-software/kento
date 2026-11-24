@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
+import { presetOf } from './presets.ts';
 import { costFromTable, type Tokens } from './prices.ts';
 import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
@@ -97,8 +98,11 @@ export function rateLimited(error: unknown): error is RateLimitError {
 /** KNT-161. A limit that ends later than this is a usage limit: a retry of the job would fail too. */
 export const RATE_LIMIT_MAX_MS = 10 * 60_000;
 
-/** KNT-161. The words of an error body that name a usage limit of the key, whatever its status. */
-const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit/i;
+/**
+ * KNT-161. The words of an error body that name a usage limit of the key, whatever its status.
+ * KNT-204: `blocked_api_access` is the code of Groq at the spend limit of the org (a 400).
+ */
+const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit|blocked_api_access/i;
 /** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
 const RATE_WORDS = /rate[ _-]?limit/i;
 
@@ -329,11 +333,16 @@ function count(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-/** The cost of a call: the one that the provider gave, else the table, else 0 and `unknown`. */
-function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown): { cost: number; cost_source: CostSource } {
+/**
+ * The cost of a call: the one that the provider gave, else the table, else 0 and `unknown`. KNT-204:
+ * the table knows a model of a server of the API of OpenAI by the host of `baseUrl`, and by the id
+ * that the server answered, else by the id of the request (`asked`): a server can answer with the
+ * dated id of an alias.
+ */
+function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown, baseUrl?: string, asked?: string): { cost: number; cost_source: CostSource } {
   if (typeof given === 'number' && Number.isFinite(given) && given >= 0) return { cost: given, cost_source: 'provider' };
   if (kind === 'ollama') return { cost: 0, cost_source: 'free' };
-  const fromTable = costFromTable(kind, model, tokens);
+  const fromTable = costFromTable(kind, model, tokens, baseUrl) ?? (asked && asked !== model ? costFromTable(kind, asked, tokens, baseUrl) : null);
   return fromTable === null ? { cost: 0, cost_source: 'unknown' } : { cost: fromTable, cost_source: 'table' };
 }
 
@@ -804,16 +813,23 @@ function markLastBlock(messages: { content: Block[] }[], tail: Block | undefined
  * `/chat/completions` of a server with the API of OpenAI. It asks for the schema with
  * `response_format`; a server that refuses it (400 or 422) gets the call again without it, with the
  * schema in the prompt. An answer that is not JSON gets one more call that asks for the JSON only.
+ *
+ * KNT-204. On the base URL of a preset (presets.ts), the call takes the name of the provider in its
+ * errors, the field of its answer cap (`max_completion_tokens` at OpenAI), and asks for no more
+ * answer tokens than the model takes.
  */
 async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
-  const name = 'The OpenAI-compatible server';
+  const preset = presetOf('openai_compatible', call.baseUrl);
+  const name = preset?.name ?? 'The OpenAI-compatible server';
+  const cap = Object.hasOwn(preset?.maxOutputTokens ?? {}, call.model) ? preset!.maxOutputTokens![call.model]! : Infinity;
+  const maxTokens = { [preset?.maxTokensField ?? 'max_tokens']: Math.min(call.config.maxTokens, cap) };
   const send = (messages: { role: string; content: string }[], withFormat: boolean) =>
     call.fetch(endpoint(call.baseUrl, '/chat/completions'), {
       method: 'POST',
       headers: { ...(call.apiKey ? { Authorization: `Bearer ${call.apiKey}` } : {}), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: call.model,
-        max_tokens: call.config.maxTokens,
+        ...maxTokens,
         messages,
         ...(withFormat
           ? { response_format: { type: 'json_schema', json_schema: { name: call.schema.name, strict: true, schema: call.schema.schema } } }
@@ -829,7 +845,10 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let withFormat = true;
   let response = await send(messages, true);
   if (response.status === 400 || response.status === 422) {
-    await response.body?.cancel();
+    // KNT-204. A limit can come as a 400 (Groq: `blocked_api_access` at the spend limit of the org):
+    // the call without the schema would get it too.
+    const text = (await response.text().catch(() => '')).slice(0, 300);
+    if (limitOf(response.status, text, response.headers)) throw await refused(new Response(text, { status: response.status, headers: response.headers }), name);
     withFormat = false;
     messages = [
       { role: 'system', content: `${call.prompt}\n\nAnswer with one JSON object only, that follows this JSON schema:\n${JSON.stringify(call.schema.schema)}` },
@@ -841,6 +860,7 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let out = await response.json();
   let input = count(out.usage?.prompt_tokens) ?? 0;
   let output = count(out.usage?.completion_tokens) ?? 0;
+  let cacheRead = count(out.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
   let content: string = out.choices?.[0]?.message?.content ?? '';
   let answer: T;
   try {
@@ -854,20 +874,24 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
     out = await again.json();
     input += count(out.usage?.prompt_tokens) ?? 0;
     output += count(out.usage?.completion_tokens) ?? 0;
+    cacheRead += count(out.usage?.prompt_tokens_details?.cached_tokens) ?? 0;
     content = out.choices?.[0]?.message?.content ?? '';
     answer = parseObject<T>(content, name);
   }
   const model: string = typeof out.model === 'string' && out.model ? out.model : call.model;
   const cached = count(out.usage?.prompt_tokens_details?.cached_tokens);
+  // `prompt_tokens` counts the cached tokens too: the table prices them apart.
+  const read = Math.min(cacheRead, input);
   return {
     answer,
     usage: {
       model,
+      ...(preset ? { provider: preset.name } : {}),
       prompt_tokens: input,
       completion_tokens: output,
       // REV-89. The cached tokens of the last call, when the server gives them.
       ...(cached !== undefined ? { cache_read_tokens: cached } : {}),
-      ...priced('openai_compatible', model, { input, output }, out.usage?.cost),
+      ...priced('openai_compatible', model, { input: input - read, output, cacheRead: read }, out.usage?.cost, call.baseUrl, call.model),
     },
   };
 }

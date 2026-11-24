@@ -1,12 +1,14 @@
 import { serviceOption, type ProviderCatalog, type ProviderOption } from '../repo-config/providers.ts'
 import { providerState } from '../ui/settings.tsx'
 import { KIND_LABELS } from './form.ts'
+import { presetName } from './presets.ts'
 import type { ProvidersStore, ProviderView } from './store.ts'
 
 /** The line under the name of a provider on the Config screen: where its key is, and its state. */
 function hint(provider: ProviderView): string {
   let state = providerState(provider)
-  let where = `${KIND_LABELS[provider.kind]}${provider.isDefault ? ', default provider of the organization' : ''}`
+  // KNT-204. A provider on the URL of a preset shows its name: "Mistral", not "OpenAI-compatible".
+  let where = `${presetName(provider) ?? KIND_LABELS[provider.kind]}${provider.isDefault ? ', default provider of the organization' : ''}`
   switch (state) {
     case 'runner':
       return `${where} · key on the runner`
