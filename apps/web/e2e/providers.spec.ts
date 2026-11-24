@@ -294,6 +294,72 @@ test('on a phone, a provider form sent back with its errors has no field under t
   await expectNoAxeViolations(page)
 })
 
+// KNT-204. "Add a provider" starts with the provider: a preset fills the form, which stays editable;
+// the list and the Config screen name the preset. The keyboard alone does it.
+test('an admin adds a provider from a preset with the keyboard, and the list names the preset', async ({ page }, testInfo) => {
+  let errors = watchConsole(page)
+  let project = testInfo.project.name
+  let db = sql()
+  try {
+    await signIn(page, 'octocat')
+    let [org] = await db<{ id: string }[]>`select org_id as id from installations where github_installation_id = ${FAKE_ORG.installationId}`
+    await db`delete from jobs where repo_id in (select id from repos where org_id = ${org!.id})`
+    await db`delete from providers where org_id = ${org!.id}`
+
+    await page.goto('/settings#new-provider')
+    await hydrated(page)
+    let form = page.locator('#new-provider')
+    // The keyboard: the list of the picker, Mistral, then the button of the picker.
+    let picker = form.getByRole('button', { name: /^Provider / })
+    await picker.focus()
+    await page.keyboard.press('ArrowDown')
+    let list = page.getByRole('listbox', { name: 'Provider' })
+    await expect(list).toBeFocused()
+    // Typeahead in the list, then Enter.
+    await page.keyboard.type('Mis')
+    await expect(list.getByRole('option', { name: 'Mistral', exact: true })).toHaveAttribute('data-highlighted', 'true')
+    await page.keyboard.press('Enter')
+    await expect(picker).toBeFocused()
+    await expect(picker).toContainText('Mistral')
+    await page.keyboard.press('Tab')
+    await expect(form.getByRole('button', { name: 'Fill in the form' })).toBeFocused()
+    await page.keyboard.press('Enter')
+
+    // The form is filled, open, and the key has the focus.
+    await expect(page).toHaveURL(/\/settings\?preset=mistral$/)
+    await hydrated(page)
+    await expect(form.getByLabel('Key', { exact: true })).toBeFocused()
+    await expect(form.getByLabel('Name')).toHaveValue('Mistral')
+    await expect(form.getByLabel('Server URL')).toHaveValue('https://api.mistral.ai/v1')
+    await expect(form.getByLabel('lite', { exact: true })).toHaveValue('mistral-small-2603, ministral-14b-2512')
+    await expect(form.getByRole('button', { name: /^Type / })).toContainText('OpenAI-compatible')
+    await expect(form.getByRole('link', { name: /the page of the Mistral keys/ })).toHaveAttribute('href', 'https://console.mistral.ai/api-keys')
+    await expect(form.getByText('The diff of each review goes to Mistral.')).toBeVisible()
+    await expectNoAxeViolations(page)
+
+    // Everything stays editable: the name, and the models of a level.
+    let label = `Mistral ${project}`
+    await form.getByLabel('Name').fill(label)
+    await form.getByLabel('heavy', { exact: true }).fill('mistral-large-4')
+    await form.getByLabel('Key', { exact: true }).fill(`e2e-mistral-${project}-0123456789-WXYZ`)
+    await form.getByRole('button', { name: 'Add the provider' }).click()
+    await expect(page.getByText('Provider added.')).toBeVisible()
+    let card = page.locator('.provider', { hasText: label })
+    await expect(card.locator('.tag').first()).toHaveText('Mistral')
+    // balanced, as the preset gave it, and heavy, as the admin left it.
+    await expect(card.getByText('mistral-large-4', { exact: true })).toHaveCount(2)
+    await expect(card.getByText('no price: not counted in the cap')).toHaveCount(0)
+    let [row] = await db<{ kind: string; base_url: string; models: Record<string, string[]> }[]>`
+      select kind, base_url, models from providers where org_id = ${org!.id} and label = ${label}`
+    expect(row).toEqual({ kind: 'openai_compatible', base_url: 'https://api.mistral.ai/v1', models: { lite: ['mistral-small-2603', 'ministral-14b-2512'], balanced: ['mistral-large-4', 'mistral-small-2603'], heavy: ['mistral-large-4'] } })
+    await expectNoAxeViolations(page)
+    expect(errors).toEqual([])
+  } finally {
+    await db`delete from providers where org_id = (select org_id from installations where github_installation_id = ${FAKE_ORG.installationId}) and label like 'Mistral %'`
+    await db.end()
+  }
+})
+
 // KNT-205. A local server of the picker: LM Studio, vLLM or llama.cpp on the network of a runner.
 test('an admin adds a vLLM server of a runner from the picker: an HTTP URL, no key, no price warning (KNT-205)', async ({ page }, testInfo) => {
   let errors = watchConsole(page)

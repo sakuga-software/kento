@@ -49,6 +49,15 @@ function openAiPrice(input: number, output: number, cacheRead: number = input): 
 }
 
 /**
+ * KNT-204. The same with a long-context tier: above `threshold` prompt tokens, the input and the
+ * cache cost `inputTimes` as much, and the output `outputTimes`.
+ */
+function longOpenAiPrice(threshold: number, input: number, output: number, cacheRead: number, inputTimes: number, outputTimes: number): Price {
+  const above = openAiPrice(input * inputTimes, output * outputTimes, cacheRead * inputTimes);
+  return { ...openAiPrice(input, output, cacheRead), longContext: { threshold, above } };
+}
+
+/**
  * KNT-205. Dollars for one euro: the reference rate of the European Central Bank on 2026-11-24
  * (https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml). The clouds of Europe give their
  * prices in euros, before tax; Kentō counts in dollars.
@@ -70,6 +79,77 @@ function openAiPriceEur(input: number, output: number, cacheRead: number = input
  * by the id of the model. Each host gives the page of its prices and the day it was read.
  */
 export const HOST_PRICES: Readonly<Record<string, { url: string; checked: string; models: Readonly<Record<string, Price>> }>> = {
+  // The prices of the standard tier. Above 272,000 prompt tokens, the input and the cache cost twice as
+  // much, and the output 1.5 times. The price of GPT-5.6 Sol is a promotion until 2026-11-30.
+  'api.openai.com': {
+    url: 'https://developers.openai.com/api/docs/pricing',
+    checked: '2026-11-24',
+    models: {
+      'gpt-5.6-luna': longOpenAiPrice(272_000, 0.2, 1.2, 0.02, 2, 1.5),
+      'gpt-5.6-terra': longOpenAiPrice(272_000, 2, 12, 0.2, 2, 1.5),
+      'gpt-5.6-sol': longOpenAiPrice(272_000, 4, 20, 0.4, 2, 1.5),
+      'gpt-5.5': longOpenAiPrice(272_000, 5, 30, 0.5, 2, 1.5),
+    },
+  },
+  // The standard tier, with billing. The prices of a change that the page announces are the ones
+  // here: Gemini 4 Argon from 2026-12-01, Gemini 3.8 Flash from 2027-01-01.
+  'generativelanguage.googleapis.com': {
+    url: 'https://aistudio.google.com/docs/pricing.md',
+    checked: '2026-11-24',
+    models: {
+      'gemini-3.5-flash-lite': openAiPrice(0.3, 2.5, 0.03),
+      'gemini-3.1-flash-lite': openAiPrice(0.25, 1.5, 0.025),
+      'gemini-4-hydrogen': openAiPrice(1.5, 7.5, 0.075),
+      'gemini-3.8-flash': openAiPrice(1.5, 7.5, 0.15),
+      'gemini-4-neon': openAiPrice(3, 15, 0.15),
+      'gemini-4-argon': openAiPrice(4, 20, 0.2),
+    },
+  },
+  // The price of Mistral Large 4 is the one of its announcement: the table of the docs has none yet.
+  'api.mistral.ai': {
+    url: 'https://docs.mistral.ai/inference/pricing',
+    checked: '2026-11-24',
+    models: {
+      'mistral-small-2603': openAiPrice(0.15, 0.6),
+      'ministral-14b-2512': openAiPrice(0.2, 0.2),
+      'mistral-large-4': openAiPrice(0.7, 2.1, 0.07),
+      'zai-glm-5-3': openAiPrice(1.4, 4.4, 0.14),
+    },
+  },
+  // From 200,000 prompt tokens, every token of the call costs twice as much.
+  'api.x.ai': {
+    url: 'https://docs.x.ai/docs/models',
+    checked: '2026-11-24',
+    models: {
+      'grok-4.20-0309-non-reasoning': longOpenAiPrice(199_999, 1.25, 2.5, 0.2, 2, 2),
+      'grok-4.3': longOpenAiPrice(199_999, 1.25, 2.5, 0.2, 2, 2),
+      'grok-4.7': longOpenAiPrice(199_999, 2, 6, 0.5, 2, 2),
+      'grok-4.6': longOpenAiPrice(199_999, 2, 6, 0.5, 2, 2),
+    },
+  },
+  'api.together.ai': {
+    url: 'https://docs.together.ai/docs/serverless/models.md',
+    checked: '2026-11-24',
+    models: {
+      'zai-org/GLM-5.3-Flash': openAiPrice(0.15, 0.5, 0.03),
+      'deepseek-ai/DeepSeek-V4.1-Flash': openAiPrice(0.3, 1.2, 0.006),
+      'zai-org/GLM-5.3': openAiPrice(1.4, 4.4, 0.26),
+      'deepseek-ai/DeepSeek-V4-Pro-0813': openAiPrice(1.32, 3.96, 0.13),
+      'moonshotai/Kimi-K3.1-Pro': openAiPrice(2, 10, 0.2),
+      'moonshotai/Kimi-K3': openAiPrice(3, 15, 0.3),
+    },
+  },
+  'api.fireworks.ai': {
+    url: 'https://fireworks.ai/pricing',
+    checked: '2026-11-24',
+    models: {
+      'accounts/fireworks/models/glm-5p3-flash': openAiPrice(0.15, 0.5, 0.03),
+      'accounts/fireworks/models/deepseek-v4p1-flash': openAiPrice(0.3, 1.2, 0.006),
+      'accounts/fireworks/models/glm-5p3': openAiPrice(1.4, 4.4, 0.26),
+      'accounts/fireworks/models/kimi-k3p1-pro': openAiPrice(2, 10, 0.2),
+      'accounts/fireworks/models/kimi-k3': openAiPrice(3, 15, 0.3),
+    },
+  },
   'api.groq.com': {
     url: 'https://console.groq.com/docs/model/openai/gpt-oss-120b',
     checked: '2026-11-24',
