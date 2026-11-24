@@ -100,9 +100,19 @@ export const RATE_LIMIT_MAX_MS = 10 * 60_000;
 
 /**
  * KNT-161. The words of an error body that name a usage limit of the key, whatever its status.
- * KNT-204: `blocked_api_access` is the code of Groq at the spend limit of the org (a 400).
+ * KNT-204: with `_` or `-` between the words too, as in the codes of OpenAI
+ * (`organization_spend_limit_exceeded`, `credit_balance_exhausted`, `billing_hard_limit_reached`),
+ * and `blocked_api_access`, the code of Groq at the spend limit of the org (a 400).
  */
-const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit|blocked_api_access/i;
+const USAGE_WORDS =
+  /usage[ _-]limits?(?![a-z])|\bcredits?(?![a-z])|insufficient[ _-](?:balance|funds|quota)|spend(?:ing)?[ _-]limit|key[ _-]limit|billing[ _-]hard[ _-]limit|blocked_api_access/i;
+/**
+ * KNT-204. « quota » names a usage limit, except a quota of a minute or a second: Cerebras answers
+ * `token_quota_exceeded` to the tokens of a minute, and Gemini names its quotas per minute.
+ */
+const QUOTA_WORDS = /quota/i;
+const SHORT_WINDOW = /per[ _-]?min(?:ute)?\b|PerMinute|per[ _-]?second|PerSecond|\b[RT]P[MS]\b/i;
+
 /** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
 const RATE_WORDS = /rate[ _-]?limit/i;
 
@@ -118,14 +128,14 @@ export type ProviderLimit = { kind: 'usage' | 'rate'; resetAt: string | null };
 
 /**
  * KNT-161. Whether an error answer of a provider is a limit, and when it ends. A usage limit: a 402,
- * a 4xx whose body names a quota, credits, a spend limit or a key limit, or a limit that ends more
- * than RATE_LIMIT_MAX_MS away. A rate limit: another 429, or a 4xx (not a 403) that names a rate
+ * a 4xx whose body names a quota (not one of a minute or a second), credits, a spend limit or a key
+ * limit, or a limit that ends more than RATE_LIMIT_MAX_MS away. A rate limit: another 429, or a 4xx (not a 403) that names a rate
  * limit. Null for another error. A 401 is never a limit.
  */
 export function limitOf(status: number, text: string, headers?: Headers, now: number = Date.now()): ProviderLimit | null {
   // A 401 is a key that the provider does not know, whatever its words: an admin must replace it.
   if (status < 400 || status > 499 || status === 401) return null;
-  const usage = status === 402 || USAGE_WORDS.test(text);
+  const usage = status === 402 || USAGE_WORDS.test(text) || (QUOTA_WORDS.test(text) && !SHORT_WINDOW.test(text));
   const rate = status === 429 || (status !== 403 && RATE_WORDS.test(text));
   if (!usage && !rate) return null;
   const resetAt = resetOf(text, headers, now);
@@ -179,7 +189,8 @@ const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{
  * (« You will regain access on 2026-12-01 at 00:00 UTC »), `retry-after` (seconds, decimals
  * included, or an HTTP date), the reset headers of Anthropic, of OpenRouter and of OpenAI, then a
  * date-time of the body that follows a reset word (« until », « reset », « try again »), then the
- * `X-RateLimit-Reset` that OpenRouter puts in the body. A time in the past, or more than 90 days
+ * `X-RateLimit-Reset` that OpenRouter puts in the body, then the `retryDelay` of Google (KNT-204).
+ * A time in the past, or more than 90 days
  * away, is skipped. Null when none says it. Any other date of the body is not read.
  */
 function resetOf(text: string, headers: Headers | undefined, now: number): string | null {
@@ -209,7 +220,11 @@ function resetOf(text: string, headers: Headers | undefined, now: number): strin
   const fromBody = near ? resetIso(Date.parse(near[1]!), now) : null;
   if (fromBody) return fromBody;
   const window = /"X-RateLimit-Reset"\s*:\s*"?(\d+)/i.exec(text);
-  return window ? resetIso(epochMs(Number(window[1]), now), now) : null;
+  const fromWindow = window ? resetIso(epochMs(Number(window[1]), now), now) : null;
+  if (fromWindow) return fromWindow;
+  // KNT-204. The RetryInfo of Google in the details of the error: `"retryDelay": "58s"`.
+  const delay = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(text);
+  return delay ? resetIso(now + Number(delay[1]) * 1000, now) : null;
 }
 
 /**
@@ -289,16 +304,30 @@ function endpoint(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}${path}`;
 }
 
+/**
+ * KNT-204. How much of an error body the limits read. Gemini puts the window of its quota and the
+ * `retryDelay` after a long message, in `details`. The error keeps the first 300 characters.
+ */
+const LIMIT_TEXT_MAX = 4096;
+
+async function errorText(response: Response): Promise<string> {
+  return (await response.text().catch(() => '')).slice(0, LIMIT_TEXT_MAX);
+}
+
 async function refused(response: Response, name: string): Promise<ProviderError> {
-  const text = (await response.text().catch(() => '')).slice(0, 300);
-  const limit = limitOf(response.status, text, response.headers);
+  return refusedWith(response.status, await errorText(response), response.headers, name);
+}
+
+function refusedWith(status: number, body: string, headers: Headers, name: string): ProviderError {
+  const text = body.slice(0, 300);
+  const limit = limitOf(status, body, headers);
   if (limit) {
     const until = limit.resetAt ? `, until ${limit.resetAt}` : '';
     const Limit = limit.kind === 'usage' ? UsageLimitError : RateLimitError;
     const words = limit.kind === 'usage' ? USAGE_LIMIT_TEXT : RATE_LIMIT_TEXT;
-    return new Limit(`${name} ${words} (${response.status}${until}): ${text}`, response.status, limit.resetAt);
+    return new Limit(`${name} ${words} (${status}${until}): ${text}`, status, limit.resetAt);
   }
-  return new ProviderError(`${name} answered ${response.status}: ${text}`, response.status);
+  return new ProviderError(`${name} answered ${status}: ${text}`, status);
 }
 
 /** The JSON object of a text: from its first `{` to its last `}`. Throws when it is not JSON. */
@@ -847,8 +876,8 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   if (response.status === 400 || response.status === 422) {
     // KNT-204. A limit can come as a 400 (Groq: `blocked_api_access` at the spend limit of the org):
     // the call without the schema would get it too.
-    const text = (await response.text().catch(() => '')).slice(0, 300);
-    if (limitOf(response.status, text, response.headers)) throw await refused(new Response(text, { status: response.status, headers: response.headers }), name);
+    const text = await errorText(response);
+    if (limitOf(response.status, text, response.headers)) throw refusedWith(response.status, text, response.headers, name);
     withFormat = false;
     messages = [
       { role: 'system', content: `${call.prompt}\n\nAnswer with one JSON object only, that follows this JSON schema:\n${JSON.stringify(call.schema.schema)}` },

@@ -12,6 +12,7 @@ import { MAX_RULES, type RulesStore, type RuleView } from '../rules/store.ts'
 import { createAppRouter } from '../router.ts'
 import { hour } from './format.ts'
 import { providerState, settingsSections } from './settings.tsx'
+import { PROVIDER_PRESETS } from '@kento-review/engine/presets'
 
 const COOKIE = SESSION_COOKIE
 const ID = '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f'
@@ -382,6 +383,80 @@ describe('the section "Providers and keys"', () => {
     assert.deepEqual(writes, [`key ${ORG.id} ${ID}`, `key ${ORG.id} 9f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f`])
     let html = await (await request('/settings?notice=replaced', { cookie })).text()
     assert.match(html, /••••wxyz/)
+  })
+
+  it('KNT-204. the picker of "Add a provider" opens the form filled from a preset, with the page of its keys, and focuses the key', async () => {
+    let { request, signIn } = setup([])
+    let { cookie } = await signIn(OCTOCAT)
+    let page = await (await request('/settings', { cookie })).text()
+    // The picker comes first, in a GET form of its own: the choice works without JavaScript.
+    let pickerForm = /<form ([^>]*class="preset-picker"[^>]*)>([\s\S]*?)<\/form>/.exec(page)
+    assert.match(pickerForm?.[1] ?? '', /method="get"/)
+    assert.match(pickerForm?.[1] ?? '', /action="\/settings"/)
+    let picker = pickerForm?.[2] ?? ''
+    for (let preset of PROVIDER_PRESETS) assert.match(picker, new RegExp(`<option value="${preset.id}"[^>]*>${preset.name}</option>`))
+    assert.match(picker, /<option value="other"[^>]*>Other OpenAI-compatible server<\/option>/)
+    assert.ok(page.indexOf('preset-picker') < page.indexOf('id="provider-kind"'), 'the provider comes before the form')
+    assert.match(picker, /<option value="anthropic" selected[^>]*>Anthropic<\/option>/, 'with no choice, the picker shows the type of the form')
+
+    let preset = PROVIDER_PRESETS.find((p) => p.id === 'mistral') ?? PROVIDER_PRESETS[0]!
+    let html = await (await request(`/settings?preset=${preset.id}`, { cookie })).text()
+    assert.match(/<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(html)?.[1] ?? '', /\bopen\b/)
+    assert.match(html, new RegExp(`<option value="${preset.id}" selected[^>]*>`))
+    assert.match(html, /<option value="openai_compatible" selected/)
+    assert.match(html, new RegExp(`id="provider-label" name="label" value="${preset.name}"`))
+    assert.match(html, new RegExp(`name="baseUrl" value="${preset.baseUrl.replaceAll('.', '\\.')}"`))
+    assert.ok(html.includes(`value="${preset.models.heavy.join(', ')}"`))
+    assert.ok(html.includes(`href="${preset.keysUrl}"`), 'the link to the page of the keys')
+    assert.ok(html.includes(`href="${preset.data.url}"`), 'the source of the data terms')
+    assert.ok(html.includes(`The diff of each review goes to ${preset.name}.`))
+    assert.deepEqual(autofocused(html), ['provider-apiKey'], 'the name, the URL and the models are filled: the key comes next')
+  })
+
+  it('KNT-204. the picker: "Other" is the form of a server with no preset, Ollama focuses its URL, an unknown id opens nothing', async () => {
+    let { request, signIn } = setup([])
+    let { cookie } = await signIn(OCTOCAT)
+    let other = await (await request('/settings?preset=other', { cookie })).text()
+    assert.match(other, /<option value="openai_compatible" selected/)
+    assert.match(other, /id="provider-label" name="label" value=""/)
+    assert.deepEqual(autofocused(other), ['provider-label'])
+    assert.doesNotMatch(other, /The diff of each review goes to/)
+    let ollama = await (await request('/settings?preset=ollama', { cookie })).text()
+    assert.deepEqual(autofocused(ollama), ['provider-baseUrl'])
+    for (let id of ['nope', 'constructor', '<script>']) {
+      let html = await (await request(`/settings?preset=${encodeURIComponent(id)}`, { cookie })).text()
+      assert.equal(/<section [^>]*id="new-provider"[^>]*>(<details[^>]*>)/.exec(html)?.[1], '<details class="new-provider-toggle">', id)
+      assert.deepEqual(autofocused(html), [], id)
+      assert.ok(!html.includes('<script>'), id)
+    }
+  })
+
+  it('KNT-204. a form of a preset sent back with an error keeps the preset on the picker and the link to its keys', async () => {
+    let { request, signIn } = setup([])
+    let { cookie, csrf } = await signIn(OCTOCAT)
+    let preset = PROVIDER_PRESETS[0]!
+    let response = await request('/settings/providers', {
+      cookie,
+      form: { _csrf: csrf, kind: 'openai_compatible', label: preset.name, baseUrl: `${preset.baseUrl}/`, apiKey: 'short', models_lite: preset.models.lite.join(', '), models_balanced: preset.models.balanced.join(', '), models_heavy: preset.models.heavy.join(', ') },
+    })
+    assert.equal(response.status, 422)
+    let html = await response.text()
+    assert.match(html, new RegExp(`<option value="${preset.id}" selected`))
+    assert.ok(!html.includes(`href="${preset.keysUrl}"`), 'the key in error shows its error, not its hint')
+    assert.deepEqual(autofocused(html), ['provider-apiKey'])
+  })
+
+  it('KNT-204. a provider on the URL of a preset shows the name of the preset, its prices and its key form', async () => {
+    let preset = PROVIDER_PRESETS[0]!
+    let model = preset.models.balanced[0]!
+    let { request, signIn } = setup([provider({ kind: 'openai_compatible', label: 'Ours', baseUrl: `${preset.baseUrl}/`, models: { balanced: [model, 'my-own-model'] } })])
+    let { cookie } = await signIn(OCTOCAT)
+    let html = await (await request('/settings', { cookie })).text()
+    assert.match(html, new RegExp(`<h3 class="provider-name">Ours</h3><span class="tag">${preset.name}</span>`))
+    assert.ok(html.includes(`New ${preset.name} key`))
+    let row = (name: string) => new RegExp(`${name.replaceAll('.', '\\.')}</span>(<span class="tag tag-warn">no price)?`).exec(html)
+    assert.equal(row(model)?.[1], undefined, 'a model of the preset has its price')
+    assert.ok(row('my-own-model')?.[1], 'another model has none')
   })
 
   it('says nothing that the URL writes, only a known notice', async () => {

@@ -57,6 +57,67 @@ const KNT_204 = '2026-11-24';
  */
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
+    id: 'openai',
+    name: 'OpenAI',
+    kind: 'openai_compatible',
+    baseUrl: 'https://api.openai.com/v1',
+    keysUrl: 'https://platform.openai.com/api-keys',
+    // Chat Completions takes the tools of the GPT-5.6 models and of GPT-5.5 with no condition. The
+    // GPT-6 models need the Responses API for their tools on Chat Completions, or no reasoning.
+    models: { lite: ['gpt-5.6-luna'], balanced: ['gpt-5.6-terra'], heavy: ['gpt-5.6-sol', 'gpt-5.5'] },
+    modelsSource: { url: 'https://developers.openai.com/api/docs/guides/function-calling', checked: KNT_204 },
+    modelsPath: '/models',
+    // `max_tokens` is deprecated, and the reasoning models refuse it.
+    maxTokensField: 'max_completion_tokens',
+    data: {
+      note: 'OpenAI does not train on the data of its API unless you opt in. Its abuse monitoring logs stay up to 30 days. Zero data retention needs its approval.',
+      url: 'https://developers.openai.com/api/docs/guides/your-data',
+      checked: KNT_204,
+    },
+  },
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    kind: 'openai_compatible',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    keysUrl: 'https://aistudio.google.com/apikey',
+    // The page of each model says "Function calling: Supported" and "Structured outputs: Supported";
+    // the page of the OpenAI compatibility sends the schema with `json_schema` and `strict`.
+    models: {
+      lite: ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+      balanced: ['gemini-4-hydrogen', 'gemini-3.8-flash'],
+      heavy: ['gemini-4-neon', 'gemini-4-argon'],
+    },
+    modelsSource: { url: 'https://aistudio.google.com/docs/openai', checked: KNT_204 },
+    modelsPath: '/models',
+    data: {
+      note: 'With billing on, Google does not use the prompts or the answers to improve its products, and keeps them 55 days for abuse monitoring; its logs keep them up to 55 days too. On the free tier, Google uses them, and people may read them. The Gemini API has no zero data retention.',
+      url: 'https://aistudio.google.com/docs/terms.md',
+      checked: KNT_204,
+    },
+  },
+  {
+    id: 'mistral',
+    name: 'Mistral',
+    kind: 'openai_compatible',
+    baseUrl: 'https://api.mistral.ai/v1',
+    keysUrl: 'https://console.mistral.ai/api-keys',
+    // « All currently available models except for codestral-mamba » answer in a JSON schema. Mistral
+    // Large 4 is active since 2026-10-29 in the legal center, after its preview.
+    models: {
+      lite: ['mistral-small-2603', 'ministral-14b-2512'],
+      balanced: ['mistral-large-4', 'mistral-small-2603'],
+      heavy: ['mistral-large-4', 'zai-glm-5-3'],
+    },
+    modelsSource: { url: 'https://docs.mistral.ai/llms/inference/conversations/structured-output/custom/llms.txt', checked: KNT_204 },
+    modelsPath: '/models',
+    data: {
+      note: 'Mistral keeps the inputs and the outputs 30 days for abuse monitoring, unless it grants zero data retention on request. Turn off "Data usage for improving our services" in the admin panel: the opt-out does not cover its preview models.',
+      url: 'https://legal.mistral.ai/terms/commercial-terms-of-service/',
+      checked: KNT_204,
+    },
+  },
+  {
     id: 'groq',
     name: 'Groq',
     kind: 'openai_compatible',
@@ -70,6 +131,64 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
     data: {
       note: 'Groq keeps no data of an inference request by default. Its logs for troubleshooting and abuse stay up to 30 days, and zero data retention is a setting of the organization. Groq does not train on inputs or outputs.',
       url: 'https://console.groq.com/docs/your-data',
+      checked: KNT_204,
+    },
+  },
+  {
+    id: 'xai',
+    name: 'xAI',
+    kind: 'openai_compatible',
+    baseUrl: 'https://api.x.ai/v1',
+    keysUrl: 'https://console.x.ai/team/default/api-keys',
+    // xAI calls Chat Completions a legacy endpoint, with no date of removal.
+    models: { lite: ['grok-4.20-0309-non-reasoning', 'grok-4.3'], balanced: ['grok-4.3'], heavy: ['grok-4.7', 'grok-4.6'] },
+    modelsSource: { url: 'https://docs.x.ai/docs/guides/structured-outputs', checked: KNT_204 },
+    modelsPath: '/models',
+    maxTokensField: 'max_completion_tokens',
+    data: {
+      note: 'xAI keeps the requests and the answers of its API 30 days for abuse audits, then deletes them. Zero data retention is a setting of the team. xAI does not train on them without your permission.',
+      url: 'https://docs.x.ai/developers/faq/security',
+      checked: KNT_204,
+    },
+  },
+  {
+    id: 'together',
+    name: 'Together AI',
+    kind: 'openai_compatible',
+    baseUrl: 'https://api.together.ai/v1',
+    keysUrl: 'https://api.together.ai/settings/projects/~current/api-keys',
+    // The catalog of the serverless models has the columns "Function calling" and "Structured outputs".
+    models: {
+      lite: ['zai-org/GLM-5.3-Flash', 'deepseek-ai/DeepSeek-V4.1-Flash'],
+      balanced: ['zai-org/GLM-5.3', 'deepseek-ai/DeepSeek-V4-Pro-0813'],
+      heavy: ['moonshotai/Kimi-K3.1-Pro', 'moonshotai/Kimi-K3'],
+    },
+    modelsSource: { url: 'https://docs.together.ai/docs/serverless/models.md', checked: KNT_204 },
+    modelsPath: '/models',
+    data: {
+      note: 'A new organization of Together AI starts with zero data retention, and no prompt storage. Sharing data for training is opt-in.',
+      url: 'https://docs.together.ai/docs/privacy-and-security.md',
+      checked: KNT_204,
+    },
+  },
+  {
+    id: 'fireworks',
+    name: 'Fireworks AI',
+    kind: 'openai_compatible',
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    keysUrl: 'https://app.fireworks.ai/settings/users/api-keys',
+    // `json_schema` is a field of Chat Completions for every model; the card of each model says that it
+    // takes tool calls.
+    models: {
+      lite: ['accounts/fireworks/models/glm-5p3-flash', 'accounts/fireworks/models/deepseek-v4p1-flash'],
+      balanced: ['accounts/fireworks/models/glm-5p3', 'accounts/fireworks/models/deepseek-v4p1-flash'],
+      heavy: ['accounts/fireworks/models/kimi-k3p1-pro', 'accounts/fireworks/models/kimi-k3'],
+    },
+    modelsSource: { url: 'https://docs.fireworks.ai/structured-responses/structured-response-formatting', checked: KNT_204 },
+    modelsPath: '/models',
+    data: {
+      note: 'Fireworks AI does not log or store the prompts or the answers of open models without your opt-in, and does not train on them.',
+      url: 'https://docs.fireworks.ai/guides/security_compliance/data_handling',
       checked: KNT_204,
     },
   },
