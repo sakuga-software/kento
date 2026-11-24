@@ -1,7 +1,9 @@
 # Threat model: the keys of the model providers
 
 An org of Kentō can add its own providers of models (Anthropic, OpenRouter, a server with the API of
-OpenAI, Ollama) on the screen "Settings · Providers and keys". This page is the threat model of
+OpenAI, Ollama) on the screen "Settings · Providers and keys". A preset (KNT-204,
+`packages/engine/src/presets.ts`) is a server with the API of OpenAI at a known URL: it changes
+nothing below. This page is the threat model of
 their keys. The generation and the rotation of the master key are in
 [SECURITY.md](../SECURITY.md#the-master-key).
 
@@ -48,6 +50,8 @@ flowchart LR
 | The key reaches the browser | The screen reads `ProviderView`, which has no key; a form with an error is rendered again without the key; no notice takes text from the URL | `ui/settings.tsx`, `settings.test.ts` |
 | The key reaches the logs | No log line carries a key (the logs name the provider id and kind); the runner redacts every key of a job from its lines; a refusal message from a provider is cut and any token of 16 characters or more is replaced by `…` | `controller.ts`, `apps/runner/src/log.ts`, `refusalMessage` |
 | An admin makes the service call its own network with the key (SSRF: the metadata server, the database) through the URL of a provider | "Test" calls HTTPS only, refuses a host that resolves to a private, loopback, link-local, CGNAT, IETF protocol (`192.0.0.0/24`) or multicast address (an IPv6 that carries an IPv4, 6to4 included, is judged by that IPv4; local NAT64 and Teredo are refused), and follows no redirect. A URL with credentials, a query or a fragment is refused by the form | `providers/probe.ts`, `providers/form.ts` |
+| An admin chooses a preset whose terms do not suit the code: the diff of each review goes to that provider | The form shows the data terms of the preset (retention, training), their source and the day they were read, under "The diff of each review goes to …". The terms can change after that day: the admin reads them at the link | `ui/settings.tsx`, `presets.ts` |
+| A preset sends the key to a host that the admin did not mean | A preset only fills the form: the admin sees the URL, which the same checks hold, before the key is stored. The URL of a preset is HTTPS on the host of the provider, and "Test" reads the path of its list of models there | `presets.ts`, `presets.test.ts`, `providers/probe.ts` |
 | The provider echoes the key in its error, which ends on the screen | The message is cut to 300 characters and long tokens are replaced by `…` | `refusalMessage`, unit test |
 | A stolen master key | Rotate it (below); every key encrypted under the old one is encrypted again, then the old one leaves the environment | `app/providers/rotate-keys.ts` |
 | An admin of an org reads the OpenRouter key of the service with a trusted runner of the org, then spends it outside Kentō | The key of the service goes only to a trusted runner of the service: the claim gives a job with no provider to a runner of an org only when it has its own OpenRouter key, and the controller checks `runnerOrgId` again (REV-130) | `runner/store.ts` `claimJob`, `runner/controller.ts`, DB tests "never sends the key of the service to a runner of an org" |
