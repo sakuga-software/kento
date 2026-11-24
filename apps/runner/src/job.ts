@@ -249,7 +249,9 @@ export function chooseModel(job: Job, own: JobDependencies['config']['provider']
 /**
  * KNT-161. The fallback provider of a job (`models.fallbackProvider`), with its model, or null: none
  * set, not in `providers`, or a provider that this runner cannot call (no key in the job, and not its
- * own kind). The runner's own key or server first, as for the provider of the job.
+ * own kind, or its own kind on the other side: KNT-205, `ownServes`). The runner's own key or server
+ * first, as for the provider of the job. A null for a fallback that the job names is logged as
+ * `job.fallback_provider_unusable`, and the job goes on without a fallback.
  */
 export function chooseFallback(job: Job, own: JobDependencies['config']['provider']): Model | null {
   const chosen = job.models?.fallbackProvider;
