@@ -1,4 +1,5 @@
 import { defaultModels } from '@kento-review/engine/levels'
+import { placeholdersOf } from '@kento-review/engine/presets'
 import { isProviderKind, LEVELS, MODEL_ID, type Level, type ProviderKind } from '@kento-review/protocol'
 
 import type { ProviderModels } from '../db/schema.ts'
@@ -41,6 +42,9 @@ export interface ProviderInput {
  * calls such a URL: "Test" calls HTTPS only, and the runner calls its own PROVIDER_BASE_URL.
  */
 export function checkBaseUrl(kind: ProviderKind, value: string, runnerHeld = false): string | null {
+  // KNT-206. The URL of a preset of a cloud holds a placeholder that the admin replaces.
+  let placeholders = placeholdersOf(value)
+  if (placeholders.length > 0) return `Replace ${placeholders.map((name) => `{${name}}`).join(' and ')} in the URL.`
   let url: URL
   try {
     url = new URL(value)

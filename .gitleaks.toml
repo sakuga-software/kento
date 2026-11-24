@@ -23,4 +23,7 @@ regexes = [
   # packages/engine/test/proves.test.ts at 75ef4f8: the key of an earlier finding, which is no
   # secret. The test now builds a key of one letter; the history keeps the first value.
   '''^0123456789ab$''',
+  # apps/web/app/providers/enterprise.test.ts and packages/engine/test/enterprise-presets.test.ts
+  # (KNT-206): the keys of the tests of the Azure and Bedrock presets, fake.
+  '''^(the-key-of-the-test-0123456789|bedrock-api-key-1234)$''',
 ]
