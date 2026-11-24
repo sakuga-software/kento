@@ -226,7 +226,8 @@ function anthropicPrice(model: string): Price | null {
  * The price of a model at a provider, or null when the table does not know it. A server of the API
  * of OpenAI has a price only on the host of a preset (`baseUrl`). KNT-206: or on a base URL of a
  * preset with a placeholder, where a dated id (`gpt-6-sol-2026-09-22`, as Azure answers) has the
- * price of its model.
+ * price of its model. An id with another suffix (`gpt-6-sol-2026-09-22-preview`) has no price: the
+ * review shows its cost as unknown, never a wrong cost.
  */
 export function priceOf(kind: ProviderKind, model: string, baseUrl?: string | null): Price | null {
   if (kind === 'anthropic') return anthropicPrice(model);

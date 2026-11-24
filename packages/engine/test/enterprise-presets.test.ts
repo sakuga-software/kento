@@ -183,3 +183,9 @@ test('KNT-206. the ThrottlingException of Bedrock is a rate limit with no reset'
   const body = JSON.stringify({ message: 'Too many tokens, please wait before trying again.' });
   assert.deepEqual(limitOf(429, body, new Headers({ 'x-amzn-errortype': 'ThrottlingException:http://internal.amazon.com/coral/com.amazon.bedrock/' }), NOW), { kind: 'rate', resetAt: null });
 });
+
+test('KNT-206. an Azure id with another suffix than a date has no price: its cost shows as unknown', () => {
+  const url = 'https://contoso-ai.openai.azure.com/openai/v1';
+  assert.equal(priceOf('openai_compatible', 'gpt-6-sol-2026-09-22-preview', url), null);
+  assert.equal(costKnown('openai_compatible', 'gpt-6-sol-2026-09-22-preview', url), false);
+});
