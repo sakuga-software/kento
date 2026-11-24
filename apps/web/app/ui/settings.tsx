@@ -1,6 +1,7 @@
 import type { Handle, RemixNode } from 'remix/component'
 
 import { defaultModels } from '@kento-review/engine/levels'
+import { placeholdersOf } from '@kento-review/engine/presets'
 import { costKnown } from '@kento-review/engine/prices'
 import { LEVELS, type Level, type ProviderKind } from '@kento-review/protocol'
 
@@ -569,9 +570,11 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
     // A key in error with the key field disabled (no KENTO_SECRETS_KEY): the way out is the box below it.
     let focusRunnerHeld = first === 'apiKey' && !secretsConfigured
     // After a choice, the first field that is still to fill takes the focus: the key, or the URL of
-    // Ollama, or the name of another server. The URL has no fragment, so that `autofocus` works.
+    // Ollama or of a cloud with a placeholder (KNT-206), or the name of another server. The URL has
+    // no fragment, so that `autofocus` works.
+    let urlToFill = choice.kind === 'ollama' || placeholdersOf(values.baseUrl).length > 0
     let next: ProviderField | null =
-      first ?? (chosen === null ? null : choice.kind === 'ollama' ? 'baseUrl' : values.label === '' ? 'label' : secretsConfigured ? 'apiKey' : null)
+      first ?? (chosen === null ? null : urlToFill ? 'baseUrl' : values.label === '' ? 'label' : secretsConfigured ? 'apiKey' : null)
     let field = (name: ProviderField) => ({
       ...(focusRunnerHeld ? {} : focusIf(next, name)),
       'aria-invalid': errors[name] ? ('true' as const) : undefined,
@@ -671,7 +674,7 @@ function NewProviderForm(handle: Handle<{ csrf: string; form: SettingsPageProps[
               Server URL
             </label>
             <Input class="mono" id="provider-baseUrl" name="baseUrl" value={values.baseUrl} inputMode="url" spellCheck={false} {...field('baseUrl')} />
-            {message('baseUrl', 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
+            {message('baseUrl', preset?.baseUrlHint ?? 'Leave it empty for the URL of the type. Required for an OpenAI-compatible server. HTTPS, except for Ollama.')}
           </div>
           <div class="field">
             <label class="field-label" for="provider-apiKey">

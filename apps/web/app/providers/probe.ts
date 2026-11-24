@@ -95,10 +95,13 @@ export function probeUrl(kind: ProviderKind, baseUrl: string | null): string | n
     case 'openrouter':
       return `${base}/key`
     case 'anthropic':
-      return `${base}/v1/models`
-    case 'openai_compatible':
+      // KNT-206. Amazon Bedrock has no list of the models to read.
+      return presetOf(kind, base)?.modelsPath === null ? null : `${base}/v1/models`
+    case 'openai_compatible': {
       // KNT-204. A preset names the path of its list of models.
-      return `${base}${presetOf(kind, base)?.modelsPath ?? '/models'}`
+      let preset = presetOf(kind, base)
+      return preset?.modelsPath === null ? null : `${base}${preset?.modelsPath ?? '/models'}`
+    }
     case 'ollama':
       // The server is on the network of a runner: the service cannot reach it.
       return null
@@ -110,7 +113,7 @@ export function createProbe(options: { fetch?: typeof fetch; resolve?: (host: st
   let resolve = options.resolve ?? (async (host: string) => (await lookup(host, { all: true })).map((entry) => entry.address))
   return async ({ kind, baseUrl, apiKey }) => {
     let target = probeUrl(kind, baseUrl)
-    if (!target) return { outcome: 'failed', message: 'Test this provider from the runner that holds it.' }
+    if (!target) return { outcome: 'failed', message: presetOf(kind, baseUrl ?? defaultBaseUrl(kind))?.testNote ?? 'Test this provider from the runner that holds it.' }
     let url = new URL(target)
     if (url.protocol !== 'https:') return { outcome: 'failed', message: 'The service calls a provider only over HTTPS. Enter a URL with https://.' }
     let host = url.hostname.replace(/^\[|\]$/g, '')

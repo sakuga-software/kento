@@ -52,6 +52,8 @@ flowchart LR
 | A stolen master key | Rotate it (below); every key encrypted under the old one is encrypted again, then the old one leaves the environment | `app/providers/rotate-keys.ts` |
 | An admin of an org reads the OpenRouter key of the service with a trusted runner of the org, then spends it outside Kentō | The key of the service goes only to a trusted runner of the service: the claim gives a job with no provider to a runner of an org only when it has its own OpenRouter key, and the controller checks `runnerOrgId` again (REV-130) | `runner/store.ts` `claimJob`, `runner/controller.ts`, DB tests "never sends the key of the service to a runner of an org" |
 | A runner of the org, trusted, is compromised | It receives the key of its org: trust a runner only on a machine you control. The admin can untrust or revoke it on the Runners screen, then replace the key | Runners screen |
+| A key of a cloud gives more than the models (KNT-206): a long-term Bedrock API key is an IAM user, the key of an Azure resource opens all its deployments | Kentō stores it like any key. The hint of the form asks for a Bedrock key that ends, on an IAM user that may only call the models; AWS recommends long-term keys for exploration only. An Azure key reaches only its resource | `engine/src/enterprise-presets.ts` |
+| An admin writes the URL of a preset with a placeholder left in it | The form refuses `{resource}` and `{region}` until they are replaced; "Test" never calls such a URL | `providers/form.ts`, unit test |
 
 ## What is not covered
 
