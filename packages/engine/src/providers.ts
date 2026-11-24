@@ -113,6 +113,8 @@ const USAGE_WORDS =
 const QUOTA_WORDS = /quota/i;
 const SHORT_WINDOW = /per[ _-]?min(?:ute)?\b|PerMinute|per[ _-]?second|PerSecond|\b[RT]P[MS]\b/i;
 
+/** KNT-204. The codes of a limit that a provider documents for a 400. */
+const LIMIT_CODES_400 = /"code"\s*:\s*"blocked_api_access"/;
 /** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
 const RATE_WORDS = /rate[ _-]?limit/i;
 
@@ -874,10 +876,12 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let withFormat = true;
   let response = await send(messages, true);
   if (response.status === 400 || response.status === 422) {
-    // KNT-204. A limit can come as a 400 (Groq: `blocked_api_access` at the spend limit of the org):
-    // the call without the schema would get it too.
+    // KNT-204. The code of a limit that a provider answers with a 400 (Groq: `blocked_api_access` at
+    // the spend limit of the org): the call without the schema would get it too. Another 400 gets
+    // that call, even when its words name a limit: they can be part of an unrelated message, and
+    // the refusal of the second call is read as a limit (refused).
     const text = await errorText(response);
-    if (limitOf(response.status, text, response.headers)) throw refusedWith(response.status, text, response.headers, name);
+    if (LIMIT_CODES_400.test(text)) throw refusedWith(response.status, text, response.headers, name);
     withFormat = false;
     messages = [
       { role: 'system', content: `${call.prompt}\n\nAnswer with one JSON object only, that follows this JSON schema:\n${JSON.stringify(call.schema.schema)}` },

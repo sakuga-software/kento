@@ -353,6 +353,16 @@ test('KNT-204. Groq at its spend limit: the 400 stops the review at once, with n
   assert.match(String(error), /Groq refused the call on a usage limit \(400\)/);
 });
 
+test('KNT-204. a 400 whose words name a limit, with no code of a limit, still gets the call without the schema', async () => {
+  const { done, calls } = callPreset('groq', 'lite', [
+    () => json({ error: { message: 'response_format is not supported; see the docs on credits and usage limits', type: 'invalid_request_error' } }, 400),
+    answer('openai/gpt-oss-20b', { prompt_tokens: 10, completion_tokens: 1 }),
+  ]);
+  assert.deepEqual((await done).answer, { ok: true });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1]!.body.response_format, undefined);
+});
+
 test('KNT-204. a 400 that is no limit still gets the call without the schema', async () => {
   const { done, calls } = callPreset('cerebras', 'lite', [
     () => json({ message: 'response_format is not valid', type: 'invalid_request_error' }, 400),
