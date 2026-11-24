@@ -10,6 +10,7 @@ import { log } from '../../log.ts'
 import { readCapsForm, readTrustedBotsForm } from '../../org-settings/model.ts'
 import type { OrgSaveOutcome, OrgSettingsValues } from '../../org-settings/store.ts'
 import { readKeyForm, readProviderForm } from '../../providers/form.ts'
+import { choiceById } from '../../providers/presets.ts'
 import { SecretsError } from '../../providers/secrets.ts'
 import { readLevelForm, readModelsForm, withoutField, type ConfigField } from '../../repo-config/model.ts'
 import { pageRoutes } from '../../routes.ts'
@@ -34,7 +35,7 @@ import {
 } from './kit.tsx'
 import { conflictNotice, parseField, readVersionedForm, type FieldParsers } from './versioned.ts'
 
-export type SettingsExtra = Pick<SettingsPageProps, 'notice' | 'form' | 'keyError'> & {
+export type SettingsExtra = Pick<SettingsPageProps, 'notice' | 'form' | 'chosen' | 'keyError'> & {
   orgNotice?: OrgNotice | null
   orgForm?: OrgForm | null
   rules?: RulesExtra
@@ -181,6 +182,8 @@ export function settingsActions(kit: UiKit) {
       let version = Number(query.get('v'))
       return renderSettings(kit, context, signed, page, {
         notice: notice !== null && notice in PROVIDER_NOTICES ? { kind: notice as ProviderNotice } : null,
+        // KNT-204. The picker of "Add a provider": an id that it does not offer opens nothing.
+        chosen: choiceById(query.get('preset')),
         orgNotice: (done === 'saved' || done === 'reset') && Number.isSafeInteger(version) && version > 0 ? { kind: done, version } : null,
         rules: rulesNotice(query),
       })

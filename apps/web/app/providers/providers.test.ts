@@ -3,10 +3,14 @@ import { randomBytes } from 'node:crypto'
 import * as assert from 'remix/assert'
 import { describe, it } from 'remix/test'
 
+import { PROVIDER_PRESETS, RESERVED_PRESET_IDS } from '@kento-review/engine/presets'
+
 import { checkBaseUrl, readKeyForm, readProviderForm } from './form.ts'
+import { choiceById, choiceOf, choiceValues, PROVIDER_CHOICES, presetName } from './presets.ts'
 import { createProbe, privateAddress, probeUrl, readHead } from './probe.ts'
 import { createSecretBox, masterKeyId, providerAad, readMasterKeys, SecretsError } from './secrets.ts'
-import { refusalMessage } from './store.ts'
+import { refusalMessage, type ProvidersStore } from './store.ts'
+import { createConfigProviders } from './catalog.ts'
 
 const KEY = 'sk-ant-api03-the-key-of-the-test-0123456789'
 const ROW = { id: '7f1d6c2e-9a4b-4c3d-8e2f-1a2b3c4d5e6f', orgId: '0b9c4a52-3f1e-4c55-9a43-2f1a3f0f6b11' }
@@ -273,5 +277,73 @@ describe('"Test" a provider', () => {
   it('cannot test Ollama from the service: its server is on the network of a runner', async () => {
     assert.equal(probeUrl('ollama', 'http://gpu.lan:11434'), null)
     assert.equal(probeUrl('openrouter', null), 'https://openrouter.ai/api/v1/key')
+  })
+})
+
+describe('the presets of "Add a provider" (KNT-204)', () => {
+  function form(values: Record<string, string>) {
+    let data = new FormData()
+    for (let [key, value] of Object.entries(values)) data.set(key, value)
+    return data
+  }
+
+  it('offers each preset, then the types with their own API, then "Other OpenAI-compatible server"', () => {
+    let ids = PROVIDER_CHOICES.map((choice) => choice.id)
+    assert.deepEqual(ids.slice(0, PROVIDER_PRESETS.length), PROVIDER_PRESETS.map((preset) => preset.id))
+    assert.deepEqual(ids.slice(PROVIDER_PRESETS.length), ['anthropic', 'openrouter', 'ollama', 'other'])
+    assert.equal(new Set(ids).size, ids.length)
+    for (let preset of PROVIDER_PRESETS) assert.ok(!(RESERVED_PRESET_IDS as readonly string[]).includes(preset.id), preset.id)
+    assert.equal(choiceById('constructor'), null)
+    assert.equal(choiceById(null), null)
+  })
+
+  it('fills the form from a preset, and the form reads it back as a valid OpenAI-compatible provider', () => {
+    for (let preset of PROVIDER_PRESETS) {
+      let values = choiceValues(choiceById(preset.id)!, false)
+      assert.equal(values.kind, 'openai_compatible')
+      assert.equal(values.label, preset.name)
+      assert.equal(values.baseUrl, preset.baseUrl)
+      assert.equal(values.models.heavy, preset.models.heavy.join(', '))
+      let read = readProviderForm(
+        form({ kind: values.kind, label: values.label, baseUrl: values.baseUrl, apiKey: KEY, models_lite: values.models.lite, models_balanced: values.models.balanced, models_heavy: values.models.heavy }),
+      )
+      assert.deepEqual(read.errors, {}, preset.id)
+      assert.deepEqual(read.input?.models, { lite: [...preset.models.lite], balanced: [...preset.models.balanced], heavy: [...preset.models.heavy] })
+      // The picker finds the preset again from the values, after an error too.
+      assert.equal(choiceOf(values).id, preset.id)
+    }
+  })
+
+  it('fills only the type and its name for Anthropic, OpenRouter and Ollama, and nothing for "Other"', () => {
+    let anthropic = choiceValues(choiceById('anthropic')!, false)
+    assert.deepEqual({ kind: anthropic.kind, label: anthropic.label, baseUrl: anthropic.baseUrl, lite: anthropic.models.lite }, { kind: 'anthropic', label: 'Anthropic', baseUrl: '', lite: '' })
+    let ollama = choiceValues(choiceById('ollama')!, false)
+    assert.equal(ollama.label, 'Ollama')
+    assert.equal(ollama.runnerHeld, true, 'Ollama needs no key')
+    let other = choiceValues(choiceById('other')!, true)
+    assert.deepEqual({ kind: other.kind, label: other.label, baseUrl: other.baseUrl, runnerHeld: other.runnerHeld }, { kind: 'openai_compatible', label: '', baseUrl: '', runnerHeld: true })
+    assert.equal(choiceOf({ kind: 'openai_compatible', baseUrl: 'https://llm.example.com/v1' }).id, 'other')
+    assert.equal(choiceOf({ kind: 'openrouter', baseUrl: '' }).id, 'openrouter')
+  })
+
+  it('names the preset of a provider by its base URL, also one added before the presets', () => {
+    let [first] = PROVIDER_PRESETS
+    assert.equal(presetName({ kind: 'openai_compatible', baseUrl: `${first!.baseUrl}/` }), first!.name)
+    assert.equal(presetName({ kind: 'openai_compatible', baseUrl: 'https://llm.example.com/v1' }), null)
+    assert.equal(presetName({ kind: 'anthropic', baseUrl: null }), null)
+  })
+
+  it('names the preset on the Config screen of a repository', async () => {
+    let [first] = PROVIDER_PRESETS
+    let row = { id: ROW.id, orgId: ROW.orgId, label: 'Ours', keyLast4: 'abcd', keySetAt: null, runnerHeld: false, isDefault: true, models: {}, lastOkAt: null, refusedAt: null, refusedStatus: null, refusedMessage: null, createdAt: new Date() }
+    let store = { list: async () => [{ ...row, kind: 'openai_compatible' as const, baseUrl: first!.baseUrl }, { ...row, id: 'x', isDefault: false, kind: 'openai_compatible' as const, baseUrl: 'https://llm.example.com/v1' }] } as unknown as ProvidersStore
+    let options = await createConfigProviders(store, { serviceKey: true }).list(ROW.orgId)
+    assert.match(options[1]!.hint, new RegExp(`^${first!.name}, default provider of the organization · `))
+    assert.match(options[2]!.hint, /^OpenAI-compatible · /)
+  })
+
+  it('tests a preset on the path of its list of models', () => {
+    for (let preset of PROVIDER_PRESETS) assert.equal(probeUrl('openai_compatible', `${preset.baseUrl}/`), `${preset.baseUrl}${preset.modelsPath}`)
+    assert.equal(probeUrl('openai_compatible', 'https://llm.example.com/v1/'), 'https://llm.example.com/v1/models')
   })
 })

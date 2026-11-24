@@ -13,6 +13,7 @@
     "./render": "./src/render.ts",
     "./threads": "./src/threads.ts",
     "./prices": "./src/prices.ts",
+    "./presets": "./src/presets.ts",
     "./providers": "./src/providers.ts",
     "./paths": "./src/paths.ts"
   },

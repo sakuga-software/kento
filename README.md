@@ -7,7 +7,8 @@ label and a check. A person asks for a stronger review, or for an answer to the 
 a comment.
 
 You run Kentō yourself: a web service, its Postgres database, and one or more runners that call the
-model provider of your choice (OpenRouter, Anthropic, a server with the OpenAI API, or Ollama).
+model provider of your choice (OpenRouter, Anthropic, a server with the OpenAI API, or Ollama). The
+screen knows the OpenAI API of [these providers](#providers).
 
 License: [GNU Affero General Public License v3.0 only](LICENSE) (`AGPL-3.0-only`). If you
 run a changed version of Kentō as a service, give its users the source of your version. The license
@@ -101,6 +102,33 @@ The defaults are in `packages/engine/src/levels.ts`. An admin changes the provid
 each level for an organization (**Settings → Providers and keys**) and for a repository (its
 Config). The footer of each review gives the model and the cost that the provider charged.
 
+### Providers
+
+**Settings → Providers and keys → Add a provider** starts with the provider. A known provider fills
+the name, the URL, the models of each level and the link to the page of its keys; you paste the key,
+change what you want, and add it. Such a provider is a server with the OpenAI API at a known URL:
+the screen names it wherever its URL is, and its models have dated prices, so their cost counts in
+the cost limit. "Other OpenAI-compatible server" is the form with nothing filled.
+
+| Provider | Base URL | Models of lite · balanced · heavy |
+| --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | GPT-5.6 Luna · GPT-5.6 Terra · GPT-5.6 Sol, then GPT-5.5 |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini 3.5 Flash-Lite · Gemini 4 Hydrogen · Gemini 4 Neon |
+| Mistral | `https://api.mistral.ai/v1` | Mistral Small 4 · Mistral Large 4 · Mistral Large 4, then GLM-5.3 |
+| Groq | `https://api.groq.com/openai/v1` | gpt-oss-20b · gpt-oss-120b · gpt-oss-120b |
+| xAI | `https://api.x.ai/v1` | Grok 4.20 (non-reasoning) · Grok 4.3 · Grok 4.7 |
+| Together AI | `https://api.together.ai/v1` | GLM-5.3 Flash · GLM-5.3 · Kimi K3.1 Pro |
+| Fireworks AI | `https://api.fireworks.ai/inference/v1` | GLM-5.3 Flash · GLM-5.3 · Kimi K3.1 Pro |
+| DeepInfra | `https://api.deepinfra.com/v1/openai` | DeepSeek V4.1 Flash · GLM-5.3 · DeepSeek V4 Pro |
+| Cerebras | `https://api.cerebras.ai/v1` | gpt-oss-120b at each level |
+
+The exact ids, the fallback models, the sources and the day of each check are in
+[`packages/engine/src/presets.ts`](packages/engine/src/presets.ts), and the prices in
+[`prices.ts`](packages/engine/src/prices.ts). A model is in a preset only if the docs of its provider
+say that it takes tool calls and answers in a JSON schema. DeepSeek is not there: its API answers in
+JSON, not in a JSON schema. The form shows the data terms of the provider that you choose: the diff
+of each review goes to it.
+
 The model has no tool. The engine sends the diff with the whole function around each change, the
 `CLAUDE.md` and `AGENTS.md` of the head commit (up to 400 lines each), and the code outside the diff
 that a reviewer opens first, found with `git grep`: at most 240 kB in all.
@@ -193,7 +221,8 @@ can go a little over the limit.
   GitHub Enterprise Server.
 - **No review of a pull request from a fork**, and no review of a draft.
 - **The diff goes to the model provider.** Choose a provider whose retention and training terms
-  suit the code that you review. With OpenRouter, Kentō asks for providers that keep nothing and
+  suit the code that you review. "Add a provider" shows the terms of each known provider, with
+  their source and the day they were read. With OpenRouter, Kentō asks for providers that keep nothing and
   train on nothing. With Ollama, the code stays on the network of the runner.
 - **The prompts and the replies of the bot are in English.**
 - **The threat model has known gaps**, listed in [docs/threat-model.md](docs/threat-model.md#what-is-not-covered).

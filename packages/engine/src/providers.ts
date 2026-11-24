@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import type { Usage } from './findings.ts';
 import type { LevelConfig } from './levels.ts';
 import type { CostSource, ProviderKind } from '../../protocol/src/index.ts';
+import { presetOf } from './presets.ts';
 import { costFromTable, type Tokens } from './prices.ts';
 import { anthropicTools, chatTools, type RepoTools } from './tools.ts';
 
@@ -97,8 +98,23 @@ export function rateLimited(error: unknown): error is RateLimitError {
 /** KNT-161. A limit that ends later than this is a usage limit: a retry of the job would fail too. */
 export const RATE_LIMIT_MAX_MS = 10 * 60_000;
 
-/** KNT-161. The words of an error body that name a usage limit of the key, whatever its status. */
-const USAGE_WORDS = /usage limits?\b|quota|\bcredits?\b|insufficient (?:balance|funds)|spend(?:ing)? limit|key limit/i;
+/**
+ * KNT-161. The words of an error body that name a usage limit of the key, whatever its status.
+ * KNT-204: with `_` or `-` between the words too, as in the codes of OpenAI
+ * (`organization_spend_limit_exceeded`, `credit_balance_exhausted`, `billing_hard_limit_reached`),
+ * and `blocked_api_access`, the code of Groq at the spend limit of the org (a 400).
+ */
+const USAGE_WORDS =
+  /usage[ _-]limits?(?![a-z])|\bcredits?(?![a-z])|insufficient[ _-](?:balance|funds|quota)|spend(?:ing)?[ _-]limit|key[ _-]limit|billing[ _-]hard[ _-]limit|blocked_api_access/i;
+/**
+ * KNT-204. « quota » names a usage limit, except a quota of a minute or a second: Cerebras answers
+ * `token_quota_exceeded` to the tokens of a minute, and Gemini names its quotas per minute.
+ */
+const QUOTA_WORDS = /quota/i;
+const SHORT_WINDOW = /per[ _-]?min(?:ute)?\b|PerMinute|per[ _-]?second|PerSecond|\b[RT]P[MS]\b/i;
+
+/** KNT-204. The codes of a limit that a provider documents for a 400. */
+const LIMIT_CODES_400 = /"code"\s*:\s*"blocked_api_access"/;
 /** KNT-161. The words of a rate limit. A 403 does not count them: a moderation 403 echoes the input. */
 const RATE_WORDS = /rate[ _-]?limit/i;
 
@@ -114,14 +130,14 @@ export type ProviderLimit = { kind: 'usage' | 'rate'; resetAt: string | null };
 
 /**
  * KNT-161. Whether an error answer of a provider is a limit, and when it ends. A usage limit: a 402,
- * a 4xx whose body names a quota, credits, a spend limit or a key limit, or a limit that ends more
- * than RATE_LIMIT_MAX_MS away. A rate limit: another 429, or a 4xx (not a 403) that names a rate
+ * a 4xx whose body names a quota (not one of a minute or a second), credits, a spend limit or a key
+ * limit, or a limit that ends more than RATE_LIMIT_MAX_MS away. A rate limit: another 429, or a 4xx (not a 403) that names a rate
  * limit. Null for another error. A 401 is never a limit.
  */
 export function limitOf(status: number, text: string, headers?: Headers, now: number = Date.now()): ProviderLimit | null {
   // A 401 is a key that the provider does not know, whatever its words: an admin must replace it.
   if (status < 400 || status > 499 || status === 401) return null;
-  const usage = status === 402 || USAGE_WORDS.test(text);
+  const usage = status === 402 || USAGE_WORDS.test(text) || (QUOTA_WORDS.test(text) && !SHORT_WINDOW.test(text));
   const rate = status === 429 || (status !== 403 && RATE_WORDS.test(text));
   if (!usage && !rate) return null;
   const resetAt = resetOf(text, headers, now);
@@ -175,7 +191,8 @@ const ISO_TIME = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{
  * (« You will regain access on 2026-12-01 at 00:00 UTC »), `retry-after` (seconds, decimals
  * included, or an HTTP date), the reset headers of Anthropic, of OpenRouter and of OpenAI, then a
  * date-time of the body that follows a reset word (« until », « reset », « try again »), then the
- * `X-RateLimit-Reset` that OpenRouter puts in the body. A time in the past, or more than 90 days
+ * `X-RateLimit-Reset` that OpenRouter puts in the body, then the `retryDelay` of Google (KNT-204).
+ * A time in the past, or more than 90 days
  * away, is skipped. Null when none says it. Any other date of the body is not read.
  */
 function resetOf(text: string, headers: Headers | undefined, now: number): string | null {
@@ -205,7 +222,11 @@ function resetOf(text: string, headers: Headers | undefined, now: number): strin
   const fromBody = near ? resetIso(Date.parse(near[1]!), now) : null;
   if (fromBody) return fromBody;
   const window = /"X-RateLimit-Reset"\s*:\s*"?(\d+)/i.exec(text);
-  return window ? resetIso(epochMs(Number(window[1]), now), now) : null;
+  const fromWindow = window ? resetIso(epochMs(Number(window[1]), now), now) : null;
+  if (fromWindow) return fromWindow;
+  // KNT-204. The RetryInfo of Google in the details of the error: `"retryDelay": "58s"`.
+  const delay = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(text);
+  return delay ? resetIso(now + Number(delay[1]) * 1000, now) : null;
 }
 
 /**
@@ -285,16 +306,30 @@ function endpoint(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}${path}`;
 }
 
+/**
+ * KNT-204. How much of an error body the limits read. Gemini puts the window of its quota and the
+ * `retryDelay` after a long message, in `details`. The error keeps the first 300 characters.
+ */
+const LIMIT_TEXT_MAX = 4096;
+
+async function errorText(response: Response): Promise<string> {
+  return (await response.text().catch(() => '')).slice(0, LIMIT_TEXT_MAX);
+}
+
 async function refused(response: Response, name: string): Promise<ProviderError> {
-  const text = (await response.text().catch(() => '')).slice(0, 300);
-  const limit = limitOf(response.status, text, response.headers);
+  return refusedWith(response.status, await errorText(response), response.headers, name);
+}
+
+function refusedWith(status: number, body: string, headers: Headers, name: string): ProviderError {
+  const text = body.slice(0, 300);
+  const limit = limitOf(status, body, headers);
   if (limit) {
     const until = limit.resetAt ? `, until ${limit.resetAt}` : '';
     const Limit = limit.kind === 'usage' ? UsageLimitError : RateLimitError;
     const words = limit.kind === 'usage' ? USAGE_LIMIT_TEXT : RATE_LIMIT_TEXT;
-    return new Limit(`${name} ${words} (${response.status}${until}): ${text}`, response.status, limit.resetAt);
+    return new Limit(`${name} ${words} (${status}${until}): ${text}`, status, limit.resetAt);
   }
-  return new ProviderError(`${name} answered ${response.status}: ${text}`, response.status);
+  return new ProviderError(`${name} answered ${status}: ${text}`, status);
 }
 
 /** The JSON object of a text: from its first `{` to its last `}`. Throws when it is not JSON. */
@@ -329,11 +364,16 @@ function count(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-/** The cost of a call: the one that the provider gave, else the table, else 0 and `unknown`. */
-function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown): { cost: number; cost_source: CostSource } {
+/**
+ * The cost of a call: the one that the provider gave, else the table, else 0 and `unknown`. KNT-204:
+ * the table knows a model of a server of the API of OpenAI by the host of `baseUrl`, and by the id
+ * that the server answered, else by the id of the request (`asked`): a server can answer with the
+ * dated id of an alias.
+ */
+function priced(kind: ProviderKind, model: string, tokens: Tokens, given?: unknown, baseUrl?: string, asked?: string): { cost: number; cost_source: CostSource } {
   if (typeof given === 'number' && Number.isFinite(given) && given >= 0) return { cost: given, cost_source: 'provider' };
   if (kind === 'ollama') return { cost: 0, cost_source: 'free' };
-  const fromTable = costFromTable(kind, model, tokens);
+  const fromTable = costFromTable(kind, model, tokens, baseUrl) ?? (asked && asked !== model ? costFromTable(kind, asked, tokens, baseUrl) : null);
   return fromTable === null ? { cost: 0, cost_source: 'unknown' } : { cost: fromTable, cost_source: 'table' };
 }
 
@@ -804,16 +844,23 @@ function markLastBlock(messages: { content: Block[] }[], tail: Block | undefined
  * `/chat/completions` of a server with the API of OpenAI. It asks for the schema with
  * `response_format`; a server that refuses it (400 or 422) gets the call again without it, with the
  * schema in the prompt. An answer that is not JSON gets one more call that asks for the JSON only.
+ *
+ * KNT-204. On the base URL of a preset (presets.ts), the call takes the name of the provider in its
+ * errors, the field of its answer cap (`max_completion_tokens` at OpenAI), and asks for no more
+ * answer tokens than the model takes.
  */
 async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
-  const name = 'The OpenAI-compatible server';
+  const preset = presetOf('openai_compatible', call.baseUrl);
+  const name = preset?.name ?? 'The OpenAI-compatible server';
+  const cap = Object.hasOwn(preset?.maxOutputTokens ?? {}, call.model) ? preset!.maxOutputTokens![call.model]! : Infinity;
+  const maxTokens = { [preset?.maxTokensField ?? 'max_tokens']: Math.min(call.config.maxTokens, cap) };
   const send = (messages: { role: string; content: string }[], withFormat: boolean) =>
     call.fetch(endpoint(call.baseUrl, '/chat/completions'), {
       method: 'POST',
       headers: { ...(call.apiKey ? { Authorization: `Bearer ${call.apiKey}` } : {}), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: call.model,
-        max_tokens: call.config.maxTokens,
+        ...maxTokens,
         messages,
         ...(withFormat
           ? { response_format: { type: 'json_schema', json_schema: { name: call.schema.name, strict: true, schema: call.schema.schema } } }
@@ -829,7 +876,12 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let withFormat = true;
   let response = await send(messages, true);
   if (response.status === 400 || response.status === 422) {
-    await response.body?.cancel();
+    // KNT-204. The code of a limit that a provider answers with a 400 (Groq: `blocked_api_access` at
+    // the spend limit of the org): the call without the schema would get it too. Another 400 gets
+    // that call, even when its words name a limit: they can be part of an unrelated message, and
+    // the refusal of the second call is read as a limit (refused).
+    const text = await errorText(response);
+    if (LIMIT_CODES_400.test(text)) throw refusedWith(response.status, text, response.headers, name);
     withFormat = false;
     messages = [
       { role: 'system', content: `${call.prompt}\n\nAnswer with one JSON object only, that follows this JSON schema:\n${JSON.stringify(call.schema.schema)}` },
@@ -841,6 +893,8 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
   let out = await response.json();
   let input = count(out.usage?.prompt_tokens) ?? 0;
   let output = count(out.usage?.completion_tokens) ?? 0;
+  // The cached tokens of the calls, or undefined when no call gave them.
+  let cacheRead = count(out.usage?.prompt_tokens_details?.cached_tokens);
   let content: string = out.choices?.[0]?.message?.content ?? '';
   let answer: T;
   try {
@@ -854,20 +908,25 @@ async function callOpenAiCompatible<T>(call: Call): Promise<Called<T>> {
     out = await again.json();
     input += count(out.usage?.prompt_tokens) ?? 0;
     output += count(out.usage?.completion_tokens) ?? 0;
+    const cachedAgain = count(out.usage?.prompt_tokens_details?.cached_tokens);
+    if (cachedAgain !== undefined) cacheRead = (cacheRead ?? 0) + cachedAgain;
     content = out.choices?.[0]?.message?.content ?? '';
     answer = parseObject<T>(content, name);
   }
   const model: string = typeof out.model === 'string' && out.model ? out.model : call.model;
-  const cached = count(out.usage?.prompt_tokens_details?.cached_tokens);
+  // `prompt_tokens` counts the cached tokens too: the table prices them apart. KNT-204: the usage
+  // gives the same count as the cost, for all the calls, as it does for `prompt_tokens`.
+  const read = cacheRead === undefined ? undefined : Math.min(cacheRead, input);
   return {
     answer,
     usage: {
       model,
+      ...(preset ? { provider: preset.name } : {}),
       prompt_tokens: input,
       completion_tokens: output,
-      // REV-89. The cached tokens of the last call, when the server gives them.
-      ...(cached !== undefined ? { cache_read_tokens: cached } : {}),
-      ...priced('openai_compatible', model, { input, output }, out.usage?.cost),
+      // REV-89. The cached tokens, when the server gives them.
+      ...(read !== undefined ? { cache_read_tokens: read } : {}),
+      ...priced('openai_compatible', model, { input: input - (read ?? 0), output, cacheRead: read ?? 0 }, out.usage?.cost, call.baseUrl, call.model),
     },
   };
 }
