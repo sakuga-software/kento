@@ -33,10 +33,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
-    "@playwright/test": "1.65.0",
+    "@playwright/test": "1.65.1",
     "@types/node": "26.6.6",
     "drizzle-kit": "0.31.11",
-    "oxlint": "1.93.0",
+    "oxlint": "1.94.0",
     "typescript": "7.0.2"
   }
 }
