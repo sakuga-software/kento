@@ -4,6 +4,10 @@ The runner has the version of the service. Its changes are in the changelog of K
 [apps/web/CHANGELOG.md](../web/CHANGELOG.md). Changesets adds a section here at each release, with
 no entry.
 
+## 0.2.1
+
+No changes in this release.
+
 ## 0.2.0
 
 The first public release, with the service.
