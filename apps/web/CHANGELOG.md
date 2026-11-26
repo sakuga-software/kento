@@ -20,6 +20,291 @@ Each entry says, when it applies:
 - **GitHub App**: a new permission or event, which the owners of each installation must accept.
 - **Order**: whether the service or the runners go first. By default, the service goes first.
 
+## 0.2.1
+
+### Patch Changes
+
+- [#39](https://github.com/sakuga-software/kento/pull/39) [`b3a6b8f`](https://github.com/sakuga-software/kento/commit/b3a6b8fed44bdeffe5ddf70d4ba1600858bd7444) - Add changesets for versions and changelogs (KNT-174). Each pull request carries a changeset, and a pull request "chore: version packages" sets the version and writes this changelog. Its merge tags `vX.Y.Z` and starts the release.
+
+- [#65](https://github.com/sakuga-software/kento/pull/65) [`ef5df54`](https://github.com/sakuga-software/kento/commit/ef5df543ed903a7b9f039b7d14205f240463d762) - **Screens**: `/costs` (KNT-188), for every member of the org: what the reviews and resolutions
+  cost over this month, last month, 30 or 90 days (`?period=`), against the period before, by UTC
+  day, repo, level and model, the most expensive runs, and for this month the projection and the
+  cap. "This month" is compared with the same days of the month before; once the day is past the end
+  of a shorter month, with the whole month before, and the label says so with its number of days
+  ("All of February, 28 days"). Charts with Chart.js 4.6.1 (MIT), served by the service itself like the other browser
+  modules; each chart has its table, and the page works without JavaScript. The tile "Cost of the
+  month" of the dashboard opens it. At startup the service checks that it can serve the charts; if
+  not, it logs `startup.assets_unavailable` and the screen shows its tables without charts. A request
+  for a file of a browser package that is no module (a UMD or CommonJS build, a `.d.ts`) answers 404
+  with a warning. No migration, no new variable.
+
+- [#85](https://github.com/sakuga-software/kento/pull/85) [`a36ace7`](https://github.com/sakuga-software/kento/commit/a36ace7d7ff56209bc37366dc0cc7ac5b1f1d9df) - The screen of a pull request counts its reviews as the request for feedback does (KNT-175): only
+  the reviews on GitHub that a model made. A copy of an earlier review on a commit with no changed
+  reviewed file shows as "same as R2", and a review that was not published shows as "not published":
+  neither takes an R number. The count, "Run R{n+1}", the change of the score "since R{n-1}", the
+  numbers in the detail and the history of a finding, and the count on the user screen follow the
+  same rule. The user screen lists only the pull requests with a review on GitHub.
+
+- [#40](https://github.com/sakuga-software/kento/pull/40) [`126e124`](https://github.com/sakuga-software/kento/commit/126e124ed2caa6802f2187226ba63565198a555d) - **Reviews** (KNT-154): a pull request that touches authentication, access control, CI, the supply
+  chain, secrets, webhooks, payments, a migration of data or the security of the web layer is a
+  critical change. Its review gets a checklist, its risk starts with "Critical change (…)", and it
+  scores 3/5 at most unless it names a file of the diff (or a route or a library of the change) and
+  a real role that it checked. A `lite` review of it scores 3 at most and advises a deeper one. The
+  runner computes it: no change of the protocol, and a service of the release before shows it as it
+  is.
+
+- [#73](https://github.com/sakuga-software/kento/pull/73) [`d681ac0`](https://github.com/sakuga-software/kento/commit/d681ac0e76f1e8d8f8de0f04718c3be4ae06761b) - Reviews read a shorter system prompt. The rules of the sections that only a later review holds (answered threads, rejected and earlier findings, the zones changed since the last review) go at the end of the message, only when the pack holds them. A defect that depends on a caller or a definition that the review does not see is no longer a finding: the review names it in its summary or in the reason of a deeper review. A finding that breaks code of the Context section sits on the changed line that causes it, so it gets a thread. The review asks for tests only when CLAUDE.md or AGENTS.md asks for them (KNT-110).
+
+- [#89](https://github.com/sakuga-software/kento/pull/89) [`428b066`](https://github.com/sakuga-software/kento/commit/428b066ab9d604499e35606f761035e7e0ba9a6f) - **Azure OpenAI and Claude on Amazon Bedrock** (KNT-206): two more presets on "Add a provider".
+  Azure OpenAI uses the v1 API of a resource (`https://{resource}.openai.azure.com/openai/v1`), the
+  key of the resource, and the GPT-6 models under the names of their deployments. Claude on Bedrock is
+  a provider of the kind Anthropic (`https://bedrock-runtime.{region}.amazonaws.com/anthropic`) with a
+  long-term Bedrock API key and the global ids of Claude, priced as Anthropic, 10 % more for a
+  geography. The form asks to replace the placeholder of the URL. A 429 of Azure OpenAI is now a rate
+  limit that the review waits for, not a usage limit that stops it. No migration, no new kind, and no
+  change of the protocol of the runners.
+
+- [#50](https://github.com/sakuga-software/kento/pull/50) [`6d36042`](https://github.com/sakuga-software/kento/commit/6d36042429a2a6d96223cd9948a7595586a4357d) - **Fallback provider** (KNT-161): each level of Config and Settings gets an optional fallback
+  provider and its model, next to the fallback model. When the provider of the level refuses the call
+  on its usage limit, the runner calls the fallback provider once, and the review says which provider
+  answered. A short rate limit does not switch provider: the job waits for its reset and runs again
+  on the same provider. A resolution falls back in the same way and says so in its summary. The cost
+  of a review or a resolution that the fallback answered goes to the fallback provider, and such a job
+  does not mark the provider of the job as working. A failure of the fallback names both providers by
+  their labels in the comment. Its key goes to a runner under the rules of the provider of the job: only a provider of the
+  org of the job, its key only to a trusted runner, and never a key held on the runners of the org
+  unless the runner holds that kind, and only with a job that carries the models of the config. Otherwise the job goes without it, and the log says why
+  (`job.fallback_provider_not_sent`). No migration.
+  
+  **Protocol**: the feature `fallback-provider` (`models.fallbackProvider` in a job, `fellBack` in a
+  review or a resolution). **Order**: the service first. A runner of this release claims the feature, and a service of
+  an earlier release refuses a claim with a feature that it does not know.
+
+- [#60](https://github.com/sakuga-software/kento/pull/60) [`208034d`](https://github.com/sakuga-software/kento/commit/208034d0c8a8ae86209c161ac012502cd591e8e7) - **Screens**: `/feedback` (KNT-176) shows 25 answers a page, the newest first, with "Newer" and
+  "Older" links that keep the filters; it showed the 200 newest before, with a count. A link to a page
+  after the last one shows "No older feedback" and a link to the newest. KNT-195: a URL with an empty
+  filter, a value the screen cannot read or a broken cursor redirects (303) to the same screen with
+  only the values in use. The page reads the existing index `feedback_repo_created_at_idx`. No
+  migration.
+
+- [#69](https://github.com/sakuga-software/kento/pull/69) [`2005727`](https://github.com/sakuga-software/kento/commit/20057276331056145c71decfeb81a011bda5e8c4) - **Screens**: `/findings` (KNT-178) reads the size of its pages from `?per=n`, 10 to 100 (a size out of
+  those bounds reads as the nearest one). Without `per` a page still has 25 rows. With JavaScript, the
+  first visit of a session without `per` replaces the URL once with the size that fits the height of
+  the window, on the page that keeps the first row on screen; the page takes no input while it leaves,
+  and the links to the list then carry that size for the rest of the session (`sessionStorage`), so
+  later visits load once. Every link of the list and the form of the filters keep `per`. KNT-195: a URL
+  with empty fields (the form sends them), a value the screen cannot read, a size out of bounds or a
+  page after the last one redirects (303) to the URL of the same list with only the values in use; the
+  notice after "Mark dismissed" or "Mark wontfix" stays. No migration.
+
+- [#57](https://github.com/sakuga-software/kento/pull/57) [`c5a8405`](https://github.com/sakuga-software/kento/commit/c5a84054ce9ed03769990b9c954953e89ec4903b) - The limits on the questions to GitHub of the forms hold for every process of the service, on the clock of Postgres (KNT-173). The take-back of the owner role asks GitHub once a minute per person and org; before, each process kept its own count. A person can try again 10 s after a failure of GitHub. A person moves or detaches at most 10 installations a minute, whatever the org. Two cases no longer answer 500 when they meet a move of an installation or a webhook of the same org: a check of the repositories, and a new installation of the account. They take the locks in the order of the move, and follow the installation to its new org.
+  
+  - **Migrations**: `0033_github_asks` adds the table `github_asks`, the counts of these questions. It only adds: the release before runs on it.
+
+- [#72](https://github.com/sakuga-software/kento/pull/72) [`ff54b66`](https://github.com/sakuga-software/kento/commit/ff54b6616195e7d4cc3a0fb9bef1f4538934a348) - A take-back of the owner role that is under way while a move deletes its org writes no count for the deleted org, and asks GitHub nothing (KNT-198). The person gets "not found".
+
+- [#74](https://github.com/sakuga-software/kento/pull/74) [`0ffa0d0`](https://github.com/sakuga-software/kento/commit/0ffa0d009f203ae245a647a95cf54c7e79cd36bf) - A take-back of the owner role by a person who is no longer a member of the org when it is counted is not counted, and asks GitHub nothing: the person gets "not found" (KNT-198).
+
+- [#86](https://github.com/sakuga-software/kento/pull/86) [`3fcb5a9`](https://github.com/sakuga-software/kento/commit/3fcb5a971aeea6ab4918682949088c454f7b167f) - Serve the browser modules from the asset server of Remix again, with no build step (KNT-202, replaces the bundles of KNT-170). A page with components preloads all of its modules at once, and the HTML pages, the stylesheet, the scripts and the modules are compressed with brotli or gzip. The stream of the live card, the fonts and the JSON of the runner API stay uncompressed.
+
+- [#67](https://github.com/sakuga-software/kento/pull/67) [`c2d9c34`](https://github.com/sakuga-software/kento/commit/c2d9c34e22f01e4f6981341236308e9a3214e6f2) - **Screens** (KNT-186): the lists of the selects, the menus "…", the confirmations and the menu of the
+  orgs open with a short fade (140 ms) and close faster (80 ms; the fade-out needs Chromium), and
+  nothing moves under "reduce motion". The menu of the orgs is now at least as wide as its box and ends
+  on its right edge; on a phone it hangs from the bar, the width of the screen, where it went past the
+  left edge before. A long name of org is cut with an ellipsis, in the box and in the menu, with its
+  full name as a tooltip, instead of pushing the page sideways.
+
+- [#53](https://github.com/sakuga-software/kento/pull/53) [`c7029de`](https://github.com/sakuga-software/kento/commit/c7029dea384dc42737d0869fc9dbd3ac99252902) - **Live card of the dashboard** (KNT-189): the card "Queue and runners" follows a stream of
+  server-sent events, `GET /dashboard/live`, for a signed-in member, for the org of the session. A
+  proxy in front of the service must not buffer `text/event-stream` answers (Traefik does not by
+  default) and must keep an idle connection open 30 s at least: the stream sends a comment every
+  25 s and ends after 2 minutes, then the browser opens another one. A stream checks its session and
+  its org again every 20 s, and ends at once at a sign-out or a switch of org. Each session holds 4
+  streams at most (429 beyond), the service 200 (503 beyond), and a client that reads nothing for 5 s
+  is cut. While the service shuts down it answers 503 with `Retry-After`, and the open pages come back
+  by themselves after a deploy. The card also says how many runners are ready: online, with no job in
+  progress. A request that the client leaves before the answer is logged at `info` with status 499,
+  no longer as an error. No migration, no new variable.
+
+- [#59](https://github.com/sakuga-software/kento/pull/59) [`25f8702`](https://github.com/sakuga-software/kento/commit/25f8702d9aba040f2e079a435a19bc89d7f7eb2c) - **Reviews** (KNT-155): the pack shows the changes of the journal of the Drizzle migrations (an entry
+  added, removed, renamed, or whose `when` goes back) and a summary of each changed snapshot (the
+  snapshot it follows, tables and columns added, removed, changed or renamed), each with its line in
+  the file, instead of listing them under « Not reviewed ». A journal or a snapshot that is removed or
+  not valid JSON says so. For a migration or a backfill, the review asks whether the version in
+  service runs on the new data, whether every write path still fits, what a rollback leaves, and how
+  mixed or legacy values map.
+
+- [#56](https://github.com/sakuga-software/kento/pull/56) [`f1fd3a1`](https://github.com/sakuga-software/kento/commit/f1fd3a17a58d322029ff40b9650e76108656e09f) - **Dashboard** (KNT-190, KNT-193): "No cap", on the card Cost and in "At a glance", links to the
+  section "Costs and cap" of the settings for an owner or an admin (plain text for a member, who keeps
+  the hint "An admin sets it in Settings"). The section "To do" shows only when it has something in it.
+
+- [#55](https://github.com/sakuga-software/kento/pull/55) [`53b1703`](https://github.com/sakuga-software/kento/commit/53b17035e33862a8a3fb13daf471543daa45ddc2) - **Reviews** (KNT-196): a review never shows an internal label such as « E1 ». It names an earlier
+  finding by its public id and title, and says nothing more of one that is no longer open.
+
+- [#82](https://github.com/sakuga-software/kento/pull/82) [`524efef`](https://github.com/sakuga-software/kento/commit/524efef0feb3204a90c00fc2dbbf9f68a042d816) - **Reviews** (KNT-201): a review whose model costs more above a number of prompt tokens (Claude
+  Haiku 5.5 at `lite`: 5 times more above 100,000 tokens) keeps its whole call under that number. On
+  a large pull request, the pack cuts the same files in the same order as before, earlier. The other
+  levels and models keep the pack that they had.
+
+- [#70](https://github.com/sakuga-software/kento/pull/70) [`151224a`](https://github.com/sakuga-software/kento/commit/151224a3e2a6147e970e30b0e7f293eb8e7c2f96) - **Dashboard** (KNT-191): the cards "Recent failures" and "Precision by repo" take the whole width,
+  one under the other. The precision by repo has a chart (Chart.js, above the list that stays without
+  JavaScript) and a choice of window, 30 days or 7 (`?precision=7`); the tile "Precision" of "At a
+  glance" follows it.
+
+- [#88](https://github.com/sakuga-software/kento/pull/88) [`3cfa37a`](https://github.com/sakuga-software/kento/commit/3cfa37acbbb29416dd925fa6f68692767603b721) - **Presets of the clouds of Europe and of the local servers** (KNT-205). "Add a provider" offers
+  Scaleway Generative APIs (Paris, zero data retention by default) and OVHcloud AI Endpoints (the
+  European Union, no data stored), with the models that their docs give for a JSON schema, and their
+  prices in euros counted in dollars at the rate of the ECB of 2026-11-24. It also offers LM Studio,
+  vLLM and the llama.cpp server on the network of a runner, as Ollama: the form fills their default
+  URL and keeps the key on the runner, takes an `http://` URL only for a server that the runner
+  holds, and a call to such a server costs 0. A runner with `PROVIDER_KIND=openai_compatible` and an
+  `http://` `PROVIDER_BASE_URL` calls its own server, with no key. No migration, no new kind.
+
+- [#87](https://github.com/sakuga-software/kento/pull/87) [`de53a30`](https://github.com/sakuga-software/kento/commit/de53a302748a20f9b9eadfdaae88a2b1d492ceed) - **Provider presets** (KNT-204): "Settings → Providers and keys → Add a provider" starts with a
+  choice of the provider. OpenAI, Google Gemini, Mistral, Groq, xAI, Together AI, Fireworks AI,
+  DeepInfra and Cerebras fill the name, the URL, the models of each level and the link to the page of
+  their keys, and show their data terms; everything stays editable. "Other OpenAI-compatible server"
+  keeps the form as before. The list of the providers and the Config screen of a repository name the
+  preset of a provider by its base URL, so a provider added before this release gets it too. The
+  models of the presets have dated prices, so their cost counts in the cost limit.
+  
+  The runner calls a preset through the OpenAI-compatible adapter of the engine
+  (`packages/engine/src/providers.ts`; no file of `apps/runner` changes). On the base URL of a preset,
+  the adapter sends the field of its answer cap (`max_completion_tokens` at OpenAI and xAI) and no
+  more answer tokens than its model takes. It reads more limits of the providers (KNT-161): the codes of OpenAI (`credit_balance_exhausted`, `organization_spend_limit_exceeded`…),
+  the spend limit of Groq (a 400, which no longer gets a second call), the `retryDelay` of Gemini, and
+  a « quota » of a minute, which is a rate limit and no longer stops the review.
+  
+  A preset is a provider of the kind `openai_compatible`: no migration, no new kind, and no change of
+  the protocol of the runners. A runner of an earlier release calls a preset as any server of the
+  OpenAI API, with `max_tokens`: update the runners before you add the OpenAI preset, whose reasoning
+  models refuse that field.
+
+- [#49](https://github.com/sakuga-software/kento/pull/49) [`54c4eb7`](https://github.com/sakuga-software/kento/commit/54c4eb78c5ebfae434e4d198d7f7297eda8f90cb) - **Usage limit of a provider** (KNT-161): a 402, an error that names a quota, credits, a spend
+  limit or a key limit, or a limit that ends more than 10 minutes away stops the review at the first
+  model of the provider (its other models get the same refusal), and keeps the reset time that the
+  provider gives. The comment on the pull request says that the review did not happen, until when,
+  and how to run it again. Such a refusal no longer marks the key of the provider as refused, even as
+  a 403 « Key limit exceeded » (a 401 stays a refused key). The reason of a runner of the release
+  before is read the same way.
+  
+  **Short rate limit**: another 429 tries the next model of the level, as before. When every model
+  gets one, the job goes back to the queue until the reset (at least the usual backoff); only when
+  that attempt fails too does the comment say that the review did not happen. The reset time comes
+  from `retry-after` (decimals included) or the reset headers (epoch seconds, milliseconds, a delta
+  or a duration), never from another date of the body, and a time in the past is dropped. Account ids
+  (`org-…`, `user_…`) are masked in the comment and the check.
+  
+  **Check of a failed review**: a review that fails for good now posts the check of Kentō on its head
+  when the head has none: `action_required` for a usage or rate limit, `failure` otherwise, never
+  `success`. A head that another review already checked keeps its check. It uses the `checks: write`
+  permission that the App already has. No migration.
+
+- [#45](https://github.com/sakuga-software/kento/pull/45) [`cbeac94`](https://github.com/sakuga-software/kento/commit/cbeac94162591f9d4948e081331bce3369c20dd7) - **Reviews** (KNT-152): a finding about a race, an order of events or a timeout gives the steps that
+  the runtime allows, each at a file and a line. Without two such steps, or without a number for a
+  claim that some work is too slow, it becomes a question.
+
+- [#76](https://github.com/sakuga-software/kento/pull/76) [`e5b5b36`](https://github.com/sakuga-software/kento/commit/e5b5b36522a8859ade8f499f1719d2c804e7ea8d) - **A rejected finding no longer comes back under a new id, and `resolve` reads the fix in another file**
+  (KNT-197). Both changes are in the runner.
+  
+  - A finding that says again what a person rejected, in the same area of the file (40 lines, with 2
+    words of the title in common), is left out, also after a push that changed the file away from it.
+    A push that changes the code near the rejected line can bring a new fact: the finding then stays,
+    and its text names the rejected finding, its cause and the lines that changed.
+  - `@kento-review resolve` reads the diffs of the other files changed since a thread opened, the
+    files that the thread names first, within a budget. A thread whose own file did not change can be
+    closed by a fix in one of them.
+
+- [#33](https://github.com/sakuga-software/kento/pull/33) [`da56248`](https://github.com/sakuga-software/kento/commit/da5624893d9ac765a6833fe9ea4d72a57100f58f) - **Screens**: `/settings/organization` (KNT-150): an owner renames the org, and moves an
+  installation of the App, with its repositories, to another org of theirs, to a new org, or to a
+  new org with no member (a detach). GitHub must count the person as an admin of the accounts that
+  the move joins; an installation on a personal account stays in an org of its own. Moving the last
+  installation deletes the empty org, after a confirmation by its name that lists its members and
+  invitations. Each change writes `org_audit`. Kentō now asks GitHub for the type of the account of
+  an installation (`GET /app/installations/{id}`, with the JWT of the App). No migration.
+
+- [#71](https://github.com/sakuga-software/kento/pull/71) [`d47241f`](https://github.com/sakuga-software/kento/commit/d47241f72958f1e317c3883bbc577a645bb212d4) - **Screens**: `/repos` and the dashboard (KNT-183, KNT-187): a confidence score is drawn as five
+  marks in the colour of its band, with its number. The Repos screen gets a column "Confidence 30 d",
+  the average score of the reviews that Kentō published on the repository in the last 30 days, and
+  the "Score" of the latest reviews of the dashboard uses the same drawing. No migration.
+
+- [#54](https://github.com/sakuga-software/kento/pull/54) [`68202ac`](https://github.com/sakuga-software/kento/commit/68202acfa33b4547068cd491c5686a3db3b838bb) - **Screens**: `/repos` (KNT-179, KNT-180, KNT-181, KNT-182, KNT-194): the table drops the columns
+  "Reviews by" and "Switch", their legend and the notes on the switch from review.yml. "Remove
+  review.yml" moves to the menu "…" of the row, for an admin at 20 reviews in a row with the file
+  still there, and the row says "review.yml can go". The dashboard item "still on review.yml" opens
+  the filter "To switch". The visibility of a repository is the icon left of its name (and in the
+  title of the name), and the last review fits on one line. No migration.
+
+- [#66](https://github.com/sakuga-software/kento/pull/66) [`7bdbf2a`](https://github.com/sakuga-software/kento/commit/7bdbf2aaa6a77b5626e4cb151ca84eacad4fdb4f) - **Screens**: `/repos` (KNT-184, KNT-185, KNT-195): "Read GitHub again" is an icon button, marked
+  busy while the check runs, and it brings the list back with its filter, search and page. The result
+  of a check, an enable or a disable shows in a toast in the corner of the window, which goes away
+  after 8 seconds or with its close link; an error stays a banner. No migration.
+
+- [#62](https://github.com/sakuga-software/kento/pull/62) [`f52096b`](https://github.com/sakuga-software/kento/commit/f52096b61558abb11e8728bea2c4d0cf71762041) - **Reviews** (KNT-167): a finding that asks to undo the fix of an earlier finding of the same pull
+  request says so in its thread, names that finding, and does not block or lower the score alone,
+  unless it is critical.
+  **Order**: the service first, as always. The runner claims the feature `reverses`, and a finding of
+  the result can carry `reverses`, the key of that earlier finding.
+
+- [#46](https://github.com/sakuga-software/kento/pull/46) [`a8f6e3f`](https://github.com/sakuga-software/kento/commit/a8f6e3fe87d5f6712da6e55ddba9a7b3ea57b08e) - **Reviews** (KNT-166): when a large pull request does not fit in a review, the generated files and
+  the docs go first, then the files of logic keep their hunks with three lines of context, and the
+  schema, the migrations and the stores go last. The summary lists the files that the review did not
+  read, and when one holds logic, the risk starts with « Partial review » and the score is at most 4,
+  or 3 for a schema, a migration or a store.
+
+- [#48](https://github.com/sakuga-software/kento/pull/48) [`19740cb`](https://github.com/sakuga-software/kento/commit/19740cb17729fef2b72b8363f2e5fe8817fdf1ea) - **Reviews** (KNT-158): « Not reviewed » lists a file once for each reason, with no empty line. A
+  review with a blocking issue no longer says « safe to merge ». When a defect comes back in another
+  form, the review asks for its root cause. After a merge of the base branch, a review judges only
+  what the pull request changes.
+
+- [#43](https://github.com/sakuga-software/kento/pull/43) [`70434d7`](https://github.com/sakuga-software/kento/commit/70434d780d6cf30d0411d45ccefa94357639d381) - **Reviews** (KNT-153): a `minor` finding whose whole fix says that no change is needed is dropped,
+  and a `minor` finding that only asks the author to confirm becomes a question. A `major` or
+  `critical` finding always stays. The block of the description lists the
+  questions under « Questions »: no thread, no block, no weight in the score.
+  **Order**: the service first, as always. The runner claims the feature `questions`, and the result
+  of a review can carry `questions`; a service of the release before refuses the claim of a runner of
+  this release.
+
+- [#44](https://github.com/sakuga-software/kento/pull/44) [`2ed6db1`](https://github.com/sakuga-software/kento/commit/2ed6db1348d18c78738088869a08d3206ebaa675) - **Reviews** (KNT-151): the context of a review holds the functions that a change calls, the schema
+  and the migrations of the tables that it reads or writes, and the route that a changed test
+  requests, and a workflow file shows whole. A finding whose premise is code that the review did not
+  read goes to « Not reviewed » with what to check, and its thread stays open.
+  
+  **Order**: the service, then the runners. A runner of this release claims the feature `moved`,
+  which the service of the release before refuses.
+
+- [#75](https://github.com/sakuga-software/kento/pull/75) [`0b8c6a4`](https://github.com/sakuga-software/kento/commit/0b8c6a486cbd6f96e9f7dbfa916d098da084e34a) - A role from GitHub is written only while the installation that gave it is still in the org (KNT-199). If an owner moves an installation to another org while Kentō asks GitHub about its account, the take-back of the owner role answers "The installations of the organization changed", and a check of a role at sign-in or on a request writes nothing and asks again at the next request. Before, a person could become the owner or an admin of an org from an account that had just left it.
+
+- [#61](https://github.com/sakuga-software/kento/pull/61) [`5556248`](https://github.com/sakuga-software/kento/commit/55562487f1d7afa181227da4db764605ec8e601f) - **Screens**: `/settings` (KNT-177): on a desktop, a link of the sidebar scrolls smoothly to its
+  section. A load of `/settings#section` (after a save, from a link, a reload), Tab and the history
+  still jump at once, as before; so does the page with reduced motion and under 900 px. No migration.
+
+- [#47](https://github.com/sakuga-software/kento/pull/47) [`8d084f9`](https://github.com/sakuga-software/kento/commit/8d084f97961252af5e011ffa5db79d267ee3df60) - **Reviews** (KNT-156): a changed test shows its whole test in the pack (three lines of context when
+  its tests pass 40 kB, or when the pack is over its size), and the review asks which change of the
+  code makes each assertion fail. When the file of an open finding changed, the review checks the
+  cases next to its fix, and a case that the fix broke counts as a new defect: it no longer follows the
+  fixed finding.
+
+- [#42](https://github.com/sakuga-software/kento/pull/42) [`bc0bad4`](https://github.com/sakuga-software/kento/commit/bc0bad43b3b5501fa8ed2f36cf291ffb7d9ae743) - **Thread commands** (KNT-160): `reject #<id> <cause>` works in the thread of that finding (another
+  id is refused, and an unknown id gets « no finding has this id »); `resolve` in a thread gets an
+  answer at once that it goes in the conversation; a reject resolves the thread even when the ledger
+  does not know its id yet. A finding not found again is now `fixed` only when a push changed a line
+  within 10 lines of it (or its file, when GitHub gives no patch); a change elsewhere in the file
+  leaves it open. No migration.
+
+- [#68](https://github.com/sakuga-software/kento/pull/68) [`94ad514`](https://github.com/sakuga-software/kento/commit/94ad51446ce7d0348a4cc3b13f6b21a4c97c824e) - **A finding that the reviews no longer see** (KNT-192): when 2 reviews in a row that read its file
+  again no longer find an open finding, and pushes changed its file since, the finding becomes `stale`
+  and Kentō says in its thread that it no longer sees it, that `resolve` can confirm the fix, and that
+  `reject` dismisses it if it is wrong. A push review that did not read the file again is not a miss.
+  The thread stays open, and the Findings screen shows the finding under "open" with the badge
+  "Not seen in the last reviews". A stale finding counts neither as fixed nor as a false positive.
+  
+  - A fix that `@kento-review resolve` confirms now makes its finding `fixed` (open or stale), so the
+    precision counts it.
+  - `@kento-review reject` now dismisses a `stale` finding, instead of refusing it.
+  
+  No migration.
+
 ## 0.2.0 (2026-11-21)
 
 The first public release. The runner image is `ghcr.io/sakuga-software/kento-runner:0.2.0`.
